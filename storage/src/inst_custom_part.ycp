@@ -105,7 +105,7 @@ HINTS: Always use
   boolean button_adapt_mp	  = false;   // Should the "Adapt mount points from 
                                              // existing /etc/fstab" -Button be shown in Expert menu
   
-   boolean test_mode          = Mode::test;
+   boolean test_mode          = Mode::test ();
    string  boot_mode	      =	"fritz";
    /* FIXME string  boot_mode	      =	Bootloader::getLoaderType ();*/
    boolean immediate_prepdisk = Storage::immediate_prepdisk;
@@ -147,11 +147,11 @@ HINTS: Always use
        bsd_label = true;
        }
 
-   if( Mode::initial )
+   if( Stage::initial () )
        {
        button_adapt_mp = true; 
        }
-   if( Mode::repair )
+   if( Mode::repair () )
       {
       button_raid 	  = false;
       button_loop 	  = false; 
@@ -2604,14 +2604,14 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 	}
     else
 	{
-	help_text = getMainHelptext(Mode::initial);
+	help_text = getMainHelptext(Stage::initial ());
 	}
 
     // Main dialog: Header
 
     string back_label = "";
     string next_label = "";
-    if( Mode::initial )
+    if( Stage::initial () )
 	{
 	back_label = Label::BackButton();
 	next_label = Label::FinishButton();
@@ -2917,7 +2917,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 			    "used_fs": used_fs,
 			     ]);
 
-		    if( Mode::repair )
+		    if( Mode::repair () )
 			{
 			new_val["format"] = false;
 			new_val["mount" ] = "";
@@ -2930,7 +2930,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 						   bsd_label,
 						   edit_cylinder,
 						   curr_disk["cyl_size"]:1000000,
-						   Mode::initial
+						   Stage::initial ()
 						 );
 		    }
 
@@ -2985,7 +2985,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    {
 		    map<string,any> part = Storage::GetSubDev( id );
 		    part = RaidExpertDlg( `settings, "/dev/md" + subdevkey,
-					   part, Mode::initial,
+					   part, Stage::initial (),
 					   FileSystems::GetAllFileSystems(true,true),
 					   false, Storage::GetTargetMap());
 		    if( part!=nil && size(part)>0 )
@@ -3097,7 +3097,7 @@ WARNING: All data on this partition will be lost."));
 						 disk_without_current,
 						 bsd_label, edit_cylinder,
 						 curr_disk["cyl_size"]:1000000,
-						 Mode::initial );
+						 Stage::initial () );
 			}
 		    if( new_val != nil && size(new_val)>0 )   // not canceld    
 			{ 
@@ -3157,7 +3157,7 @@ WARNING: All data on this partition will be lost."));
 		    focusline = id;
 		    map new_targetMap = deleteAllDevPartitions( tmap,
 								id,
-								Mode::initial,
+								Stage::initial (),
 								bsd_label );
 		    y2milestone( "new_targetMap %1", new_targetMap );
 		    if( new_targetMap != nil && size(new_targetMap)>0 )
@@ -3198,7 +3198,7 @@ WARNING: All data on this partition will be lost."));
 							    true,  // bsd_check
 							    true,  // lvm_check
 							    true ,
-							    Mode::initial ); 
+							    Stage::initial () ); 
 
 
 		if( ret_delete == `immediate_prepdisk )
@@ -3216,7 +3216,7 @@ WARNING: All data on this partition will be lost."));
 		if( Storage::IsSubDevExtended( id ) )
 		    {
 		    if( !check_extended_delete( maindevkey, curr_disk, 
-		                                Mode::initial ) )
+		                                Stage::initial () ) )
 			{
 			focusline = id;
 			ret = `again;
@@ -3233,7 +3233,7 @@ WARNING: All data on this partition will be lost."));
 		    {
 		    if( maindevkey == "/dev/loop" && size(curr_part["fpath"]:"")>0 )
 			{
-			if( Mode::normal && 
+			if( Mode::normal () && 
 			    Popup::YesNo( sformat(_("\nShould the loop file %1 also be removed?
 "), curr_part["fpath"]:"" )))
 			    {
@@ -3328,7 +3328,7 @@ of \"Resize\".
 	    else
 		{
 		map new_val = (map)eval(curr_part);
-		if( Mode::normal && new_val["used_fs"]:`none == `ntfs )
+		if( Mode::normal () && new_val["used_fs"]:`none == `ntfs )
 		    {
 		    Package::InstallAll( ["ntfsprogs"] );
 		    }
@@ -3536,7 +3536,7 @@ Select the DASD disk for which dasdfmt should be executed."));
 		ret = `again;
 		continue;
 		}
-	    else if( Mode::normal )
+	    else if( Mode::normal () )
 		{
 		Package::InstallAll( ["lvm2"] );
 		}
@@ -3546,7 +3546,7 @@ Select the DASD disk for which dasdfmt should be executed."));
         // Adapt mount points from existing /etc/fstab
         /////////////////////////////////////////////////////////////
 
-        if (ret == `adapt_mp && Mode::initial )
+        if (ret == `adapt_mp && Stage::initial () )
 	    {
 	    map<string,map> od = (map<string,map>)Storage::GetOndiskTarget();
 	    list<list> fstab = scanAndReadExistingFstab( od );
@@ -3610,7 +3610,7 @@ Really quit the main dialog?
 		}
 	    if ( ret == `next && !immediate_prepdisk )
 		{
-		list retval = check_created_partiton_table( Storage::GetTargetMap() , true, Mode::initial );
+		list retval = check_created_partiton_table( Storage::GetTargetMap() , true, Stage::initial () );
 		Storage::SetTargetMap( retval[0]:$[] );
 	        doagain = retval[1]:`next;
 		}
@@ -3644,7 +3644,7 @@ Really quit the main dialog?
   Wizard::RestoreNextButton();
   if( (ret == `lvm || ret == `raid_wizard || ret == `raid_settings || 
        ret == `evms) &&
-      !Mode::initial )
+      !Stage::initial () )
       {
       Wizard::RestoreBackButton();
       }
@@ -3654,11 +3654,11 @@ Really quit the main dialog?
              Storage::GetTargetMap() );
 
   //next by installation
-  if( Mode::initial && ret == `next )
+  if( Stage::initial () && ret == `next )
       ret = `instnext;
 
   //next in existing system
-  if( !Mode::initial && ret == `next )
+  if( !Stage::initial () && ret == `next )
       ret = `sysnext;
 
   if( ret == `back )

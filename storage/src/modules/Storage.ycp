@@ -38,6 +38,7 @@
   import "Popup";
   import "Misc";
   import "StorageDevices";
+  import "Stage";
 
 global boolean DoCheckEvmsNonEvms = true;
 global boolean DoCheckEvmsLvm = true;
@@ -273,7 +274,7 @@ global define map<string,map> SetPartition( map<string,map> tg, map part )
  */
 global define string GetLoopDev( integer start )
     ``{
-    if( Mode::test )
+    if( Mode::test () )
 	return "/dev/loop2";
 
     integer max_loop_dev= 15;
@@ -545,7 +546,7 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 		});
 	    });
 	}
-    if( Mode::normal )
+    if( Mode::normal () )
 	{
 	SCR::UnmountAgent (.proc.mounts);
 	list<map> mounts = (list<map>) SCR::Read(.proc.mounts);
@@ -686,7 +687,7 @@ global define map<string,map> ReadLvmMd( map<string,map> targetMap )
     ``{
     SCR::UnmountAgent(.md);
     targetMap = GetLvmMdSystemInfo( targetMap );
-    if( Mode::initial  && !Mode::repair )
+    if( Stage::initial ()  && !Mode::repair () )
 	{
 	SetMdOn( false );
 	}
@@ -715,7 +716,7 @@ global define map<string,map> GetFsysType( map<string,map> target)
 		    partition["fstype"] =
 			Partitions::FsIdToString( Partitions::fsid_fat32 );
 		    }
-		if( partition["used_fs"]:`none == `swap && Mode::initial )
+		if( partition["used_fs"]:`none == `swap && Stage::initial () )
 		    {
 		    string cmd = sformat( "file -s %1", partition["device"]:"/dev/null" );
 		    cmd = cmd + "| grep -q \"new style\"";
@@ -750,19 +751,19 @@ global define list SwappingPartitions()``{
 global define map<string,map> AddSwapMp( map<string,map> target )
     ``{
     list swaps = [];
-    if( !Mode::initial )
+    if( !Stage::initial () )
 	swaps = SwappingPartitions();
     y2milestone( "swaps %1", swaps );
     foreach(string diskdev, map disk, target,
 	``{
 	 disk["partitions"] = maplist(map part, disk["partitions"]:[],
 				 ``{
-				 if( (Mode::initial &&
+				 if( (Stage::initial () &&
 				      !Partitions::IsDosWinNtPartition(part["fsid"]:0) &&
 				      part["detected_fs"]:`unknown==`swap &&
 				      !part["old_swap"]:false &&
 				      find( diskdev, "/dev/evms" )!=0 ) ||
-				     (!Mode::initial &&
+				     (!Stage::initial () &&
 				      contains( swaps, part["device"]:"" )))
 				     {
 				     part["mount"] = "swap";
@@ -1075,7 +1076,7 @@ global define map<string,map> GetTargetMap()
     ``{
     map<string,map> tmp = $[];
     boolean changed = false;
-    if( !probe_done && !Mode::config )
+    if( !probe_done && !Mode::config () )
 	{
 	y2milestone ("probing StorageDevices" );
 	tmp = (map<string,map>)StorageDevices::Probe(force_disk_probe);
@@ -1098,7 +1099,7 @@ global define map<string,map> GetTargetMap()
 	tmp = GetFsysType( tmp );
 	y2milestone ("AddSwapMp" );
 	tmp = AddSwapMp( tmp );
-	if( Mode::initial )
+	if( Stage::initial () )
 	    {
 	    y2milestone( "AddWinInfo" );
 	    tmp = AddWinInfo( tmp );
@@ -1107,12 +1108,12 @@ global define map<string,map> GetTargetMap()
 	StorageMap[targets_backup_key,"initial"] = eval(tmp);
 	StorageMap[targets_backup_l_key,"initial"] = true;
 	StorageMap[targets_backup_m_key,"initial"] = $[];
-	if( Mode::initial || Mode::repair )
+	if( Stage::initial () || Mode::repair () )
 	    {
 	    y2milestone( "AddMountPointsForWin" );
 	    tmp = AddMountPointsForWin( tmp );
 	    }
-	if( Mode::normal )
+	if( Mode::normal () )
 	    {
 	    y2milestone ("AddMountPointInfo" );
 	    tmp = AddMountPointInfo( tmp );
@@ -1353,7 +1354,7 @@ global define map GetMountPoints()
 	});
     if (size (swapPoints) > 0)
 	mountPoints = add (mountPoints, "swap", swapPoints);
-    if( !Mode::initial )
+    if( !Stage::initial () )
 	{
 	list<map> cm = filter(map e, Partitions::CurMounted(),
 	                  ``(find(e["spec"]:"","/dev/")==0));
@@ -1762,7 +1763,7 @@ global define boolean CheckForEvmsRootFs()
 	SetClassifiedUserSettings( $[ "crypt_nb":0 ]  );
 	SetModifyTargets($[]);
 	SetTargetMap( $[] );
-	if( Mode::normal )
+	if( Mode::normal () )
 	    {
 	    Storage::SetPartMode( "CUSTOM" );
 	    Storage::SetPartProposalActive( false  );
@@ -3180,7 +3181,7 @@ global define list GetForeignPrimary()
 	list<map> wd = (list<map>) flatten( (list<list>) maplist(string k, map e, tg, ``(e["partitions"]:[])));
 	wd = filter(map e, wd, ``(size(e["winfo"]:$[])>0));
 	y2milestone( "wd %1", wd );
-	if( !Mode::initial && size(wd)==0 )
+	if( !Stage::initial () && size(wd)==0 )
 	    {
 	    tg = GetTargetMap();
 	    y2milestone( "AddWinInfo" );
@@ -3491,7 +3492,7 @@ global define void WriteFstab( map<string,map> targetMap )
     include "partitioning/write_fstab.ycp";
 
     map<string,map> tg = eval(targetMap);
-    if( Mode::initial )
+    if( Stage::initial () )
 	{
 	StorageDevices::MakeCDLinks();
 	}

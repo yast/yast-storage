@@ -23,6 +23,7 @@
     module "StorageDevices";
 
     import "Mode";
+    import "Stage";
     import "String";
     import "HwStatus";
     import "Partitions";
@@ -133,7 +134,7 @@ global define boolean ProbeCDROMs()
 		     "dvdram"      : 0 ];
     if (size (cddrives) == 0)
 	{
-	if (Mode::initial || Mode::cont)
+	if (Stage::initial () || Stage::cont ())
 	    {
 	    cddrives = (list<map>) SCR::Read (.probe.cdrom);
 	    // write out data for hardware status check
@@ -239,7 +240,7 @@ global define map GetCdromEntry( string device )
 
 global define boolean FloppyReady ()
     ``{
-    if( Mode::initial )
+    if( Stage::initial () )
 	{
 	y2milestone( "before .probe.floppy" );
 	FloppyDrives = (list<map>) SCR::Read(.probe.floppy);
@@ -261,7 +262,7 @@ global define boolean FloppyReady ()
 
     map floppy_data = FloppyDrives[0]:$[];
     FloppyDevice = floppy_data["dev_name"]:"";
-    if( (FloppyDevice != "") || Mode::test)
+    if( (FloppyDevice != "") || Mode::test ())
 	{
 	FloppyPresent = true;
 	}
@@ -313,10 +314,10 @@ define map findZIPs ()
 
 global define map fakeProbe ()
     ``{
-    string fake_map_file = ( Mode::demo ? "demo_target_map.ycp" : "test_target_map.ycp" );
+    string fake_map_file = ( Mode::test () ? "demo_target_map.ycp" : "test_target_map.ycp" );
     
     y2milestone( "%1 mode - using fake target map from %2",
-                 Mode::demo ? "Demo" : "Test", fake_map_file );
+                 Mode::test () ? "Demo" : "Test", fake_map_file );
 
     map target_map = (map) SCR::Read( .target.yast2, fake_map_file );
 
@@ -402,7 +403,7 @@ global define map CheckPartedValid( string ddevice, map disk,
     if( find( ddevice, "/dev/sd" )==0 )
 	{
 	if( size(filter( map p, partitions, ``(p["nr"]:0>15)))>0 &&
-	    Mode::initial && !Mode::autoinst )
+	    Stage::initial () && !Mode::autoinst () )
 	    {
 	    partitions = filter( map p, partitions, ``(p["nr"]:0<=15));
 	    plist1 = filter( integer idx, integer val, plist1, ``(idx<=15));
@@ -559,7 +560,7 @@ define map localProbe ()
     map targets = $[];
     list<map> ppart = [];
 
-    if( Mode::test )
+    if( Mode::test () )
 	{
 	return fakeProbe();
 	}
@@ -796,7 +797,7 @@ define map localProbe ()
 		    y2milestone( "localProbe: new p %1", partitions );
 		    target["readonly"] = !disk["softraiddisk"]:false &&
 		                         target["label"]:"" != "aix";
-		    if( Mode::initial && !Mode::autoinst && 
+		    if( Stage::initial () && !Mode::autoinst () && 
 		        target["readonly"]:false )
 			{
 			Report::Error( Partitions::RdonlyText(ddevice,false) );
@@ -812,7 +813,7 @@ define map localProbe ()
 		}
 	    else if( find( ddevice, "/dev/dasd" )==0 )
 		{
-		if( notready && Mode::initial )
+		if( notready && Stage::initial () )
 		    {
 		    target["dasdfmt"] = true;
 		    }
@@ -1025,7 +1026,7 @@ global define void InitDone()
 
 global define void StorageDevices ()
     ``{
-    if( !Mode::initial && !Mode::config )
+    if( !Stage::initial () && !Mode::config () )
 	{
 	FullProbe ();
 	disks_valid = true;
