@@ -212,6 +212,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
     boolean swap_found           = false;
     boolean boot_found           = false;
     boolean root_found           = false;
+    boolean gpt_warning          = false;
     integer boot_end             = 0;
     integer root_end             = 0;
     boolean root_raid            = false;
@@ -323,6 +324,10 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 
 		if ( mountpoint == "/" )
 		{
+		    if( diskinfo["label"]:"" = "gpt" )
+			{
+			gpt_warning = true;
+			}
 		    root_found = true;
 		    root_end   = part["region",0]:0 + part["region",1]:1-1;
 		    if( size(part["raid_type"]:"")>0 ||
@@ -339,6 +344,10 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		}
 		else if ( mountpoint == "/boot" )
 		{
+		    if( diskinfo["label"]:"" = "gpt" )
+			{
+			gpt_warning = true;
+			}
 		    boot_found      = true;
 		    boot_start_cyl  = part["region",0]:0;
 		    boot_cyl_nb     = part["region",1]:0;
@@ -463,6 +472,23 @@ new partition starting at cylinder %1.
 
 Do you want to change your partitioning?
 "), axp_start_nth +1, axp_start_dev ) );
+
+	  if (ret == true) retval = `again;
+      }
+
+      if ( ( !Arch::ia64 && installation && gpt_warning) || show_all_popups )
+      {
+          // popup text %2 is a disk name e.g. /dev/hda %1 is a number
+	  boolean ret = Popup::YesNo( sformat(_("The disk label type on your system disk is GPT.
+Linux can handle GPT partition table fine but most BIOS
+versions cannot handle the disk label. To remove the GPT
+disk label from a disk you can use the menue entry 
+\"%1\" of the \"%2\" button.
+
+Do you want to change your partitioning?
+"), 
+	deletechars( _("Delete partition &table and disk label"), "&"),
+	deletechars( _("E&xpert.."), "&") ) );
 
 	  if (ret == true) retval = `again;
       }
