@@ -111,7 +111,7 @@ global define map GetTargetMap()
 	tmp = GetFsysType( tmp );
 	y2milestone ("AddSwapMp" );
 	tmp = AddSwapMp( tmp );
-	SCR::Write(Storage::SaveDumpPath("targetMap_i"), tmp );
+	SCR::Write(.target.ycp, Storage::SaveDumpPath("targetMap_i"), tmp );
 	StorageMap[targets_backup_key,"initial"] = eval(tmp);
 	StorageMap[targets_backup_l_key,"initial"] = true;
 	StorageMap[targets_backup_m_key,"initial"] = $[];
@@ -429,7 +429,7 @@ global define void ResetOndiskTarget()
     global define void CreateTargetBackup(string who)``{
 	if( size(StorageMap[targets_backup_key,who]:$[])==0 )
 	    {
-	    //SCR::Write(topath(".dumpto.tmp.b_"+who), StorageMap[targets_key]:$[] );
+	    //SCR::Write(.target.ycp, "/tmp/b_"+who, StorageMap[targets_key]:$[] );
 	    y2milestone( "creating backup of TargetMap who=%1", who );
 	    StorageMap[targets_backup_key,who] = eval(StorageMap[targets_key]:$[]);
 	    StorageMap[targets_backup_l_key,who] = lvm_initialized;
@@ -452,7 +452,7 @@ global define void ResetOndiskTarget()
 	    {
 	    y2milestone( "restoring backup of TargetMap who=%1", who );
 	    StorageMap[targets_key] = eval(StorageMap[targets_backup_key,who]:$[]);
-	    //SCR::Write(topath(".dumpto.tmp.r_"+who), StorageMap[targets_key]:$[] );
+	    //SCR::Write(.target.ycp, "/tmp/r_"+who, StorageMap[targets_key]:$[] );
 	    lvm_initialized = StorageMap[targets_backup_l_key,who]:false;
 	    StorageMap[modify_targets_key] = eval(StorageMap[targets_backup_m_key,who]:$[]);
 	    StorageMap[targets_backup_key,who] = $[];
@@ -2222,7 +2222,8 @@ global define list GetRootInitrdModules()
     classified[crypt_key] = fs_passwd;
 
     if( Mode::test )
-	SCR::Write(.dumpto.tmp.classified_user_settings, classified_user_settings );
+	SCR::Write( .target.ycp, "/tmp/classified_user_settings", 
+	            classified_user_settings );
     SetClassifiedUserSettings(classified);
     return crypt_key;
     }
@@ -2271,8 +2272,8 @@ global define list GetRootInitrdModules()
     /* Save Storage to dir for debug */
     global define TestWrite()``{
 
-	 SCR::Write(.dumpto.tmp.Storage,  StorageMap );
-	 SCR::Write(.dumpto.tmp.StorageMaps,  StorageMaps );
+	 SCR::Write(.target.ycp, "/tmp/Storage", StorageMap );
+	 SCR::Write(.target.ycp, "/tmp/StorageMaps", StorageMaps );
     };
 
 
@@ -2567,14 +2568,9 @@ global define list GetWinPrimPartitions( map targets )
     return( ret );
     }
 
-global define path SaveDumpPath( string name )``{
-    list parts = splitstring( Misc::tmpdir + "/" + name, "/" );
-    path ret = topath( ".dumpto." );
-    foreach( `e, parts, ``{
-	if(size(e)>0)
-	    ret = ret + topath( "." + e );
-	});
-    y2debug( "SaveDumpPath name=%1 path=%2", name, ret );
+global define string SaveDumpPath( string name )``{
+    string ret = Misc::tmpdir + "/" + name;
+    y2debug( "name=%1 path=%2", name, ret );
     return ret;
     }
 
