@@ -779,8 +779,17 @@ global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
   }
 
   global define list GetNeededModules( symbol used_fs )``{
+      list ret = [];
       map fsmap 	= GetFsMap( used_fs);
-      return fsmap[`needed_modules ]:[];
+      if( used_fs==`ntfs && size(fsmap)==0 )
+	{
+	ret = ["ntfs"];
+	}
+      else 
+	{
+	ret = fsmap[`needed_modules ]:[];
+	}
+      return ret;
   }
 
   global define string GetMakeFsType( symbol used_fs , string default )``{
@@ -1176,7 +1185,7 @@ global define map GetFreeSpace( string device, integer testsize,
 
     // mount the partition to execute some checks
     //
-    y2milestone( "mount %1 type %2", device, mount_type );
+    y2milestone( "mount %1 used_fs %2 type %3", device, used_fs, mount_type );
     boolean mount_ret = SCR::Execute(.target.mount, [device, "/mnt"],
 				     mount_type );
 
@@ -1190,7 +1199,7 @@ global define map GetFreeSpace( string device, integer testsize,
     // get usage information for the partition via df
     //
     list df_result = SCR::Read(.run.df);
-    if( used_fs==`fat32 || used_fs==`fat16 )
+    if( used_fs==`fat32 || used_fs==`fat16 || used_fs==`ntfs )
 	{
 	list chkf = ["boot.ini", "msdos.sys", "io.sys", "config.sys",
 	             "MSDOS.SYS", "IO.SYS" ];
@@ -1263,19 +1272,20 @@ global define map GetFreeSpace( string device, integer testsize,
 
     integer new_size = used + free - linux_size;
 
+    map ret = nil;
+
     if (ok)
 	{
-	return( $[ "free":free,
-	           "used":used,
-		   "win_disk":win_disk,
-		   "linux_size":linux_size,
-		   "max_win_size":used + free - min_linux_size,
-		   "new_size":new_size ] );
+	ret = $[ "free":free,
+	         "used":used,
+		 "win_disk":win_disk,
+		 "linux_size":linux_size,
+		 "max_win_size":used + free - min_linux_size,
+		 "ntfs" : (used_fs == `ntfs),
+		 "new_size":new_size ];
 	}
-    else
-	{
-	return( nil );
-	}
+    y2milestone( "ret %1", ret );
+    return( ret );
     };
 
 
