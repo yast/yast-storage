@@ -481,7 +481,10 @@ int EvmsAccess::PluginFilterFunction( const char* plugin )
 EvmsAccess::EvmsAccess()
     {
     y2debug( "begin Konstruktor EvmsAccess" );
-    unlink( "/var/lock/evms-engine" );
+    if( !RunningFromSystem() )
+	{
+	unlink( "/var/lock/evms-engine" );
+	}
     evms_set_load_plugin_fct( PluginFilterFunction );
     int ret = evms_open_engine( NULL, (engine_mode_t)ENGINE_READWRITE, NULL, 
                                 EVERYTHING, NULL );

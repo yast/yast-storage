@@ -763,11 +763,19 @@ define void DoUmountAndReset( list mounts )
     boolean retry = false;
     boolean reboot = false;
     map<string,map> tg = Storage::GetTargetMap();
-    integer num_lvm_vg = size (filter (any dev, map disk, tg,
+    integer num_lvm_vg = size (filter (string dev, map disk, tg,
                                        ``(disk["is_lvm_vg"]:false)));
     boolean md_active = size(tg["/dev/md","partitions"]:[])>0;
+    integer num_evms = 0;
 
-
+    foreach( string dev, map disk, tg,
+	``{
+	num_evms = num_evms + size(filter( map p, disk["partitions"]:[],
+	                                   ``(size(p["mount"]:"")>0)));
+	});
+    y2milestone( "num_evms %1 num_lvm_vg %2 md_active %3", num_evms, num_lvm_vg,
+                 md_active );
+    
   // 0b. Do any necessary lvm preparation
 
     if( size(modify_targets) > 0 )
@@ -840,7 +848,7 @@ damage to your file systems, it is safer to cancel and reboot.
 	SCR::Write( .lvm.deactivate, "" );
         }
 
-    HandleEvmsChanges( tg, false );
+    HandleEvmsChanges( tg, false, true );
 
     if( md_active )
 	{
@@ -854,6 +862,8 @@ damage to your file systems, it is safer to cancel and reboot.
 	y2milestone( "mr_list %1", mr_list );
 	SCR::Write( .md.deactivate, mr_list );
 	}
+
+    SCR::Execute( .target.bash, "/sbin/dmsetup remove_all" );
 
   // 1. Partitioning all disks
 
@@ -1166,7 +1176,6 @@ Please repeat the installation with another swap partition selected
     y2milestone("boot_device: %1", boot_device );
     y2milestone("swap_devices: %1", swap_devices);
     y2milestone("root_device: %1", root_device );
-    y2milestone("md_active: %1", md_active );
 
     //------------------------------------------------------------------
     // partitioner isn't needed any more
@@ -1245,6 +1254,12 @@ Please repeat the installation with another swap partition selected
     // 2b. Do any necessary lvm preparation
     // activate lvm, cause if I only use a existing LV, I need to activate it 
     // here
+    if( num_evms>0 || HandleEvmsChanges( tg, true, false ) )
+	{
+	SCR::Write( .evms.init, "" );
+	HandleEvmsChanges( tg, true, true );
+	}
+    
     if ( num_lvm_vg > 0 )
 	{
 	SCR::Write( .lvm.init, "" );
@@ -1301,8 +1316,6 @@ damage to your file systems, it is safer to cancel and reboot.
 	    }
 	} while(retry);
 
-    HandleEvmsChanges( tg, true );
-    
     if( this_is_for_real )
 	{
 	// 3. Create and use swap devices

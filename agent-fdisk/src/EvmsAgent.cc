@@ -4,7 +4,6 @@
 #include <sstream>
 
 #include <YCP.h>
-#include "PartInfo.defs.h"
 #include "EvmsAgent.h"
 #include <ycp/y2log.h>
 

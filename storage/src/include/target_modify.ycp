@@ -545,13 +545,15 @@ define boolean HandleResizeLvm( map<string,map> target,
     return( ret );
     }
 
-define boolean HandleEvmsChanges( map<string,map> target, boolean before_part )
+define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
+                                  boolean doit )
     ``{
     boolean ret = true;
     map<string,map> tg = filter( string k, map e, target, 
                                  ``(find(k,"/dev/evms")==0));
     list<map> todo = [];
-    y2milestone( "HandleEvmsChanges before_part %1", before_part );
+    y2milestone( "HandleEvmsChanges before_part %1 doit %2", before_part,
+                 doit );
     y2milestone( "HandleEvmsChanges tg %1", tg );
     map m = $[ "use_module" : "evms_ll" ];
     if( before_part )
@@ -618,15 +620,23 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part )
 		todo = add( todo, m );
 		}
 	    });
-	foreach( map e, filter( map t, todo, ``(m["type"]:"" == "resize_lv")),
-	    ``{
-	    ret = HandleResize( "/dev/evms/"+e["container"]:"", e["part"]:$[],
-				e["size"]:0, e["old_size"]:0 );
-	    });
-	integer n = -1;
-	map t = listmap( map e, todo, ``{n=n+1; return( $[n:e]);});
-	y2milestone( "t = %1", t );
-	ret = target_modify( t, Mode::initial );
+	if( doit )
+	    {
+	    foreach( map e, filter( map t, todo, ``(m["type"]:""=="resize_lv")),
+		``{
+		ret = HandleResize( "/dev/evms/"+e["container"]:"", 
+		                    e["part"]:$[], e["size"]:0, 
+				    e["old_size"]:0 );
+		});
+	    integer n = -1;
+	    map t = listmap( map e, todo, ``{n=n+1; return( $[n:e]);});
+	    y2milestone( "t = %1", t );
+	    ret = target_modify( t, Mode::initial );
+	    }
+	else
+	    {
+	    ret = size(todo)>0;
+	    }
 	}
     else
 	{
@@ -698,15 +708,23 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part )
 		    });
 		}
 	    });
-	integer n = -1;
-	map t = listmap( map e, todo, ``{n=n+1; return( $[n:e]);});
-	y2milestone( "t = %1", t );
-	ret = target_modify( t, Mode::initial );
-	foreach( map e, filter( map t, todo, ``(m["type"]:"" == "resize_lv")),
-	    ``{
-	    ret = HandleResize( "/dev/evms/"+e["container"]:"", e["part"]:$[],
-				e["size"]:0, e["old_size"]:0 );
-	    });
+	if( doit )
+	    {
+	    integer n = -1;
+	    map t = listmap( map e, todo, ``{n=n+1; return( $[n:e]);});
+	    y2milestone( "t = %1", t );
+	    ret = target_modify( t, Mode::initial );
+	    foreach( map e, filter( map t, todo, ``(m["type"]:""=="resize_lv")),
+		``{
+		ret = HandleResize( "/dev/evms/"+e["container"]:"", 
+		                    e["part"]:$[], e["size"]:0, 
+				    e["old_size"]:0 );
+		});
+	    }
+	else
+	    {
+	    ret = size(todo)>0;
+	    }
 	}
     y2milestone( "ret %1", ret );
     return( ret );

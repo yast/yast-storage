@@ -285,7 +285,7 @@ bool RunningFromSystem()
         {
         FirstCall_bs = false;
 	FromSystem_bs = access( "/usr/lib/YaST2/.Reh", R_OK )!=0;
-	y2debug( "RunningFromSystem %d", FromSystem_bs );
+	y2milestone( "RunningFromSystem %d", FromSystem_bs );
         }
     return( FromSystem_bs );
     }

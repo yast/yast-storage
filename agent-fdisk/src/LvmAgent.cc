@@ -2,7 +2,6 @@
 
 #include <set>
 #include <YCP.h>
-#include "PartInfo.defs.h"
 #include "LvmAgent.h"
 #include <ycp/y2log.h>
 
