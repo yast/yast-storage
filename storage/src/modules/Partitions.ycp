@@ -441,6 +441,25 @@ global define list<map> CurMounted()
 //    root_map = add (root_map, "spec", mtab_root["spec"]:"");
     if( root_map["spec"]:"" == "/dev/root" )
 	root_map["spec"] = mtab_root["spec"]:"";
+    if( (find( root_map["spec"]:"", "LABEL=" )==0 ||
+         find( root_map["spec"]:"", "UUID=" )==0) && !Mode::initial )
+	{
+	map bo = (map) SCR::Execute (.target.bash_output, "fsck -N /", $[] );
+	y2milestone( "CurMounted bo:%1", bo );
+	string dev = "";
+	if( bo["exit"]:1==0 )
+	    {
+	    list tmp = filter( string k, splitstring( bo["stdout"]:"", " \n" ),
+	                       ``(size(k)>0) );
+	    if( size(tmp)>0 )
+		dev = tmp[size(tmp)-1]:"";
+	    y2milestone( "CurMounted LABEL/UUID dev:%1", dev );
+	    }
+	if( size(dev)>0 )
+	    {
+	    root_map["spec"] = dev;
+	    }
+	}
     y2milestone( "root_map %1", root_map );
 //    this version makes some problems with interpreter, above lookup/add is OK
     mounts = filter(map mount, mounts, ``( mount["file"]:"" != "/"));
