@@ -790,12 +790,16 @@ map lenc = $[ "el" : "iso8859-7",
 global define string LangTypicalEncoding()
     ``{
     string lang = Encoding::GetEncLang();
-    lang = substring(lang, 0, 2);
-    lang = tolower(lang);
-    string enc = "iso8859-15";
-    if( haskey( lenc, lang ) )
+    string enc = "utf8";
+    if( !Encoding::GetUtf8Lang() )
 	{
-	enc = lenc[lang]:"";
+	enc = "iso8859-15";
+	lang = substring(lang, 0, 2);
+	lang = tolower(lang);
+	if( haskey( lenc, lang ) )
+	    {
+	    enc = lenc[lang]:"";
+	    }
 	}
     y2milestone( "LangTypicalEncoding lang %1 ret %2", lang, enc );
     return( enc );
@@ -838,14 +842,7 @@ global define list AddMountPointsForWinParts( list<map> partitions, boolean prim
 	    string code = Encoding::GetCodePage(enc);
 	    if( size(enc)>0 )
 		{
-		if( partition["used_fs"]:`none!=`ntfs )
-		    {
-		    mntops = mntops + ",iocharset=" + enc;
-		    }
-		else
-		    {
-		    mntops = mntops + ",nls=" + enc;
-		    }
+		mntops = mntops + ",iocharset=" + enc;
 		}
 	    if( size(code)>0 && partition["used_fs"]:`none!=`ntfs )
 		{
@@ -882,12 +879,12 @@ global define map<string,map> AddMountPointsForWin( map<string,map> targets )
 
     foreach(string disk, map data, targets,
 	``{
-	data["partitions"] =
+	targets[disk,"partitions"] =
 	    AddMountPointsForWinParts( data["partitions"]:[], true );
 	});
     foreach(string disk, map data, targets,
 	``{
-	data["partitions"] =
+	targets[disk,"partitions"] =
 	    AddMountPointsForWinParts( data["partitions"]:[], false );
 	});
     return( targets );
@@ -1198,6 +1195,7 @@ global define map<string,map> ReReadTargetMap()
     lvm_initialized = false;
     SCR::Write( .md.init, "" );
     SCR::Write( .lvm.init, "" );
+    SCR::Write( .evms.init, "" );
     SetModifyTargets( $[] );
     force_disk_probe = true;
     return GetTargetMap();
@@ -2921,17 +2919,17 @@ global define list GetWinPrimPartitions( map<string,map> targets )
 			text = dos_text;
 			}
 		    else
-		{
+			{
 			num_win = num_win+1;
 			text = win_text;
-		}
+			}
 		    }
 		else if( part["fsid"]:0 == 0x12 )
-		{
+		    {
 		    text = "Compaq diagnostic";
-		}
+		    }
 		else if( part["fsid"]:0 == 0x0a )
-	    {
+		    {
 		    text = os2_text;
 		    num_os2 = num_os2+1;
 		    }
@@ -2948,30 +2946,30 @@ global define list GetWinPrimPartitions( map<string,map> targets )
 		    ret = add( ret, eval(entry) );
 		    y2milestone( "new entry %1", entry );
 		    }
-	    }
+		}
 	    });
 	});
     integer num = 1;
     if( num_linux>1 )
-		    {
+	{
 	foreach(map entry, filter(map e, ret, ``(e["string"]:""==linux_text)),
 	    ``{
 	    entry["string"] = linux_text + sformat( " %1", num );
 	    num = num+1;
 	    });
-		    }
+	}
     num = 1;
     if( num_dos>1 )
-		    {
+	{
 	foreach(map entry, filter(map e, ret, ``(e["string"]:""==dos_text)),
 	    ``{
 	    entry["string"] = dos_text + sformat( " %1", num );
 	    num = num+1;
-		});
-	    }
+	    });
+	}
     num = 1;
     if( num_win>1 )
-	    {
+	{
 	foreach(map entry, filter(map e, ret, ``(e["string"]:""==win_text)),
 	    ``{
 	    entry["string"] = win_text + sformat( " %1", num );
