@@ -144,6 +144,17 @@ SystemCmd::SetOutputHandler( void (*Handle_f)( void *, string, bool ),
     HandlerPar_p = Par_p;
     }
 
+void 
+SystemCmd::CloseOpenFds()
+    {
+    int max_fd = getdtablesize();
+    for( int fd = 3; fd < max_fd; fd++ ) 
+	{
+	close(fd);
+	}
+    }
+
+
 #define ALTERNATE_SHELL "/bin/bash"
 
 int
@@ -180,7 +191,7 @@ SystemCmd::DoExecute( string Cmd_Cv )
 	case 0:
 	    setenv( "LC_ALL", "C", 1 );
 	    setenv( "LANGUAGE", "C", 1 );
-
+	    CloseOpenFds();
 	    Ret_i = execl( Shell_Ci.c_str(), Shell_Ci.c_str(), "-c",
 			   Cmd_Ci.c_str(),
 	                   (char*) NULL );

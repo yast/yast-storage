@@ -66,6 +66,7 @@ class SystemCmd
 	void ExtractNewline( char* Buf_ti, int Cnt_ii, bool& NewLineSeen_br,
 	                     string& Text_Cr, vector<string>& Lines_Cr );
 	void AddLine( string Text_Cv, vector<string>& Lines_Cr );
+	void CloseOpenFds();
 
 	string FileName_aC[2];
 	string Text_aC[2];
