@@ -165,7 +165,7 @@
 	    foreach( map e, part, ``{
 		if( e["ori_length"]:0 > 0 )
 		    {
-		    e["region"] = [e["region",0]:[0],e["ori_length"]:0];
+		    e["region"] = [e["region",0]:0,e["ori_length"]:0];
 		    }
 		if( e["change_fsid"]:false )
 		    {
@@ -181,7 +181,7 @@
 		    }
 		// filter out all entries added during partitioning
 		e = filter( `k, `v, e, ``(
-		     k!="delete" && k!="format" && k!="used_fs" && 
+		     k!="delete" && k!="format" && 
 		     k!="change_fsid" && k!="ori_fsid" && 
 		     k!="resize" && k!="new_size" && k!="ori_length" &&
 		     k!="mount" && k!="lvm_size_bytes" ));
@@ -271,7 +271,8 @@
 	    foreach (map partition, partitions,
 	    ``{
 		if( partition["used_fs"]:`none == `none &&
-		    partition["fsid"]:0 == Partitions::fsid_native )
+		    (partition["fsid"]:0 == Partitions::fsid_native ||
+		     Partitions::IsDosPartition( partition["fsid"]:0 )))
 		    {
 		    string dev = GetDeviceName( device, partition["nr"]:0 );
 		    partition["used_fs"] = DetectFs( dev );
@@ -1405,7 +1406,7 @@
     }
 
     /* set <key> in partition <nr> if disk <disk> to the given <value> and
-       return cahnge map <tg> */
+       return changed map <tg> */
     global define map SetPartitionData( map tg, string disk, any nr, string key,
 					any value )``{
 
@@ -2018,7 +2019,7 @@ global define list SwappingPartitions()``{
     return( ret );
     }
 
-global define boolean CheckSwapon( string disk )``{
+global define boolean CheckSwapOn( string disk )``{
     boolean ret = false;
     list swaps = SwappingPartitions();
     while( size(swaps)>0 && ret == false )
@@ -2076,6 +2077,7 @@ global define list GetWinPrimPartitions( map targets )``{
 	    ``{
 	    string device = GetDeviceName( disk, part["nr"]:0 );
 	    if( part["type"]:`unknown == `primary &&
+		part["delete"]:false==false &&
 	        Partitions::IsDosWinNtPartition( part["fsid"]:0 ) &&
 	        SCR::Execute (.target.bash, "/usr/lib/YaST2/bin/check.boot "+device) == 0)
 		{
@@ -2088,7 +2090,7 @@ global define list GetWinPrimPartitions( map targets )``{
 		    {
 		    entry["string"] = "windows";
 		    }
-		ret = add( ret, entry );
+		ret = add( ret, eval(entry) );
 		}
 	    });
 	});
@@ -2102,10 +2104,158 @@ global define path SaveDumpPath( string name )``{
     foreach( `e, parts, ``{
 	if(size(e)>0)
 	    ret = ret + topath( "." + e );
-    });
+	});
     y2milestone( "SaveDumpPath name=%1 path=%2", name, ret );
     return ret;
     }
+
+global define map IsResizable( map part )
+    ``{
+    map ret = FileSystems::IsResizable(`unknwon);
+    if( !Arch::s390 && Partitions::IsResizable( part["fsid"]:0 ) )
+	{
+	if( part["fsid"]:0==Partitions::fsid_swap )
+	    {
+	    ret = FileSystems::IsResizable(`swap);
+	    }
+	else
+	    {
+	    ret = FileSystems::IsResizable(part["used_fs"]:`unknown);
+	    }
+	}
+    y2milestone( "IsResizable part:%1 ret:%2", part, ret );
+    return( ret );
+    }
+
+global define integer FreeCylAfter( map disk, map partition )
+    ``{
+    integer ret = 0;
+    integer next_used_cyl = disk["cyl_count"]:0;
+    integer cylinder = partition["region",0]:0;
+    if( haskey( partition, "ori_length" ))
+        {
+        cylinder = cylinder + partition["ori_length"]:0;
+        }
+    else
+        {
+        cylinder = cylinder + partition["region",1]:0;
+        }
+    if( partition["type"]:`primary == `logical )
+	{
+	map ext = select( filter( `part, disk["partitions"]:[], 
+	                          ``( part["type"]:`primary==`extended )), 
+			  0, $[] );
+	next_used_cyl = ext["region",0]:0+ext["region",1]:0;
+	}
+    if( cylinder < next_used_cyl )
+	{
+	foreach( `part, disk["partitions"]:[], ``{
+	    if( !part["delete"]:false )
+		{
+		integer start = part["region",0]:0;
+		if( start >= cylinder && start < next_used_cyl )
+		    {
+		    next_used_cyl = start;
+		    }
+		}
+	    });
+	}
+    if( next_used_cyl >= cylinder )
+	ret = next_used_cyl-cylinder;
+    y2milestone( "FreeCylAfter cyl:%1 ret:%2", cylinder, ret );
+    return( ret );
+    }
+
+global define boolean CheckNextCreated( map disk, list region )
+    ``{
+    boolean ret = false;
+    integer cylinder = region[0]:0 + region[1]:0;
+    foreach( `part, disk["partitions"]:[], ``{
+	if( part["region",0]:0 == cylinder && part["create"]:false )
+	    {
+	    ret = true;
+	    }
+	});
+    y2milestone( "CheckNextCreated region:%1 ret:%2", region, ret );
+    return( ret );
+    }
+
+global define void AdaptResize( string maindev, list region, integer schange )
+    ``{
+    list partitions = GetMainDevParam( maindev, "partitions" );
+    integer cylinder = region[0]:0 + region[1]:0;
+    boolean found = false;
+    integer index = -1; 
+    list idx_list = [];
+    map part = find( `p, partitions, ``(p["delete"]:false==false &&
+					p["region",0]:0 == cylinder &&
+					p["create"]:false) );
+    if( part != nil )
+	{
+	found = false;
+	index = 0;
+	foreach( `p, partitions, ``{
+	    y2milestone( "found:%1 index:%2 p=%3", found, index, p );
+	    if( p["delete"]:false == false && 
+		p["region",0]:0 == cylinder &&
+		p["create"]:false )
+		{
+		found = true;
+		}
+	    else if( !found )
+		{
+		index = index + 1;
+		}
+	    });
+	y2milestone( "AdaptResize part:%1", part );
+	cylinder = part["region",0]:0 + part["region",1]:0;
+	map pnew = find( `p, partitions, ``(p["delete"]:false==false &&
+					    p["region",0]:0 == cylinder &&
+					    p["create"]:false ));
+	while( pnew != nil &&
+	       (part["mount"]:"" == "/boot" || 
+	        part["fsid"]:0==Partitions::fsid_swap ||
+	        part["region",1]:0 < schange) )
+	    {
+	    y2milestone( "AdaptResize pnew:%1", pnew );
+	    part = eval(pnew);
+	    idx_list = add( idx_list, index );
+	    found = false;
+	    index = 0;
+	    foreach( `p, partitions, ``{
+	        y2milestone( "found:%1 index:%2 p=%3", found, index, p );
+		if( p["delete"]:false == false && 
+		    p["nr"]:0 == pnew["nr"]:0 )
+		    {
+		    found = true;
+		    }
+		else if( !found )
+		    {
+		    index = index + 1;
+		    }
+		});
+	    cylinder = part["region",0]:0 + part["region",1]:0;
+	    pnew = find( `p, partitions, ``(p["delete"]:false==false &&
+					    p["region",0]:0 == cylinder &&
+					    p["create"]:false ));
+	    }
+	y2milestone( "AdaptResize idx:%1 list:%2", index, idx_list );
+	partitions[index,"region",0] = partitions[index,"region",0]:0 - schange;
+	partitions[index,"region",1] = partitions[index,"region",1]:0 + schange;
+	foreach( `num, idx_list, ``{
+	    partitions[num,"region",0] = partitions[num,"region",0]:0 - schange;
+	    });
+	}
+    else
+	{
+	y2error( "AdaptResize this should not happen %1", partitions );
+	}
+    SetMainDevParam( maindev, "partitions", partitions );
+    y2milestone( "AdaptResize maindev:%1 region:%2 change:%3", maindev,
+                 region, schange );
+    }
+
+
 }
 
 

@@ -45,7 +45,6 @@
   include "partitioning/raid_lib.ycp";
   include "partitioning/write_fstab.ycp";
 
-
   integer fsid_boot	   = Partitions::fsid_boot;
   //integer loop_dev_nb	   = 0;
   boolean first_crypt_fs   = true;
@@ -519,76 +518,91 @@ damage to your file systems, it is safer to cancel and reboot.
 	    if ( zero_partition_table != "")
 		SCR::Execute (.target.bash, zero_partition_table ); 	
 
+
+            // handle all partitions resizings that decrease partition size
+	    cancel = !HandleResizePartitions( targetdevice, target, true );
+
+	    if( !cancel )
+	    {
 	    path scrpath = lookup ( target, "scrpath", topath ("."+substring (targetdevice, 5)));
 	    y2milestone ("partitioning %1 %2\n", .disk + scrpath + .partitions, partitions);
-
 	    do
-	    {
+		{
 		retry = false;
+	        UI::ChangeWidget(`id(`progress), `Label,
+				 sformat(_("partitioning disk %1"), targetdevice ));
+
 		/////////////////////////////////////////////////////////////////////////
-		boolean result = SCR::Write(.disk + scrpath + .partitions, partitions);
+		boolean result = SCR::Write(.disk + scrpath + .partitions,
+					    partitions, 
+					    Partitions::UseParted() );
 		/////////////////////////////////////////////////////////////////////////
 
 		if ( !result )
-		{
-		  y2error("Oops, fdisk failed for device ", targetdevice);
-		
-		  symbol ret=`yes;
-		  // continue/cancel/retry during installation
-		  if ( installation )
-		  {
-		    if( Storage::CheckSwapOn( targetdevice ) )
-			{
-			reboot_necessary = true;
-			}
-		    else
-			{
+		    {
+		    y2error("Oops, fdisk failed for device ", targetdevice);
+		    
+		    symbol ret=`yes;
+		    // continue/cancel/retry during installation
+		    if ( installation )
+		        {
+			if( Storage::CheckSwapOn( targetdevice ) )
+			    {
+			    reboot_necessary = true;
+			    }
+			else
+			    {
+			    ret = UI::AnyQuestionPopup3(
+			        _("fdisk failed."),
+				sformat (
+				    _("Partitioning failed for unkown reason.
+Repartition disk %1."),
+					targetdevice),
+				UI::ContinueButtonLabel(), 
+				UI::AbortButtonLabel(), 
+				UI::RetryButtonLabel(), `focus_no);
+
+			    if ( ret == `retry )
+			    {
+			       retry = true;
+			    }
+			    else if ( ret == `no )
+			    {
+			      cancel = true;
+			      //abort foreach run
+			      return;
+			    }
+			    }
+		      }
+		      // offer reboot in running system
+		      else
+		      {
 			ret = UI::AnyQuestionPopup3(_("fdisk failed."),
-			  sformat (_("The disk has an unsupported partition table.
-Repartition disk %1.
-"),
-			    targetdevice),
-			  UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_no);
+			      _("It is strongly advised to reboot now to prevent damage to your file systems."),
+			      UI::ContinueButtonLabel(), UI::AbortButtonLabel(), _("Reboot"), `focus_retry);
 
 			if ( ret == `retry )
 			{
-			   retry = true;
+			  SCR::Execute (.target.bash,"/sbin/shutdown -r now");
+			  reboot = true;
+			  cancel = true;
+			  //abort foreach run
+			  return;
 			}
-			else if ( ret == `no )
+			else if (ret == `no )
 			{
 			  cancel = true;
 			  //abort foreach run
 			  return;
 			}
-		        }
-		  }
-		  // offer reboot in running system
-		  else
-		  {
-		    ret = UI::AnyQuestionPopup3(_("fdisk failed."),
-			  _("It is strongly advised to reboot now to prevent damage to your file systems."),
-			  UI::ContinueButtonLabel(), UI::AbortButtonLabel(), _("Reboot"), `focus_retry);
-
-		    if ( ret == `retry )
-		    {
-		      SCR::Execute (.target.bash,"/sbin/shutdown -r now");
-		      reboot = true;
-		      cancel = true;
-		      //abort foreach run
-		      return;
+		      }
 		    }
-		    else if (ret == `no )
-		    {
-		      cancel = true;
-		      //abort foreach run
-		      return;
-		    }
-		  }
-		}
-	    } while ( retry );
-
+		} while ( retry );
+	    }
+	    if( !cancel )
+	    {
 	    foreach (`pentry, partitions,
-	    ``{
+		``{
 		/////////////////////////////////////////////////////
 		// look if we have to change an partition id
 
@@ -596,26 +610,23 @@ Repartition disk %1.
 		symbol  type        = lookup( pentry, "type",        `unknown );
 
 		if ( change_fsid  &&  type != `pdisk  )
-		{
+		    {
 		    integer ori_fsid = lookup( pentry, "ori_fsid", 0);
 		    integer fsid     = lookup( pentry, "fsid",     0);
 		    integer nr       = lookup( pentry, "nr",       0);
 
 		    if ( fsid != ori_fsid )
-		    {
+			{
 			fdisk_change_id( targetdevice, nr, fsid );
+			}
 		    }
-		}
-		
-		/////////////////////////////////////////////////////
-		// due to lvm tools, the disk and the kernel are not
-		// in sync if I delete an active physical volume
+		});
+	    }
 
-		string  lvm_group = lookup (pentry, "lvm_group", "");
-		boolean deleted   = lookup (pentry, "delete",    false);
-		
-		if ( lvm_group != "" && deleted ) reboot_necessary = true;
-	    });
+	    if( !cancel )
+		cancel = !HandleResizePartitions( targetdevice, target, false );
+
+
 	}  // partitioning
 
 	if ( !immediate_prepdisk )

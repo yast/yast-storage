@@ -35,7 +35,8 @@
   global define resize_partition( list partitions,
 				  integer nr,
 				  integer win_length,  // in cyl
- 				  integer win_size  )  // in byte
+ 				  integer win_size,    // in byte
+				  integer win_max_length ) // in cyl
   ``{
 
       map win_part = select(filter( `c_part, partitions,
@@ -59,6 +60,7 @@
       win_part    = add( win_part, "new_size", win_size / (1024*1024));
       region      = [ select( region, 0,0), win_length ];
       win_part    = add( win_part, "region", region );
+      win_part    = add( win_part, "win_max_length", win_max_length );
 
       if ( win_part == $[] || win_part == nil || nr == -1 || win_part == -1 || win_length == -1)
       {
@@ -325,110 +327,6 @@
       }
   };
 
-
-
-  //////////////////////////////////////////////////////////////////////////
-  // mount windows partition and look how much free space is available
-  // size: size of partition
-  //////////////////////////////////////////////////////////////////////////
-
-  global define GetWinFree( string win_device, integer winsize )
-  ``{
-      integer win_used = 0;
-      integer win_free = 0;
-
-      if ( Mode::test )
-      {
-	  integer wf =  tointeger(tofloat(winsize) * 0.6);
-	  integer wu =  tointeger(tofloat(winsize) * 0.4);
-	  integer ls =  tointeger(tofloat(winsize) * 0.5);
-	  return( $[ "win_free"  : wf,
-		   "win_used"    : wu,
-		   "linux_size"  : ls,
-		   "new_win_size": (wu + wf - ls) ] );
-      }
-
-      // mount the partition to execute some checks
-      //
-      boolean mount_ret = SCR::Execute(.target.mount, [win_device, "/mnt", Installation::mountlog]);
-
-      if ( !mount_ret)
-      {
-	  y2error( "Current Windows device <%1> could not be mounted. Canceled", win_device );
-	  return( nil );	// abort installation
-      }
-      else y2milestone( "Current Windows device <%1> mounted on /mnt.", win_device );
-
-      // get usage information for the partition via df
-      //
-      list df_result = SCR::Read(.run.df);
-
-	SCR::Execute(.target.umount, win_device);
-
-      y2debug( ".run.df: %1", df_result );
-
-      // filter out headline and other invalid entries
-      df_result = filter( `part, df_result, ``( substring ( lookup( part, "spec", "" ), 0, 1 ) == "/" ) );
-
-      boolean ok = false;
-
-      foreach( `part, df_result,
-      ``{
-	  if ( lookup( part, "spec", "" ) == win_device )	// find right entry
-	  {
-	      // get the usage values
-	      //
-	      win_used = tointeger( lookup( part, "used", "-1" ));
-	      win_free = tointeger( lookup( part, "free", "-1" ));
-
-	      if ( win_used != -1 && win_free != -1 )
-	      {
-		  win_used = win_used * 1024;	// Byte
-		  win_free = win_free * 1024;	// Byte
-
-		  ok = true;
-		  y2milestone( ".run.df: win_used: <%1> win_free:<%2>", win_used, win_free );
-	      }
-	  }
-      });
-
-      integer linux_size = 0;
-
-      if ( win_free > 300000000  && win_free < 600000000 )
-      {
-	  linux_size = win_free - 75000000;
-      }
-      else if ( win_free < 1000000000 )
-      {
-	  linux_size = win_free - 200000000;
-      }
-      else if ( win_free < 2000000000 )
-      {
-	  linux_size = win_free - 300000000;
-      }
-      else if ( win_free < 3000000000 )
-      {
-	  linux_size = win_free - 800000000;
-      }
-      else
-      {
-	  linux_size = win_free - ( win_free / 3 );
-      }
-
-      integer new_win_size = win_used + win_free - linux_size;
-
-      if (ok)
-      {
-	  return( $[ "win_free":win_free,
-		   "win_used":win_used,
-		   "linux_size":linux_size,
-		   "new_win_size":new_win_size ] );
-      }
-      else
-      {
-	  return( nil );
-      }
-  };
 
 
   ///////////////////////////////////////////////////

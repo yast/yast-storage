@@ -70,9 +70,147 @@
             contains( fsid_ntfstypes, fsid ));
     }
 
+    global define boolean UseParted()
+    ``{
+    boolean ret = true;
+    if( Arch::i386 )
+	ret = false;
+    y2milestone( "UseParted ret:%1", ret );
+    ret = true;
+    return( ret );
+    }
+
+    global define boolean PartitionIdParted( integer fsid )
+    ``{
+    boolean ret = true;
+    ret = contains( [ fsid_lvm, fsid_raid, fsid_swap, fsid_native, fsid_fat16 ],
+                    fsid );
+    y2milestone( "PartitionIdParted id:%1 ret:%2", fsid, ret );
+    return( ret );
+    }
+
+    global define boolean IsResizable( integer fsid )
+    ``{
+    boolean ret = false;
+    ret = IsDosPartition(fsid) || fsid == fsid_swap || fsid == fsid_native;
+    y2milestone( "IsResizable fsid:%1 ret:%2", fsid, ret );
+    return( ret );
+    }
+
     global define boolean IsLinuxPartition( integer fsid )
     ``{
 	return ( fsid==fsid_native || fsid==fsid_swap || fsid==fsid_lvm ||
 	         fsid==fsid_raid );
-    }
+    };
+
+  //////////////////////////////////////////////////////////////////////////
+  // mount partition and look how much free space is available
+  // size: size of partition
+  //////////////////////////////////////////////////////////////////////////
+
+  global define map GetFreeSpace( string device, integer testsize )
+  ``{
+      integer used = 0;
+      integer free = 0;
+
+      if ( Mode::test )
+      {
+	  integer wf =  tointeger(tofloat(testsize) * 0.6);
+	  integer wu =  tointeger(tofloat(testsize) * 0.4);
+	  integer ls =  tointeger(tofloat(testsize) * 0.5);
+	  return( $[ "free"  : wf,
+		   "used"    : wu,
+		   "linux_size"  : ls,
+		   "new_size": (wu + wf - ls) ] );
+      }
+
+      // mount the partition to execute some checks
+      //
+      boolean mount_ret = SCR::Execute(.target.mount, [device, "/mnt", Installation::mountlog]);
+
+      if ( !mount_ret)
+      {
+	  y2error( "Current device <%1> could not be mounted. Canceled", device );
+	  return( nil );	// abort installation
+      }
+      else y2milestone( "Current device <%1> mounted on /mnt.", device );
+
+      // get usage information for the partition via df
+      //
+      list df_result = SCR::Read(.run.df);
+
+      SCR::Execute(.target.umount, device);
+
+      y2debug( ".run.df: %1", df_result );
+
+      // filter out headline and other invalid entries
+      df_result = filter( `part, df_result, ``( substring ( lookup( part, "spec", "" ), 0, 1 ) == "/" ) );
+
+      boolean ok = false;
+
+      foreach( `part, df_result,
+      ``{
+	  if ( lookup( part, "spec", "" ) == device )	// find right entry
+	  {
+	      // get the usage values
+	      //
+	      used = tointeger( lookup( part, "used", "-1" ));
+	      free = tointeger( lookup( part, "free", "-1" ));
+
+	      if ( used != -1 && free != -1 )
+	      {
+		  used = used * 1024;	// Byte
+		  free = free * 1024;	// Byte
+
+		  ok = true;
+		  y2milestone( ".run.df: used: <%1> free:<%2>", used, free );
+	      }
+	  }
+      });
+
+      integer linux_size = 0;
+      integer min_linux_size = 0;
+
+      if( free > 300000000  && free < 600000000 )
+      {
+	  linux_size = free - 75000000;
+	  min_linux_size = linux_size;
+      }
+      else if ( free < 1000000000 )
+      {
+	  linux_size = free - 200000000;
+	  min_linux_size = 300000000;
+      }
+      else if ( free < 2000000000 )
+      {
+	  linux_size = free - 300000000;
+	  min_linux_size = 500000000;
+      }
+      else if ( free < 3000000000 )
+      {
+	  linux_size = free - 800000000;
+	  min_linux_size = 500000000;
+      }
+      else
+      {
+	  linux_size = free - ( free / 3 );
+	  min_linux_size = 500000000;
+      }
+
+      integer new_size = used + free - linux_size;
+
+      if (ok)
+      {
+	  return( $[ "free":free,
+		   "used":used,
+		   "linux_size":linux_size,
+		   "max_win_size":used + free - min_linux_size,
+		   "new_size":new_size ] );
+      }
+      else
+      {
+	  return( nil );
+      }
+  };
+
 }

@@ -16,6 +16,7 @@
     textdomain "partitioning";
 
     import "Storage";
+    import "Partitions";
 
     include "ui/common_messages.ycp";
     include "ui/common_functions.ycp";
@@ -170,12 +171,26 @@
 	    pos = findfirstof( disk, "/" );
 	}
 
+	boolean parted = Partitions::UseParted();
+
+	if( curr_map["type"]:"" == "change_id" )
+	    {
+	    if( !Partitions::PartitionIdParted( curr_map["id"]:0 ) )
+		{
+		parted = false;
+		}
+	    }
+	else if( curr_map["type"]:"" == "resize" )
+	    {
+	    parted = true;
+	    }
+
 	pt = pt + "." + disk;
 	if( size(pt)>0 )
 	{
 	    pt = ".disk" + pt + ".command";
 	    y2debug( "pt=%1", pt );
-	    ok = SCR::Write(topath(pt), curr_map);
+	    ok = SCR::Write(topath(pt), curr_map, parted );
 	}
 
 	return( ok );
@@ -188,7 +203,7 @@
     //  "id"   : 142,          // new id
     //   "nr"  : 8,            // for sdb8
   
-    global define fdisk_change_id( string disk, integer nr, integer id  )
+    global define boolean fdisk_change_id( string disk, integer nr, integer id  )
 	``{
 	map curr_change_id = $[
 			       "disk" : disk,
@@ -198,6 +213,144 @@
       
 	return( fdisk_call( curr_change_id ));       
     };
+
+
+
+    ////////////////////////////////////////////////////////////////////
+    // resize a partition:
+    //  "disk"          : "/dev/sdb",
+    //   "nr"           : 8,            // for sdb8
+    //   "new_cyl_num"  : 1500          // resize to 1500 cylinders
   
+    global define boolean fdisk_resize( string disk, integer nr, integer new_cyl  )
+	``{
+	map curr_change = $[
+			       "disk"         : disk,
+			       "new_cyl_cnt" : new_cyl,
+			       "nr"           :  nr,
+			       "type"         : "resize" ];
+      
+	return( fdisk_call( curr_change ));       
+    };
+
+
+
+ 
+  global define boolean HandleResizePartitions( string disk_dev, map disk,
+						boolean decrease )
+    ``{
+    boolean ret = true;
+    string unit = _("MB");
+    integer cyl_size = disk["cyl_size"]:0;
+
+    list part = filter( `p, disk["partitions"]:[], 
+			``(p["resize"]:false && !p["delete"]:false));
+    if( decrease )
+	{
+	part = filter( `p, part, ``(p["region",1]:0 < p["ori_length"]:0));
+	}
+    else
+	{
+	part = filter( `p, part, ``(p["region",1]:0 > p["ori_length"]:0));
+	}
+    if( Mode::installation )
+	{
+	part = filter( `p, part, 
+		       ``(!Partitions::IsDosWinNtPartition( p["fsid"]:0 )));
+	}
+
+    foreach( `p, part, ``{
+        if( ret )
+	    {
+	    boolean retry = false;
+	    string device = Storage::GetDeviceName( disk_dev, p["nr"]:0 );
+	    symbol fs = p["used_fs"]:`unknown;
+	    string fs_name = FileSystems::GetName( fs, _("unknown") );
+	    integer new_size = p["region",1]:0*cyl_size/(1024*1024);
+	    do
+		{
+		UI::ChangeWidget(`id(`progress), `Label, 
+		                 sformat(_("Resizing device %1 with filesystem %2 from %3 %4 to %5 %4"), 
+				 device, fs_name,
+				 p["ori_length"]:0*cyl_size/(1024*1024), unit,
+				 new_size ));
+		retry = false;
+		boolean result = true;
+		if( result && decrease )
+		    {
+		    result = HandleFilesystem( device, fs, new_size, decrease );
+		    }
+		if( result )
+		    {
+		    result = fdisk_resize( disk_dev, p["nr"]:0, 
+					   p["region",1]:0 );
+		    y2milestone( "fdisk_resize ret:%1", result );
+		    }
+		if( result && !decrease )
+		    {
+		    result = HandleFilesystem( device, fs, new_size, decrease );
+		    }
+		if ( !result )
+		  {
+		  y2error("Oops, partition resize failed for device %1", device);
+		  symbol ans=`yes;
+		  // continue/cancel/retry during installation
+		  ans = UI::AnyQuestionPopup3(_("resize failed."),
+			  sformat (_("Resizing of device %1 failed."), device),
+			  UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_no);
+
+		  if( ans == `retry )
+		    {
+		    retry = true;
+		    }
+		  else if( ans == `no )
+		    {
+		    ret = false;
+		    }
+		  }
+		} while ( retry );
+	    }
+	});
+    return( ret );
+    }
+
+ global define boolean HandleFilesystem( string device, symbol fs, 
+                                         integer new_size,
+                                         boolean decrease )
+    ``{
+    boolean ret = true;
+    string cmd = "";
+    y2milestone( "HandleFilesystem device:%1 fs:%2 new:%3 decrease:%4",
+                 device, fs, new_size, decrease );
+    if( fs == `reiser )
+	{
+	cmd = sformat("echo y | resize_reiserfs -s %1M -f %2", new_size, 
+	              device );
+	y2milestone( "execute cmd:%1", cmd );
+	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	}
+    else if( fs == `xfs && !decrease )
+	{
+	string mdir = Misc::tmpdir + "/m1";
+	cmd = sformat("mkdir %1", mdir );
+	SCR::Execute(.target.bash, cmd );
+	cmd = sformat("mount %1 %2", device, mdir );
+	y2milestone( "execute cmd:%1", cmd );
+	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	if( ret )
+	    {
+	    cmd = sformat("xfs_growfs %1", mdir );
+	    y2milestone( "execute cmd:%1", cmd );
+	    ret = SCR::Execute(.target.bash, cmd ) == 0;
+	    cmd = sformat("umount %1", device );
+	    y2milestone( "execute cmd:%1", cmd );
+	    SCR::Execute(.target.bash, cmd );
+	    }
+	cmd = sformat("rmdir %1", mdir );
+	SCR::Execute(.target.bash, cmd );
+	}
+    y2milestone( "HandleFilesystem ret:%1", ret );
+    return( ret );
+    }
   
 }

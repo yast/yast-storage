@@ -1745,7 +1745,7 @@ Do you really want to change the FSID?
 
 	      //y2milestone( "%1", return_value );
 	      
-	      CloseDialog();
+	      UI::CloseDialog();
 
 	      if ( ret == `cancel )
 	      {
@@ -1760,257 +1760,381 @@ Do you really want to change the FSID?
 
 
      /**
-      * Dialog: "Resize a FAT partition Dialog"
-      * @parm new_val map that contains a partition
-      * @parm targetList a list with all targets  
+      * Dialog: "Resize a partition Dialog"
+      * @parm new_val  map that contains a partition
+      * @parm device   device name of the resized partition
+      * @parm cyl_size size of a cylinder on the disk
       * @return map modified partition or nil by cancel
       */
-    UI(``{
-	global define ResizePartDlg( map new_val, string device, integer cyl_size )
+    global define ResizePartDlg( map new_val, string device, integer cyl_size,
+                                 map possible )
 
-	    ``{
-	    boolean test_simple_ui = false;
+    ``{
+	boolean test_simple_ui = false;
+	boolean win = Partitions::IsDosPartition( curr_part["fsid"]:0 );
+	boolean swap = !win && new_val["fsid"]:0==Partitions::fsid_swap;
+	integer cyl_after = 0;
+	if( possible["extend"]:false )
+	    {
+	    cyl_after = Storage::FreeCylAfter( curr_disk, new_val );
+	    }
+	integer av_space = cyl_after*cyl_size / (1024*1024);
 
-	    y2milestone( "ResizePartDlg dev:%1, cyl:%2 map:%3", device, cyl_size, new_val );
+	y2milestone( "ResizePartDlg dev:%1 cyl:%2 map:%3 win:%4 swap:%5",
+	             device, cyl_size, new_val, win, swap );
+	y2milestone( "ResizePartDlg cyl_after:%1 av_space:%2", 
+	             cyl_after, av_space );
 
-	    string  unit = _("MB");
+	string  unit = _("MB");
 
-	    // Labels for bar graph. "%1" will be replace with a numeric value.
-	    string bargraph_label_win_used  = _("Windows\nused\n%1 ") + unit;
-	    string bargraph_label_win_free  = _("Windows\nfree\n%1 ") + unit;
-	    string bargraph_label_linux     = _("free\nspace\n%1 ") + unit;
-
-	    // Labels for input fields. "%1" will be replaced with the current unit (MB).
-	    string field_label_win_free     = sformat( _("Windows free (%1)"), unit);
-	    string field_label_linux        = sformat( _("free space (%1)"), unit);
-
-	    integer min_win_free  = -1;
-	    integer new_win_size  = -1;
-	    integer linux_size    = 0;
-	    integer linux_min     = 0;
-
-	    map win = WFM::GetWinFree( device, 0 );
-
-	    y2milestone( "ResizePartDlg win:%1", win );
-
-	    integer win_used = win["win_used"]:0 / (1024*1024);
-	    integer win_free = win["win_free"]:0 / (1024*1024);
-
-	    min_win_free = win_free / 10;
-
-	    if( haskey( new_val, "new_size" ) )
+	// Labels for bar graph. "%1" will be replace with a numeric value.
+	string bargraph_label_used  = "";
+	string bargraph_label_free  = "";
+	string bargraph_label_new   = "";
+	if( win )
+	    {
+	    bargraph_label_used  = _("Windows\nused\n%1 ") + unit;
+	    bargraph_label_free  = _("Windows\nfree\n%1 ") + unit;
+	    bargraph_label_new   = _("Linux\nsize\n%1 ") + unit;
+	    }
+	else
+	    {
+	    bargraph_label_used  = _("Space\nused\n%1 ") + unit;
+	    if( swap )
 		{
-		linux_size = win_used + win_free - new_val["new_size"]:0;
+		bargraph_label_free  = _("Swap\nspace\n%1 ") + unit;
 		}
+	    else
+		{
+		bargraph_label_free  = _("Space\nfree\n%1 ") + unit;
+		}
+	    bargraph_label_new   = _("unused\ndisk\n%1 ") + unit;
+	    }
 
-	    y2milestone( "min_win_free:%1 win_free:%2 win_used:%3 linux_size:%4", 
-	                 min_win_free, win_free, win_used, linux_size );
+	// Labels for input fields. "%1" will be replaced with the current unit (MB).
+	string field_label_free = "";
+	string field_label_new  = "";
+	if( win )
+	    {
+	    field_label_free = sformat( _("Windows free (%1)"), unit);
+	    field_label_new  = sformat( _("Linux size (%1)"), unit);
+	    }
+	else
+	    {
+	    field_label_new  = sformat( _("unused disk (%1)"), unit);
+	    if( swap )
+		{
+		field_label_free = sformat( _("Swap space (%1) "), unit);
+		}
+	    else
+		{
+		field_label_free = sformat( _("Space free (%1)"), unit);
+		}
+	    }
 
-	    // Help text for Windows partition resizing - 
-	    // common part for both graphical mode (with bar graphs) 
-	    // and non-graphical mode (text only).
-	    string helptext = _("<p>
-Choose the new size for your Windows partition.
-</p>");
+	integer min_free = 0;
+	integer new_size = 0;
+	integer linux_size = 0;
+	integer new_min = 0;
 
-	    // help text (common to both modes), continued
-	    helptext = helptext + _("
+	map df = $[];
+
+	if( !swap )
+	    {
+	    df = Partitions::GetFreeSpace( device, 0 );
+	    }
+	else
+	    {
+	    df["used"] = 0;
+	    if( haskey( new_val, "ori_length" ) && new_val["resize"]:false )
+		{
+		df["free"] = new_val["ori_length"]:0 * cyl_size;
+		}
+	    else
+		{
+		df["free"] = new_val["region",1]:0 * cyl_size;
+		}
+	    }
+	if( haskey( new_val, "win_max_length" ) && new_val["resize"]:false )
+	    {
+	    new_min = new_val["ori_length"]:0 - new_val["win_max_length"]:0; 
+	    new_min = new_min*cyl_size / (1024*1024);
+	    }
+
+	y2milestone( "ResizePartDlg min_lin:%1 df:%2", new_min, df );
+
+	integer used = df["used"]:0 / (1024*1024);
+	integer free = df["free"]:0 / (1024*1024);
+
+	if( win )
+	    {
+	    min_free = free / 10;
+	    }
+	else
+	    {
+	    min_free = 5;
+	    }
+
+	if( haskey( new_val, "new_size" ) && new_val["resize"]:false )
+	    {
+	    y2milestone( "new_size:%1", new_val["new_size"]:0 );
+	    linux_size = used + free - new_val["new_size"]:0;
+	    }
+	linux_size = linux_size + av_space;
+
+	y2milestone( "min_free:%1 free:%2 used:%3 linux_size:%4", 
+		     min_free, free, used, linux_size );
+
+	string windows = "";
+	if( win )
+	    {
+	    windows = _("Windows");
+	    }
+
+	// Help text for partition resizing - 
+	// common part for both graphical mode (with bar graphs) 
+	// and non-graphical mode (text only).
+	string helptext = sformat( _("<p>
+Choose the new size for your %1 partition.
+</p>"), windows );
+
+	// help text (common to both modes), continued
+	helptext = helptext + sformat( _("
 <p>
 The actual resizing will be performed only after you confirm all your
-settings in the last installation dialog. Until then, your Windows
+settings in the last installation dialog. Until then, your %1
 partition will remain untouched.
-</p>");
+</p>"), windows );
 
-	    // help text (common to both modes), continued
-	    helptext = helptext + _("
+	// help text (common to both modes), continued
+	helptext = helptext + _("
 <p>
 If you decide not to resize your partition after all, press the 
-<b>No Resize</b> button. This sets the value back to the original
+<b>No Resize</b> button. This sets the values back to the original
 size of the partition.
 </p>
 ");
 
-	    if( UI::HasSpecialWidget(`Slider   ) &&
-	        UI::HasSpecialWidget(`BarGraph ) && !test_simple_ui )
-	      {
-	      // help text, continued - graphical mode only
-	      // this help text will be appended to the help text common to both modes.
-	      helptext = helptext + _("
+	if( UI::HasSpecialWidget(`Slider   ) &&
+	    UI::HasSpecialWidget(`BarGraph ) && !test_simple_ui )
+	  {
+	  // help text, continued - graphical mode only
+	  // this help text will be appended to the help text common to both modes.
+	  helptext = helptext + _("
 <p>
 The upper bar graph displays the current situation.
 The lower bar graph displays the situation after the installation -- after
 the partition resize.
 </p>
 ");
-	      // help text (graphical mode), continued
-	      helptext = helptext + _("
+	  // help text (graphical mode), continued
+	  helptext = helptext + _("
 <p>
 Drag the slider or enter a numeric value in either
 input field to adjust the suggested value.
 </p>");
-      
-	      ////////////////////////////////////////////////////////////////////////////////////////////
-	      // Open main dialog for resizing of partitions
-	      ////////////////////////////////////////////////////////////////////////////////////////////
-	      OpenDialog( `opt(`decorated  ),
-			  `HBox(
-				`HWeight(30, `RichText( helptext )),
-				`HStretch(),
-				`HSpacing(1),
-				`HWeight(70,`VBox(
-				    `HSpacing(50),
-				    `VStretch(),
-				    `VSpacing(1),
-				    // Headline above bar graph that displays current windows partition size
-				    `Left( `Label( _("Now:")) ),
-				    `BarGraph( [ win_used, win_free ],
-				               [ bargraph_label_win_used,
-					         bargraph_label_win_free ] ),
-				    `VSpacing(1),
-				    `VStretch(),
-				    // Headline above bar graph that displays future windows and linux partitions
-				    `Left( `Label( _("After installation:") ) ),
-				    `PartitionSplitter( `id(`linux_size), 
-				                        win_used, win_free,
-							linux_size, linux_min, min_win_free,
-							bargraph_label_win_used,
-							bargraph_label_win_free,
-							bargraph_label_linux,
-							field_label_win_free,
-							field_label_linux ),
-				    `HBox( `PushButton(`id(`rem_resize), _("&No Resize") )),
-				    `VSpacing(1),
-				    `HBox(
-					 `PushButton(`id(`ok), `opt(`default),  OKButtonLabel()   ),
-					 `PushButton(`id(`cancel),  CancelButtonLabel() ))
-				    ))));
-		}
-	      else
-		{
-		// help text, continued - non-graphical mode only
-		// this help text will be appended to the help text common to both modes.
-		helptext = helptext + _("
-<p>Enter a value for the size to which to shrink the Windows partition.
-</p>
-");
-      
-		// help text (non-graphical mode), continued
-		helptext = helptext + _("
-<p>
-<b>Windows used</b> is the size of the used part of your Windows partition.
-</p>");
-
-		// help text (non-graphical mode), continued
-		helptext = helptext + _("
-<p><b>Free</b> indicates the current free space (before shrinking)
-on the partition.
-</p>");
   
-		OpenDialog( `opt(`decorated  ),
-			    `HBox(
-				`HWeight(30, `RichText( helptext )),
-				`HStretch(),
-				`HSpacing(1),
-			        `HWeight(70,
-				  `VBox(
-				    `HBox(
-				        // Label for used part of the Windows partition in non-graphical mode
-					`HWeight(3, `Right(`Label(_("Windows used:")))),
-					`HWeight(2, `Label(`opt(`outputField), sformat("%1", win_used ))),
-					`HWeight(3, `Left(`Label( unit )))),
-				    `VSpacing(0.5),
-				    `HBox(
-				        // Label for free part of the Windows partition in non-graphical mode
-					`HWeight(3, `Right(`Label(_("Free:")))),
-					`HWeight(2, `Label(`opt(`outputField), sformat("%1", win_free ))), 
-					`HWeight(3, `Left(`Label( unit )))),
-				    `VSpacing(0.5),
-				    `HBox(
-					// Edit field label for linux partition size in non-graphical mode
-					`HWeight(3, `Right(`Bottom(`Label(_("free space:"))))),
-					`HWeight(2, `IntField( `id(`linux_size), "", 
-					                       linux_min, win_free - min_win_free, 
-							       linux_size )),
-					`HWeight(3, `Left(`Bottom(`Label( unit ))))),
-				    `HBox( `PushButton(`id(`rem_resize), _("&No Resize") )),
-				    `VSpacing(1),
-				    `HBox(
-					 `PushButton(`id(`ok), `opt(`default),  OKButtonLabel()   ),
-					 `PushButton(`id(`cancel),  CancelButtonLabel() ))
-				   ))));
-		    }
+	  ////////////////////////////////////////////////////////////////////////////////////////////
+	  // Open main dialog for resizing of partitions
+	  ////////////////////////////////////////////////////////////////////////////////////////////
+	  term graph = nil;
+	  if( win || cyl_after==0 )
+	      {
+	      graph = `BarGraph( [ used, free ],
+			         [ bargraph_label_used, bargraph_label_free ] );
+	      }
+	  else
+	      {
+	      graph = `BarGraph( [ used, free, av_space ],
+			         [ bargraph_label_used, bargraph_label_free,
+				   bargraph_label_new ] );
+	      }
+	  y2milestone( "graph=%1", graph );
+
+	  UI::OpenDialog( `opt(`decorated  ),
+		      `HBox(
+			    `HWeight(30, `RichText( helptext )),
+			    `HStretch(),
+			    `HSpacing(1),
+			    `HWeight(70,`VBox(
+				`HSpacing(50),
+				`VStretch(),
+				`VSpacing(1),
+				// Headline above bar graph that displays current partition size
+				`Left( `Label( _("Now:")) ),
+				graph,
+				`VSpacing(1),
+				`VStretch(),
+				// Headline above bar graph that displays future partitions
+				`Left( `Label( _("After installation:") ) ),
+				`PartitionSplitter( `id(`linux_size), 
+						    used, free+av_space,
+						    linux_size, new_min, min_free,
+						    bargraph_label_used,
+						    bargraph_label_free,
+						    bargraph_label_new,
+						    field_label_free,
+						    field_label_new ),
+				`HBox( `PushButton(`id(`rem_resize), _("&No Resize") )),
+				`VSpacing(1),
+				`HBox(
+				     `PushButton(`id(`ok), `opt(`default),  OKButtonLabel()   ),
+				     `PushButton(`id(`cancel),  CancelButtonLabel() ))
+				))));
+	    }
+	  else
+	    {
+	    // help text, continued - non-graphical mode only
+	    // this help text will be appended to the help text common to both modes.
+	    helptext = helptext + sformat( _("
+<p>Enter a value for the size to which to shrink the %1 partition.
+</p>"), windows );
+
+	    string used_label = "";
+	    if( win )
+		{
+		used_label = _("Windows used");
+		}
+	    else
+		{
+		used_label = _("Used");
+		}
+	    // help text (non-graphical mode), continued
+	    helptext = helptext + sformat(_("
+<p>
+<b>%1<b> is the size of the used part of your %2 partition.
+</p>"), used_label, windows );
+
+	    // help text (non-graphical mode), continued
+	    helptext = helptext + _("
+<p><b>Free</b> indicates the current free space (before shrinking)
+of the partition.
+</p>");
+
+	    UI::OpenDialog( `opt(`decorated  ),
+			`HBox(
+			    `HWeight(30, `RichText( helptext )),
+			    `HStretch(),
+			    `HSpacing(1),
+			    `HWeight(70,
+			      `VBox(
+				`HBox(
+				    // Label for used part of the partition in non-graphical mode
+				    `HWeight(3, `Right(`Label(used_label))),
+				    `HWeight(2, `Label(`opt(`outputField), sformat("%1", used ))),
+				    `HWeight(3, `Left(`Label( unit )))),
+				`VSpacing(0.5),
+				`HBox(
+				    // Label for free part of the partition in non-graphical mode
+				    `HWeight(3, `Right(`Label(_("Free:")))),
+				    `HWeight(2, `Label(`opt(`outputField), sformat("%1", free ))), 
+				    `HWeight(3, `Left(`Label( unit )))),
+				`VSpacing(0.5),
+				`HBox(
+				    // Edit field label for linux partition size in non-graphical mode
+				    `HWeight(3, `Right(`Bottom(`Label(_("free space:"))))),
+				    `HWeight(2, `IntField( `id(`linux_size), "", 
+							   new_min, free - min_free, 
+							   linux_size )),
+				    `HWeight(3, `Left(`Bottom(`Label( unit ))))),
+				`HBox( `PushButton(`id(`rem_resize), _("&No Resize") )),
+				`VSpacing(1),
+				`HBox(
+				     `PushButton(`id(`ok), `opt(`default),  OKButtonLabel()   ),
+				     `PushButton(`id(`cancel),  CancelButtonLabel() ))
+			       ))));
+		}
 
 
-	      map return_value     = new_val;
-	      any ret = `ok;
+	  map return_value     = new_val;
+	  any ret = `ok;
 
-	      repeat
+	  repeat
+	     {
+	     ///////////////////////////////////////////////////////////////////////////////////////
+	     // Check the User input
+	     ret = UI::UserInput();
+
+	     y2milestone( "ret=%1", ret );
+
+	     if( ret == `rem_resize )
 		 {
-		 ///////////////////////////////////////////////////////////////////////////////////////
-		 // Check the User input
-		 ret = UserInput();
-		 return_value = new_val;
+		 UI::ChangeWidget( `id(`linux_size), `Value,  av_space );
+		 }
 
-		 y2milestone( "ret=%1", ret );
-
-		 if( ret == `rem_resize )
-		     {
-		     UI::ChangeWidget(`id(`linux_size), `Value,  0);
-		     }
-
-		 if ( ret == `ok )
-		     {
-		     // Get the value the user adjusted. If s/he entered a value
-		     // too big or too small this is automatically adjusted to the
-		     // biggest/smallest value possible (by Qt).
-		
-		     linux_size   = UI::QueryWidget(`id(`linux_size), `Value);
-		     new_win_size = win_used + win_free - linux_size;
-		     y2milestone("Linux size: <%1> - New Win size: <%2>", linux_size, new_win_size);
-		     if( linux_size != 0 )
+	     if ( ret == `ok )
+		 {
+		 // Get the value the user adjusted. If s/he entered a value
+		 // too big or too small this is automatically adjusted to the
+		 // biggest/smallest value possible (by Qt).
+	    
+		 linux_size   = UI::QueryWidget(`id(`linux_size), `Value);
+		 new_size = used + free + av_space - linux_size;
+		 if( new_size < used+free && !possible["shrink"]:false )
+		    {
+		    UI::MessagePopup(_("The filesystem on the selected cannot shrink.
+Only fat, ext2, ext3 and reiser allow shrinking of a filesystem."));
+                    ret = `again;
+		    }
+		 else if( new_size < used+free && 
+		          new_val["used_fs"]:`unknown==`reiser )
+		    {
+		    if( !UI::YesNoPopup( _("
+You decreased a partition with a reiser filesystem on it.
+It is possible to shrink a reiser filesystem but this feature is not 
+very thoroughly tested. A backup of your data is recommended.
+Do you still want to shrink the filesystem?")) )
 			{
-			return_value["resize"] = true;
-			return_value["new_size"] = new_win_size;
-			if( !haskey( return_value, "ori_length" ))
-			    {
-			    integer ori_length = return_value["region",1]:0;
-			    return_value["ori_length"] = ori_length;
-			    }
+			ret = `again;
+			}
+		    }
+		 y2milestone("Linux size: <%1> - New size: <%2>", linux_size, new_size);
+		 }
+	    if( ret == `ok )
+		 {
+		 if( linux_size != av_space )
+		    {
+		    return_value["resize"] = true;
+		    return_value["new_size"] = new_size;
+		    if( !haskey( return_value, "ori_length" ))
+			{
+			integer ori_length = return_value["region",1]:0;
+			return_value["ori_length"] = ori_length;
+			}
+		    list new_reg = [ return_value["region",0]:0, 
+				     PartedSizeToCly( (tofloat(new_size) * 1024.0 * 1024.0),
+						      cyl_size ) ];
+		    return_value["region"] = new_reg;
+		    }
+		else
+		    {
+		    return_value["resize"] = false;
+		    if( haskey( return_value, "ori_length" ))
+			{
 			list new_reg = [ return_value["region",0]:0, 
-			                 WFM::PartedSizeToCly( (tofloat(new_win_size) * 1024.0 * 1024.0),
-							  cyl_size ) ];
+					 return_value["ori_length"]:0 ];
 			return_value["region"] = new_reg;
 			}
-		    else
-			{
-			return_value["resize"] = false;
-			if( haskey( return_value, "ori_length" ))
-			    {
-			    list new_reg = [ return_value["region",0]:0, 
-			                     return_value["ori_length"]:0 ];
-			    return_value["region"] = new_reg;
-			    }
-			}
-		     }
-		 y2milestone("ret = %1", return_value );
-		 } 
-	      until (  ret == `ok  || ret == `cancel );
+		    }
+		}
+	     y2milestone("ret = %1", return_value );
+	     } 
+	  until (  ret == `ok  || ret == `cancel );
 
 
-	      //y2milestone( "%1", return_value );
-	      
-	      CloseDialog();
+	  //y2milestone( "%1", return_value );
+	  
+	  UI::CloseDialog();
 
-	      if ( ret == `cancel )
-	      {
-		  return( nil );
-	      }
-	      else
-	      {
-		  return( return_value );
-	      }
-	 }
-     });
+	  if ( ret == `cancel )
+	  {
+	      return( nil );
+	  }
+	  else
+	  {
+	      return( return_value );
+	  }
+     }
 
 
 
@@ -2486,7 +2610,7 @@ fit into this new extended partition.
     if ( button_delete ) buttonline_a = add( buttonline_a, `PushButton(`id(`delete), _("&Delete")) );
 
     // main dialog: Button Reize partition
-    if ( button_resize ) buttonline_a = add( buttonline_a, `PushButton(`id(`resize), _("Re&size FAT")) );
+    if ( button_resize ) buttonline_a = add( buttonline_a, `PushButton(`id(`resize), _("Re&size")) );
 
 
     
@@ -3117,22 +3241,56 @@ WARNING: All data on this partition will be lost.
 	    map curr_part 	= Storage::GetSubDev( id );
 	    map curr_disk  	= Storage::GetMainDev( maindevkey );
 
+	    y2milestone( "disk=%1", curr_disk );
 	    y2milestone( "RESIZE id=%1 maindev=%2 part=%3", 
 	                 id, maindevkey, curr_part );
-	    if( !Partitions::IsDosPartition( curr_part["fsid"]:0 ) )
+	    map possible = Storage::IsResizable( curr_part );
+	    if( (!possible["extend"]:false && !possible["shrink"]:false) ||
+	        curr_part["create"]:false  )
 		{
-		UI::MessagePopup(_("You can only resize DOS/Windows FAT partitions.
-Select such a partition and press the \"Resize\" button again.
+		UI::MessagePopup(_("You cannot resize the selected partition.
+Only existing Linux partitions with filesystems ext2, ext3, reiserfs, 
+xfs and existing Swap partitions can be resized.
 "));
                 }
 	    else
 		{
-		map new_val = curr_part;
-		new_val = UI::ResizePartDlg( curr_part,
-					     Storage::GetDeviceName( maindevkey, WFM::tointeger(new_val["nr"]:0) ),
-					     curr_disk["cyl_size"]:1000000 );
+		map new_val = eval(curr_part);
+		new_val = ResizePartDlg( new_val,
+					 Storage::GetDeviceName( maindevkey, WFM::tointeger(new_val["nr"]:0) ),
+					 curr_disk["cyl_size"]:1000000,
+					 possible );
 		if( new_val != nil )
 		    {
+		    integer size_change = curr_part["region",1]:0 -
+			                  new_val["region",1]:0;
+		    y2milestone( "region old=%1 new:%2", curr_part["region"]:0,
+		                 new_val["region"]:0 );
+		    y2milestone( "size_change=%1", size_change );
+		    if( size_change != 0 &&
+		        Storage::CheckNextCreated( curr_disk, 
+			                           curr_part["region"]:[0,0] ))
+			{
+			if( size_change < 0 )
+			    {
+			    UI::MessagePopup( _("
+You decreased the size available for Linux parititons. 
+Linux partition sizes have been adapted accordingly.
+Please check the new sizes in the partition list."));
+                            Storage::AdaptResize( maindevkey, 
+			                          curr_part["region"]:[0,0],
+						  size_change );
+			    }
+			else if( UI::YesNoPopup( _("
+You decreased a partition that is followed by a newly created partition.
+Should the newly created partition get automatically increased to use the 
+freed disk space.")) )
+			    {
+                            Storage::AdaptResize( maindevkey, 
+			                          curr_part["region"]:[0,0],
+						  size_change );
+			    }
+			}
 		    Storage::SetSubDev( id, new_val );
 		    }
 		}

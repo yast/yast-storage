@@ -25,7 +25,6 @@
   boolean demo_mode	= Mode::demo;
   boolean beta_mode	= false;
   map	  targets	= Storage::GetTargetMap();
-  string  do_resize     = Storage::GetDoResize(); // minor number (e.g. "1" for /dev/sda1 or "NO")
 
   any ret = `auto;
 
@@ -43,22 +42,19 @@
       ``{
 	   foreach( `part, lookup( diskinfo, "partitions", [] ),
 	   ``{
-	       if ( lookup( part, "resize", false) == true )
-	       {
+	       if( part["resize"]:false &&
+		   Partitions::IsDosWinNtPartition( part["fsid"]:0 ))
+		   {
 		   no_resize_command = false;
-	      }
+		   }
 	  });
       });
 
-      if ( no_resize_command
-	   &&  ( do_resize == "NO" || do_resize == "no" || do_resize == "") )
+      if ( no_resize_command )
       {
 	  return `auto;
       }
   }
-
-  include "partitioning/auto_part_functions.ycp";
-
 
   /////////////////////////////////////////////////////////////////////////
   // START: Fake for development
@@ -86,7 +82,6 @@
 
   if ( development_mode )
   {
-      do_resize = true;	// do it!
 
       // the following map is taken from kingman and will be taken for real
   
@@ -389,7 +384,8 @@ the diagnostics window.
       foreach (`pentry, partitions, ``{
 	  // Now we are looping over all partitions for the current device
 	  // check resize flag for every partition
-	  boolean resize = lookup (pentry, "resize", false);
+	  boolean resize = pentry["resize"]:false &&
+	                   Partitions::IsDosWinNtPartition( pentry["fsid"]:0 );
 
 	  if ( resize )
 	  {
@@ -425,7 +421,7 @@ the diagnostics window.
 	      }
 	      else y2debug( "New size <%1> OK for device <%2>.", new_size, device_name );
 
-	      if ( ! is_fat_partition( pentry ) )
+	      if ( ! Partitions::IsDosPartition( pentry["fsid"]:0 ) )
 	      {
 		  // currently we do resize FAT16 and FAT32 partitions only
 		  y2error("Device <%1> is not of type FAT. Skipped!", device_name);
