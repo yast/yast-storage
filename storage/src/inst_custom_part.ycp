@@ -1633,8 +1633,58 @@ define map ResizePartDlg( map cur_val, string device, map disk, map possible )
     y2milestone( "ResizePartDlg cyl_after:%1 av_space:%2", 
 		 cyl_after, av_space );
 
+    integer min_free = 0;
+    integer new_size = 0;
+    integer linux_size = 0;
+    integer new_min = 0;
+
+    map df = $[];
+
+    if( !swap && !cur_val["format"]:false )
+	{
+	df = FileSystems::GetFreeSpace( device, 0, cur_val["used_fs"]:`none );
+	if( size(df)==0 )
+	    {
+	    y2error( "failed GetFreeSpace %1 fs:%2", device, 
+		     cur_val["used_fs"]:`none );
+	    return( nil );
+	    }
+	}
+    else
+	{
+	df["used"] = 0;
+	if( haskey( cur_val, "ori_length" ) && cur_val["resize"]:false )
+	    {
+	    df["df_free"] = cur_val["ori_length"]:0 * cyl_size;
+	    }
+	else
+	    {
+	    df["df_free"] = cur_val["region",1]:0 * cyl_size;
+	    }
+	df["free"] = df["df_free"]:0;
+	}
+
     // label text
     string  unit = _("MB");
+    integer factor = 1024*1024;
+
+    if( df["df_free"]:0 > 15*1024*factor )
+	{
+	factor = factor * 1024;
+	unit = _("GB");
+	}
+
+    if( haskey( cur_val, "win_max_length" ) && cur_val["resize"]:false )
+	{
+	new_min = cur_val["ori_length"]:0 - cur_val["win_max_length"]:0; 
+	new_min = new_min*cyl_size / factor;
+	}
+
+    y2milestone( "ResizePartDlg min_lin:%1 df:%2", new_min, df );
+
+    integer used = df["used"]:0 / factor;
+    integer free = df["df_free"]:0 / factor;
+    integer not_shrink_free = 0;
 
     // Labels for bar graph. "%1" will be replace with a numeric value.
     string bargraph_label_used  = "";
@@ -1667,7 +1717,7 @@ define map ResizePartDlg( map cur_val, string device, map disk, map possible )
 	bargraph_label_new   = _("Unused\ndisk\n%1 ") + unit;
 	}
 
-    // Labels for input fields. "%1" will be replaced with the current unit (MB).
+    // Labels for input fields. "%1" will be replaced with the current unit (MB)
     string field_label_free = "";
     string field_label_new  = "";
     if( win )
@@ -1693,56 +1743,13 @@ define map ResizePartDlg( map cur_val, string device, map disk, map possible )
 	    }
 	}
 
-    integer min_free = 0;
-    integer new_size = 0;
-    integer linux_size = 0;
-    integer new_min = 0;
-
-    map df = $[];
-
-    if( !swap && !cur_val["format"]:false )
-	{
-	df = FileSystems::GetFreeSpace( device, 0, 
-					cur_val["used_fs"]:`none );
-	if( size(df)==0 )
-	    {
-	    y2error( "failed GetFreeSpace %1 fs:%2", device, 
-		     cur_val["used_fs"]:`none );
-	    return( nil );
-	    }
-	}
-    else
-	{
-	df["used"] = 0;
-	if( haskey( cur_val, "ori_length" ) && cur_val["resize"]:false )
-	    {
-	    df["df_free"] = cur_val["ori_length"]:0 * cyl_size;
-	    }
-	else
-	    {
-	    df["df_free"] = cur_val["region",1]:0 * cyl_size;
-	    }
-	df["free"] = df["df_free"]:0;
-	}
-    if( haskey( cur_val, "win_max_length" ) && cur_val["resize"]:false )
-	{
-	new_min = cur_val["ori_length"]:0 - cur_val["win_max_length"]:0; 
-	new_min = new_min*cyl_size / (1024*1024);
-	}
-
-    y2milestone( "ResizePartDlg min_lin:%1 df:%2", new_min, df );
-
-    integer used = df["used"]:0 / (1024*1024);
-    integer free = df["df_free"]:0 / (1024*1024);
-    integer not_shrink_free = 0;
-
     if( win )
 	{
 	min_free = free / 10;
 	if( df["df_free"]:0 != df["free"]:0 )
 	    {
 	    not_shrink_free = df["df_free"]:0 - df["free"]:0;
-	    not_shrink_free = (not_shrink_free + 1024*1024 - 1) / (1024*1024);
+	    not_shrink_free = (not_shrink_free + factor - 1) / factor;
 	    if( not_shrink_free > min_free )
 		{
 		min_free = not_shrink_free;
@@ -1755,7 +1762,7 @@ define map ResizePartDlg( map cur_val, string device, map disk, map possible )
 	}
 
     if( cur_val["used_fs"]:`none == `ntfs && 
-        not_shrink_free > df["free"]:0/(1024*1024)/5 )
+        not_shrink_free > df["free"]:0/factor/5 )
         {
 	string ptext = sformat( _("Your NTFS file system has %1 %3 free space available. Due to limitations in
 the NTFS resizer, the file system can only be shrunk by up to %2 %3.
@@ -1763,25 +1770,25 @@ To be able to shrink the file system more, boot your Windows
 system and run a disk defragmentation program under Windows to move
 the used blocks of the file system towards the start of the partition.
 "),
-                                free, df["free"]:0/(1024*1024), unit );
+                                free, df["free"]:0/factor, unit );
         Popup::Message( ptext );
 	}
     if( haskey( cur_val, "new_size" ) && cur_val["resize"]:false )
 	{
-	linux_size = (df["used"]:0+df["df_free"]:0)/(1024*1024) -
+	linux_size = (df["used"]:0+df["df_free"]:0)/factor -
 		     cur_val["new_size"]:0;
 	y2milestone( "ResizePartDlg new_size:%1 linux_size:%2", 
 	             cur_val["new_size"]:0, linux_size );
-	if( linux_size>df["free"]:0/(1024*1024) )
+	if( linux_size>df["free"]:0/factor )
 	    {
-	    linux_size = df["free"]:0/(1024*1024);
+	    linux_size = df["free"]:0/factor;
 	    }
 	y2milestone( "ResizePartDlg linux_size:%1", linux_size );
 	}
     linux_size = linux_size + av_space;
 
-    y2milestone( "ResizePartDlg min_free:%1 free:%2 used:%3 linux_size:%4", 
-                 min_free, free, used, linux_size );
+    y2milestone( "ResizePartDlg min_free:%1 free:%2 used:%3 linux_size:%4 unit:%5", 
+                 min_free, free, used, linux_size, unit );
 
     string windows = "";
     if( win )
@@ -1989,7 +1996,7 @@ of the partition.
 		    retval["ori_length"] = ori_length;
 		    }
 		list new_reg = [ retval["region",0]:0, 
-				 PartedSizeToCly( (tofloat(new_size)*1024.0*1024.0),
+				 PartedSizeToCly( (tofloat(new_size)*tofloat(factor)),
 						  cyl_size ) ];
 		retval["region"] = new_reg;
 		}
