@@ -124,7 +124,21 @@ global define map proposal_s390( map targetMap )
 //	    }
 //	});
     return( $[ "ok" : found, "target" : targetMap ] );
-    }
+    };
+
+define boolean ignore_disk( string dev, map entry )
+    ``{
+    boolean ret = Storage::IsRealDisk( dev, entry );
+    if( ret && Arch::board_iseries && find( dev, "/dev/sd" )==0 )
+	{
+	ret = false;
+	}
+    if( !ret )
+	{
+	y2milestone( "ignoring disk %1", dev );
+	}
+    return( ret );
+    };
   
 global define map do_proposal_real( boolean need_boot, map targetMap )
     ``{
@@ -138,10 +152,9 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
     // Now we generate a proposal
     /////////////////////////////////////////////////////////////////
 
-    foreach( `dev, `disk, 
-             filter( `k, `e, targetMap, ``(Storage::IsRealDisk(k,e))),
+    foreach( `dev, `disk, filter( `k, `e, targetMap, ``(ignore_disk(k,e))),
 	``{
-	y2milestone( "%1 not an lvm", dev );
+	y2milestone( "checking disk %1", dev );
 
 	list primary_possible = [1,2,3,4];
 	boolean extended_allowed = true;
@@ -283,6 +296,24 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 				 ``(add(slot, "p_or_l", "logical")));
 	primary_slots = maplist( `slot, primary_slots, 
 				 ``(add(slot, "p_or_l", "primary")));
+	/* hack added to prevent partition 0x41 (Prep Boot) being inside
+	   an extended partition, it is a bit radical but anyway it reaches
+	   its goal */
+	if( Partitions::PrepBoot() && size(logical_slots)>0 )
+	    {
+	    logical_slots = maplist( `slot, logical_slots,
+		``({
+		if( slot["type"]:"" != "free" )
+		    slot["type"] = "other";
+		return( slot );
+		}));
+	    primary_slots = maplist( `slot, primary_slots,
+		``({
+		if( slot["type"]:"" != "free" )
+		    slot["type"] = "other";
+		return( slot );
+		}));
+	    }
 
 	list base_slots = primary_slots + logical_slots;
 
