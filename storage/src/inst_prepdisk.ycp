@@ -317,15 +317,8 @@ define boolean HandleFormatPartition( map partition )
 
 		string makefs_type = 
 		    FileSystems::GetMakeFsType( used_fs, "ext2");
-		string dd_sblocks = "";
-		string idev = crypt_fs ? "/dev/urandom" : "/dev/zero";
-		dd_sblocks = sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50",
-				      idev, device );
-		if( !Arch::sparc || crypt_fs )
-		    {
-		    y2milestone( "dd_sblocks=%1", dd_sblocks );
-		    SCR::Execute (.target.bash, dd_sblocks );
-		    }
+
+		DumpPartitionStart( device, crypt_fs );
 		if( used_fs != `hfs )
 		    {
 		    ret = WFM::CallModule( "makefs", 
@@ -422,6 +415,19 @@ your file systems, it is safer to cancel and reboot."),
     y2milestone( "device %1 ret %2", partition["device"]:"", cancel );
     return( !cancel );
     };
+
+define void DumpPartitionStart( string device, boolean crypt_fs )
+    ``{
+    string dd_sblocks = "";
+    string idev = crypt_fs ? "/dev/urandom" : "/dev/zero";
+    dd_sblocks = sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50", idev, 
+                          device );
+    if( !Arch::sparc || crypt_fs )
+	{
+	y2milestone( "dd_sblocks=%1", dd_sblocks );
+	SCR::Execute (.target.bash, dd_sblocks );
+	}
+    }
 
 define map DetermineMountPoints(string disk, map target, map mp )
     ``{
@@ -1240,6 +1246,7 @@ damage to your file systems, it is safer to cancel and reboot.
 
 		if (swaplist[1]:false == true)		// format == yes ?
 		   {
+		   DumpPartitionStart( swapdev, false );
 		   if( SCR::Execute (.target.bash, "/sbin/mkswap "+ swapdev) != 0 )
 		      {
 		      // popup text %1 replaced by partition name e.g. /dev/hda1
