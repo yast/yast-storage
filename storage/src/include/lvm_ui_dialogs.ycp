@@ -28,6 +28,12 @@ include "partitioning/custom_part_lib.ycp";
 include "partitioning/custom_part_dialogs.ycp";
 include "partitioning/lvm_ui_lib.ycp";
 
+global define void handle_max( integer stripe, string max_text )
+    ``{
+    y2milestone( "stripe %1", stripe );
+    UI::ChangeWidget(`id("max_size"), `Enabled, stripe==1 );
+    UI::ChangeWidget(`id("max_text"), `Value, stripe==1?max_text:"" );
+    }
     
   //----------------------------------------------------------------------------------------
     
@@ -42,7 +48,7 @@ include "partitioning/lvm_ui_lib.ycp";
 					   integer pesize )
 
     ``{
-    y2milestone( "dev=%1 pesize=%2", dev, pesize );
+    y2milestone( "dev=%1 pesize=%2 max_size=%3", dev, pesize, max_size );
 
     integer new_size     = 0;
     if( haskey( Lv, "lv_size" ) )
@@ -86,8 +92,9 @@ include "partitioning/lvm_ui_lib.ycp";
 	{
 	max_size = max_size+new_size;
 	}
+    max_size = max_size-1025;
     string max_text = sformat(_("max = %1 "), 
-			      ByteToHumanStringWithZero(max_size-1025));
+			      ByteToHumanStringWithZero(max_size));
 
 
     if( create_or_edit == "create" )
@@ -155,12 +162,12 @@ include "partitioning/lvm_ui_lib.ycp";
 					  `Top(`VBox( `TextEntry(`id("size"), size_txt, curr_size),
 						      `HBox(
 							    // set size to maxsize
-							    `Left(`Label( max_text )),
+							    `Left(`Label( `id("max_text"), max_text )),
 							    `PushButton( `id("max_size"), _("ma&x")))
 						      
 					      )),
 					  `VStretch(),
-					  `Left(`ComboBox( `id("stripes"), `opt(`hstretch),
+					  `Left(`ComboBox( `id("stripes"), `opt(`hstretch,`notify),
 							   _("Stri&pes"), stripes_poss )),
 					  `VStretch(),
 					  `VSpacing(1),
@@ -186,6 +193,7 @@ include "partitioning/lvm_ui_lib.ycp";
       // configure main dialog for the first call
 
       UI::ChangeWidget( `id("stripes"), `Enabled, is_create_mode );
+      handle_max( stripes, max_text );
   
       ////////////////////////////////////////////////////////////////////
       // User mainloop for dialog
@@ -203,7 +211,15 @@ include "partitioning/lvm_ui_lib.ycp";
 	    c_ret = UI::UserInput();
 
 	    /////////////////////////////////////////////////////////
-	    // maxsize
+	    if( c_ret == "stripes")
+		{
+		stripes = UI::QueryWidget(`id("stripes"), `Value);
+		handle_max( stripes, max_text );
+		continue;
+		}
+
+	    /////////////////////////////////////////////////////////
+	    // stripes
 	    if( c_ret == "max_size")
 		{
 		UI::ChangeWidget(`id("size"), `Value, ByteToHumanStringWithZero(max_size));
