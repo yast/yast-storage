@@ -488,28 +488,50 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	    UI::ChangeWidget( `id(`fsid_point), `Enabled, !format);
 	    }
 
-	if( old_format != format && format )
+	if( old_format != format )
 	    {
-	    symbol dfs = UI::QueryWidget(`id(`fs), `Value);
+	    symbol dfs = `none;
+	    if( format )
+		{
+		dfs = UI::QueryWidget(`id(`fs), `Value);
+		}
+	    else
+		{
+		dfs = new["detected_fs"]:Partitions::default_fs;
+		UI::ChangeWidget( `id(`fs), `Value, dfs );
+		}
 	    map selected_fs = file_systems[dfs]:$[];
 	    new["used_fs"] = dfs;
 	    HandleFsChanged( init, new, file_systems );
-	    new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
+	    if( format )
+		{
+		new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
+		}
+	    else
+		{
+		if( haskey( new, "ori_fsid" ) )
+		    {
+		    new["fsid"] = new["ori_fsid"]:0;
+		    }
+		else
+		    {
+		    new["fsid"] = old["fsid"]:0;
+		    }
+		}
 	    if( UI::WidgetExists( `id(`fsid_point) ))
 		{
 		UI::ChangeWidget( `id(`fsid_point), `Value, 
 				  selected_fs[`fsid_item]:"");
 		}
-	    if( Arch::s390 )
+	    if( Arch::s390 && format )
 		{
 		new["fs_options"] = $["opt_blocksize":$["option_str":"-b", 
 		                                        "option_value":"4096"]];
 		}
-	    }
-
-	if( !format )
-	    {
-	    new["fs_options"] = $[];
+	    if( !format )
+		{
+		new["fs_options"] = $[];
+		}
 	    }
 	}
     if( init || ret == `fs )

@@ -413,6 +413,7 @@ writeback -- Data ordering is not preserved.</p>
 				    `mount_option	: "-t vfat",
 				    `mount_string	: "vfat",
 				    `makefstype		: "fat32",
+				    `needed_modules	: [ "fat", "vfat" ],
 				    `fst_options  	: fat_fst_options,
 				    `options 		: fat32_options
 					
@@ -549,10 +550,14 @@ global define void FileSystems()
     if( Arch::ppc )
 	{
 	support[`xfs] = false;
+	support[`fat16] = false;
+	support[`fat32] = false;
 	}
     if( Arch::s390 )
 	{
 	support[`xfs] = false;
+	support[`fat16] = false;
+	support[`fat32] = false;
 	}
     if( Arch::alpha )
 	{
@@ -648,10 +653,11 @@ global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
      * Return the mount option for each used_fs (-t)
      * @return string
      */
-  global define string GetMountString(symbol used_fs ,string default )``{
+  global define string GetMountString(symbol used_fs, string default )``{
       map fsmap 	= GetFsMap( used_fs);
       string ret        = fsmap[`mount_string ]:"";
       if( ret == "" ) ret = default;
+      y2milestone( "used_fs:%1 ret:%2", used_fs, ret );
       return ret;
   }
 
@@ -679,7 +685,7 @@ global define boolean LoadModule( symbol used_fs )
     ``{
 
     list all_needed_modules = GetNeededModules( used_fs );
-    y2milestone("all needed modules : %1", all_needed_modules );
+    y2milestone("all needed modules for %1: %2", used_fs, all_needed_modules );
     boolean load_success = true;
 
     map loaded_modules = SCR::Read(.proc.modules);
@@ -758,6 +764,7 @@ global define map GetFsysInfos( string disk, map part )
 	}
     y2milestone( "dev:%1", dev );
     part["used_fs"] = DetectFs( dev );
+    part["detected_fs"] = part["used_fs"]:`unknown;
     if( part["used_fs"]:`unknown != `unknown )
 	{
 	map info = GetUuidVolume( dev, part["used_fs"]:`unknown );
@@ -1016,5 +1023,125 @@ global define boolean SetVolumeLabel( string dev, map part )
     y2milestone( "ret:%1", ret );
     return( ret );
     };
+
+//////////////////////////////////////////////////////////////////////////
+// mount partition and look how much free space is available
+// size: size of partition
+//////////////////////////////////////////////////////////////////////////
+
+global define map GetFreeSpace( string device, integer testsize, 
+                                symbol used_fs )
+    ``{
+    integer used = 0;
+    integer free = 0;
+
+    LoadModule( used_fs );
+    if ( Mode::test )
+	{
+	integer wf =  tointeger(tofloat(testsize) * 0.6);
+	integer wu =  tointeger(tofloat(testsize) * 0.4);
+	integer ls =  tointeger(tofloat(testsize) * 0.5);
+	return( $[ "free"  : wf, "used"    : wu,
+		   "linux_size"  : ls, "new_size": (wu + wf - ls) ] );
+	}
+
+    string mount_type = GetMountString( used_fs, "");
+    if (mount_type != "")
+	{
+	mount_type = "-t " + mount_type;
+	}
+
+    // mount the partition to execute some checks
+    //
+    y2milestone( "mount %1 type %2", device, mount_type );
+    boolean mount_ret = SCR::Execute(.target.mount, [device, "/mnt"],
+				     mount_type );
+
+    if ( !mount_ret)
+	{
+	y2error( "Current device <%1> could not be mounted. Canceled", device );
+	return( nil );	// abort installation
+	}
+    else y2milestone( "Current device <%1> mounted on /mnt.", device );
+
+    // get usage information for the partition via df
+    //
+    list df_result = SCR::Read(.run.df);
+
+    SCR::Execute(.target.umount, device);
+
+    y2debug( ".run.df: %1", df_result );
+
+    // filter out headline and other invalid entries
+    df_result = filter( `part, df_result, 
+                        ``( substring( part["spec"]:"", 0, 1 ) == "/" ) );
+
+    boolean ok = false;
+
+    foreach( `part, df_result,
+	``{
+	if( part["spec"]:"" == device )	// find right entry
+	    {
+	    // get the usage values
+	    //
+	    used = tointeger( part["used"]:"-1" );
+	    free = tointeger( part["free"]:"-1" );
+
+	    if ( used != -1 && free != -1 )
+		{
+		used = used * 1024;	// Byte
+		free = free * 1024;	// Byte
+
+		ok = true;
+		y2milestone( ".run.df: used: <%1> free:<%2>", used, free );
+		}
+	    }
+	});
+
+    integer linux_size = 0;
+    integer min_linux_size = 0;
+
+    if( free > 300000000  && free < 600000000 )
+	{
+	linux_size = free - 75000000;
+	min_linux_size = linux_size;
+	}
+    else if ( free < 1000000000 )
+	{
+	linux_size = free - 200000000;
+	min_linux_size = 300000000;
+	}
+    else if ( free < 2000000000 )
+	{
+	linux_size = free - 300000000;
+	min_linux_size = 500000000;
+	}
+    else if ( free < 3000000000 )
+	{
+	linux_size = free - 800000000;
+	min_linux_size = 500000000;
+	}
+    else
+	{
+	linux_size = free - ( free / 3 );
+	min_linux_size = 500000000;
+	}
+
+    integer new_size = used + free - linux_size;
+
+    if (ok)
+	{
+	return( $[ "free":free, 
+	           "used":used,
+		   "linux_size":linux_size,
+		   "max_win_size":used + free - min_linux_size,
+		   "new_size":new_size ] );
+	}
+    else
+	{
+	return( nil );
+	}
+    };
+
 
 }
