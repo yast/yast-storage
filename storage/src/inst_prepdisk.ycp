@@ -481,6 +481,61 @@ your file systems, it is safer to cancel and reboot."),
     return( !cancel );
     };
 
+define list CreateAndActivateSwap( list<list> swd )
+    ``{
+    list ret = [];
+    y2milestone( "CreateAndActivateSwap swd %1", swd );
+    foreach (list swaplist, swd,
+	``{
+	y2milestone( "CreateAndActivateSwap swap %1", swaplist );
+	string swapdev = (string)select (swaplist, 0, "/dev/null");
+
+	if( !contains( Storage::SwappingPartitions(), swapdev ) )
+	    {
+	    boolean format_swap = swaplist[1]:false;
+	    string label = "";
+	    if( format_swap )
+		{
+		// label text %1 replaced by partition name e.g. /dev/hda1
+		label = sformat(_("Formatting %1 as swap"), swapdev );
+		}
+	    else
+		{
+		// label text %1 replaced by partition name e.g. /dev/hda1
+		label = sformat(_("Activating %1 for swap"), swapdev );
+		}
+	    UI::ChangeWidget(`id(`progress), `Label, label );
+
+	    if (swaplist[1]:false == true)		// format == yes ?
+	       {
+	       DumpPartitionStart( swapdev, false );
+	       if( SCR::Execute (.target.bash, "/sbin/mkswap "+ swapdev) != 0 )
+		  {
+		  // popup text %1 replaced by partition name e.g. /dev/hda1
+		  Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
+		  }
+	       else
+		  {
+		  map<string,map> tg = Storage::GetTargetMap();
+		  tg = Storage::DelPartitionData( tg, swapdev, "create" );
+		  Storage::SetTargetMap(tg);
+		  }
+	       }
+	    if (0 != SCR::Execute (.target.bash, "/sbin/swapon "+swapdev))
+	       {
+	       // popup text %1 replaced by partition name e.g. /dev/hda1
+	       Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
+	       }
+	    else
+	       {
+	       ret = add (ret, swapdev);
+	       }
+	    }
+	});
+    y2milestone( "CreateAndActivateSwap ret %1", ret );
+    return( ret );
+    }
+
 
 define map DetermineMountPoints(string disk, map target, map mp )
     ``{
@@ -1262,16 +1317,6 @@ Please repeat the installation with another swap partition selected
 	    }
 	}
 
-    if( num_evms>0 || HandleEvmsChanges( tg, false, false ) )
-	{
-	SCR::Write( .evms.init, "" );
-	y2milestone( "dmsetup %1", 
-		     SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
-	HandleEvmsChanges( tg, false, true );
-	}
-    y2milestone( "dmsetup %1", 
-                 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
-    RemoveUsedNonEvmsDm( tg );
     
     // 2b. Do any necessary lvm preparation
     // activate lvm, cause if I only use a existing LV, I need to activate it 
@@ -1334,65 +1379,21 @@ damage to your file systems, it is safer to cancel and reboot.
 	    }
 	} while(retry);
 
+    // 3. Create and use swap devices
     if( this_is_for_real )
 	{
-	// 3. Create and use swap devices
-	foreach (list swaplist, swap_devices,
-	    ``{
-	    y2milestone( "swap %1", swaplist );
-	    string swapdev = (string)select (swaplist, 0, "/dev/null");
-
-	    if( !contains( Storage::SwappingPartitions(), swapdev ) )
-		{
-		boolean format_swap = swaplist[1]:false;
-		string label = "";
-		if( format_swap )
-		    {
-		    // label text %1 replaced by partition name e.g. /dev/hda1
-		    label = sformat(_("Formatting %1 as swap"), swapdev );
-		    }
-		else
-		    {
-		    // label text %1 replaced by partition name e.g. /dev/hda1
-		    label = sformat(_("Activating %1 for swap"), swapdev );
-		    }
-		UI::ChangeWidget(`id(`progress), `Label, label );
-
-		if (swaplist[1]:false == true)		// format == yes ?
-		   {
-		   DumpPartitionStart( swapdev, false );
-		   if( SCR::Execute (.target.bash, "/sbin/mkswap "+ swapdev) != 0 )
-		      {
-		      // popup text %1 replaced by partition name e.g. /dev/hda1
-		      Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
-		      }
-		   else
-		      {
-		      map<string,map> tg = Storage::GetTargetMap();
-		      tg = Storage::DelPartitionData( tg, swapdev, "create" );
-		      Storage::SetTargetMap(tg);
-		      }
-		   }
-		if (0 != SCR::Execute (.target.bash, "/sbin/swapon "+swapdev))
-		   {
-		   // popup text %1 replaced by partition name e.g. /dev/hda1
-		   Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
-		   }
-		else
-		   {
-		   activatedswaps = add (activatedswaps, swapdev);
-		   }
-		}
-	    });
+	list<list> swd = filter( list e, swap_devices, ``(find(e[0]:"","/dev/evms/")!=0));
+	list sw = CreateAndActivateSwap( swd );
+        activatedswaps = (list<string>)union(activatedswaps, sw);
 	}
-    y2milestone( "Swap created and activated %1", this_is_for_real);
 
     // 4. Create filesystems
     cancel = false;
     retry = false;
 
     foreach( string tdevice, map target, 
-             filter( string k, map e, Storage::GetTargetMap(), ``(k!="/dev/loop")),
+             filter( string k, map e, Storage::GetTargetMap(), 
+	             ``(k!="/dev/loop" && find(k,"/dev/evms")!=0 )),
 	``{
 	// every disk
 	list<map> partitions = target["partitions"]:[];
@@ -1422,19 +1423,19 @@ damage to your file systems, it is safer to cancel and reboot.
 
     // 5. Mount all targets with mountpoints
 
-    // now select all native partitions with a mountpoint
+    // now select all native non-EVMS partitions with a mountpoint
     // and put them in a map. This ensures lexical ordering.
     map<string,list> mountPoints = $[];
     tg = Storage::GetTargetMap();
 
     foreach( string tdevice, map target, 
-             filter( string k, map e, tg, ``(k!="/dev/loop")),
+             filter( string k, map e, tg, 
+	             ``(k!="/dev/loop" && find(k,"/dev/evms")!=0 )),
 	``{
 	mountPoints = (map<string,list>)DetermineMountPoints( tdevice, target, mountPoints );
 	}); // foreach (tdevice)
 
-    y2milestone("MountPoints: %1",mountPoints);
-    //Popup::Message("mount " );
+    y2milestone("non EVMS-MountPoints: %1",mountPoints);
 
     y2milestone( "Enable automatic module loading for mount");
     if( installation )
@@ -1453,6 +1454,84 @@ damage to your file systems, it is safer to cancel and reboot.
 	    return `back;
 	    }
 	}
+
+    if( num_evms>0 || HandleEvmsChanges( tg, false, false ) )
+	{
+	SCR::Write( .evms.init, "" );
+	y2milestone( "dmsetup %1", 
+		     SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
+	HandleEvmsChanges( tg, false, true );
+	RemoveUsedNonEvmsDm( tg );
+
+	// Create and use swap devices
+	list<list> swd = filter( list e, swap_devices, 
+	                         ``(find(e[0]:"","/dev/evms/")==0));
+	list sw = CreateAndActivateSwap( swd );
+        activatedswaps = (list<string>)union(activatedswaps, sw);
+
+	// Create filesystems
+	cancel = false;
+	retry = false;
+
+	foreach( string tdevice, map target, 
+		 filter( string k, map e, Storage::GetTargetMap(), 
+			 ``(find(k,"/dev/evms")==0 )),
+	    ``{
+	    // every disk
+	    list<map> partitions = target["partitions"]:[];
+	    y2milestone( "tdevice %1", tdevice );
+	    foreach(map partition, filter( map p, partitions, ``(!p["delete"]:false)),
+		``{
+		if( !cancel && 
+		    (size(partition["mount"]:"")>0 ||
+		     size(partition["label"]:"")>0 || 
+		     partition["format"]:false))
+		    {
+		    cancel = !HandleFormatPartition( partition );
+		    y2milestone( "after HandleFormatPartition cancel %1", cancel );
+		    }
+		});
+	    });
+
+	// some mkfs failed, go back
+	if( cancel )
+	    {
+	    doswapoff(activatedswaps);
+	    losetup_d(activatedLoopDevices);
+	    restoretargetmap();
+	    return `back;
+	    }
+
+	tg = Storage::GetTargetMap();
+	mountPoints = $[];
+	foreach( string tdevice, map target, 
+		 filter( string k, map e, tg, ``(find(k,"/dev/evms")==0 )),
+	    ``{
+	    mountPoints = (map<string,list>)DetermineMountPoints( tdevice, target, mountPoints );
+	    }); // foreach (tdevice)
+
+	y2milestone("EVMS-MountPoints: %1",mountPoints);
+
+	if( installation )
+	    SCR::Execute( .target.bash, 
+			  "/bin/echo /sbin/modprobe >/proc/sys/kernel/modprobe");
+
+	if( this_is_for_real )
+	    {
+	    cancel = !DoMountList( mountPoints );
+
+	    // some mount failed, try to umount all already mounted partitions
+	    if( cancel )
+		{
+		list mlist = maplist( any k, any e, mountPoints, ``(k) );
+		DoUmountAndReset( mlist );
+		return `back;
+		}
+	    }
+	}
+
+    y2milestone( "dmsetup %1", 
+                 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
 
     if( size( tg["/dev/loop","partitions"]:[] )>0 && this_is_for_real )
 	{
