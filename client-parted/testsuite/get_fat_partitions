@@ -1,0 +1,191 @@
+#! /bin/bash
+
+#
+# Explain what will be done
+#
+echo
+echo "CAUTION:"
+echo "This program will transfer all FAT partitons on your system"
+echo "to a server where they will be stored. This is _NOT_ done for"
+echo "spying reasons but to get test cases for testing our FAT resizer"
+echo "that will be used with release 7.1. If your FAT partition(s) contain"
+echo "private or critical data you may want to cancel this operation."
+echo "Do you want to proceed (Please enter yes or no)?"
+echo
+echo "ACHTUNG:"
+echo "Dieses Programm wird alle FAT-Partitionen auf Ihrem System an"
+echo "einen Server uebertragen und dort Speichern. Dies geschieht"
+echo "_NICHT_ zum Zwecke der Spionage, sondern um Testfaelle fuer"
+echo "unseren FAT-Resizer zu gewinnen, der ab Release 7.1 benutzt"
+echo "werden soll. Wenn Ihre FAT-Partition(en) private oder kritische"
+echo "Daten enthalten, wollen Sie die Operation vielleicht abbrechen."
+echo "Moechten sie fortfahren (Geben Sie bitte yes oder no ein)?"
+
+#
+# ask the user if he wants to do it
+#
+read GO_ON
+
+if [ ! $GO_ON ]
+    then
+    echo "==> canceled"
+    exit 1
+fi
+
+
+if [ $GO_ON != "yes" ]
+    then
+    if [ $GO_ON != "YES" ]
+	then
+	echo "==> canceled"
+	exit 1
+    fi
+fi
+
+echo
+
+#
+# set Debug mode on/off (Comment in/out)
+# 
+#DEBUG="1"
+
+if [ $DEBUG ]
+   then echo "*** Debug mode is on --> verbose output"
+fi
+
+
+#
+# Check if all commands necessary for execution are reachable
+#
+for COMMAND in hostname basename date sfdisk dd whoami gzip rsh
+    do
+	if [ ! `type -p ${COMMAND}` ]
+	    then
+	    echo "Error: $COMMAND command not reachable"
+	    exit 1
+	fi
+    done
+
+
+#
+# Check if we are root (user must decide)
+#
+if [ `whoami` != root ]
+    then
+    echo "Error: Must be root to run `basename $0`"
+    exit 1
+fi
+
+
+#
+# Possible servers to receive the image
+# SCHANZ is yet tbs.
+#
+SERVER_DHS=10.10.3.51
+SERVER_SCHANZ=XXX_to_be_specified_XXX
+
+
+#
+# Set the correct user who will be allowed to do it on the server
+#
+I_USER=iuser
+
+
+#
+# Directory that will take the images
+#
+IMPORT_DIR=/images/ftp/pub/
+
+#
+# IP-Adress of Host we are running on for file name generation
+#
+IP_ADDRESS=`hostname -i`
+
+# since the result of `hostname -i` has a trailing blank we must remove it
+IP_ADDRESS=${IP_ADDRESS% *}
+
+if [ $DEBUG ]
+   then echo "IP Adress: $IP_ADDRESS"
+fi
+
+
+#
+# Determine which server should receive the image
+#
+case ${IP_ADDRESS%.*.*} in
+    10.10)    SERVER=$SERVER_DHS;;
+    10.0)     SERVER=$SERVER_SCHANZ;;
+    *)        echo Error: no server for this subnet; exit 1;;
+esac
+
+echo "Using Server $SERVER for storing..."
+
+
+#
+# Time stamp for file name generation
+#
+TIME_STAMP=`date +%d%m%y_%H%M`
+
+if [ $DEBUG ]
+   then echo "Time stamp: $TIME_STAMP"
+fi
+
+
+#
+# Get all FAT partitions on the system
+#
+FAT_PART=`sfdisk -l | grep FAT | cut -d' ' -f1`
+
+echo "Transferring partition(s): $FAT_PART"
+
+
+#
+# Now create an image of every FAT partition found.
+# If none is found the body of the loop will not be executed.
+#
+for PART in $FAT_PART
+   do
+      echo "Transferring ${PART}..."
+
+      # Get the partition string
+      PART_NAME=`basename $PART`
+
+      # To use sfdisk we must split the partition name into device and number
+      PART_DEV=${PART%%[0-9]*}
+      PART_NUM=${PART##*[!0-9]}
+
+      # Get the type of the partition
+      PART_ID=`sfdisk --print-id $PART_DEV $PART_NUM`
+
+      # Create file name of the resulting image as 
+      # e.g. b_10.10.0.245_sda7_131000_1739
+      FILE_NAME=${PART_ID}_${IP_ADDRESS}_${PART_NAME}_${TIME_STAMP}
+
+      # finally do it
+      if [ $DEBUG ]
+         then 
+	 echo "Image file: ${FILE_NAME}"
+	 echo "Command: dd if=$PART bs=1M | gzip -c | rsh -l $I_USER $SERVER dd of=${IMPORT_DIR}${FILE_NAME}.gz bs=1M"
+      fi
+
+      dd if=$PART bs=1M | gzip -c | rsh -l $I_USER $SERVER dd of=${IMPORT_DIR}${FILE_NAME}.gz bs=1M
+
+      # write flag file after completion
+      rsh -l $I_USER $SERVER touch ${IMPORT_DIR}${FILE_NAME}.cpl
+
+      echo "... done"
+
+      #
+      # Remark: The resulting image can be stored in a suitable partition with
+      #            gunzip -c <image_file> | dd of=<device> bs=1M
+      #         The type of the partition must be set correctly according to the
+      #         ID that is leading the image file name, e.g.:
+      #            6_10.10.1.143_sda1_171000_1620.gz
+      #            ^
+      #            Type is 6 here (FAT16) and can be set with
+      #            sfdisk --change-id /dev/sda 1 6
+      #
+   done
+
+# Thomas Roelz / tom@suse.de / 2000-10-18
+# -EOF -

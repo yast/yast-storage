@@ -1,0 +1,169 @@
+Resizing Win-Partitions with parted
+===================================
+
+parted integration
+------------------
+Parted will be integrated via command line interface and YaST2 client module.
+The interface will be made similar to the fdisk module. Therefore parted including
+its client module can be integrated into the extended fdisk test suite (see below).
+fdisk integration is realized via SCR. parted will be integrated via client module.
+The extension of the fdisk interface has to be specified.
+
+
+Windows versions to be handled
+------------------------------
+Win95, Win98, WinME, Win2000, WinNT, Win311 
+Is this relevant for the preservation of the bootability, i.e. could it be that
+parted can resize a Win98-FAT32-partition in a bootable way but will fail with a
+WinME-FAT32-partition? If this could be the case we would have to define a set of
+permissible Windows versions. This set would have to be checked prior to resizing.
+
+
+Check if resize should take place
+---------------------------------
+In the installation workflow there must be a check if resizing is advisable and
+realizable.
+
+Prerequisites:
+- one single FAT16 or FAT32 partition
+- on this partition there is a windows directory
+- on this partition the well known M$-files (io.sys ...) are present
+- dosfsck says OK
+- the free space on this partition is above a certain value (tbs.)
+  Resizing would make no sense otherwise.
+
+poss. extension-1:
+The Win-partition is not necessarily the only partition in the system (on all disks).
+Any FAT-partiton will be resized if it is the only FAT-partiton in the system.
+
+poss. extension-2:
+The only FAT-partition on the system does not necessarily contain Windows. Any single
+FAT-partition will be resized, no matter if Windows is present or not.
+
+
+Test suite:
+-----------
+The existing fdisk test suite will be extended so that resizing operations can be
+tested automatically. The integration of parted into YaST2 must take this into
+consideration (see above). For the test bootable Win-partitions will be saved via dd.
+These images will then be retrieved from the DB, get resized, and the result will be
+checked for correctness.
+
+Creation of the image DB
+------------------------
+In "Schanz" and "DHS" servers will be set up to store the images. Additionally a
+script will be created that will "dd" a Win-Partiton and store the resulting image
+on one of these servers.
+
+Two possibilities:
+
+     1. The script will find the partition as
+
+	    ...
+            VAR=`fdisk -l | grep FAT | cut -d' ' -f1`
+	    ...
+
+	Advantage:    There is no need to enter the partition name.
+	Disadvantage: Ambiguous if more tha one FAT-partitions exist.
+
+     2. Script takes partition as parameter as
+
+	    get_image /dev/sda1
+
+	Advantage:    Partition is non-ambiuous in any case.
+	Disadvantage: Partition must be entered.
+
+The right server will be determined automatically from the host IP address.
+The name of the image file contains the host IP address.
+
+The script has been created with option 1 and is called get_fat_partitions.
+
+Using this script everybody can store existing or newly created Win-partitions.
+
+Problem:
+If this tool is used by several people to store deliberate pathological Win-
+installations ("I know a funny strange installation") there should be some measures
+to prevent the creation of the same test case by different people (waste of space).
+Additionally the anatomy of the test case should be recorded some way.
+==>???
+
+Remark:
+For partition surprise it was intended to record the creation of the test cases on
+paper. There should be a form to be filled out. All testers should apportion the
+whole bunch of tests between them.
+
+Apparently there are two types of test cases:
+
+	   1. Images created to realize a specific test case with a highly specific
+	      and well known anatomy in the Windows installation. These images
+	      constitute the systematic test set.
+
+	   2. Images created somewhere by somebody who just has an installed Windows
+	      at hand (probably because he/she is using it). In many of these cases
+	      the anatomy of the installation will not be known to a high detail
+	      level. These cases should be looked at as additional unspecific
+	      test cases and may cover unforseen configurations.
+
+
+Test for correctness
+--------------------
+
+General tests
+-------------
+
+Test for bootability
+--------------------
+Two possibilities:
+
+     1. Byte-compare of the resulting mages.
+
+	Advantage:	- absolutely safe because the result image used for checking
+			  has proven to be OK by an arbitrary number of tests
+			  (by hand).
+
+        Disadvantage:	- resulting images must be stored in the DB
+		          (space consuming)
+
+			- if there is a change in the parted internal algorithms
+			  the byte compare may fail while the result is nevertheless
+			  correct. In this case all the result images in the DB would
+			  have to be updated to the new state (including the 
+			  exercise of all the tests for correctness by hand )
+
+     2. booting within VMware
+
+	Advantage:      - no storing and maintenance of result images in the DB.
+
+	Disadvantage:	- The Windows run in VMware is not fully native. OTOH a run
+			  in VMware is a positive test, i.e. it is more likely that
+			  booting in VMware fails where it would succeed natively
+			  than the opposite. That means if booting in VMware is OK
+			  so will it be in native mode (most likely).
+
+
+	Problem:        - is Win-booting in VMware automatable and observable?
+
+
+Bootability test cases
+----------------------
+AFAIK every Windows version can be run with FAT file systems. OTOH it may well be
+that every Windows version has a slightly different boot mechanism. Since parted
+only distinguishes FAT file systems from nonFAT file systems it would be interresting
+if the Windows version does influence the bootability after resize. So there should
+be test cases for all Windows versions each using FAT as file system:
+
+Win95, Win98, WinME, Win2000, WinNT, Win311
+
+
+Swap space test cases
+---------------------
+Windows allows to have the swap file on another partition than the Windows partition.
+Additionally the swap file may be under windows control in which case the swap file
+is always on the move being grown and shrunk as needed. It is also possible to set a
+fixed size for the swap file in which case it is nailed to a fixed disk location. We
+should test all the possible cases to see if resizing is influenced by these
+configuration possibilities.
+
+
+tbc.
+/tom/2000-10-12/

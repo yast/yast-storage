@@ -1,0 +1,210 @@
+{
+// To resize the correct partition in the right way the following variables
+// must be set correctly.
+//
+// *** DANGER *** *** DANGER *** *** DANGER *** *** DANGER *** *** DANGER ***
+//
+// The valuaes here are taken for sure. So if the process is not cancelled
+// by the user the partition will actually be resized !!!
+//
+// *** DANGER *** *** DANGER *** *** DANGER *** *** DANGER *** *** DANGER *** 
+//
+string partition = "/dev/sda1";
+string start_mb = "0.0";
+string length_mb = "1850.0";
+
+
+//
+// define the main UI dialog (Resizing....)
+//
+UI(``{
+    define PartedDialog(string parted_header) ``{
+	OpenDialog(`VBox(
+			 `HSpacing(80),
+			 `Label(`id(`parted_header), parted_header),
+			 `HBox(
+			       `Label( "Partition:" ),
+			       `Label(`id(`parted_line), `opt(`outputField, `hstretch), " " )
+			       ),
+			 `HBox(
+			       `Label( "Directory:" ),
+			       `Label(`id(`directory_line), `opt(`outputField, `hstretch), " " )
+			       ),
+			 `HBox(
+			       `Label( "Exception:" ),
+			       `Label(`id(`exception_line), `opt(`outputField, `hstretch), " " )
+			       ),
+
+			 `ProgressBar(`id(`parted_progress), "Resizing...", 100)
+			 )
+		   );
+    };
+});
+
+
+//
+// Define the UI update macro for the progress bar.
+// This will be downloaded into the parted module.
+//
+UI(``{
+    define ShowProgressParted( integer percent )
+	``{ 
+	ChangeWidget(`id(`parted_progress), `Value, percent );
+	return nil;
+    };
+});
+
+
+//
+// Define the UI update macro for the directory messages.
+// This will be downloaded into the parted module.
+//
+UI(``{
+    define ShowDirectoryParted( string message_directory )
+	``{ 
+	ChangeWidget(`id(`directory_line), `Value, message_directory );
+	return nil;
+    };
+});
+
+
+//
+// Define the UI update macro for the exception messages.
+// This will be downloaded into the parted module.
+//
+UI(``{
+    define ShowExceptionParted( string message_exception )
+	``{ 
+	ChangeWidget(`id(`exception_line), `Value,  message_exception );
+	return nil;
+    };
+});
+
+
+//
+// Now display the main UI dialog
+//
+UI(``{
+   PartedDialog("Resizing partition");
+});
+
+
+//
+// Set header according to the variables
+//
+UI(``{
+   ChangeWidget(`id(`parted_line), `Value, partition +
+		" Start: " + start_mb +
+		" MB, length: " + length_mb + " MB" );
+}); 
+
+
+//
+// check if formatting should really start
+// Display a second dialog with two buttons.
+// 
+UI(``{
+    OpenDialog(`VBox(`Label("*** WARNING *** WARNING *** WARNING ***"),
+		     `Label("The partition mentioned will actually be resized !!!"),
+		     `Label("*** WARNING *** WARNING *** WARNING ***"),
+		     `HBox(
+			   `PushButton(`id(`ok), "Do it!"),
+			   `HSpacing(0.1),
+			   `PushButton(`id(`cancel), "Cancel")
+			   )
+		     )
+	       );
+});
+
+
+//
+// get the button press of user confirmation
+//
+any ok = UI(`UserInput());
+
+
+_debug("User decision:", ok);
+
+
+//
+// close the second dialog
+//
+UI(`CloseDialog());
+
+
+//
+// If user canceled also close the main dialog and return `cancel.
+//
+if (ok == `cancel)
+{
+    UI(`CloseDialog());
+    return `cancel;
+}
+
+
+//
+// If Cancel was not pressed continue and call the parted module.
+//
+_debug("Calling the parted-Module");
+
+
+any res = nil;
+
+//
+// Now call parted module with arguments as:
+// <progress_macro>		- macro to adjust progress bar
+// <directory_macro>		- macro to display directory information
+// <exception_macro>		- macro to display exception information
+// "/dev/sda1"			- partition to be resized
+// "0.0"			- new start of partition in MB on disk
+// "200.3"			- length of partition im MB on disk
+//
+res = CallModule("parted", ["ShowProgressParted",
+			   "ShowDirectoryParted",
+			   "ShowExceptionParted",
+			   partition,	// MUST exist and be OK
+			   start_mb,	// change for testing
+			   length_mb]);	// change for testing
+
+
+_debug("parted result:", res);
+
+
+if (res == `ok)
+{
+   //
+   // report success (another dialog)
+   //
+  UI(``{
+      OpenDialog(
+		 `VBox(`Label("Fertig!"), `PushButton(`id(`ok), "OK"))
+		 );
+  });
+}
+else
+{
+   //
+   // report the error (another dialog)
+   //
+  UI(``{
+      OpenDialog(
+		 `VBox(`Label("There was an error!"), `PushButton(`id(`ok), "OK"))
+		 );
+  });
+}
+
+//
+// get OK press from user
+//
+UI(`UserInput());
+
+
+//
+// CLose both dialogs
+//
+UI(`CloseDialog());
+UI(`CloseDialog());
+
+return res;
+
+}

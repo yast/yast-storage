@@ -1,0 +1,95 @@
+SuSE patched version of parted and how to maintain it.
+======================================================
+
+We are using a patched version of parted within the installation workflow.
+To accomplish this various small patches have been made that must be applied
+when a new version of parted is used. parted and its patches are held in the
+source rpm.
+
+-rw-r--r--   1 tom      suse          619 Nov 22 14:28 Makefile.diff
+-rw-r--r--   1 tom      suse          605 Nov 22 18:11 README.parted_patch
+-rw-r--r--   1 tom      suse          780 Nov 22 14:23 libparted.diff
+-rw-r--r--   1 tom      suse       394246 Nov 21 15:28 parted-1.4.2.tar.bz2
+-rw-r--r--   1 tom      suse         6854 Nov 22 14:25 resize.diff
+-rw-r--r--   1 tom      suse       121261 Nov 22 16:27 yast2-core-clients-2.3.X.tar.bz2
+-rw-r--r--   1 tom      suse         2617 Nov 22 17:24 yast2-core-clients.changes
+-rw-r--r--   1 tom      suse         1673 Nov 22 16:51 yast2-core-clients.spec
+
+The diff files therein contain the changes made. There are no modified
+parted sources in CVS since this would be a great deal of maintenance
+with every new version of parted. Instead the whole archive (here 
+parted-1.4.2.tar.bz2) is checked in. When building the y2clients package
+this archive is used, the patches are applied and the SuSE specific parted
+is built.
+
+How to switch to a new parted version
+=====================================
+If a new version of parted should be used the procedure is as follows:
+
+1.  Do a cvs up in ...yast2/source/y2clients.
+
+2.  Increment the micro number in ...yast2/source/y2clients/VERSION.
+
+3.  Do a make package in ...yast2/source/y2clients.
+    (The current version of y2client...tar.bz2 will be generated)
+
+4.  Generate/copy the new parted archive into ...yast2/source/y2clients/package.
+    (It must be parted...tar.bz2)
+
+5.  Change the parted version in ...yast2/source/y2clients/y2client.spec.in.
+
+6.  Do a make -f Makefile.cvs in ...yast2/source/y2clients.
+    A new y2client.spec will be generated.
+
+7.  Build the package in a local build environment.
+
+8.  Check the $BUILD_ROOT/.build.log for errors.
+
+9.  If everything was fine test the new parted in a YaST2 environment.
+    The executable is $BUILD_ROOT/usr/src/packages/BUILD/parted-1.4.2/parted/parted.
+    It is linked statically and therefore does not require any shared libs.
+
+10. If testing was OK make the new y2client package and check it into STABLE.
+    (You have been verrry lucky then  ;-)
+
+11. If building the package fails some diffs may have been unpatchable. This may occur
+    if the parted sources have changed heavily. In this ugly case the diffs have to be
+    implemented anew by hand. Do the following:
+
+12. Unpack the new parted archive with its original name into ...yast2/source/y2clients/package.
+    Rename it by appending .suse. Unpack it again with its original name. 
+    Change to the .suse version of parted.
+
+13. Apply the diffs by hand. You got to find the location and edit the code.
+
+14. If done make parted and test it in the YaST environment.
+
+15. If this is ok generate new diffs:
+
+    Support only the desired file systems:
+    diff -wupr parted-X.Y.Z/libparted/Makefile.am parted-X.Y.Z.suse/libparted > Makefile.diff
+
+    Abolish references to unused filesystems:
+    diff -wupr parted-X.Y.Z/libparted/libparted.c parted-X.Y.Z.suse/libparted > libparted.diff
+
+    Reimplement the SuSE progress indication:
+    diff -wupr parted-X.Y.Z/libparted/fs_fat/resize.c parted-X.Y.Z.suse/libparted/fs_fat > resize.diff
+
+16. Build the new y2client package and put it into STABLE.
+
+17. After all is done:
+    
+    - remove the old parted package from CVS
+    - add new parted package to CVS
+
+    Check in if changed:
+    - ...yast2/source/y2clients/VERSION
+    - ...yast2/source/y2clients/yast2-core-clients.spec.in
+    - ...yast2/source/y2clients/package/yast2-core-clients.changes
+    - the diffs
+    - this README (maybe)
+
+
+/tom@suse.de/2000-11-22/
+
+-EOF-

@@ -1,0 +1,139 @@
+/**
+ * $Id$
+ *
+ * Module:		testit.ycp
+ *
+ * Purpose:		Test the makefs module formatting a file with type ext2.
+ *
+ * Author:		Thomas Roelz <tom@suse.de>
+ */
+{
+include "ui/common_popups.ycp";
+
+UI( ``{
+    // Create dialog for formatting the test file used as partition.
+    //
+    global define MakefsDialog( string explanation )
+	``{
+	term contents =
+	    `VBox(
+		  `Label( explanation ),
+
+		  `VSpacing( 1 ),
+
+		  `HBox(
+			`HSpacing( 2.5 ),
+					       
+			// PushButton to cancel
+			`PushButton( `id(`cancel), "&Cancel" ),
+
+			`HStretch(),
+					 
+			// PushButton to do it
+			`PushButton( `id(`doit), "&Do it" ),
+
+			`HSpacing( 2.5 )
+			),
+		      
+		  `VSpacing( 1 ),
+
+		  `ProgressBar(`id(`makefs_progress), "Formatting...", 100)
+		      
+		  );
+
+
+	// Add margins around the real contents
+
+	term makefs_dialog =
+	    `HBox(
+		  `HSpacing( 1 ),
+		  `VBox(
+			`VSpacing( 0.5 ),
+			contents,
+			`VSpacing( 0.5 )
+			),
+		  `HSpacing( 1 )
+		  );
+
+	return makefs_dialog;
+    };
+
+    global define UpdateProgressBar( integer percent )
+	``{
+	ChangeWidget(`id(`makefs_progress), `Value, percent);
+
+	any res = PollInput();
+
+	if ( res == `abort ) 	return `cancel;
+	else 			return nil;
+    };
+});
+
+
+string explanation = "
+Test of the makefs module
+=====================
+
+To run this test there must be a file named \"test_makefs_device\"
+present in the current directory. This file will then be formatted
+as an ext2 partiton. Currently only mke2fs is able to format a file.
+
+To create a file of size 100 MB you may use (e.g.)
+
+   dd if=/dev/zero of=test_makefs_device bs=1M count=100
+
+===> Don't forget to delete it after the test. <===
+";
+
+// display UI-dialog
+//
+UI::OpenDialog( UI::MakefsDialog( explanation ) );
+
+// Get the user's choice
+//
+any ok = UI::UserInput();
+
+y2milestone( "Result:", ok );
+
+any res = `cancel;
+
+if ( ok == `doit )
+{
+    // Call the makefs module with test_makefs_device
+    //
+    y2milestone( "Calling the makefs-Module with type ext2" );
+    
+    res = CallModule("makefs", ["UpdateProgressBar",	// Name of progressbar macro
+			       "ext2",			// Only ext2 can format a file
+			       "test_makefs_device",	// Name of the "partition" file
+			       ["-F"]]			// Format file (no block device)
+		     );
+    
+    if ( res == `ok )
+    {
+	// success message
+	//
+	UI::MessagePopup( "Formatting was successful." );
+    }
+    else
+    {
+	// error message
+	//
+	UI::MessagePopup( "There was an error. Please see logfile." );
+    }
+}
+else
+{
+    y2milestone( "User cancelled" );
+}
+
+//
+// Close dialog in any case
+//
+UI::CloseDialog();
+
+// Return status
+//
+return res;
+
+}
