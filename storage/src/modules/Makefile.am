@@ -19,9 +19,9 @@ module_DATA =				\
 
 EXTRA_DIST = $(module_DATA) $(ynclude_DATA)
 
-symlinks:
-	test -L partitioning || ln -sf ../include partitioning
+include:
+	mkdir include && ln -sf ../../include include/partitioning
 
-ycpchook = symlinks
+ycpchook = include
 
 include $(top_srcdir)/Makefile.am.common
