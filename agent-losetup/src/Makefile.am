@@ -17,3 +17,6 @@ INCLUDES =					\
 	-I$(srcdir)/../../liby2/src/include	\
 	-I$(srcdir)/../../libscr/src/include	\
 	-I$(includedir)
+
+install-data-hook:
+	rm -f $(DESTDIR)$(plugindir)/$(plugin_LTLIBRARIES)

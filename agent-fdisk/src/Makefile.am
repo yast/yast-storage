@@ -30,4 +30,4 @@ libpy2ag_storage_la_SOURCES =				\
 libpy2ag_storage_la_LDFLAGS = -version-info 2:0
 
 install-data-hook:
-	rm -f $(DESTDIR)$(plugindir)/libpy2ag_storage.la
+	rm -f $(DESTDIR)$(plugindir)/$(plugin_LTLIBRARIES)
