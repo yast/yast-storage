@@ -3843,6 +3843,11 @@ define string GetLosetupCmd( map loop, string tmpf )
     list noext = [ "twofish", "none" ];
     string encr = loop["encryption"]:"twofish";
     string cmd = sformat( "/sbin/losetup -e %1", encr );
+    # XXX: This could be done better
+    if ( encr == "twofishSL92" ) 
+       {
+          cmd = "/sbin/losetup -e twofish256";
+       }
     if( !contains( noext, encr ) && size(loop["phash"]:"")>0 )
 	{
 	cmd = cmd + " -H " + loop["phash"]:"";
@@ -3912,6 +3917,14 @@ global define boolean SetCryptLoop( map& part )
 		                                  "loop_fish2", "");
 		}
 	    }
+       else if( part["crypt"]:"" == "twofishSL92" )
+            {
+            if( !haskey( loaded_modules, "loop_fish2" ) )
+                {
+                crypt_ok = (boolean) SCR::Execute( .target.modprobe,
+                                                  "loop_fish2", "");
+                }
+            }
 	else if( find(part["crypt"]:"","twofish")==0 )
 	    {
 	    if( !haskey( loaded_modules, "cryptoloop" ) )
@@ -4302,7 +4315,7 @@ global define void UpdateCryptoType()
 	if( pos >= 0 )
 	    {
 	    string new = substring( l["fields",3]:"", 0, pos );
-	    new = new + "encryption=twofish";
+	    new = new + "encryption=twofishSL92";
 	    new = new + substring( l["fields",3]:"", pos+size(search) );
 	    y2milestone( "new options line in %1 is %2", l, new );
 	    AsciiFile::ChangeLineField( fstab, line, 3, new );
@@ -4318,8 +4331,8 @@ global define void UpdateCryptoType()
 	map l = AsciiFile::GetLine( crtab, line );
 	if( l["fields",4]:"" == "twofish256" )
 	    {
-	    y2milestone( "set twofish in line %1", l );
-	    AsciiFile::ChangeLineField( crtab, line, 4, "twofish" );
+	    y2milestone( "set twofishSL92 in line %1", l );
+	    AsciiFile::ChangeLineField( crtab, line, 4, "twofishSL92" );
 	    }
 	line = line+1;
 	}
