@@ -154,7 +154,7 @@ Y2MakefsComponent::report_progress (Y2Component* displayserver, double percent)
 	return YCPVoid ();
 
     // build command
-    Y2Function* t = report_macro->createFunctionCall (symbol);
+    Y2Function* t = report_macro->createFunctionCall (symbol, Type::Unspec);
     
     if (t != NULL)
     {

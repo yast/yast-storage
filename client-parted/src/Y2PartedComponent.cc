@@ -193,7 +193,7 @@ Y2PartedComponent::report_progress(Y2Component *displayserver,
     if( report_macro ) 
         {
         // build command
-        t = report_macro->createFunctionCall( progress_symbol );
+        t = report_macro->createFunctionCall( progress_symbol, Type::Unspec );
         }
     if( report_macro && t )
 	{
@@ -228,7 +228,7 @@ Y2PartedComponent::report_directory(Y2Component *displayserver,
     if( report_macro ) 
 	{
 	// build command
-	t = report_macro->createFunctionCall (directory_symbol);
+	t = report_macro->createFunctionCall (directory_symbol, Type::Unspec);
 	}
 
     // if no macro at hand return immediately
@@ -292,7 +292,7 @@ Y2PartedComponent::report_exception(Y2Component *displayserver,
     if( report_macro ) 
 	{
 	// build command
-	t = report_macro->createFunctionCall( exception_symbol );
+	t = report_macro->createFunctionCall( exception_symbol, Type::Unspec );
 	}
 
     // if no macro at hand return immediately
