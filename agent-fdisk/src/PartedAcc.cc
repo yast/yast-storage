@@ -127,13 +127,13 @@ PartedAccess::NewPartition(const PartitionType Part_e,
 
   Buf_Ci << std::setprecision(3) 
          << std::setiosflags(std::ios_base::fixed) 
-	 << (double)(Num_ui-0.8)*CylinderToKb(1)/1024 
+	 << (double)(Num_ui-1)*CylinderToKb(1)/1024 
          << " ";
   Data_Ci.clear();
   Data_Ci.str( Bis_Cv );
   Data_Ci >> Num_ui;
   y2debug( "Bis:%s bis:%u", Bis_Cv.c_str(), Num_ui );
-  Buf_Ci << std::setprecision(3) << ((double)Num_ui-0.1)*CylinderToKb(1)/1024;
+  Buf_Ci << std::setprecision(3) << ((double)Num_ui)*CylinderToKb(1)/1024;
   
   y2milestone( "ok:%d executing cmd:%s", Ok_bi, Buf_Ci.str().c_str() );
   if( Ok_bi )
