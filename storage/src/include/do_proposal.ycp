@@ -36,16 +36,20 @@ include "partitioning/propose_slot_util.ycp";
 include "partitioning/do_proposal_flexible.ycp";
 
 
-define boolean ignore_disk( string dev, map entry )
+define boolean ignore_disk( string dev, map entry, boolean soft )
     ``{
     boolean ret = Storage::IsRealDisk( dev, entry );
     if( ret && Arch::board_iseries && find( dev, "/dev/sd" )==0 )
 	{
 	ret = false;
 	}
+    if( soft && entry["softraiddisk"]:false )
+	{
+	ret = false;
+	}
     if( !ret )
 	{
-	y2milestone( "ignoring disk %1", dev );
+	y2milestone( "ignoring disk %1 soft %2", dev, soft );
 	}
     return( ret );
     };
@@ -62,7 +66,7 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
     /////////////////////////////////////////////////////////////////
 
     foreach( string dev, map disk, 
-	     filter( string k, map e, targetMap, ``(ignore_disk(k,e))),
+	     filter( string k, map e, targetMap, ``(ignore_disk(k,e,true))),
 	``{
 	y2milestone( "checking disk %1", dev );
 
@@ -897,9 +901,9 @@ define map do_proposal()
 	    foreach ( string dev, map disk, target, 
 		``{
 		y2milestone( "dev %1 ignore %2 use_disk %3 ro %4", dev, 
-		             ignore_disk(dev,disk), use_disk, 
+		             ignore_disk(dev,disk,false), use_disk, 
 			     disk["readonly"]:false );
-		if( !ignore_disk(dev,disk) && use_disk == "" && 
+		if( !ignore_disk(dev,disk,false) && use_disk == "" && 
 		    !disk["readonly"]:false && find( dev, "/dev/" )==0 )
 		    {
 		    use_disk = dev;
