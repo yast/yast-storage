@@ -3292,6 +3292,16 @@ global define void ChangeLineFstab( map entry )
     AsciiFile::RewriteFile( fstab, tabpath );
     };
 
+global define string CdromMntops()
+    ``{
+    return( "fs=cdfss,ro,procuid,nosuid,exec" );
+    }
+
+global define string FloppyMntops()
+    ``{
+    return( "fs=floppyfss,procuid,nodev,nosuid,sync" );
+    }
+
 global define map MakeCdromFstabEntry( map cd )
     ``{
     map entry = $[];
@@ -3299,7 +3309,7 @@ global define map MakeCdromFstabEntry( map cd )
     string media = "/media/"+substring(cdmount,5);
 
     entry = $[ "spec":cdmount, "mount":media, "vfstype":"subfs",
-	       "mntops":"fs=cdfss,ro,procuid,nosuid,exec", 
+	       "mntops": CdromMntops(),
 	       "freq":0, "passno":0];
     if( Storage::SaneConsoleEncoding() != "iso8859-1" &&
         Storage::SaneConsoleEncoding() != "iso8859-15" &&
@@ -3720,6 +3730,49 @@ global define map GetBootPartition( string disk )
 global define void UpdateFstab( string oldv, string newv )
     ``{
     y2milestone( "UpdateFstab old:%1 new:%2", oldv, newv );
+    list<string> o = filter( string e, splitstring( oldv, " " ), ``(size(e)>0));
+    list<string> n = filter( string e, splitstring( newv, " " ), ``(size(e)>0));
+    y2milestone( "oldv = %1 newv = %2", o, n );
+    if( o[2]:""=="9.0" || tointeger( o[2]:"" )<9 )
+	{
+	y2milestone( "updating subfs for cdrom and floppy" );
+	string tabpath = PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	while( line<=AsciiFile::NumLines( fstab ) )
+	    {
+	    map l = AsciiFile::GetLine( fstab, line );
+	    if( find( l["fields",1]:"", "/media/floppy" )==0 )
+		{
+		AsciiFile::ChangeLineField( fstab, line, 2, "subfs" );
+		AsciiFile::ChangeLineField( fstab, line, 3, FloppyMntops() );
+		}
+	    else if( find( l["fields",1]:"", "/media/cdrom" )==0 ||
+	             find( l["fields",1]:"", "/media/dvd" )==0 ||
+	             find( l["fields",1]:"", "/media/cdrecorder" )==0 ||
+	             find( l["fields",1]:"", "/media/dvdrecorder" )==0 ||
+	             find( l["fields",1]:"", "/cdrom" )==0 ||
+	             find( l["fields",1]:"", "/dvd" )==0 ||
+	             find( l["fields",1]:"", "/cdrecorder" )==0 ||
+	             find( l["fields",1]:"", "/dvdrecorder" )==0 ) 
+		{
+		AsciiFile::ChangeLineField( fstab, line, 2, "subfs" );
+		list<string> opts = splitstring( l["fields",3]:"", "," );
+		opts = filter( string e, opts, ``(size(e)>0 ));
+		y2milestone( "old opts %1", opts );
+		opts = filter( string e, opts, 
+		               ``(!contains( ["noauto","ro","user","exec"], e )));
+		y2milestone( "old opts %1", opts );
+		string nopts = CdromMntops();
+		if( size(opts)>0 )
+		    nopts = nopts + "," + mergestring( opts, "," );
+		y2milestone( "new opts %1", opts );
+		AsciiFile::ChangeLineField( fstab, line, 3, nopts );
+		}
+	    line = line+1;
+	    }
+	AsciiFile::RewriteFile( fstab, tabpath );
+	}
     }
 
 }
