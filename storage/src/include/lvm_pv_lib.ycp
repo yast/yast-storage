@@ -382,27 +382,45 @@ define symbol check_pv_delete( map<string,map> targetMap, string id, string curr
     map partition  = Storage::GetPartition( targetMap, 
                                             Storage::GetDeviceName(maindev, tointeger(subdev)) );
 
-    y2debug( "part %1 current_vg: %2", partition, current_vg );
+    y2milestone( "check_pv_delete part %1 current_vg: %2", partition, current_vg );
 
     //new partition should be deleted -> check size for volume group
     //total size of volume group  
     integer vg_siz = (integer)get_vg_size( get_possible_pvs(targetMap), 
                                            current_vg, `integer );
-    y2debug( "vg_size : %1", vg_siz);
+    y2milestone( "check_pv_delete vg_size : %1", vg_siz);
 
     //used size (sum logical partitions)
     list<map> parts = get_lvs_and_mounted_partitions( targetMap, false, current_vg );
-    y2debug( "parts=%1 current_vg=%2", parts, current_vg );
+    y2milestone( "check_pv_delete parts=%1 current_vg=%2", parts, current_vg );
 	    
     integer used_size = (integer)select( get_lv_size_info( targetMap, parts, current_vg ) , 0, 0);
+
+    y2milestone( "check_pv_delete vg_pvs:%1", filter( map p, get_possible_pvs(targetMap), 
+                                      ``(p["lvm_group"]:""==current_vg)) );
+    integer num_pvs = size( filter( map p, get_possible_pvs(targetMap),
+				    ``(p["lvm_group"]:""==current_vg)));
+    y2milestone( "check_pv_delete num_pvs:%1", num_pvs );
+    if( num_pvs<=1 )
+	{
+	// message popup
+	Popup::Error(_("You cannot remove the last PV from a volume group.
+You have to delete the volume group completely instead.
+"));
+	y2milestone( "check_pv_delete `nodelete" );
+	return `nodelete;
+	}
+	
 	
     // size of the seleted partition
     integer bytes_of_part = 0;
     integer nb_cyl = partition["region",1]:0;
 	
     bytes_of_part = nb_cyl * targetMap[maindev,"cyl_size"]:1000000; 
-	
-    if( vg_siz - bytes_of_part < used_size)
+
+    y2milestone( "check_pv_delete used_size %1 bytes_of_part %2", used_size, bytes_of_part );
+
+    if( used_size>0 && vg_siz - bytes_of_part < used_size)
 	{
 	// message popup
 	Popup::Error(_("If you remove the selected partition from the volume group,
@@ -410,9 +428,10 @@ there will not be enough space for all logical volumes in this group.
 To delete the volume group completely, remove its
 logical volumes first.
 "));
+	y2milestone( "check_pv_delete `nodelete" );
 	return `nodelete;
 	}
-	    
+    y2milestone( "check_pv_delete `delete" );
     return `delete;
     }
     
