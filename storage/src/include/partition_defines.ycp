@@ -286,8 +286,16 @@
 		{
 		    if( mount == "swap")
 			{
-			// to translators: * Format partition hda3 700 MB (for swap)
-			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (for %3)"), device, psize, mount ));
+			if( !diskinfo["is_lvm_vg"]:false )
+			    {
+			    // to translators: * Format partition hda3 700 MB (for swap)
+			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (for %3)"), device, psize, mount ));
+			    }
+			else
+			    {
+			    // to translators: * Format LV swap in VG system 700 MB (for swap)
+			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4)"), part["nr"]:"", substring(disk,5), psize, mount ));
+			    }
 			}
 		    else
 			{
@@ -299,7 +307,7 @@
 			else
 			    {
 			    // to translators: * format LV var in VG system 700 MB (for /var with ext2)
-			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1 in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
+			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
 			    }
 			}
 		}
@@ -407,7 +415,7 @@
      ``{
 	 if( all_mountpoints == [] || all_mountpoints == nil  )
 	 {
-	     all_mountpoints =  FileSystems::system_m_points;
+	     all_mountpoints =  FileSystems::suggest_m_points;
 	 }
 
 
@@ -428,56 +436,6 @@
 
 	 return( not_used_mountpoints );
      };
-
-
-    /*---------------------------------------------------------------------
-     * At the moment with a pdisk-formated disk you cannot
-     * create partitions
-     *------------------------------------
-     * in: current disk, `warn_not | `warn_delete | `warn_create
-     * out true | false
-     *---------------------------------------------------------------------
-     */
-
-      global define check_pdisk( map curr_disk, symbol warn )
-	``{
-	      if (filter (`pentry, lookup( curr_disk, "partitions", []),
-			  ``(lookup (pentry, "type", `empty) == `pdisk))
-		  != [] )
-	      {
-		  // This disk has an non-fdisk partition scheme
-		  // only mount-point
-		  if ( warn == `warn_delete )
-		  {
-		      Report::Warning (_("This disk has pdisk partitions.
-
-There is nothing wrong with that, but, at the moment, YaST2 cannot
-delete these partitions. It can only mount them.
-"));
-		  }
-		  else  if ( warn == `warn_create )
-		  {
-		      Report::Warning (_("This disk has pdisk partitions.
-
-There is nothing wrong with that, but, at the moment, YaST2 cannot
-create these partitions. It can only mount them.
-
-A way around this is to use an empty disk without any partitions.
-Then YaST2 can also create and delete partitions.
-"));
-		  }
-		  else  if ( warn == `warn_create )
-		  {
-		      // dont warn
-		  }
-
-		  return true;
-	      }
-	      else
-	      {
-		  return false;
-	      }
-	  };
 
 
     /*---------------------------------------------------------------------
@@ -961,7 +919,7 @@ global define integer GetModifyIdx( map modify_targets, map new )
 		boolean do_format = lookup (pentry, "format", false);
 		if (!lookup (pentry, "delete", false)) {		// only those which aren't deleted
 		    y2debug("Partition: %1", pentry);
-		    if ( mountpoint == "/boot" && type != `pdisk )
+		    if ( mountpoint == "/boot" )
 		    {
 			boot_pentry = pentry;
 			change ( boot_pentry, "fsid", Partitions::fsid_prep_chrp_boot );

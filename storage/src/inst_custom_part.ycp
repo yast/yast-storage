@@ -1016,9 +1016,6 @@ define FillPartitionList ()
 	 // Now we come to the partitions ...
 
 	 list partitions = disk["partitions"]:[];
-	 boolean     pdisk_disk      = check_pdisk( disk, `warn_not );
-	 if( pdisk_disk )
-	     Partitions::no_fsid_menu = true;
 
 	 foreach( `partition, partitions,
 	     ``{
@@ -1174,19 +1171,18 @@ define FillPartitionList ()
       * @parm disk a map with the disk data  CAUTION: in Edit-Mode, the edited partition, must not be in this map!!
       * @parm bsd_label
       * @parm edit_size flag
-      * @parm pdisk_disk
       * @parm cyl_size
       * @return map modified partition or nil by cancel
       */
 global define EditOrCreatePartDlg( map cur_val, map file_systems, string title,
                                    string dev, map disk, boolean bsd_label, 
-				   boolean edit_size, boolean pdisk_disk, 
-				   integer cyl_size, boolean installation  )
+				   boolean edit_size, integer cyl_size, 
+				   boolean installation  )
 
     ``{
     boolean create      	= cur_val["create"]:false;
 
-    string helptextCR = getEditOrCreateHelptext( cur_val, !pdisk_disk );
+    string helptextCR = getEditOrCreateHelptext( cur_val, true );
 
     //////////////////////////////////////////////////////////////////////
     // Now create "main" dialog with all elements needed
@@ -1349,8 +1345,7 @@ Use ReiserFS on larger partitions.
 	     //  user changed fsid of existing partition
 	     symbol par_type = cur_val["type"]:`empty;
 	     y2milestone( "par_type %1", par_type );
-	     if( !pdisk_disk &&
-		 retval["fsid"]:0 != cur_val["fsid"]:0 &&
+	     if( retval["fsid"]:0 != cur_val["fsid"]:0 &&
 		 (par_type==`primary||par_type==`logical||par_type==`extended)&&
 		 !haskey( cur_val, "change_fsid") && 
 		 !retval["create"]:false )
@@ -2396,258 +2391,240 @@ global define ChoosePart( string usage )
 
 	    symbol  create_type = `none;
 	    map     curr_disk   = Storage::GetMainDev( maindev );
-	    boolean pdisk_disk  = false;
 
-	    ///////////////////////////////////////////////////////
-	    // At the moment with a pdisk-formated disk you cannot
-	    // create partitions: check it ...
+	    list possibilities = CheckCreatePossibilities( maindev, curr_disk );
 
-           
-	    pdisk_disk = check_pdisk( curr_disk, `warn_create );
-	    
+	    boolean primary_is_possible  = select( possibilities, 0, false );
+	    boolean extended_is_possible = select( possibilities, 1, false );
+	    boolean logical_is_possible  = select( possibilities, 2, false );
 
+	    symbol  no_primary_cause     = select( possibilities, 3, `no_space );
+	    symbol  no_extended_cause    = select( possibilities, 4, `no_space );
+	    symbol  no_logical_cause     = select( possibilities, 5, `no_space );
 
-	    ///////////////////////////////////////////////////////
-	    // If we have a no pdisk-disk and we have a current disk
-	    // lets start ....
+	    list log_slot = [];
+	    list p_e_slot = [];
 
-	    if (  !pdisk_disk )
-            {
-                list possibilities = CheckCreatePossibilities( maindev, curr_disk );
+	    //////////////////////////////////////////////////////////
+	    // Test if there is space left on the device
+	    log_slot = GetLogicalSlot(maindev, curr_disk);
+	    p_e_slot = GetSlot(maindev, curr_disk);
 
-                boolean primary_is_possible  = select( possibilities, 0, false );
-                boolean extended_is_possible = select( possibilities, 1, false );
-                boolean logical_is_possible  = select( possibilities, 2, false );
+	    if ((log_slot == nil) && logical_is_possible ) no_logical_cause     = `no_space;
+	    if ((p_e_slot == nil) && primary_is_possible ) no_primary_cause     = `no_space;
+	    if ((p_e_slot == nil) && extended_is_possible) no_extended_cause    = `no_space;
 
-		symbol  no_primary_cause     = select( possibilities, 3, `no_space );
-		symbol  no_extended_cause    = select( possibilities, 4, `no_space );
-		symbol  no_logical_cause     = select( possibilities, 5, `no_space );
-
-                list log_slot = [];
-                list p_e_slot = [];
-
-                //////////////////////////////////////////////////////////
-                // Test if there is space left on the device
-		log_slot = GetLogicalSlot(maindev, curr_disk);
-		p_e_slot = GetSlot(maindev, curr_disk);
-
-                if ((log_slot == nil) && logical_is_possible ) no_logical_cause     = `no_space;
-                if ((p_e_slot == nil) && primary_is_possible ) no_primary_cause     = `no_space;
-                if ((p_e_slot == nil) && extended_is_possible) no_extended_cause    = `no_space;
-
-                if (log_slot == nil) logical_is_possible  = false;
-                if (p_e_slot == nil) primary_is_possible  = false;
-                if (p_e_slot == nil) extended_is_possible = false;
+	    if (log_slot == nil) logical_is_possible  = false;
+	    if (p_e_slot == nil) primary_is_possible  = false;
+	    if (p_e_slot == nil) extended_is_possible = false;
 
 
 
-                /*----------------------------------------------------------------------
-		*   Intel/Fdisk  PPC/Fdisk
-		*
-                *   At the same time is not possible, that both "logial_part_is_possible"
-                *   and "extended_part_is_possible" are true
-                *   so we have 6 possible situations
-                *
-                *   to show this we use
-                *   "P" for primary_part_is_possible
-                *   "E" for extended_part_is_possible
-                *   "L" for logial_part_is_possible
-                *
-                *   "p" for primary_part_is_possible  == false
-                *   "e" for extended_part_is_possible == false
-                *   "l" for logial_part_is_possible  == false
-                *
-                *
-                *   PE  : I can create a primary or exended part.
-                *   PL  : Extended part. exist. I can create a primary or a logical
-                *   Pel : only a priary is possible, when the extended part. has no space left
-                *
-                *   pE  : Not possible, if "E" is possible always "P" is possible too.
-                *   pL  : only a logical is possible, if together 4 primary and extended
-                *          partitions are already created
-                *   pel : no partitions are possible
-		*
-		*   --------------------------------------------------------------------
-		*
-		*   BSD-Labeling:
-                *   "Pel" for primary_part_is_possible
-                *   "pel" for primary_part_is_possible  == false
-		*
-                *--------------------------------------------------------------------------*/
+	    /*----------------------------------------------------------------------
+	    *   Intel/Fdisk  PPC/Fdisk
+	    *
+	    *   At the same time is not possible, that both "logial_part_is_possible"
+	    *   and "extended_part_is_possible" are true
+	    *   so we have 6 possible situations
+	    *
+	    *   to show this we use
+	    *   "P" for primary_part_is_possible
+	    *   "E" for extended_part_is_possible
+	    *   "L" for logial_part_is_possible
+	    *
+	    *   "p" for primary_part_is_possible  == false
+	    *   "e" for extended_part_is_possible == false
+	    *   "l" for logial_part_is_possible  == false
+	    *
+	    *
+	    *   PE  : I can create a primary or exended part.
+	    *   PL  : Extended part. exist. I can create a primary or a logical
+	    *   Pel : only a priary is possible, when the extended part. has no space left
+	    *
+	    *   pE  : Not possible, if "E" is possible always "P" is possible too.
+	    *   pL  : only a logical is possible, if together 4 primary and extended
+	    *          partitions are already created
+	    *   pel : no partitions are possible
+	    *
+	    *   --------------------------------------------------------------------
+	    *
+	    *   BSD-Labeling:
+	    *   "Pel" for primary_part_is_possible
+	    *   "pel" for primary_part_is_possible  == false
+	    *
+	    *--------------------------------------------------------------------------*/
 
-                if ( !primary_is_possible  && !extended_is_possible && !logical_is_possible )
-                {
-                    // ------pel--------
-		    string text = "";
+	    if ( !primary_is_possible  && !extended_is_possible && !logical_is_possible )
+	    {
+		// ------pel--------
+		string text = "";
 
-		    if (  bsd_label )
-		    {
-			text = sformat( _("It is not possible to create a partition on %1 "), maindev);
-		    }
-		    else
-		    {
-			text = sformat( _("It is not possible to create a partition on %1
+		if (  bsd_label )
+		{
+		    text = sformat( _("It is not possible to create a partition on %1 "), maindev);
+		}
+		else
+		{
+		    text = sformat( _("It is not possible to create a partition on %1
 
 %2
 "), maindev,
-					   FormatYouCannotCause( primary_is_possible,  extended_is_possible,   logical_is_possible,
-								 no_primary_cause,     no_extended_cause,      no_logical_cause  ));
-		    }
-                    UI::WarningPopup(text);
-                }
-                else if ( !primary_is_possible  && logical_is_possible )
-                {
-                    //------pL----------
-                    create_type = `logical;
-                }
-                else if ( !primary_is_possible  && extended_is_possible )
-                {
-                    //------pE----------
-                    create_type = `extended;
+				       FormatYouCannotCause( primary_is_possible,  extended_is_possible,   logical_is_possible,
+							     no_primary_cause,     no_extended_cause,      no_logical_cause  ));
+		}
+		UI::WarningPopup(text);
+	    }
+	    else if ( !primary_is_possible  && logical_is_possible )
+	    {
+		//------pL----------
+		create_type = `logical;
+	    }
+	    else if ( !primary_is_possible  && extended_is_possible )
+	    {
+		//------pE----------
+		create_type = `extended;
 
-                }
-                else if ( primary_is_possible  && !extended_is_possible && !logical_is_possible )
-                {
-                    //------Pel----------
-                    create_type = `primary;
-                }
-                else if ( primary_is_possible  && extended_is_possible )
-                {
-                    //------PE----------
-                    create_type = ChoosePart("PE");   // maindev
-                }
-                else if ( primary_is_possible  && logical_is_possible )
-                {
-                    //------PL----------
-                    create_type = ChoosePart("PL");     // popup
-                }
-                else
-                {
-                    y2error("Error during partition check" );
-                    create_type = ChoosePart("PEL");   // popup
-                }
+	    }
+	    else if ( primary_is_possible  && !extended_is_possible && !logical_is_possible )
+	    {
+		//------Pel----------
+		create_type = `primary;
+	    }
+	    else if ( primary_is_possible  && extended_is_possible )
+	    {
+		//------PE----------
+		create_type = ChoosePart("PE");   // maindev
+	    }
+	    else if ( primary_is_possible  && logical_is_possible )
+	    {
+		//------PL----------
+		create_type = ChoosePart("PL");     // popup
+	    }
+	    else
+	    {
+		y2error("Error during partition check" );
+		create_type = ChoosePart("PEL");   // popup
+	    }
 
-                if ( create_type != `none )
-                {
-                    list    partitions = lookup( curr_disk, "partitions", []);
-                    integer curr_nr    = 0;
-                    list    base       = [];
-		    list    slot       = [];
+	    if ( create_type != `none )
+	    {
+		list    partitions = lookup( curr_disk, "partitions", []);
+		integer curr_nr    = 0;
+		list    base       = [];
+		list    slot       = [];
 
-                    // search for the first possible dev nr
-                    if ( create_type == `primary || create_type == `extended || create_type == `logical )
-                    {
-                        if ( create_type == `primary || create_type == `extended)
-                        {
-			    if ( !bsd_label )
-			    {
-				base = [1,2,3,4];
-			    }
-			    else
-			    {
-				base = [1,2,4,5,6,7,8];
-			    }
-			    slot = p_e_slot;
-                        }
-                        else  // logical
-                        {
-                            base = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,
-                                    40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64];
-			    slot = log_slot;
-                        }
-
-                        //----------------------------------------------------------
-                        // dev_nb List of numbers of  extende an primary partitions
-                        // result: list of all free primaty|extended partition numbers
-
-
-                        list dev_nb = maplist( `part, filter( `pa, partitions, ``(lookup( pa, "delete", false) == false)), ``(lookup( part, "nr", 0) ));
-                        list result = filter( `base_nr, base, ``( find(`nr, dev_nb, ``(nr == base_nr)) == nil));
-
-                        curr_nr = select( sort( result ), 0, 0 );
-                    }
-
-
-                    //---------------------------------------------------------------------------------------
-                    // Present the Create-Popups ...
-                    //---------------------------------------------------------------------------------------
-
-                    string titleC = "";
-		    // %1 and %3 are not neccecary anymore, dur to the translation, i have not changed it.
-                    // Popup Create Partition: Description of partition %1 and %3 are free space,  %2 is for example "/dev/hda3"
-                    if ( create_type == `primary )  titleC =  sformat( _("%1 Create a primary partition on %2 %3"),   "", maindev, "" );
-                    // Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
-                    if ( create_type == `extended ) titleC =  sformat( _("%1 Create an extended partition on %2 %3"), "", maindev, "" );
-                    // Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
-                    if ( create_type == `logical )  titleC =  sformat( _("%1 Create a logical partition on %2 %3"),   "", maindev, "" );
-
-		    map new_val = $[
-				    "create"	: true,
-				
-				    "region" 	: [
-						   select(slot, 0, 0),
-						   select(slot, 1, 0) - select(slot, 0, 0)+1 ],
-				    "type"	: create_type,
-				    "crypt_fs"	: false,
-				    "crypt_key" : "",
-				    "nr"	: curr_nr,
-				    "device"	: Storage::GetDeviceName( maindev, curr_nr )
-		    ];
-
-
-                    if ( create_type == `extended )
-                    {
-			new_val = union( new_val , $[
-						     "fsid"	: Partitions::fsid_extended_win,
-						     "used_fs"	: `unknown,
-						     "fstype"   : "Extended"
-						     ]);
-
-                        new_val = CreateEditExtendedPartDlg(new_val,
-							    titleC,
-							    maindev,
-							    curr_disk,
-							    lookup( curr_disk, "cyl_size", 1000000),
-							    false,
-							    bsd_label );
-                    }
-                    else
-                    {
-			string mount_point_proposal = GetMountPointProposal( Storage::GetTargetMap() , [] );
-			symbol used_fs = `reiser;
-			if (mount_point_proposal == "/boot")
+		// search for the first possible dev nr
+		if ( create_type == `primary || create_type == `extended || create_type == `logical )
+		{
+		    if ( create_type == `primary || create_type == `extended)
+		    {
+			if ( !bsd_label )
 			{
-			    used_fs = `ext2;
+			    base = [1,2,3,4];
 			}
-			new_val = union( new_val , $[
-						     "format" 	: true,
-						     "fsid"	: Partitions::fsid_native,
-						     "mount"	: mount_point_proposal,
-						     "used_fs"	: used_fs,
-						     ] );
+			else
+			{
+			    base = [1,2,4,5,6,7,8];
+			}
+			slot = p_e_slot;
+		    }
+		    else  // logical
+		    {
+			base = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,
+				40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64];
+			slot = log_slot;
+		    }
+
+		    //----------------------------------------------------------
+		    // dev_nb List of numbers of  extende an primary partitions
+		    // result: list of all free primaty|extended partition numbers
 
 
-			new_val = EditOrCreatePartDlg( new_val,
-						       FileSystems::GetAllFileSystems(true, true ),
-						       titleC,
-						       maindev,
-						       curr_disk,
-						       bsd_label,
-						       edit_cylinder,
-						       pdisk_disk,
-						       lookup( curr_disk, "cyl_size", 1000000),
-						       Mode::initial
-						     );
-                    }
+		    list dev_nb = maplist( `part, filter( `pa, partitions, ``(lookup( pa, "delete", false) == false)), ``(lookup( part, "nr", 0) ));
+		    list result = filter( `base_nr, base, ``( find(`nr, dev_nb, ``(nr == base_nr)) == nil));
 
-                    if (new_val != nil)
-                    {
-			// set focus to new partition
-			focusline = Storage::GetSubDevKey( maindev , curr_nr );
-			Storage::AddSubDev(focusline,  new_val );
-                    }
-                }
-            }
+		    curr_nr = select( sort( result ), 0, 0 );
+		}
+
+
+		//---------------------------------------------------------------------------------------
+		// Present the Create-Popups ...
+		//---------------------------------------------------------------------------------------
+
+		string titleC = "";
+		// %1 and %3 are not neccecary anymore, dur to the translation, i have not changed it.
+		// Popup Create Partition: Description of partition %1 and %3 are free space,  %2 is for example "/dev/hda3"
+		if ( create_type == `primary )  titleC =  sformat( _("%1 Create a primary partition on %2 %3"),   "", maindev, "" );
+		// Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
+		if ( create_type == `extended ) titleC =  sformat( _("%1 Create an extended partition on %2 %3"), "", maindev, "" );
+		// Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
+		if ( create_type == `logical )  titleC =  sformat( _("%1 Create a logical partition on %2 %3"),   "", maindev, "" );
+
+		map new_val = $[
+				"create"	: true,
+			    
+				"region" 	: [
+					       select(slot, 0, 0),
+					       select(slot, 1, 0) - select(slot, 0, 0)+1 ],
+				"type"	: create_type,
+				"crypt_fs"	: false,
+				"crypt_key" : "",
+				"nr"	: curr_nr,
+				"device"	: Storage::GetDeviceName( maindev, curr_nr )
+		];
+
+
+		if ( create_type == `extended )
+		{
+		    new_val = union( new_val , $[
+						 "fsid"	: Partitions::fsid_extended_win,
+						 "used_fs"	: `unknown,
+						 "fstype"   : "Extended"
+						 ]);
+
+		    new_val = CreateEditExtendedPartDlg(new_val,
+							titleC,
+							maindev,
+							curr_disk,
+							lookup( curr_disk, "cyl_size", 1000000),
+							false,
+							bsd_label );
+		}
+		else
+		{
+		    string mount_point_proposal = GetMountPointProposal( Storage::GetTargetMap() , [] );
+		    symbol used_fs = `reiser;
+		    if (mount_point_proposal == "/boot")
+		    {
+			used_fs = `ext2;
+		    }
+		    new_val = union( new_val , $[
+						 "format" 	: true,
+						 "fsid"	: Partitions::fsid_native,
+						 "mount"	: mount_point_proposal,
+						 "used_fs"	: used_fs,
+						 ] );
+
+
+		    new_val = EditOrCreatePartDlg( new_val,
+						   FileSystems::GetAllFileSystems(true, true ),
+						   titleC,
+						   maindev,
+						   curr_disk,
+						   bsd_label,
+						   edit_cylinder,
+						   curr_disk["cyl_size"]:1000000,
+						   Mode::initial
+						 );
+		}
+
+		if (new_val != nil)
+		{
+		    // set focus to new partition
+		    focusline = Storage::GetSubDevKey( maindev , curr_nr );
+		    Storage::AddSubDev(focusline,  new_val );
+		}
+	    }
         }
 
       ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2697,16 +2674,12 @@ global define ChoosePart( string usage )
 		map curr_disk      = Storage::GetMainDev( maindevkey );
 
 	
-		//////////////////////////////////////////////////////////////////////////////
-		// check if it is a pdisk disk, then editing is restricted
-		boolean pdisk_disk = check_pdisk( curr_disk, `warn_not );
-
 		map  curr_part      = Storage::GetSubDev( id );
 
 		
 
 		
-		//////////////////////////////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
                 // check if the partition can be deleted
 		
 		if(  check_partition_edit( maindevkey,  curr_part, bsd_label) != `edit )
@@ -2770,7 +2743,7 @@ WARNING: All data on this partition will be lost.
 						  "/dev/md" + subdevindex,
 						  curr_part,
 						  Mode::initial,
-						  FileSystems::GetAllFileSystems( false, true ),
+						  FileSystems::GetAllFileSystems( true, true ),
 						  false,
 						  Storage::GetTargetMap()
 						  );
@@ -2797,8 +2770,7 @@ WARNING: All data on this partition will be lost.
 						      disk_without_current,
 						      bsd_label,
 						      edit_cylinder,
-						      pdisk_disk ,
-						      lookup( curr_disk, "cyl_size", 1000000),
+						      curr_disk["cyl_size"]:1000000,
 						      Mode::initial
 						      );
 		    }
@@ -2875,7 +2847,6 @@ WARNING: All data on this partition will be lost.
 		// check if the partition can be deleted
 		
 		symbol ret_delete = check_partition_delete( maindevkey, curr_disk , curr_part, bsd_label,
-							    true,  // pdisk_check
 							    true,  // bsd_check
 							    true,  // lvm_check
 							    true ,

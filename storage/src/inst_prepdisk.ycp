@@ -405,8 +405,7 @@ global define symbol UpdateProgressBar(integer percent)
 
   // 0b. Do any necessary lvm preparation
 
-    SCR::Write(Storage::SaveDumpPath("targetMap_p1"), Storage::GetTargetMap() );
-    if ( size(modify_targets) > 0 )
+    if( size(modify_targets) > 0 )
 	{
         // activate lvm
 	SCR::Write( .lvm.activate, "" );
@@ -491,7 +490,6 @@ damage to your file systems, it is safer to cancel and reboot.
 
     y2milestone("running_swap: %1", running_swap);
 
-    SCR::Write(Storage::SaveDumpPath("targetMap_p2"), Storage::GetTargetMap() );
     foreach (`tdevice, `target, Storage::GetTargetMap(),
 	``{
 	if (cancel)
@@ -648,7 +646,7 @@ Repartition disk %1."),
 		boolean change_fsid = pentry["change_fsid"]:false;
 		symbol type = pentry["type" ]:`unknown;
 
-		if ( change_fsid  &&  type != `pdisk  )
+		if( change_fsid )
 		    {
 		    integer ori_fsid = pentry["ori_fsid"]:0;
 		    integer fsid     = pentry["fsid"]:0;
@@ -756,63 +754,8 @@ Please repeat the installation with another swap partition selected
 	SCR::Write( .md.activate, "" );
 	}
 
-    SCR::Write(Storage::SaveDumpPath("targetMap_p3"), Storage::GetTargetMap() );
-    if ( this_is_for_real )
-    {
-	// 2. Create and use swap devices
-	foreach (`swaplist, swap_devices,
-	``{
-	    y2milestone( "swap %1", swaplist );
-	    string swapdev = select (swaplist, 0, "/dev/null");
-
-	    if( !contains( Storage::SwappingPartitions(), swapdev ) )
-		{
-		boolean format_swap = swaplist[1]:false;
-		string label = "";
-		if( format_swap )
-		    {
-		    label = sformat(_("Formatting %1 as swap"), swapdev );
-		    }
-		else
-		    {
-		    label = sformat(_("Activating %1 for swap"), swapdev );
-		    }
-		UI::ChangeWidget(`id(`progress), `Label, label );
-
-		if (swaplist[1]:false == true)		// format == yes ?
-		   {
-		   if( SCR::Execute (.target.bash, "/sbin/mkswap "+ swapdev) != 0 )
-		      {
-		      Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
-		      }
-		   else
-		      {
-		      map tg = Storage::GetTargetMap();
-		      tg = Storage::DelPartitionData( tg, swapdev, "create" );
-		      Storage::SetTargetMap(tg);
-		      }
-		   }
-		if (0 != SCR::Execute (.target.bash, "/sbin/swapon "+swapdev))
-		   {
-		   Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
-		   }
-		else
-		   {
-		   activatedswaps = add (activatedswaps, swapdev);
-		   }
-		}
-	});
-
-	// 2.1 only 5% buffer vm
-
-//	SCR::Execute (.target.bash, "/bin/echo 5 > /proc/sys/vm/bdflush"));
-    }
-
-    SCR::Write(Storage::SaveDumpPath("targetMap_p4"), Storage::GetTargetMap() );
-    y2milestone( "Swap created and activated %1", this_is_for_real);
-
-    // 3a. Do any necessary RAID preparation
-    if ( this_is_for_real && md_active )
+    // 2a. Do any necessary RAID preparation
+    if( this_is_for_real && md_active )
 	{
         map tg = Storage::GetTargetMap();
 	if( size( filter( `part,  tg["/dev/md","partitions"]:[], 
@@ -856,7 +799,7 @@ Please repeat the installation with another swap partition selected
 	    }
 	}
 
-    // 3b. Do any necessary lvm preparation
+    // 2b. Do any necessary lvm preparation
     // activate lvm, cause if I only use a existing LV, I need to activate it 
     // here
     if ( num_lvm_vg > 0 )
@@ -912,8 +855,55 @@ damage to your file systems, it is safer to cancel and reboot.
 	    }
 	} while(retry);
 
-    // 4. Create filesystems
+    if( this_is_for_real )
+	{
+	// 3. Create and use swap devices
+	foreach (`swaplist, swap_devices,
+	    ``{
+	    y2milestone( "swap %1", swaplist );
+	    string swapdev = select (swaplist, 0, "/dev/null");
 
+	    if( !contains( Storage::SwappingPartitions(), swapdev ) )
+		{
+		boolean format_swap = swaplist[1]:false;
+		string label = "";
+		if( format_swap )
+		    {
+		    label = sformat(_("Formatting %1 as swap"), swapdev );
+		    }
+		else
+		    {
+		    label = sformat(_("Activating %1 for swap"), swapdev );
+		    }
+		UI::ChangeWidget(`id(`progress), `Label, label );
+
+		if (swaplist[1]:false == true)		// format == yes ?
+		   {
+		   if( SCR::Execute (.target.bash, "/sbin/mkswap "+ swapdev) != 0 )
+		      {
+		      Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
+		      }
+		   else
+		      {
+		      map tg = Storage::GetTargetMap();
+		      tg = Storage::DelPartitionData( tg, swapdev, "create" );
+		      Storage::SetTargetMap(tg);
+		      }
+		   }
+		if (0 != SCR::Execute (.target.bash, "/sbin/swapon "+swapdev))
+		   {
+		   Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
+		   }
+		else
+		   {
+		   activatedswaps = add (activatedswaps, swapdev);
+		   }
+		}
+	    });
+	}
+    y2milestone( "Swap created and activated %1", this_is_for_real);
+
+    // 4. Create filesystems
     cancel = false;
     retry = false;
 
@@ -1163,33 +1153,34 @@ your file systems, it is safer to cancel and reboot.
 	    });
 	});
 
-// some mkfs failed, go back
-if ( cancel )
-{
-    doswapoff(activatedswaps);
-    losetup_d(activatedLoopDevices);
-    restoretargetmap();
-    return `back;
-}
+    // some mkfs failed, go back
+    if ( cancel )
+	{
+	doswapoff(activatedswaps);
+	losetup_d(activatedLoopDevices);
+	restoretargetmap();
+	return `back;
+	}
 
 
-SCR::Write(Storage::SaveDumpPath("targetMap_p6"), Storage::GetTargetMap() );
-// 5. Mount "/" and "/boot" and all other targets with mountpoints
+    // 5. Mount "/" and "/boot" and all other targets with mountpoints
 
-// now select all native partitions with a mountpoint
-// and put them in a map. This ensures lexical ordering.
-map mountPoints = $[];
+    // now select all native partitions with a mountpoint
+    // and put them in a map. This ensures lexical ordering.
+    map mountPoints = $[];
 
-foreach (`tdevice, `target, Storage::GetTargetMap(),
+    foreach (`tdevice, `target, Storage::GetTargetMap(),
 	``{
 	foreach (`part, target["partitions"]:[],
 	    ``{
-	    string partitionName = Storage::GetDeviceName( tdevice, part["nr"]:0 );
+	    string partitionName = part["device"]:0;
+	    boolean running_system_create_part = 
+		!installation && part["create"]:false;
+	    boolean running_system_remound_part = 
+		!installation && contains( remountPartitions, partitionName );
 
-	    boolean running_system_create_part  = !installation && part["create"]:false;
-	    boolean running_system_remound_part = !installation && contains( remountPartitions, partitionName );
-
-	    if ( installation || running_system_create_part || running_system_remound_part )
+	    if( installation || running_system_create_part || 
+	        running_system_remound_part )
 	    {
 	    string mountPoint = part["mount"]:"";
 
@@ -1207,13 +1198,13 @@ foreach (`tdevice, `target, Storage::GetTargetMap(),
 	    });  // foreach (partition)
 	}); // foreach (tdevice)
 
-SCR::Write(Storage::SaveDumpPath("targetMap_p7"), Storage::GetTargetMap() );
-y2milestone("MountPoints: %1",mountPoints);
-//UI::MessagePopup("mount " );
+    y2milestone("MountPoints: %1",mountPoints);
+    //UI::MessagePopup("mount " );
 
-y2milestone( "Enable automatic module loading for mount");
-if ( installation )
-    SCR::Execute (.target.bash, "/bin/echo \"/sbin/modprobe\" >/proc/sys/kernel/modprobe");
+    y2milestone( "Enable automatic module loading for mount");
+    if ( installation )
+	SCR::Execute( .target.bash, 
+	              "/bin/echo \"/sbin/modprobe\" >/proc/sys/kernel/modprobe");
 
     if ( this_is_for_real )
 	{

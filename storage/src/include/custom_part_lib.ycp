@@ -148,11 +148,11 @@ global define scanAndReadExistingFstab( map targetMap, map file_systems )
    */
    global define check_lvm_mount_points( string mount ) ``{
 
-       list not_allowed_lvm_mount_points  = [ "/boot", "/" , "swap" ];
+       list not_allowed_lvm_mount_points  = [ "/boot" ];
        y2milestone( " check lvm mount");
        if( contains(  not_allowed_lvm_mount_points , mount ))
        {
-	   UI::ErrorPopup(_("You cannot use the mount points \"/boot\", \"/\", and \"swap\" for LVM.\n"));
+	   UI::ErrorPopup(_("You cannot use the mount point \"/boot\" for LVM.\n"));
 
 	    return false;
 	}
@@ -167,12 +167,11 @@ global define scanAndReadExistingFstab( map targetMap, map file_systems )
    **/
     global define check_raid_mount_points( string mount )
     ``{
-	list not_allowed_raid_mount_points  = [ "/boot", "swap" ];
+	list not_allowed_raid_mount_points  = [ "/boot" ];
 	y2milestone( " check raid mount");
-	if( contains(  not_allowed_raid_mount_points , mount ))
+	if( contains( not_allowed_raid_mount_points, mount ))
 	{
-	    UI::ErrorPopup(_("You cannot use the mount points /boot and swap for RAID.
-"));
+	    UI::ErrorPopup(_("You cannot use the mount point /boot for RAID."));
 
 	    return false;
 	}
@@ -417,9 +416,7 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
 				selected_fs[`mountpoints]:[] );
 	if( new["type"]:`primary == `lvm )
 	    {
-	    not_used_mp = filter( `mp, not_used_mp,
-				  ``( mp != "/"  && mp != "swap" && 
-				      mp != "/boot" ));
+	    not_used_mp = filter( `mp, not_used_mp, ``( mp != "/boot" ));
 	    }
 	if(mount == "swap")
 	    new["mount"] = "";
@@ -462,6 +459,8 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	boolean format = UI::QueryWidget(`id(`format), `CurrentButton) == 
 	                 `format_true;
 
+	boolean old_format = new["format"]:false;
+
 	////////////////////////////////////////////////
 	// format partition
 	new["format"] = format;
@@ -477,6 +476,21 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	    {
 	    UI::ChangeWidget( `id(`fsid_point), `Enabled, !format);
 	    }
+
+	if( old_format != format && format )
+	    {
+	    symbol dfs = UI::QueryWidget(`id(`fs), `Value);
+	    map selected_fs = file_systems[dfs]:$[];
+	    new["used_fs"] = dfs;
+	    HandleFsChanged( init, new, file_systems );
+	    new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
+	    if( UI::WidgetExists( `id(`fsid_point) ))
+		{
+		UI::ChangeWidget( `id(`fsid_point), `Value, 
+				  selected_fs[`fsid_item]:"");
+		}
+	    }
+
 	if( !format )
 	    {
 	    new["fs_options"] = $[];

@@ -54,8 +54,8 @@
     map     targetMap      = Storage::GetTargetMap();
     map     modify_targets = Storage::GetModifyTargets();
     
-    list    lvm_vgs      = get_vgs(  targetMap );
-    list    parts 	 = get_possible_pvs(    targetMap );
+    list    lvm_vgs      = get_vgs( targetMap );
+    list    parts 	 = get_possible_pvs( targetMap );
     list    table 	 = get_pv_widget_table( parts );
 
 
@@ -111,7 +111,7 @@
     symbol ret = `next;
 
     repeat
-    {
+	{
 	/////////////////////////////////////////////////////////////////
 	// Show the current state:
 	parts 	 = get_possible_pvs(    targetMap );
@@ -119,25 +119,24 @@
 	UI::ChangeWidget( `id(`pv_table), `Items, table);
 
 	if( current_vg != nil )
-	{
+	    {
 	    string vg_size_str = get_vg_size( parts, current_vg , `string );
 	    y2debug( "**** %1", vg_size_str );
 	    UI::ChangeWidget( `id(`pv_size), `Value, vg_size_str );
-	}
+	    }
 	
 
-        UI::SetFocus( `id(`pv_table));
+        UI::SetFocus(`id(`pv_table));
 
-	if ( id != "" )
-	{
+	if( id != "" )
+	    {
 	    UI::ChangeWidget( `id(`pv_table), `CurrentItem, id);
-	}
+	    }
 
         /////////////////////////////////////////////////////////////////
         // Wait for User input
 
 
-	
 	ret= Wizard::UserInput();
 	y2milestone("#################### EE %1", ret);
 
@@ -146,80 +145,79 @@
 	// toggle between pv_add and pv_delete 
 	////////////////////////////////////////
 
-	if ( ret ==  `pv_table )
-	{
+	if( ret ==  `pv_table )
+	    {
 	    id = UI::QueryWidget(`id(`pv_table), `CurrentItem);
 
-	    if ( isItemPv(id) )
-	    {
+	    if( isItemPv(id) )
+		{
 		ret = `pv_delete;
-	    }
+		}
 	    else
-	    {
+		{
 		ret = `pv_add;
+		}
 	    }
-	}
 	
 
 	////////////////////////////////////////
 	// user has changed the current volume group
 	////////////////////////////////////////
 	
-	if ( ret == `vg )
-	{
+	if( ret == `vg )
+	    {
 	    current_vg = UI::QueryWidget( `id(`vg), `Value);
 	    y2milestone("TTT %1", current_vg );
-	}
+	    }
 
         ////////////////////////////////////////
         // Add a new volume group:
         ////////////////////////////////////////
 
-        if ( ret == `vg_add_vg  )
-        {
+        if( ret == `vg_add_vg  )
+	    {
             any addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
 
             // has the user cancelled the dialog?
-            if ( ! lookup(addVG, "cancelled", false) )
-            {
-                targetMap       = lookup( addVG, "targets", $[] );
-                modify_targets  = lookup( addVG, "modify_targets", $[] );
-                lvm_vgs         = lookup( addVG, "lvm_vgs", [] );
-                current_vg      = lookup( addVG, "current_vg", "none" );
-            }
-        }
+            if( !addVG["cancelled"]:false )
+		{
+                targetMap       = addVG["targets"]:$[];
+                modify_targets  = addVG["modify_targets"]:$[];
+                lvm_vgs         = addVG["lvm_vgs"]:[];
+                current_vg      = addVG["current_vg"]:"none";
+		}
+	    }
 
 
 	////////////////////////////////////////
 	// Remove volume group:
 	////////////////////////////////////////
 	
-	if ( ret == `vg_remove_vg && current_vg != nil )
-	{
-	integer count = size(get_lv_names(targetMap, current_vg));
-	if( count > 0 )
+	if( ret == `vg_remove_vg && current_vg != nil )
 	    {
-	    // Message popup
-	    UI::MessagePopup(sformat(_("The volume group \"%1\" contains %2 
+	    integer count = size(get_lv_names(targetMap, current_vg));
+	    if( count > 0 )
+		{
+		// Message popup
+		UI::MessagePopup(sformat(_("The volume group \"%1\" contains %2 
 logical volumes. It cannot be removed. Remove all logical volumes and 
 remove the volume group afterwards."), current_vg, count));
-
-	    }
-	else
-	    {
-	    if( UI::ContinueCancelPopup ( _("Do you really want to remove the current volume group?")))
+		}
+	    else
 		{
+		if( UI::ContinueCancelPopup ( _("Do you really want to remove the current volume group?")))
+		    {
 		    y2milestone( " remove " );
-		    map ret = removeVolumeGroup( current_vg, targetMap, lvm_vgs, modify_targets );
-		    y2milestone( " remove 1");
-		    targetMap       = lookup( ret, "targets", $[] );
-		    modify_targets  = lookup( ret, "modify_targets", $[] );
-		    lvm_vgs  	    = lookup( ret, "lvm_vgs", [] );
-		    current_vg      = lookup( ret, "current_vg", "none" );
+		    map ret = removeVolumeGroup( current_vg, targetMap, 
+		                                 lvm_vgs, modify_targets );
+		    targetMap       = ret["targets"]:$[];
+		    modify_targets  = ret["modify_targets"]:$[];
+		    lvm_vgs  	    = ret["lvm_vgs"]:[];
+		    current_vg      = ret["current_vg"]:"none";
 		    y2milestone( " current_vg 11 %1 " , current_vg );
+		    }
 		}
 	    }
-	}
 
 
 	////////////////////////////////////////
@@ -227,68 +225,61 @@ remove the volume group afterwards."), current_vg, count));
 	////////////////////////////////////////
 	
 	
-	if ( ret == `pv_add && current_vg != nil )
-	{
+	if( ret == `pv_add && current_vg != nil )
+	    {
 	    id = UI::QueryWidget(`id(`pv_table), `CurrentItem);
 	    y2debug( "WWW ID ADD GROUP %1", id);
 	    
-	    if ( id!=nil && CheckItemIsNotPv(id) )
-	    {
-		any addPV = addPhysicalVolume( modify_targets, targetMap, id,  current_vg );
+	    if( id!=nil && CheckItemIsNotPv(id) )
+		{
+		any addPV = addPhysicalVolume( modify_targets, targetMap, 
+		                               id, current_vg );
             
 		// has an error occured
-		if ( ! lookup(addPV, "error", false) )
-		{
-		    targetMap      = lookup( addPV, "targets", $[] );
-		    modify_targets  = lookup( addPV, "modify_targets", $[] );
+		if( !addPV["error"]:false )
+		    {
+		    targetMap      = addPV["targets"]:$[];
+		    modify_targets  = addPV["modify_targets"]:$[];
+		    }
 		}
 	    }
-	}
 
 	////////////////////////////////////////
 	// Delete a new physical volume:
 	////////////////////////////////////////
 	
-	if ( ret == `pv_delete  &&  current_vg != nil)
-	{
+	if( ret == `pv_delete && current_vg != nil )
+	    {
 	    id = UI::QueryWidget(`id(`pv_table), `CurrentItem);
 
-	    if( id!=nil )
+	    if( id!=nil && CheckItemIsPv(id) )
 		{
 		string vg = lookup( Storage::IdFromTarget( targetMap, id ),
 				    "lvm_group", "" );
 		y2debug( "vg=%1", vg );
 
-		symbol ret_check_pv_delete = check_pv_delete( targetMap, id,  vg );
-		if( ret_check_pv_delete == `nodelete )
+		if( check_pv_delete( targetMap, id, vg ) == `nodelete )
 		    {
 		    continue;
 		    }
-		else if( ret_check_pv_delete == `immediate_prepdisk )
-		    {
-		    Storage::immediate_prepdisk = true;
-		    y2milestone("immediate_prepdisk = true");
-		    }
 	    
-		if ( CheckItemIsPv(id) )
+		any deletePV = removePhysicalVolume( modify_targets, targetMap,
+		                                     id, vg );
+		// has an error occured
+		if( !deletePV["error"]:false )
 		    {
-		    any deletePV = removePhysicalVolume( modify_targets, targetMap, id, vg );
-		    // has an error occured
-		    if ( ! lookup(deletePV, "error", false) )
-		    {
-			targetMap      = lookup( deletePV, "targets", $[] );
-			modify_targets  = lookup( deletePV, "modify_targets", $[] );
+		    targetMap      = deletePV["targets"]:$[];
+		    modify_targets  = deletePV["modify_targets"]:$[];
 		    }
 		}
 	    }
-	}
 
 	
 	////////////////////////////////////////
 	// Finish this step
 	////////////////////////////////////////
 	
-	if (ret == `next || ret == `back )
+	if( ret == `next || ret == `back )
 	    {
 	    if( ret == `next && get_vgs( targetMap ) ==  [] )
 		{

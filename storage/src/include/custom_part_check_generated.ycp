@@ -216,6 +216,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
     integer boot_end             = 0;
     integer root_end             = 0;
     boolean root_raid            = false;
+    boolean root_lvm             = false;
     boolean jfs_found            = false;
     boolean xfs_found            = false;
     symbol  root_fs              = `unknown;
@@ -324,7 +325,8 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		{
 		    root_found = true;
 		    root_end   = part["region",0]:0 + part["region",1]:1-1;
-		    if( part["raid_type"]:"" != "" || part["is_lvm_vg"]:false )
+		    if( size(part["raid_type"]:"")>0 ||
+		        part["type"]:`unknown==`lvm )
 		      {
 		      // root_end does not have anything to do with physical cylinders
 		      root_end = 0;
@@ -333,6 +335,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		    root_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
 		    
 		    if ( id_sw_raid_dev ) root_raid = true;
+		    if ( part["type"]:`unknown==`lvm ) root_lvm = true;
 		}
 		else if ( mountpoint == "/boot" )
 		{
@@ -416,13 +419,12 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		    whole_disk = false;
 		}
 
-		if ( fsid == Partitions::fsid_native
-		     && lookup( part, "mount", nil )   != nil
-		     && substring( lookup( part, "mount", ""), 0, 1 ) == "/"
-		     &&            lookup( part, "format", false  ) == false )
-		{
+		if ( !part["format"]:false &&
+		     contains( FileSystems::system_m_points, 
+		               part["mount"]:"" ) )
+		    {
 		    partition_mounted_but_not_formated = true;
-		}
+		    }
 
 	    }
 	});
@@ -653,12 +655,30 @@ Do you want to change this?
 	    if (ret == true) retval = `again;
 	}
 
-	if ( root_raid || show_all_popups )
+	if ( (root_raid && !boot_found) || show_all_popups )
 	{
 	    boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux
 installation might not be directly bootable, because
 you have no \"boot\" partition, and your \"root\" partition is RAID.
 LILO sometimes fails in this configuration.
+
+Do you want to change this?
+"));
+
+	    if (ret == true) retval = `again;
+	}
+
+	if ( (root_lvm && !boot_found) || show_all_popups )
+	{
+	    boolean ret = UI::YesNoPopup(_(
+"Warning: With your current setup, your SuSE Linux installation 
+may encounter problems when booting, because you have no \"boot\" 
+partition, and your \"root\" partition is a LVM logical volume. 
+There are certain restrictions on LVM usage when you want to boot 
+from it.
+
+If you do not know exactly what you are doing, use a normal 
+partition for your files below /boot.
 
 Do you want to change this?
 "));
@@ -764,25 +784,13 @@ Please remove it from the volume group before you edit it."),lookup( curr_part, 
     
     
     global define check_partition_delete( string dev, map curr_disk , map curr_part,  boolean bsd_label  ,
-					  boolean c_pdisk,
 					  boolean c_bsd,
 					  boolean c_lvm,
 					  boolean c_raid,
 					  boolean installation )
 	``{
 
-	string part_name = dev + sformat("%1",  lookup( curr_part,  "nr", 0 ));
-
-	if( c_pdisk )
-	{
-	    ///////////////////////////////////////////////////////
-	    // At the moment with a pdisk-formated disk you cannot
-	    // create/delete partitions: check it ...
-	    
-	    if ( check_pdisk( curr_disk, `warn_delete ) )    // also makes a popup!
-		return `no_delete;
-	}
-
+	string part_name = curr_part["device"]:"";
 
 	if( c_bsd )
 	{

@@ -42,12 +42,13 @@
     //
     //  out: "10.6 GB"
      
-    global define get_vg_size( list partition_list, string current_vg, symbol `what )
+global define get_vg_size( list partition_list, string current_vg, 
+                           symbol `what )
     ``{
-	integer sum_byte = vg_size( partition_list, current_vg );
-	if( what == `string )
-	    return( ByteToHumanStringWithZero( sum_byte ));
-	return sum_byte;
+    integer sum_byte = vg_size( partition_list, current_vg );
+    if( what == `string )
+	return( ByteToHumanStringWithZero( sum_byte ));
+    return sum_byte;
     };
 		
 	 
@@ -152,7 +153,7 @@ global define removePhysicalVolume( map modify_targets, map targetMap,
     string subdev  = Storage::GetSubDevIndex(id); // i.e. 1        for /dev/hda1
 
     map partition  = Storage::GetPartition( targetMap, 
-                                            Storage::GetDeviceName(maindev, subdev) );
+                                            Storage::GetDeviceName(maindev, tointeger(subdev)) );
 
     if( partition["change_fsid"]:false )
 	{
@@ -166,7 +167,7 @@ global define removePhysicalVolume( map modify_targets, map targetMap,
 
     partition = filter( `key, `val, partition, ``( key != "lvm_group" ));
 
-    targetMap = Storage::SetPartition( targetMap, maindev, partition );
+    targetMap = Storage::SetPartition( targetMap, partition );
 
     map new_remove_pv = $[
 			  "use_module" : "lvm_ll",
@@ -399,15 +400,15 @@ global define check_pv_delete( map targetMap, string id, string current_vg )
     string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
     string subdev  = Storage::GetSubDevIndex(id); // i.e. 1        for /dev/hda1
     map partition  = Storage::GetPartition( targetMap, 
-                                            Storage::GetDeviceName(maindev, subdev) );
+                                            Storage::GetDeviceName(maindev, tointeger(subdev)) );
 
     y2debug( "part %1 current_vg: %2", partition, current_vg );
 
     //new partition should be deleted -> check size for volume group
     //total size of volume group  
-    integer vg_size = get_vg_size( get_possible_pvs(targetMap), current_vg,
-                                   `integer );
-    y2debug( "vg_size : %1", vg_size);
+    integer vg_siz = get_vg_size( get_possible_pvs(targetMap), current_vg,
+                                  `integer );
+    y2debug( "vg_size : %1", vg_siz);
 
     //used size (sum logical partitions)
     list parts = get_lvs_and_mounted_partitions( targetMap, false, current_vg );
@@ -421,7 +422,7 @@ global define check_pv_delete( map targetMap, string id, string current_vg )
 	
     bytes_of_part = nb_cyl * targetMap[maindev,"cyl_size"]:1000000; 
 	
-    if( vg_size - bytes_of_part < used_size)
+    if( vg_siz - bytes_of_part < used_size)
 	{
 	UI::ErrorPopup(_("If you remove the selected partition from the volume group,
 there will not be enough space for all logical volumes in this group.
