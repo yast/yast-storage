@@ -31,12 +31,12 @@ public:
   /**
    * Writes data.
    */
-  YCPValue Write(const YCPPath& path, const YCPValue& value, const YCPValue& arg = YCPNull());
+  YCPBoolean Write(const YCPPath& path, const YCPValue& value, const YCPValue& arg = YCPNull());
 
   /**
    * Get a list of all subtrees.
    */
-  YCPValue Dir(const YCPPath& path);
+  YCPList Dir(const YCPPath& path);
 protected:
   YCPMap CreateMdMap( const MdInfo& Md_Cv );
   MdAccess *Md_pC;

@@ -161,7 +161,7 @@ YCPMap LvmAgent::CreatePvMap( const PvInfo& Pv_Cv )
     return( PvMap_Ci );
     }
 
-YCPValue
+YCPBoolean
 LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 		 const YCPValue& arg )
     {
@@ -173,7 +173,7 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
     if (path->length() < 1)
 	{
 	y2error("Path '%s' has incorrect length", path->toString().c_str());
-	return YCPVoid();
+	return YCPBoolean(false);
 	}
 
     string conf_name = path->component_str(0);
@@ -557,10 +557,10 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 	{
 	y2error( "unknown or readonly path %s", path->toString().c_str());
 	}
-    return YCPVoid();
+    return YCPBoolean(false);
     }
 
-YCPValue LvmAgent::Dir(const YCPPath& path)
+YCPList LvmAgent::Dir(const YCPPath& path)
 {
   return YCPList();
 }

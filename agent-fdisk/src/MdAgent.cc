@@ -92,7 +92,7 @@ MdAgent::CreateMdMap( const MdInfo& Md_Cv )
     return( Map_Ci );
     }
 
-YCPValue
+YCPBoolean
 MdAgent::Write(const YCPPath& path, const YCPValue& value,
                const YCPValue& arg)
     {
@@ -101,7 +101,7 @@ MdAgent::Write(const YCPPath& path, const YCPValue& value,
     if (path->length() < 1)
         {
         y2error("Path '%s' has incorrect length", path->toString().c_str());
-        return YCPVoid();
+        return YCPBoolean(false);
         }
     string conf_name = path->component_str(0);
     YCPBoolean ret(true);
@@ -144,10 +144,10 @@ MdAgent::Write(const YCPPath& path, const YCPValue& value,
 	{
 	y2error( "unknown or readonly path %s", path->toString().c_str());
 	}
-    return YCPVoid();
+    return YCPBoolean(false);
     }
 
-YCPValue MdAgent::Dir(const YCPPath& path)
+YCPList MdAgent::Dir(const YCPPath& path)
 {
   return YCPList();
 }

@@ -178,7 +178,7 @@ typedef set<Created_partition, std::less<Created_partition> > CPart_set;
 // <command> is always the last part of 'path'
 //
 
-YCPValue
+YCPBoolean
 FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& arg)
 {
   y2milestone("FdiskAgent::Write(%s, %s, %s)", path->toString().c_str(),
@@ -209,7 +209,7 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
   if (path->length() < 2)
     {
       y2error("Path '%s' has incorrect length", path->toString().c_str());
-      return YCPVoid();
+      return YCPBoolean(false);
     }
 
   int i = 0;
@@ -460,10 +460,10 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
     {
       y2error("unknown or readonly path %s", path->toString().c_str());
     }
-  return YCPVoid();
+  return YCPBoolean(false);
 }
 
-YCPValue FdiskAgent::Dir(const YCPPath& path)
+YCPList FdiskAgent::Dir(const YCPPath& path)
 {
   return YCPList();
 }
