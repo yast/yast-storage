@@ -166,6 +166,9 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 
     term contents = `Dummy();
 
+    boolean custom_val = (Storage::GetPartMode() == "CUSTOM");
+    y2milestone( "custom_val %1", custom_val );
+
     if( size(targetMap) > 0) 
 	{
 	if (test_mode) 
@@ -178,30 +181,56 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 
 	term buttonbox = `VBox();
 
-	integer i = 0;
-	foreach( string tname, map tdata, targetMap, 
-	    ``{
-	    if( Storage::IsRealDisk( tname, tdata ))
-		{
-		string tlinename = tdata["name"]:"?";
-		string tline = "&" + (i+1) + ":    " + tlinename;
-		boolean sel = Storage::GetPartDisk()==tname && 
-		              Storage::GetPartMode()!="CUSTOM";
-		buttonbox = add( buttonbox, 
-		                 `Left(`RadioButton(`id(tname), tline, sel )));
-		i = i + 1;
-		}
-	    });
+	integer dskcnt = size( filter( string d, map e, targetMap,
+	                               ``(Storage::IsRealDisk( d, e ))));
+	y2milestone( "dskcnt %1", dskcnt );
+
+	if( dskcnt>10 )
+	    {
+	    integer i = 1;
+	    list disklist = [];
+	    foreach( string tname, map tdata, targetMap, 
+		``{
+		if( Storage::IsRealDisk( tname, tdata ))
+		    {
+		    disklist = add( disklist, 
+				    `item(`id(tname), 
+					  sformat( "%1: %2", i, tname )));
+		    i = i + 1;
+		    }
+		});
+	    buttonbox = add( buttonbox,
+			     `SelectionBox(`id(`disklist), `opt(`notify),
+			                   _("Available &disks"),
+					   disklist ));
+	    }
+	else
+	    {
+	    integer i = 1;
+	    foreach( string tname, map tdata, targetMap, 
+		``{
+		if( Storage::IsRealDisk( tname, tdata ))
+		    {
+		    string tlinename = tdata["name"]:"?";
+		    string tline = "&" + i + ":    " + tlinename;
+		    boolean sel = Storage::GetPartDisk()==tname && 
+				  !custom_val;
+		    buttonbox = add( buttonbox, 
+				     `Left(`RadioButton(`id(tname), tline, sel )));
+		    i = i + 1;
+		    }
+		});
+	    }
 
 	buttonbox = add(buttonbox, `VSpacing(0.8) );
 	// Check box for expert partitioning mode rather than
 	// just selecting one of the hard disks and use
 	// a standard partitioning scheme
 	buttonbox = 
-	    add(buttonbox, `Left(`RadioButton(`id("CUSTOM"),
+	    add(buttonbox, `Left(`RadioButton(`id("CUSTOM"), `opt(`notify),
 	                         // label text
 				 _("&Custom partitioning -- for experts"),
-				 ((Storage::GetPartMode() == "CUSTOM") ))));
+				 custom_val )));
     
 	// This dialog selects the target disk for the installation.
 	// Below this label, all targets are listed that can be used as 
@@ -260,32 +289,66 @@ partitions to mount points when installing SuSE Linux.
     if ( Mode::initial )
 	Wizard::SetTitleIcon( "idetune" );
     
-    symbol ret = nil;
+    if( UI::WidgetExists( `id(`disklist)) && !custom_val )
+	{
+	UI::ChangeWidget( `id(`disklist), `CurrentItem, Storage::GetPartDisk());
+	}
+    any ret = nil;
 
     // Event handling
 
     any option = nil;
 
+    symbol sym = `none;
+
     repeat
 	{
-	ret = (symbol)Wizard::UserInput();
+	ret = Wizard::UserInput();
 
-	if( ret == `abort && Popup::ConfirmAbort(`painless) )
+
+	y2milestone( "ret %1", ret );
+
+	if( is( ret, string) && (string)ret == "CUSTOM" )
+	    {
+	    UI::ChangeWidget( `id(`disklist), `CurrentItem, "" );
+	    //UI::ChangeWidget( `id("CUSTOM"), `Value, true );
+	    custom_val = !custom_val;
+	    }
+
+	sym = `none;
+	if( is( ret, symbol))
+	    {
+	    sym = (symbol)ret;
+	    }
+
+	if( sym == `disklist )
+	    {
+	    y2milestone( "set CUSTOM false" );
+	    UI::ChangeWidget( `id("CUSTOM"), `Value, false );
+	    }
+
+	if( sym == `abort && Popup::ConfirmAbort(`painless) )
 	    return `abort;
 	
-	if( ret == `next ) 
+	if( sym == `next ) 
 	    {
 	    option = UI::QueryWidget(`id(`options), `CurrentButton);
 	    y2milestone( "option %1", option );
 	    if( option == nil ) 
 		{
-		// there is a selection from that one option has to be 
-		// chosen - at the moment no option is chosen
-		Popup::Message(_("Select one of the options to continue."));
-		ret = `again;
-		continue;
+		string disk = (string)UI::QueryWidget(`id(`disklist), `CurrentItem);
+		if( find( disk, "/dev/" ) == 0 )
+		    option = disk;
+		else
+		    {
+		    // there is a selection from that one option has to be 
+		    // chosen - at the moment no option is chosen
+		    Popup::Message(_("Select one of the options to continue."));
+		    ret = `again;
+		    continue;
+		    }
 		}
-	    else if (substring((string)option,0,5) == "/dev/" )
+	    if (substring((string)option,0,5) == "/dev/" )
 		{
 		if( targetMap[(string)option,"readonly"]:false )
 		    {
@@ -326,7 +389,11 @@ partitions to mount points when installing SuSE Linux.
 
 	    } // if (ret == next)
 	
-	} until ( ret == `next || ret == `back || ret == `cancel );
-    Storage::SaveExitKey( ret );
-    return ret;
+	} until ( sym == `next || sym == `back || sym == `cancel );
+    if( sym != `next )
+	{
+	Storage::SetPartMode( "SUGGESTION" );
+	}
+    Storage::SaveExitKey( sym );
+    return sym;
 }
