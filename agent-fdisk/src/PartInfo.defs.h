@@ -81,6 +81,7 @@ struct PartInfo
   {
     PType_e = PAR_TYPE_LINUX;
     Blocks_l = Id_i = Num_i = Start_i = End_i = 0;
+    Boot_b = false;
   }
   PartitionType PType_e;
   string Device_C;
@@ -91,6 +92,7 @@ struct PartInfo
   unsigned Start_i;
   unsigned End_i;
   unsigned long Blocks_l;
+  bool Boot_b;
   bool operator ==(const PartInfo& Rhs_rv)
   {
     return (Start_i == Rhs_rv.Start_i &&

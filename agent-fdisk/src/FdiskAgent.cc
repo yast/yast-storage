@@ -111,6 +111,10 @@ FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
 	  part_entry->add (YCPString ("nr"), YCPInteger (entry->Num_i));
 	  part_entry->add (YCPString ("fsid"), YCPInteger (entry->Id_i));
 	  part_entry->add (YCPString ("fstype"), YCPString (entry->Info_C));
+	  if( entry->Boot_b )
+	    {
+	    part_entry->add (YCPString("boot"), YCPBoolean(entry->Boot_b));
+	    }
 	  YCPList region;
 	  region->add (YCPInteger (entry->Start_i-1));
 	  region->add (YCPInteger (entry->End_i + 1 - entry->Start_i));

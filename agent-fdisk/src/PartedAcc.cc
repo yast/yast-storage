@@ -322,6 +322,7 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
     Part_rr.PType_e = PAR_TYPE_LINUX;
     Part_rr.Id_i = PART_ID_LINUX_NATIVE;
     Part_rr.Info_C = "";
+    Part_rr.Boot_b = Type_Ci.find( ",boot," ) != string::npos;
     string OrigType_Ci = Type_Ci;
     for( string::iterator i=Type_Ci.begin(); i!=Type_Ci.end(); i++ )
 	{
