@@ -211,7 +211,8 @@ DiskAccess::GetPartDeviceName(int Num_iv, string Disk_Cv)
 {
   string Ret_Ci = Disk_Cv;
   if (Disk_Cv.find("/dev/cciss/") == 0 || Disk_Cv.find("/dev/ida/") == 0 ||
-      Disk_Cv.find("/dev/ataraid/") == 0 || Disk_Cv.find("/dev/rd/") == 0)
+      Disk_Cv.find("/dev/ataraid/") == 0 || Disk_Cv.find("/dev/rd/") == 0 ||
+      Disk_Cv.find("/dev/etherd/") == 0 )
       Ret_Ci += "p";
   Ret_Ci += dec_string(Num_iv);
   return Ret_Ci;
