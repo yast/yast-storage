@@ -10,7 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ycp/y2log.h>
-#include <y2/ExternalDataSource.h>
+#include <y2util/ExternalDataSource.h>
 
 #include "Reiser_Partition.h"
 
