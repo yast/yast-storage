@@ -9,7 +9,7 @@ INCLUDES = -I$(includedir)
 noinst_PROGRAMS = runfdisk
 runfdisk_SOURCES = runfdisk.cc
 
-runfdisk_LDADD = -lscr -ly2 -lycp -lcrypt
+runfdisk_LDADD = -lscr -ly2 -lycp
 runfdisk_LDFLAGS = -L$(libdir)	\
 	-Xlinker --whole-archive	\
 	$(plugindir)/libpy2stdio.la	\
