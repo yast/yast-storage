@@ -1,0 +1,108 @@
+/**
+ * File:
+ *   lvm_config.ycp
+ *
+ * Module:
+ *    configuration of lvm in installed system
+ * Summary:
+ *
+ * Authors:
+ *   mike <mike@suse.de>
+ *
+ * $Id$
+ *
+ */
+
+
+{
+
+textdomain "storage";
+
+import "Label";
+import "FileSystems";
+import "Wizard";
+import "Package";
+
+include "wizard/sequencer.ycp";
+include "partitioning/custom_part_testdata.ycp";
+include "partitioning/partition_defines.ycp";
+include "partitioning/lvm_ui_dialogs.ycp";
+
+/////////////////////////////////////////////////////////////////////
+//                          WORKFLOW                               //
+/////////////////////////////////////////////////////////////////////
+
+define symbol Dummy_NextStep()
+    ``{
+    Popup::ContinueCancel( Label::NextButton() );
+    return( `next );
+    }
+
+map Aliases = $[
+    "config_ui"            : ``(WFM::CallFunction("lvm_config_ui")),
+    "apply_prepdisk"    : ``(WFM::CallFunction("inst_prepdisk")),
+    "finish_prepdisk"   : ``(WFM::CallFunction("inst_prepdisk"))
+    ];
+
+map dummy_Aliases = $[
+    "config_ui"            : ``(WFM::CallFunction("lvm_config_ui")),
+    "apply_prepdisk"    : ``(Dummy_NextStep() ),
+    "finish_prepdisk"   : ``(Dummy_NextStep() )
+    ];
+
+map Sequence = $[
+    "ws_start"  : "config_ui",
+
+    "config_ui" : $[ `abort   :	`abort ,
+		     `apply   : "apply_prepdisk",
+		     `finish  : "finish_prepdisk" ],
+    "apply_prepdisk" : $[ `abort   :	`abort ,
+			  `next    : "config_ui" ],
+    "finish_prepdisk": $[ `abort   :	`abort ,
+			  `next    : `end ]
+    ];
+
+
+/////////////////////////////////////////////////////////////////////
+//                                   I N I T                       //
+/////////////////////////////////////////////////////////////////////
+
+
+    //////////////////////////////////////////////////////////////////////
+    // Reset Info about LVM and Partitioning
+    //////////////////////////////////////////////////////////////////////
+
+    Wizard::SetDesktopIcon("lvm_config");
+
+    Storage::SetLvmUse( true );
+
+    //---------------------------------------------------------------
+
+    term diag = 
+	`VBox( `Heading( _("LVM Configuration") ),
+	       `HBox( get_config_content( [], [], [""], "0G", "0G", true )),
+	       `HBox( 
+	              `Left( `PushButton(`id(`help),  Label::HelpButton())),
+		      `Left( `PushButton(`id(`abort), Label::AbortButton())),
+		      // button text
+		      `Right(`PushButton(`id(`apply), _("A&pply"))),
+		      `Right(`PushButton(`id(`finish), Label::FinishButton()))
+		    )
+	     );
+    UI::OpenDialog( `opt(`defaultsize), diag );
+
+    Package::InstallAll( ["lvm2"] );
+
+    /////////////////////////////////////////////////////////////////
+    any result = WizardSequencer (Aliases, Sequence);
+    // any result = WizardSequencer (dummy_Aliases, Sequence);
+    /////////////////////////////////////////////////////////////////////////////////
+
+    if( result == `end )
+	{
+        // popup text
+	Popup::Message (_("All the settings were written and are ready to use."));
+	}
+
+    return UI::CloseDialog();
+}
