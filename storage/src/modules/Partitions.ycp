@@ -375,7 +375,24 @@ global define list CurMounted()
     foreach( `p, mounts, ``{ 
 	if( find( p["spec"]:"", "/dev/loop" )>=0 )
 	    {
-	    string cmd = sformat( "/sbin/losetup %1", p["spec"]:"" );
+	    map r = GetLoopOn( p["spec"]:"" );
+	    if( r["blockdev"]:false )
+		{
+		p["loop_on"] = r["file"]:"";
+		}
+	    }
+	ret = add( ret, p );
+	});
+
+    y2debug( "all mounts %1", ret);
+    return ret;
+    };
+
+
+global define map GetLoopOn( string device )
+    ``{
+    map ret = $[];
+    string cmd = sformat( "/sbin/losetup %1", device );
 	    map bash_call = SCR::Execute (.target.bash_output, cmd, $[] );
 	    if( bash_call["exit"]:1 == 0)
 		{
@@ -386,21 +403,15 @@ global define list CurMounted()
 		    if( find( text, "(" )>0 )
 			{
 			text = substring( text, find( text, "(" )+1 );
+		ret["file"] = text;
 			map stat = SCR::Read( .target.stat, text );
-			if( stat["isblock"]:false )
-			    {
-			    p["loop_on"] = text;
-			    }
+		ret["blockdev"] = stat["isblock"]:false;
 			}
 		    }
 		}
+    y2milestone( "dev %1 ret %2", device, ret );
+    return( ret );
 	    }
-	ret = add( ret, p );
-	});
-
-    y2debug( "all mounts %1", ret);
-    return ret;
-    };
 
 global define map GetFstab( string pathname )
     ``{

@@ -264,14 +264,20 @@ define boolean HandleFormatPartition( map partition )
 
 	y2milestone( "dev:%1 loop_dev %2", device, partition["loop_dev"]:"" );
 
+	boolean loop_match = false;
+
 	if( size(partition["loop_dev"]:"")>0 )
 	    {
-	    SCR::Execute( .target.bash, 
-			  "/sbin/losetup -d " + partition["loop_dev"]:"" );
+	    map r = Partitions::GetLoopOn( partition["loop_dev"]:"" );
+	    loop_match = r["file"]:"" == partition["device"]:"";
+	    if( !loop_match )
+		SCR::Execute( .target.bash, 
+			      "/sbin/losetup -d " + partition["loop_dev"]:"" );
 	    }
+	y2milestone( "loop_match %1", loop_match );
 	///////////////////////////////
 	// CRYPT ?
-	if( crypt_fs || partition["type"]:`none==`loop )
+	if( !loop_match && (crypt_fs || partition["type"]:`none==`loop) )
 	    {
 	    cancel = !Storage::SetCryptLoop( partition );
 	    if( !cancel )
@@ -472,9 +478,13 @@ define map DetermineMountPoints(string disk, map target, map mp )
 	    {
 	    if( mount != "" && mount != "swap" && !part["delete"]:false &&
 	        !part["noauto"]:false &&
-		part["fsid"]:0 != 7 )         // ntfs is read-only anyway.
+		(!installation||part["fsid"]:0 != 7)) // ntfs is read-only anyway.
 		{
 		symbol used_fs = part["used_fs"]:`unknown;
+		if( used_fs == `unknown )
+		    {
+		    used_fs = part["detected_fs"]:`unknown;
+		    }
 		if( part["loop_fs"]:false )
 		    device = part["loop_dev"]:"";
 		mp[mount] = [device, used_fs, disk];
@@ -711,7 +721,8 @@ global define symbol UpdateProgressBar(integer percent)
       foreach( `val, targetMounts,
 	  ``{
           string dev = val["device"]:"";
-	  if( size( filter( `v, mounts, ``(v["spec"]:""==dev) ))==0 )
+	  if( size( filter( `v, mounts, 
+	                    ``(v["spec"]:""==dev||v["loop_on"]:""==dev) ))==0 )
 	      {
 	      remountPartitions = add( remountPartitions, dev );
 	      y2milestone( "remadd:%1 rem:%2", dev, remountPartitions );
