@@ -307,6 +307,7 @@ SystemCmd::AppendTo( string File_Cv, const unsigned Idx_iv )
 	}
     Append_ab[Idx_iv] = true;
     statfs( File_Cv.c_str(), &Buf_ri );
+    Buf_ri.f_bfree = 1;
 #ifdef SYSTEMCMD_VERBOSE_DEBUG
     y2debug( "Statfs File:\"%s\" Free:%d", File_Cv.c_str(), Buf_ri.f_bfree );
 #endif
@@ -504,6 +505,7 @@ SystemCmd::CheckOutput()
 	    Delay( 100000 );
 	    }
 	statfs( FileName_aC[IDX_STDOUT].c_str(), &Buf_ri );
+	Buf_ri.f_bfree = 1;
 #ifdef SYSTEMCMD_VERBOSE_DEBUG
 	y2debug( "File:\"%s\" Free Stdout:%d", FileName_aC[IDX_STDOUT].c_str(),
 	         Buf_ri.f_bfree );
@@ -526,6 +528,7 @@ SystemCmd::CheckOutput()
 			 NewLineSeen_ab[IDX_STDOUT], false );
 	    }
 	statfs( FileName_aC[IDX_STDERR].c_str(), &Buf_ri );
+	Buf_ri.f_bfree = 1;
 	if( Buf_ri.f_bfree == 0 && !Full_bi )
 	    {
 	    if( !Append_ab[IDX_STDERR] && Spec_e!=ST_NO_ABORT )
