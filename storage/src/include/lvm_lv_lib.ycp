@@ -191,7 +191,7 @@ global define editLogicalVolume( map Lv, map modify_targets,
      /////////////////////////////////////////////////
      // change targetMap
 
-     targetMap = Storage::SetPartition( targetMap, "/dev/"+current_vg, Lv );
+     targetMap = Storage::SetPartition( targetMap, Lv );
 
      y2debug("lv_size: %1 ", Lv["lv_size"]:0 );
 
@@ -247,13 +247,8 @@ global define editLogicalVolume( map Lv, map modify_targets,
 	 /////////////////////////////////////////////////
 	 // change targetMap
 
-	 map  disk       = lookup( targetMap, "/dev/"+current_vg, $[] );
-	 list partitions = lookup( disk, "partitions", []  );
-
-	 list new_partitions = filter(`part, partitions,
-				      ``(lookup(part, "nr", "")!=volume_name));
-	 
-	 change( disk, "partitions", new_partitions);
+	 targetMap = Storage::SetPartitionData( targetMap, Lv["device"]:"",
+	                                        "delete", true );
 
 	 y2debug( "createLv: %1", Lv);
 	 y2debug( "modify_targets: %1", modify_targets);
@@ -390,7 +385,8 @@ global define get_lvs_and_mounted_partitions( map targetMap,
     
 global define get_lv_names( map targetMap, string current_vg )
     ``{
-    list part = targetMap["/dev/"+current_vg,"partitions"]:[];
+    list part = filter( `e, targetMap["/dev/"+current_vg,"partitions"]:[],
+                        ``(!e["delete"]:false));
     list ret = maplist( `e, part, ``(e["nr"]:"") );
     return( ret );
     };

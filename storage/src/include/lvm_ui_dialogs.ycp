@@ -21,13 +21,138 @@
 
 textdomain "storage";
 
+import "Mode";
 import "Partitions";
+import "FileSystems";
+import "Storage";
 
 import "Label";
 import "Popup";
+
 include "partitioning/custom_part_lib.ycp";
 include "partitioning/custom_part_dialogs.ycp";
+include "partitioning/lvm_lib.ycp";
+include "partitioning/lvm_lv_lib.ycp";
 include "partitioning/lvm_ui_lib.ycp";
+
+global define map HandleEditLv( map targetMap, map modify_targets, string id )
+    ``{
+    map ret = $[];
+    string maindev = Storage::GetMainDevKey( id);
+    string subdev  = Storage::GetSubDevIndex( id );
+    string device  = Storage::GetDeviceName( maindev, subdev );
+    integer pesize = targetMap[maindev,"cyl_size"]:(4*1024*1024);
+
+    map fs = FileSystems::GetAllFileSystems(true, true);
+    map Lv = Storage::GetPartition( targetMap, device );
+
+    // if Lv is a lvm partition
+    if( size(Lv)>0 )
+	{
+	string tmp_vg = substring( maindev, 5);
+	list size_list = 
+	    get_lv_size_info( targetMap,
+			      get_lvs_and_mounted_partitions( targetMap, false,
+			                                      tmp_vg ), 
+			      tmp_vg );
+	integer max_size    = size_list[1]:0;
+	integer used_size   = size_list[0]:0;
+
+	if( Lv["create"]:false )
+	    {
+	    map createLv = DlgCreateEditLogicaVolume( "edit", Lv, max_size,
+						      tmp_vg, [], fs,
+						      Mode::initial, device,
+						      pesize );
+
+	    // has an error occured
+	    if ( size(createLv)>0 )
+		{
+		ret = editLogicalVolume( createLv, modify_targets, targetMap, 
+		                         tmp_vg );
+		}
+	    }
+	else
+	    {
+	    map createLv = DlgCreateEditLogicaVolume( "resize", Lv, max_size,
+						      tmp_vg, [], fs,
+						      Mode::initial, device,
+						      pesize );
+	    // has an error occured
+	    if ( size(createLv)>0 )
+		{
+		ret = resizeLogicalVolume( createLv, modify_targets, targetMap,
+					   tmp_vg );
+		}
+	    }
+	}
+    y2milestone( "ret %1", ret );
+    return( ret );
+    }
+
+global define map HandleRemoveLv( map targetMap, map modify_targets, string id )
+    ``{
+    map ret = $[];
+    string maindev = Storage::GetMainDevKey(id);
+    string subdev  = Storage::GetSubDevIndex(id );
+    string tmp_vg =  substring( maindev, 5);
+    string device = Storage::GetDeviceName(maindev, subdev);
+    map Lv = Storage::GetPartition( targetMap, device );
+    if( size(Lv)==0 || Lv==nil )
+	{
+	// Popup text
+	Popup::Error(_("You can only remove logical volumes."));
+	}
+    else
+	{
+	// Popup text
+	string message = sformat( _("Remove the logical volume %1?"), 
+	                          device );
+
+	if( Popup::YesNo( message ))
+	    {
+	    y2debug( "Lv:  %1", Lv);
+	    y2debug( "modify_targets:  %1", modify_targets );
+	    y2debug( "targetMap: %1", targetMap);
+	    y2debug( "vgname:  %1", tmp_vg );
+	    any deleteLV = removeLogicalVolume( Lv, modify_targets, targetMap,
+	                                        tmp_vg );
+
+	    // has an error occured
+	    if( !deleteLV["error"]:false )
+		{
+		ret = eval(deleteLV);
+		}
+	    }
+	}
+    return( ret );
+    }
+
+
+global define map HandleRemoveVg( map targetMap, map modify_targets, 
+                                  string current_vg )
+    ``{
+    map ret = $[];
+    integer count = size(get_lv_names(targetMap, current_vg));
+    if( count > 0 )
+	{
+	// Message popup
+	Popup::Message(sformat(
+_("The volume group \"%1\" contains %2 logical volumes. 
+It cannot be removed. Remove all logical volumes and 
+remove the volume group afterwards."), current_vg, count));
+	}
+    else
+	{  
+	// popup text
+	if( Popup::ContinueCancel( sformat( _("Do you really want to remove the volume group \"%1\"?"), current_vg)))
+	    {
+	    y2milestone( " remove " );
+	    ret = removeVolumeGroup( current_vg, targetMap, modify_targets );
+	    }
+	}
+    return( ret );
+    }
 
 global define void handle_max( integer stripe, string max_text )
     ``{

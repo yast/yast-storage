@@ -58,9 +58,9 @@ global define list get_raid_devices( integer raid_nr )
    **/
 global define boolean IsRaidCreated( string device, symbol what )
     ``{
+    boolean created = false;
     if( what != `wizard )
 	{
-	boolean created = false;
 	list partitions = Storage::GetMainDevParam( "/dev/md", "partitions" );
 
 	foreach( `part, partitions, 
@@ -71,22 +71,13 @@ global define boolean IsRaidCreated( string device, symbol what )
 		created = true;
 		}
 	    });
-
-	if ( !created )
-	    {
-	    // popup text
-	    Popup::Message(_("
-You cannot edit or delete an existing 
-RAID with the current version of YaST2.
-"));
-	    }
-
-	return created;
 	}
     else
 	{
-	return true;
+	created = true;
 	}
+    y2milestone( "what %1 created %2", what, created );
+    return( created );
     };
 
 
@@ -551,6 +542,7 @@ global define boolean prepare_raid( map targets, boolean installation )
 	{
 	// create /etc/raidtab if its not already existing,
 	// otherwise change it
+	y2milestone( "size %1", SCR::Read(.target.size, "/etc/raidtab") );
 	if( SCR::Read(.target.size, "/etc/raidtab") == -1 )
 	    {
 	    raidtab = create_raidtab( targets );
@@ -613,8 +605,11 @@ global define boolean prepare_raid( map targets, boolean installation )
 
 	    if( load_success )
 		{
+		string command = sformat ("/sbin/raidstop /dev/md%1", raid_nr );
+		SCR::Execute( .target.bash, command );
+
 		// force !! create raid even  if  they appear to have data on them already.
-		string command = sformat ("/sbin/mkraid -c /etc/raidtab --really-force /dev/md%1", raid_nr);
+		command = sformat ("/sbin/mkraid -c /etc/raidtab --really-force /dev/md%1", raid_nr);
 
 		if( SCR::Execute (.target.bash, command) == 0 )
 		    {
@@ -878,7 +873,6 @@ global define string change_raidtab( map targetMap )
     list raiddev_list = 
 	filter( `line, raidtab_list , ``( issubstring( line, "raiddev")));
 
-    y2debug( " raiddev_list : %1", raiddev_list );
     list r_partitions = all_raid_partitions( targetMap );
     list raids = targetMap["/dev/md","partitions"]:[];
     list raids_del = filter(`raid, raids, ``( raid["delete"]:false ));
@@ -894,29 +888,26 @@ global define string change_raidtab( map targetMap )
 	y2debug( " raiddev_lines : %1", raiddev_lines );
 	//////////////////////////////////////////////////////////////
 	// 1.  remove all raidtab entries for deleted partitions!!
-	if( raid["delete"]:false )
+	if( size( raiddev_lines ) != 0 )
 	    {
-	    if( size( raiddev_lines ) != 0 )
-		{
-		y2debug( " delete one raid entry " );
-		string raiddev_line = raiddev_lines[0]:nilstring;
-		integer start_pos = find( raidtab , raiddev_line );
-		integer end_pos = 0;
+	    y2debug( " delete one raid entry " );
+	    string raiddev_line = raiddev_lines[0]:nilstring;
+	    integer start_pos = find( raidtab , raiddev_line );
+	    integer end_pos = 0;
 
-		list bigger_raiddevs = 
-		    filter( `raiddev, raiddev_list, 
-			    ``( find( raidtab, raiddev) > start_pos ));
+	    list bigger_raiddevs = 
+		filter( `raiddev, raiddev_list, 
+			``( find( raidtab, raiddev) > start_pos ));
 
-		if( size( bigger_raiddevs ) > 0 )
-		    end_pos = find( raidtab, bigger_raiddevs[0]:nilinteger);
-		else end_pos = size( raidtab ) ;
+	    if( size( bigger_raiddevs ) > 0 )
+		end_pos = find( raidtab, bigger_raiddevs[0]:nilinteger);
+	    else end_pos = size( raidtab ) ;
 
-		string new_raidtab = substring( raidtab , 0, start_pos );
-		new_raidtab = new_raidtab + substring( raidtab, end_pos, 
-		                                       size( raidtab ));
-		raidtab = new_raidtab;
-		any_raid_changed = true;
-		}
+	    string new_raidtab = substring( raidtab, 0, start_pos );
+	    new_raidtab = new_raidtab + substring( raidtab, end_pos );
+	    raidtab = new_raidtab;
+	    y2milestone( "raidtab %1", raidtab );
+	    any_raid_changed = true;
 	    }
 	});
 
@@ -925,42 +916,41 @@ global define string change_raidtab( map targetMap )
 			   ``( issubstring( line, "raiddev")));
 
     foreach( `raid, raids, 
-	     ``{
-	     list raiddev_lines = 
-		 filter( `devs, raiddev_list, 
-		         ``( issubstring( devs, raid["device"]:"" )));
+	``{
+	list raiddev_lines = 
+	    filter( `devs, raiddev_list, 
+		    ``( issubstring( devs, raid["device"]:"" )));
 
-	     y2debug( " raiddev_lines : %1", raiddev_lines );
-	     ///////////////////////////////////////////////////////////
-	     // 2.  add new entries
-	     if( size( raiddev_lines ) == 0)
-		 {
-		 y2debug( " add new raid entry " );
-		 string raidentry = onepartition2raidtab( raid, r_partitions );
-		 y2milestone ("change_raidtab raidentry: %1",raidentry);
-		 if( raidentry != "")
-		     {
-		     any_raid_changed = true;
-		     raidtab = raidtab + raidentry;
-		     raidtab = raidtab + "\n";
-		     }
-		 }
-	     else
-		 {
-		 ///////////////////////////////////////////////////////////
-		 // 3.  raid changed -> not supported FIXME
-		 string raidentry = onepartition2raidtab( raid, r_partitions );
-		 y2debug( " (change ) raid entry %1", raidentry);
-		 if( raidentry != "" )
-		     {
-		     // popup text
-		     Popup::Message(_("Content of /etc/raidtab does not match raids known to kernel.
+	y2debug( " raiddev_lines : %1", raiddev_lines );
+	///////////////////////////////////////////////////////////
+	// 2.  add new entries
+	if( size( raiddev_lines ) == 0)
+	    {
+	    y2debug( " add new raid entry " );
+	    string raidentry = onepartition2raidtab( raid, r_partitions );
+	    y2milestone ("change_raidtab raidentry: %1",raidentry);
+	    if( raidentry != "")
+		{
+		any_raid_changed = true;
+		raidtab = raidtab + raidentry + "\n";
+		}
+	    }
+	else
+	    {
+	    ///////////////////////////////////////////////////////////
+	    // 3.  raid changed -> not supported FIXME
+	    string raidentry = onepartition2raidtab( raid, r_partitions );
+	    y2debug( " (change ) raid entry %1", raidentry);
+	    if( raidentry != "" )
+		{
+		// popup text
+		Popup::Message(_("Content of /etc/raidtab does not match raids known to kernel.
 Please remove the obsolete raid entries in /etc/raidtab manually
 and retry creation of your raid in YaST2."));
-		     }
+		}
 
-		 }
-	     });
+	    }
+	});
 
     if (!any_raid_changed)
 	return "";

@@ -180,20 +180,19 @@ create at least one physical volume.
     //////////////////////////////////////////////////////////////////////
     // get a list of all volume groups in the targetMap
     
-    global define get_vgs( map targetMap )
+global define list get_vgs( map targetMap )
     ``{
-	list lvm_vg = [];
+    list lvm_vg = [];
 	
-	foreach( `dev, `devmap, targetMap,
+    foreach( `dev, `devmap, targetMap,
 	``{
-	    if ( devmap["is_lvm_vg"]:false == true )
+	if ( devmap["is_lvm_vg"]:false && !devmap["delete"]:false )
 	    {
-		// add a found volume group
-		lvm_vg = add( lvm_vg, substring(dev, 5) ); 
+	    // add a found volume group
+	    lvm_vg = add( lvm_vg, substring(dev, 5) ); 
 	    }
 	});
-
-	return( lvm_vg );
+    return( lvm_vg );
     };
 
 global define integer vg_size( list partitions, string current_vg )
@@ -284,95 +283,75 @@ global define addVolumeGroup( map targetMap, list lvm_vgs, map modify_targets )
 	    ]);
     };
 
-    //////////////////////////////////////////////////////////////////////
-    // Remove the current volume group  
-    // return: the changed targetMap and lvm_vgs and new current_vg 
+//////////////////////////////////////////////////////////////////////
+// Remove the specified volume group  
+// return: the changed targetMap and modify_targets 
 
-    global define removeVolumeGroup( string current_vg, map targetMap, list lvm_vgs, map modify_targets )
+global define removeVolumeGroup( string current_vg, map targetMap, 
+                                 map modify_targets )
     ``{
-      string old_vg = "/dev/" + current_vg;
-      map new = $[];
-      foreach( `k, `v, targetMap, ``{
-        if( k != old_vg) 
-	    {
-	    list npart = [];
-	    foreach( `p, lookup( v, "partitions", [] ), ``{
-		if( lookup( p, "lvm_group", "" )==current_vg )
-		    {
-		    p = filter( `k1, `v1, p, ``(k1 != "lvm_group") );
-		    }
-	        npart = add( npart, p );
-		});
-	    v = add( v, "partitions", npart );
-	    new = add( new, k, v );
-	    }
-      });
-      lvm_vgs    = get_vgs( new );
-      string  new_vg = nil;
-      if( size( lvm_vgs ) > 0 )
-      {
-	  string new_vg = select( lvm_vgs, 0, "" );
+    string old_vg = "/dev/" + current_vg;
+    map new = $[];
+    foreach( `k, `v, targetMap, 
+	``{
+	list npart = [];
+	foreach( `p, lookup( v, "partitions", [] ), 
+	    ``{
+	    if( lookup( p, "lvm_group", "" )==current_vg )
+		{
+		p = filter( `k1, `v1, p, ``(k1 != "lvm_group") );
+		}
+	    npart = add( npart, p );
+	    });
+	v = add( v, "partitions", npart );
+	new = add( new, k, v );
+	});
 
-	  // Display current vg:
-	  new_vg_list( lvm_vgs );
-	  UI::ChangeWidget( `id(`vg), `Value, current_vg);
-      }
-      else  new_vg_list( [] );
-     
-	  
-      map tmp = filter( `k, `v, modify_targets, ``(
-	lookup( v, "use_module", "" )== "lvm_ll" &&
-	lookup( v, "type", "" ) == "create_vg" &&
-	lookup( v, "vgname", "" ) == current_vg ) );
-      if( size(tmp)>0 )
+    new[old_vg,"delete"] = true;
+	
+    map tmp = filter( `k, `v, modify_targets, 
+                      ``( v["use_module"]:"" == "lvm_ll" &&
+			  v["type"]:"" == "create_vg" &&
+			  v["vgname"]:"" == current_vg ));
+    if( size(tmp)>0 )
 	{
 	integer num = select( maplist( `k, `v, tmp, ``(k) ), 0, 0 );
 	modify_targets = removeTargetModification( modify_targets, num );
-	map tmp = filter( `k, `v, modify_targets, ``(
-	    lookup( v, "use_module", "" )== "lvm_ll" &&
-	    lookup( v, "type", "" ) == "create_pv" &&
-	    lookup( v, "vgname", "" ) == current_vg ) );
+	map tmp = filter( `k, `v, modify_targets, 
+			  ``( v["use_module"]:"" == "lvm_ll" &&
+			      v["type"]:"" == "create_pv" &&
+			      v["vgname"]:"" == current_vg ));
 	while( size(tmp)>0 )
 	    {
 	    num = select( maplist( `k, `v, tmp, ``(k) ), 0, 0 );
 	    modify_targets = removeTargetModification( modify_targets, num );
 
-	    map tmp = filter( `k, `v, modify_targets, ``(
-		lookup( v, "use_module", "" )== "lvm_ll" &&
-		lookup( v, "type", "" ) == "create_pv" &&
-		lookup( v, "vgname", "" ) == current_vg ) );
+	    map tmp = filter( `k, `v, modify_targets, 
+	                      ``( v["use_module"]:"" == "lvm_ll" &&
+				  v["type"]:"" == "create_pv" &&
+				  v["vgname"]:"" == current_vg ));
 	    }
 	}
-      else
+    else
 	{
-        // insert an entry into execution stack
-        /////////////////////////////////////////////////
-        // new entry in execution stack "modify_targets"
+	// insert an entry into execution stack
+	/////////////////////////////////////////////////
+	// new entry in execution stack "modify_targets"
 	
-        map new_delete_vg = $[
+	map new_delete_vg = $[
 			      "use_module" : "lvm_ll",
 			      "type"       : "remove_vg",
 			      "vgname"     : current_vg,  
 			   ];
 	
-        modify_targets = addTargetModification( modify_targets, new_delete_vg );
+	modify_targets = addTargetModification( modify_targets, new_delete_vg );
 	}
-      y2debug( "EEE s %1", modify_targets);
+    y2debug( "EEE s %1", modify_targets);
 
-      return( $[
-		    "targets"        : new,
-		    "modify_targets" : modify_targets,
-		    "lvm_vgs"        : lvm_vgs,
-		    "current_vg"     : new_vg
-	        ]);
+    return( $[
+		  "targets"        : new,
+		  "modify_targets" : modify_targets,
+	      ]);
 
     };
-    
-
-    
-
 }		 
-
-		 
-	    
-	    

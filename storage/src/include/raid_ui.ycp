@@ -1008,13 +1008,14 @@ global define symbol RaidExpertWizard()
  *  raidExpertDlg dialog
  *  edit expert options
  */
-global define map RaidExpertDlg( symbol what, string current_raid, map cur_raid,
+global define map RaidExpertDlg( symbol what, string device, map cur_raid,
 				 boolean installation, map file_systems,
 				 boolean edit_raid_type, map targetMap )
     ``{
     string raid_type = cur_raid["raid_type"]:"";
     // heading text
-    string caption   = sformat(_("Raid settings %1"), current_raid );
+    string caption   = sformat(_("Raid settings %1"), device );
+    boolean created  = IsRaidCreated( device, what );
     
     term contents = `HBox(
 			   FormatDlg( cur_raid, file_systems ),
@@ -1088,8 +1089,10 @@ global define map RaidExpertDlg( symbol what, string current_raid, map cur_raid,
 
      UI::ChangeWidget( `id(`raid_combo), `Value, raid_type );
      UI::ChangeWidget( `id(`chunk_size), `Value, cur_raid["chunk_size"]:"4" );
-     UI::ChangeWidget( `id(`partity), `Enabled, raid_type=="raid5" );
-     UI::ChangeWidget( `id(`chunk_size), `Enabled, raid_type!="multipath" );
+     UI::ChangeWidget( `id(`parity), `Enabled, created && raid_type=="raid5" );
+     UI::ChangeWidget( `id(`chunk_size), `Enabled, 
+                       created && raid_type!="multipath" );
+     UI::ChangeWidget( `id(`persist), `Enabled, created );
 
      map retval = eval(cur_raid);
      any ret = `ok;
@@ -1115,14 +1118,15 @@ global define map RaidExpertDlg( symbol what, string current_raid, map cur_raid,
 	     retval["persistent_superblock"] = 
 		 UI::QueryWidget(`id(`persist), `Value);
 	     retval["parity_algorithm"] = 
-		 UI::QueryWidget(`id(`partity), `Value);
+		 UI::QueryWidget(`id(`parity), `Value);
 	     }
 
 	 if( ret == `raid_combo )
 	     {
-	     UI::ChangeWidget( `id(`partity), `Enabled, raid_type=="raid5" );
+	     UI::ChangeWidget( `id(`parity), `Enabled, 
+	                       created && raid_type=="raid5" );
 	     UI::ChangeWidget( `id(`chunk_size), `Enabled, 
-	                       raid_type!="multipath" );
+	                       created && raid_type!="multipath" );
 	     }
 
 	 if( ret == `ok || ret == `next )

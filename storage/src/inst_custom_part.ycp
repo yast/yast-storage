@@ -57,6 +57,7 @@ HINTS: Always use
   import "Popup";
   include "partitioning/propose_part_util.ycp";
   include "partitioning/loop.ycp";
+  include "partitioning/lvm_ui_dialogs.ycp";
 
   
   // Which columns show the main window have
@@ -933,7 +934,7 @@ define FillPartitionList ()
 		 {
 		 vendor = "RAID "+disk_dev_name;
 		 }
-	     else if ( disk["is_lvm_vg"]:false )
+	     else if( disk["is_lvm_vg"]:false )
 		 {
 		 vendor = "LVM" + (disk["lvm2"]:false ? "2 " : "  ") +
 		          substring( disk_dev_name, 5 );
@@ -961,7 +962,8 @@ define FillPartitionList ()
 	     dev_start_cyl = " -- ";
 	     }
 	       
-	 if( show_disk && (real_disk||disk["is_lvm_vg"]:false) )
+	 if( show_disk && 
+	     (real_disk || (disk["is_lvm_vg"]:false&&!disk["delete"]:false)) )
 	     {
 	     term a = `item(`id(disk_dev_name));
 
@@ -2840,18 +2842,16 @@ global define ChoosePart( string usage )
 	    // notify a line is selected
             if( w_id != nil )
 		{
-		string id = UI::QueryWidget(`id(`table), `CurrentItem);
-		focusline = id;
+		string id = w_id;
+		focusline = w_id;
 		string maindevkey = Storage::GetMainDevKey(id); 
-		y2milestone("Chosen: %1", id);
+		string subdevkey = Storage::GetSubDevIndex(id); 
+		y2milestone( "Chosen: %1 maindev: %2 subdev:\"%3\"", id, 
+		             maindevkey, subdevkey );
             
-		if( Storage::IsMainDevMd( id ) )
+		if( maindevkey == id )
 		    {
-		    ret = `raid_settings;
-		    }
-		else if( Storage::IsKeyMainDevKey( id ) )
-		    {
-		    if( Storage::GetMainDevParam( id , "is_lvm_vg"))
+		    if( Storage::GetMainDevParam( id, "is_lvm_vg") )
 			{
 			ret = `lvm;
 			}
@@ -2861,9 +2861,25 @@ global define ChoosePart( string usage )
 			                           $[] ), id );
 			}
 		    }
-		else if( Storage::IsMainDevVg( id ) )
+		else if( Storage::IsSubDevLv( id ) )
 		    {
-		    ret = `lvmlv;
+		    map tg =  Storage::GetTargetMap();
+		    map mt =  Storage::GetModifyTargets();
+		    map ret = HandleEditLv( tg, mt, id );
+		    Storage::SetTargetMap( ret["targets"]:tg );
+		    Storage::SetModifyTargets( ret["modify_targets"]:mt );
+		    }
+		else if( maindevkey == "/dev/md" )
+		    {
+		    map part = Storage::GetSubDev( id );
+		    part = RaidExpertDlg( `settings, "/dev/md" + subdevkey,
+					   part, Mode::initial,
+					   FileSystems::GetAllFileSystems(true,true),
+					   false, Storage::GetTargetMap());
+		    if( part!=nil && size(part)>0 )
+			{
+			Storage::SetSubDev( id, part );
+			}
 		    }
 		else if( maindevkey == "/dev/loop" )
 		    {
@@ -2877,8 +2893,7 @@ global define ChoosePart( string usage )
 		    integer number     = tointeger( subdevindex );
 		    string devStr      = Storage::GetDeviceName(maindevkey, number );
 		    map curr_disk      = Storage::GetMainDev( maindevkey );
-
-		    map  curr_part      = Storage::GetSubDev( id );
+		    map curr_part      = Storage::GetSubDev( id );
 
 		    
 		    /////////////////////////////////////////////////////
@@ -2941,46 +2956,30 @@ WARNING: All data on this partition will be lost."));
 			}
 		    else
 			{
-			if( Storage::IsSubDevRaid( id ))
+			string title = "";
+			if( !curr_part["create"]:false )
 			    {
-			    new_val =  RaidExpertDlg( `settings,
-						      "/dev/md" + subdevindex,
-						      curr_part,
-						      Mode::initial,
-						      FileSystems::GetAllFileSystems( true, true ),
-						      false,
-						      Storage::GetTargetMap()
-						      );
+			    // header of the dialog edit a partition
+			    title = _("Edit Existing Partition") + " " + devStr;
 			    }
 			else
 			    {
-			    string title = "";
-			    if( !curr_part["create"]:false )
-				{
-				// header of the dialog edit a partition
-				title = _("Edit Existing Partition") + 
-				        " " + devStr;
-				}
-			    else
-				{
-				// header of the Dialog edit a partition
-				title = _("Edit partition ")+ devStr;
-				}
-
-			    new_val = 
-				EditOrCreatePartDlg( curr_part,
-						     FileSystems::GetAllFileSystems(true, true) ,
-						     title, devStr,
-						     disk_without_current,
-						     bsd_label, edit_cylinder,
-						     curr_disk["cyl_size"]:1000000,
-						     Mode::initial );
+			    // header of the Dialog edit a partition
+			    title = _("Edit partition ")+ devStr;
 			    }
+
+			new_val = 
+			    EditOrCreatePartDlg( curr_part,
+						 FileSystems::GetAllFileSystems(true, true) ,
+						 title, devStr,
+						 disk_without_current,
+						 bsd_label, edit_cylinder,
+						 curr_disk["cyl_size"]:1000000,
+						 Mode::initial );
 			}
-		    
-		    if( new_val != nil )   // not canceld    
+		    if( new_val != nil && size(new_val)>0 )   // not canceld    
 			{ 
-			Storage::SetSubDev(id , new_val );
+			Storage::SetSubDev( id, new_val );
 			}	
 		    }
 	        }
@@ -2998,6 +2997,7 @@ WARNING: All data on this partition will be lost."));
 	    {
 	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
 	    string maindevkey 	= Storage::GetMainDevKey( id);
+	    string subdevkey = Storage::GetSubDevIndex(id); 
 	    
 	    if( ! Storage::IsKeyKey(id)) continue;
 
@@ -3008,7 +3008,7 @@ WARNING: All data on this partition will be lost."));
 		continue;
 		}
 	 
-	    if( Storage::IsKeyMainDevKey(id))
+	    if( maindevkey == id )
 		{
 		if( Storage::IsMainDevMd(maindevkey))
 		    {	
@@ -3016,8 +3016,12 @@ WARNING: All data on this partition will be lost."));
 		    }
 		else if( Storage::IsMainDevVg(maindevkey ))
 		    {
-		    // FIXME -> remove the  volume group 
-		    ret = `lvm;
+		    string current_vg = substring( maindevkey, 5 );
+		    map tg =  Storage::GetTargetMap();
+		    map mt =  Storage::GetModifyTargets();
+		    map ret = HandleRemoveVg( tg, mt, current_vg );
+		    Storage::SetTargetMap( ret["targets"]:tg );
+		    Storage::SetModifyTargets( ret["modify_targets"]:mt );
 		    }
                 // popup text %1 is replaced by a disk name e.g. /dev/hda
 		else if( Popup::YesNo ( sformat(_("Do you really want to delete all partitions on %1?"), id )))
@@ -3035,8 +3039,11 @@ WARNING: All data on this partition will be lost."));
 		}
 	    else if( Storage::IsSubDevLv(id))
 		{
-		// FIXME -> remove the logical volume
-		ret = `lvmlv;
+		map tg =  Storage::GetTargetMap();
+		map mt =  Storage::GetModifyTargets();
+		map ret = HandleRemoveLv( tg, mt, id );
+		Storage::SetTargetMap( ret["targets"]:tg );
+		Storage::SetModifyTargets( ret["modify_targets"]:mt );
 		} 
             else
 		{
@@ -3153,6 +3160,14 @@ You cannot resize the selected partition because the file system
 on this partition does not support being resized.
 "));
                 }
+	    else if( Storage::IsSubDevLv(id))
+		{
+		map tg =  Storage::GetTargetMap();
+		map mt =  Storage::GetModifyTargets();
+		map ret = HandleEditLv( tg, mt, id );
+		Storage::SetTargetMap( ret["targets"]:tg );
+		Storage::SetModifyTargets( ret["modify_targets"]:mt );
+		}
 	    else if( curr_part["create"]:false )
 		{
                 // popup text

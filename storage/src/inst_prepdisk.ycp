@@ -265,7 +265,7 @@ define boolean HandleFormatPartition( map partition )
 	    cancel = !Storage::SetCryptLoop( partition );
 	    if( !cancel )
 		{
-		if( !format )
+		if( !format && !partition["delete"]:false )
 		    {
 		    partition = FileSystems::GetFsysInfos( partition );
 		    map tg = Storage::GetTargetMap();
@@ -1151,7 +1151,7 @@ Please repeat the installation with another swap partition selected
 	    y2milestone( "cmd %1", cmd );
 	    SCR::Execute( .target.bash, cmd );
 	    });
-	if( size( add_l )>0 )
+	if( size( add_l )>0 || size( rem_l )>0)
 	    {
 	    y2milestone( "prepare raid" );
 	    do
@@ -1198,6 +1198,7 @@ Please repeat the installation with another swap partition selected
     if ( num_lvm_vg > 0 )
 	{
 	SCR::Write( .lvm.init, "" );
+	SCR::Write( .lvm.activate, "" );
 	}
     do
 	{
@@ -1375,10 +1376,10 @@ damage to your file systems, it is safer to cancel and reboot.
 	list mlist = maplist( `k, `e, mountPoints, ``(k) );
 	foreach( `p, loop["partitions"]:[],
 	    ``{
+	    string fpath = Storage::PathToDestdir( p["fpath"]:"" );
 	    if( !cancel && p["create"]:false )
 		{
 		integer size_k = loop["cyl_size"]:0 * p["region",1]:0 / 1024;
-		string fpath = Storage::PathToDestdir( p["fpath"]:"");
 		integer max_ur = 10*1024;
 		if( size_k<max_ur )
 		    {
@@ -1418,7 +1419,22 @@ damage to your file systems, it is safer to cancel and reboot.
 		    cancel = true;
 		    }
 		}
-	    if( !cancel )
+	    if( !cancel && p["delete"]:false )
+		{
+		if( size(p["loop_dev"]:"")>0 )
+		    {
+		    SCR::Execute( .target.bash, 
+				  "/sbin/losetup -d " + p["loop_dev"]:"" );
+		    }
+		if( size(p["fpath"]:"")>0 )
+		    {
+		    if( SCR::Read( .target.size, fpath )>=0 )
+			{
+			SCR::Execute( .target.remove, fpath  );
+			}
+		    }
+		}
+	    if( !cancel && !p["delete"]:false )
 		{
 		cancel = !HandleFormatPartition( p );
 		}
@@ -1487,8 +1503,9 @@ damage to your file systems, it is safer to cancel and reboot.
 		new = add( new, part );
 		}
 	    });
-	disk["partitions"] = new;
+	tg[device,"partitions"] = new;
 	});
+    tg = filter( `device, `disk, tg, ``(!disk["delete"]:false));
     Storage::SetTargetMap( tg );
 
     SCR::Write( .target.ycp, Storage::SaveDumpPath("targetMap_pe"), 
