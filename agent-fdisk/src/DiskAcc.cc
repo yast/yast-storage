@@ -125,10 +125,10 @@ bool
 DiskAccess::IsKnownDevice(const string& Part_Cv)
     {
     bool Ret_bi;
-    Ret_bi = Part_Cv.find("/dev/sd")==0 || Part_Cv.find("/dev/hd") ||
+    Ret_bi = Part_Cv.find("/dev/sd")==0 || Part_Cv.find("/dev/hd")==0 ||
              Part_Cv.find("/dev/ed")==0 || Part_Cv.find( "/dev/i2o/hd" )==0 ||
              Part_Cv.find("/dev/ida/")==0 || Part_Cv.find("/dev/rd/")==0 ||
-             Part_Cv.find("/dev/cciss/") || Part_Cv.find("/dev/dasd")==0;
+             Part_Cv.find("/dev/cciss/")==0 || Part_Cv.find("/dev/dasd")==0;
     return( Ret_bi );
     }
 

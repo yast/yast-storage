@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <fstream>
+#include <sstream>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 
@@ -166,7 +167,7 @@ LvmAccess::DoExpensive()
     {
     if( !Expensive_b )
 	{
-	//ScanForDisks();
+	ScanForDisks();
 	if( RunningFromSystem() && !DidVgchangeA_b )
 	    ScanForInactiveVg();
 	Expensive_b = true;
@@ -440,31 +441,32 @@ void
 LvmAccess::ScanForDisks()
     {
     bool Add_bi;
-    string Tmp_Ci;
     string Line_Ci;
-    SystemCmd Cmd_Ci;
-    Cmd_Ci.Execute( "/sbin/lvmdiskscan" );
-    Cmd_Ci.Select( "/dev/" );
-    int Cnt_ii = Cmd_Ci.NumLines( true );
+    ifstream File_Ci( "/proc/partitions" );
     PvInfo PvElem_ri;
+    int Major_ii, Minor_ii;
+    unsigned long Blocks_ui;
+    string Device_Ci;
 
-    for( int I_ii=0; I_ii<Cnt_ii; I_ii++ )
+    getline( File_Ci, Line_Ci );
+    while( File_Ci.good() )
 	{
-	Line_Ci = *Cmd_Ci.GetLine( I_ii, true );
-	y2debug( "Line:\"%s\" i:%d cnr:%d", Line_Ci.c_str(), I_ii, Cnt_ii );
-	Tmp_Ci = ExtractNthWord( 2, Line_Ci );
-	Add_bi = false;
-	if( DiskAccess::IsKnownDevice( Tmp_Ci ) )
-	    {
-	    Add_bi = Line_Ci.find( "extended partition" )==string::npos;
-	    }
-	else if( Tmp_Ci.find( "/dev/md" )==0 )
+	std::istringstream Data_Ci( Line_Ci );
+	Device_Ci = "";
+	Major_ii = Minor_ii = Blocks_ui = 0;
+	Data_Ci >> Major_ii >> Minor_ii >> Blocks_ui >> Device_Ci;
+	Device_Ci = "/dev/" + Device_Ci;
+	y2debug( "Maj:%d Min:%d Blocks:%ld Device:%s", Major_ii, Minor_ii, 
+	         Blocks_ui, Device_Ci.c_str() );
+	Add_bi = Major_ii>0 && DiskAccess::IsKnownDevice( Device_Ci );
+	if( Device_Ci.find( "/dev/md" )==0 )
 	    {
 	    Add_bi = true;
 	    }
+	Add_bi = Add_bi && Blocks_ui>10;
 	if( Add_bi )
 	    {
-	    Add_bi = FindPv( Tmp_Ci )==PvList_C.end();
+	    Add_bi = FindPv( Device_Ci )==PvList_C.end();
 	    }
 	y2debug( "Add:%d", Add_bi );
 	if( Add_bi )
@@ -472,33 +474,21 @@ LvmAccess::ScanForDisks()
 	    PvElem_ri.RealDevList_C.clear();
 	    PvElem_ri.Created_b = false;
 	    PvElem_ri.Active_b = false;
-	    PvElem_ri.PartitionId_i = 0;
+	    PvElem_ri.PartitionId_i = LVM_PART_ID;
 	    PvElem_ri.Allocatable_b = false;
-	    PvElem_ri.Name_C = Tmp_Ci;
+	    PvElem_ri.Name_C = Device_Ci;
 	    PvElem_ri.RealDevList_C.push_back( PvElem_ri.Name_C );
-	    Tmp_Ci = Line_Ci;
-	    Tmp_Ci.erase( 0,  Tmp_Ci.find( '[' )+1 );
-	    double Val_di = 0;
-	    sscanf( Tmp_Ci.c_str(), "%lf", &Val_di );
-	    Tmp_Ci = ExtractNthWord( 1, Tmp_Ci );
-	    Val_di *= UnitToValue( Tmp_Ci );
-	    PvElem_ri.Blocks_l = (unsigned long)Val_di;
+	    PvElem_ri.Blocks_l = Blocks_ui;
 	    PvElem_ri.Free_l = PvElem_ri.Blocks_l;
-	    Tmp_Ci.erase( 0, Tmp_Ci.find( ']' )+1 );
-	    PvElem_ri.PartitionId_i = 0;
-	    if( Tmp_Ci.find( '[' )!=string::npos )
-		{
-		Tmp_Ci.erase( 0, Tmp_Ci.find( '[' )+1 );
-		sscanf( Tmp_Ci.c_str(), "%x", &PvElem_ri.PartitionId_i );
-		}
-	    y2debug( "Append PV Name: %s VG Name:%s Act:%d All:%d Crt:%d "
-	             "Id:%x Blocks:%ld Free:%ld", PvElem_ri.Name_C.c_str(), 
-		     PvElem_ri.VgName_C.c_str(), PvElem_ri.Active_b, 
-		     PvElem_ri.Allocatable_b, PvElem_ri.Created_b, 
-		     PvElem_ri.PartitionId_i, PvElem_ri.Blocks_l,
-		     PvElem_ri.Free_l );
+	    y2milestone( "Append PV Name: %s VG Name:%s Act:%d All:%d Crt:%d "
+			 "Id:%x Blocks:%ld Free:%ld", PvElem_ri.Name_C.c_str(), 
+			 PvElem_ri.VgName_C.c_str(), PvElem_ri.Active_b, 
+			 PvElem_ri.Allocatable_b, PvElem_ri.Created_b, 
+			 PvElem_ri.PartitionId_i, PvElem_ri.Blocks_l,
+			 PvElem_ri.Free_l );
 	    SortIntoPvList( PvElem_ri );
 	    }
+	getline( File_Ci, Line_Ci );
 	}
     ProcessMd();
     y2debug( "End" );
@@ -1134,7 +1124,7 @@ LvmAccess::GetPvDevicename( const string& VgName_Cv, const string& FDev_Cv,
 
 void LvmAccess::ScanProcLvm()
     {
-    ifstream File_Ci( "/proc/lvm/global" );
+    std::ifstream File_Ci( "/proc/lvm/global" );
     string Line_Ci;
     VgIntern VgElem_ri;
     PvInfo PvElem_ri;
