@@ -1,6 +1,9 @@
 #
 # Makefile.am for y2m_inst/ycp/partitioning/include
 #
+
+yncludedir = @yncludedir@/partitioning
+
 ynclude_HEADERS = \
 	read_storage.ycp		\
 	partition_defines.ycp		\
