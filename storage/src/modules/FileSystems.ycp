@@ -34,7 +34,12 @@
 		   `ext3        : true,
 		   `jfs    	: true,
 		   `fat16  	: true,
-		   `fat32  	: true
+		   `fat32  	: true,
+		   `xxefi  	: false,
+		   `xbootdisk  	: false,
+		   `xhibernate 	: true,
+		   `raid       	: true,
+		   `lvm        	: true
   ];
 
   map capabilities = $[
@@ -511,6 +516,7 @@ number of inodes on a file system after its creation, so be sure to enter a reas
 		      `fat32	: $[
 				    `name 		: "FAT",
 				    `fsid 		: 12,
+				    `alt_fsid           : [ 12, 0x103 ],
 				    `supports_format 	: true ,
 				    `fsid_item 		: "0x0C Win95 FAT32 ",
 				    `fstype 		: "Fat32",
@@ -627,7 +633,13 @@ number of inodes on a file system after its creation, so be sure to enter a reas
 					   `fsid 		: Partitions::fsid_hibernation,
 					   `supports_format 	: false,
 					   `fsid_item 		: "0xA0 Hibernation"
-			    ]
+					   ],
+			    `xxefi      : $[
+			                   `name                : "Efi Boot",
+					   `fsid                : Partitions::fsid_efi_boot,
+					   `supports_format     : false,
+					   `fsid_item           : "0x103 EFI Boot"
+					   ]
   ];
 
   list swap_fst_options = [
@@ -676,6 +688,7 @@ global define void FileSystems()
 	support[`xfs] = false;
 	support[`fat16] = false;
 	support[`fat32] = false;
+	support[`xbootdisk] = true;
 	}
     if( Arch::s390 )
 	{
@@ -686,6 +699,7 @@ global define void FileSystems()
     if( Arch::ia64 )
 	{
 	support[`jfs] = false;
+	support[`xxefi] = true;
 	}
     if( Arch::alpha )
 	{
@@ -714,7 +728,8 @@ global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
 	}
     if( add_pseudo )
 	{
-	ret = union( ret, PseudoFileSystems );
+	ret = union( ret, filter( `fs_key, `fs_map, PseudoFileSystems,
+				  ``( support[fs_key]:false )));
 	}
     return ret;
     }
