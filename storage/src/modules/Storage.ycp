@@ -118,7 +118,9 @@ global define map GetTargetMap()
 	StorageMap[targets_backup_m_key,"initial"] = $[];
 	if( Mode::initial )
 	    {
-	    y2milestone ("AddMountPointsForWin" );
+	    y2milestone( "AddWinInfo" );
+	    tmp = AddWinInfo( tmp );
+	    y2milestone( "AddMountPointsForWin" );
 	    tmp = AddMountPointsForWin( tmp );
 	    }
 	if( Mode::normal )
@@ -336,10 +338,8 @@ global define list AddMountPointsForWinParts( list partitions, boolean primary )
 
 	if( !haskey( partition, "mount") && !partition["delete"]:false && 
 	    ((partnum<5)==primary) && 
-	    contains(union(union(Partitions::fsid_dostypes,
-				 Partitions::fsid_ntfstypes),
-			   Partitions::fsid_wintypes), fsid ) &&
-	    (partition["used_fs"]:`none==`fat32||partition["used_fs"]:`none==`ntfs))
+	    Partitions::IsDosWinNtPartition(fsid) &&
+	    contains( [`fat32, `fat16, `ntfs], partition["used_fs"]:`none ))
 	    {
 	    string mntops = "users,gid=users,umask=0002";
 	    string enc = "iso8859-1";
@@ -418,6 +418,26 @@ global define map AddMountPointsForWin( map targets )
 	});
     return( targets );
     }
+
+global define map AddWinInfo( map targets )
+    ``{
+    y2milestone( "AddWinInfo called" );
+    foreach( `disk, `data, targets,
+	``{
+	data["partitions"] = 
+	    maplist( `p, data["partitions"]:[],
+		``{
+		if( Partitions::IsDosWinNtPartition(p["fsid"]:0) &&
+		    contains( [`fat32, `fat16 ], p["used_fs"]:`none ))
+		    {
+		    p["winfo"] = FileSystems::GetFreeSpace( p["device"]:"", 0,
+		                                            `fat32 );
+		    }
+		return( p );
+		});
+	});
+    return( targets );
+    };
 
 global define map GetOndiskTarget()
     ``{
@@ -2510,7 +2530,8 @@ global define list GetWinPrimPartitions( map targets )
 		              "/usr/lib/YaST2/bin/check.boot "+device) == 0)
 		{
 		text = "";
-	        if( Partitions::IsDosWinNtPartition( part["fsid"]:0 ) )
+	        if( Partitions::IsDosWinNtPartition( part["fsid"]:0 ) &&
+		    part["winfo","win_disk"]:false )
 		    {
 		    if( contains( Partitions::fsid_dostypes, part["fsid"]:0 ) )
 			{

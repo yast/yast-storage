@@ -655,7 +655,7 @@ global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
       string ret        = fsmap[`mount_string ]:"";
       if( size(ret)==0 )
 	  {
-	  if( used_fs == `vfat || used_fs == `fat16 )
+	  if( used_fs == `fat32 || used_fs == `fat16 )
 	      {
 	      ret = "vfat";
 	      }
@@ -1047,6 +1047,7 @@ global define map GetFreeSpace( string device, integer testsize,
     ``{
     integer used = 0;
     integer free = 0;
+    boolean win_disk = false;
 
     LoadModule( used_fs );
     if ( Mode::test )
@@ -1080,6 +1081,17 @@ global define map GetFreeSpace( string device, integer testsize,
     // get usage information for the partition via df
     //
     list df_result = SCR::Read(.run.df);
+    if( used_fs==`fat32 || used_fs==`fat16 )
+	{
+	list chkf = ["boot.ini", "msdos.sys", "io.sys", "config.sys",
+	             "MSDOS.SYS", "IO.SYS" ];
+	integer num = 0;
+	while( !win_disk && num<size(chkf) )
+	    {
+	    win_disk = SCR::Read( .target.size, "/mnt/"+chkf[num]:"XX" ) >= 0;
+	    num = num+1;
+	    }
+	}
 
     SCR::Execute(.target.umount, device);
 
@@ -1146,6 +1158,7 @@ global define map GetFreeSpace( string device, integer testsize,
 	{
 	return( $[ "free":free,
 	           "used":used,
+		   "win_disk":win_disk,
 		   "linux_size":linux_size,
 		   "max_win_size":used + free - min_linux_size,
 		   "new_size":new_size ] );
