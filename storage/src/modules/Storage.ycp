@@ -2371,6 +2371,29 @@ global define list GetPartitionList()``{
     return( ret );
     }
 
+global define list GetOtherLinuxPartitions()``{
+    list ret = [];
+    foreach ( string dev, map disk, GetTargetMap(), ``{
+        if( !disk["is_lvm_vg"]:false && dev != "/dev/md" )
+	    {
+	    list l = filter( map `p, disk["partitions"]:[], 
+	                     ``(!p["delete"]:false && 
+	                        !p["format"]:false && 
+			        Partitions::IsLinuxPartition(p["fsid"]:0)) );
+	    l = filter( `p, l, ``(contains( [`xfs, `ext2, `ext3, `jfs, `reiser],
+	                                    p["used_fs"]:`unknown)));
+	    l = filter( `p, l, ``(!contains( FileSystems::system_m_points,
+	                                    p["mount"]:"" )));
+	    if( size(l)>0 )
+		{
+		ret = union( ret, l );
+		}
+	    }
+	});
+    y2milestone( "GetOtherLinuxPartitions ret=%1", ret );
+    return( ret );
+    }
+
 global define list SwappingPartitions()``{
     list ret = [];
     list swaps = filter( `e, SCR::Read( .proc.swaps ), 
