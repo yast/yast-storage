@@ -3851,30 +3851,6 @@ global define list<list<string> > AutodetectMultipathRaid( map<string,map> tg )
     return( ret );
     }
 
-define string GetLosetupCmd( map loop, string tmpf )
-    ``{
-    list noext = [ "twofish", "none" ];
-    string encr = loop["encryption"]:"twofish";
-    string cmd = sformat( "/sbin/losetup -e %1", encr );
-    # XXX: This could be done better
-    if ( encr == "twofishSL92" ) 
-       {
-          cmd = "/sbin/losetup -e twofish256";
-       }
-    if( !contains( noext, encr ) && size(loop["phash"]:"")>0 )
-	{
-	cmd = cmd + " -H " + loop["phash"]:"";
-	}
-    if( !contains( noext, encr ) && size(loop["itercountk"]:"")>0 )
-	{
-	cmd = cmd + " -C " + loop["itercountk"]:"";
-	}
-    cmd = cmd + " " + loop["loop_dev"]:"" + " " + loop["partitionName"]:"" +
-          " -p0 < " + tmpf;
-    y2milestone( "GetLosetupCmd %1", cmd );
-    return( cmd );
-    }
-
 global define boolean PerformLosetup( map& loop, boolean format )
     ``{
     boolean crypt_ok = false;
@@ -3886,22 +3862,18 @@ global define boolean PerformLosetup( map& loop, boolean format )
     y2milestone( "PerformLosetup tmpf %1", tmpf );
     SCR::Write( .target.string, tmpf, pwd );
 
-    string cmd = GetLosetupCmd( loop, tmpf );
+    string cmd = FileSystems::GetLosetupCmd( loop, tmpf );
     map r = (map)SCR::Execute( .target.bash_output, cmd );
     y2milestone( "PerformLosetup r %1", r );
     crypt_ok = r["exit"]:1 == 0;
-    if( crypt_ok && !format && loop["encryption"]:""=="twofish" )
+    if( crypt_ok && !format && find( loop["encryption"]:"", "twofish")==0 )
 	{
-	symbol fs = FileSystems::DetectFs( loop["loop_dev"]:"" );
-	y2milestone( "PerformLosetup fs on %1 is %2", loop["loop_dev"]:"", fs );
-	if( fs == `unknown )
+	string enc = FileSystems::DetectLoopEncryption( loop, tmpf );
+	y2milestone( "PerformLosetup enc %1", enc );
+	if( size(enc)>0 )
 	    {
-	    SCR::Execute( .target.bash, "/sbin/losetup -d "+loop["loop_dev"]:"" );
-	    loop["encryption"] = "twofish256";
-	    cmd = GetLosetupCmd( loop, tmpf );
-	    map r = (map)SCR::Execute( .target.bash_output, cmd );
-	    y2milestone( "PerformLosetup r %1", r );
-	    crypt_ok = r["exit"]:1 == 0;
+	    loop["encryption"] = enc;
+	    crypt_ok = true;
 	    }
 	}
     SCR::Execute( .target.remove, tmpf );
