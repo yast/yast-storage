@@ -19,7 +19,7 @@
 
 */
 {
-  import "Partitions";
+import "Partitions";
 
 
   //////////////////////////////////////////////////////////////////////
@@ -27,25 +27,32 @@
   // ------------------------------------------------------------------
   //////////////////////////////////////////////////////////////////////
 
-  global define get_boot_slot_list( list base_slots )
-  ``{
+global define get_boot_slot_list( list base_slots )
+    ``{
 
-      // todo: a free slot, which start_cyl +3 <1024 are also a start cyl!
-      list boot_slots = filter( `slot, base_slots, ``(    (lookup( slot, "start_cyl", 0) + min_nb_boot_cyl) < 1024
-							  && lookup( slot, "size", 1)    > Partitions::minimal_needed_bootsize ));
+    // todo: a free slot, which start_cyl +3 <1024 are also a start cyl!
+    list boot_slots = 
+        filter( `slot, base_slots, 
+	        ``( slot["start_cyl"]:0 + min_nb_boot_cyl < 1024 && 
+		    slot["size"]:1 > Partitions::minimal_needed_bootsize ));
 
-      list boot_slots_win        = filter( `slot, boot_slots, ``(    lookup( slot, "type", "") == "free"
-								     || lookup( slot, "type", "") == "win_resize" ));
-      list boot_slots_reuse      = filter( `slot, boot_slots, ``(    lookup( slot, "type", "") == "free"
-								     || lookup( slot, "type", "") == "linux" ));
-      list boot_slots_reuse_only = filter( `slot, boot_slots, ``(    lookup( slot, "type", "") == "linux" ));
-      list boot_slots_free       = filter( `slot, boot_slots, ``(    lookup( slot, "type", "") == "free" ));
-
-	      
-      return ( $[ "use_free":boot_slots_free,  "use_win"    :boot_slots_win,
-	     	  "reuse"   :boot_slots_reuse, "reuse_only" : boot_slots_reuse_only ] );
-  };
-
+    list boot_slots_win = 
+        filter( `slot, boot_slots, 
+	        ``( slot["type"]:"" == "free" || 
+		    slot["type"]:"" == "win_resize" ));
+    list boot_slots_reuse = 
+        filter( `slot, boot_slots, 
+	        ``( slot["type"]:"" == "free" || slot["type"]:""== "linux" ));
+    list boot_slots_reuse_only = 
+        filter( `slot, boot_slots, ``( slot["type"]:"" == "linux" ));
+    list boot_slots_free = 
+        filter( `slot, boot_slots, ``( slot["type"]:"" == "free" ));
+	  
+    return ( $[ "use_free"   : boot_slots_free,  
+	        "use_win"    : boot_slots_win,
+	        "reuse"      : boot_slots_reuse, 
+	        "reuse_only" : boot_slots_reuse_only ] );
+    };
 
 
   //////////////////////////////////////////////////////////////////////
@@ -54,197 +61,206 @@
   // for further comment see:  see Step 2 in inst_part_proposal.ycp
   //////////////////////////////////////////////////////////////////////
 
-  global define GetSlots( list    part_list,
-                          integer start_cyl,
-                          integer end_cyl,
-                          integer cyl_size )
-  ``{
-      integer last_border = 0;  // first not "slotted" cylinder.
-      list    slot_list    = [];
+global define GetSlots( list part_list, integer start_cyl, integer end_cyl,
+                        integer cyl_size )
+    ``{
+    integer last_border = 0;  // first not "slotted" cylinder.
+    list    slot_list   = [];
 
-      last_border = start_cyl;
+    y2milestone( "start:%1 end:%2 size:%3", start_cyl, end_cyl, cyl_size );
+    y2debug( "list:%1", part_list );
 
-      // for every partition of this disk do ...
-      foreach( `part, part_list, ``{
+    last_border = start_cyl;
 
-	  integer old_last_border = last_border;
-          integer begin_of_part =  select(lookup(part, "region", []), 0,0);
-          integer end_of_part   =  begin_of_part + select(lookup(part, "region", []), 1,1) - 1;
+    // for every partition of this disk do ...
+    foreach( `part, part_list, 
+	``{
+	integer old_last_border = last_border;
+	integer begin_of_part = part["region",0]:0;
+	integer end_of_part  = begin_of_part + part["region",1]:1 - 1;
 
-	  y2debug( "last_border %1, begin %2, end %3 ", last_border, begin_of_part, end_of_part );
+	y2debug( "last_border %1, begin %2, end %3 ", last_border, 
+	         begin_of_part, end_of_part );
 
-
-          //////////////////////////////////////////////////////////////
-          // is there a gap between partitions -> create free slot
-          //////////////////////////////////////////////////////////////
-          if ( last_border < begin_of_part )
-          {
-              // create freeslot
-              // example: last = 1 begin = 10 -> free = 1..9     size = 10 - 1 * cylsize
-
-              slot_list = add( slot_list, $[ "type"    :    "free",
-                                           "dev"       :     dev,
-                                           "end_cyl"   :     begin_of_part-1,
-                                           "start_cyl" :     last_border,
-                                           "size":       ((begin_of_part - last_border )*cyl_size) ]);
-              last_border = begin_of_part;
-          }
+	//////////////////////////////////////////////////////////////
+	// is there a gap between partitions -> create free slot
+	//////////////////////////////////////////////////////////////
+	if( last_border < begin_of_part )
+	    {
+	    // create freeslot
+	    // example: last = 1 begin = 10 -> free = 1..9  
+	    //          size = 10 - 1 * cylsize
 
 
-          //////////////////////////////////////////////////////////////
-          // create the slot for the current partition
-          //////////////////////////////////////////////////////////////
-          if ( last_border == begin_of_part )
-          {
-              integer nr         = lookup(part, "nr", 0);
-              string  type       = "other";
-              integer psize      =  ((end_of_part - begin_of_part +1)*cyl_size);
-              integer pstart     =  begin_of_part;
-              integer win_length = -1;
-              integer win_max_length = -1;
-	      map     win_dat    = $[];
+	    integer psize  = ((end_of_part - begin_of_part +1)*cyl_size);
+	    slot_list = 
+		add( slot_list, $[ "type"      : "free",
+				   "dev"       : dev,
+				   "end_cyl"   : begin_of_part-1,
+				   "start_cyl" : last_border,
+				   "size"      : psize ] );
+	    last_border = begin_of_part;
+	    }
 
-              integer fsid = lookup( part, "fsid", 0 );
-              if ( Partitions::IsDosPartition( fsid ) )
-              {
-                  win_dat = Partitions::GetFreeSpace( get_device_name( dev, lookup( part, "nr", 0 )), psize );
-                  if ( win_dat != nil  )
-                  {
-                      type       =  "win_resize";
-                      psize      = lookup( win_dat, "linux_size", -1 );
-                      win_length = PartedSizeToCly( tofloat(lookup(win_dat,"new_size", 0)), cyl_size );
-                      win_max_length = PartedSizeToCly( tofloat(lookup(win_dat,"max_win_size", 0)), cyl_size );
-                      pstart     = begin_of_part + win_length;
-                  }
-                  else
-                  {
-                      // error: to other -> not useable
-                      y2error("Storage::GetFreeSpace -> nil from %1", get_device_name( dev, lookup( part, "nr", 0 )) );
-                  }
-              }
-              if ( fsid == Partitions::fsid_native )       type =  "linux";
-              if ( fsid == Partitions::fsid_swap )         type =  "swap";
-              if ( fsid == Partitions::fsid_extended )     type =  "extended";
-              if ( fsid == Partitions::fsid_extended_win ) type =  "extended";
+	// allow end of prevoius partition to be on same cylinder as
+	// beginning of next one
+	if( old_last_border > begin_of_part+1 )
+	    {
+	    y2error( "Partition order ? %1 %2", last_border, begin_of_part );
+	    y2error( "slot_list %1", slot_list);
+	    y2error( "part_list %1", part_list);
+	    }
+	else
+	    {
+	    /////////////////////////////////////////////////////////
+	    // create the slot for the current partition
+	    /////////////////////////////////////////////////////////
+	    integer nr     = part["nr"]:0;
+	    string  type   = "other";
+	    integer psize  = ((end_of_part - begin_of_part +1)*cyl_size);
+	    integer pstart =  begin_of_part;
+	    integer win_len = -1;
+	    integer win_max_len = -1;
+	    map     win_dat    = $[];
 
-              // for now, this auto mode does not handle raid/lvm
+	    integer fsid = part["fsid"]:0;
+	    if ( Partitions::IsDosPartition( fsid ) )
+		{
+		win_dat = Partitions::GetFreeSpace( part["device"]:"", psize );
+		if ( win_dat != nil  )
+		    {
+		    type    = "win_resize";
+		    psize   = win_dat["linux_size"]:-1;
+		    win_len = PartedSizeToCly( tofloat(win_dat["new_size"]:0), 
+					       cyl_size );
+		    win_max_len = 
+			PartedSizeToCly( tofloat(win_dat["max_win_size"]:0), 
+			                 cyl_size );
+		    pstart     = begin_of_part + win_len;
+		    }
+		else
+		    {
+		    // error: to other -> not useable
+		    y2error("Storage::GetFreeSpace -> nil from %1", 
+		            part["device"]:"" );
+		    }
+		}
+	    if( fsid == Partitions::fsid_native )       type = "linux";
+	    if( fsid == Partitions::fsid_swap )         type = "swap";
+	    if( fsid == Partitions::fsid_extended )     type = "extended";
+	    if( fsid == Partitions::fsid_extended_win ) type = "extended";
 
-              map slot =  $[ "type"    :     type,
-                           "dev"       :     dev,
-                           "nr"        :     nr,
-                           "end_cyl"   :     end_of_part,
-                           "start_cyl" :     pstart,
-                           "size"      :     psize ];
+	    // for now, this auto mode does not handle raid/lvm
 
-              if ( type == "win_resize" )
-              {
-                  slot = add( slot, "win_size",   lookup(win_dat,"new_size", 0));
-                  slot = add( slot, "win_length", win_length);
-		  slot = add( slot, "win_max_length", win_max_length );
-              }
-              slot_list = add( slot_list, slot );
+	    map slot = $[ "type"      :     type,
+			  "dev"       :     dev,
+			  "nr"        :     nr,
+			  "end_cyl"   :     end_of_part,
+			  "start_cyl" :     pstart,
+			  "size"      :     psize ];
 
-              last_border = end_of_part +1;
-          }
+	    if( type == "win_resize" )
+		{
+		slot["win_size"] = win_dat["new_size"]:0;
+		slot["win_length"] = win_len;
+		slot["win_max_length"] = win_max_len;
+		}
+	    slot_list = add( slot_list, slot );
 
-          if ( old_last_border > begin_of_part )
-          {
-              y2error( "Partition order ? %1 %2", last_border, begin_of_part );
-	      y2error( "slot_list %1", slot_list);
-	      y2error( "part_list %1", part_list);
-          }
-      });
+	    last_border = end_of_part +1;
+	    }
+	});
 
-      //////////////////////////////////////////////////////////////
-      // is there a gap between partitions -> create free slot
-      //////////////////////////////////////////////////////////////
-      if ( last_border < end_cyl )
-      {
-          // create freeslot
-          // example: last = 1 end = 10 -> free = 1..10     size = 10 - 1 +1 * cylsize
+    //////////////////////////////////////////////////////////////
+    // is there a gap between partitions -> create free slot
+    //////////////////////////////////////////////////////////////
+    if( last_border < end_cyl )
+	{
+	// create freeslot
+	// example: last = 1 end = 10 -> free = 1..10     
+	//          size = 10 - 1 +1 * cylsize
 
-          slot_list = add( slot_list, $[ "type" :     "free",
-                                       "dev"       :     dev,
-                                       "end_cyl":       end_cyl,
-                                       "start_cyl":     last_border,
-                                       "size"   :       ((end_cyl - last_border +1)*cyl_size) ]);
-
-      }
-
-      return( slot_list );
-  };
-
-
-
-  //////////////////////////////////////////////////////////////////////
-  // Look if there is a boot slot
-  // type:: "p_or_l", "primary", "logical"
-
-  global define HaveBootSlot( string type, integer curr_slotnb, string mode, map boot_slot_list )
-  ``{
-      // delete curr slot from boot slot if it is in there
-      list slots = [];
-
-      if ( mode == "use_free" )  slots = lookup( boot_slot_list, "use_free", []);
-      if ( mode == "use_win" )   slots = lookup( boot_slot_list, "use_win", []);
-      if ( mode == "reuse" )     slots = lookup( boot_slot_list, "reuse", []);
-
-      if ( type == "reuse")
-      {
-	  type = "p_or_l";
-	  slots = lookup( boot_slot_list, "reuse_only", []);
-      }
-
-      // y2debug( "Have bootSlots: %1, %2", slots, filter( `slot, slots, ``(curr_slotnb!= lookup( slot, "slotnb"))));
-      
-      if ( type == "p_or_l" )
-      {
-          return ( size( filter( `slot, slots, ``(curr_slotnb!= lookup( slot, "slotnb", -1) ))) > 0);
-      }
-      else
-      {
-          return ( size( filter( `slot, slots, ``( curr_slotnb!=lookup( slot, "slotnb", -1)
-                                                   && (lookup( slot, "p_or_l", "") == type )))) > 0   );
-      }
-  };
+	slot_list = add( slot_list, 
+	                 $[ "type"   : "free",
+			    "dev"    : dev,
+			    "end_cyl": end_cyl,
+			    "start_cyl": last_border,
+			    "size"   : ((end_cyl - last_border +1)*cyl_size) ]);
+	}
+    y2milestone( "list:%1", slot_list );
+    return( slot_list );
+    };
 
 
+//////////////////////////////////////////////////////////////////////
+// Look if there is a boot slot
+// type:: "p_or_l", "primary", "logical"
 
-  //////////////////////////////////////////////////////////////////////
-  // search for the smallest boot slot
+global define HaveBootSlot( string type, integer curr_slotnb, string mode,
+                            map boot_slot_list )
+    ``{
+    // delete curr slot from boot slot if it is in there
+    list slots = [];
 
-  global define GetBootSlot( string type, integer curr_slotnb, string mode, map boot_slot_list  )
-  ``{
-      // delete curr slot from boot slot if it is in there
-      list slots = [];
+    if( mode == "use_free" ) slots = boot_slot_list["use_free"]:[];
+    if( mode == "use_win" )  slots = boot_slot_list["use_win"]:[];
+    if( mode == "reuse" )    slots = boot_slot_list["reuse"]:[];
 
-      if ( mode == "use_free" )  slots = lookup( boot_slot_list, "use_free", []);
-      if ( mode == "use_win" )   slots = lookup( boot_slot_list, "use_win", []);
-      if ( mode == "reuse" )     slots = lookup( boot_slot_list, "reuse", []);
+    if( type == "reuse" )
+	{
+	type = "p_or_l";
+	slots = boot_slot_list["reuse_only"]:[];
+	}
 
-      if ( type == "reuse")
-      {
-	  type = "p_or_l";
-	  slots = lookup( boot_slot_list, "reuse_only", []);
-      }
-      
-      if ( type == "p_or_l" )
-      {
-          slots = filter( `slot, slots, ``(curr_slotnb!= lookup( slot, "slotnb", -1)   ));
-      }
-      else
-      {
-          slots = filter( `slot, slots, ``( curr_slotnb!= lookup( slot, "slotnb", -1)
-                                            && (lookup( slot, "p_or_l", "") == type )));
-      }
+    list b_slot = [];
+    if ( type == "p_or_l" )
+	{
+	b_slot = filter( `slot, slots, ``(curr_slotnb!=slot["slotnb"]:-1 ));
+	}
+    else
+	{
+	b_slot = filter( `slot, slots, ``( curr_slotnb!=slot["slotnb"]:-1 && 
+					   slot["p_or_l"]:"" == type ));
+	}
+    y2debug( "Have bootSlots: %1, %2", slots, b_slot );
+    return( size(b_slot)>0 );
+    };
 
 
-      slots = sort(`slot_x, `slot_y, slots, ``(lookup(slot_x, "size", 0) <= lookup(slot_y, "size", 0)));
+//////////////////////////////////////////////////////////////////////
+// search for the smallest boot slot
 
-      return( select( slots, 0, $[]));
-  };
+global define GetBootSlot( string type, integer curr_slotnb, string mode, 
+                           map boot_slot_list )
+    ``{
+    // delete curr slot from boot slot if it is in there
+    list slots = [];
 
-  
-  
-	  
+    if( mode == "use_free" ) slots = boot_slot_list["use_free"]:[];
+    if( mode == "use_win" )  slots = boot_slot_list["use_win"]:[];
+    if( mode == "reuse" )    slots = boot_slot_list["reuse"]:[];
+
+    if( type == "reuse")
+	{
+	type = "p_or_l";
+	slots = boot_slot_list["reuse_only"]:[];
+	}
+    
+    if( type == "p_or_l" )
+	{
+	slots = filter( `slot, slots, ``(curr_slotnb != slot["slotnb"]:-1 ));
+	}
+    else
+	{
+	slots = filter( `slot, slots, 
+	                ``( curr_slotnb != slot["slotnb"]:-1 && 
+			    slotr["p_or_l"]:"" == type ));
+	}
+
+    slots = sort( `slot_x, `slot_y, slots, 
+                  ``(slot_x["size"]:0 <= slot_y["size"]:0));
+
+    return( slots[0]:$[] );
+    };
+
 }
