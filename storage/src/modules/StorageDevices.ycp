@@ -91,7 +91,11 @@ list scsicds = [];		// list of SCSI CDs
   */
 global define boolean ProbeCDROMs()
     ``{
-    map linknum = $[ "cdrom":0, "cdrecorder":0, "dvd":0];
+    map linknum = $[ "cdrom"       : 0, 
+                     "cdrecorder"  : 0, 
+		     "dvd"         : 0, 
+		     "dvdrecorder" : 0,
+		     "dvdram"      : 0 ];
     if (size (cddrives) == 0)
 	{
 	if (Mode::initial || Mode::cont)
@@ -124,13 +128,13 @@ global define boolean ProbeCDROMs()
 	// sort out idecdrws and scsicds
 	foreach (`e, cddrives,
 	    ``{
-	    if( e["cdtype"]:"" == "cdrw" && e["bus"]:"" == "IDE" )
+	    if( (e["cdr"]:false || e["cdrw"]:false || e["dvdr"]:false ) &&
+		e["bus"]:"" == "IDE" )
 		{
-		idecdrws = add (idecdrws, substring( e["dev_name"]:"", 5));
+		idecdrws = add( idecdrws, substring( e["dev_name"]:"", 5));
 		y2milestone ("IDE CD-RW %1", idecdrws );
-		// ** must reboot
 		}
-	    else if( e["bus"]:"" == "SCSI" )
+	    if( e["bus"]:"" == "SCSI" )
 		{
 		scsicds = add (scsicds, e["dev_name"]:"");
 		}
@@ -154,17 +158,23 @@ global define boolean ProbeCDROMs()
 	    ``{
 	    // first, determine the drive type and make a linkname guess
 	    string cddevice = e["dev_name"]:"";
-	    string cdtype = e["cdtype"]:"cdrom";
 
 	    string linkname = "cdrom";
-	    if (cdtype == "dvd")
+	    if( e["dvdram"]:false )
 		{
-		linkname = "dvd";
+		linkname = "dvdram";
 		}
-	    else if( (cdtype == "cdr") || (cdtype == "cdrw") ||
-		     (cdtype == "dvdr") || (cdtype == "dvdram"))
+	    else if( e["dvdr"]:false )
+		{
+		linkname = "dvdrecorder";
+		}
+	    else if( e["cdr"]:false || e["cdrw"]:false )
 		{
 		linkname = "cdrecorder";
+		}
+	    else if( e["dvd"]:false )
+		{
+		linkname = "dvd";
 		}
 
 	    // now check the number (for /dev/cdrom, /dev/cdrom1, ...)
@@ -686,7 +696,7 @@ define void symlink_cdrom( map cdinfo )
 
 /**
 * Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
-* create cdtype dependant links (i.e. /dev/dvd for a DVD drive
+* create type dependant links (i.e. /dev/dvd for a DVD drive
 * but make sure that at least /dev/cdrom exists.
 */
 

@@ -282,14 +282,24 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 	    map ret = MakeCdromFstabEntry( cd );
 	    fstab[ret["mount"]:""] = ret;
 	    });
-	if( size(cddevices)>0 && !haskey( fstab, "/media/cdrom" ) &&
-	    (haskey(fstab, "/media/dvd") || haskey(fstab, "/media/cdwriter")))
+	if( size(cddevices)>0 && !haskey( fstab, "/media/cdrom" ) )
 	    {
-	    fstab["/media/cdrom"] = eval(haskey(fstab, "/media/dvd") ? 
-					    fstab["/media/dvd"]:$[] :
-					    fstab["/media/cdwriter"]:$[] );
-	    fstab["/media/cdrom","mount"] = "/media/cdrom";
-	    fstab["/media/cdrom","spec"] = "/dev/cdrom";
+	    map tm = $[];
+	    list names = [ "/media/dvd", "/media/cdrecorder", 
+	                   "/media/dvdrecorder", "/media/dvdram" ];
+	    foreach( `n, names, 
+		``{
+		if( size(tm)==0 && haskey( fstab, n ) )
+		    {
+		    tm = fstab[n]:$[];
+		    }
+		});
+	    if( size(tm)>0 )
+		{
+		fstab["/media/cdrom"] = eval(tm);
+		fstab["/media/cdrom","mount"] = "/media/cdrom";
+		fstab["/media/cdrom","spec"] = "/dev/cdrom";
+		}
 	    }
 	fstablist = union( fstablist, maplist (`k, `v, fstab, ``(v)));
 	y2milestone( "fstablist %1", fstablist );

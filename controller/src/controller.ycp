@@ -255,7 +255,10 @@ Stderr was:
 	map conf = SCR::Read(.probe.status, entry["unique_key"]:"");
 	y2milestone( "entry:%1", entry );
 	y2milestone( "conf:%1", conf );
-	if( conf["available"]:`no != `no && size(entry["drivers"]:[])>0 )
+	if( conf["available"]:`no != `no && size(entry["drivers"]:[])>0 &&
+            find( `e, dev, ``(e["bus"]:""==entry["bus"]:"" && 
+                              e["slot_id"]:""==entry["slot_id"]:"" &&
+                              e["bus_id"]:""==entry["bus_id"]:""))==nil )
 	    {
 	    entry["conf"] = conf;
 	    dev = add( dev, entry );
@@ -494,17 +497,18 @@ Stderr was:
 	    boolean mkinitrd = false;
 	    params[modname] = UI::QueryWidget( `id(`param), `Value );
 	    list new_initrd = [];
+	    list tlist = eval(initrd);
 	    foreach( `e, clist,
 		``{
 		integer num = TermToId( e );
 		integer modnum = dev[num,"modnum"]:0;
-		if( contains( initrd, 
+		if( contains( tlist, 
 		              dev[num,"drivers",modnum,"modules",0,0]:"" ) )
 		    {
 		    foreach( `d, dev[num,"drivers",modnum,"modules"]:[],
 			``{
 			new_initrd = add( new_initrd, d[0]:"" );
-			initrd = filter( `e, initrd, ``(e!=d[0]:""));
+			tlist = filter( `e, tlist, ``(e!=d[0]:""));
 			if( size(params[d[0]:""]:"")==0 )
 			    params[d[0]:""] = d[1]:"";
 			mkinitrd = mkinitrd || size(d[1]:"")>0;
@@ -573,6 +577,7 @@ Stderr was:
 		UI::OpenDialog( `VBox( `Label( _("Executing mkinitrd") ) ) );
 		integer exit = SCR::Execute( .target.bash, "/sbin/mk_initrd" );
 		UI::CloseDialog();
+		y2milestone( "exit /sbin/mk_initrd %1", exit );
 		if( exit != 0 )
 		    {
 		    UI::ErrorPopup( _("Executing mkinitrd failed.
