@@ -770,8 +770,11 @@ define void DoUmountAndReset( list mounts )
 
     foreach( string dev, map disk, tg,
 	``{
-	num_evms = num_evms + size(filter( map p, disk["partitions"]:[],
-	                                   ``(size(p["mount"]:"")>0)));
+	if( find( dev, "/dev/evms" )==0 )
+	    {
+	    num_evms = num_evms + size(filter( map p, disk["partitions"]:[],
+					       ``(size(p["mount"]:"")>0)));
+	    }
 	});
     y2milestone( "num_evms %1 num_lvm_vg %2 md_active %3", num_evms, num_lvm_vg,
                  md_active );
@@ -848,7 +851,8 @@ damage to your file systems, it is safer to cancel and reboot.
 	SCR::Write( .lvm.deactivate, "" );
         }
 
-    HandleEvmsChanges( tg, false, true );
+    HandleEvmsChanges( tg, true, true );
+    SCR::UnmountAgent(.evms);
 
     if( md_active )
 	{
@@ -863,7 +867,12 @@ damage to your file systems, it is safer to cancel and reboot.
 	SCR::Write( .md.deactivate, mr_list );
 	}
 
-    SCR::Execute( .target.bash, "/sbin/dmsetup remove_all" );
+    y2milestone( "dmsetup %1", 
+                 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
+    y2milestone( "dmsetup %1", 
+                 SCR::Execute( .target.bash_output, "/sbin/dmsetup remove_all" ));
+    y2milestone( "dmsetup %1", 
+                 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
 
   // 1. Partitioning all disks
 
@@ -1254,17 +1263,25 @@ Please repeat the installation with another swap partition selected
     // 2b. Do any necessary lvm preparation
     // activate lvm, cause if I only use a existing LV, I need to activate it 
     // here
-    if( num_evms>0 || HandleEvmsChanges( tg, true, false ) )
+    if( num_evms>0 || HandleEvmsChanges( tg, false, false ) )
 	{
+	y2milestone( "dmsetup %1", 
+		     SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
 	SCR::Write( .evms.init, "" );
-	HandleEvmsChanges( tg, true, true );
+	y2milestone( "dmsetup %1", 
+		     SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
+	HandleEvmsChanges( tg, false, true );
 	}
+    y2milestone( "dmsetup %1", 
+                 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
     
     if ( num_lvm_vg > 0 )
 	{
 	SCR::Write( .lvm.init, "" );
 	SCR::Write( .lvm.activate, "" );
 	}
+    y2milestone( "dmsetup %1", 
+		 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
     do
 	{
 	retry=false;
