@@ -106,6 +106,10 @@ LvmAgent::Read(const YCPPath& path, const YCPValue& arg, const YCPValue& )
       YCPInteger Ret_Ci = Lvm_pC->LvmVersion();
       return Ret_Ci;
       }
+  else if (conf_name == (string)"error" )
+      {
+      return Err_C;
+      }
   else
       {
       y2error("unknown command in path '%s'", path->toString().c_str());
@@ -178,7 +182,6 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 
     if (conf_name == "command")
 	{
-	YCPMap Ret_Ci;
 	YCPMap cmd;
 	YCPValue type = YCPNull();
 	string CmdLine_Ci;
@@ -517,16 +520,19 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 	    y2error( ErrText_Ci.c_str() );
 	    ret = false;
 	    }
+	for( YCPMapIterator I_ii=Err_C.begin(); I_ii!=Err_C.end(); I_ii++ )
+	    {
+	    Err_C.remove( I_ii.key() );
+	    }
 	if( !ret->asBoolean()->value() )
 	    {
-	    Ret_Ci->add( YCPString( "errtxt" ), YCPString( ErrText_Ci ) );
+	    Err_C->add( YCPString( "errtxt" ), YCPString( ErrText_Ci ) );
 	    if( CmdLine_Ci.length()>0 )
 		{
-		Ret_Ci->add( YCPString( "cmdline" ), YCPString( CmdLine_Ci ) );
+		Err_C->add( YCPString( "cmdline" ), YCPString( CmdLine_Ci ) );
 		}
 	    }
-	Ret_Ci->add( YCPString( "ok" ), YCPBoolean( ret ));
-	return Ret_Ci;
+	return YCPBoolean( ret );
 	}
     else if (conf_name == "init")
 	{

@@ -41,6 +41,7 @@ protected:
   YCPMap CreateLvMap( const LvInfo& Lv_Cv );
   YCPMap CreatePvMap( const PvInfo& Pv_Cv );
   YCPMap CreateVgMap( const VgInfo& Vg_Cv );
+  YCPMap   Err_C;
   LvmAccess *Lvm_pC;
 };
 
