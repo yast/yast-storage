@@ -214,4 +214,96 @@
       }
   };
 
+
+global define list mountedPartitionsOnDisk( string dev_str, list mounts_read )
+    ``{
+
+    list mounts = filter(`mount, mounts_read,
+                         ``( issubstring(mount["spec"]:"", dev_str )));
+
+    if( Mode::test )
+        SCR::Write(.dumpto.tmp.mounts1, mounts );
+
+    // reset
+    if( mounts == nil ) mounts = [];
+
+    return mounts;
+    }
+
+global define string MountedOn( string partition_str, list mounts_read )
+    ``{
+
+    list mounts = filter( `mount, mounts_read,
+                          ``( mount["spec"]:""==partition_str) );
+
+    if( Mode::test )
+        SCR::Write(.dumpto.tmp.mount_part, mounts );
+
+    if( size( mounts) > 0 )
+        return lookup( select( mounts , 0, $[]), "file", "");
+    return "";
+    };
+
+    /**
+     *	Return a list with all mounted partition
+     *  @return list
+     */
+global define list CurMounted() 
+    ``{
+
+    list mounts = SCR::Read(.proc.mounts);
+    list swaps  = SCR::Read(.proc.swaps );
+
+    foreach( `swap, swaps, 
+	``{
+	map swap_entry = $[
+			   "file" : "swap",
+			   "spec" :  lookup( swap, "file", "" )
+	];
+
+	mounts = add( mounts , swap_entry );
+
+	});
+
+    SCR::Execute(.target.bash, "/bin/mount | grep \" / \" >/tmp/YaST2_mounts");
+
+    string root_str  = SCR::Read(.target.string, "/tmp/YaST2_mounts");
+    SCR::Execute(.target.bash, "/bin/rm /tmp/YaST2_mounts");
+
+    list root_list = splitstring( root_str, " ");
+
+    y2debug( " root device : %1", select( root_list , 0, "" ));
+
+    map root_map  = find( `mount, mounts, ``( lookup( mount ,"spec", "") == "/dev/root"));
+    root_map = add( root_map, "spec", select( root_list , 0, "" ) );
+    mounts = filter( `mount, mounts, ``( lookup( mount ,"spec", "") != "/dev/root"));
+    mounts = add( mounts, root_map );
+    list ret = [];
+    foreach( `p, mounts, ``{ 
+	if( find( p["spec"]:"", "/dev/loop" )>=0 )
+	    {
+	    string cmd = sformat( "/sbin/losetup %1", p["spec"]:"" );
+	    map bash_call = SCR::Execute (.target.bash_output, cmd, $[] );
+	    if( bash_call["exit"]:1 == 0)
+		{
+		string text = bash_call["stdout"]:"";
+		if( find( text, ")" )>0 )
+		    {
+		    text = substring( text, 0, find( text, ")" ) );
+		    if( find( text, "(" )>0 )
+			{
+			text = substring( text, find( text, "(" )+1 );
+			p["loop_on"] = text;
+			}
+		    }
+		}
+	    }
+	ret = add( ret, p );
+	});
+
+    y2debug( " all mounts %1", ret);
+    return ret;
+    };
+
+
 }

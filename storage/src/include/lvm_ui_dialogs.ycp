@@ -21,6 +21,8 @@
 
 textdomain "storage";
 
+import "Partitions";
+
 include "ui/common_popups.ycp";
 include "partitioning/custom_part_dialogs.ycp";
 include "partitioning/lvm_ui_lib.ycp";
@@ -39,8 +41,11 @@ include "partitioning/lvm_ui_lib.ycp";
 
       ``{
             map return_value	 = $[];
+	    y2milestone( "dev=%1", dev );
       
             string  curr_size    =    ByteToHumanStringWithZero(lookup( Lv, "size", 1));
+	    integer new_size     =    Lv["size"]:0;
+	    integer old_size     =    Lv["ori_length"]:new_size;
 	    string  volume_name  =    lookup(  Lv, "subdev",     "");
 	    integer stripes_b    =    lookup(  Lv, "stripes",    nil);
 	    map fs_options       =    lookup(  Lv, "fs_options", $[] );
@@ -142,8 +147,23 @@ include "partitioning/lvm_ui_lib.ycp";
 	      }
 
 	   
-								
-
+	      ////////////////////////////////////////////////////////////////////////////////////////
+	      // warning if partition is mounted
+	      y2milestone( "installation=%1", installation );
+	      if(  ! installation )
+	      {
+		  string mounts = 
+		      Partitions::MountedOn( dev, Partitions::CurMounted()  );
+		  y2milestone( "dev:%1 mounts=%2", dev, mounts );
+		  if( mounts != "" ) 
+		  {
+		      if( !ModifyPartitionInSystemWarningPopup( dev, mounts ))
+			{
+			return( nil );
+			}
+		  }
+	      }
+		  
 	      
 	      UI::OpenDialog(
 	        `opt(`decorated ),
@@ -210,17 +230,6 @@ include "partitioning/lvm_ui_lib.ycp";
 	      
 	      if( ! create ) UI::ChangeWidget( `id("stripes"),`Enabled, false );
 	  
-	      ////////////////////////////////////////////////////////////////////////////////////////
-	      // warning if partition is mounted
-	      if(  ! installation )
-	      {
-		  string mounts = PartitionMountedOn( dev  , WFM::CurrentMounted()  );
-		  if( mounts != "" ) 
-		  {
-		      UI::ModifyPartitionInSystemWarningPopup();
-		  }
-	      }
-		  
 	      
 	      ////////////////////////////////////////////////////////////////////
 	      // User mainloop for dialog
@@ -308,15 +317,52 @@ include "partitioning/lvm_ui_lib.ycp";
 		    y2debug("STRI ---- i%1i", filesystem);
 		    if ( c_ret=="ok")
 		    {
+		        new_size = kmgt_str_to_byte(lv_size);
 			
-			if ( ! icheck_lv_size(lv_size, max_size) )
+			if ( ! icheck_lv_size(new_size, max_size) )
 			{
 			    input_is_ok = false;
 			    continue;
 			}
 
+			if( is_resize_mode && !format && new_size!=old_size)
+			    {
+			    map possible = FileSystems::IsResizable( fs_option_fs );
+			    if( new_size < old_size )
+				{
+				if( !possible["shrink"]:false )
+				    {
+				    if( !FsysCannotShrinkWarning() )
+					{
+					UI::ChangeWidget(`id("size"), `Value,
+							 curr_size );
+					continue;
+					}
+				    }
+				else if( fs_option_fs == `reiser )
+				    {
+				    if( !FsysShrinkReiserWarning() )
+					{
+					UI::ChangeWidget(`id("size"), `Value,
+							 curr_size );
+					continue;
+					}
+				    }
+				}
+			    else if( new_size > old_size )
+				{
+				if( !possible["extend"]:false )
+				    {
+				    if( !FsysCannotGrowWarning() )
+					{
+					UI::ChangeWidget(`id("size"), `Value,
+							 curr_size );
+					continue;
+					}
+				    }
+				}
+			    }
 
-			
 			if ( is_create_mode )
 			{
 			    if( !icheck_volume_name(volume_name) )
@@ -402,29 +448,19 @@ or cancel this dialog.
 					  "format"	  : format,
 					  "fs_options"  : fs_options,
 					  "stripes"     : stripes_k,
-					  "lv_size"     : kmgt_str_to_byte(lv_size),
+					  "lv_size"     : new_size,
 					  "mountpoint"  : mountpoint,
-					  "changed_size": lv_size!=curr_size,
+					  "changed_size": new_size!=old_size,
 					  "volume_name" : volume_name,
 					  "filesystem"  : filesystem,
 					  "crypt_fs"    : new_crypt,
 					  "crypt_key"   : crypt_key	  ];
 
-		    
-		    ////////////////////////////////////////////////////////////////////////////////////////
-		    // modified partition and partition is mounted
-		    if( ! installation  && ! arePartitionsEqual( Lv , return_value ) )
-		    {
-			string mounts =  PartitionMountedOn( dev  , WFM::CurrentMounted() );
-			if( mounts != "" ) 
+		    if( new_size!=old_size )
 			{
-			    if( ! UI::UseChangedPartitionContinueCancelPopup()) 
-			    {
-				ret = "cancel";
-			    }
-			} 
-		    }
-
+			return_value["ori_length"] = old_size;
+			}
+		    
 	      } until ( (c_ret=="ok"&&input_is_ok) || c_ret == "cancel" );
 
 	      UI::CloseDialog();
@@ -439,7 +475,7 @@ or cancel this dialog.
 	      {
 		  return( nil );
 	      }
-	    };
+	};
     
 
 

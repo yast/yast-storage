@@ -51,6 +51,7 @@ HINTS: Always use
   
 
   // include "partitioning/custom_part_testdata.ycp";
+  include "partitioning/custom_part_dialogs.ycp";
   include "ui/common_popups.ycp";
   include "partitioning/propose_part_util.ycp";
 
@@ -1393,7 +1394,8 @@ HINTS: Always use
 	      // warning if partition is mounted
 	      if( ! installation )
 	      {
-		  string mounts = WFM::PartitionMountedOn( dev  , WFM::CurrentMounted()  );
+		  string mounts = 
+		      Partitions::MountedOn( dev, Partitions::CurMounted() );
 		  if( mounts != "" ) 
 		  {      
 		      ModifyPartitionInSystemWarningPopup( dev, mounts );
@@ -1707,7 +1709,9 @@ Do you really want to change the FSID?
 			      
 			 if( ! installation &&  ! WFM::arePartitionsEqual( new_val , return_value )  && ! create )
 			 {
-			     string mounts =  WFM::PartitionMountedOn( dev  , WFM::CurrentMounted() );
+			     string mounts = 
+				 Partitions::MountedOn( dev, 
+							Partitions::CurMounted() );
 			     if( mounts != "" ) 
 			     {
 				 if( ! UseChangedPartitionContinueCancelPopup()) 
@@ -2072,18 +2076,13 @@ of the partition.
 		 new_size = used + free + av_space - linux_size;
 		 if( new_size < used+free && !possible["shrink"]:false )
 		    {
-		    UI::MessagePopup(_("The filesystem on the selected cannot shrink.
-Only fat, ext2, ext3 and reiser allow shrinking of a filesystem."));
+		    FsysCannotShrinkPopup();
                     ret = `again;
 		    }
 		 else if( new_size < used+free && 
 		          new_val["used_fs"]:`unknown==`reiser )
 		    {
-		    if( !UI::YesNoPopup( _("
-You decreased a partition with a reiser filesystem on it.
-It is possible to shrink a reiser filesystem but this feature is not 
-very thoroughly tested. A backup of your data is recommended.
-Do you still want to shrink the filesystem?")) )
+		    if( !FsysShrinkReiserWarning() )
 			{
 			ret = `again;
 			}

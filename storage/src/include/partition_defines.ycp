@@ -266,7 +266,7 @@ the encryption option.
      *---------------------------------------------------------------------
      */
 
-    global define TargetChangesToRichText( map targetMap)
+    global define TargetChangesToRichText( map targetMap, map modTg )
     ``{
 	if ( targetMap == nil )
 	{
@@ -441,6 +441,35 @@ the encryption option.
 	    });
 	});
 
+
+	foreach( `num, `entry, modTg, ``{
+	    if( entry["type"]:"" == "remove_lv" )
+		{
+		// to translators: * Delete LV /dev/system/usr 
+		delete_lst = 
+		    add( delete_lst, 
+		         sformat(_("<font color=red>Delete LV</font> /dev/%1/%2"),
+			         entry["vgname"]:"", entry["name"]:"" ));
+		}
+
+	    if( entry["type"]:"" == "create_vg" )
+		{
+		// to translators: * create VG system
+		create_lst = 
+		    add( create_lst, 
+			 sformat(_("Create VG %1"), entry["vgname"]:"" ));
+		}
+	    if( entry["type"]:"" == "resize_lv" )
+		{
+		// to translators: * create VG system
+		resize_lst = 
+		    add( resize_lst, 
+		         sformat(_("Resize LV /dev/%1/%2 to %3"), 
+			         entry["vgname"]:"", entry["name"]:"",
+				 ByteToHumanString(entry["size"]:0)));
+		}
+
+	});
 
         foreach( `line, delete_lst, ``{
             y2debug( "OUT: DELETE: %1", line);
@@ -855,6 +884,29 @@ Then YaST2 can also create and delete partitions.
 		y2milestone( "addTargetModification remove lv %1", modify_targets );
 		done = true;
 		}
+	    rem = filter( `k, `m, modify_targets,
+	                  ``(m["type"]:""=="resize_lv" &&
+			     m["vgname"]:""==add_el["vgname"]:"" &&
+			     m["name"]:""==add_el["name"]:"") );
+	    if( size(rem)>0 )
+		{
+		integer num = select( maplist( `k, `m, rem, ``(k) ), size(rem)-1, -1 );
+		modify_targets = removeTargetModification( modify_targets, num );
+		y2milestone( "addTargetModification resize lv %1", modify_targets );
+		}
+	    }
+	else if( add_el["type"]:"" == "resize_lv" )
+	    {
+	    map rem = filter( `k, `m, modify_targets,
+	                      ``(m["type"]:""=="resize_lv" &&
+			         m["vgname"]:""==add_el["vgname"]:"" &&
+				 m["name"]:""==add_el["name"]:"") );
+	    if( size(rem)>0 )
+		{
+		integer num = select( maplist( `k, `m, rem, ``(k) ), size(rem)-1, -1 );
+		modify_targets = removeTargetModification( modify_targets, num );
+		y2milestone( "addTargetModification resize lv %1", modify_targets );
+		}
 	    }
 	if( !done )
 	    {
@@ -1059,70 +1111,6 @@ Then YaST2 can also create and delete partitions.
 
 
 
-    /**
-     *	Return a list with all mounted partition
-     *  @return list
-     */
-    global define CurrentMounted() ``{
-
-	list mounts = SCR::Read(.proc.mounts);
-	list swaps  = SCR::Read(.proc.swaps );
-
-	foreach( `swap, swaps, ``{
-	    map swap_entry = $[
-			       "file" : "swap",
-			       "spec" :  lookup( swap, "file", "" )
-	    ];
-
-	    mounts = add( mounts , swap_entry );
-
-	});
-
-	SCR::Execute(.target.bash, "/bin/mount | grep \" / \" >/tmp/YaST2_mounts");
-
-	string root_str  = SCR::Read(.target.string, "/tmp/YaST2_mounts");
-	SCR::Execute(.target.bash, "/bin/rm /tmp/YaST2_mounts");
-
-	list   root_list = splitstring( root_str, " ");
-
-	y2debug( " root device : %1", select( root_list , 0, "" ));
-
-	map   root_map  = find(   `mount , mounts, ``( lookup( mount ,"spec", "") == "/dev/root"));
-	root_map        = add(     root_map , "spec",  select( root_list , 0, "" ) );
-	mounts          = filter( `mount , mounts, ``( lookup( mount ,"spec", "") != "/dev/root"));
-	mounts          = add(     mounts, root_map );
-	ret = [];
-	foreach( `p, mounts, ``{ 
-	    if( find( p["spec"]:"", "/dev/loop" )>=0 )
-		{
-		string cmd = sformat( "/sbin/losetup %1", p["spec"]:"" );
-		map bash_call = SCR::Execute (.target.bash_output, cmd, $[] );
-		if( bash_call["exit"]:1 == 0)
-		    {
-		    string text = bash_call["stdout"]:"";
-		    if( find( text, ")" )>0 )
-			{
-			text = substring( text, 0, find( text, ")" ) );
-			if( find( text, "(" )>0 )
-			    {
-			    text = substring( text, find( text, "(" )+1 );
-			    p["loop_on"] = text;
-			    }
-			}
-		    }
-		}
-	    ret = add( ret, p );
-	    });
-
-	y2debug( " all mounts %1", ret);
-
-	return ret;
-    };
-
-
-   
-
-    
     // check for ppc-PReP/CHRP system, they need a special boot partition
 
     global define prepare_ppc_boot_part( map targets )    

@@ -240,7 +240,6 @@
 						boolean decrease )
     ``{
     boolean ret = true;
-    string unit = _("MB");
     integer cyl_size = disk["cyl_size"]:0;
 
     list part = filter( `p, disk["partitions"]:[], 
@@ -262,92 +261,242 @@
     foreach( `p, part, ``{
         if( ret )
 	    {
-	    boolean retry = false;
-	    string device = Storage::GetDeviceName( disk_dev, p["nr"]:0 );
-	    symbol fs = p["used_fs"]:`unknown;
-	    string fs_name = FileSystems::GetName( fs, _("unknown") );
 	    integer new_size = p["region",1]:0*cyl_size/(1024*1024);
-	    do
-		{
-		UI::ChangeWidget(`id(`progress), `Label, 
-		                 sformat(_("Resizing device %1 with filesystem %2 from %3 %4 to %5 %4"), 
-				 device, fs_name,
-				 p["ori_length"]:0*cyl_size/(1024*1024), unit,
-				 new_size ));
-		retry = false;
-		boolean result = true;
-		if( result && decrease )
-		    {
-		    result = HandleFilesystem( device, fs, new_size, decrease );
-		    }
-		if( result )
-		    {
-		    result = fdisk_resize( disk_dev, p["nr"]:0, 
-					   p["region",1]:0 );
-		    y2milestone( "fdisk_resize ret:%1", result );
-		    }
-		if( result && !decrease )
-		    {
-		    result = HandleFilesystem( device, fs, new_size, decrease );
-		    }
-		if ( !result )
-		  {
-		  y2error("Oops, partition resize failed for device %1", device);
-		  symbol ans=`yes;
-		  // continue/cancel/retry during installation
-		  ans = UI::AnyQuestionPopup3(_("resize failed."),
-			  sformat (_("Resizing of device %1 failed."), device),
-			  UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_no);
-
-		  if( ans == `retry )
-		    {
-		    retry = true;
-		    }
-		  else if( ans == `no )
-		    {
-		    ret = false;
-		    }
-		  }
-		} while ( retry );
+	    integer old_size = p["ori_length"]:0*cyl_size/(1024*1024);
+	    ret = HandleResize( disk_dev, p, new_size, old_size );
 	    }
 	});
     return( ret );
     }
 
+global define boolean HandleResizeLvm( map target, map mod, boolean decrease )
+    ``{
+    y2milestone( "HandleResizeLvm decrease:%1 mod:%2", decrease, mod );
+    boolean ret = true;
+    integer num = 1;
+    map doit = $[];
+    foreach( `n, `e, mod, ``{
+	string vg = "/dev/" + e["vgname"]:"";
+        map p = Storage::GetPartition( target, vg, e["name"]:"abcde" );
+	y2debug( "p:%1", p );
+        integer new_size = e["size"]:0;
+        integer old_size = p["ori_length"]:new_size;
+	old_size = old_size / (1024*1024);
+	new_size = new_size / (1024*1024);
+	if( (decrease && old_size > new_size) ||
+	    (!decrease && old_size < new_size) )
+	    {
+	    e["part"] = eval(p);
+	    doit[num] = e;
+	    num = num + 1;
+	    }
+	});
+    y2debug( "doit:%1", doit );
+    if( size(doit)>0 )
+	{
+	if( !decrease )
+	    {
+	    ret = target_modify( doit, Mode::installation );
+	    }
+	foreach( `n, `e, doit, ``{
+	    if( ret )
+		{
+		y2debug( "n:%1 e:%2", n, e );
+		integer new_size = e["size"]:0 / (1024*1024);
+		integer old_size = e["part","ori_length"]:0 / (1024*1024);
+		ret = HandleResize( "/dev/"+e["vgname"]:"", e["part"]:$[],
+		                    new_size, old_size );
+		}
+	    });
+	if( decrease )
+	    {
+	    ret = target_modify( doit, Mode::installation );
+	    }
+	}
+    return( ret );
+    }
+
+global define boolean HandleResize( string disk_dev, map part,
+                                    integer new_size, integer old_size )
+    ``{
+    y2milestone( "HandleResize disk:%1 new:%2 old:%3", disk_dev, new_size,
+                 old_size );
+    y2milestone( "HandleResize part:%1", part );
+    string unit = _("MB");
+    boolean retry = false;
+    string cmd = "";
+    string device = Storage::GetDeviceName( disk_dev, part["nr"]:0 );
+    symbol fs = part["used_fs"]:`unknown;
+    string fs_name = FileSystems::GetName( fs, _("unknown") );
+    boolean lvm = part["type"]:`unknown == `lvm;
+    boolean decrease = new_size < old_size;
+    boolean format = part["format"]:false;
+    map possible = FileSystems::IsResizable( fs );
+    list swap = Storage::SwappingPartitions();
+    do
+	{
+	UI::ChangeWidget(`id(`progress), `Label, 
+			 sformat(_("Resizing device %1 with filesystem %2 from %3 %4 to %5 %4"), 
+				 device, fs_name, old_size, unit, new_size ));
+	retry = false;
+	boolean result = true;
+	boolean need_umount = false;
+	string mp = "";
+	if( !Mode::installation )
+	    mp = Partitions::MountedOn( device, Partitions::CurMounted() );
+	if( size(mp)>0 )
+	    {
+	    if( decrease && !possible["mount_shrink"]:false )
+		need_umount = true;
+	    if( !decrease && !possible["mount_extend"]:false )
+		need_umount = true;
+	    if( format )
+		need_umount = true;
+	    }
+	if( contains( swap, device ))
+	    {
+	    cmd = sformat( "swapoff %1", device );
+	    y2milestone( "execute cmd:%1", cmd );
+	    SCR::Execute(.target.bash, cmd );
+	    need_umount = false;
+	    }
+	if( need_umount )
+	    {
+	    cmd = sformat("umount %1", mp );
+	    y2milestone( "execute cmd:%1", cmd );
+	    result = SCR::Execute(.target.bash, cmd ) == 0;
+	    if( !result )
+		{
+		UI::MessagePopup( _("
+Resizing of the given filesystem is only possible while the filesystem
+is not mounted. Trying to umount the failed for some reason. 
+Therefore resizing is not possible.
+You could umount the filesystem manually and retry resizing." ));
+		}
+	    }
+	if( result && decrease && !format )
+	    {
+	    result = HandleFilesystem( device, fs, new_size, decrease, mp );
+	    }
+	if( result && lvm && !format && decrease && possible["parted"]:false )
+	    {
+	    cmd = sformat( "/usr/sbin/parted -s %1 resize 1 0 %2", device,
+	                   new_size );
+	    y2milestone( "execute cmd:%1", cmd );
+	    result = SCR::Execute(.target.bash, cmd ) == 0;
+	    }
+	if( result && !lvm )
+	    {
+	    result = fdisk_resize( disk_dev, part["nr"]:0, part["region",1]:0 );
+	    y2milestone( "fdisk_resize ret:%1", result );
+	    }
+	if( result && lvm && !format && !decrease && possible["parted"]:false )
+	    {
+	    cmd = sformat( "/usr/sbin/parted -s %1 resize 1 0 %2", device,
+	                   new_size );
+	    y2milestone( "execute cmd:%1", cmd );
+	    result = SCR::Execute(.target.bash, cmd ) == 0;
+	    }
+	if( result && !decrease && !format )
+	    {
+	    result = HandleFilesystem( device, fs, new_size, decrease, mp );
+	    }
+	if( need_umount && !format )
+	    {
+	    cmd = sformat("mount %1 %2", device, mp );
+	    y2milestone( "execute cmd:%1", cmd );
+	    SCR::Execute(.target.bash, cmd );
+	    }
+	if( contains( swap, device ))
+	    {
+	    cmd = sformat( "mkswap %1", device );
+	    y2milestone( "execute cmd:%1", cmd );
+	    SCR::Execute(.target.bash, cmd );
+	    cmd = sformat( "swapon %1", device );
+	    y2milestone( "execute cmd:%1", cmd );
+	    SCR::Execute(.target.bash, cmd );
+	    }
+	if ( !result )
+	  {
+	  y2error("Oops, partition resize failed for device %1", device);
+	  symbol ans=`yes;
+	  // continue/cancel/retry during installation
+	  ans = UI::AnyQuestionPopup3(_("resize failed."),
+		  sformat (_("Resizing of device %1 failed."), device),
+		  UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_no);
+
+	  if( ans == `retry )
+	    {
+	    retry = true;
+	    }
+	  else if( ans == `no )
+	    {
+	    ret = false;
+	    }
+	  }
+	else
+	  {
+	  map tg = Storage::GetTargetMap();
+	  tg = Storage::DelPartitionData( tg, disk_dev, part["nr"]:0, 
+	                                  "ori_length" );
+	  Storage::SetTargetMap( tg );
+	  }
+	} while ( retry );
+    }
+				     
+
  global define boolean HandleFilesystem( string device, symbol fs, 
                                          integer new_size,
-                                         boolean decrease )
+                                         boolean decrease,
+					 string mp )
     ``{
     boolean ret = true;
     string cmd = "";
-    y2milestone( "HandleFilesystem device:%1 fs:%2 new:%3 decrease:%4",
-                 device, fs, new_size, decrease );
+    y2milestone( "HandleFilesystem device:%1 fs:%2 new:%3 decrease:%4 mp:%5",
+                 device, fs, new_size, decrease, mp );
     if( fs == `reiser )
 	{
-	cmd = sformat("echo y | resize_reiserfs -s %1M -f %2", new_size, 
-	              device );
+	if( !decrease && size(mp)>0 )
+	    {
+	    cmd = sformat("mount -oremount,resize=%1 %2", new_size*256, mp );
+	    }
+	else
+	    {
+	    cmd = sformat("echo y | resize_reiserfs -s %1M -f %2", new_size, 
+			  device );
+	    }
 	y2milestone( "execute cmd:%1", cmd );
 	ret = SCR::Execute(.target.bash, cmd ) == 0;
 	}
     else if( fs == `xfs && !decrease )
 	{
 	string mdir = Misc::tmpdir + "/m1";
-	cmd = sformat("mkdir %1", mdir );
-	SCR::Execute(.target.bash, cmd );
-	cmd = sformat("mount %1 %2", device, mdir );
-	y2milestone( "execute cmd:%1", cmd );
-	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	if( size(mp)==0 )
+	    {
+	    cmd = sformat("mkdir %1", mdir );
+	    SCR::Execute(.target.bash, cmd );
+	    cmd = sformat("mount %1 %2", device, mdir );
+	    y2milestone( "execute cmd:%1", cmd );
+	    ret = SCR::Execute(.target.bash, cmd ) == 0;
+	    }
+	else
+	    {
+	    mdir = mp;
+	    }
 	if( ret )
 	    {
 	    cmd = sformat("xfs_growfs %1", mdir );
 	    y2milestone( "execute cmd:%1", cmd );
 	    ret = SCR::Execute(.target.bash, cmd ) == 0;
+	    }
+	if( size(mp)==0 )
+	    {
 	    cmd = sformat("umount %1", device );
 	    y2milestone( "execute cmd:%1", cmd );
 	    SCR::Execute(.target.bash, cmd );
+	    cmd = sformat("rmdir %1", mdir );
+	    SCR::Execute(.target.bash, cmd );
 	    }
-	cmd = sformat("rmdir %1", mdir );
-	SCR::Execute(.target.bash, cmd );
 	}
     y2milestone( "HandleFilesystem ret:%1", ret );
     return( ret );

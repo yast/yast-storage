@@ -308,10 +308,10 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
 	       cpart != to_create.end (); ++cpart)
 	    {
 	      ostringstream buffer;
-	      buffer << cpart->start PLUS_1 << ends;
+	      buffer << cpart->start PLUS_1;
 	      string start_string = buffer.str();
 	      buffer.seekp(0, ios::beg);
-	      buffer << cpart->start + cpart->length << ends;
+	      buffer << cpart->start + cpart->length;
 	      string end_string = buffer.str();
 
 	      y2milestone( "creating partition: type %d, nr %d, start %s, end %s",

@@ -665,22 +665,6 @@ Try again.
   }
 
 
-  global define ModifyPartitionInSystemWarningPopup(string part, string mount )``{
-      
-      string warning = sformat(_("
-The selected partition (%1) is currently mounted on %2.
-If you change parameters (such as the mount point or the file system type),
-your Linux installation might be damaged.
-
-Unmount the partition if possible. If you are unsure,
-it is recommended to abort. Do not proceed unless you know
-exactly what you are doing.
-"), part, mount );
-
-          
-      WarningPopup( warning );
-  };
-
 
   
   global define  UseChangedPartitionContinueCancelPopup()``{
@@ -701,6 +685,71 @@ press Cancel.
   
   });
 
+  global define boolean ModifyPartitionInSystemWarningPopup(string part, string mount )``{
+      
+      string warning = sformat(_("
+The selected partition (%1) is currently mounted on %2.
+If you change parameters (such as the mount point or the file system type),
+your Linux installation might be damaged.
+
+Unmount the partition if possible. If you are unsure,
+it is recommended to abort. Do not proceed unless you know
+exactly what you are doing.
+
+Do you want to continue?
+"), part, mount );
+
+      boolean ret = false;
+
+      ret = UI::YesNoPopup( warning );
+
+      return( ret );
+  };
+
+
+  global define void FsysCannotShrinkPopup()
+  ``{
+  UI::MessagePopup(_("
+The filesystem on the selected partition cannot shrink.
+Only fat, ext2, ext3 and reiser allow shrinking of a filesystem."));
+  }
+
+  global define boolean FsysCannotShrinkWarning()
+  ``{
+  boolean ret = true;
+  ret = UI::YesNoPopup( _("
+The filesystem on the selected partition cannot be shrinked by YaST2.
+Only fat, ext2, ext3 and reiser allow shrinking of a filesystem.
+You risk loosing data when you shrink this logical volume.
+
+Do you want to continue?
+"));
+  return( ret );
+  }
+
+  global define boolean FsysCannotGrowWarning()
+  ``{
+  boolean ret = true;
+  ret = UI::YesNoPopup( _("
+The filesystem on the selected partition cannot be extended by YaST2.
+Only fat, ext2, ext3, xfs and reiser allow extending a filesystem.
+You have to reformat when you want to use the larger volume.
+
+Do you want to continue?
+"));
+  return( ret );
+  }
+
+  global define boolean FsysShrinkReiserWarning()
+  ``{
+  boolean ret = true;
+  ret = UI::YesNoPopup( _("
+You decreased a partition with a reiser filesystem on it.
+It is possible to shrink a reiser filesystem but this feature is not
+very thoroughly tested. A backup of your data is recommended.
+Do you still want to shrink the filesystem?"));
+  return( ret );
+  }
 
 
   /** 
@@ -929,8 +978,9 @@ Do you really want to do this now?
     global define ReallyInstPrepdisk( )``{
 
 	map targetMap = Storage::GetTargetMap();
+	map modTg = Storage::GetModifyTargets();
 	
-	string doto = TargetChangesToRichText(  targetMap);
+	string doto = TargetChangesToRichText(targetMap, modTg);
 	term dlg = `Empty();
 	if( size(doto) > size("<ul></ul>")+1 )
 	    {
@@ -991,7 +1041,7 @@ Do you really want to do this now?
 
 	if ( ! installation )
 	{
-	    list mounts      = mountedPartitionsOnDevice( del_dev,  CurrentMounted() );
+	    list mounts = Partitions::mountedPartitionsOnDisk( del_dev, Partitions::CurMounted() );
 
 	    if ( size( mounts ) != 0 )
 	    {

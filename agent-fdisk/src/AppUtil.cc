@@ -24,7 +24,7 @@
 string dec_string(long number)
 {
   std::ostringstream num_str;
-  num_str << number << std::ends;
+  num_str << number;
   string decimal = num_str.str();
   return decimal;
 }
@@ -32,7 +32,7 @@ string dec_string(long number)
 string hex_string(long number)
 {
   std::ostringstream num_str;
-  num_str << std::hex << number << std::ends;
+  num_str << std::hex << number;
   string hexadecimal = num_str.str();
   return hexadecimal;
 }

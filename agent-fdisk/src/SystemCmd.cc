@@ -170,6 +170,7 @@ SystemCmd::DoExecute( string Cmd_Cv )
 
     TimeMark( "System", false );
     InitCmd( Cmd_Cv, Cmd_Ci );
+    y2debug( "Cmd_Ci:%s", Cmd_Ci.c_str() );
     if( access( Shell_Ci.c_str(), X_OK ) != 0 )
 	{
 	Shell_Ci = ALTERNATE_SHELL;

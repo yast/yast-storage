@@ -110,8 +110,7 @@ PartedAccess::NewPartition(const PartitionType Part_e,
   Data_Ci.str( Bis_Cv );
   Data_Ci >> Num_ui;
   y2debug( "Bis:%s bis:%u", Bis_Cv.c_str(), Num_ui );
-  Buf_Ci << std::setprecision(3) 
-	 << ((double)Num_ui-0.1)*CylinderToKb(1)/1024 << std::ends;
+  Buf_Ci << std::setprecision(3) << ((double)Num_ui-0.1)*CylinderToKb(1)/1024;
   
   y2milestone( "ok:%d executing cmd:%s", Ok_bi, Buf_Ci.str().c_str() );
   if( Ok_bi )
@@ -131,19 +130,19 @@ PartedAccess::SetType(const unsigned Part_iv, const unsigned Type_iv)
   bool SetType_bi = true;
   if( Type_iv == 0x82 )
     {
-    Buf_Ci << " swap on" << std::ends;
+    Buf_Ci << " swap on";
     }
   else if( Type_iv == 0x8e )
     {
-    Buf_Ci << " lvm on" << std::ends;
+    Buf_Ci << " lvm on";
     }
   else if( Type_iv == 0xfd )
     {
-    Buf_Ci << " raid on" << std::ends;
+    Buf_Ci << " raid on";
     }
   else if( Type_iv == 0x83 )
     {
-    Buf_Ci << " raid off" << std::ends;
+    Buf_Ci << " raid off";
     }
   else
     {
@@ -157,8 +156,7 @@ PartedAccess::SetType(const unsigned Part_iv, const unsigned Type_iv)
     if( Type_iv == 0x83 )
 	{
 	Buf_Ci.str( "" );
-        Buf_Ci << PARTEDCMD << Disk_C << " set " << Part_iv << " lvm off"
-	       << std::ends;
+        Buf_Ci << PARTEDCMD << Disk_C << " set " << Part_iv << " lvm off";
 	SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );
 	CheckError( Buf_Ci.str(), Cmd_Ci );
 	}
@@ -209,7 +207,7 @@ PartedAccess::Delete(const unsigned Part_iv)
 {
   Changed_b = true;
   std::ostringstream Buf_Ci;
-  Buf_Ci << PARTEDCMD << Disk_C << " rm " << Part_iv << std::ends;
+  Buf_Ci << PARTEDCMD << Disk_C << " rm " << Part_iv;
   Stderr_C.erase();
   y2milestone( "executing cmd:%s", Buf_Ci.str().c_str() );
   SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );

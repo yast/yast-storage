@@ -258,6 +258,7 @@
     };
 
     global define void SetModifyTargets( map modify_targets )``{
+        y2debug( "SetModifyTargets map:%1", modify_targets );
 	StorageMap = add( StorageMap, modify_targets_key, modify_targets );
     };
 
@@ -1407,7 +1408,7 @@
 	SetMainDevParam( maindevkey, "partitions", partitions);
     }
 
-    /* set <key> in partition <nr> if disk <disk> to the given <value> and
+    /* set <key> in partition <nr> in disk <disk> to the given <value> and
        return changed map <tg> */
     global define map SetPartitionData( map tg, string disk, any nr, string key,
 					any value )``{
@@ -1429,6 +1430,43 @@
 		}
 	    }
 	return( tg );
+    }
+    /* remove <key> in partition <nr> in disk <disk> and return 
+       changed map <tg> */
+    global define map DelPartitionData( map tg, string disk, any nr, string key)
+        ``{
+        y2debug( "DelPartitionData disk=%1, nr=%2 key=%3", disk, nr, key );
+	list r_part = filter( `part, tg[disk,"partitions"]:[],
+			      ``(part["nr"]:-1 != nr ||
+				 part["delete"]:false == true));
+	if( size(r_part)!=size(tg[disk,"partitions"]:[]) )
+	    {
+	    map p = select( filter( `part, tg[disk,"partitions"]:[],
+	                            ``(part["nr"]:-1 == nr &&
+		                       part["delete"]:false == false)), 0, $[] );
+	    if( size(p)>0 )
+		{
+		p = filter( `k, `e, p, ``(k != key ) );
+		r_part    = add( r_part, p );
+		tg[disk,"partitions"] = r_part;
+		}
+	    }
+	return( tg );
+    }
+
+    /* return partition <nr> in disk <disk> of map <tg> */
+    global define map GetPartition( map tg, string disk, any nr )
+	``{
+	any ret = $[];
+        y2debug( "GetPartition disk=%1, nr=%2", disk, nr );
+	list part = filter( `part, tg[disk,"partitions"]:[],
+			    ``(part["nr"]:-1 == nr && !part["delete"]:false));
+	if( size(part)>=0 )
+	    {
+	    ret = part[0]:$[];
+	    }
+        y2debug( "GetPartition ret=%1", ret );
+	return( ret );
     }
 
 

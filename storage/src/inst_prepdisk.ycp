@@ -278,7 +278,7 @@ perform various checks. <br></p>");
   // 0.5 unmount all deleted or changed partitions ( only in running system )
   if ( ! installation )
   {
-      list mounts = CurrentMounted();
+      list mounts = Partitions::CurMounted();
       list umounts = [];
       list targetMounts = [];
 
@@ -431,6 +431,18 @@ perform various checks. <br></p>");
 	  if( mod_ok )
 	    {
 	    mod = filter( `num, `p, modify_targets,
+			  ``(p["type"]:""=="resize_lv") );
+	    if( size(mod)>0 )
+	      {
+	      n = 0;
+	      mod = mapmap( `num, `p, mod, ``{ n=n+1; return( [n, p] ); } );
+	      y2milestone( "mod=%1", mod );
+	      mod_ok = HandleResizeLvm( targets, mod, true );
+	      }
+	    }
+	  if( mod_ok )
+	    {
+	    mod = filter( `num, `p, modify_targets,
 			  ``(p["type"]:""=="remove_pv" || 
 			     p["type"]:""=="remove_vg") );
 	    if( size(mod)>0 )
@@ -522,7 +534,13 @@ damage to your file systems, it is safer to cancel and reboot.
             // handle all partitions resizings that decrease partition size
 	    cancel = !HandleResizePartitions( targetdevice, target, true );
 
-	    if( !cancel )
+	    boolean need_part = size( filter( `p, target["partitions"]:[], 
+	                                      ``( p["resize"]:false ||
+	                                          p["create"]:false ||
+	                                          p["delete"]:false ))) > 0;
+	    y2milestone( "disk:%1 need_part:%2", targetdevice, need_part );
+
+	    if( !cancel && need_part )
 	    {
 	    path scrpath = lookup ( target, "scrpath", topath ("."+substring (targetdevice, 5)));
 	    y2milestone ("partitioning %1 %2\n", .disk + scrpath + .partitions, partitions);
@@ -831,7 +849,21 @@ Please repeat the installation with another swap partition selected
 	  mod = mapmap( `num, `p, mod, ``{ n=n+1; return( [n, p] ); } );
 	  y2milestone( "mod=%1", mod );
 
-	  if (target_modify( mod, installation ) == false)
+	  ret = target_modify( mod, installation );
+	  if( ret )
+	    {
+	    mod = filter( `num, `p, modify_targets,
+			  ``(p["type"]:""=="resize_lv") );
+	    if( size(mod)>0 )
+	      {
+	      n = 0;
+	      mod = mapmap( `num, `p, mod, ``{ n=n+1; return( [n, p] ); } );
+	      y2milestone( "mod=%1", mod );
+	      ret = HandleResizeLvm( targets, mod, false );
+	      }
+	    }
+
+	  if (ret == false)
 	  {
 	    symbol ret = `yes;
 

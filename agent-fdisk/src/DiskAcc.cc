@@ -8,7 +8,7 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <linux/fs.h>          /* for BLKGETSIZE */
+#include <sys/mount.h>         /* for BLKGETSIZE */
 #include <linux/hdreg.h>       /* for HDIO_GETGEO */
 
 #include <ycp/y2log.h>
