@@ -172,7 +172,7 @@ WIN_Partition::resize( string partition_start,
    sprintf( pe_buf, "%f", new_end );
    partition_end = pe_buf;
   
-   argv[i++] = "/sbin/parted";
+   argv[i++] = "/usr/sbin/parted";
    argv[i++] = "-s";				// script mode
    argv[i++] = partition_device.c_str();	// e.g. /dev/sda
    argv[i++] = "resize";			// do resize
