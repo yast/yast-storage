@@ -597,6 +597,7 @@ define void DoUmountAndReset( list mounts )
     y2milestone( "mounts %1", mounts );
     if( installation )
 	{
+	mounts = add( mounts, "/sys" );
 	mounts = add( mounts, "/proc" );
 	mounts = add( mounts, "/proc/bus/usb" );
 	}
@@ -616,7 +617,7 @@ define void DoUmountAndReset( list mounts )
 
   if ( Mode::autoinst )
   {
-      /* FIXME
+      /* FIXME 
       import "AutoinstStorage";
       AutoinstStorage::Initialize();
       */
@@ -649,9 +650,9 @@ define void DoUmountAndReset( list mounts )
 	  if( size( all_target_of_mounted_part ) > 0 )
 	      {
 	      map target_of_mounted_part = (map)
-		  select( maplist(`k, `v, all_target_of_mounted_part, ``(v) ), 0, $[] );
+		  select( maplist(any k, any v, all_target_of_mounted_part, ``(v) ), 0, $[] );
 
-	      y2debug( "target_of_mounted_part %1", select( maplist(`k, `v, all_target_of_mounted_part, ``(k) ), 0, "" ));
+	      y2debug( "target_of_mounted_part %1", select( maplist(any k, any v, all_target_of_mounted_part, ``(k) ), 0, "" ));
 	      list all_partitions = filter( map part,
 					    target_of_mounted_part["partitions"]:[],
 					    ``( issubstring( mounted_partition["spec"]:"", sformat( "%1", part["nr"]:0 ) ) ||
@@ -763,7 +764,7 @@ define void DoUmountAndReset( list mounts )
     boolean retry = false;
     boolean reboot = false;
     map tg = Storage::GetTargetMap();
-    integer num_lvm_vg = size (filter (`dev, map disk, tg,
+    integer num_lvm_vg = size (filter (any dev, map disk, tg,
                                        ``(disk["is_lvm_vg"]:false)));
     boolean md_active = size(tg["/dev/md","partitions"]:[])>0;
 
@@ -779,35 +780,35 @@ define void DoUmountAndReset( list mounts )
 
 	  integer n = 0;
 	  boolean mod_ok = true;
-	  map mod = filter( `num, map p, modify_targets,
+	  map mod = filter( integer num, map p, modify_targets,
 	                    ``(p["type"]:""=="remove_lv") );
 	  if( size(mod)>0 )
 	    {
-	    mod = mapmap( `num, `p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	    mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	    y2milestone( "mod=%1", mod );
 	    mod_ok = target_modify( mod, installation );
 	    }
 	  if( mod_ok )
 	    {
-	    mod = filter( `num, map p, modify_targets,
+	    mod = filter( integer num, map p, modify_targets,
 			  ``(p["type"]:""=="resize_lv") );
 	    if( size(mod)>0 )
 	      {
 	      n = 0;
-	      mod = mapmap( `num, `p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	      mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	      y2milestone( "mod=%1", mod );
 	      mod_ok = HandleResizeLvm( Storage::GetTargetMap(), mod, true );
 	      }
 	    }
 	  if( mod_ok )
 	    {
-	    mod = filter( `num, map p, modify_targets,
+	    mod = filter( integer num, map p, modify_targets,
 			  ``(p["type"]:""=="remove_pv" ||
 			     p["type"]:""=="remove_vg") );
 	    if( size(mod)>0 )
 	      {
 	      n = 0;
-	      mod = mapmap( `num, `p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	      mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	      y2milestone( "mod=%1", mod );
 	      mod_ok = target_modify( mod, installation );
 	      }
@@ -1251,22 +1252,22 @@ Please repeat the installation with another swap partition selected
 	{
 	retry=false;
 	integer n = 0;
-	map mod = filter( `num, map p, modify_targets,
+	map mod = filter( integer num, map p, modify_targets,
 	                  ``(p["type"]:""!="remove_pv" &&
 			     p["type"]:""!="remove_lv" &&
 			     p["type"]:""!="remove_vg") );
-        mod = mapmap( `num, `p, mod, ``{ n=n+1; return( $[n: p] ); } );
+        mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	y2milestone( "mod=%1", mod );
 
 	boolean ret = target_modify( mod, installation );
 	if( ret )
 	    {
-	    mod = filter( `num, map p, modify_targets,
+	    mod = filter( integer num, map p, modify_targets,
 			  ``(p["type"]:""=="resize_lv") );
 	    if( size(mod)>0 )
 	      {
 	      n = 0;
-	      mod = mapmap( `num, `p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	      mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	      y2milestone( "mod=%1", mod );
 	      ret = HandleResizeLvm( Storage::GetTargetMap(), mod, false );
 	      }
@@ -1355,8 +1356,8 @@ damage to your file systems, it is safer to cancel and reboot.
     cancel = false;
     retry = false;
 
-    foreach( `tdevice, map target, 
-             filter( string k, `e, Storage::GetTargetMap(), ``(k!="/dev/loop")),
+    foreach( string tdevice, map target, 
+             filter( string k, map e, Storage::GetTargetMap(), ``(k!="/dev/loop")),
 	``{
 	// every disk
 	list partitions = target["partitions"]:[];
@@ -1392,7 +1393,7 @@ damage to your file systems, it is safer to cancel and reboot.
     tg = Storage::GetTargetMap();
 
     foreach( string tdevice, map target, 
-             filter( string k, `e, tg, ``(k!="/dev/loop")),
+             filter( string k, any e, tg, ``(k!="/dev/loop")),
 	``{
 	mountPoints = DetermineMountPoints( tdevice, target, mountPoints );
 	}); // foreach (tdevice)
@@ -1412,7 +1413,7 @@ damage to your file systems, it is safer to cancel and reboot.
 	// some mount failed, try to umount all already mounted partitions
 	if( cancel )
 	    {
-	    list mlist = maplist( `k, `e, mountPoints, ``(k) );
+	    list mlist = maplist( any k, any e, mountPoints, ``(k) );
 	    DoUmountAndReset( mlist );
 	    return `back;
 	    }
@@ -1421,7 +1422,7 @@ damage to your file systems, it is safer to cancel and reboot.
     if( size( tg["/dev/loop","partitions"]:[] )>0 && this_is_for_real )
 	{
 	map loop = tg["/dev/loop"]:$[];
-	list mlist = maplist( `k, `e, mountPoints, ``(k) );
+	list mlist = maplist( any k, any e, mountPoints, ``(k) );
 	foreach( map p, loop["partitions"]:[],
 	    ``{
 	    string fpath = Storage::PathToDestdir( p["fpath"]:"" );
@@ -1494,7 +1495,7 @@ damage to your file systems, it is safer to cancel and reboot.
 	    cancel = !DoMountList( loop_mp );
 	    if( cancel )
 		{
-		mlist = union( mlist, maplist( `k, `e, loop_mp, ``(k) ));
+		mlist = union( mlist, maplist( any k, any e, loop_mp, ``(k) ));
 		}
 	    }
 	if( cancel )
@@ -1525,6 +1526,9 @@ damage to your file systems, it is safer to cancel and reboot.
 		SCR::Execute( .target.mount, ["usbfs", destproc +"/bus/usb"],
 			      "-t usbfs" );
 		}
+	    destproc = Installation::destdir+"/sys";
+	    SCR::Execute (.target.mkdir, destproc, 0755);
+	    SCR::Execute (.target.mount, ["sysfs", destproc], "-t sysfs");
 	    }
 	Storage::WriteFstab( Storage::GetTargetMap() );
 	}
@@ -1548,13 +1552,13 @@ damage to your file systems, it is safer to cancel and reboot.
 	    ``{
 	    if( !part["delete"]:false )
 		{
-		part = filter( `k, `v, part, ``(!contains( remove_keys, k )));
+		part = filter( string k, any v, part, ``(!contains( remove_keys, k )));
 		new = add( new, part );
 		}
 	    });
 	tg[device,"partitions"] = new;
 	});
-    tg = filter( `device, map disk, tg, ``(!disk["delete"]:false));
+    tg = filter( string device, map disk, tg, ``(!disk["delete"]:false));
     Storage::SetTargetMap( tg );
 
     SCR::Write( .target.ycp, Storage::SaveDumpPath("targetMap_pe"), 
