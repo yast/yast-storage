@@ -532,19 +532,22 @@ define string get_free_raid_nr( map targetMap, integer min )
  * @param targetMap all targets
  * @return nil
  */
-define void add_main_dev_to_partition_map( map targetMap )
+define map add_main_dev_to_partition_map( map targetMap )
     ``{
     foreach( string targetdevice, map target, targetMap, 
 	``{
-	foreach( map partition, target["partitions"]:[], 
-	    ``{
-	    if( partition["raid_name"]:"" != "")
-		{
-		change( partition, "main_dev", targetdevice );
-		}
-	    });
+	targetMap[targetdevice,"partitions"] = 
+	    maplist( map p, target["partitions"]:[],
+		``({
+		if( p["raid_name"]:"" != "")
+		    {
+		    p["main_dev"] = targetdevice;
+		    }
+		return( p );
+		}));
 	});
     y2debug("targets %1", targetMap );
+    return( targetMap );
     };
 
 /**
@@ -682,8 +685,7 @@ define string onepartition2raidtab( map raid, list r_partitions )
  */
 define string create_raidtab( map targets )
     ``{
-    // by change !!!
-    add_main_dev_to_partition_map( targets );
+    targets = add_main_dev_to_partition_map( targets );
 
     list r_partitions = all_raid_partitions( targets );
 
@@ -723,8 +725,7 @@ define string create_raidtab( map targets )
  */
 define string change_raidtab( map targetMap ) 
     ``{
-    // by change !!!
-    add_main_dev_to_partition_map( targetMap );
+    targetMap = add_main_dev_to_partition_map( targetMap );
 
     string raidtab = (string)SCR::Read(.target.string , "/etc/raidtab" );
 
