@@ -165,7 +165,6 @@ global define boolean ProbeCDROMs()
 	    if( (e["cdr"]:false || e["cdrw"]:false || e["dvdr"]:false ) &&
 		e["bus"]:"" == "IDE" )
 		{
-		idecdrws = add( idecdrws, substring( e["dev_name"]:"", 5));
 		y2milestone ("IDE CD-RW %1", idecdrws );
 		}
 	    if( e["bus"]:"" == "SCSI" )
@@ -173,23 +172,6 @@ global define boolean ProbeCDROMs()
 		scsicds = add (scsicds, e["dev_name"]:"");
 		}
 	    });
-
-	// now rewrite the /dev-names for the IDE drives
-	// as they appear _after_ loading of ide-scsi
-	cddrives = maplist( map e, cddrives,
-	    ``{
-	    if( contains( idecdrws, substring( e["dev_name"]:"", 5) ))
-		{
-		string scsiname = "/dev/sr" + size (scsicds);
-		y2milestone ("IDE CD-RW %1 -> %2", e["dev_name"]:"", scsiname);
-		scsicds = add (scsicds, scsiname);
-		e["dev_orig"] = e["dev_name"]:"";
-		e["dev_name"] = scsiname;
-		}
-	    return( e );
-	    });
-
-	Kernel::IDERecorders ((list<string>)idecdrws);
 
 	cddrives = maplist( map e, cddrives,
 	    ``{
@@ -436,7 +418,8 @@ global define map CheckPartedValid( string ddevice, map disk,
 	    else
 		{
 		integer diff = e - plist2[k]:0;
-		ret = ret && diff > -cyl_blocks && diff < cyl_blocks;
+		if( diff < 0 ) diff = -diff;
+		ret = ret && diff < plist2[k]:0/100;
 		y2milestone( "k:%1 diff:%2", k, diff );
 		}
 	    });
@@ -449,7 +432,8 @@ global define map CheckPartedValid( string ddevice, map disk,
 	    else
 		{
 		integer diff = e - plist1[k]:0;
-		ret = ret && diff >= -cyl_blocks && diff <= cyl_blocks;
+		if( diff < 0 ) diff = -diff;
+		ret = ret && diff < plist2[k]:0/100;
 		y2milestone( "k:%1 diff:%2", k, diff );
 		}
 	    });
@@ -824,20 +808,6 @@ global define map Probe (boolean force_reset)
     return targetMap;
     }
 
-
-/*
- * ProbeIDERecorders ()
- *
- * probe for IDE cd recorders and return list of hdX names
- * for ide-scsi setup
- */
-
-global define list ProbeIDERecorders ()
-    ``{
-    ProbeCDROMs();
-    y2milestone ("idecdrws %1", idecdrws);
-    return idecdrws;
-    }
 
 /*
  * symlink_cdrom
