@@ -183,7 +183,7 @@ SystemCmd::DoExecute( string Cmd_Cv )
 
 	    Ret_i = execl( Shell_Ci.c_str(), Shell_Ci.c_str(), "-c",
 			   Cmd_Ci.c_str(),
-	                   NULL );
+	                   (char*) NULL );
 	    y2error( "SHOULD NOT HAPPEN \"%s\" Ret:%d", Shell_Ci.c_str(),
 		     Ret_i );
 	    break;
