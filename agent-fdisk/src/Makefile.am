@@ -35,7 +35,7 @@ install-data-hook:
 # Formerly, the redirection from ag_{fdisk,lvm,md} to ag_storage
 # was done in liby2 (sic!)
 # Now we make symlinks, which kinda circumvents libtool. Oh well.
-install-exec-local:
-	ln -s libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_fdisk.so.2
-	ln -s libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_lvm.so.2
-	ln -s libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_md.so.2
+install-exec-local: installdirs
+	ln -sf libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_fdisk.so.2
+	ln -sf libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_lvm.so.2
+	ln -sf libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_md.so.2
