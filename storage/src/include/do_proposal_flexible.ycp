@@ -522,6 +522,7 @@ global define map add_cylinder_info( map conf, map gap )
 	      else
 		  return( a["size"]:0 >= b["size"]:0 );
 	      }));
+    y2milestone( "parts %1", conf["partitions"]:[] );
     integer sum = 0;
     conf["partitions"] = maplist( `p, conf["partitions"]:[],
 	``{
@@ -533,14 +534,16 @@ global define map add_cylinder_info( map conf, map gap )
 	    }
 	return( p );
 	});
+    y2milestone( "sum %1", sum );
+    y2milestone( "parts %1", conf["partitions"]:[] );
     if( sum>100 )
 	{
-	integer rest = 100 - sum;
+	integer rest = sum - 100;
 	conf["partitions"] = maplist( `p, conf["partitions"]:[],
 	    ``{
 	    if( haskey( p, "pct" ) )
 		{
-		integer pct = 0;
+		integer pct = p["pct"]:0;
 		integer diff = ((rest * pct) + sum/2) / sum;
 		sum = sum - pct;
 		rest = rest - diff;
@@ -572,6 +575,7 @@ global define map add_cylinder_info( map conf, map gap )
 	    }
 	return( p );
 	});
+    y2milestone( "parts %1", conf["partitions"]:[] );
     return( conf );
     }
 
@@ -725,16 +729,23 @@ global define map normalize_gaps( list ps, map g )
 	    y2milestone( "needed %1 rest %2", needed, rest );
 	    if( needed > rest )
 		{
+                list tr = [];
 		list weight = 
 		    maplist( `l, e["added"]:[], 
 			     ``({
 			     integer idx = l[0]:0;
 			     integer d = ps[idx,"want_cyl"]:0 - 
 			                 ps[idx,"cylinders"]:0;
+                             if( d>0 )
+				 {
+				 l = add( l, ps[idx,"cylinders"]:0 );
+				 }
+			     tr = add( tr, l );
 			     return( d>0 ? d : 0 );
 			     }));
+	        y2milestone( "tr %1", tr );
 		map r = $[];
-		r = distribute_space( rest, weight, e["added"]:[], ps );
+		r = distribute_space( rest, weight, tr, ps );
 		e["added"] = eval(r["added"]:[]);
 		e["cylinders"] = e["cylinders"]:0 - r["diff"]:0;
 		y2milestone( "partly satisfy %1 cyl %2", e["added"]:[], 
