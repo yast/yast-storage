@@ -118,14 +118,27 @@ MdAgent::Write(const YCPPath& path, const YCPValue& value,
         }
     else if (conf_name == "deactivate")
         {
+	list<string> avoid;
         y2milestone( "deactivate all MDs" );
-        ret = Md_pC->ActivateMDs( false );
+	if( value->isList() )
+	    {
+	    YCPList mds = value->asList();
+	    for( int i=0; i<mds->size(); i++ )
+		{
+		if( mds->value (i)->isString() )
+		    {
+		    avoid.push_back( mds->value(i)->asString()->value() );
+		    }
+		}
+	    }
+        ret = Md_pC->ActivateMDs( false, avoid );
         return( ret );
         }
     else if (conf_name == "activate")
         {
+	list<string> empty;
         y2milestone( "activate all MDs" );
-        ret = Md_pC->ActivateMDs( true );
+        ret = Md_pC->ActivateMDs( true, empty );
         return( ret );
         }
     else

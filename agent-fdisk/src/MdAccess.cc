@@ -10,6 +10,7 @@
 
 #include <string>
 #include <list>
+#include <algorithm>
 #include <ycp/y2log.h>
 
 
@@ -276,8 +277,9 @@ bool MdAccess::GetMd( const string& Device_Cv, MdInfo& Val_Cr )
     return( I_ii!=List_C.end() );
     }
 
-bool MdAccess::ActivateMDs( bool Activate_bv )
+bool MdAccess::ActivateMDs( bool Activate_bv, const list<string>& Avoid_Cv )
     {
+    y2milestone( "Activate %d llen:%d", Activate_bv, Avoid_Cv.size() );
     SystemCmd Cmd_Ci;
     if( Activate_bv )
 	{
@@ -290,13 +292,21 @@ bool MdAccess::ActivateMDs( bool Activate_bv )
 	list<MdInfo>::iterator I_ii = List_C.begin();
 	while( I_ii!=List_C.end() )
 	    {
-	    string CmdLine_Ci = "/sbin/raidstop ";
-	    if( access( "/etc/raidtab", R_OK ) != 0 )
+	    y2milestone( "Name %s found %d", I_ii->Name_C.c_str(),
+	                 std::find( Avoid_Cv.begin(), Avoid_Cv.end(), 
+			            I_ii->Name_C )!=Avoid_Cv.end());
+	    if( std::find( Avoid_Cv.begin(), Avoid_Cv.end(), I_ii->Name_C ) ==
+	        Avoid_Cv.end() )
 		{
-		CmdLine_Ci += "-c /dev/null ";
+		string CmdLine_Ci = "/sbin/raidstop ";
+		if( access( "/etc/raidtab", R_OK ) != 0 )
+		    {
+		    CmdLine_Ci += "-c /dev/null ";
+		    }
+		CmdLine_Ci += I_ii->Name_C;
+		y2milestone( "cmd %s", CmdLine_Ci.c_str() );
+		Cmd_Ci.Execute( CmdLine_Ci );
 		}
-	    CmdLine_Ci += I_ii->Name_C;
-	    Cmd_Ci.Execute( CmdLine_Ci );
 	    I_ii++;
 	    }
 	}

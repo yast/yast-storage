@@ -31,7 +31,7 @@ class MdAccess
 	unsigned Cnt();
 	MdInfo GetMd( int Idx_ii );
 	bool GetMd( const string& Device_Cv, MdInfo& Val_Cr );
-	bool ActivateMDs( bool Activate_bv=true );
+	bool ActivateMDs( bool Activate_bv, const list<string>& Avoid_Cv  );
 
     protected:
 	list<MdInfo>::iterator FindMd( const string& Device_Cv );
