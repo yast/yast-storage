@@ -93,15 +93,29 @@ FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
 	   entry != part_info.end(); entry++)
 	{
 	  YCPMap part_entry;
+	  YCPSymbol* pptype;
 	  // XXX
 #if defined(__sparc__)
 	  // On sparc, we have only primary partitions
-          YCPSymbol ptype("primary", true);
+          pptype = new YCPSymbol("primary", true);
 #else
-	  YCPSymbol ptype(entry->PType_e == PAR_TYPE_EXTENDED ? "extended"
-			  : entry->Num_i >= 5 ? "logical" : "primary", true);
+	  if( fdisk_cmd->DiskLabel() == "mac" ||
+	      fdisk_cmd->DiskLabel() == "gpt" ||
+	      fdisk_cmd->DiskLabel() == "bsd" ||
+	      fdisk_cmd->DiskLabel() == "sun" )
+	      {
+	      pptype = new YCPSymbol("primary", true);
+	      }
+	  else
+	      {
+	      pptype = 
+		  new YCPSymbol(entry->PType_e==PAR_TYPE_EXTENDED?"extended" : 
+		                entry->Num_i >= 5 ? "logical" : 
+				                    "primary", true);
+	      }
 #endif
-	  part_entry->add (YCPString ("type"), ptype);
+	  part_entry->add (YCPString ("type"), *pptype);
+	  delete pptype;
 	  part_entry->add (YCPString ("nr"), YCPInteger (entry->Num_i));
 	  part_entry->add (YCPString ("fsid"), YCPInteger (entry->Id_i));
 	  part_entry->add (YCPString ("fstype"), YCPString (entry->Info_C));
