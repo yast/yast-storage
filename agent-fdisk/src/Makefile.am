@@ -30,6 +30,7 @@ libpy2ag_storage_la_SOURCES =				\
 	Y2CCStorageAgent.cc
 
 libpy2ag_storage_la_LDFLAGS = -version-info 2:0 -levms
+libpy2ag_storage_la_LIBADD = @AGENT_LIBADD@
 
 install-data-hook:
 	rm -f $(DESTDIR)$(plugindir)/$(plugin_LTLIBRARIES)

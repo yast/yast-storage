@@ -11,6 +11,7 @@ libpy2ag_losetup_la_SOURCES =		\
 	rmd160.c y2loop.h loop.h y2lomount.h
 
 libpy2ag_losetup_la_LDFLAGS = -version-info 2:0
+libpy2ag_losetup_la_LIBADD = @AGENT_LIBADD@
 
 INCLUDES =					\
 	-I$(srcdir)/../../libycp/src/include	\
