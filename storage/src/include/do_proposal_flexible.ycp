@@ -15,18 +15,18 @@
  *************************************************************
 
  $Id$
-
-
 */
 {
 
 textdomain "storage";
 
 import "FileSystems";
+import "ProductFeatures";
 
 include "partitioning/partition_defines.ycp";
 
 map read_partition_config( string fpath );
+map read_partition_xml_config();
 map get_gap_info( map disk, boolean add_exist_linux );
 map add_cylinder_info( map conf, map gap );
 map get_perfect_list( list ps, map g );
@@ -110,11 +110,16 @@ define map do_flexible_disk( string dev, map disk )
     return( ret );
     }
 
+
 define map do_proposal_flexible( map target )
     ``{
     map ret = $[];
     ret["ok"] = false;
-    map conf = read_partition_config( pinfo_name() );
+    map conf = $[];
+    if (ProductFeatures::flexible_partitioning)
+        conf = read_partition_xml_config();
+    else
+        conf = read_partition_config( pinfo_name() );
     list solutions = [];
 
     if( size(conf)>0 )
@@ -1193,6 +1198,165 @@ define map get_gap_info( map disk, boolean add_exist_linux )
     return( ret );
     }
 
+/**
+ * Read partition data from XML control file
+ * @return map flexible propsal map
+ */
+define map read_partition_xml_config()
+    ``{
+
+    map xmlflex = Product::FlexiblePartitioning;
+    y2debug("xml input: %1", xmlflex );
+
+    map conf = $[];
+    conf["prefer_remove"] = xmlflex["prefer_remove"]:true;
+    conf["remove_special_partitions"] =
+	xmlflex["remove_special_partitions"]:false;
+    conf["keep_partition_id"] = [];
+    conf["keep_partition_num"] = [];
+    conf["keep_partition_fsys"] = [];
+
+    foreach( string key, [ "keep_partition_id", "keep_partition_num"], ``{
+	list num = [];
+	list nlist = splitstring(xmlflex[key]:"", ",");
+	foreach( string n, nlist, ``{ num = union( num, [tointeger(n)] );});
+	conf[key] = num;
+    });
+
+    list fsys = [];
+    list nlist = splitstring( xmlflex["keep_partition_fsys"]:"" , "," );
+    foreach( string n, nlist,
+	     ``{
+	symbol fs = FileSystems::FsToSymbol(n);
+	if( fs != `none )
+	{
+	    fsys = union( fsys, [ fs ] );
+	}
+    });
+    conf["keep_partition_fsys"] = fsys;
+    list partitions = [];
+    foreach(map p, xmlflex["partitions"]:[],
+	    ``{
+	map partition = $[];
+
+	if (p["disk"]:0 != 0)
+	{
+	    partition["disk"] = p["disk"]:0;
+	}
+	if (p["id"]:0 != 0)
+	{
+	    partition["id"] = p["id"]:0;
+	}
+
+	if (p["fstopt"]:"" != "")
+	{
+	    partition["fstopt"] = p["fstopt"]:"";
+	}
+
+	if (p["formatopt"]:"" != "")
+	{
+	    partition["fopt"] = p["formatopt"]:"";
+	}
+
+	partition["increasable"] = p["increasable"]:false;
+
+	if (p["mount"]:"" != "")
+	{
+	    partition["mount"] = p["mount"]:"";
+	}
+
+	if (p["percent"]:-1 != -1)
+	{
+	    partition["pct"] = p["percent"]:100;
+	}
+
+	if (p["label"]:"" != "")
+	{
+	    partition["label"] = p["label"]:"";
+	}
+
+	if (p["maxsize"]:"" != "")
+	{
+	    partition["maxsize"] = kmgt_str_to_byte(p["maxsize"]:"");
+	}
+
+	if (p["fsys"]:"" != "")
+	{
+	    symbol fs = FileSystems::FsToSymbol(p["fsys"]:"");
+	    if( fs != `none )
+	    {
+		partition["fsys"] = fs;
+	    }
+	}
+
+	if (p["size"]:"" != "")
+	{
+	    string s = p["size"]:"";
+	    if( tolower(s) == "auto" )
+	    {
+		partition["size"] = -1;
+	    }
+	    else if( tolower(s) == "max" )
+	    {
+		partition["size"] = 0;
+	    }
+	    else
+	    {
+		partition["size"] = kmgt_str_to_byte( s );
+	    }
+
+	}
+
+	if( partition["size"]:0 == -1 && partition["mount"]:"" == "swap" )
+	{
+	    partition["size"] = 1024*1024*Partitions::SwapSizeMb(0);
+	}
+	if( partition["mount"]:"" == Partitions::BootMount() )
+	{
+	    if( partition["size"]:0 == -1 )
+	    {
+		partition["size"] = Partitions::MinimalNeededBootsize();
+	    }
+	    if( partition["fsys"]:`none == `none )
+	    {
+		partition["fsys"] = Partitions::DefaultBootFs();
+	    }
+	    if( partition["id"]:0 == 0 )
+	    {
+		partition["id"] = Partitions::FsidBoot();
+	    }
+	    partition["max_cyl"] = Partitions::BootCyl();
+	}
+	if( partition["size"]:0 == -1 )
+	{
+	    partition["size"] = 0;
+	}
+
+	y2debug("partition: %1", partition);
+	if( size(partition["mount"]:"")>0 || partition["id"]:0 > 0 )
+	{
+	    partitions = add( partitions, partition );
+	}
+
+
+    });
+    conf["partitions"] = partitions;
+    if( size(partitions)==0 )
+    {
+	conf = $[];
+    }
+    else
+    {
+	conf["partitions"] = partitions;
+    }
+    y2milestone( "conf %1", conf );
+    return( conf );
+
+
+
+}
+
+
 define map read_partition_config( string fpath )
     ``{
     integer pos = 0;
@@ -1410,4 +1574,4 @@ define map read_partition_config( string fpath )
     }
 
 }
-  
+
