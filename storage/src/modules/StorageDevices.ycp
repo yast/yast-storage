@@ -559,102 +559,101 @@
 
     map linknum = $[ "cdrom":0, "cdrecorder":0, "dvd":0];
 
-    define void symlink_cdrom (map cdinfo)
+define void symlink_cdrom( map cdinfo )
     ``{
+    // first, determine the drive type and make a linkname guess
+    string cddevice = cdinfo["dev_name"]:"";
+    string cdtype = cdinfo["cdtype"]:"cdrom";
 
-	// first, determine the drive type and make a linkname guess
-
-	string cddevice = cdinfo["dev_name"]:"";
-	string cdtype = cdinfo["cdtype"]:"cdrom";
-
-	string linkname = "cdrom";
-	if (cdtype == "dvd")
+    string linkname = "cdrom";
+    if (cdtype == "dvd")
 	{
-	    linkname = "dvd";
+	linkname = "dvd";
 	}
-	else if ((cdtype == "cdr")
-		|| (cdtype == "cdrw")
-		|| (cdtype == "dvdr")
-		|| (cdtype == "dvdram"))
+    else if( (cdtype == "cdr") || (cdtype == "cdrw") || (cdtype == "dvdr") ||
+	     (cdtype == "dvdram"))
 	{
-	    linkname = "cdrecorder";
+	linkname = "cdrecorder";
 	}
 
-	// now check the number (for /dev/cdrom, /dev/cdrom1, ...)
-	integer number = linknum[linkname]:0;
+    // now check the number (for /dev/cdrom, /dev/cdrom1, ...)
+    integer number = linknum[linkname]:0;
 
-	string devname = "/dev/" + linkname;
+    string devname = "/dev/" + linkname;
 
-	if (number > 0)
-	  devname = devname + number;
+    if( number > 0)
+        devname = devname + number;
 
-	cddevices = add (cddevices, devname);
+    cddevices = add (cddevices, devname);
 
-	if (cddevice != "")
+    if (cddevice != "")
 	{
-	    SCR::Execute (.target.symlink, cddevice, devname);
-	    number = number + 1;
-	    linknum[linkname] = number;
+	if( Installation::destdir != "/" )
+	    {
+	    devname = Installation::destdir + devname;
+	    }
+	SCR::Execute (.target.symlink, cddevice, devname);
+	number = number + 1;
+	linknum[linkname] = number;
 	}
-	return;
+    return;
     }
 
+/**
+  * Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
+  * create cdtype dependant links (i.e. /dev/dvd for a DVD drive
+  * but make sure that at least /dev/cdrom exists.
+  */
 
-    /**
-     * Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
-     * create cdtype dependant links (i.e. /dev/dvd for a DVD drive
-     * but make sure that at least /dev/cdrom exists.
-     */
-
-    global define void MakeCDLinks (list ide_recorders)
+global define void MakeCDLinks (list ide_recorders)
     ``{
-	if (ProbeCDROMs ())
+    if( ProbeCDROMs() )
 	{
-	    string boot_device = Mode::installMap["cdrom"]:"";
+	string boot_device = Mode::installMap["cdrom"]:"";
 
-	    if (boot_device != "")
-		boot_device = "/dev/" + boot_device;
+	if (boot_device != "")
+	    boot_device = "/dev/" + boot_device;
 
-	    // build up ide-scsi information
+	// build up ide-scsi information
 
-	    // now look again and rewrite the /dev-names for the IDE drives
-	    // as they appear _after_ loading of ide-scsi
+	// now look again and rewrite the /dev-names for the IDE drives
+	// as they appear _after_ loading of ide-scsi
 
-	    foreach (`drive, cddrives,
+	foreach (`drive, cddrives,
 	    ``{
-		string devname = substring (drive["dev_name"]:"", 5);
-		if (contains (ide_recorders, devname))
+	    string devname = substring (drive["dev_name"]:"", 5);
+	    if (contains (ide_recorders, devname))
 		{
-		    string scsiname = "/dev/sr" + size (scsicds);
-		    y2milestone ("IDE CD-RW %1 -> %2", devname, scsiname);
-		    scsicds = add (scsicds, scsiname);
-		    drive["dev_name"] = scsiname;
+		string scsiname = "/dev/sr" + size (scsicds);
+		y2milestone ("IDE CD-RW %1 -> %2", devname, scsiname);
+		scsicds = add (scsicds, scsiname);
+		drive["dev_name"] = scsiname;
 
-		    // our boot device might be re-mapped due to ide-scsi
-		    if (("/dev/" + devname) == boot_device)
-			boot_device = scsiname;
-	        }
-		symlink_cdrom (drive);
+		// our boot device might be re-mapped due to ide-scsi
+		if (("/dev/" + devname) == boot_device)
+		    boot_device = scsiname;
+		}
+	    symlink_cdrom (drive);
 	    });
 
-	    // if we didn't made a /dev/cdrom link, we dont have a
-	    // plain cdrom drive (only cdrecorders, dvds, etc.)
-	    // force such a link here.
+	// if we didn't made a /dev/cdrom link, we dont have a
+	// plain cdrom drive (only cdrecorders, dvds, etc.)
+	// force such a link here.
 
-	    if (!contains (cddevices, "/dev/cdrom"))
+	if( !contains (cddevices, "/dev/cdrom"))
 	    {
-		// if we didnt boot from cd, just link to the first drive
-		if (boot_device == "")
+	    // if we didnt boot from cd, just link to the first drive
+	    if( boot_device=="" )
 		{
-		    boot_device = cddevices[0]:"";
+		boot_device = cddevices[0]:"";
 		}
-		if (boot_device != "")
+	    if (boot_device != "")
 		{
-		    symlink_cdrom ($["dev_name" : boot_device, "cdtype" : "cdrom"]);
+		symlink_cdrom ($["dev_name" : boot_device, "cdtype" : "cdrom"]);
 		}
 	    }
 	}
-	return;
+    return;
     }
 
     /**
