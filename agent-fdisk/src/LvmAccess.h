@@ -110,6 +110,8 @@ class LvmAccess
 	list<PvInfo>::iterator SortIntoPvList( const PvInfo& PvElem_rv );
 	bool ExecuteLvmCmd( const string& Cmd_Cv );
 	bool MountRamdisk( const string& Path_Cv, unsigned SizeMb_iv );
+	void CleanPartialVGs( const string& VgName_Cv );
+	
 	string GetPvDevicename( const string& VgName_Cv, const string& FDev_Cv,
 	                        const string& Dev_Cv, int Num_iv, int Mp_iv );
 	void LvIntoList( VgIntern& VgElem_rr, list<LvInfo>& LvList_Cr,

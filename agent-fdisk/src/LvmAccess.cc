@@ -698,7 +698,7 @@ list<LvInfo>::iterator LvmAccess::FindLv( const string& Name_Cv )
 
 bool LvmAccess::CreatePv( const string& PvName_Cv, bool NewMeta_bv )
     {
-    y2milestone( "PV Name:%s", PvName_Cv.c_str() );
+    y2milestone( "PV Name:%s NewMeta:%d", PvName_Cv.c_str(), NewMeta_bv );
     list<PvInfo>::iterator Pix_Ci = PvList_C.begin();
     while( Pix_Ci!=PvList_C.end() && Pix_Ci->Name_C!=PvName_Cv )
 	{
@@ -774,6 +774,51 @@ bool LvmAccess::ExtendVg( const string& VgName_Cv, const string& PvName_Cv )
     return( Ret_bi );
     }
 
+void LvmAccess::CleanPartialVGs( const string& VgName_Cv )
+    {
+    struct stat sbuf;
+    string Tmp_Ci;
+    SystemCmd Cmd_Ci;
+
+    Tmp_Ci = "LC_ALL=POSIX pvscan";
+    Cmd_Ci.Execute( Tmp_Ci );
+    Cmd_Ci.Select( "VG " + VgName_Cv + " " );
+    if( Cmd_Ci.NumLines(true)>0 )
+	{
+	string::size_type pos, npos;
+	for( int I_ii=0; I_ii<Cmd_Ci.NumLines(true); I_ii++ )
+	    {
+	    pos = Cmd_Ci.GetLine( I_ii, true )->find( "/dev/" );
+	    npos = string::npos;
+	    if( pos != string::npos )
+		npos = Cmd_Ci.GetLine( I_ii, true )->find_first_of( " \t\n", pos );
+	    y2milestone( "pos %d npos %d", pos, npos );
+	    if( pos != string::npos )
+		{
+		string Device = 
+		    Cmd_Ci.GetLine( I_ii, true )->substr( pos, npos );
+		bool Old_bv = Cmd_Ci.GetLine( I_ii, true )->find( " lvm1 " );
+		y2milestone( "Device %s Old:%d", Device.c_str(), Old_bv );
+		CreatePv( Device, !Old_bv );
+		}
+	    }
+	}
+
+    string Device_Ci = "/dev/" + VgName_Cv;
+    if( stat( Device_Ci.c_str(), &sbuf )==0 && S_ISDIR(sbuf.st_mode) )
+	{
+	Tmp_Ci = "find " + Device_Ci + " -type l | xargs rm";
+	Cmd_Ci.Execute( Tmp_Ci );
+	rmdir( Device_Ci.c_str() );
+	}
+    Device_Ci += "/group";
+    if( access( Device_Ci.c_str(), R_OK )==0 )
+	{
+	Tmp_Ci = "rm -rf /dev/" + VgName_Cv;
+	Cmd_Ci.Execute( Tmp_Ci );
+	}
+    }
+
 bool LvmAccess::CreateVg( const string& VgName_Cv, unsigned long PeSize_lv,
                           bool NewMeta_bv, list<string>& Devices_Cv )
     {
@@ -781,42 +826,38 @@ bool LvmAccess::CreateVg( const string& VgName_Cv, unsigned long PeSize_lv,
                  VgName_Cv.c_str(), PeSize_lv, Devices_Cv.size() );
     bool Ret_bi=false;
     PrepareLvmCmd();
-    string Device_Ci = "/dev/";
-    string Cmd_Ci = (string)"vgcreate";
-    if( Lvm2() )
-	{
-	Cmd_Ci += NewMeta_bv ? " -M2" : " -M1";
-	}
-    if( !RunningFromSystem() )
-	{
-	Cmd_Ci += " -A n";
-	}
     list<VgIntern>::iterator Vg_Ci = FindVg( VgName_Cv );
     if( Vg_Ci!=VgList_C.end() )
 	{
 	y2error( "Volume group %s already exists", VgName_Cv.c_str() );
 	}
-    Cmd_Ci += " -s ";
-    Cmd_Ci += dec_string(PeSize_lv);
-    Cmd_Ci += "k ";
-    Cmd_Ci += VgName_Cv;
-    Device_Ci += VgName_Cv;
-    for( list<string>::iterator Pix_Ci=Devices_Cv.begin(); 
-	 Pix_Ci!=Devices_Cv.end(); Pix_Ci++ )
+    else
 	{
-	Cmd_Ci += ' ';
-	Cmd_Ci += *Pix_Ci;
-	}
-    Device_Ci += "/group";
-    if( access( Device_Ci.c_str(), R_OK )==0 )
-	{
-	string Tmp_Ci = "rm -rf /dev/" + VgName_Cv;
-	system( Tmp_Ci.c_str() );
-	}
-    Ret_bi = ExecuteLvmCmd( Cmd_Ci );
-    if( Ret_bi )
-	{
-	ScanLvmStatus();
+	CleanPartialVGs( VgName_Cv );
+	string Cmd_Ci = (string)"vgcreate";
+	if( Lvm2() )
+	    {
+	    Cmd_Ci += NewMeta_bv ? " -M2" : " -M1";
+	    }
+	if( !RunningFromSystem() )
+	    {
+	    Cmd_Ci += " -A n";
+	    }
+	Cmd_Ci += " -s ";
+	Cmd_Ci += dec_string(PeSize_lv);
+	Cmd_Ci += "k ";
+	Cmd_Ci += VgName_Cv;
+	for( list<string>::iterator Pix_Ci=Devices_Cv.begin(); 
+	     Pix_Ci!=Devices_Cv.end(); Pix_Ci++ )
+	    {
+	    Cmd_Ci += ' ';
+	    Cmd_Ci += *Pix_Ci;
+	    }
+	Ret_bi = ExecuteLvmCmd( Cmd_Ci );
+	if( Ret_bi )
+	    {
+	    ScanLvmStatus();
+	    }
 	}
     return( Ret_bi );
     }
@@ -1635,13 +1676,11 @@ bool LvmAccess::ExecuteLvmCmd( const string& Cmd_Cv )
 	    }
 	}
     LvmCmd_C.GetStdout( Plex_Ci );
-    if( Plex_Ci.size()>0 )
+    LvmOutput_C.erase();
+    for( unsigned I_ii=0; I_ii<Plex_Ci.size(); I_ii++ )
 	{
-	LvmOutput_C = Plex_Ci[0];
-	}
-    else
-	{
-	LvmOutput_C.erase();
+	LvmOutput_C += Plex_Ci[I_ii];
+	LvmOutput_C += "\n";
 	}
     y2milestone( "lvm cmd output:%s", LvmOutput_C.c_str() );
     return( LvmRet_i==0 );
