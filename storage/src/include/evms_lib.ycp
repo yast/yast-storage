@@ -42,7 +42,301 @@ devices that use the available space of the current container.</p>
 
     return( help_text );
     };
-    
+
+//////////////////////////////////////////////////////////////////////
+// evms_pesize_check 
+// in: <number>[kKmM][bB]
+// 
+// return 0 if input is invalid
+// 
+// pesize is valid   8K to 512M in power of 2
+// 8 is 8k
+// 16K == 16k == 16KB == 16kb
+     
+define integer evms_pesize_check( string input, string type )
+    ``{
+    integer num = kmgt_str_to_byte( input );
+    if( findfirstnotof( input, "0123456789 " ) == nil )
+	num = num*1024;
+
+    integer ret = num;
+
+    if( ret % 1024 != 0 )
+	ret = 0;
+    else
+	{
+	while( num>1 )
+	    {
+	    if( num%2 != 0 )
+		ret = 0;
+	    else
+		num = num/2;
+            }
+        }
+    y2milestone( "evms_pesize_check ret %1", ret );
+    if( ret < 8*1024 || ret > 512*1024*1024 )
+        {
+        ret = 0;
+        }
+    y2milestone( "evms_pesize_check ret %1", ret );
+    if( ret==0 )
+	{
+	// error popup text
+	Popup::Error(_("The data entered is invalid.
+Insert a physical extent size from
+8KB to 512MB in powers of 2, for example, \"4M\" or \"512K\"
+"));
+	}
+    return( ret );
+    };
+
+//////////////////////////////////////////////////////////////////////
+// checks if name is a valid container name 
+define boolean evms_check_name( string name )
+    ``{
+    if ( size( name ) == 0 ) return( false );
+    return( ( findfirstof( name, " ;/`'´!,\"%#" ) == nil ) );
+    }
+
+define list get_pvlist( map tg, string name )
+    {
+    list pv = [];
+    foreach( string k, map e, tg,
+	``{
+	if( e["is_evms"]:false )
+	    {
+	    if( !e["is_evms_container"]:false )
+		{
+		pv = merge( pv, filter( map p, e["partitions"]:[], 
+					``(p["evms_vol"]:""==name ||
+					   (size(p["evms_vol"]:"")==0 &&
+					    size(p["mount"]:"")==0) )));
+		}
+	    }
+	else
+	    {
+	    pv = merge( pv, filter( map p, e["partitions"]:[], 
+	                            ``(p["evms_vol"]:""==name )));
+	    }
+	});
+    pv = maplist( map p, pv, 
+	``{
+	string d = substring( p["device"]:"", 5 );
+	if( find( d, "evms/" )==0 )
+	    {
+	    d = substring( d, 5 );
+	    }
+	p["device"] = d;
+	return( p );
+	});
+    return( pv );
+    }
+
+
+define map dlg_modify_container( map tg, map co, boolean create )
+    ``{
+    // popup header
+    string head = _("Modify existing EVMS Container");
+    if( co["create"]:false )
+	{
+	if( create )
+	    {
+	    // popup header
+	    head = _("Create EVMS Container");
+	    }
+	else
+	    {
+	    // popup header
+	    head = _("Modify EVMS Container");
+	    }
+	}
+    string txt =
+	      // popup description
+_("Change the setting for EVSM container.
+Container type, PE Size and container name can only be set when creating
+the container.");
+
+    term dlg = 
+	`HBox(
+	    `HSpacing(2),
+	    `VBox(
+		  `Heading(head),
+		  `Label( txt ),
+		  // label text
+		  `HBox(
+		      `HSpacing(1),
+		      `ComboBox( `id(`type), `opt(`notify), _("Container Type"),
+						      // label text
+			         [ `item( `id("lvm"), _("Linux LVM") ),
+						      // label text
+				   `item( `id("aix"), _("AIX LVM") )] ),
+			  
+		      `HSpacing(2),
+		      // label text
+		      `TextEntry( `id(`name), `opt(`notify), 
+		                  _("Container &Name"), co["name"]:"" ),
+		      `HSpacing(2),
+		      // label text
+		      `TextEntry(`id(`pesize), _("&Physical Extent Size"), ""),
+		      `HSpacing(1)
+		      ),
+		  `HBox(
+		      `HSpacing(1),
+		      `Label( _("Container size:") ),
+		      `Label( `id(`size), "" ),
+		      `HSpacing(1)
+		       ),
+		  `VSpacing(2),
+		  `HBox( 
+		      `HSpacing(2),
+		      `VBox(
+			  `Table(`id(`pv_table), `opt(`notify),
+				 // header text
+				 `header(_("Device"), `Right(_(" Size")), 
+					 // header text
+					 _(" Container")),
+				 [] ),
+			  `VSpacing(1),
+			  `HBox(
+			      // button text
+			      `PushButton(`id(`pv_add), _("&Add Volume")),
+			      // button text
+			      `PushButton(`id(`pv_delete), _("&Remove Volume"))
+			      )
+			  ),
+		      `HSpacing(2)
+		      ),
+		  `VSpacing(1),
+		  `HBox(
+		      // Ok button
+		      `PushButton(`id(`ok), `opt(`default), Label::OKButton() ),
+		      // Cancel button
+		      `PushButton(`id(`cancel), Label::CancelButton() )
+		       ),
+		  `VSpacing(0.5)
+		 ),
+	    `HSpacing(2)
+	    );
+
+    UI::OpenDialog( `opt(`decorated ), dlg );
+
+    string name = co["name"]:"";
+    if( findlastof( name, "/" ) != nil );
+	name = substring( name, findlastof( name, "/" )+1;
+
+    UI::ChangeWidget( `id(`name), `Value, name );
+    UI::ChangeWidget( `id(`pesize), `Value, 
+                      ByteToHumanStringWithZero(co["cyl_size"]:0 ));
+    UI::ChangeWidget( `id(`type), `Value, "aix" );
+
+    map pvlist = get_pvlist( tg, co["name"]:"" );
+    y2milestone( "dlg_modify_container pvlist %1", pvlist );
+
+    any ret = nil;
+      
+    repeat
+	{
+	ret = UI::UserInput();
+
+	y2milestone( "dlg_modify_container ret %1", ret );
+
+	if( ret == `ok )
+	    {
+	    string type = (string)UI::QueryWidget(`id(`type), `Value );
+
+	    if( type == "aix" )
+		{
+		co["manager"] = "AixRegMgr";
+		c0["name"] = "aix/";
+		}
+	    else
+		{
+		co["manager"] = "LvmRegMgr";
+		c0["name"] = "lvm/";
+		}
+	    string name = (string)UI::QueryWidget(`id(`name), `Value );
+	    name = deletechars( name, " \t" );
+	    co["name"] = co["name"]:"" + name;
+
+	    co["cyl_size"] = 
+		evms_pesize_check( (string)UI::QueryWidget( `id(`pesize), 
+		                                            `Value),
+				   type );
+
+	    y2milestone( "dlg_modify_container co %1 type %2", co, type );
+
+	    if( co["cyl_size"]:0 == 0 )
+	        {
+		ret = `again;
+		}
+
+	    if( ret==`ok && !evms_check_name(name) )
+		{
+		// error popup text
+		Popup::Error(_("The data entered is invalid.
+Insert a container names like \"system\" or \"test\".
+Do not use ;/`, in your group name.
+"));
+		ret = `again;
+		}
+	  
+	    if( ret==`ok && 
+	        (haskey( tg, "/dev/evms/" + co["name"]:"" ) ||
+	         haskey( tg, "/dev/" + name )) )
+		{
+		// error popup text
+		Popup::Error(sformat(_("The container named \"%1\" already exists.
+Choose a different name
+or cancel this dialog.
+"), name ));
+		ret = `again;
+		}
+	    }
+	} until( ret == `ok || ret == `cancel );
+
+    UI::CloseDialog();
+	     
+    if (ret == `ok )
+	{
+	return( co );
+	}
+    else
+	{
+	return( $[] );
+	}
+    };
+
+define map add_evms_container( map tg, boolean first )
+    ``{
+    map co = $[ "manager" : "LvmRegMgr",
+		"cyl_count" : 0,
+                "cyl_size" : 4 * 1024 * 1024,
+		"create" : true,
+		"is_evms" : true,
+		"is_evms_container" : true,
+		"name" : first?"lvm/system":"",
+		"partitions" : []
+	      ];
+
+    co = dlg_modify_container( tg, co, true );
+
+    // has the user cancelled the dialog? 
+    if( size(co)>0 )
+	{
+	string co_name = co["name"]:"";
+
+	co = filter( string k, any e, co, ``(k!="name") );
+	y2milestone( "co %1", co );
+
+	tg[ "/dev/evms/"+co_name ] = co;
+	}
+
+    return( $[
+		"ok"      : size(co)>0,
+		"targets" : tg,
+		"name"    : co_name
+	     ]);
+    };
 
 
 //////////////////////////////////////////////////////////////////////
@@ -107,7 +401,7 @@ define list get_containers( map tg )
     list ret = [];
     foreach( string k, map e, tg, 
 	``{
-	if( e["is_evms_container"]:false )
+	if( e["is_evms_container"]:false && !e["delete"]:false )
 	    {
 	    ret = add( ret, substring( k, 10 ));
 	    }
@@ -140,7 +434,8 @@ define list get_evms_volumes( map tg )
     y2milestone( "get_evms_volumes keys %1", keys );
     foreach( string k, keys,
 	``{
-	list pa = maplist( map p, tg[k,"partitions"]:[], 
+	list pa = filter( map p, tg[k,"partitions"]:[], ``(!p["delete"]:false));
+	pa = maplist( map p, pa,
 	    ``{
 	    p["size"] = 
 		ByteToHumanStringWithZero( p["region",1]:0*tg[k,"cyl_size"]:0 );

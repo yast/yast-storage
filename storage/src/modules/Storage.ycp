@@ -421,6 +421,8 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	entry["cyl_size"] = pesize*1024;
 	entry["cyl_count"] = e["size"]:0 / pesize;
 	entry["cyl_free"] = e["free"]:0 / pesize;
+	entry["manager"] = e["type"]:"AixRegMgr";
+	entry["consumes"] = e["consumes"]:[];
 	entry["partitions"] = [];
 	targetMap[key] = entry;
 	y2milestone ("e=%1 key:%2 map=%3", e, key, entry);
@@ -464,6 +466,8 @@ global define map GetLvmMdSystemInfo( map targetMap )
 				     findlastof( e["device"]:"", "/" )+1 );
 	    if( find( cons, "lvm/" ) == 0 )
 		cons = substring( cons, 4 );
+	    else if( find( cons, "aix/" ) == 0 )
+		cons = substring( cons, 4 );
 	    string dev = "/dev/" + cons;
 	    map p = Storage::GetPartition( targetMap, dev );
 	    if( size(p)>0 )
@@ -479,6 +483,27 @@ global define map GetLvmMdSystemInfo( map targetMap )
 		targetMap = Storage::SetPartition( targetMap, p );
 		}
 	    }
+	});
+    foreach( map e, cont, 
+	``{
+	foreach( string dev, e["consumes"]:[],
+	    ``{
+	    string name = e["name"]:""; 
+	    dev = "/dev/" + dev;
+	    map p = Storage::GetPartition( targetMap, dev );
+	    if( size(p)>0 )
+		{
+		p["evms_vol"] = name;
+		targetMap = Storage::SetPartition( targetMap, p );
+		}
+	    dev = "/dev/evms/" + dev;
+	    p = Storage::GetPartition( targetMap, dev );
+	    if( size(p)>0 )
+		{
+		p["evms_vol"] = name;
+		targetMap = Storage::SetPartition( targetMap, p );
+		}
+	    });
 	});
     if( Mode::normal )
 	{
@@ -3199,7 +3224,7 @@ global define map MakeCdromFstabEntry( map cd )
     string media = "/media/"+substring(cdmount,5);
 
     entry = $[ "spec":cdmount, "mount":media, "vfstype":"subfs",
-	       "mntops":"fs=cdfss,ro,noauto,user,exec", "freq":0, "passno":0];
+	       "mntops":"fs=cdfss,ro,user,exec", "freq":0, "passno":0];
     if( Storage::SaneConsoleEncoding() != "iso8859-1" &&
         Storage::SaneConsoleEncoding() != "iso8859-15" &&
 	Storage::SaneConsoleEncoding() != "" )
