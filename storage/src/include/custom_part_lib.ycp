@@ -198,15 +198,12 @@ global define scanAndReadExistingFstab( map targetMap, map file_systems )
    * @param crypt_fs boolean
    * @return boolean
    **/
-    global define check_crypt_fs_mount_points( 	string mount , boolean crypt_fs )
+global define check_crypt_fs_mount_points( string mount, boolean crypt_fs )
     ``{
-	list not_allowed_cryptfs_mount_points = [ "/" , "/boot" ,  "/usr" ,  "swap" ];
-
-	//y2milestone( "cryptfs %1, mount: %2", crypt_fs, mount );
-
-	if ( crypt_fs && contains( not_allowed_cryptfs_mount_points , mount ))
+    if( crypt_fs && 
+        (contains( FileSystems::system_m_points, mount ) || mount=="swap" ))
 	{
-	     UI::ErrorPopup(_("You have assigned an encrypted file system to a
+	UI::ErrorPopup(_("You have assigned an encrypted file system to a
 partition with one of the following
 mount points: \"/\", \"/usr\", \"/boot\", \"swap\". This is
 not possible. Change the mount point or deselect
@@ -214,7 +211,7 @@ the encryption option.
 "));
 	    return false;
 	}
-	return true;
+    return true;
     };
 
 
@@ -281,7 +278,6 @@ global define check_mount_point( map targetMap, string dev, map part )
 	    allowed = false;
 	    UI::ErrorPopup(_("FAT filesystem used for system mount point (/, /usr, /opt, /var, /home).\nThis is not possible."));
 	    }
-
 	// check if the mount countains chars making trouble
 	else if( findfirstof( mount, " `'´!\"%#" ) >= 0 )
 	    {
@@ -415,7 +411,9 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
 
     if( UI::WidgetExists( `id(`crypt_fs) ))
 	{
-	UI::ChangeWidget(`id(`crypt_fs), `Enabled, selected_fs[`crypt]:false );
+	boolean cr = selected_fs[`crypt]:false && new["type"]:`none!=`loop;
+
+	UI::ChangeWidget( `id(`crypt_fs), `Enabled, cr );
 	if( !selected_fs[`crypt]:false )
 	    {
 	    UI::ChangeWidget(`id(`crypt_fs), `Value, false );
@@ -440,6 +438,12 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
 	if( new["type"]:`primary == `lvm || new["type"]:`primary == `sw_raid )
 	    {
 	    not_used_mp = filter( `mp, not_used_mp, ``( mp != "/boot" ));
+	    }
+	else if( new["type"]:`primary == `loop )
+	    {
+	    not_used_mp = 
+		filter( `mp, not_used_mp, 
+			``(!contains( FileSystems::system_m_points, mp)));
 	    }
 	if(mount == "swap")
 	    new["mount"] = "";
@@ -507,7 +511,8 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	if( UI::WidgetExists( `id(`crypt_fs) ))
 	    {
 	    UI::ChangeWidget( `id(`crypt_fs), `Enabled, 
-			      selected_fs[`crypt]:false );
+			      selected_fs[`crypt]:false && 
+			      new["type"]:`none!=`loop );
 	    }
 	if( UI::WidgetExists( `id(`fsid_point) ))
 	    {
@@ -735,5 +740,34 @@ global define list AddFstabToData( map targetMap, list fstab )
 
     return [ new_targetMap, table_input ];
     };
+
+global define check_max_size( integer byte_size, integer max_size )
+    ``{
+    y2milestone( "icheck_lv_size byte_size=%1 max_size=%2", byte_size,
+                 max_size );
+   
+    if( byte_size == 0 )
+        {
+	if( max_size>0 )
+	    UI::ErrorPopup(sformat(_("The size entered is invalid.
+Enter a size from 1M to %1. For example, 40M or 1G."),
+				   ByteToHumanStringWithZero(max_size)) );
+	else
+	    UI::ErrorPopup(_("The size entered is invalid.
+Enter a valid size, for example 500k, 40M or 1G."));
+        return( false );
+        }
+
+    if( max_size>0 && byte_size>max_size )
+        {
+        UI::ErrorPopup(sformat(_("The size entered is too large.
+Enter a size from 1M to %1."),
+                               ByteToHumanStringWithZero(max_size)) );
+        return( false );
+        }
+
+    return( true );
+    };
+
 
 }

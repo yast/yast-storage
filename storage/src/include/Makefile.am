@@ -28,6 +28,7 @@ ynclude_HEADERS = \
 	lvm_pv_lib.ycp  		\
 	lvm_ui_dialogs.ycp  		\
 	lvm_ui_lib.ycp			\
+	loop.ycp			\
 	do_proposal.ycp
 
 EXTRA_DIST = $(ynclude_HEADERS)

@@ -389,7 +389,7 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
     write_cryptotab( tg );
     };
 
-global define map onepartition2cryptotab( map partition )
+global define map onepartition2cryptotab( map partition, integer loop_num )
     ``{
     string  partitionName = partition["device"]:"";
     string  mountPoint    = partition["mount"]:"";
@@ -397,6 +397,10 @@ global define map onepartition2cryptotab( map partition )
     boolean crypt_fs      = partition["crypt_fs"]:false;
     string  loop_dev      = partition["loop_dev"]:"";
 
+    if( Mode::initial )
+	{
+	loop_dev = Storage::GetDeviceName( "/dev/loop", loop_num );
+	}
 
     if( Mode::test && loop_dev == "")
 	loop_dev = "/dev/loop1";
@@ -419,11 +423,17 @@ global define map onepartition2cryptotab( map partition )
 		 "opt1"    : "twofish",
 		 "opt2"    : partition["fsopts"]:"noatime" ];
 
+    if( partition["type"]:`none == `loop )
+	{
+	ret["device"] = partition["fpath"]:"";
+	ret["loopfile"] = true;
+	}
+
     if( partition["crtabline"]:0 != 0 )
 	{
-	ret["line"] = part["crtabline"]:0;
+	ret["line"] = partition["crtabline"]:0;
 	}
-    y2milestone( "ret=%1" );
+    y2milestone( "loop_num:%1 ret=%2", loop_num, ret );
     return( ret );
     };
 
@@ -433,13 +443,16 @@ global define void write_cryptotab (map targets)
     map crtab = $[];
     list dellines = [];
     list cryptotab = [];
+    list disks = sort( `a, `b, maplist( `k, `e, targets, ``(k)), 
+                       ``(a!="/dev/loop") );
 
-    foreach( `targetdevice, `target, targets,
+    foreach( `targetdevice, disks,
 	``{
-	list partitions = target["partitions"]:[];
+	list partitions = targets[targetdevice,"partitions"]:[];
 	foreach (`partition, partitions,
 	    ``{
-	    map cryptotabentry = onepartition2cryptotab( partition );
+	    map cryptotabentry = onepartition2cryptotab( partition, 
+	                                                 size(crtab) );
 
 	    if( size(cryptotabentry)>0 )
 		{
@@ -451,15 +464,16 @@ global define void write_cryptotab (map targets)
 				   ( p["delete"]:false ||
 				     !p["crypt_fs"]:false ||
 				     size(p["mount"]:"")==0 )));
-	dellines = union( dellines, maplist( `p, delpart, ``(p["crtabline"]:0 )));
+	dellines = union( dellines, 
+	                  maplist( `p, delpart, ``(p["crtabline"]:0 )));
 	});
 
+    y2milestone( "crtab %1", crtab );
     list crtablist = maplist (`k, `v, crtab, ``(v));
 
-    string tabpath = "/etc/cryptotab";
+    string tabpath = Storage::PathToDestdir( "/etc/cryptotab" );
     if( Installation::destdir != "/" )
 	{
-	tabpath = Installation::destdir + tabpath;
 	if( SCR::Read( .target.size, tabpath )>=0 )
 	    SCR::Execute( .target.remove, tabpath );
 	}
@@ -469,7 +483,6 @@ global define void write_cryptotab (map targets)
     y2milestone( "dellist=%1", dellines );
     y2milestone( "crtablist=%1", crtablist );
 
-
     foreach( `entry, crtablist,
 	``{
 	list fstlist = [ entry["loop"]:"", entry["device"]:"", 
@@ -478,6 +491,11 @@ global define void write_cryptotab (map targets)
 	if( entry["line"]:0 > 0 )
 	    {
 	    map part = Storage::GetPartition( tg, entry["device"]:"" );
+	    if( entry["loopfile"]:false )
+		{
+		part = Storage::GetPartition( tg, entry["loop"]:"" );
+		}
+	    y2milestone( "part %1", part );
 	    if( part["format"]:false ||
 		(haskey(part,"ori_mount") && 
 		 part["ori_mount"]:""!=part["mount"]:"") ||

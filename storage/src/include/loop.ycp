@@ -1,0 +1,286 @@
+/**
+ * File:
+ *   loop.ycp
+ *
+ * Module:
+ *   Configuration loop file setup
+ *
+ * Summary:
+ *   Functions for configuration of loop file setup
+ *
+ * Authors:
+ *   Thomas Fehr <fehr@suse.de>
+ *
+ * $Id$
+ *
+ */
+
+{
+
+  textdomain "storage";
+
+  import "Wizard";
+  import "Storage";
+  import "FileSystems";
+  import "Partitions";
+  
+  include "partitioning/partition_defines.ycp";
+  include "partitioning/custom_part_dialogs.ycp";
+  include "partitioning/custom_part_lib.ycp";
+
+/**
+ * LoopDlgHelp
+ * @return string
+ */
+global define string LoopDlgHelp()
+    ``{
+    string helptext = _("
+<p><b>Path name of file:</b><br>This must be an absolute path to the file
+containing the data for the encrypted loop device to be set up.</p>");
+
+    helptext = helptext + _("
+<p><b>Create crypt file:</b><br>If this is checked, the file will be 
+created with the size given in the next field. <b>NOTE:</b> If the 
+file already exists all data it lost.</p>");
+
+    helptext = helptext + _("
+<p><b>Size of crypt file:</b><br>This is the size of the loop file.
+The filesystem to be created in the encrypted loop device will have 
+this size.</p>");
+
+    helptext = helptext + _("
+<p><b>NOTE:</b>During installation there cannot be any consistency
+checks about file size and pathnames since the filesystem is not 
+accessible. It will be created at the end of installation. So be 
+careful about the size and pathname you provide.</p>");
+
+    return helptext;
+    };
+
+
+/**
+ * LoopSetup dialog
+ *
+ * Provide dialog for settings of loop device related parameters
+ */
+global define symbol LoopSetup( boolean edit )
+    ``{
+    string id = Storage::GetWizardKey();
+    string key = "/dev/loop";
+    y2milestone( "edit %1 id %2", edit, id );
+    map part = Storage::InitialLoopEntry();
+    map tg = Storage::GetTargetMap();
+    if( edit )
+	{
+	part = Storage::GetSubDev( id );
+	}
+    else
+	{
+	integer n = 0;
+	list nlist = maplist( `p, tg[key,"partitions"]:[], ``(p["nr"]:0));
+	while( n<size(nlist) && contains( nlist, n) )
+	    {
+	    n = n+1;
+	    }
+	part["nr"] = n;
+	part["device"] = Storage::GetDeviceName( key, part["nr"]:0 );
+	part["format"] = true;
+	part["create"] = true;
+	part["region",1] = 50;
+	}
+    y2milestone( "part %1", part );
+
+    y2milestone( "fs %1", FileSystems::GetAllFileSystems(false, false) );
+    part = LoopExpertDlg( edit, part, 
+                          filter( `k, `e, 
+			          FileSystems::GetAllFileSystems(false, false),
+				  ``(e[`crypt]:false)));
+
+    symbol ret = part["symbol"]:`next;
+    // remove symbol key from data
+    part = filter( `key, `value, part, ``( key != "symbol" ));
+
+    if( ret == `ok )
+	{
+	if( size(tg[key]:$[]) == 0 )
+	    {
+	    tg[key] = Storage::InitialLoopMaindev();
+	    }
+	tg = Storage::SetPartition( tg, part );
+	Storage::SetTargetMap( tg );
+	}
+    y2milestone( "ret = %1", ret );
+    return  ret;
+    }
+
+
+/**
+ *  LoopExpertDlg dialog
+ *  edit loop options
+ */
+global define map LoopExpertDlg( boolean edit, map part, map file_systems )
+    ``{
+    string caption = "";
+    if( edit )
+	{
+	caption = sformat( _("Edit Loop Device Setup of %1"), 
+	                   part["fpath"]:"" );
+	}
+    else
+	{
+	caption = _("Create New Loop Device Setup");
+	}
+
+    term contents = `VBox( `HSpacing( 60 ),
+                           `HBox( `HSpacing(2), 
+			          LoopOptionsDlg(), 
+				  `HSpacing(20)
+				),
+			   `VSpacing(1),
+			   `HBox( FormatDlg( part, file_systems ),
+			          `HSpacing(2),
+				  `Top(`ReplacePoint( `id(`mount_dlg_rp), 
+						      MountDlg( part, [] )))
+				)
+			 );
+
+    contents = `VBox(
+		     `Heading(caption),
+		     `VSpacing(1),
+		     `VStretch(),
+		     contents,
+		     `VSpacing(1),
+		     `VStretch(),
+		     `HBox(
+			   `PushButton(`id(`ok), `opt(`default), 
+				       OKButtonLabel()  ),
+			   `PushButton(`id(`cancel), CancelButtonLabel() )
+		    ));
+
+
+
+    /////////////////////////////////////////////////////////////
+    // Open main dialog for Raid
+    /////////////////////////////////////////////////////////////
+    UI::OpenDialog( `opt(`decorated ),
+		    `HBox( `HWeight(30,`RichText(LoopDlgHelp())),
+			   `HStretch(),
+			   `HSpacing(1),
+			   `HWeight(70, contents ),
+			   `HSpacing(1),
+			   `HStretch()
+			 ));
+
+    ////////////////////////////////////////////////////////////////
+    // configure main dialog for the first call
+    string lsize = ByteToHumanStringWithZero(part["region",1]:0*1024*1024);
+
+    UI::ChangeWidget( `id(`loop_path), `Value, part["fpath"]:"" );
+    UI::ChangeWidget( `id(`loop_path), `ValidChars, 
+                      FileSystems::nchars + "-._:/" );
+    UI::ChangeWidget( `id(`loop_create), `Value, part["create"]:false );
+    UI::ChangeWidget( `id(`loop_size), `Value, lsize );
+    UI::ChangeWidget( `id(`loop_size), `Enabled, part["create"]:false );
+    UI::ChangeWidget( `id(`crypt_fs), `Enabled, false );
+
+    map retval = eval(part);
+    any ret = `ok;
+
+    HandlePartWidgetChanges( true, ret, file_systems, part, retval );
+
+    repeat
+	{
+	ret = UI::UserInput();
+	y2milestone( "DlgLoop %1", ret);
+
+	////////////////////////////////////////////////////////////
+	if( ret != `cancel )
+	    {
+	    HandlePartWidgetChanges( false, ret, file_systems, part, retval );
+	    }
+
+	if( ret == `loop_create )
+	    {
+	    retval["create"] = UI::QueryWidget( `id(`loop_create), `Value );
+	    UI::ChangeWidget( `id(`loop_size), `Enabled, 
+			      retval["create"]:false );
+	    if( retval["create"]:false )
+		{
+		retval["format"] = true;
+		UI::ChangeWidget( `id(`format), `Value, true );
+		}
+	    }
+
+	if( ret == `ok )
+	    {
+	    retval["fpath"] = UI::QueryWidget(`id(`loop_path), `Value);
+	    retval["create"] = UI::QueryWidget(`id(`loop_create), `Value);
+
+	    lsize = UI::QueryWidget(`id(`loop_size), `Value);
+	    integer nsize = kmgt_str_to_byte( lsize );
+	    retval["region",1] = nsize/(1024*1024);
+	    y2milestone( "size:%1 num:%2", lsize, nsize );
+	    y2milestone( "retval:%1", retval );
+	    if( !check_max_size( nsize, 0 ) )
+		{
+		continue;
+		}
+	    if( size(retval["fpath"]:"")==0 || 
+	        substring( retval["fpath"]:" ", 0, 1)!="/" )
+		{
+		UI::ErrorPopup( sformat(_("The file name \"%1\" is invalid.
+You have to use an absolute pathname"), retval["fpath"]:" " ));
+		continue;
+		}
+
+	    if( Mode::normal && !retval["create"]:false &&
+	        SCR::Read( .target.size, retval["fpath"]:"" )<=0 )
+		{
+		UI::ErrorPopup( sformat(_("The file name \"%1\" does not exist
+and the flag for create is off. Either use an existing file or activate
+the create flag."), retval["fpath"]:" " ));
+		continue;
+		}
+
+	    if( !retval["format"]:false && retval["create"]:false )
+		{
+		UI::ErrorPopup( _(
+"You did specify to create the crypt file bot did not specify 
+that it should be formatted. This does not make sense. 
+
+Please check the format option also."));
+		continue;
+		}
+
+	    map ret_mp = CheckOkMount( part["device"]:"", part, retval );
+	    y2milestone( "ret_mp %1 part %2", ret_mp, part );
+	    if( !ret_mp["ok"]:false )
+	       {
+	       if( ret_mp["field"]:`none != `none )
+		   UI::SetFocus(`id( ret_mp["field"]:`none ));
+	       continue;
+	       }
+
+	    if( size(retval["mount"]:"")==0 )
+		{
+		UI::ErrorPopup( _("You have to provide a mount point"));
+		continue;
+		}
+
+	    ret_mp = CheckCryptOk( retval );
+	    y2milestone( "ret_mp %1", ret_mp );
+	    if( !ret_mp["ok"]:false && UI::WidgetExists( `id(`crypt_fs) ))
+	       {
+	       continue;
+	       }
+	    }
+        } until( ret == `ok || ret == `cancel || ret == `next ||
+		 ret == `back || ret == `abort );
+
+    retval["symbol"] = ret;
+    y2milestone( "ret:%1 retval=%2", ret, retval );
+    UI::CloseDialog();
+    return retval;
+    }
+
+}

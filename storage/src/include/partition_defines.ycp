@@ -57,12 +57,11 @@
     //
     // 8 is 8k
     // 16K == 16k == 16KB == 16kb
-     global define kmgt_str_to_byte( string input )
+global define kmgt_str_to_byte( string input )
      ``{
    	   integer number = 0;
 
-	   if ( size(filterchars(input, "0123456789kKmMgGtTbBoO ."))
-		!= size(input))
+    if( size(filterchars(input, "0123456789kKmMgGtTbBoO .")) != size(input))
 	   {
 	       return(0);
 	   }
@@ -71,12 +70,12 @@
 
 	   y2debug( "EEE -%1- **** ", input);
 
-           if ( findfirstnotof( input, "0123456789.") != nil  )
+    if( findfirstnotof( input, "0123456789.") != nil  )
            {
                // check whether the last char is in "kKmM" or "bB"
                string last_char = substring( input, size(input)-1, 1);
 
-	       if ( last_char == "b" || last_char == "B" ||
+        if( last_char == "b" || last_char == "B" ||
 	            last_char == "o" || last_char == "O" )
                {
                    input = substring( input, 0, size(input)-1);
@@ -86,9 +85,9 @@
 
 	       string number_str = substring(input, 0, size(input)-1);
 
-	       if ( findfirstnotof( number_str, "0123456789.") == nil )
+        if( findfirstnotof( number_str, "0123456789.") == nil )
 	       {
-   	          if ( last_char == "k" || last_char == "K" )
+	    if( last_char == "k" || last_char == "K" )
 		  {
 		      number = tointeger(tofloat( number_str ) * 1024.0) ;
 		  }
@@ -98,11 +97,13 @@
 		  }
 		  else if ( last_char == "g" || last_char == "G" )
 		  {
-		      number = tointeger(tofloat( number_str ) * 1024.0 * 1024.0 * 1024.0);
+		number = tointeger(tofloat( number_str ) * 
+		                   1024.0 * 1024.0 * 1024.0);
 		  }
 		  else if ( last_char == "t" || last_char == "T" )
 		  {
-		      number = tointeger(tofloat( number_str ) * 1024.0 * 1024.0 * 1024.0 * 1024.0);
+		number = tointeger(tofloat( number_str ) * 
+		                   1024.0 * 1024.0 * 1024.0 * 1024.0);
 		  }
 		  else
 		  {
@@ -118,7 +119,6 @@
            {
                number = tointeger( input );
            }
-
 	   return( number );
      };
 
@@ -131,289 +131,291 @@
      *---------------------------------------------------------------------
      */
 
-    global define TargetChangesToRichText( map targetMap, map modTg )
+global define TargetChangesToRichText( map targetMap, map modTg )
     ``{
-	if ( targetMap == nil )
+    if( targetMap == nil )
 	{
-	    y2error( "TargetChangesToRichText(nil)");
-	    return("");
+	y2error( "TargetChangesToRichText(nil)");
+	return("");
 	}
+    string description = "";
 
-	string description = "";
-
-	list delete_lst = [];
-	list resize_lst = [];
-	list reuse_lst  = [];
-	list create_lst = [];
-	list other_lst  = [];
+    list delete_lst = [];
+    list resize_lst = [];
+    list reuse_lst  = [];
+    list create_lst = [];
+    list other_lst  = [];
 
 
-	foreach( `disk, `diskinfo, targetMap, ``{
-	    list    partitions = diskinfo["partitions"]:[];
-	    integer cyl_size  = diskinfo["cyl_size"]:1;
+    foreach( `disk, `diskinfo, targetMap, 
+	``{
+	list    partitions = diskinfo["partitions"]:[];
+	integer cyl_size  = diskinfo["cyl_size"]:1;
 
-	    foreach( `part, partitions, ``{
+	foreach( `part, partitions, 
+	    ``{
+	    string  device  = part["device"]:"";
+	    string  used_fs = substring(sformat("%1", part["used_fs"]:" "), 1);
+	    string  mount   = part["mount"]:"";
+	    symbol  type    = part["type"]:`unknown;
+	    string  fstype  = part["fstype"]:"";
+	    string  winstr  = "";
+	    boolean is_fat  = Partitions::IsDosPartition( part["fsid"]:0 );
+	    string  psize   = ByteToHumanString (part["region",1]:0 * cyl_size);
+	    string  old_size = "";
+	    string  debugstr = "";
+	    string ent_name = _("partition");
 
-		string  device   = Storage::GetDeviceName( disk, part["nr"]:0 );
-		string  used_fs  = substring(sformat("%1", part["used_fs"]:" ") ,1);
-		string  mount    = part["mount"]:"";
-		symbol  type     = part["type"]:`unknown;
-		string  fstype   = part["fstype"]:"";
-		string  winstr   = "";
-		boolean is_fat   = Partitions::IsDosPartition( part["fsid"]:0 );
-		string  psize    = ByteToHumanString (part["region",1]:0 * cyl_size);
-		string  old_size = "";
-		string  debugstr = "";
-
-		if ( Mode::test && !Mode::screen_shot )
+	    if( part["type"]:`unknown == `loop )
 		{
-		    integer startcyl =  part["region",0]:0;
-		    integer lencyl   =  part["region",1]:0;
-		    debugstr = sformat(" cyl: %1 to %2  ", ToStringLen(5, startcyl), ToStringLen(5,startcyl + lencyl -1) );
+		ent_name = _("crypt loop file");
+		device = part["fpath"]:"";
 		}
 
-		if ( is_fat )
+	    if( Mode::test && !Mode::screen_shot )
 		{
-		   // try to find windows letter like C: D:
-		   // look for /windows/ or /dos/
-		    if ( size(mount) > 5  &&  substring( mount, 0, 5) == "/dos/" )      winstr = substring( mount, 5, 1 ) + ":";
-		    if ( size(mount) > 9  &&  substring( mount, 0, 9) == "/windows/" )  winstr = substring( mount, 9, 1 ) + ":";
-
-		    old_size = ByteToHumanString (part["ori_length"]:0 * cyl_size);
+		integer startcyl =  part["region",0]:0;
+		integer lencyl   =  part["region",1]:0;
+		debugstr = sformat(" cyl: %1 to %2  ", ToStringLen(5, startcyl),
+		                   ToStringLen(5,startcyl + lencyl -1) );
 		}
 
-		y2debug( "WWW %1", part);
-
-		if ( part["delete"]:false )
+	    if( is_fat )
 		{
-		    if ( is_fat )
-		    {
-			// to translators: * Delete Windows partition C: (hda3) 600 MB
-			delete_lst = add( delete_lst, debugstr + sformat(_("<font color=red>Delete Windows partition</font> %1 (%2) %3"), winstr, device, psize ));
-		    }
-		    else
-		    {
-		        // to translators: * Delete partition hda3 600 MB (Linux LVM)
-		        delete_lst = add( delete_lst, debugstr + sformat(_("<font color=red>Delete partition</font> %1 %2 (%3)"), device, psize, fstype ));
-		    }
+	        // try to find windows letter like C: D:
+	        // look for /windows/ or /dos/
+		if( size(mount) > 5  && substring(mount, 0, 5) == "/dos/" )
+		    winstr = substring( mount, 5, 1 ) + ":";
+		if( size(mount) > 9  && substring(mount, 0, 9) == "/windows/" )
+		    winstr = substring( mount, 9, 1 ) + ":";
+
+		old_size = ByteToHumanString (part["ori_length"]:0 * cyl_size);
 		}
 
-		else if ( part["create"]:false )
+	    y2debug( "WWW %1", part);
+
+	    if( part["delete"]:false )
 		{
-		    boolean new_mp = false;
-
-		    string instr = mount;
-
-		    // for Create %1 partition to Create boot partition
-		    if( mount == "/boot" || 
-			part["fsid"]:0 == Partitions::fsid_prep_chrp_boot )
-			instr = _("boot");
-		    // for Create %1 partition to Create root partition
-		    else if ( mount == "/")     instr = _("root");
-		    // for Create %1 partition to Create swap partitions
-		    else if ( mount == "swap" ) instr = _("swap");
-                    // or a non default mp
-		    else new_mp = true;
-
-
-		    if ( !new_mp && 
-		         (part["fsid"]:0 == Partitions::fsid_prep_chrp_boot ||
-			  mount == "swap"))
+		if( is_fat )
 		    {
-			// to translators: * Create swap partition 1.2 GB on hda1
-			create_lst = add( create_lst, debugstr + sformat(_("Create %1 partition %2 on %3"), instr, psize, device ));
+		    // to translators: * Delete Windows partition C: (hda3) 600 MB
+		    delete_lst = add( delete_lst, debugstr + sformat(_("<font color=red>Delete Windows partition</font> %1 (%2) %3"), winstr, device, psize ));
 		    }
-		    else if ( !new_mp )
+		else
 		    {
-			// to translators: * Create root partition 1.2 GB (hda1 with ext2)
-			create_lst = add( create_lst, debugstr + sformat(_("Create %1 partition %2 (%3 with %4)"), instr, psize, device, used_fs ));
+		    // to translators: * Delete partition hda3 600 MB (Linux LVM)
+		    delete_lst = add( delete_lst, debugstr + sformat(_("<font color=red>Delete partition</font> %1 %2 (%3)"), device, psize, fstype ));
 		    }
-		    else if ( type == `extended )
+		}
+	    else if ( part["create"]:false )
+		{
+		boolean new_mp = false;
+
+		string instr = mount;
+
+		// for Create %1 partition to Create boot partition
+		if( mount == "/boot" || 
+		    part["fsid"]:0 == Partitions::fsid_prep_chrp_boot )
+		    instr = _("boot");
+		// for Create %1 partition to Create root partition
+		else if ( mount == "/")    
+		    instr = _("root");
+		// for Create %1 partition to Create swap partitions
+		else if ( mount == "swap" ) 
+		    instr = _("swap");
+		// or a non default mp
+		else 
+		    new_mp = true;
+
+		if( !new_mp && 
+		    (part["fsid"]:0 == Partitions::fsid_prep_chrp_boot ||
+		     mount == "swap"))
 		    {
-			// to translators: * Create extended partition 1.2 GB (hda1)
-			create_lst = add( create_lst, debugstr + sformat(_("Create extended partition %2 (%3)"), instr, psize, device));
+		    // to translators: * Create swap partition 1.2 GB on hda1
+		    create_lst = add( create_lst, debugstr + sformat(_("Create %1 partition %2 on %3"), instr, psize, device ));
 		    }
-		    else
+		else if( !new_mp )
 		    {
-			if( diskinfo["is_lvm_vg"]:false == false )
+		    // to translators: * Create root partition 1.2 GB (hda1 with ext2)
+		    create_lst = add( create_lst, debugstr + sformat(_("Create %1 partition %2 (%3 with %4)"), instr, psize, device, used_fs ));
+		    }
+		else if( type == `extended )
+		    {
+		    // to translators: * Create extended partition 1.2 GB (hda1)
+		    create_lst = add( create_lst, debugstr + sformat(_("Create extended partition %2 (%3)"), instr, psize, device));
+		    }
+		else
+		    {
+		    if( diskinfo["is_lvm_vg"]:false == false )
+			{
+			if( mount != "" )
 			    {
-			    if( mount != "" )
+			    // to translators: * Create partition hda3 700 MB (for /var with ext2)
+			    create_lst = add( create_lst, debugstr + sformat(_("Create %5 %1 %2 (for %3 with %4)"), device, psize, mount, used_fs, ent_name ));
+			    }
+			else
+			    {
+			    integer id = part["fsid"]:0;
+			    if( id != Partitions::fsid_native &&
+				id != Partitions::fsid_swap &&
+				id < 256 )
 				{
-				// to translators: * Create partition hda3 700 MB (for /var with ext2)
-				create_lst = add( create_lst, debugstr + sformat(_("Create partition %1 %2 (for %3 with %4)"), device, psize, mount, used_fs ));
+				// to translators: * Create partition hda3 (id=0x41) 700 MB
+				create_lst = add( create_lst, debugstr + sformat(_("Create %4 %1 (id=%2) %3"), device, Partitions::ToHexString(id), psize, ent_name ));
 				}
 			    else
 				{
-				integer id = part["fsid"]:0;
-				if( id != Partitions::fsid_native &&
-				    id != Partitions::fsid_swap &&
-				    id < 256 )
-				    {
-				    // to translators: * Create partition hda3 (id=0x41) 700 MB
-				    create_lst = add( create_lst, debugstr + sformat(_("Create partition %1 (id=%2) %3"), device, Partitions::ToHexString(id), psize ));
-				    }
-				else
-				    {
-				    // to translators: * Create partition hda3 700 MB
-				    create_lst = add( create_lst, debugstr + sformat(_("Create partition %1 %2"), device, psize ));
-				    }
+				// to translators: * Create partition hda3 700 MB
+				create_lst = add( create_lst, debugstr + sformat(_("Create %3 %1 %2"), device, psize, ent_name ));
 				}
 			    }
-			else
-			    {
-			    // to translators: * Create LV var in VG system 700 MB (for /var with ext2)
-			    create_lst = add( create_lst, debugstr + sformat(_("Create LV %1 in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
-			    }
+			}
+		    else
+			{
+			// to translators: * Create LV var in VG system 700 MB (for /var with ext2)
+			create_lst = add( create_lst, debugstr + sformat(_("Create LV %1 in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
+			}
 		    }
 		}
 
-		else if ( part["resize"]:false )
+	    else if( part["resize"]:false )
 		{
-		    if ( is_fat )
+		if( is_fat )
 		    {
-			// to translators: * Resize Windows partition C: (hda1) from 3.2GB to 1.8GB.
-			// or without C:   * Resize Windows partition (hda1) from 3.2GB to 1.8GB.
-			resize_lst = add( resize_lst, debugstr + sformat(_("Resize Windows partition %1 (%2) from %3 to %4"),
-							      winstr, device, old_size, psize  ));
+		    // to translators: * Resize Windows partition C: (hda1) from 3.2GB to 1.8GB.
+		    // or without C:   * Resize Windows partition (hda1) from 3.2GB to 1.8GB.
+		    resize_lst = add( resize_lst, debugstr + sformat(_("Resize Windows partition %1 (%2) from %3 to %4"),
+							  winstr, device, old_size, psize  ));
 		    }
-		    else
+		else
 		    {
-			// to translators: * Resize partition hda1 to 1.8GB.
-			resize_lst = add( resize_lst, debugstr + sformat(_("Resize partition %1 to %2"),  device, psize  ));
+		    // to translators: * Resize partition hda1 to 1.8GB.
+		    resize_lst = add( resize_lst, debugstr + sformat(_("Resize partition %1 to %2"),  device, psize  ));
 		    }
 		}
-
-		else if ( part["format"]:false )
+	    else if ( part["format"]:false )
 		{
-		    if( mount == "swap")
+		if( mount == "swap")
+		    {
+		    if( !diskinfo["is_lvm_vg"]:false )
 			{
-			if( !diskinfo["is_lvm_vg"]:false )
-			    {
-			    // to translators: * Format partition hda3 700 MB (for swap)
-			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (for %3)"), device, psize, mount ));
-			    }
-			else
-			    {
-			    // to translators: * Format LV swap in VG system 700 MB (for swap)
-			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4)"), part["nr"]:"", substring(disk,5), psize, mount ));
-			    }
-			}
-		    else if( size(mount)>0 )
-			{
-			if( diskinfo["is_lvm_vg"]:false == false )
-			    {
-			    // to translators: * Format partition hda3 700 MB (for /var with ext2)
-			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (for %3 with %4)"), device, psize, mount, used_fs ));
-			    }
-			else
-			    {
-			    // to translators: * format LV var in VG system 700 MB (for /var with ext2)
-			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
-			    }
+			// to translators: * Format partition hda3 700 MB (for swap)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format %4</font> %1 %2 (for %3)"), device, psize, mount, ent_name ));
 			}
 		    else
 			{
-			if( diskinfo["is_lvm_vg"]:false == false )
-			    {
-			    // to translators: * Format partition hda3 700 MB (with ext2)
-			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (with %3)"), device, psize, used_fs ));
-			    }
-			else
-			    {
-			    // to translators: * format LV var in VG system 700 MB (with ext2)
-			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (with %4)"), part["nr"]:"", substring(disk,5), psize, used_fs ));
-			    }
+			// to translators: * Format LV swap in VG system 700 MB (for swap)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4)"), part["nr"]:"", substring(disk,5), psize, mount ));
 			}
+		    }
+		else if( size(mount)>0 )
+		    {
+		    if( diskinfo["is_lvm_vg"]:false == false )
+			{
+			// to translators: * Format partition hda3 700 MB (for /var with ext2)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format %5</font> %1 %2 (for %3 with %4)"), device, psize, mount, used_fs, ent_name ));
+			}
+		    else
+			{
+			// to translators: * format LV var in VG system 700 MB (for /var with ext2)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
+			}
+		    }
+		else
+		    {
+		    if( diskinfo["is_lvm_vg"]:false == false )
+			{
+			// to translators: * Format partition hda3 700 MB (with ext2)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (with %3)"), device, psize, used_fs ));
+			}
+		    else
+			{
+			// to translators: * format LV var in VG system 700 MB (with ext2)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (with %4)"), part["nr"]:"", substring(disk,5), psize, used_fs ));
+			}
+		    }
 		}
-		else if( haskey(part,"ori_label") &&
-		         part["ori_label"]:"" != part["label"]:"" )
-		    {
+	    else if( haskey(part,"ori_label") &&
+		     part["ori_label"]:"" != part["label"]:"" )
+		{
+		other_lst = 
+		    add( other_lst, 
+			 sformat(_("Set volume label of %1 to %2"),
+				 device, part["label"]:"" ));
+		}
+	    else if( (Mode::initial && size(part["mount"]:"") > 0 && 
+		      part["mount"]:""!="swap" ) ||
+		     (!Mode::initial && haskey(part,"ori_mount") && 
+		      part["ori_mount"]:""!=part["mount"]:"" ))
+		{
+		if( size(part["mount"]:"") > 0 )
 		    other_lst = 
 			add( other_lst, 
-			     sformat(_("Set volume label of %1 to %2"),
-				     device, part["label"]:"" ));
-		    }
-		else if( (Mode::initial && size(part["mount"]:"") > 0 && 
-		          part["mount"]:""!="swap" ) ||
-			 (!Mode::initial && haskey(part,"ori_mount") && 
-		          part["ori_mount"]:""!=part["mount"]:"" ))
-		    {
-		    if( size(part["mount"]:"") > 0 )
-			other_lst = 
-			    add( other_lst, 
-				 sformat(_("Set mount point of %1 to %2"),
-					   device, part["mount"]:"" ));
-		    else
-			other_lst = 
-			    add( other_lst, 
-				 sformat(_("Remove device %1 from /etc/fstab"),
-					   device ));
-		    }
-		else if( !Mode::initial && (haskey(part,"ori_fstopt") && 
-		          part["ori_fstopt"]:""!=part["fstopt"]:"") ||
-			 (haskey(part,"ori_mountby") &&
-			  part["ori_mountby"]:`device!=part["mountby"]:`device))
-		    {
+			     sformat(_("Set mount point of %1 to %2"),
+				       device, part["mount"]:"" ));
+		else
 		    other_lst = 
 			add( other_lst, 
-			     sformat(_("Change mount options of %1 in /etc/fstab"),
+			     sformat(_("Remove device %1 from /etc/fstab"),
 				       device ));
-		    }
+		}
+	    else if( !Mode::initial && (haskey(part,"ori_fstopt") && 
+		      part["ori_fstopt"]:""!=part["fstopt"]:"") ||
+		     (haskey(part,"ori_mountby") &&
+		      part["ori_mountby"]:`device!=part["mountby"]:`device))
+		{
+		other_lst = 
+		    add( other_lst, 
+			 sformat(_("Change mount options of %1 in /etc/fstab"),
+				   device ));
+		}
 	    });
 	});
 
 
-	foreach( `num, `entry, modTg, ``{
-	    if( entry["type"]:"" == "remove_lv" )
-		{
-		// to translators: * Delete LV /dev/system/usr 
-		delete_lst = 
-		    add( delete_lst, 
-		         sformat(_("<font color=red>Delete LV</font> /dev/%1/%2"),
-			         entry["vgname"]:"", entry["name"]:"" ));
-		}
+    foreach( `num, `entry, modTg, 
+	``{
+	if( entry["type"]:"" == "remove_lv" )
+	    {
+	    // to translators: * Delete LV /dev/system/usr 
+	    delete_lst = 
+		add( delete_lst, 
+		     sformat(_("<font color=red>Delete LV</font> /dev/%1/%2"),
+			     entry["vgname"]:"", entry["name"]:"" ));
+	    }
 
-	    if( entry["type"]:"" == "create_vg" )
-		{
-		// to translators: * create VG system
-		create_lst = 
-		    add( create_lst, 
-			 sformat(_("Create VG %1"), entry["vgname"]:"" ));
-		}
-	    if( entry["type"]:"" == "resize_lv" )
-		{
-		// to translators: * create VG system
-		resize_lst = 
-		    add( resize_lst, 
-		         sformat(_("Resize LV /dev/%1/%2 to %3"), 
-			         entry["vgname"]:"", entry["name"]:"",
-				 ByteToHumanString(entry["size"]:0)));
-		}
-
+	if( entry["type"]:"" == "create_vg" )
+	    {
+	    // to translators: * create VG system
+	    create_lst = 
+		add( create_lst, 
+		     sformat(_("Create VG %1"), entry["vgname"]:"" ));
+	    }
+	if( entry["type"]:"" == "resize_lv" )
+	    {
+	    // to translators: * create VG system
+	    resize_lst = 
+		add( resize_lst, 
+		     sformat(_("Resize LV /dev/%1/%2 to %3"), 
+			     entry["vgname"]:"", entry["name"]:"",
+			     ByteToHumanString(entry["size"]:0)));
+	    }
 	});
 
-        foreach( `line, delete_lst, ``{
-            y2debug( "OUT: DELETE: %1", line);
-        });
-        foreach( `line, reuse_lst, ``{
-            y2debug( "OUT: REUSE : %1", line);
-        });
-        foreach( `line, resize_lst, ``{
-            y2debug( "OUT: RESIZE: %1", line);
-        });
-        foreach( `line, create_lst, ``{
-            y2debug( "OUT: CREATE: %1", line);
-        });
+    foreach( `line, delete_lst, ``{ y2debug( "OUT: DELETE: %1", line); });
+    foreach( `line, reuse_lst, ``{ y2debug( "OUT: REUSE : %1", line); });
+    foreach( `line, resize_lst, ``{ y2debug( "OUT: RESIZE: %1", line); });
+    foreach( `line, create_lst, ``{ y2debug( "OUT: CREATE: %1", line); });
 
-	string ret = "";
+    string ret = "";
 
-	list all = flatten( [ delete_lst, reuse_lst, resize_lst,
-			      create_lst, other_lst ] );
-	if( size(all)>0 )
-	    {
-	    ret = HTML::Colorize( HTML::List( all ), "black" );
-	    }
-	return ret;
+    list all = flatten( [ delete_lst, reuse_lst, resize_lst,
+			  create_lst, other_lst ] );
+    if( size(all)>0 )
+	{
+	ret = HTML::Colorize( HTML::List( all ), "black" );
+	}
+    return ret;
     };
 
 

@@ -65,12 +65,6 @@
   list activatedLoopDevices = [];
 
 
-  y2debug( "BEGINNING of inst_prepdisk" );
-
-  changeExtendedIdTo15();
-  // check for ppc-PReP/CHRP system, they need a special boot partition
-  // todo -> put this in a lib, we need it also in inst_custom_part ...
-
     //switch swap off
     define doswapoff(list activatedswaps)
     ``{
@@ -86,111 +80,110 @@
 	 return;
     };
 
-    //detach loop devices
-    define losetup_d(list activatedLoopDevices)
+//detach loop devices
+define losetup_d(list activatedLoopDevices)
     ``{
-	foreach (`loopdev, activatedLoopDevices,
-	``{
-	   y2debug("detaching loop device %1",loopdev);
-	   if (0 != SCR::Execute (.target.bash, "/sbin/losetup -d "+loopdev))
-	   {
-	     y2warning("detaching loop device %1 failed",loopdev);
-	     Report::Warning (sformat(
-		  _("Detaching loop device %1 failed. Nothing serious, but you may run out of loop devices."),
-		  loopdev));
-	   }
-	 });
-	 return;
+    foreach (`loopdev, activatedLoopDevices,
+    ``{
+       y2debug("detaching loop device %1",loopdev);
+       if (0 != SCR::Execute (.target.bash, "/sbin/losetup -d "+loopdev))
+       {
+	 y2warning("detaching loop device %1 failed",loopdev);
+	 Report::Warning (sformat(
+	      _("Detaching loop device %1 failed. Nothing serious, but you may run out of loop devices."),
+	      loopdev));
+       }
+     });
+     return;
     };
 
     //backup target map, reread it from harddisk and restore mountpoints etc.
-    define restoretargetmap()
+define restoretargetmap()
     ``{
-
-      //bakup information a new map
-      map baktargets=$[];
-      foreach (`tdevice,`target, Storage::GetTargetMap(),
-      ``{
-	  list partitions = target["partitions"]:[];
-	  //map for partitions, referenced by number
-	  map bakpartitionmap=$[];
-	  foreach (`pentry, partitions,
-	  ``{
-	      //no backup for partitions marked for delete
-	      if (pentry["delete"]:false)
+    //bakup information a new map
+    map baktargets=$[];
+    foreach (`tdevice,`target, Storage::GetTargetMap(),
+	``{
+	list partitions = target["partitions"]:[];
+	//map for partitions, referenced by number
+	map bakpartitionmap=$[];
+	foreach (`pentry, partitions,
+	    ``{
+	    //no backup for partitions marked for delete
+	    if (pentry["delete"]:false)
 		return;
 
-	      integer fsid	= pentry["fsid"]:0;
-	      string  mount	= pentry["mount"]:"";
-	      boolean crypt_fs	= pentry["crypt_fs"]:false;
-	      string  crypt_key = pentry["crypt_key"]:"";
-	      symbol  used_fs 	= pentry["used_fs"]:`unknown;
-	      boolean format	= pentry["format"]:false;
-	      list region	= pentry["region"]:[];
-	      map bakpentry=$[];
-	      change(bakpentry,"fsid",fsid);
-	      change(bakpentry,"mount",mount);
-	      change(bakpentry,"crypt_fs",crypt_fs);
-	      change(bakpentry,"crypt_key",crypt_key);
-	      change(bakpentry,"used_fs",used_fs);
-	      change(bakpentry,"format",format);
-	      change(bakpentry,"region",region);
-	      change(bakpartitionmap,pentry["nr"]:0,bakpentry);
-	  });
-	  change(baktargets,tdevice,$["partitions":bakpartitionmap]);
-      });
+	    integer fsid	= pentry["fsid"]:0;
+	    string  mount	= pentry["mount"]:"";
+	    boolean crypt_fs	= pentry["crypt_fs"]:false;
+	    string  crypt_key = pentry["crypt_key"]:"";
+	    symbol  used_fs 	= pentry["used_fs"]:`unknown;
+	    boolean format	= pentry["format"]:false;
+	    list region	= pentry["region"]:[];
+	    map bakpentry=$[];
+	    change(bakpentry,"fsid",fsid);
+	    change(bakpentry,"mount",mount);
+	    change(bakpentry,"crypt_fs",crypt_fs);
+	    change(bakpentry,"crypt_key",crypt_key);
+	    change(bakpentry,"used_fs",used_fs);
+	    change(bakpentry,"format",format);
+	    change(bakpentry,"region",region);
+	    change(bakpartitionmap,pentry["nr"]:0,bakpentry);
+	    });
+	change(baktargets,tdevice,$["partitions":bakpartitionmap]);
+	});
 //      SCR::Write(.target.ycp, "/tmp/targetMap_orig", targets );
 //      SCR::Write(.target.ycp, "/tmp/targetMap_backup", baktargets );
-      map targets = Storage::ReReadTargetMap();
+    map targets = Storage::ReReadTargetMap();
 //      SCR::Write(.target.ycp, "/tmp/targetMap_reread", targets );
 
-      //see if theres info available in backupmap
-      foreach (`tdevice,`target, targets,
-      ``{
-	  map bakpartitionmap = baktargets[tdevice, "partitions"]:$[];
-	  list partitions = target["partitions"]:[];
+    //see if theres info available in backupmap
+    foreach (`tdevice,`target, targets,
+	``{
+	map bakpartitionmap = baktargets[tdevice, "partitions"]:$[];
+	list partitions = target["partitions"]:[];
 
-	  list newpartitions = [];
-	  boolean usebackup=true;
-	  foreach (`pentry, partitions,
-	  ``{
-	      usebackup = true;
+	list newpartitions = [];
+	boolean usebackup=true;
+	foreach (`pentry, partitions,
+	    ``{
+	    usebackup = true;
 
-	      //do we have data for that partition?
-	      map bakpentry=lookup(bakpartitionmap,pentry["nr"]:0,$[]);
+	    //do we have data for that partition?
+	    map bakpentry=lookup(bakpartitionmap,pentry["nr"]:0,$[]);
 
-	      // partition is (no longer) available
-	      if (bakpentry == $[])
+	    // partition is (no longer) available
+	    if( bakpentry == $[])
 		usebackup=false;
 
-	      integer fsid = lookup (pentry, "fsid",0);
-	      integer bakfsid = lookup (bakpentry, "fsid",0);
+	    integer fsid = lookup (pentry, "fsid",0);
+	    integer bakfsid = lookup (bakpentry, "fsid",0);
 
-	      //file system id has changed, better leave it
-	      if ( usebackup && fsid!=bakfsid)
-	      {
+	    //file system id has changed, better leave it
+	    if( usebackup && fsid!=bakfsid)
+		{
 		y2warning("fsid changed, no bakup for %1%2",tdevice,nr);
 		usebackup=false;
-	      }
+		}
 
-	      list region = lookup (pentry, "region", []);
-	      list bakregion = lookup (bakpentry, "region", []);
+	    list region = lookup (pentry, "region", []);
+	    list bakregion = lookup (bakpentry, "region", []);
 
-	      // different region is dangerous
-	      if ( usebackup && region != bakregion )
-	      {
+	    // different region is dangerous
+	    if( usebackup && region != bakregion )
+		{
 		y2warning("region changed, no bakup for %1%2",tdevice,nr);
 		usebackup=false;
-	      }
+		}
 
-	      string  mount	= pentry["mount"]:"";
-	      boolean crypt_fs	= pentry["crypt_fs"]:false;
-	      string  crypt_key = pentry["crypt_key"]:"";
-	      symbol  used_fs	= pentry["used_fs"]:`unknown;
-	      boolean format	= pentry["format"]:false;
+	    string  mount	= pentry["mount"]:"";
+	    boolean crypt_fs	= pentry["crypt_fs"]:false;
+	    string  crypt_key = pentry["crypt_key"]:"";
+	    symbol  used_fs	= pentry["used_fs"]:`unknown;
+	    boolean format	= pentry["format"]:false;
 
-	      if (usebackup==true)
-	      {
+	    if( usebackup==true)
+		{
 		string  bakmount     = bakpentry["mount"]:"";
 		boolean bakcrypt_fs  = bakpentry["crypt_fs"]:false;
 		string  bakcrypt_key = bakpentry["crypt_key"]:"";
@@ -198,23 +191,23 @@
 		boolean bakformat    = bakpentry["format"]:false;
 
 		if (mount=="" && bakmount !="" )
-		  change(pentry,"mount",bakmount);
+		    change(pentry,"mount",bakmount);
 		if (crypt_fs==false && bakcrypt_fs !=false )
-		  change(pentry,"crypt_fs",bakcrypt_fs);
+		    change(pentry,"crypt_fs",bakcrypt_fs);
 		if (crypt_key=="" && bakcrypt_key !="" )
-		  change(pentry,"crypt_key",bakcrypt_key);
+		    change(pentry,"crypt_key",bakcrypt_key);
 		if (used_fs==`unknown && bakused_fs !=`unknown )
-		  change(pentry,"used_fs",bakused_fs);
+		    change(pentry,"used_fs",bakused_fs);
 		if (format==false && bakformat !=false )
-		  change(pentry,"format",bakformat);
-	      }
+		    change(pentry,"format",bakformat);
+		}
 
-	      newpartitions = add (newpartitions, pentry);
-	  });
-	  targets[tdevice] = target;
-	  targets[tdevice,"partitions"] = newpartitions;
-      });
-      Storage::SetTargetMap( targets );
+	    newpartitions = add (newpartitions, pentry);
+	    });
+	targets[tdevice] = target;
+	targets[tdevice,"partitions"] = newpartitions;
+	});
+    Storage::SetTargetMap( targets );
     };
 
 // Define macro that creates a dialog with progressbar
@@ -240,14 +233,323 @@ perform various checks. <br></p>");
 			helptext, false, false);
     };
 
+define boolean HandleFormatPartition( map partition )
+    ``{
+    boolean format = partition["format"]:false;
+    boolean crypt_fs = partition["crypt_fs"]:false;
+    string mount = partition["mount"]:"";
+    string device = "";
+    boolean retry = false;
+    boolean cancel = false;
+
+    //retry loop
+    do
+	{
+	device = partition["device"]:"";
+	retry = false;
+
+	y2milestone( "dev:%1 loop_dev %2", device, partition["loop_dev"]:"" );
+
+	if( size(partition["loop_dev"]:"")>0 )
+	    {
+	    SCR::Execute( .target.bash, 
+			  "/sbin/losetup -d " + partition["loop_dev"]:"" );
+	    }
+	///////////////////////////////
+	// CRYPT ?
+	if( crypt_fs || partition["type"]:`none==`loop )
+	    {
+	    cancel = !Storage::SetCryptLoop( partition );
+	    if( !cancel )
+		{
+		if( !format )
+		    {
+		    partition = FileSystems::GetFsysInfos( partition );
+		    map tg = Storage::GetTargetMap();
+		    tg = Storage::SetPartition( tg, partition );
+		    Storage::SetTargetMap( tg );
+		    y2milestone( "loop part info %1", partition );
+		    }
+		if( haskey( partition, "loop_dev" ))
+		    {
+		    device = partition["loop_dev"]:"";
+		    activatedLoopDevices = add(activatedLoopDevices, device);
+		    }
+		}
+	    }
+	// announce partition to be formatted
+	if( !cancel && format && mount != "swap")
+	    {
+	    string tmp = device;
+	    if( partition["type"]:`none==`loop )
+		{
+		tmp = partition["fpath"]:"";
+		}
+	    string label = sformat(_("Formatting %1 as %2"), tmp, mount);
+
+	    UI::ChangeWidget(`id(`progress), `Label, label );
+	    symbol ret = `ok;
+
+	    if( this_is_for_real )
+		{
+		// Format partitions
+
+		symbol used_fs = partition["used_fs"]:`unknown;
+
+		y2milestone( "mkfs: used %1, crypt %2 ", used_fs, crypt_fs);
+
+		list options = [];
+		if( partition["format"]:false && 
+		    partition["fs_options"]:$[] != $[] )
+		    {
+		    options = convertFsOptionMapInList( partition );
+		    }
+
+		if( used_fs == `ext3 )
+		    {
+		    // add -j to options
+		    options = add( options , "-j" );
+		    }
+		y2milestone( "Format options %1", options );
+
+		string makefs_type = 
+		    FileSystems::GetMakeFsType( used_fs, "ext2");
+		string dd_sblocks = "";
+		string idev = crypt_fs ? "/dev/urandom" : "/dev/zero";
+		dd_sblocks = sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50",
+				      idev, device );
+		if( !Arch::sparc || crypt_fs )
+		    {
+		    y2milestone( "dd_sblocks=%1", dd_sblocks );
+		    SCR::Execute (.target.bash, dd_sblocks );
+		    }
+		if( used_fs != `hfs )
+		    {
+		    ret = WFM::CallModule( "makefs", 
+		                           ["UpdateProgressBar", makefs_type, 
+					    device, options /*[ ]*/ ]);
+		    y2milestone( "format ret = %1", ret );
+		    }
+		else
+		    {
+		    string cmd = sformat( "/usr/bin/hformat %1", device );
+		    y2milestone( "cmd %1", cmd );
+		    SCR::Execute (.target.bash, cmd );
+		    ret = `ok;
+		    }
+		if( ret == `ok )
+		    {
+		    map info = FileSystems::GetUuidVolume( device, used_fs );
+		    map tg = Storage::GetTargetMap();
+		    if( size(info["uuid"]:"")>0 )
+			{
+			tg = Storage::SetPartitionData( tg, 
+							partition["device"]:"",
+							"uuid", 
+							info["uuid"]:"" );
+			}
+		    tg = Storage::SetPartitionData( tg, partition["device"]:"",
+						    "detected_fs", used_fs );
+		    tg = Storage::DelPartitionData( tg, partition["device"]:"",
+						    "create" );
+		    Storage::SetTargetMap( tg );
+		    }
+		}
+	    else
+		{
+		// Fake formatting
+		integer progress = 0;
+
+		while ( progress < 100 )
+		    {
+		    UI::UpdateProgressBar ( progress );
+		    sleep ( 300 ); // millisec
+		    progress = progress + 3;
+		    }
+		}
+
+	    if( ret == `cancel )
+		{
+		cancel = true;
+		}
+	    else if( ret != `ok )
+		{
+		// report any formatting errors
+		ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
+			sformat(_("Could not format partition %1.
+You can continue if you know what you are doing, but, to prevent damage to
+your file systems, it is safer to cancel and reboot."),
+			    device ),
+			UI::ContinueButtonLabel(), UI::AbortButtonLabel(), 
+			UI::RetryButtonLabel(), `focus_no);
+		if (ret == `no)
+		    {
+		    cancel=true;
+		    }
+		else if (ret==`retry)
+		    {
+		    retry=true;
+		    }
+		}
+	    }
+	} 
+    while( retry );
+    string label = partition["label"]:"";
+    if( !cancel && size(label)>0 &&
+	(format || 
+	 (haskey(partition,"ori_label") && partition["ori_label"]:""!=label)))
+	{
+	y2milestone( "set volume label %1", label );
+	if( !FileSystems::SetVolumeLabel( device, partition ))
+	    {
+	    UI::ErrorPopup(
+		sformat(_("Error setting the volume label on device %2 to %1"),
+			partition["label"]:"", device ));
+	    }
+	else
+	    {
+	    map tg = Storage::GetTargetMap();
+	    tg = Storage::DelPartitionData( tg, device, "ori_label" );
+	    Storage::SetTargetMap( tg );
+	    }
+	}
+    y2milestone( "device %1 ret %2", partition["device"]:"", cancel );
+    return( !cancel );
+    };
+
+define map DetermineMountPoints(string disk, map target, map mp )
+    ``{
+    foreach (`part, target["partitions"]:[],
+	``{
+	string device = part["device"]:0;
+	string mount = part["mount"]:"";
+	boolean running_system_create_part = 
+	    !installation && part["create"]:false;
+	boolean running_system_remound_part = 
+	    !installation && contains( remountPartitions, device );
+
+	if( installation || running_system_create_part || 
+	    running_system_remound_part )
+	    {
+	    if( mount != "" && mount != "swap" && !part["delete"]:false &&
+		part["fsid"]:0 != 7 )         // ntfs is read-only anyway.
+		{
+		symbol used_fs = part["used_fs"]:`unknown;
+		if( part["crypt_fs"]:false )
+		    device = part["loop_dev"]:"";
+		mp[mount] = [device, used_fs, disk];
+		}
+	    }
+	});  // foreach (partition)
+    y2milestone( "disk %1 mp %2", disk, mp );
+    return( mp );
+    };
+
+define boolean DoMountList( map mp )
+    ``{
+    boolean retry = false;
+    boolean cancel = false;
+
+    y2milestone( "mp %1", mp );
+    foreach( `mount, `mountData, mp,
+	``{
+	if (cancel)
+	    {
+	    return;
+	    }
+	symbol used_fs = select (mountData, 1, `ext2);
+
+	/////////////////////////////////////////////
+	// load filesystem modules
+	FileSystems::LoadModule( used_fs );
+
+	if( mount == "/" )
+	    {
+	    foreach( `modname, FileSystems::GetNeededModules(used_fs),
+		``{
+		Initrd::AddModule (modname, "");
+		});
+	    }
+
+	// eg /mnt + /usr
+	if( Installation::destdir != "/" )
+	    {
+	    mount = Installation::destdir + mount;
+	    }
+
+	do
+	    {
+	    retry = false;
+
+	    // partition has a mount point
+	    y2milestone("mkdir %1", mount );
+	    SCR::Execute( .target.mkdir, mount, 0755 );
+	    string device = select( mountData, 0, "/dev/null" );
+
+	    y2milestone( "mountcmd: %1 target:%2 [-t <%3>]", 
+			 device, mount, used_fs );
+
+	    string mount_type = FileSystems::GetMountString( used_fs, "");
+
+	    if (mount_type != "")
+		{
+		mount_type = "-t " + mount_type;
+		}
+
+	    if( !SCR::Execute( .target.mount, [device, mount], mount_type ) )
+		{
+		symbol ret=`yes;
+		// /bin/mount failed, report this to the user
+		ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
+			sformat(_("Could not mount partition %1 to %2.
+You can continue if you know what you are doing, but, to prevent damage to
+your file systems, it is safer to cancel and reboot."),
+			    device, mount ),
+			UI::ContinueButtonLabel(), UI::AbortButtonLabel(), 
+			UI::RetryButtonLabel(), `focus_yes);
+		if (ret == `retry)
+		    {
+		    retry=true;
+		    }
+		else if (ret == `no)
+		    {
+		    cancel=true;
+		    }
+		}
+	    } while (retry==true);
+	});
+    y2milestone( "ret %1", !cancel );
+    return( !cancel );
+    };
+
+define void DoUmountAndReset( list mounts )
+    ``{
+    y2milestone( "mounts %1", mounts );
+    if( installation )
+	{
+	mounts = add( mounts, "/proc" );
+	mounts = add( mounts, "/proc/bus/usb" );
+	}
+    integer num = size(mounts)-1;
+    while( num>=0 )
+	{
+	y2milestone( "umount: %1", mounts[num]:"" );
+	SCR::Execute( .target.umount, mounts[num]:"" );
+	num = num-1;
+	}
+    doswapoff(activatedswaps);
+    losetup_d(activatedLoopDevices);
+    restoretargetmap();
+    };
+
 // define macros for the ui that is called by the package
 // installer in order to update the progressbars.
 
 UI::{
 global define symbol UpdateProgressBar(integer percent)
-    ``{
-    ChangeWidget(`id(`progress), `Value, percent);
-    any ret = PollInput();
+``{
+ChangeWidget(`id(`progress), `Value, percent);
+any ret = PollInput();
 
     if ( ret == `abort && UI::ConfirmAbort(`unusable ) )
       return `cancel;
@@ -255,29 +557,37 @@ global define symbol UpdateProgressBar(integer percent)
     }
 };
 
+  y2debug( "BEGINNING of inst_prepdisk" );
+
+  changeExtendedIdTo15();
+  // check for ppc-PReP/CHRP system, they need a special boot partition
+  // todo -> put this in a lib, we need it also in inst_custom_part ...
+
   MakefsDialog();
 
   // Begin with the actual work
   // 0.5 unmount all deleted or changed partitions ( only in running system )
-  if ( ! installation )
-  {
+  if( !installation )
+      {
       list mounts = Partitions::CurMounted();
       list umounts = [];
       list targetMounts = [];
 
-      foreach( `mounted_partition, mounts , ``{
+      foreach( `mounted_partition, mounts, 
+	  ``{
 	  y2debug( "mounted partition map : %1", mounted_partition );
 
 	  map all_target_of_mounted_part = filter( `key, `target, Storage::GetTargetMap(), 
 	                                           ``( issubstring( mounted_partition["spec"]:"", key ) ||
 						       issubstring( mounted_partition["loop_on"]:"", key )));
+	  y2debug( "all_target_of_mounted_part: %1 ", mounted_partition );
 
-	  if ( size( all_target_of_mounted_part ) > 0 )
-	  {
-	      map target_of_mounted_part = select( maplist(`k, `v,  all_target_of_mounted_part, ``(v) ), 0, $[] );
+	  if( size( all_target_of_mounted_part ) > 0 )
+	      {
+	      map target_of_mounted_part = 
+		  select( maplist(`k, `v, all_target_of_mounted_part, ``(v) ), 0, $[] );
 
-
-	      y2debug( "target_of_mounted_part %1", select( maplist(`k, `v,  all_target_of_mounted_part, ``(k) ), 0, "" ));
+	      y2debug( "target_of_mounted_part %1", select( maplist(`k, `v, all_target_of_mounted_part, ``(k) ), 0, "" ));
 	      list all_partitions = filter( `part,
 					    target_of_mounted_part["partitions"]:[],
 					    ``( issubstring( mounted_partition["spec"]:"", sformat( "%1", part["nr"]:0 ) ) ||
@@ -293,14 +603,13 @@ global define symbol UpdateProgressBar(integer percent)
 
 	      // mounted partition should be delete
 	      delete_found =  size( filter( `part, all_partitions,
-	                                    ``( part["delete"]:false  &&
+	                                    ``( part["delete"]:false &&
 					        !part["create"]:false ))) > 0;
 
 	      // mount point of mounted partition should be changed
 	      mount_changed_found =
 		  size( filter(`part, all_partitions,
 	                       ``( !part["delete"]:false &&
-				   !part["create"]:false &&
 				   (haskey(part,"ori_mount") &&
 				    part["ori_mount"]:""!=part["mount"]:"") ||
 				   (haskey(part,"ori_fstopt") &&
@@ -310,80 +619,72 @@ global define symbol UpdateProgressBar(integer percent)
 				    part["ori_label"]:""!=part["label"]:""))))>0;
 
 	      // mounted partition should formated
-	      format_found  = size( filter(`part, all_partitions, ``( ! lookup( part, "delete", false) &&
-								      ! lookup( part, "create", false) &&
-									lookup( part, "format", false) ))) > 0;
+	      format_found = size( filter(`part, all_partitions, 
+	                                  ``( !part["delete"]:false &&
+					       part["format"]:false ))) > 0;
 
 	      // change fsid of  mounted  partition
-	      change_fsid  =  size( filter(`part, all_partitions, ``( ! lookup( part, "delete", false) &&
-								      ! lookup( part, "create", false) &&
-									lookup( part, "change_fsid", false) ))) > 0;
+	      change_fsid = size( filter(`part, all_partitions, 
+	                                 ``( !part["delete"]:false &&
+					      part["change_fsid"]:false ))) > 0;
 
-	      if ( mount_changed_found || delete_found  || format_found ||
-	           change_fsid )
+	      if( mount_changed_found || delete_found || format_found ||
+	          change_fsid )
 		  {
 		  umounts = add( umounts, mounted_partition );
 		  }
 
-	      if ( mount_changed_found || format_found || change_fsid )
+	      if( mount_changed_found || format_found || change_fsid )
 		  {
 		  remountPartitions = add( remountPartitions,
 		                           mounted_partition["spec"]:"");
 		  }
 	      y2debug( "%5 delete:%1 changed:%2 format:%3 chfsid:%4",
 	               delete_found, mount_changed_found,
-	               format_found, change_fsid, mounted_partition["spec"]:"" );
-	  }
-
-      });
-      y2debug( "remountPartitions=%1", remountPartitions );
-      y2debug( "umounts=%1", umounts );
-
-      foreach( `key, `val, Storage::GetTargetMap(), ``{
-          list new = filter( `v, lookup(val, "partitions", []),
-			     ``(lookup( v, "mount", "" )!=""));
-          list new1 = [];
-	  foreach( `v, new, ``{
-	      string d = Storage::GetDeviceName( key, lookup( v, "nr", 0 ));
-	      y2milestone( "d=%1", d );
-	      v = add( v, "device", d );
-	      new1 = add( new1, v );
+	               format_found, change_fsid, 
+		       mounted_partition["spec"]:"" );
+	      }
 	  });
-	  y2milestone( "new:%1", new1 );
-	  targetMounts = union( targetMounts, new1 );
-      });
+      y2milestone( "remountPartitions=%1", remountPartitions );
+      y2milestone( "umounts=%1", umounts );
+
+      foreach( `key, `val, Storage::GetTargetMap(), 
+	  ``{
+          list new = filter( `v, val["partitions"]:[], ``(v["mount"]:""!=""));
+	  y2milestone( "new:%1", new );
+	  targetMounts = union( targetMounts, new );
+	  });
 
       foreach( `val, targetMounts,
-      ``{
+	  ``{
           string dev = val["device"]:"";
-	  if ( size( filter( `v, mounts, ``(v["spec"]:""==dev) ))==0 )
-	  {
+	  if( size( filter( `v, mounts, ``(v["spec"]:""==dev) ))==0 )
+	      {
 	      remountPartitions = add( remountPartitions, dev );
 	      y2milestone( "remadd:%1 rem:%2", dev, remountPartitions );
-	  }
-      });
-
-      y2debug( "remountPartitions=%1", remountPartitions );
-
-      if ( ! this_is_for_real )
-      {
-	  y2milestone( "All unmounted mount points : %1", maplist(`umount, umounts, ``(lookup( umount, "file", ""))));
-      }
-      else
-      {
-	 foreach( `umount, umounts,
-	 ``{
-	      string mount_point = umount["file"]:"";
-	      if ( mount_point != "swap")
-		  SCR::Execute (.target.umount,  mount_point );
-	      else
-		  SCR::Execute (.target.bash , "/sbin/swapoff " + lookup( umount, "spec", ""));
+	      }
 	  });
+
+      y2milestone( "remountPartitions=%1", remountPartitions );
+
+      if( !this_is_for_real )
+	  {
+	  y2milestone( "All unmounted mount points : %1", 
+		       maplist(`umount, umounts, ``(umount["file"]:"")));
+	  }
+      else
+	  {
+	  foreach( `umount, umounts,
+	      ``{
+	      string mount_point = umount["file"]:"";
+	      if( mount_point != "swap")
+		  SCR::Execute( .target.umount, mount_point );
+	      else
+		  SCR::Execute( .target.bash, 
+		                "/sbin/swapoff " + umount["spec"]:"");
+	      });
+	  }
       }
-  }
-
-
-
 
 
   // 0. Prepare modify_target map
@@ -542,8 +843,8 @@ damage to your file systems, it is safer to cancel and reboot.
 	    }
 
 	// Partitioning with fdisk agent  (s390 needs no partitioning)
-	if( this_is_for_real && !Arch::s390 && !target["is_lvm_vg"]:false &&
-	    tdevice != "/dev/md" )
+	if( this_is_for_real && !Arch::s390 && 
+	    Storage::IsRealDisk( tdevice, target ))
 	    {
             // handle all partitions resizings that decrease partition size
 	    cancel = !HandleResizePartitions( tdevice, target, true );
@@ -556,8 +857,10 @@ damage to your file systems, it is safer to cancel and reboot.
 
 	    if( !cancel && need_part )
 	    {
-	    path scrpath = lookup ( target, "scrpath", topath ("."+substring (tdevice, 5)));
-	    y2milestone ("partitioning %1 %2\n", .disk + scrpath + .partitions, partitions);
+		path scrpath = 
+		    target["scrpath"]:topath("."+substring(tdevice, 5));
+		y2milestone( "partitioning %1 %2\n", 
+		             .disk + scrpath + .partitions, partitions );
 	    if( Arch::ia64 )
 		{
 		partitions = 
@@ -573,7 +876,8 @@ damage to your file systems, it is safer to cancel and reboot.
 		{
 		retry = false;
 	        UI::ChangeWidget(`id(`progress), `Label,
-				 sformat(_("partitioning disk %1"), tdevice ));
+				     sformat(_("partitioning disk %1"), 
+				             tdevice ));
 
 		map args = $[ "parted" : Partitions::UseParted(),
 		              "label"  : target["label"]:"msdos" ];
@@ -584,13 +888,13 @@ damage to your file systems, it is safer to cancel and reboot.
 					    partitions, args );
 		/////////////////////////////////////////////////////
 
-		if ( !result )
+		    if( !result )
 		    {
 		    y2error("Oops, fdisk failed for device ", tdevice);
 
 		    symbol ret=`yes;
 		    // continue/cancel/retry during installation
-		    if ( installation )
+			if( installation )
 		        {
 			if( Storage::CheckSwapOn( tdevice ) )
 			    {
@@ -602,13 +906,13 @@ damage to your file systems, it is safer to cancel and reboot.
 			        _("fdisk failed."),
 				sformat (
 				    _("Partitioning failed for unkown reason.
-Repartition disk %1."),
+    Repartition disk %1."),
 					tdevice),
 				UI::ContinueButtonLabel(),
 				UI::AbortButtonLabel(),
 				UI::RetryButtonLabel(), `focus_no);
 
-			    if ( ret == `retry )
+				if( ret == `retry )
 			    {
 			       retry = true;
 			    }
@@ -627,7 +931,7 @@ Repartition disk %1."),
 			      _("It is strongly advised to reboot now to prevent damage to your file systems."),
 			      UI::ContinueButtonLabel(), UI::AbortButtonLabel(), _("Reboot"), `focus_retry);
 
-			if ( ret == `retry )
+			    if( ret == `retry )
 			{
 			  SCR::Execute (.target.bash,"/sbin/shutdown -r now");
 			  reboot = true;
@@ -642,12 +946,13 @@ Repartition disk %1."),
 			  return;
 			}
 		      }
+			}
 		    }
-		} while ( retry );
+		while ( retry );
 	    }
 	    if( !cancel )
 	    {
-	    foreach (`pentry, partitions,
+		foreach( `pentry, partitions,
 		``{
 		/////////////////////////////////////////////////////
 		// look if we have to change an partition id
@@ -674,33 +979,34 @@ Repartition disk %1."),
 
 	    if( !cancel )
 		cancel = !HandleResizePartitions( tdevice, target, false );
-
-
 	}  // partitioning
 
-	if ( !immediate_prepdisk )
+	if( !immediate_prepdisk )
 	{
 	    // check all partitions and initialize
 	    // boot_device, root_device, and swap_devices
 
 	    foreach (`pentry, partitions,
 	    ``{
-		string device = Storage::GetDeviceName( tdevice, pentry["nr"]:0);
+		string device = pentry["device"]:"";
 		string mountpoint = pentry["mount"]:"";
 		boolean do_format = pentry["format"]:false;
 
-		y2milestone("device %1, mount %2, format %3", device, mountpoint, do_format);
+		y2milestone( "device %1, mount %2, format %3", device, 
+		             mountpoint, do_format );
 
-		if (!pentry["delete"]:false)
+		if( !pentry["delete"]:false)
 		{		// only those which aren't deleted
-		    if (mountpoint == "/boot")
+		    if( mountpoint == "/boot")
 		    {
 			boot_device = device;
 		    }
-		    else if ((mountpoint == "swap")	// only swaps which aren't running (yast2 did enable any swap yet!!)
-			     && (running_swap[substring (device, 4, size(device))]:"" == ""))
+			// only swaps which aren't running 
+			// (yast2 did enable any swap yet!!)
+		    else if( mountpoint=="swap" && 
+			     (running_swap[substring(device, 4, size(device))]:"" == ""))
 		    {
-			swap_devices = add (swap_devices, [ device, do_format]);
+			swap_devices = add( swap_devices, [device, do_format] );
 		    }
 		    else if (mountpoint == "/")
 		    {
@@ -718,18 +1024,18 @@ Repartition disk %1."),
 
     //fdisk failed
 
-    if ( reboot )
+    if( reboot )
     {
 	return `abort;
     }
-    if ( cancel )
+    if( cancel )
     {
 	y2debug("fdisk failed");
 	restoretargetmap();
 	return `back;
     }
 
-    if ( reboot_necessary || immediate_prepdisk )
+    if( reboot_necessary || immediate_prepdisk )
     {
 	import "Misc";
 
@@ -932,199 +1238,27 @@ damage to your file systems, it is safer to cancel and reboot.
     cancel = false;
     retry = false;
 
-    foreach (`tdevice,`target, Storage::GetTargetMap(),
+    foreach( `tdevice, `target, 
+             filter( `k, `e, Storage::GetTargetMap(), ``(k!="/dev/loop")),
 	``{
 	// every disk
 	list partitions = target["partitions"]:[];
-
-	foreach(`partition, partitions,
+	y2milestone( "tdevice %1", tdevice );
+	foreach(`partition, filter( `p, partitions, ``(!p["delete"]:false)),
 	    ``{
-	    if (partition["delete"]:false)
-		return;
-
-	    //every partition which is to be formatted
-	    boolean format = partition["format"]:false;
-	    string mountPoint = partition["mount"]:"";
-	    string partitionName = "";
-
-	    //retry loop
-	    do
+	    if( !cancel && 
+	        (size(partition["mount"]:"")>0 ||
+	         size(partition["label"]:"")>0 || 
+	         partition["format"]:false))
 		{
-		boolean crypt_fs  = partition["crypt_fs"]:false;
-		partitionName = partition["device"]:"";
-		retry = false;
-
-		if( !crypt_fs && haskey( partition, "loop_dev" ))
-		    {
-		    SCR::Execute( .target.bash, 
-				  "/sbin/losetup -d "+partition["loop_dev"]:"" );
-		    }
-		///////////////////////////////
-		// CRYPT ?
-		if( crypt_fs )
-		    {
-		    cancel = !Storage::SetCryptLoop( partition );
-		    if( !cancel )
-			{
-			if( !format )
-			    {
-			    partition = FileSystems::GetFsysInfos( tdevice, 
-			                                           partition );
-			    map tg = Storage::GetTargetMap();
-			    tg = Storage::SetPartition( tg, partition );
-			    Storage::SetTargetMap( tg );
-			    y2milestone( "loop part info %1", partition );
-			    }
-			if( haskey( partition, "loop_dev" ))
-			    {
-			    partitionName = partition["loop_dev"]:"";
-			    activatedLoopDevices = add(activatedLoopDevices,
-			                               partitionName);
-			    }
-			}
-		    }
-		// announce partition to be formatted
-		if( !cancel && format && mountPoint != "swap")
-		    {
-		    string label = sformat(_("Formatting %1 as %2"), 
-		                           partitionName, mountPoint);
-
-		    UI::ChangeWidget(`id(`progress), `Label, label );
-		    any ret = `ok;
-
-		    if ( this_is_for_real )
-			{
-			// Format partitions
-
-			symbol used_fs = partition["used_fs"]:`unknown;
-
-			y2milestone( "mkfs: used %1, crypt %2 ", used_fs, 
-			             crypt_fs);
-
-			list options = [];
-			if( partition["format"]:false && 
-			    partition["fs_options"]:$[] != $[] )
-			    {
-			    options = convertFsOptionMapInList( partition );
-			    }
-
-			if( used_fs == `ext3 )
-			    {
-			    // add -j to options
-			    options = add( options , "-j" );
-			    }
-			y2milestone( "Format options %1", options );
-
-			string makefs_type = FileSystems::GetMakeFsType( used_fs , "ext2");
-			string dd_sblocks = "";
-			string idev = crypt_fs ? "/dev/urandom" : 
-						 "/dev/zero";
-			dd_sblocks = 
-			    sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50",
-				     idev, partitionName );
-			if( !Arch::sparc || crypt_fs )
-			    {
-			    y2milestone( "dd_sblocks=%1", dd_sblocks );
-			    SCR::Execute (.target.bash, dd_sblocks );
-			    }
-			if( used_fs != `hfs )
-			    {
-			    ret = WFM::CallModule ("makefs", ["UpdateProgressBar", makefs_type, partitionName, options /*[ ]*/ ]);
-			    y2milestone( "format ret = %1", ret );
-			    }
-			else
-			    {
-			    string cmd = sformat( "/usr/bin/hformat %1",
-						  partitionName );
-			    y2milestone( "cmd %1", cmd );
-			    SCR::Execute (.target.bash, cmd );
-			    ret = `ok;
-			    }
-			if( ret == `ok )
-			    {
-			    map info = 
-				FileSystems::GetUuidVolume( partitionName,
-							    used_fs );
-			    map tg = Storage::GetTargetMap();
-			    if( size(info["uuid"]:"")>0 )
-				{
-				tg = Storage::SetPartitionData( tg, 
-					    partition["device"]:"",
-					    "uuid", 
-					    info["uuid"]:"" );
-				}
-			    tg = Storage::SetPartitionData( tg, 
-					partition["device"]:"",
-					"detected_fs", used_fs );
-			    tg = Storage::DelPartitionData( tg, 
-				    partition["device"]:"",
-				    "create" );
-			    Storage::SetTargetMap( tg );
-			    }
-			}
-		    else
-			{
-			// Fake formatting
-
-			integer progress = 0;
-
-			while ( progress < 100 )
-			    {
-			    UI::UpdateProgressBar ( progress );
-			    sleep ( 300 ); // millisec
-			    progress = progress + 3;
-			    }
-			}
-
-		    if( ret == `cancel )
-			{
-			cancel = true;
-			}
-		    else if( ret != `ok )
-			{
-			// report any formatting errors
-			ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
-				sformat(_("Could not format partition %1.
-You can continue if you know what you are doing, but, to prevent damage to
-your file systems, it is safer to cancel and reboot.
-")
-				    , partitionName),
-				UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_no);
-			if (ret == `no)
-			    {
-			    cancel=true;
-			    }
-			else if (ret==`retry)
-			    {
-			    retry=true;
-			    }
-			}
-		    }
-		} while (retry == true);
-	    if( !cancel && size(partition["label"]:"")>0 &&
-		(format || 
-		 (haskey(partition,"ori_label") &&
-		  partition["ori_label"]:""!=partition["label"]:"")))
-		{
-		if( !FileSystems::SetVolumeLabel( partitionName, partition ))
-		    {
-		    UI::ErrorPopup(
-			    sformat(_("Error setting the volume label on device %2 to %1"),
-				partition["label"]:"", partitionName ));
-		    }
-		else
-		    {
-		    map tg = Storage::GetTargetMap();
-		    tg = Storage::DelPartitionData( tg, partition["device"]:"",
-			    "ori_label" );
-		    Storage::SetTargetMap( tg );
-		    }
+		cancel = !HandleFormatPartition( partition );
+		y2milestone( "after HandleFormatPartition cancel %1", cancel );
 		}
 	    });
 	});
 
     // some mkfs failed, go back
-    if ( cancel )
+    if( cancel )
 	{
 	doswapoff(activatedswaps);
 	losetup_d(activatedLoopDevices);
@@ -1138,165 +1272,105 @@ your file systems, it is safer to cancel and reboot.
     // now select all native partitions with a mountpoint
     // and put them in a map. This ensures lexical ordering.
     map mountPoints = $[];
+    map tg = Storage::GetTargetMap();
 
-    foreach (`tdevice, `target, Storage::GetTargetMap(),
+    foreach( `tdevice, `target, filter( `k, `e, tg, ``(k!="/dev/loop")),
 	``{
-	foreach (`part, target["partitions"]:[],
-	    ``{
-	    string partitionName = part["device"]:0;
-	    boolean running_system_create_part = 
-		!installation && part["create"]:false;
-	    boolean running_system_remound_part = 
-		!installation && contains( remountPartitions, partitionName );
-
-	    if( installation || running_system_create_part || 
-	        running_system_remound_part )
-		{
-		string mountPoint = part["mount"]:"";
-
-		if (mountPoint != "" && mountPoint != "swap" &&
-		    part["fsid"]:0 != 7 &&        // ntfs is read-only anyway.
-		    part["delete"]:false == false )
-		    {
-		    symbol  used_fs = part["used_fs"]:`unknown;
-		    if ( part["crypt_fs"]:false )
-			partitionName = part["loop_dev"]:"";
-		    mountPoints[mountPoint] = [partitionName, used_fs, tdevice];
-		    }
-		}
-	    });  // foreach (partition)
+	mountPoints = DetermineMountPoints( tdevice, target, mountPoints );
 	}); // foreach (tdevice)
 
     y2milestone("MountPoints: %1",mountPoints);
     //UI::MessagePopup("mount " );
 
     y2milestone( "Enable automatic module loading for mount");
-    if ( installation )
+    if( installation )
 	SCR::Execute( .target.bash, 
-	              "/bin/echo \"/sbin/modprobe\" >/proc/sys/kernel/modprobe");
+	              "/bin/echo /sbin/modprobe >/proc/sys/kernel/modprobe");
 
-    if ( this_is_for_real )
+    if( this_is_for_real )
 	{
-	retry = false;
-	boolean retrymount=false;
-	cancel = false;
-
-	list mountPointsReversed = [];
-	integer nr = 0;
-
-	foreach (`mountPoint, `mountData, mountPoints,
-	    ``{
-	    if (cancel)
-		{
-		return;
-		}
-	    symbol used_fs = select (mountData, 1, `ext2);
-
-	    /////////////////////////////////////////////
-	    // load filesystem modules
-	    FileSystems::LoadModule( used_fs );
-
-	    if( mountPoint == "/")
-		{
-		foreach( `modname, FileSystems::GetNeededModules(used_fs),
-		    ``{
-		    Initrd::AddModule (modname, "");
-		    });
-		}
-
-	    // eg /mnt + /usr
-	    if ( Installation::destdir != "/" )
-		{
-		mountPoint = Installation::destdir + mountPoint;
-		}
-
-	    do
-		{
-		retry = false;
-
-		// partition has a mount point
-		y2milestone("mkdir %1",mountPoint);
-		SCR::Execute (.target.mkdir, mountPoint, 0755);
-		string partitionName = select (mountData, 0, "/dev/null");
-		symbol used_fs = select (mountData, 1, `ext2);
-
-		y2milestone( "mountcmd: %1 target:%2 [-t <%3>]", 
-		             partitionName, mountPoint, used_fs );
-
-		string mount_type = FileSystems::GetMountString( used_fs, "");
-
-		if (mount_type != "")
-		    {
-		    mount_type = "-t " + mount_type;
-		    }
-
-		if (SCR::Execute (.target.mount, [partitionName, mountPoint], 
-		                  mount_type) == false)
-		    {
-		    symbol ret=`yes;
-		    // /bin/mount failed, report this to the user
-		    ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
-			    sformat(_("Could not mount partition %1 to %2.
-You can continue if you know what you are doing, but, to prevent damage to
-your file systems, it is safer to cancel and reboot.")
-				, partitionName, mountPoint),
-			    UI::ContinueButtonLabel(), UI::AbortButtonLabel(), 
-			    UI::RetryButtonLabel(), `focus_yes);
-		    if (ret == `retry)
-			{
-			retry=true;
-			}
-		    else if (ret == `no)
-			{
-			cancel=true;
-			}
-		    }
-		else
-		    {
-		    //Build a list for umounting
-		    mountPointsReversed = add (mountPointsReversed, mountPoint);
-		    }
-
-		} while (retry==true);
-	    });
+	cancel = !DoMountList( mountPoints );
 
 	// some mount failed, try to umount all already mounted partitions
-	if ( cancel )
+	if( cancel )
 	    {
-	    symbol ret=`back;
-	    // sort list reversed
-	    mountPointsReversed=sort(`a,`b,mountPointsReversed,``(a>b));
-
-	    if (installation)
-		{
-		//just to make sure ...
-		SCR::Execute (.target.umount, Installation::destdir + "/proc/bus/usb");
-		SCR::Execute (.target.umount, Installation::destdir + "/proc");
-		}
-	    foreach(`mountpoint,mountPointsReversed,
-		``{
-		y2debug("umount: %1", mountpoint );
-		if (SCR::Execute (.target.umount, mountpoint)==false)
-		    {
-		    y2debug("umount: %1 failed", mountpoint );
-		    Report::Error (sformat(
-			_("Unmounting %1 failed. This is a serious problem. Reboot."),
-			mountpoint));
-		    Misc::WriteYaSTInf($["Root" : "reboot", "RebootMsg" : "0"]);
-		    ret=`abort;
-		    }
-		});
-
-	    doswapoff(activatedswaps);
-	    losetup_d(activatedLoopDevices);
-
-	    restoretargetmap();
-
-	    return ret;
+	    list mlist = maplist( `k, `e, mountPoints, ``(k) );
+	    DoUmountAndReset( mlist );
+	    return `back;
 	    }
+	}
 
-	y2milestone( "installation=%1", installation );
+    if( size( tg["/dev/loop","partitions"]:[] )>0 && this_is_for_real )
+	{
+	map loop = tg["/dev/loop"]:$[];
+	list mlist = maplist( `k, `e, mountPoints, ``(k) );
+	foreach( `p, loop["partitions"]:[],
+	    ``{
+	    if( !cancel && p["create"]:false )
+		{
+		integer size_k = loop["cyl_size"]:0 * p["region",1]:0 / 1024;
+		string fpath = Storage::PathToDestdir( p["fpath"]:"");
+		integer max_ur = 10*1024;
+		if( size_k<max_ur )
+		    {
+		    max_ur = size_k;
+		    }
+		string cmd = 
+		    sformat( "dd if=/dev/urandom of=%1 bs=1k count=%2", fpath,
+			     max_ur );
+		size_k = size_k-max_ur;
+		if( size_k>0 )
+		    {
+		    cmd = cmd + "; dd if=/dev/zero ";
+		    cmd = cmd + sformat( "of=%1 bs=1k count=%2 seek=%3",
+				         fpath, size_k, max_ur );
+		    cmd = cmd + " conv=notrunc";
+		    }
+		if( SCR::Read( .target.size, fpath )>=0 )
+		    {
+		    SCR::Execute( .target.remove, fpath  );
+		    }
+		fpath = substring( fpath, 0, findlastof( fpath, "/" ));
+		y2milestone( "dir %1", fpath );
+		if( SCR::Read( .target.size, fpath )<=0 )
+		    {
+		    SCR::Execute( .target.mkdir, fpath  );
+		    }
+		y2milestone( "cmd %1", cmd );
+		UI::ChangeWidget( `id(`progress), `Label, 
+				  sformat( _("Creating crypt file %1"), 
+					   p["fpath"]:"" ));
+		if( SCR::Execute (.target.bash, cmd ) != 0 )
+		    {
+		    Report::Error(sformat(_("Could not create crypt file %1"), p["fpath"]:"" ));
+		    cancel = true;
+		    }
+		}
+	    if( !cancel )
+		{
+		cancel = !HandleFormatPartition( p );
+		}
+	    });
+	if( !cancel )
+	    {
+	    map loop_mp = DetermineMountPoints( "/dev/loop", loop, $[] );
+	    cancel = !DoMountList( loop_mp );
+	    if( cancel )
+		{
+		mlist = union( mlist, maplist( `k, `e, loop_mp, ``(k) ));
+		}
+	    }
+	if( cancel )
+	    {
+	    DoUmountAndReset( mlist );
+	    return `back;
+	    }
+	}
 
+    y2milestone( "installation=%1", installation );
+
+    if( this_is_for_real )
+	{
 	if( num_lvm_vg > 0 )
 	    {
 	    SCR::Execute (.target.mkdir, 
@@ -1319,9 +1393,9 @@ your file systems, it is safer to cancel and reboot.")
 	}
 
     y2milestone( "Disable automatic module loading");
-    if ( installation )
+    if( installation )
 	SCR::Execute( .target.bash, 
-	              "/bin/echo \"/etc/nothing\" >/proc/sys/kernel/modprobe");
+	              "/bin/echo /etc/nothing >/proc/sys/kernel/modprobe");
 
     // remove all possibly remaining occurences of entries causing changes
     // in targetmap 

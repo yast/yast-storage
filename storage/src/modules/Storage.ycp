@@ -236,9 +236,13 @@ global define map AddFstabInfo( map target, boolean lineno )
 		    }
 		}
 	    lines = AsciiFile::FindLineField( crtab, 2, mp );
-	    if( size(lines)==0 )
+	    if( size(lines)==0 && diskdev!="/dev/loop" )
 		{
 		lines = AsciiFile::FindLineField( crtab, 1, part["device"]:"" );
+		}
+	    if( size(lines)==0 && diskdev=="/dev/loop" )
+		{
+		lines = AsciiFile::FindLineField( crtab, 0, part["device"]:"" );
 		}
 	    if( size(lines)>0 )
 		{
@@ -583,7 +587,7 @@ global define map GetFsysType( map target)
 	    ``{
 	    if( partition["used_fs"]:`none == `none )
 		{
-		partition = FileSystems::GetFsysInfos( device, partition );
+		partition = FileSystems::GetFsysInfos( partition );
 		if( partition["used_fs"]:`unknown == `fat32 )
 		    {
 		    partition["fsid"] = Partitions::fsid_fat32;
@@ -2798,7 +2802,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    part["nr"] = tointeger(substring (pk, 7));
 	    part["device"] = Storage::GetDeviceName( key, part["nr"]:"" );
 	    part["size_byte"] = pv["blocks"]:0 * 1024;
-	    part = FileSystems::GetFsysInfos( "/dev/md", part );
+	    part = FileSystems::GetFsysInfos( part );
 	    if( pv["chunk"]:0 >0 )
 		{
 		part["chunk_size"] = sformat("%1",pv["chunk"]:0);
@@ -2855,7 +2859,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    part["region"] = region;
 	    part["nr"] = name;
 	    part["device"] = Storage::GetDeviceName( key, name );
-	    part = FileSystems::GetFsysInfos( key, part );
+	    part = FileSystems::GetFsysInfos( part );
 	    part["type"] = `lvm;
 	    y2debug ("key=%2 part=%1", part, pk);
 	    partitions = add (partitions, part);
@@ -2883,11 +2887,31 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    crypto = SCR::Read( .etc.cryptotab );
 	if( size(crypto)>0 )
 	    {
-	    foreach (`e, crypto, 
+	    foreach (`e, crypto,
 		``{
-		if( size( e["file"]:"" )>0 )
+		map stat = SCR::Read( .target.stat, e["file"]:"" );
+		map p = $[];
+		y2milestone( "stat %1", stat );
+		if( stat["isblock"]:false )
 		    {
-		    map p = Storage::GetPartition( targetMap, e["file"]:"" );
+		    p = Storage::GetPartition( targetMap, e["file"]:"" );
+		    }
+		else if( stat["isreg"]:false )
+		    {
+		    if( size(targetMap["/dev/loop"]:$[])==0 )
+			{
+			targetMap["/dev/loop"] = InitialLoopMaindev();
+			}
+		    p = InitialLoopEntry();
+		    map tmp = GetDiskPartition( e["loop"]:"" );
+		    p["nr"] = tmp["nr"]:0;
+		    p["device"] = e["loop"]:"";
+		    p["fpath"] = e["file"]:"";
+		    p["region",1] = SCR::Read( .target.size, e["file"]:"" ) /
+		                    targetMap["/dev/loop","cyl_size"]:1;
+		    }
+		if( size(p)>0 )
+		    {
 		    p["crypt_fs"] = true;
 		    p["mount"] = e["mount"]:"";
 		    string loop = e["loop"]:"";
@@ -2895,7 +2919,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 		    if( size(loop)>0 )
 			{
 			p["loop_dev"] = loop;
-			p = FileSystems::GetFsysInfos( "/dev/loop", p );
+			p = FileSystems::GetFsysInfos( p );
 			}
 		    targetMap = Storage::SetPartition( targetMap, p );
 		    }
@@ -2927,10 +2951,9 @@ global define map ReadLvmMd( map targetMap )
 //
 global define void ChangeLineFstab( map entry )
     ``{
-    string tabpath = "/etc/fstab";
+    string tabpath = PathToDestdir( "/etc/fstab" );
     if( Installation::destdir != "/" )
 	{
-	tabpath = Installation::destdir + tabpath;
 	if( SCR::Read( .target.size, tabpath )>= 0 )
 	    SCR::Execute( .target.remove, tabpath );
 	}
@@ -2959,8 +2982,7 @@ global define void ChangeLineFstab( map entry )
     string dir = entry["mount"]:"";
     if( substring( dir, 0, 1 )== "/" )
 	{
-	if( Installation::destdir != "/" )
-	    dir = Installation::destdir + dir;
+	dir = PathToDestdir( dir );
 	if( SCR::Read( .target.size, dir )<=0 )
 	    {
 	    SCR::Execute( .target.mkdir, dir );
@@ -3173,22 +3195,22 @@ global define string GetLoopDev()
     if( Mode::test )
 	return "/dev/loop2";
 
-    integer max_loop_dev= 7;
+    integer max_loop_dev= 15;
     integer loop_dev_nb = 0;
     boolean found_free  = false;
     string  loop_dev    = "";
 
-    while( !found_free  && loop_dev_nb <= max_loop_dev )
+    while( !found_free && loop_dev_nb <= max_loop_dev )
 	{
 	loop_dev = sformat("/dev/loop%1", loop_dev_nb );
 	loop_dev_nb = loop_dev_nb + 1;
 
 	// Test loop dev
-	if (SCR::Execute(.target.bash , "/sbin/losetup " + loop_dev ) != 0 )
+	if( SCR::Execute(.target.bash , "/sbin/losetup " + loop_dev ) != 0 )
 	    found_free = true;
 	}
 
-    if( loop_dev_nb >= 8 )
+    if( !found_free )
 	{
 	loop_dev = "";
 	// internal error popup
@@ -3205,14 +3227,18 @@ global define boolean SetCryptLoop( map part )
     ``{
     string crypt_passwd = lookup( GetClassifiedUserSettings(), 
                                   part["crypt_key"]:"", "");
-    string loop_dev = GetLoopDev();
+    string loop_dev = part["loop_dev"]:"";
+    if( size(loop_dev)==0 )
+	{
+	loop_dev = GetLoopDev();
+	}
 
     boolean crypt_ok = size(loop_dev)>0;
 
     y2milestone( "crypt %1 %2", crypt_ok, loop_dev );
 
     map loaded_modules = SCR::Read(.proc.modules);
-    if( !haskey( loaded_modules, "loop_fish2" ) )
+    if( part["crypt_fs"]:false && !haskey( loaded_modules, "loop_fish2" ) )
 	{
 	crypt_ok = SCR::Execute( .target.modprobe, "loop_fish2", "");
 	}
@@ -3232,6 +3258,14 @@ global define boolean SetCryptLoop( map part )
 		   "loop_dev"      : loop_dev,
 		   "partitionName" : part["device"]:"" ];
 
+	    if( !part["crypt_fs"]:false )
+		{
+		setloop["encryption"] = "none";
+		}
+	    if( part["type"]:`none == `loop )
+		{
+		setloop["partitionName"] = PathToDestdir( part["fpath"]:"" );
+		}
 	    crypt_ok = SCR::Write( .losetup, setloop );
 	    }
 	if( !crypt_ok )
@@ -3360,6 +3394,34 @@ global define void DestroyLvmOnAllDisks()
     SCR::Write( .lvm.activate, "" );
     };
 
+global define map InitialLoopEntry()
+    ``{
+    map part = $[ "type"     : `loop,
+		  "crypt_fs" : true,
+		  "fstype"   : Partitions::loop_name,
+		  "fsid"     : Partitions::fsid_native,
+		  "region"   : [ 0, 0 ]
+		];
+    return( part );
+    }
+
+global define map InitialLoopMaindev()
+    ``{
+    return( $[ "name"      : Partitions::loop_name,
+	       "cyl_count" : 1,          // not used
+	       "cyl_size"  : 1024*1024,  // size in MB
+	       "partitions": []
+	     ] );
+    }
+
+global define string PathToDestdir( string pt )
+    ``{
+    if( Installation::destdir != "/" )
+	{
+	pt = Installation::destdir + pt;
+	}
+    return( pt );
+    }
 }
 
 

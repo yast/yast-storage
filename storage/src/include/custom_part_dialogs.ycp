@@ -393,42 +393,52 @@ Try again.
    */
 global define void FstabOptions( map old, map new, map fs_define ) 
     ``{
-    string helptext = _("<p><b>Mount in /etc/fstab by:</b>
+    string helptext = "";
+    term contents = `VBox();
+
+    if( !new["crypt_fs"]:false )
+	{
+	helptext = helptext + _("<p><b>Mount in /etc/fstab by:</b>
 Normally the device to mount a file system is identified in /etc/fstab
 by the device name. This can be changed to find the file system to mount
 by search for an UUID or a volume label. Not all file systems can be 
 mounted by UUID or volume label. If an option is disabled, it is not possible.
 ");
 
-    helptext = helptext + _("<p><b>Volume label:</b>
+	helptext = helptext + _("<p><b>Volume label:</b>
 The name entered in this field is used as the volume label. This normally only
 makes sense when you activate the option mounting by volume label.
 ");
 
-    term contents = 
-	`VBox(  
-	    `RadioButtonGroup( 
-		`id(`mt_group),
-		`VBox( 
-		    `Left( `Label( _("Mount in /etc/fstab by"))),
-		    `Left( `RadioButton( `id(`device),
-					 _("&Device name") )),
-		    `Left( `RadioButton( `id(`label),
-					 _("Volume &label") )),
-		    `Left( `RadioButton( `id(`uuid), "U&UID" ))
-		     )
-		),
-	   `TextEntry( `id(`vol_label), `opt(`hstretch), _("Volume &Label")),
-	   `VSpacing(1)
-	   );
+	contents = add( contents,
+			`VBox(  
+			    `RadioButtonGroup( 
+				`id(`mt_group),
+				`VBox( 
+				    `Left( `Label(_("Mount in /etc/fstab by"))),
+				    `Left( `RadioButton( `id(`device),
+							 _("&Device name") )),
+				    `Left( `RadioButton( `id(`label),
+							 _("Volume &label") )),
+				    `Left( `RadioButton( `id(`uuid), "U&UID" ))
+				     )
+				),
+			   `TextEntry( `id(`vol_label), `opt(`hstretch), 
+				       _("Volume &Label")),
+			   `VSpacing(1)
+		       ));
+	}
     list opt_list = [];
-    foreach( `entry, FileSystems::GetGeneralFstabOptions(),
-	``{
-	opt_list = add( opt_list, entry );
-	contents = add( contents, entry[`widget]:`empty );
-	helptext = helptext + entry[`help_text]:"";
-	});
-    contents = add( contents, `VSpacing(1) );
+    if( new["mount"]:"" != "swap" )
+	{
+	foreach( `entry, FileSystems::GetGeneralFstabOptions(),
+	    ``{
+	    opt_list = add( opt_list, entry );
+	    contents = add( contents, entry[`widget]:`empty );
+	    helptext = helptext + entry[`help_text]:"";
+	    });
+	contents = add( contents, `VSpacing(1) );
+	}
     foreach( `entry, fs_define[`fst_options]:[],
 	``{
 	opt_list = add( opt_list, entry );
@@ -805,6 +815,7 @@ global define FormatDlg( map new_val, map file_systems )
 
     if( new_val["type"]:`primary != `lvm &&
 	    new_val["type"]:`primary != `sw_raid &&
+	new_val["type"]:`primary != `loop &&
 	    !Partitions::no_fsid_menu )
 	{
 	fsid = `VBox( 
@@ -902,6 +913,25 @@ global define RaidOptionsDlg( map new_val, boolean edit_raid_type )
 		 ));	
 
     }
+
+global define term LoopOptionsDlg()
+    ``{
+    term widget = 
+	`VSquash(
+	    `VBox(
+		 `VSpacing(),
+		 `Left( `TextEntry( `id(`loop_path), `opt(`notify),
+		                    _("P&ath name of file"))), 
+		 `VSpacing(1),
+		 `Left( `CheckBox( `id(`loop_create), `opt(`notify),
+		                   _("C&reate loop file"))),
+		 `Left( `TextEntry( `id(`loop_size), `opt(`notify),
+		                    _("Si&ze of loop file"))),
+		 `VSpacing()
+		 ));	
+
+    return widget;
+    }
   
   /**
    * Change the state of all symbol from the list symbols
@@ -943,9 +973,9 @@ global define MountDlg( map new_val, list mountpoints )
     if( mountpoints == nil  )
 	mountpoints = [ "/", "/usr", "/boot", "/var", "/home", "/opt" , ""];
 
-    if( !contains( mountpoints, "" ))
-	mountpoints      = add( mountpoints , "");
-    string mount     = new_val["mount"]:"";
+    if( !contains( mountpoints, "" ) && !new_val["crypt_fs"]:false )
+	mountpoints = add( mountpoints , "");
+    string mount = new_val["mount"]:"";
 
     if( !contains( mountpoints, mount ))
 	mountpoints = union( [mount], mountpoints);

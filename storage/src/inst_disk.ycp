@@ -42,6 +42,7 @@ include "partitioning/custom_part_check_generated.ycp";
 include "partitioning/custom_part_lib.ycp";
 include "partitioning/raid_lib.ycp";
 include "partitioning/raid_ui.ycp";
+include "partitioning/loop.ycp";
 include "partitioning/lvm_pv_lib.ycp";
 
     y2milestone( "PartMode %1 ProposalActive %2 ", Storage::GetPartMode(),
@@ -71,102 +72,99 @@ global define InitSettings( boolean installation )
 
 
     map aliases = $[
-                    "RaidTypeWizard"  	   :   ``(ChooseRaidType(`wizard  )),
-		    "RaidTypeSettings"	   :   ``(ChooseRaidType(`settings)),
-		    "RaidDeviceWizard"	   :   ``(RaidDevices(`wizard  )),
-                    "RaidDeviceSettings"   :   ``(RaidDevices(`settings)),
-		    "RaidExpertWizard"     :   ``(RaidExpertWizard()),
-		    "RaidMpAutodetect"     :   ``(RaidMultipathAuto()),
-		    "ReallyInstPrepdisk"   :   ``(ReallyInstPrepdisk()),
-
-
-		    "LvmPv"		   :   ``(CallFunction(`inst_lvm_pv(true, true ))),
-		    "LvmLv"		   :   ``(CallFunction(`inst_lvm_lv(true, true ))),
-                    "Custom"               :   ``(CallFunction(`inst_custom_part(true,  true))),
-                    "PrepDiskEnd"          :   ``(CallFunction(`inst_prepdisk(true,  true))),
-                    "PrepDiskApply"        :   ``(CallFunction(`inst_prepdisk(true,  true))),
-		    "ReInitSettings"       :   ``(InitSettings(installation)),
-		    "TabsEnd"	 	   :   ``(TabsWrite()),
-		    "TabsApply"		   :   ``(TabsWrite()),
-                    "abort"                :   ``(AbortDialog())
+	"RaidTypeWizard"     : ``(ChooseRaidType(`wizard  )),
+	"RaidDeviceWizard"   : ``(RaidDevices(`wizard  )),
+	"RaidDeviceSettings" : ``(RaidDevices(`settings)),
+        "LoopCreateWizard"   : ``(LoopSetup(false)),
+        "LoopEditWizard"     : ``(LoopSetup(true)),
+	"RaidExpertWizard"   : ``(RaidExpertWizard()),
+	"RaidMpAutodetect"   : ``(RaidMultipathAuto()),
+	"ReallyInstPrepdisk" : ``(ReallyInstPrepdisk()),
+	"LvmPv"		     : ``(CallFunction(`inst_lvm_pv(true, true ))),
+	"LvmLv"		     : ``(CallFunction(`inst_lvm_lv(true, true ))),
+	"Custom"             : ``(CallFunction(`inst_custom_part(true, true))),
+	"PrepDiskEnd"        : ``(CallFunction(`inst_prepdisk(true, true))),
+	"PrepDiskApply"      : ``(CallFunction(`inst_prepdisk(true, true))),
+	"ReInitSettings"     : ``(InitSettings(installation)),
+	"abort"              : ``(AbortDialog())
     ];
 
 
     map sequence = $[
-                     "ws_start"             :       "Custom",
+	"ws_start"           : "Custom",
 
-                     "RaidTypeWizard"	    :   $[  `abort : "abort",
-						    `cancel: `cancel,
-						    `mp_auto : "RaidMpAutodetect",
-                                                    `next  : "RaidDeviceWizard"],
+        "RaidTypeWizard"     : $[ `abort   : "abort",
+				  `cancel  : `cancel,
+				  `mp_auto : "RaidMpAutodetect",
+				  `next    : "RaidDeviceWizard" ],
 
-                     "RaidDeviceWizard"     :   $[  `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `next  : "RaidExpertWizard" ],
+        "RaidDeviceWizard"   : $[ `abort  : "abort",
+				  `cancel : `cancel,
+                                  `next   : "RaidExpertWizard" ],
 
-                     "RaidMpAutodetect"     :   $[  `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `next  : "Custom" ],
+        "RaidMpAutodetect"   : $[ `abort  : "abort",
+				  `cancel : `cancel,
+                                  `next   : "Custom" ],
 
-		     "RaidExpertWizard"  :    $[  `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `next  : "Custom" ],
+	"RaidExpertWizard"   : $[ `abort  : "abort",
+				  `cancel : `cancel,
+                                  `next   : "Custom" ],
 
-		     "RaidDeviceSettings"    :   $[  `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `next  : "Custom"],
+	"RaidDeviceSettings" : $[ `abort  : "abort",
+				  `cancel : `cancel,
+				  `next   : "Custom" ],
 
-		     "ReallyInstPrepdisk"    :   $[ `abort : `abort,
-						    `cancel: `cancel,
-                                            	    `finish  : "PrepDiskEnd",
-						    `apply   : "PrepDiskApply" ],
+	"LoopCreateWizard"   : $[ `abort  : "abort",
+				  `cancel : `cancel,
+                                  `next   : "Custom" ],
 
-                     "Custom"               :   $[  `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `raid_wizard   : "RaidTypeWizard",
-						    `raid_settings : "RaidDeviceSettings",
-						    `backtoi  : `back,
-						    `sysnext  : "ReallyInstPrepdisk",
-						    `lvm   : "LvmPv",
-						    `lvmlv : "LvmLv",
-                                            	    `again : "Custom",
-                                            	    `apply : "PrepDiskApply",
-                                            	    `instnext  : `next ],
+	"LoopEditWizard"     : $[ `abort  : "abort",
+				  `cancel : `cancel,
+                                  `next   : "Custom"],
 
-		     "LvmPv"		    :   $[  `abort : "abort",
-						    `cancel: `cancel,
-						    `next  : "LvmLv" ],
+	"ReallyInstPrepdisk" : $[ `abort  : `abort,
+				  `cancel : `cancel,
+                                  `finish : "PrepDiskEnd",
+				  `apply  : "PrepDiskApply" ],
 
-		     "LvmLv"		    :   $[  `abort : "abort",
-						    `cancel: `cancel,
-						    `next  :  "Custom" ],
+        "Custom"             : $[ `abort         : "abort",
+				  `cancel        : `cancel,
+                                  `raid_wizard   : "RaidTypeWizard",
+				  `raid_settings : "RaidDeviceSettings",
+                                  `loop_create   : "LoopCreateWizard",
+                                  `loop_edit     : "LoopEditWizard",
+				  `backtoi       : `back,
+				  `sysnext       : "ReallyInstPrepdisk",
+				  `lvm           : "LvmPv",
+				  `lvmlv         : "LvmLv",
+                                  `again         : "Custom",
+                                  `apply         : "PrepDiskApply",
+                                  `instnext      : `next ],
 
-/*
-		     "TabsApply"	    :   $[  `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `next  : "ReInitSettings"   ],
+	"LvmPv"		    :  $[ `abort  : "abort",
+				  `cancel : `cancel,
+				  `next   : "LvmLv" ],
 
-		     "TabsEnd"		    :   $[ `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `next  : `next    ],
-*/
+	"LvmLv"		    :  $[ `abort  : "abort",
+				  `cancel : `cancel,
+				  `next   :  "Custom" ],
 
-		     "PrepDiskApply"        :   $[  `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `back  : "ReInitSettings",
-                                            	    `next  : "ReInitSettings" ],
+	"PrepDiskApply"     :  $[ `abort  : "abort",
+				  `cancel : `cancel,
+                                  `back   : "ReInitSettings",
+                                  `next   : "ReInitSettings" ],
 
-		     "PrepDiskEnd"          :   $[  `abort : "abort",
-						    `cancel: `cancel,
-                                            	    `back  : "ReInitSettings",
-                                            	    `next  : `next ],
+	"PrepDiskEnd"       :  $[ `abort  : "abort",
+				  `cancel : `cancel,
+                                  `back   : "ReInitSettings",
+                                  `next   : `next ],
 
-		     "ReInitSettings"	    :   $[  `abort : "abort",
-						    `cancel: `cancel,
-						    `next  : "Custom" ],
+	"ReInitSettings"    :  $[ `abort  : "abort",
+				  `cancea : `cancel,
+				  `next   : "Custom" ],
 
-                     "abort"                :   $[  `yes   : `abort,
-						    `cancel: `cancel]
+        "abort"             :  $[ `yes    : `abort,
+				  `cancel : `cancel]
     ];
 
 
