@@ -13,7 +13,6 @@ y2makefs_LDADD = -ly2 -lycp
 y2makefs_LDFLAGS = -L$(libdir)				\
 	-Xlinker --whole-archive			\
 	$(plugindir)/libpy2stdio.la			\
-	$(plugindir)/libpy2script.la			\
 	$(srcdir)/../src/libpy2makefs.la		\
 	-Xlinker --no-whole-archive
 
