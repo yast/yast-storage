@@ -77,7 +77,7 @@ Y2MakefsComponent::doActualWork (const YCPList & options,
     // init progress bar
 
     YCPValue val = report_progress (displayserver, 0);
-    if (!val->isVoid ())
+    if (!val.isNull () && !val->isVoid ())
 	return val;
 
     // start formatting
@@ -91,7 +91,7 @@ Y2MakefsComponent::doActualWork (const YCPList & options,
     while (partition->get_progress_status (percent))
     {
 	YCPValue val = report_progress (displayserver, percent);
-	if (!val->isVoid ())
+	if (!val.isNull () && !val->isVoid ())
 	{
 	    partition->kill_format ();
 	    return val;
@@ -118,7 +118,7 @@ Y2MakefsComponent::doActualWork (const YCPList & options,
 
 
 YCPValue
-Y2MakefsComponent::report_progress (Y2Component * displayserver, double percent)
+Y2MakefsComponent::report_progress (Y2Component* displayserver, double percent)
 {
     y2debug ("Reporting progress: %f percent", percent);
 
@@ -133,15 +133,13 @@ Y2MakefsComponent::report_progress (Y2Component * displayserver, double percent)
     YCPValue val = displayserver->evaluate (t);
 
     // check result
-    if (!val->isVoid ())
+    if (!val.isNull () && !val->isVoid ())
     {
 	if (val->isSymbol () && val->asSymbol ()->symbol () == "cancel")
 	    return val;
-	else
-	{
-	    y2error ("displayserver returned %s", val->toString ().c_str ());
-	    return RETURN_ERROR;
-	}
+
+	y2error ("displayserver returned %s", val->toString ().c_str ());
+	return RETURN_ERROR;
     }
 
     return val;
