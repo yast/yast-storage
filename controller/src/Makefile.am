@@ -11,4 +11,6 @@ client_DATA =		\
 
 config_DATA = controller.y2cc
 
-EXTRA_DIST = $(client_DATA) $(config_DATA)
+desktop_DATA = controller.desktop
+
+EXTRA_DIST = $(client_DATA) $(config_DATA) $(desktop_DATA)

@@ -14,4 +14,6 @@ ynclude_HEADERS =		\
 
 config_DATA = disk.y2cc
 
-EXTRA_DIST = $(client_DATA) $(ynclude_HEADERS) $(config_DATA)
+desktop_DATA = disk.desktop
+
+EXTRA_DIST = $(client_DATA) $(ynclude_HEADERS) $(config_DATA) $(desktop_DATA)

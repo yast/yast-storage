@@ -12,4 +12,6 @@ client_DATA = 		\
 
 config_DATA = lvm_config.y2cc
 
-EXTRA_DIST = $(client_DATA) $(config_DATA)
+desktop_DATA = lvm_config.desktop
+
+EXTRA_DIST = $(client_DATA) $(config_DATA) $(desktop_DATA)

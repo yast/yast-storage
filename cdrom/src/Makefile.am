@@ -11,4 +11,6 @@ client_DATA =		\
 
 config_DATA = cdrom.y2cc
 
-EXTRA_DIST = $(client_DATA) $(config_DATA)
+desktop_DATA = cdrom.desktop
+
+EXTRA_DIST = $(client_DATA) $(config_DATA) $(desktop_DATA)
