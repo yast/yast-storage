@@ -30,24 +30,24 @@
 
 {
 
- 
-  
-    textdomain "storage"; 
-   
+
+
+    textdomain "partitioning";
+
     import "Mode";
     import "Storage";
     import "Wizard";
     import "FileSystems";
-  
+
     include "partitioning/lvm_ui_lib.ycp";
     include "partitioning/lvm_lib.ycp";
     include "partitioning/lvm_lv_lib.ycp";
     include "partitioning/lvm_ui_dialogs.ycp";
-   
-    
 
-    string  current_vg       = "none";    
-  
+
+
+    string  current_vg       = "none";
+
     boolean test_mode        = Mode::test;
     map     targetMap        = Storage::GetTargetMap();
     map     modify_targets   = Storage::GetModifyTargets();
@@ -58,39 +58,39 @@
     // test_mode   = true;
     // test_mode   = false;
     ////////////////////////////////////////////////
-    
-  
+
+
     // supported filesystems -> inst_disk.ycp > global
 
 
-    list    lvm_vgs      = get_vgs(  targetMap );
-    list    parts 	 = get_lvs_and_mounted_partitions( targetMap, view_all_mnts, current_vg );
-    list    table 	 = get_lv_widget_table( parts );
-   
-    y2debug( "XX EEEEEEE %1 ", table );
+    list    lvm_vgs  = get_vgs(  targetMap );
+    list    parts	 = get_lvs_and_mounted_partitions( targetMap, view_all_mnts, current_vg );
+    list    table	 = get_lv_widget_table( parts );
+
+    y2debug( "table: %1", table );
 
 
-    
+
     Wizard::SetContents( _("Logical Volume Manager -- Logical Volumes"),
 			     get_lv_content( table, lvm_vgs, "-------", view_all_mnts),
 			     "", true, true);
     Wizard::ReplaceHelp(`RichText(`id(`help), getLvHelptext() ));
 
 
-    
+
     //////////////////////////////////////////////////////////////////////
     // First we typically have to create a volumegroup
     // check if there is already a lvm group
     //////////////////////////////////////////////////////////////////////
-    
+
     // Display current vg:
-    current_vg = select( lvm_vgs, 0, "" ); 
+    current_vg = select( lvm_vgs, 0, "" );
     UI::new_vg_list( lvm_vgs );
     UI::ChangeWidget( `id(`vg), `Value, current_vg);
-    
+
 
     any vg = nil;
-    
+
 
     //////////////////////////////////////////////////////////////////////
     // mainloop
@@ -105,15 +105,15 @@
 
     repeat
     {
-	
+
 	/////////////////////////////////////////////////////////////////
 	// Show the current state:
-	
-        parts 	 = get_lvs_and_mounted_partitions( targetMap, view_all_mnts, current_vg );
-	table 	 = get_lv_widget_table( parts );
+
+    parts	 = get_lvs_and_mounted_partitions( targetMap, view_all_mnts, current_vg );
+	table	 = get_lv_widget_table( parts );
 	UI::ChangeWidget( `id(`lv_table), `Items, table);
 
-	parts 	    = get_lvs_and_mounted_partitions(  targetMap, false, current_vg );
+	parts	    = get_lvs_and_mounted_partitions(  targetMap, false, current_vg );
 	y2debug( "parts=%1 current_vg=%2", parts, current_vg );
 	size_list   = get_lv_size_info( targetMap,  parts, current_vg );
 	max_size    = select( size_list, 1, 0 );
@@ -136,7 +136,7 @@
 	   UI::ChangeWidget( `id(`vg_size), `Value, vg_size_str);
 	}
 
-	
+
 	if ( id != "" && id != nil )
 	{
 	    UI::ChangeWidget( `id(`lv_table), `CurrentItem, id);
@@ -144,57 +144,54 @@
 
 
         /////////////////////////////////////////////////////////////////
-        // Wait for User input        
+        // Wait for User input
 	ret= Wizard::UserInput();
 	y2milestone(" ret %1", ret );
-	
-	
+
+
 	////////////////////////////////////////
 	// user has changed the current volume group
 	////////////////////////////////////////
-	
+
 	if ( ret == `vg )
 	{
 	    current_vg = UI::QueryWidget( `id(`vg), `Value);
 	}
 
 
-	
+
 	////////////////////////////////////////
 	// Add a new logical volume:
 	////////////////////////////////////////
-	
-	
+
+
 	if ( ret == `viewmnt )
 	{
 	    view_all_mnts = UI::QueryWidget(`id(`viewmnt), `Value);
 	}
 
-	
+
 	////////////////////////////////////////
 	// Add a new logical volume:
 	////////////////////////////////////////
-	
-	
+
+
 	if ( ret == `lv_add )
 	{
-
-	    y2debug("WWWWWWWWW__ e");
-
 	    map Lv = $[
-		       "create"		:  	true,
-		       "mount"  	: 	"",
-		       "used_fs"	:   	`reiser,
-		       "crypt_fs"	: 	false,
+		       "create"		:	true,
+		       "mount"		:	"",
+		       "used_fs"	:	`reiser,
+		       "crypt_fs"	:	false,
 		       "size"		:       max_size /4 ,
 		       "subdev"		:       "",
-		       "stripes"	: 	1,
-		       "fs_options"	: 	$[],
+		       "stripes"	:	1,
+		       "fs_options"	:	$[],
 		       "format"		:	true,
-		       "fsid"		: 	Partitions::fsid_lvm,
+		       "fsid"		:	Partitions::fsid_lvm,
 		       "mount"		:       GetMountPointProposal(targetMap , ["/", "swap", "/boot" ] )
 	    ];
-	    
+
 	    map createLv = DlgCreateEditLogicaVolume( "create",
 						      Lv,
 						      max_size,
@@ -210,21 +207,21 @@
 	      notUsedMountpoints(targetMap, []),
 					   UI::FileSystemsComboBox( $[ "used_fs"   : `reiser ,
 								       "crypt_fs"  :  false  ] , file_systems ),
-							  
+
 					   //possibleFilesystems( false, reiserfs_support, xfs_support, jfs_support, `reiser),
 					   ByteToHumanStringWithZero(max_size/4),
 					   "",
 					   1,
 							  //`reiser,
-					   false, 
+					   false,
 	    */
 
-	    
+
 	    // has an error occured
 	    if ( size(createLv)>0 )
 	    {
 		map ret = addLogicalVolume( createLv, modify_targets, targetMap, current_vg );
-		
+
 		targetMap      = lookup( ret, "targets",        targetMap );
 		modify_targets = lookup( ret, "modify_targets", modify_targets );
 	    }
@@ -233,20 +230,20 @@
 	////////////////////////////////////////
 	// Edit/Resize a new logical volume:
 	////////////////////////////////////////
-	
-	
+
+
 	if ( ret == `lv_edit || ret == `lv_table )
 	{
 	    id = UI::QueryWidget(`id(`lv_table), `CurrentItem);
 	    y2milestone("id %1", id);
-	    
+
 	    if ( id == nil )
 	    {
 		// Popup text
 		UI::ErrorPopup(_("No device selected.
 Select the device to edit.
 "));
-		
+
 	    }
 	    else
 	    {
@@ -257,20 +254,20 @@ Select the device to edit.
 		{
 		    string maindev = Storage::GetMainDevKey( id);
 		    string subdev  = Storage::GetSubDevIndex( id );
-		    
+
 		    string tmp_vg = lookup( Lv, "vgname", "none");
 		    size_list   = get_lv_size_info( targetMap,
 		                                get_lvs_and_mounted_partitions(  targetMap, false, tmp_vg ), tmp_vg );
 		    max_size    = select( size_list, 1, 0 );
 		    used_size   = select( size_list, 0, 0 );
 
-		    y2debug( "DDDDD %1", Lv);
-		
+		    y2debug("Lv: %1", Lv);
+
 		    if ( !lookup(Lv, "error", false) )
 		    {
-			if ( Lv["created"]:false )
+			if ( lookup( Lv, "is_created", false) )
 			{
-			 
+
 
 			      map createLv = DlgCreateEditLogicaVolume(
 								       "edit",
@@ -280,10 +277,10 @@ Select the device to edit.
 								       [],
 								       FileSystems::GetAllFileSystems(false, true),
 								       installation,
-								       Storage::GetDeviceName( maindev, subdev )
+								       maindev + subdev
 								     );
-			   
-			      
+
+
 			    // has an error occured
 			    if ( size(createLv)>0 )
 			    {
@@ -292,7 +289,7 @@ Select the device to edit.
 							     targetMap,
 							     lookup( Lv, "vgname", "none"),
 							     lookup( Lv, "modify_targets_index", 0));
-		
+
 				targetMap      = lookup( ret, "targets",        targetMap );
 				modify_targets = lookup( ret, "modify_targets", modify_targets );
 			    }
@@ -307,11 +304,11 @@ Select the device to edit.
 								     [],
 								     FileSystems::GetAllFileSystems(false, true),
 								     installation,
-								     Storage::GetDeviceName( maindev, subdev )
+								     maindev + subdev
 								     );
 
-			   
-				
+
+
 			    // has an error occured
 			    if ( size(createLv)>0 )
 			    {
@@ -319,7 +316,7 @@ Select the device to edit.
 							       modify_targets,
 							       targetMap,
 							       lookup( Lv, "vgname", "none"));
-		
+
 				targetMap      = lookup( ret, "targets",        targetMap );
 				modify_targets = lookup( ret, "modify_targets", modify_targets );
 			    }
@@ -334,8 +331,8 @@ Select the device to edit.
 	////////////////////////////////////////
 
 	// search for old create and delte this entry !!!
-	y2debug("DDDD %1", ret);
-	
+	y2debug("ret: %1", ret);
+
 	if ( ret == `lv_delete )
 	{
 	    id = UI::QueryWidget(`id(`lv_table), `CurrentItem);
@@ -346,7 +343,7 @@ Select the device to edit.
 		UI::ErrorPopup(_("No device selected.
 Select the device to remove.
 "));
-		
+
 	    }
 	    else
 	    {
@@ -360,24 +357,24 @@ Select the device to remove.
 		    UI::ErrorPopup(_("You can only remove logical volumes."));
 		    continue;
 		}
-		
+
 		// Popup text
 		string message = sformat( UI(_("Do you want to remove
 the logical volume %1/%2?")), maindev, subdev );
-		
+
 		boolean do_remove = UI::YesNoPopup( message );
-	    
+
 		if ( do_remove )
 		{
-		    		    y2debug( "NBNBNBNB  %1  ", Lv);
-		    y2debug( "NBNBNBNB  %1  ", modify_targets );
-		    y2debug( "NBNBNBNB  %1  ", targetMap);
-		    y2debug( "NBNBNBNB  %1  ", lookup( Lv, "vgname", "none") );
+		    y2debug( "Lv:  %1", Lv);
+		    y2debug( "modify_targets:  %1", modify_targets );
+		    y2debug( "targetMap: %1", targetMap);
+		    y2debug( "vgname:  %1", lookup( Lv, "vgname", "none") );
 		    any deleteLV = removeLogicalVolume( Lv,
 							modify_targets,
 							targetMap,
 							lookup( Lv, "vgname", "none") );
-            
+
 		    // has an error occured
 		    if ( ! lookup(deleteLV, "error", false) )
 		    {
@@ -388,11 +385,11 @@ the logical volume %1/%2?")), maindev, subdev );
 	    }
 	}
 
-	
+
 	////////////////////////////////////////
 	// Finish this step
 	////////////////////////////////////////
-	
+
 	if (ret == `next || ret == `back )
 	{
 
