@@ -1,0 +1,109 @@
+/**
+ * File:
+ *   disk_io.ycp
+ *
+ * Module:
+ *   Configuration of disk
+ *
+ * Summary:
+ *   Input and output functions.
+ *
+ * Authors:
+ *   Michael Hager <mike@suse.de>
+ *
+ * $Id$
+ *
+ * Input and output routines.
+ * 
+ */
+
+{
+
+  textdomain "partitioning";
+  include "partitioning/custom_part_testdata.ycp";
+  include "partitioning/write_fstab.ycp";
+  import "Installation";
+  import "Storage";
+  import "Arch";
+  
+  
+/**
+ * Fill the map of all disk settings from the SCR
+ * @return map all disk settings
+ */
+  
+global define DiskRead( boolean installation ) ``{
+
+    map    targetMap    = $[];
+    string architecture = "";
+
+
+    if ( installation )
+    {
+	targetMap    = Storage::GetTargetmap();
+	architecture = Arch::architecture;
+    }
+    else
+    {
+        targetMap    = Storage::ResetLVMandPartitionInfo(Installation::test_mode  );
+	architecture = SCR(`Read(.probe.architecture));
+    }
+
+
+    if ( Installation::test_mode )
+    {
+	//targetMap = getTestTargetMap();
+	targetMap   =   getOrgTestTargetMap();
+	y2milestone(" local_test_mode -> getTestTargetMap");
+	
+	// add Windows mount points
+	// only for testing
+	integer foreign_nr = 0;		
+	map new_targetMap = targetMap;
+	foreach( `key, `target, targetMap, ``{
+	    target = add( target, "partitions", Storage::AddMountPointsForWinParts ( lookup(target, "partitions" , []) ));
+	    new_targetMap = add( new_targetMap  , key, target );
+	});
+	targetMap = new_targetMap;
+    }
+
+
+    return $[ "targets":targetMap, "architecture":architecture] ;
+}
+
+
+
+/**
+ * Update the SCR from the map of all disk settings
+ * @param m a map of all disk settings
+ * @return boolean success of operation
+ */
+global define DiskWrite(map settings) ``{
+    /* TODO your code here ... */
+
+    return true;
+}
+
+
+
+/**
+ * Write the disk data from SCR to the disk
+ * @return list success of operation
+ */
+global define TabsWrite() ``{
+
+    /* TODO your code here ... */
+    map targetMap = lookup( user_settings, "targets", $[] );
+
+    y2milestone("TabsWrite");
+    
+    change_fstab(targetMap );
+    change_cryptotab ( targetMap );
+
+    create_raidtab( targetMap);
+    
+    //WFM::Write(.local.string, "/tmp/raidtab", change_raidtab( targetMap ) );
+    return `next;
+}
+
+}
