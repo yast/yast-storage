@@ -409,7 +409,7 @@ global define void FstabOptions( map old, map new )
     string helptext = "";
     term contents = `VBox();
 
-    if( !new["crypt_fs"]:false && new["mount"]:"" != "swap" )
+    if( !new["loop_fs"]:false && new["mount"]:"" != "swap" )
 	{
 	// help text, richtext format
 	helptext = helptext + _("<p><b>Mount in /etc/fstab by:</b>
@@ -527,8 +527,14 @@ makes sense when you activate the option for mounting by volume label.
 	};
     y2milestone( "key=%1 val:%2", opt_list[size(opt_list)-1,`query_key]:"",
                  mergestring( opt_lstr, "," ) );
-    old_state[opt_list[size(opt_list)-1,`query_key]:""] = 
-	mergestring( opt_lstr, "," );
+    string arb_opt = mergestring( opt_lstr, "," );
+    if( new["loop_fs"]:false && !new["noauto"]:false && 
+        new["crypt"]:"none"!="none" )
+	{
+	arb_opt = FileSystems::RemoveCryptOpts( arb_opt );
+	}
+
+    old_state[opt_list[size(opt_list)-1,`query_key]:""] = arb_opt;
     y2milestone( "old_state=%1", old_state );
 
     UI::OpenDialog( `opt(`decorated), 
@@ -565,18 +571,18 @@ makes sense when you activate the option for mounting by volume label.
 	                  new["mountby"]:`device );
 	UI::ChangeWidget( `id(`label), `Enabled, 
 			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
-			      !new["crypt_fs"]:false );
+			      !new["loop_fs"]:false );
 	UI::ChangeWidget( `id(`uuid), `Enabled, 
 			  (new["format"]:false || size(new["uuid"]:"")>0) &&
 			      FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
-			      !new["crypt_fs"]:false );
+			      !new["loop_fs"]:false );
 	}
 
     if( UI::WidgetExists( `id(`vol_label) ))
 	{
 	UI::ChangeWidget( `id(`vol_label), `Enabled, 
 			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
-			      !new["crypt_fs"]:false );
+			      !new["loop_fs"]:false );
 	UI::ChangeWidget( `id(`vol_label), `ValidChars, 
 			  FileSystems::nchars + "-._:" );
 	UI::ChangeWidget( `id(`vol_label), `Value, new["label"]:"" );
@@ -639,6 +645,10 @@ is %1. Your volume label was truncated to this size.
 		    Popup::Error( _("This volume label is already in use. Select a different one."));
 		    continue;
 		    }
+		}
+	    if( UI::WidgetExists( `id("opt_noauto") ))
+		{
+		new["noauto"] = UI::QueryWidget( `id("opt_noauto"), `Value );
 		}
 	    map new_state = $[];
 	    string text = "";
@@ -757,11 +767,11 @@ global define FileSystemsComboBox( map new_val, map file_systems )
     term CryptWidget = `Empty();
     if( !Arch::s390 )
 	{
+	boolean cr = new_val["loop_fs"]:false && new_val["crypt"]:""!="none";
 	CryptWidget = `VBox( `VSpacing(0.7),
 	                     `Left(`CheckBox(`id(`crypt_fs), 
 					    // button text 
-			                     _("&Encrypt file system"),
-			                     new_val["crypt_fs"]:false )));
+			                     _("&Encrypt file system"), cr )));
 	}
 
     return `VBox( 
@@ -1037,7 +1047,7 @@ global define MountDlg( map new_val, list mountpoints )
     if( mountpoints == nil  )
 	mountpoints = [ "/", "/usr", "/boot", "/var", "/home", "/opt" , ""];
 
-    if( !contains( mountpoints, "" ) && !new_val["crypt_fs"]:false )
+    if( !contains( mountpoints, "" ) && !new_val["loop_fs"]:false )
 	mountpoints = add( mountpoints , "");
     string mount = new_val["mount"]:"";
 

@@ -39,7 +39,8 @@ global define onepartition2fstab (map part)
     if (part["delete"]:false || 
 	part["type"]:`unknown == `extended ||
 	(part["type"]:`unknown == `lvm && size(part["mount"]:"")==0) ||
-	part["crypt_fs"]:false ||
+	(part["loop_fs"]:false && !part["noauto"]:false && 
+	 part["crypt"]:"none"!="none") ||
 	part["lvm_group"]:"" != "" ||
 	part["raid_name"]:"" != "" ||
 	part["fsid"]:0 == Partitions::fsid_prep_chrp_boot ||
@@ -69,14 +70,10 @@ global define onepartition2fstab (map part)
     integer passno  = 0;
     string  mntops  = part["fstopt"]:"";
 
-    if( size(mntops) == 0 )
-	{
-	mntops = "defaults";
-	}
     if( mount_point == "swap" )
 	{
 	vfstype = "swap";
-	if( mntops == "defaults" )
+	if( size(mntops) == 0 )
 	    {
 	    mntops = "pri=42";
 	    }
@@ -148,6 +145,34 @@ global define onepartition2fstab (map part)
 		 "freq":freq, 
 		 "device":part["device"]:"", 
 		 "passno":passno ];
+
+    if( part["loop_fs"]:false )
+	{
+	ret["freq"] = 0;
+	ret["passno"] = 0;
+	ret["loop_dev"] = part["loop_dev"]:"";
+	mntops = FileSystems::RemoveCryptOpts( mntops );
+	if(size(mntops)>0)
+	    {
+	    mntops = mntops + ",";
+	    }
+	mntops = mntops + "loop=" + part["loop_dev"]:"";
+	if( part["crypt"]:"none" != "none" )
+	    {
+	    mntops = mntops + ",encryption=" + part["crypt"]:"";
+	    }
+	ret["mntops"] = mntops;
+	if( part["type"]:`none == `loop )
+	    {
+	    ret["spec"] = part["fpath"]:"";
+	    ret["loopfile"] = true;
+	    }
+	}
+
+    if( size(ret["mntops"]:"")==0 )
+	{
+	ret["mntops"] = "defaults";
+	}
 
     if( part["fstabline"]:0 != 0 )
 	{
@@ -227,7 +252,9 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 	list delpart = filter( `p, partitions, 
 			       ``( p["fstabline"]:0>0 &&
 				   ( p["delete"]:false ||
-				     p["crypt_fs"]:false ||
+				     (p["loop_fs"]:false && 
+				      !p["noauto"]:false && 
+				      p["crypt"]:"none"!="none") ||
 				     size(p["mount"]:"")==0 )));
 	y2milestone( "partitions:%1", partitions );
 	y2milestone( "delpart:%1", delpart );
@@ -241,11 +268,11 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
     if( Mode::initial )
 	{
         if( !Mode::live_eval )
-        {
+	    {
 	    // proc
 	    fstab["/proc"] = $["spec":"proc", "mount":"/proc", "vfstype":"proc",
 			       "mntops":"defaults", "freq":0, "passno":0];
-        }
+	    }
 
 	// usbdevfs added with noauto
 	if (Hotplug::haveUSB)
@@ -354,6 +381,10 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 	if( entry["line"]:0 > 0 )
 	    {
 	    map part = Storage::GetPartition( tg, entry["device"]:(entry["spec"]:"") );
+	    if( entry["loopfile"]:false )
+		{
+		part = Storage::GetPartition( tg, entry["loop_dev"]:"" );
+		}
 	    if( size(part["mount"]:"")>0 && 
 		contains( dellines, entry["line"]:0 ))
 		{
@@ -411,13 +442,13 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
     write_cryptotab( tg );
     };
 
-global define map onepartition2cryptotab( map partition, integer loop_num )
+global define map onepartition2cryptotab( map part, integer loop_num )
     ``{
-    string  partitionName = partition["device"]:"";
-    string  mountPoint    = partition["mount"]:"";
-    symbol  used_fs       = partition["used_fs"]:`unknown;
-    boolean crypt_fs      = partition["crypt_fs"]:false;
-    string  loop_dev      = partition["loop_dev"]:"";
+    string  partitionName = part["device"]:"";
+    string  mountPoint    = part["mount"]:"";
+    symbol  used_fs       = part["used_fs"]:`unknown;
+    boolean crypt_fs      = part["loop_fs"]:false;
+    string  loop_dev      = part["loop_dev"]:"";
 
     if( Mode::initial )
 	{
@@ -427,9 +458,11 @@ global define map onepartition2cryptotab( map partition, integer loop_num )
     if( Mode::test && loop_dev == "")
 	loop_dev = "/dev/loop1";
 
-    if( partition["delete"]:false || 
-	partition["type"]:`unknown == `extended ||
-        !partition["crypt_fs"]:false ||
+    if( part["delete"]:false || 
+	part["type"]:`unknown == `extended ||
+        !part["loop_fs"]:false ||
+        part["noauto"]:false ||
+        part["crypt"]:"none"=="none" ||
 	mountPoint == "" || 
 	mountPoint == "swap" )
 	{
@@ -439,21 +472,21 @@ global define map onepartition2cryptotab( map partition, integer loop_num )
     string used_fs_str = FileSystems::GetMountString( used_fs, "auto" );
 
     map ret = $[ "device"  : partitionName,
-		 "loop"    : loop_dev,
+		 "loop_dev": loop_dev,
 		 "mount"   : mountPoint,
 		 "vfstype" : used_fs_str,
 		 "opt1"    : "twofish",
-		 "opt2"    : partition["fsopts"]:"noatime" ];
+		 "opt2"    : FileSystems::RemoveCryptOpts(part["fstopt"]:"noatime") ];
 
-    if( partition["type"]:`none == `loop )
+    if( part["type"]:`none == `loop )
 	{
-	ret["device"] = partition["fpath"]:"";
+	ret["device"] = part["fpath"]:"";
 	ret["loopfile"] = true;
 	}
 
-    if( partition["crtabline"]:0 != 0 )
+    if( part["crtabline"]:0 != 0 )
 	{
-	ret["line"] = partition["crtabline"]:0;
+	ret["line"] = part["crtabline"]:0;
 	}
     y2milestone( "loop_num:%1 ret=%2", loop_num, ret );
     return( ret );
@@ -484,7 +517,9 @@ global define void write_cryptotab (map targets)
 	list delpart = filter( `p, partitions, 
 			       ``( p["crtabline"]:0>0 &&
 				   ( p["delete"]:false ||
-				     !p["crypt_fs"]:false ||
+				     !p["loop_fs"]:false ||
+				     p["noauto"]:false ||
+				     p["crypt"]:"none"=="none" ||
 				     size(p["mount"]:"")==0 )));
 	dellines = union( dellines, 
 	                  maplist( `p, delpart, ``(p["crtabline"]:0 )));
@@ -507,7 +542,7 @@ global define void write_cryptotab (map targets)
 
     foreach( `entry, crtablist,
 	``{
-	list fstlist = [ entry["loop"]:"", entry["device"]:"", 
+	list fstlist = [ entry["loop_dev"]:"", entry["device"]:"", 
 	                 entry["mount"]:"", entry["vfstype"]:"", 
 			 entry["opt1"]:"", entry["opt2"]:"" ];
 	if( entry["line"]:0 > 0 )
@@ -515,7 +550,7 @@ global define void write_cryptotab (map targets)
 	    map part = Storage::GetPartition( tg, entry["device"]:"" );
 	    if( entry["loopfile"]:false )
 		{
-		part = Storage::GetPartition( tg, entry["loop"]:"" );
+		part = Storage::GetPartition( tg, entry["loop_dev"]:"" );
 		}
 	    y2milestone( "part %1", part );
 	    if( part["format"]:false ||

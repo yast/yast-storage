@@ -13,6 +13,7 @@
   module "FileSystems";
   textdomain "storage";
   import "Arch";
+  import "String";
   import "Partitions";
 
 
@@ -146,6 +147,22 @@ The file system may be mounted by an ordinary user. Default is false.</p>
              `type : `boolean,
 	     `str_opt  : $[ 1 : "user", "default" : "" ],
 	     `str_scan : [[ "nouser", 0 ], ["user", 1 ]],
+	   ],
+	  $[
+	     // button text
+	     `widget : `Left(`CheckBox(`id("opt_noauto"), _("Do not mount at system &startup"), false)),
+	     `query_key : "opt_noauto",
+	     // help text, richtext format
+	     `help_text : _("<p><b>Not mounted at system startup:</b>
+The file system is not automatically mounted when the system starts up.
+There is an entry in /etc/fstab created and the filesystem is mounted
+with the appropriate options when the command <tt>mount &lt;mountpoint&gt;</tt>
+(&lt;mountpoint&gt; is the directory the filesystem is mounted to)
+is given. Default is false.</p>
+"),
+             `type : `boolean,
+	     `str_opt  : $[ 1 : "noauto", "default" : "" ],
+	     `str_scan : [[ "noauto", 1 ], ["auto", 0 ]],
 	   ]
 	];
     return( options );
@@ -184,10 +201,10 @@ global define list GetAclFstabOptions()
     list options =
 	[ $[
 	     // button text
-	     `widget : `Left(`CheckBox(`id("opt_acl"), _("&Access Control Lists"), false)),
+	     `widget : `Left(`CheckBox(`id("opt_acl"), _("&Access Control Lists (ACL)"), false)),
 	     `query_key : "opt_acl",
 	     // help text, richtext format
-	     `help_text : _("<p><b>Access Control Lists:</b>
+	     `help_text : _("<p><b>Access Control Lists (ACL):</b>
 Enable access control lists on the file system.</p>
 "),
              `type : `boolean,
@@ -894,12 +911,15 @@ global define map GetFsysInfos( map part )
 	dev = part["loop_dev"]:"";
 	y2milestone( "device:%1", dev );
 	}
-    part["used_fs"] = DetectFs( dev );
-    part["detected_fs"] = part["used_fs"]:`unknown;
-    if( part["used_fs"]:`unknown != `unknown &&
-        part["used_fs"]:`unknown != `swap )
+    part["detected_fs"] = DetectFs( dev );
+    if( part["detected_fs"]:`unknown != `unknown )
 	{
-	map info = GetUuidVolume( dev, part["used_fs"]:`unknown );
+	part["used_fs"] = part["used_fs"]:`unknown;
+	}
+    if( part["detected_fs"]:`unknown != `unknown &&
+        part["detected_fs"]:`unknown != `swap )
+	{
+	map info = GetUuidVolume( dev, part["detected_fs"]:`unknown );
 	if( size(info["uuid"]:"")>0 )
 	    {
 	    part["uuid"] = info["uuid"]:"";
@@ -1400,5 +1420,31 @@ global define map GetFreeSpace( string device, integer testsize,
     return( ret );
     };
 
+global define boolean IsSystemMp( string mount, boolean prefix )
+    ``{
+    boolean ret = contains( system_m_points, mount );
+    if( !ret && prefix )
+	{
+	list mp = filter( `s, system_m_points, ``(s!="/") );
+	foreach( `s, mp,
+	    ``{
+	    ret = ret || find( mount, s + "/" )==0;
+	    });
+	}
+    y2milestone( "mount:%1 prefix:%2 ret:%3", mount, prefix, ret );
+    return( ret );
+    };
 
+global define string RemoveCryptOpts( string opt )
+    ``{
+    string ret = opt;
+    ret = String::CutRegexMatch( ret, ",*loop[^,]*", true );
+    ret = String::CutRegexMatch( ret, ",*encryption=[^,]*", true );
+    if( size(ret)!=size(opt) )
+	{
+	ret = String::CutRegexMatch( ret, "^,", false );
+	y2milestone( "in %1 ret %2", opt, ret );
+	}
+    return( ret );
+    };
 }

@@ -76,7 +76,8 @@ global define addPhysicalVolume( map modify_targets, map targetMap,
     map partition   = Storage::GetPartition( targetMap, maindev+subdev );
     y2milestone( "partition %1", partition );
     
-    if( partition["fsid"]:0 != Partitions::fsid_lvm )
+    if( partition["fsid"]:0 != Partitions::fsid_lvm && 
+        contains( [`primary, `logical], partition["type"]:`none ) )
 	{
 	if( !partition["change_fsid"]:false )
 	    {
@@ -84,6 +85,8 @@ global define addPhysicalVolume( map modify_targets, map targetMap,
 	    change( partition, "ori_fsid",    partition["fsid"]:0 );
 	    change( partition, "ori_fstype" , partition["fstype"]:"" );
 	    }
+	change( partition, "fsid", Partitions::fsid_lvm);
+	change( partition, "fstype", "Linux LVM");
 	}
 
     // if we have /data? the automatic generated mountpoint: delete it  
@@ -108,14 +111,7 @@ global define addPhysicalVolume( map modify_targets, map targetMap,
     modify_targets = addTargetModification( modify_targets, new_create_pv );
     y2debug( "EEE s %1", modify_targets);
 
-
-    /////////////////////////////////////////////////
-    // change targetMap
-
-    change( partition, "fsid",      Partitions::fsid_lvm);
-    change( partition, "fstype",    "Linux LVM");
     change( partition, "lvm_group", current_vg);
-
 
     return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
 };

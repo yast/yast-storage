@@ -118,17 +118,19 @@ define restoretargetmap()
 
 	    integer fsid	= pentry["fsid"]:0;
 	    string  mount	= pentry["mount"]:"";
-	    boolean crypt_fs	= pentry["crypt_fs"]:false;
-	    string  crypt_key = pentry["crypt_key"]:"";
+	    boolean crypt_fs	= pentry["loop_fs"]:false;
+	    string  crypt_key   = pentry["crypt_key"]:"";
+	    string  cypher      = pentry["crypt"]:"";
 	    symbol  used_fs 	= pentry["used_fs"]:`unknown;
 	    boolean format	= pentry["format"]:false;
 	    list region	= pentry["region"]:[];
 	    map bakpentry=$[];
 	    change(bakpentry,"fsid",fsid);
 	    change(bakpentry,"mount",mount);
-	    change(bakpentry,"crypt_fs",crypt_fs);
+	    change(bakpentry,"loop_fs",crypt_fs);
 	    change(bakpentry,"crypt_key",crypt_key);
 	    change(bakpentry,"used_fs",used_fs);
+	    change(bakpentry,"crypt",cypher);
 	    change(bakpentry,"format",format);
 	    change(bakpentry,"region",region);
 	    change(bakpartitionmap,pentry["nr"]:0,bakpentry);
@@ -180,25 +182,29 @@ define restoretargetmap()
 		}
 
 	    string  mount	= pentry["mount"]:"";
-	    boolean crypt_fs	= pentry["crypt_fs"]:false;
-	    string  crypt_key = pentry["crypt_key"]:"";
+	    boolean crypt_fs	= pentry["loop_fs"]:false;
+	    string  crypt_key   = pentry["crypt_key"]:"";
+	    string  cypher      = pentry["crypt"]:"";
 	    symbol  used_fs	= pentry["used_fs"]:`unknown;
 	    boolean format	= pentry["format"]:false;
 
 	    if( usebackup==true)
 		{
 		string  bakmount     = bakpentry["mount"]:"";
-		boolean bakcrypt_fs  = bakpentry["crypt_fs"]:false;
+		boolean bakcrypt_fs  = bakpentry["loop_fs"]:false;
 		string  bakcrypt_key = bakpentry["crypt_key"]:"";
+		string  bakcypher    = bakpentry["crypt"]:"";
 		symbol  bakused_fs   = bakpentry["used_fs"]:`unknown;
 		boolean bakformat    = bakpentry["format"]:false;
 
 		if (mount=="" && bakmount !="" )
 		    change(pentry,"mount",bakmount);
 		if (crypt_fs==false && bakcrypt_fs !=false )
-		    change(pentry,"crypt_fs",bakcrypt_fs);
+		    change(pentry,"loop_fs",bakcrypt_fs);
 		if (crypt_key=="" && bakcrypt_key !="" )
 		    change(pentry,"crypt_key",bakcrypt_key);
+		if (cypher=="" && bakcypher !="" )
+		    change(pentry,"crypt",bakcypher);
 		if (used_fs==`unknown && bakused_fs !=`unknown )
 		    change(pentry,"used_fs",bakused_fs);
 		if (format==false && bakformat !=false )
@@ -239,7 +245,8 @@ perform various checks. <br></p>");
 define boolean HandleFormatPartition( map partition )
     ``{
     boolean format = partition["format"]:false;
-    boolean crypt_fs = partition["crypt_fs"]:false;
+    boolean crypt_fs = partition["loop_fs"]:false &&
+                       partition["crypt"]:""!="none";
     string mount = partition["mount"]:"";
     string device = "";
     boolean retry = false;
@@ -444,17 +451,18 @@ define map DetermineMountPoints(string disk, map target, map mp )
 	string mount = part["mount"]:"";
 	boolean running_system_create_part = 
 	    !installation && part["create"]:false;
-	boolean running_system_remound_part = 
+	boolean running_system_remount_part = 
 	    !installation && contains( remountPartitions, device );
 
 	if( installation || running_system_create_part || 
-	    running_system_remound_part )
+	    running_system_remount_part )
 	    {
 	    if( mount != "" && mount != "swap" && !part["delete"]:false &&
+	        !part["noauto"]:false &&
 		part["fsid"]:0 != 7 )         // ntfs is read-only anyway.
 		{
 		symbol used_fs = part["used_fs"]:`unknown;
-		if( part["crypt_fs"]:false )
+		if( part["loop_fs"]:false )
 		    device = part["loop_dev"]:"";
 		mp[mount] = [device, used_fs, disk];
 		}
@@ -1427,7 +1435,7 @@ damage to your file systems, it is safer to cancel and reboot.
 		    SCR::Execute( .target.bash, 
 				  "/sbin/losetup -d " + p["loop_dev"]:"" );
 		    }
-		if( size(p["fpath"]:"")>0 )
+		if( size(p["fpath"]:"")>0 && p["fpath_remove"]:false )
 		    {
 		    if( SCR::Read( .target.size, fpath )>=0 )
 			{

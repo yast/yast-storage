@@ -68,8 +68,8 @@ HINTS: Always use
   boolean showT_format 		  = true;      // show format flag
   boolean showT_fs 		  = true;      // show filesystem
   boolean showT_mount 		  = true;      // show mountpoint
-  boolean showT_RAID		  = true;      // show assigned RAID device
-  boolean showT_LVM	          = true;      // show assigned LVM device
+  boolean showT_Used		  = true;      // show using entity 
+  boolean showT_Label             = true;      // show assigned label
   
   boolean show_disk               = true;
   boolean edit_cylinder           = true;
@@ -976,8 +976,8 @@ define FillPartitionList ()
 	     if( showT_mount )  a = add(a, "" );
 	     if( showT_cyl )    a = add(a, dev_start_cyl );
 	     if( showT_cyl )    a = add(a, dev_nb_cyl    );
-	     if( showT_RAID )   a = add(a, "");
-	     if( showT_LVM  )   a = add(a, "");
+	     if( showT_Used )   a = add(a, "");
+	     if( showT_Label  ) a = add(a, "");
 	      
 	     table_input = add( table_input, a );
 	     }
@@ -1014,12 +1014,17 @@ define FillPartitionList ()
 		integer  nb_cyl          = partition["region",1]:0;
 		symbol   type            = partition["type"]:`unknown;
 		boolean  format          = partition["format"]:false;
-		boolean  crypt_fs        = partition["crypt_fs"]:false;
+		boolean  crypt_fs        = partition["loop_fs"]:false && partition["crypt"]:"" != "none";
 		symbol   used_fs         = partition["used_fs"]:`unknown;
 		string   mount_point     = partition["mount"]:"";
 		string   filesystem_name = "";
-		string   lvm_group	 = partition["lvm_group"]:"";
-		string   raid_name       = partition["raid_name"]:"";
+		string   used_by   	 = partition["raid_name"]:"";
+		string   label           = partition["label"]:"";
+
+		if( size( partition["lvm_group"]:"")>0 )
+		    {
+		    used_by = "LVM " + partition["lvm_group"]:"";
+		    }
 
 		filesystem_name = partition["fstype"]:"";
 
@@ -1076,14 +1081,23 @@ define FillPartitionList ()
 		if( showT_size )   a = add(a, bytes_of_part);
 		if( showT_format ) a = add(a, format_flag);
 		if( showT_fs )     a = add(a, filesystem_name);
-		if( showT_mount )  a = add(a, mount_point );
+		if( showT_mount )  
+		    {
+		    string tmp = mount_point;
+		    if( partition["noauto"]:false && 
+		        !partition["active"]:false )
+			{
+			tmp = tmp + " *";
+			}
+		    a = add(a, tmp );
+		    }
 		if( showT_cyl )
 		    {
 		    if( real_disk )
 			{
 			a = add(a, to4string(start_cyl));
 			integer num = start_cyl + nb_cyl - 1;
-			a = add(a, to4string(num));
+			a = add(a, to4string(num)+" ");
 			}
 		    else
 			{
@@ -1091,8 +1105,8 @@ define FillPartitionList ()
 			a = add(a, " -- ");
 			}
 		    }
-		if( showT_RAID )   a = add(a, raid_name);
-		if( showT_LVM  )   a = add(a, lvm_group);
+		if( showT_Used )   a = add(a, used_by);
+		if( showT_Label )  a = add(a, label);
 
 		table_input = add( table_input, a );
 		}
@@ -2399,10 +2413,10 @@ global define ChoosePart( string usage )
     if ( showT_cyl )    header = add( header, `Right(_("Start")));
     // Column header: minimum = 4 characters   fill with space if needed
     if ( showT_cyl )    header = add( header, `Right(_("End ")));
-    // Column header: minimum = 6 characters   fill with space if needed
-    if ( showT_RAID )   header = add( header, `Right(_("RAID  ")));
-    // Column header: minimum = 11 characters   fill with space if needed
-    if ( showT_LVM  )   header = add( header, `Right(_("LVM Group  ")));
+    // Column header 
+    if ( showT_Used )   header = add( header, `Left(_("Used by")));
+    // Column header 
+    if ( showT_Label )  header = add( header, `Left(_("Label")));
 
     /////////////////////////////////////////////////////////////////
     //    MAIN LAYOUT
@@ -2766,8 +2780,6 @@ global define ChoosePart( string usage )
 					       select(slot, 0, 0),
 					       select(slot, 1, 0) - select(slot, 0, 0)+1 ],
 				"type"	: create_type,
-				"crypt_fs"	: false,
-				"crypt_key" : "",
 				"nr"	: curr_nr,
 				"device"	: Storage::GetDeviceName( maindev, curr_nr )
 		];
@@ -3101,6 +3113,20 @@ WARNING: All data on this partition will be lost."));
 		if( Popup::YesNo( sformat(_("Do you really want to delete partition %1?"), 
 		                            curr_part["device"]:"" )))
 		    {
+		    if( maindevkey == "/dev/loop" && size(curr_part["fpath"]:"")>0 )
+			{
+			if( Mode::normal && 
+			    Popup::YesNo( sformat(_("
+Should the loop file %1 be also removed"), curr_part["fpath"]:"" )))
+			    {
+			    map tg =  Storage::GetTargetMap();
+			    tg = Storage::SetPartitionData( tg, 
+			                                    curr_part["device"]:"",
+							    "fpath_remove", 
+							    true );
+			    Storage::SetTargetMap( tg );
+			    }
+			}
 		    Storage::DelSubDev( id );
 		    }
 		if( maindevkey == "/dev/md" )

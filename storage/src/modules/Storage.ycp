@@ -339,6 +339,10 @@ global define map AddMountPointInfo( map target )
 	    if( mt != nil )
 		{
 		part["mount"] = mt["file"]:"";
+		if( part["noauto"]:false )
+		    {
+		    part["active"] = true;
+		    }
 		}
 	    return( part );
 	    });
@@ -2523,8 +2527,8 @@ global define list GetOtherLinuxPartitions()``{
 			        Partitions::IsLinuxPartition(p["fsid"]:0)) );
 	    l = filter( `p, l, ``(contains( [`xfs, `ext2, `ext3, `jfs, `reiser],
 	                                    p["used_fs"]:`unknown)));
-	    l = filter( `p, l, ``(!contains( FileSystems::system_m_points,
-	                                    p["mount"]:"" )));
+	    l = filter( `p, l, 
+			``(!FileSystems::IsSystemMp( p["mount"]:"", false )));
 	    if( size(l)>0 )
 		{
 		ret = union( ret, l );
@@ -3000,49 +3004,114 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	});
     if( Mode::normal )
 	{
-	list crypto = [];
+	list mounts = SCR::Read(.proc.mounts);
+	list loop = [];
+	list tab = [];
 	if( SCR::Read( .target.size, "/etc/cryptotab" ) > 0 )
-	    crypto = SCR::Read( .etc.cryptotab );
-	if( size(crypto)>0 )
-	    {
-	    foreach (`e, crypto,
-		``{
-		map stat = SCR::Read( .target.stat, e["file"]:"" );
-		map p = $[];
-		y2milestone( "stat %1", stat );
-		if( stat["isblock"]:false )
+	    tab = SCR::Read( .etc.cryptotab );
+	foreach (`e, tab,
+	    ``{
+	    map v = $[];
+	    v["device"] = e["file"]:"";
+	    v["loop"] = e["loop"]:"";
+	    v["used_fs"] = e["vfstype"]:"";
+	    v["mount"] = e["mount"]:"";
+	    v["crypt"] = "twofish";
+	    loop = add( loop, v );
+	    });
+	y2milestone( "loop %1", loop );
+	tab = [];
+	if( SCR::Read( .target.size, "/etc/fstab" ) > 0 )
+	    tab = SCR::Read( .etc.fstab );
+	foreach (`e, tab,
+	    ``{
+	    map v = $[];
+	    v["device"] = e["spec"]:"";
+	    v["mount"] = e["file"]:"";
+	    v["used_fs"] = e["vfstype"]:"";
+	    list opts = splitstring( e["mntops"]:"", "," );
+	    boolean noauto = size(filter( `s, opts, ``(s=="noauto"))) > 0;
+	    string lopt = select( filter( `s, opts, ``(find(s,"loop")==0) ), 
+				  0, "" );
+	    string algo = select( filter( `s, opts, 
+	                                  ``(find(s,"encryption")==0) ), 
+				  0, "" );
+	    y2milestone( "noauto:%1 lopt:%2 algo:%3", noauto, lopt, algo );
+	    if( size(lopt)>0 )
+		{
+		list tm = splitstring( lopt, "=" );
+		v["loop"] = tm[1]:"";
+		if( size(v["loop"]:"")==0 )
 		    {
-		    p = Storage::GetPartition( targetMap, e["file"]:"" );
-		    }
-		else if( stat["isreg"]:false )
-		    {
-		    if( size(targetMap["/dev/loop"]:$[])==0 )
+		    map t = select( filter( `w, mounts, 
+		                            ``(w["file"]:""==v["mount"]:"")),
+				    0, $[] );
+		    v["loop"] = t["spec"]:"";
+		    if( size(v["loop"]:"")==0 )
 			{
-			targetMap["/dev/loop"] = InitialLoopMaindev();
+			v["loop"] = GetLoopDev(0);
 			}
-		    p = InitialLoopEntry();
-		    map tmp = GetDiskPartition( e["loop"]:"" );
-		    p["nr"] = tmp["nr"]:0;
-		    p["device"] = e["loop"]:"";
-		    p["fpath"] = e["file"]:"";
-		    p["region",1] = SCR::Read( .target.size, e["file"]:"" ) /
-		                    targetMap["/dev/loop","cyl_size"]:1;
 		    }
+		tm = splitstring( algo, "=" );
+		v["crypt"] = tm[1]:"none";
+		v["noauto"] = noauto;
+		loop = add( loop, v );
+		}
+	    else if( noauto )
+		{
+		map p = Storage::GetPartition( targetMap, v["device"]:"" );
 		if( size(p)>0 )
 		    {
-		    p["crypt_fs"] = true;
-		    p["mount"] = e["mount"]:"";
-		    string loop = e["loop"]:"";
-		    y2milestone( "loop=%1", loop );
-		    if( size(loop)>0 )
-			{
-			p["loop_dev"] = loop;
-			p = FileSystems::GetFsysInfos( p );
-			}
-		    targetMap = Storage::SetPartition( targetMap, p );
+		    p["noauto"] = true;
+		    targetMap = Storage::SetPartitionData( targetMap, p );
 		    }
-		});
-	    }
+		}
+	    });
+	y2milestone( "loop %1", loop );
+	foreach (`e, loop,
+	    ``{
+	    map stat = SCR::Read( .target.stat, e["device"]:"" );
+	    map p = $[];
+	    y2milestone( "stat %1", stat );
+	    y2milestone( "loop %1", e );
+	    if( stat["isblock"]:false )
+		{
+		p = Storage::GetPartition( targetMap, e["device"]:"" );
+		}
+	    else if( stat["isreg"]:false )
+		{
+		if( size(targetMap["/dev/loop"]:$[])==0 )
+		    {
+		    targetMap["/dev/loop"] = InitialLoopMaindev();
+		    }
+		p = InitialLoopEntry();
+		map tmp = GetDiskPartition( e["loop"]:"" );
+		p["nr"] = tmp["nr"]:0;
+		p["device"] = e["loop"]:"";
+		p["fpath"] = e["device"]:"";
+		p["region",1] = SCR::Read( .target.size, e["device"]:"" ) /
+				targetMap["/dev/loop","cyl_size"]:1;
+		}
+	    if( size(p)>0 )
+		{
+		p["loop_fs"] = true;
+		p["crypt"] = e["crypt"]:"none";
+		p["mount"] = e["mount"]:"";
+		p["used_fs"] = FileSystems::FsToSymbol( e["used_fs"]:"" );
+		if( e["noauto"]:false )
+		    {
+		    p["noauto"] = true;
+		    }
+		string loop = e["loop"]:"";
+		if( size(loop)>0 )
+		    {
+		    p["loop_dev"] = loop;
+		    p = FileSystems::GetFsysInfos( p );
+		    }
+		y2milestone( "p %1", p );
+		targetMap = Storage::SetPartition( targetMap, p );
+		}
+	    });
 	}
     return targetMap;
     };
@@ -3134,7 +3203,7 @@ global define map GetS390DeviceMap( map targetMap )
 
     foreach( `key, `value, targetMap, ``{
         list part = value["partitions"]:[];
-	if( find( `p, part, ``( p["crypt_fs"]:false ||
+	if( find( `p, part, ``( p["loop_fs"]:false ||
 				size(p["lvm_group"]:"")>0 ||
 				size(p["raid_name"]:"")>0 ||
 				size(p["mount"]:"")>0)) != nil )
@@ -3308,13 +3377,13 @@ global define list AutodetectMultipathRaid( map tg )
  * Find next free loop device.
  * @return string loop_dev ( e.g.: /dev/loop1 ) 
  */
-global define string GetLoopDev()
+global define string GetLoopDev( integer start )
     ``{
     if( Mode::test )
 	return "/dev/loop2";
 
     integer max_loop_dev= 15;
-    integer loop_dev_nb = 0;
+    integer loop_dev_nb = start;
     boolean found_free  = false;
     string  loop_dev    = "";
 
@@ -3348,7 +3417,7 @@ global define boolean SetCryptLoop( map part )
     string loop_dev = part["loop_dev"]:"";
     if( size(loop_dev)==0 )
 	{
-	loop_dev = GetLoopDev();
+	loop_dev = GetLoopDev(0);
 	}
 
     boolean crypt_ok = size(loop_dev)>0;
@@ -3356,7 +3425,8 @@ global define boolean SetCryptLoop( map part )
     y2milestone( "crypt %1 %2", crypt_ok, loop_dev );
 
     map loaded_modules = SCR::Read(.proc.modules);
-    if( part["crypt_fs"]:false && !haskey( loaded_modules, "loop_fish2" ) )
+    if( part["loop_fs"]:false && part["crypt"]:""=="twofish" && 
+        !haskey( loaded_modules, "loop_fish2" ) )
 	{
 	crypt_ok = SCR::Execute( .target.modprobe, "loop_fish2", "");
 	}
@@ -3371,15 +3441,11 @@ global define boolean SetCryptLoop( map part )
 	    part["loop_dev"] = loop_dev;
 
 	    map setloop = 
-		$[ "encryption"    : "twofish",
+		$[ "encryption"    : part["crypt"]:"twofish",
 		   "passwd"        : crypt_passwd,
 		   "loop_dev"      : loop_dev,
 		   "partitionName" : part["device"]:"" ];
 
-	    if( !part["crypt_fs"]:false )
-		{
-		setloop["encryption"] = "none";
-		}
 	    if( part["type"]:`none == `loop )
 		{
 		setloop["partitionName"] = PathToDestdir( part["fpath"]:"" );
@@ -3553,7 +3619,7 @@ global define void DestroyMdOnAllDisks()
 global define map InitialLoopEntry()
     ``{
     map part = $[ "type"     : `loop,
-		  "crypt_fs" : true,
+		  "loop_fs"  : true,
 		  "fstype"   : Partitions::loop_name,
 		  "fsid"     : Partitions::fsid_native,
 		  "region"   : [ 0, 0 ]

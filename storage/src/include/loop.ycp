@@ -91,8 +91,17 @@ global define symbol LoopSetup( boolean edit )
 	    {
 	    n = n+1;
 	    }
-	part["nr"] = n;
-	part["device"] = Storage::GetDeviceName( key, part["nr"]:0 );
+	if( Mode::normal )
+	    {
+	    part["device"] = Storage::GetLoopDev(n);
+	    map d = Storage::GetDiskPartition( part["device"]:"" );
+	    part["nr"] = d["nr"]:0;
+	    }
+	else
+	    {
+	    part["nr"] = n;
+	    part["device"] = Storage::GetDeviceName( key, part["nr"]:0 );
+	    }
 	part["format"] = true;
 	part["create"] = true;
 	part["region",1] = 50;
@@ -192,7 +201,7 @@ global define map LoopExpertDlg( boolean edit, map part, map file_systems )
     UI::ChangeWidget( `id(`loop_create), `Value, part["create"]:false );
     UI::ChangeWidget( `id(`loop_size), `Value, lsize );
     UI::ChangeWidget( `id(`loop_size), `Enabled, part["create"]:false );
-    UI::ChangeWidget( `id(`crypt_fs), `Enabled, false );
+    UI::ChangeWidget( `id(`crypt_fs), `Enabled, true );
 
     map retval = eval(part);
     any ret = `ok;
@@ -284,11 +293,20 @@ Also check the format option.
 		}
 
 	    ret_mp = CheckCryptOk( retval );
+	    boolean crypt = false;
 	    y2milestone( "ret_mp %1", ret_mp );
-	    if( !ret_mp["ok"]:false && UI::WidgetExists( `id(`crypt_fs) ))
-	       {
-	       continue;
-	       }
+	    if( UI::WidgetExists( `id(`crypt_fs)) )
+	        {
+		if( !ret_mp["ok"]:false )
+		    {
+		    continue;
+		    }
+		else
+		    {
+		    crypt = UI::QueryWidget(`id(`crypt_fs), `Value );
+		    }
+	        }
+	    retval["crypt"] = crypt ? "twofish" : "none";
 	    }
         } until( ret == `ok || ret == `cancel || ret == `next ||
 		 ret == `back || ret == `abort );
