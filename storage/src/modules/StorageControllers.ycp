@@ -20,6 +20,7 @@
     import "ModuleLoading";
     import "HwStatus";
     import "Initrd";
+    import "Kernel";
     import "Storage";
     import "StorageDevices";
 
@@ -218,50 +219,56 @@ active DASD devices."));
 // parportInitialize
 
 define void parportInitialize ()
-``{
+    ``{
     // post-load parport module
-    if ((size (postinstall_info) == 0)
-	|| Mode::test)
-    {
+    if ((size (postinstall_info) == 0) || Mode::test)
+	{
 	return;
-    }
+	}
 
     boolean parport_loaded = false;
     boolean parport_pc_loaded = false;
 
     foreach (`postlist, postinstall_info,
-    ``{
+	``{
 	boolean post_modprobe = postlist[0]:false;
 	string post_name      = postlist[1]:"";
-	string post_arg	  = postlist[2]:"";
+	string post_arg	      = postlist[2]:"";
 	string post_vendor    = postlist[3]:"";
 	string post_device    = postlist[4]:"";
 	if (!parport_loaded)
-	{
-	    if (`ok == ModuleLoading::Load ("parport", "", post_vendor, post_device, Mode::manual, post_modprobe))
 	    {
+	    if( `ok == ModuleLoading::Load( "parport", "", post_vendor, 
+	                                    post_device, Mode::manual, true ))
+		{
 		ModulesConf::ModuleArgs ("parport", "");
 		parport_loaded = true;
+		}
 	    }
-
-	}
-	if (!parport_pc_loaded)
-	{
-	    if (`ok == ModuleLoading::Load ("parport_pc", "", post_vendor, post_device, Mode::manual, post_modprobe))
+	if( !parport_pc_loaded)
 	    {
+	    if( `ok == ModuleLoading::Load( "parport_pc", "", post_vendor, 
+	                                    post_device, Mode::manual, true ))
+		{
 		ModulesConf::ModuleArgs ("parport_pc", "");
 		parport_pc_loaded = true;
+		}
 	    }
-	}
 
-	if (`ok == ModuleLoading::Load (post_name, post_arg, post_vendor, post_device, Mode::manual, post_modprobe))
-	{
+	if( `ok == ModuleLoading::Load( post_name, post_arg, post_vendor, 
+	                                post_device, Mode::manual, post_modprobe))
+	    {
 	    ModulesConf::ModuleArgs (post_name, post_arg);
-	}
-    });
+	    Kernel::AddModuleToLoad(post_name);
 
+	    moduleNames = add( moduleNames, post_name );
+	    moduleArgs  = add( moduleArgs, post_arg );
+	    y2milestone( "moduleNames %1", moduleNames );
+	    y2milestone( "moduleArgs %1", moduleArgs );
+	    }
+	});
     return;
-}
+    }
 
 // start a controller (by loading its module)
 // return true if all necessary modules were actually loaded
@@ -332,7 +339,8 @@ define boolean startController (map controller)
 		    {
 		    y2milestone("name: %1 args: %2", module_name, module_args);
 
-		    list vendor_device = prepare_vendor_device_info(controller);
+		    list vendor_device = 
+			ModuleLoading::prepareVendorDeviceInfo(controller);
 
 		    // save data for parportInitialize
 		    postinstall_info = 
@@ -363,6 +371,7 @@ define boolean startController (map controller)
 						     "", "", false, 
 						     module_modprobe );
 			    }
+			y2milestone( "load_result %1", load_result );
 
 			if (load_result == `fail)
 			    {
@@ -379,6 +388,9 @@ define boolean startController (map controller)
 			    moduleArgs  = add (moduleArgs, module_args);
 			    moduleIDs  = add (moduleIDs, module_id);
 
+			    y2milestone( "moduleNames %1", moduleNames );
+			    y2milestone( "moduleArgs %1", moduleArgs );
+			    y2milestone( "moduleIDs %1", moduleIDs );
 			    // put them into initrd
 			    Initrd::AddModule (module_name, module_args);
 			    }
@@ -416,12 +428,12 @@ define boolean startController (map controller)
 
 define boolean anyActive (list resources)
 ``{
-    boolean active = false;
+    boolean active = true;
 
     foreach (`res, resources,
     ``{
-	if (res["active"]:false)
-	    active = true;
+	if (!res["active"]:true)
+	    active = false;
     });
 
     return active;
@@ -451,6 +463,7 @@ global define void Initialize ()
     while( cindex < size(controllers) )
 	{
 	controller = controllers[cindex]:$[];
+	y2milestone( "controller %1", controller );
 
 	cindex = cindex + 1;
 
@@ -461,6 +474,7 @@ global define void Initialize ()
 	if( !(anyActive (controller["resource", "io"]:[]) || 
 	      anyActive (controller["resource", "mem"]:[])))
 	    {
+	    y2milestone( "disabled in BIOS" );
 	    // continue if disabled in BIOS
 	    continue;
 	    }
@@ -468,6 +482,8 @@ global define void Initialize ()
 	startController(controller);
 	} // while (controller)
 
+
+    y2milestone( "postinstall_info %1", postinstall_info );
 
     parportInitialize ();
 
