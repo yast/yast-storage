@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include "WIN_Partition.h"
 #include <ycp/y2log.h>
-#include <y2/ExternalDataSource.h>
+#include <y2util/ExternalDataSource.h>
 
 #define PROGRESS_MSG		"Progress:"
 #define DIRECTORY_MSG		"Directory:"
