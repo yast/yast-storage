@@ -578,11 +578,8 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 	    v["used_fs"] = e["vfstype"]:"";
 	    list<string> opts = splitstring( e["mntops"]:"", "," );
 	    boolean noauto = size(filter(string s, opts, ``(s=="noauto"))) > 0;
-	    string lopt = select( filter(string s, opts, ``(find(s,"loop")==0) ),
-				  0, "" );
-	    string algo = select( filter(string s, opts,
-	                                  ``(find(s,"encryption")==0) ),
-				  0, "" );
+	    string lopt = filter(string s, opts, ``(find(s,"loop")==0) )[0]:"";
+	    string algo = filter(string s, opts, ``(find(s,"encryption")==0))[0]:"";
 	    y2milestone( "noauto:%1 lopt:%2 algo:%3", noauto, lopt, algo );
 	    if( size(lopt)>0 )
 		{
@@ -590,9 +587,8 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 		v["loop"] = tm[1]:"";
 		if( size(v["loop"]:"")==0 )
 		    {
-		    map t = select( filter(map w, mounts,
-		                            ``(w["file"]:""==v["mount"]:"")),
-				    0, $[] );
+		    map t = filter(map w, mounts,
+				   ``(w["file"]:""==v["mount"]:""))[0]:$[];
 		    v["loop"] = t["spec"]:"";
 		    if( size(v["loop"]:"")==0 )
 			{
@@ -1301,7 +1297,7 @@ global define void SetTargetMap( map targets )
     };
 
     global define map<integer,any> GetModifyTargets()``{
-	return lookup(StorageMap, modify_targets_key , $[] );
+	return StorageMap[modify_targets_key]:$[];
     };
 
     /* SubDev defines  ------------------------------------------------------------------ */
@@ -1403,7 +1399,7 @@ global define map GetMountPoints()
 
 
   global define boolean GetTestsuite()``{
-      return lookup( StorageMap, testsuite_key, false);
+      return StorageMap[testsuite_key]:false;
   }
 
   global define void SetTestsuite( boolean value ) ``{
@@ -1411,7 +1407,7 @@ global define map GetMountPoints()
   }
 
   global define boolean GetLvmViewAllMnt()``{
-      return lookup( StorageMap, lvm_view_all_mnt_key, true);
+      return StorageMap[lvm_view_all_mnt_key]:true;
   }
 
   global define void SetLvmViewAllMnt( boolean value ) ``{
@@ -1419,7 +1415,7 @@ global define map GetMountPoints()
   }
 
   global define boolean GetRaidtabCreated()``{
-      return lookup( StorageMap, raidtab_created_key, false);
+      return StorageMap[raidtab_created_key]:false;
   }
 
   global define void SetRaidtabCreated( boolean value ) ``{
@@ -1427,7 +1423,7 @@ global define map GetMountPoints()
   }
 
   global define string GetDoResize()``{
-      return lookup( StorageMap, do_resize_key, "NO" );
+      return StorageMap[do_resize_key]:"NO";
   }
 
   global define void SetDoResize( string value ) ``{
@@ -1435,7 +1431,7 @@ global define map GetMountPoints()
   }
 
   global define string GetPartProposalMode()``{
-      return lookup( StorageMap, part_proposal_mode_key, "accept" );
+      return StorageMap[part_proposal_mode_key]:"accept";
   }
 
   global define void SetPartProposalMode( string value ) ``{
@@ -1443,7 +1439,7 @@ global define map GetMountPoints()
   }
 
   global define boolean GetWholeDisk()``{
-      return lookup( StorageMap, whole_disk_key, false);
+      return StorageMap[whole_disk_key]:false;
   }
 
   global define void SetWholeDisk( boolean value ) ``{
@@ -1451,7 +1447,7 @@ global define map GetMountPoints()
   }
 
   global define boolean GetPartProposalFirst()``{
-      return lookup( StorageMap, part_proposal_first_key, true);
+      return StorageMap[part_proposal_first_key]:true;
   }
 
   global define void SetPartProposalFirst( boolean value ) ``{
@@ -1459,7 +1455,7 @@ global define map GetMountPoints()
   }
 
   global define boolean GetWinDevice()``{
-      return lookup( StorageMap, win_device_key, false);
+      return StorageMap[win_device_key]:false;
   }
 
   global define void SetWinDevice( boolean value ) ``{
@@ -1472,7 +1468,7 @@ global define map GetMountPoints()
      * @return map
      */
     global define map<string, any> GetMainDev(string maindevkey )``{
-	map<string, any> maindev = lookup( GetTargetMap(), maindevkey, $[] );
+	map<string, any> maindev = (map<string, any>)GetTargetMap()[maindevkey]:$[];
 
 	if( maindev == $[] )
 	    {
@@ -1507,7 +1503,7 @@ global define map GetMountPoints()
 global define any GetMainDevParam( string maindevkey, string paramkey, 
                                    any default )
     ``{
-    any param =  lookup( GetMainDev( maindevkey ), paramkey, default );
+    any param =  GetMainDev( maindevkey )[paramkey]:default;
 
     return param;
     }
@@ -1670,13 +1666,13 @@ global define boolean CheckForEvmsRootFs()
 	list<integer> all_record_keys   = (list<integer>) maplist(integer key, any entry , all_record_entries,  ``(  key ));
 
 	if( size( all_record_entries ) > 0 )
-	    return (integer) select( sort(integer x, integer y, all_record_keys , ``(y < x)), 0,1 );
+	    return sort(integer x, integer y, all_record_keys , ``(y < x))[0]:1;
 	else return 0;
     }
 
 
     define void Rollback2Pos(integer pos ) ``{
-	StorageMap = lookup( lookup( StorageMaps, pos, $[] ), storage_map_key , $[] );
+	StorageMap = StorageMaps[pos,storage_map_key]:$[];
 	StorageMaps = filter(integer key, map entry, StorageMaps, ``( key < pos ));
     }
 
@@ -2394,9 +2390,9 @@ global define map<string,map> SetPartitionData( map<string,map> tg,
 			     part["delete"]:false == true));
     if( size(r_part)!=size(tg[disk,"partitions"]:[]) )
 	{
-	map p = (map) select( filter(map part, tg[disk,"partitions"]:[],
-				``(part["device"]:"" == device &&
-				   part["delete"]:false == false)), 0, $[] );
+	map p = filter( map part, tg[disk,"partitions"]:[],
+		        ``(part["device"]:"" == device &&
+			   part["delete"]:false == false))[0]:$[];
 	if( size(p)>0 )
 	    {
 	    p[key] = value;
@@ -2419,9 +2415,9 @@ global define map<string,map> DelPartitionData( map<string,map> tg,
 			     part["delete"]:false == true));
     if( size(r_part)!=size(tg[disk,"partitions"]:[]) )
 	{
-	map p = (map) select( filter(map part, tg[disk,"partitions"]:[],
-				``(part["device"]:"" == device &&
-				   part["delete"]:false == false)), 0, $[] );
+	map p = filter( map part, tg[disk,"partitions"]:[],
+			``(part["device"]:"" == device &&
+			   part["delete"]:false == false))[0]:$[];
 	if( size(p)>0 )
 	    {
 	    p = filter(string k, any e, (map<string,any>)p, ``(k != key) );
@@ -2480,13 +2476,13 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
 
     global define any GetSubDevParam(string subdevkey, string paramkey )``{
 
-	any param = lookup( GetSubDev(subdevkey ) , paramkey, nil );
+	any param = GetSubDev(subdevkey )[paramkey]:nil;
 
 	if( param == nil )
 	{
 
 	    y2milestone(" GetSubDevParam try to return default subdev parameter.");
-	    param = lookup ( default_sub_dev_param, paramkey, nil );
+	    param = default_sub_dev_param[paramkey]:nil;
 	}
 	if( param == nil )
 	{
@@ -2530,7 +2526,7 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
     /* For IsSubDev... defines use GetSubDevList( .. , .. , .. )``{}; */
 
     global define boolean IsSubDevVirtual(string subdevkey )``{
-	return lookup( GetSubDev( subdevkey ) , "create", false );
+	return GetSubDev( subdevkey )["create"]:false;
     };
 
 
@@ -2775,7 +2771,7 @@ global define void SetWizardKey( string key )
     }
 
   global define integer NumLoopDevices() ``{
-    return( lookup( GetClassifiedUserSettings(), "crypt_nb", 0 ) );
+    return( GetClassifiedUserSettings()["crypt_nb"]:0 );
     }
 
   global define map IdFromTarget( map tg, string id )
@@ -2786,9 +2782,9 @@ global define void SetWizardKey( string key )
 	string maindev = GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
 	string subdev  = GetSubDevIndex(id); // i.e. 1        for /dev/hda1
 
-	part = (map) select( filter(map part, tg[maindev,"partitions"]:[],
+	part = filter( map part, tg[maindev,"partitions"]:[],
 		       ``( sformat("%1", part["nr"]:(any)"") == subdev &&
-			   part["delete"]:false == false) ), 0, $[]);
+			   part["delete"]:false == false) )[0]:$[];
 	}
     y2debug( "IdFromTarget id:%1 map:%2", id, part );
     return( part );
@@ -2799,8 +2795,8 @@ global define void SetWizardKey( string key )
 
     global define void DebugStorage()``{
 
-	y2milestone(sformat("StorageMaps: %1",StorageMaps));
-	y2milestone(sformat("Storage:%1",StorageMap));
+	y2milestone("StorageMaps: %1",StorageMaps);
+	y2milestone("Storage:%1",StorageMap);
     }
 
 
@@ -3236,9 +3232,8 @@ global define integer FreeCylAfter( map disk, map partition )
         }
     if( partition["type"]:`primary == `logical )
 	{
-	map ext = (map) select( filter(map part, disk["partitions"]:[],
-				       ``( part["type"]:`primary==`extended )),
-					   0, $[] );
+	map ext = filter( map part, disk["partitions"]:[],
+			  ``( part["type"]:`primary==`extended ))[0]:$[];
 	next_used_cyl = ext["region",0]:0+ext["region",1]:0;
 	}
     if( cylinder < next_used_cyl )
@@ -3742,8 +3737,7 @@ global define boolean PerformLosetup( map& loop, boolean format )
 
 global define boolean SetCryptLoop( map& part )
     ``{
-    string crypt_passwd = lookup( GetClassifiedUserSettings(),
-                                  part["crypt_key"]:"", "");
+    string crypt_passwd = GetClassifiedUserSettings()[part["crypt_key"]:""]:"";
     string loop_dev = part["loop_dev"]:"";
 
     boolean crypt_ok = size(loop_dev)>0;
@@ -3959,8 +3953,7 @@ global define map GetBootPartition( string disk )
     ``{
     map ret = $[];
     map tg = GetTargetMap();
-    ret = select( (list<map>) filter( map p, tg[disk,"partitions"]:[], ``(p["boot"]:false) ),
-		  0, $[]);
+    ret = filter( map p, tg[disk,"partitions"]:[], ``(p["boot"]:false))[0]:$[];
     y2milestone( "disk:%1 ret:%2", disk, ret );
     return( ret );
     }
@@ -4108,7 +4101,7 @@ global define void UpdateFstabDiskmap( map diskmap )
     while( line<=AsciiFile::NumLines( crtab ) )
 	{
 	map l = AsciiFile::GetLine( crtab, line );
-	n = HdDiskMap( l["fields",0]:"", diskmap );
+	n = HdDiskMap( l["fields",1]:"", diskmap );
 	if( n != l["fields",1]:"" )
 	    {
 	    AsciiFile::ChangeLineField( crtab, line, 1, n );

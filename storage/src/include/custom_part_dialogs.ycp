@@ -171,8 +171,8 @@ define string DlgUpdateCryptFs( string device, string mount )
 
 // translator comment: %1 is the device name, %2 is a directory
 //            example: "...password for device /dev/hda6 mounted on /var"
-    string enter = _("You have to enter your crypt password for 
-device %1 mounted on %2");
+    string enter = sformat(_("You have to enter your crypt password for 
+device %1 mounted on %2"),device,mount);
 	     
     UI::OpenDialog(
 	     `opt(`decorated ),
@@ -191,7 +191,7 @@ device %1 mounted on %2");
 					  `HSpacing(4),
 					  `VBox(
 						// advise user to remember his new password
-						`Label(sformat(enter,device,mount)),
+						`Label(enter),
 						`VSpacing(),
 	 
 						`Left(`Password(`id("pw1"),
@@ -319,7 +319,7 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
     term contents 	= `VBox(`VSpacing (1));
     string helptext   = "";
     
-    foreach( map option, lookup( fs_define, `options, []),  
+    foreach( map option, fs_define[`options]:[],  
 	``{
 	term emptyterm = `Empty();
 	contents = add( contents, option[`widget]:emptyterm);
@@ -762,7 +762,7 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
     y2debug( "new=%1 swap=%2", new_val, is_swap );
     foreach( symbol file_system_name, map file_system_map, file_systems, 
 	``{
-	if( lookup( file_system_map, `supports_format, false ) )
+	if( file_system_map[`supports_format]:false )
 	    {
 	    fs_sel[file_system_name] = $[];
 	    fs_sel[file_system_name,"text"] = file_system_map[`name]:"Ext2";
@@ -868,7 +868,7 @@ define term SizeDlg( map new_val , integer cyl_size , boolean edit_size )
     string str_cyl_size =  substring( sformat( "%1", mb_cyl_size ), 0, 4);
 
 
-    if( lookup ( new_val , "create" , false ) && edit_size )
+    if( new_val["create"]:false && edit_size )
     {		
 	// label text 
 	return `Frame ( _("Size"),
@@ -894,7 +894,7 @@ define term SizeDlg( map new_val , integer cyl_size , boolean edit_size )
 			    +  _("\nStart cylinder:")
 			    // label text
 			    +  _("\nEnd cylinder:  ") )),
-		    `Left(`Label( lookup( new_val , "fstype", "") 
+		    `Left(`Label( new_val["fstype"]:""
 			    + "\n " + start_cyl
 			    + "\n " + end_part ))
 		    ));
@@ -1063,7 +1063,7 @@ define map GetFirstFilesystemDefinition( integer fsid, map<symbol,map> file_syst
     if( size( define_list ) == 0) 
 	return $[];
     else 
-	return select(define_list, 0, $[]);
+	return define_list[0]:$[];
     }
   
   
@@ -1346,20 +1346,19 @@ define term TargetShowBarGraph( map target, string dev )
     list partitions_size = [];
     list partitions_text = [];
     integer sum_used     = 0;
-    integer cyl_size     = lookup( target, "cyl_size", 1);
-    integer cyl_count    = lookup( target, "cyl_count", 1);
+    integer cyl_size     = target["cyl_size"]:1;
+    integer cyl_count    = target["cyl_count"]:1;
     integer min_size     = tointeger( cyl_count / 8 );
 
     
     y2milestone( " target %1" ,target );
-    y2milestone( " parts %1", lookup( target, "partitions", [] ));
+    y2milestone( " parts %1", target["partitions"]:[] );
     
-    foreach( map part, lookup( target, "partitions", [] ), 
+    foreach( map part, target["partitions"]:[],
 	``{
-	if( lookup (part, "type" , `primary ) != `extended &&
-	    lookup (part, "delete", false   ) == false )
+	if( part["type"]:`primary != `extended && !part["delete"]:false )
 	    {
-	    integer part_size =  select( lookup( part, "region", [0,0]),1,0);
+	    integer part_size =  part["region",1]:0;
 	    string  part_size_str = "";
 
 	    part_size_str = ByteToHumanString(part_size * cyl_size);
@@ -1370,14 +1369,14 @@ define term TargetShowBarGraph( map target, string dev )
       
 	    partitions_size = add( partitions_size , part_size);
 
-	    string part_text =  lookup( part, "mount","");
+	    string part_text =  part["mount"]:"";
 
 	    if( part_text  == "" || part_text == nil )
-		part_text = dev + sformat("%1", lookup( part, "nr", (any)0));
+		part_text = dev + sformat("%1", part["nr"]:(any)0);
 
 	    part_text = part_text + "\n" + part_size_str; 
 	    
-	    partitions_text = add( partitions_text , part_text );
+	    partitions_text = add( partitions_text, part_text );
 	    }
 	});
 
@@ -1612,7 +1611,7 @@ Choose Cancel unless you know exactly what you are doing.
 
 	    if( dev == del_dev )
 		{
-		list<map> partitions = lookup( target, "partitions", [] );
+		list<map> partitions = target["partitions"]:[];
 		partitions      = filter( map part, partitions, 
 		                          ``( !part["delete"]:false ));
 

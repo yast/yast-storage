@@ -257,8 +257,8 @@ Windows partition by other means.
       if ( size(mother_part) != 1 ) return -1;	// should be exactly one
 
       map ext_part = mother_part[0]:$[];	// the extended partition
-      integer p_start  = select(lookup(ext_part, "region", [0,0]), 0, 0);
-      integer p_length = select(lookup(ext_part, "region", [0,0]), 1, 0);
+      integer p_start  = ext_part["region",0]:0;
+      integer p_length = ext_part["region",1]:0;
 
       integer ext_free = p_start + p_length - start_cylinder;
 
@@ -277,7 +277,7 @@ Windows partition by other means.
   {
       // get the selected target device from the target map
       //
-      target = lookup( targets, target_is, $[] );
+      target = targets[target_is]:$[];
 
       if ( target == $[] )
       {
@@ -293,7 +293,7 @@ Windows partition by other means.
 
       // get the cylinder size of this device (used later for region calculation)
       //
-      cyl_size = lookup( target, "cyl_size", -1 );
+      cyl_size = target["cyl_size"]:-1;
 
       if ( cyl_size == -1 )
       {
@@ -305,7 +305,7 @@ Windows partition by other means.
 	  
       // get the partition list from the target map
       //
-      partitions = lookup( target, "partitions", [] );
+      partitions = target["partitions"]:[];
 
       if ( partitions == [] )
       {
@@ -320,8 +320,9 @@ Windows partition by other means.
       // This is actually obsolete since the invention of the targets-restore-mechanism
       // but left in for safeness reasons.
       //
-      partitions = filter (map<string,any> pentry, partitions, ``( ! lookup (pentry, "create", false) &&
-						    ! lookup (pentry, "resize", false)    ));
+      partitions = filter( map<string,any> pentry, partitions, 
+                           ``( !pentry["create"]:false &&
+			       !pentry["resize"]:false ));
 
       // reset all "delete" partitions, they will be re-created
       // (this ensures a 'clean' partition list if this dialogue is re-entered.
@@ -336,14 +337,14 @@ Windows partition by other means.
       // This is the start of the new partitions list.
       //
       partitions_new = filter( map<string,any> pentry, partitions,
-			    ``(lookup(pentry, "nr", -1) != tointeger(do_resize)));
+			    ``(pentry["nr"]:-1 != tointeger(do_resize)));
 
       y2milestone( "New partition list without windows partition: <%1>", partitions_new );
 
       // get the windows partition from the old list 
       //
       list p_list = filter( map<string,any> pentry, partitions,
-			    ``(lookup(pentry, "nr", -1) == tointeger(do_resize)));
+			    ``(pentry["nr"]:-1 == tointeger(do_resize)));
 
       if ( size( p_list ) != 1 )	// there should be only one
       {
@@ -360,10 +361,10 @@ Windows partition by other means.
 
       // check if this partition is the right one
       //
-      if ( Storage::GetDeviceName( target_is, lookup( win_partition, "nr", -1 )) != win_device )
+      if ( Storage::GetDeviceName( target_is, win_partition["nr"]:-1) != win_device )
       {
 	  y2error( "Partition from the list <%1> is not the assigned windows device <%2>.",
-		   Storage::GetDeviceName( target_is, lookup( win_partition, "nr", -1 )),
+		   Storage::GetDeviceName( target_is, win_partition["nr"]:-1 ),
 		   win_device );
 	  internal_error();
 	  return( `abort );	// abort installation
@@ -382,7 +383,7 @@ Windows partition by other means.
 
       // Get region from win partition
       //
-      region = lookup( win_partition, "region", [] );
+      region = win_partition["region"]:[];
 
       if ( size( region ) != 2 )
       {
@@ -421,37 +422,38 @@ Windows partition by other means.
       y2debug( ".run.df: %1", df_result );
 
       // filter out headline and other invalid entries
-      df_result = filter( map part, df_result, ``( substring ( lookup( part, "spec", "" ), 0, 1 ) == "/" ) );
+      df_result = filter( map part, df_result, 
+                          ``( substring( part["spec"]:"", 0, 1 ) == "/" ));
 
       foreach( map part, df_result,
-      ``{
-	  if ( lookup( part, "spec", "" ) == win_device )	// find right entry
-	  {
+	  ``{
+	  if( part["spec"]:"" == win_device )	// find right entry
+	      {
 	      // get the usage values
 	      //
-	      win_used = tointeger( lookup( part, "used", "-1" ));
-	      win_free = tointeger( lookup( part, "free", "-1" ));
+	      win_used = tointeger(part["used"]:"-1");
+	      win_free = tointeger(part["free"]:"-1");
 
-	      if ( win_used != -1 && win_free != -1 )
-	      {
+	      if( win_used != -1 && win_free != -1 )
+		  {
 		  win_used = win_used / 1024;	// MB
 		  win_free = win_free / 1024;	// MB
 		  
 		  y2milestone( ".run.df: win_used: <%1> win_free:<%2>", win_used, win_free );
+		  }
 	      }
-	  }
-      });
+	  });
 
       if ( win_used == -1 || win_free == -1 )
-      {
+	  {
 	  y2error( "The sizes for device <%1> could not be examined in df_result <%2>. Canceled",
 		   win_device, df_result );
 
 	  internal_error();
 	  return( `abort );	// abort installation
-      }
+	  }
       else
-      {
+	  {
 	  // Apply some checks to determine if installing Linux is feasible at all.
 	  //
 	  boolean feasible = true;
@@ -475,23 +477,24 @@ Windows partition by other means.
 	  // Now see if the so calculated Linux space is big enough
 	  //
 	  if ( feasible )
-	  {
+	      {
 	      if ( win_free - min_win_free < linux_min )
-	      {
+		  {
 		  feasible = false;
-	      }
+		  }
 	      else
-	      {
+		  {
 		  // Try to reserve 1.5 GB for linux (default installation).
 		  // Otherwise get as much as possible
 		  //
-		  if ( win_free - min_win_free > 1500 ) linux_size = 1500;
-		  else					linux_size = win_free - min_win_free;
+		  if ( win_free - min_win_free > 1500 ) 
+		      linux_size = 1500;
+		  else
+		      linux_size = win_free - min_win_free;
+		  }
 	      }
-	  }
-
-	  if ( ! feasible )
-	  {
+	  if( ! feasible )
+	      {
 	      y2error( "Current Windows device <%1> has not enough room for Linux. Canceled", win_device );
 	      y2error( "Space calculation: win_used: <%1> win_free: <%2> min_win_free: <%3> linux_min: <%4> linux_size: <%5>",
 		       win_used, win_free, min_win_free, linux_min, linux_size );
@@ -536,9 +539,10 @@ Please be patient.
 ");
       
 	  UI::OpenDialog(`opt(`decorated), `VBox(`Label(explanation)));
+	  string cmd = "/usr/sbin/parted -s " + target_is + " check " + do_resize;
 
-	  y2milestone ("running /usr/sbin/parted -s " + target_is + " check " + do_resize );
-	  local_ret = SCR::Execute(.target.bash, "/usr/sbin/parted -s " + target_is + " check " + do_resize);
+	  y2milestone ("running: %1", cmd );
+	  local_ret = SCR::Execute(.target.bash, cmd );
 	  
 	  UI::CloseDialog();
 	  
@@ -796,7 +800,7 @@ installation) on the partition.
       win_partition = add( win_partition, "new_size",   new_win_size );
 
       // save the original length of windows partition, if it is not already saved
-      if ( lookup( win_partition, "ori_length", -1 ) == -1 )
+      if ( win_partition["ori_length"]:-1 == -1 )
 	  {
           integer ori_length   = region[1]:0;
 	  win_partition        = add( win_partition, "ori_length", ori_length );
@@ -847,12 +851,12 @@ installation) on the partition.
       //
       integer pseudo_length = -1;	// init
       
-      if ( lookup(win_partition, "type", `dummy) == `primary ) // Win partition is primary
+      if ( win_partition["type"]:`dummy == `primary ) // Win partition is primary
       {
 	  y2milestone( "Windows partition is primary" );
-	  pseudo_length = lookup (target, "cyl_count", 0) - win_start - new_length_i;
+	  pseudo_length = target["cyl_count"]:0 - win_start - new_length_i;
       }
-      else if ( lookup(win_partition, "type", `dummy) == `logical ) // Win partition is logical within extended
+      else if ( win_partition["type"]:`dummy == `logical ) // Win partition is logical within extended
       {
 	  y2milestone( "Windows partition is logical within extended" );
 	  pseudo_length = get_extended_free( partitions_new, pseudo_start );
@@ -884,7 +888,7 @@ installation) on the partition.
       // now let the automatic partitioner do its work
       //
 
-      disk_size 	= lookup (target, "cyl_count", 1);
+      disk_size 	= target["cyl_count"]:1;
       full_region 	= [ 0, disk_size ];
       size_of_boot 	= Partitions::MinimalNeededBootsize();
       size_of_swap 	= 1024*1024*Partitions::SwapSizeMb(0);

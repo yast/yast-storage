@@ -50,7 +50,7 @@
 
 define integer size_of_region (list<integer> region, 
                                           integer bytes_per_unit) ``{
-	return select (region, 1,0) * bytes_per_unit;
+	return region[1]:0 * bytes_per_unit;
     };
 
     // Return the number of units that holds at least BYTES
@@ -63,13 +63,13 @@ define integer size_to_units( integer bytes,
     // Return the start of the region.
 
 define integer start_of_region (list<integer> region) ``{
-	return select (region, 0,0);
+	return region[0]:0;
     };
 
     // Return the end of the region, ie. start of the next region
 
 define integer end_of_region (list<integer> region) ``{
-	return select (region, 0,0) + select (region, 1,0);
+	return region[0]:0 + region[1]:0;
     };
 
     // Return the number of primary partitions
@@ -78,7 +78,7 @@ define integer num_primary (list<map> partitions) ``{
 	integer n = 0;
 
 	foreach (map pentry, partitions, ``{
-	    if (lookup (pentry, "type", `unknown) == `primary)
+	    if (pentry["type"]:`unknown == `primary)
 		n = n + 1;
 	});
 
@@ -120,9 +120,9 @@ define boolean contiguous_selection (list<map> selection) ``{
 	list<integer>    last_region = nil;
 
 	foreach (map pentry, selection, ``{
-	    if (!lookup (pentry, "create", false)) {
-		list<integer> region = (list<integer>) lookup (pentry, "region", []);
-		symbol type = lookup (pentry, "type", `unknown);
+	    if (!pentry["create"]:false) {
+		list<integer> region = pentry["region"]:[];
+		symbol type = pentry["type"]:`unknown;
 		if ((last_region != nil)
 		    && (end_of_region (last_region) != start_of_region (region)))
 		{
@@ -207,7 +207,7 @@ define list<integer> calculate_selected_region( list selection,
 define boolean can_create_logical( list<map> partitions )
     ``{
     list logicals = filter( map pentry, partitions,
-			    ``(lookup (pentry, "type", `unknown) == `logical));
+			    ``(pentry["type"]:`unknown == `logical));
     integer num_logical = size (logicals);
     return ((first_logical_nr + num_logical + 3) <= (max_partitions + 1));
     };
@@ -227,10 +227,10 @@ define boolean bootable(list<integer> region, integer bps)
     // Return: true if partition is FAT, false otherwise
     //
 define boolean is_fat_partition( map partition ) ``{
-	return ( lookup( partition, "fsid", -1 ) == 0x06 ||	// FAT16
-		 lookup( partition, "fsid", -1 ) == 0x0b ||	// Win95 FAT32 CHS
-		 lookup( partition, "fsid", -1 ) == 0x0c ||	// Win95 FAT32 LBA
-		 lookup( partition, "fsid", -1 ) == 0x0e );	// Win95 FAT16 LBA	
+	return ( partition["fsid"]:-1 == 0x06 ||	// FAT16
+		 partition["fsid"]:-1 == 0x0b ||	// Win95 FAT32 CHS
+		 partition["fsid"]:-1 == 0x0c ||	// Win95 FAT32 LBA
+		 partition["fsid"]:-1 == 0x0e );	// Win95 FAT16 LBA	
     }
 
 
@@ -239,9 +239,9 @@ define boolean is_fat_partition( map partition ) ``{
     // Return: true if partition is NTFS, false otherwise
     //
 define boolean is_ntfs_partition( map partition ) ``{
-	return ( lookup( partition, "fsid", -1 ) == 0x07 || 	// HPFS/NTFS
-		 lookup( partition, "fsid", -1 ) == 0x86 || 	// NTFS-Datenträger
-		 lookup( partition, "fsid", -1 ) == 0x87 );	// NTFS-Datenträger
+	return ( partition["fsid"]:-1 == 0x07 || 	// HPFS/NTFS
+		 partition["fsid"]:-1 == 0x86 || 	// NTFS-Datenträger
+		 partition["fsid"]:-1 == 0x87 );	// NTFS-Datenträger
     }
 
     
@@ -254,9 +254,9 @@ define map get_last_used_partition( list<map> partitions ) ``{
 	integer minor = -1;
 
 	foreach( map partition, partitions, ``{
-	    if ( tointeger(lookup(partition, "nr", "-1")) > minor )
+	    if ( tointeger(partition["nr"]:"-1") > minor )
 	    {
-		minor = tointeger(lookup(partition, "nr", "-1"));
+		minor = tointeger(partition["nr"]:"-1");
 		last_partition = partition;
 	    }
 	});
@@ -282,7 +282,7 @@ define map can_resize( list<map> partitions ) ``{
 	// This space would be there as a pseudo partition of type `free.
 	//
 	list<map> partitions_local =
-	    filter( map pentry, partitions, ``( lookup(pentry, "type", `dummy) != `free ));
+	    filter( map pentry, partitions, ``( pentry["type"]:`dummy != `free ));
 
 	last_used_partition = get_last_used_partition( partitions_local );
 	
@@ -398,15 +398,15 @@ define integer check_win_nt_system( map disk )
     // The returned list is sorted by partition number instead of region
 
 define list<map<string, any> > renumber_logical_partitions (list<map<string, any> > partitions) ``{
-	partitions = sort (map<string, any> a, map<string, any> b, partitions, ``(lookup (a, "nr", 0) < lookup (b, "nr", 0)));
+	partitions = sort (map<string, any> a, map<string, any> b, partitions, ``(a["nr"]:0 < b["nr"]:0));
 	integer logicals_deleted = 0;
 	return maplist (map<string, any> pentry, partitions, ``{
-	    if (lookup (pentry, "type", `unknown) == `logical) {
-		if (lookup (pentry, "delete", false))
+	    if (pentry["type"]:`unknown == `logical) {
+		if (pentry["delete"]:false)
 		    logicals_deleted = logicals_deleted + 1;
 		else
 		    pentry = add (pentry, "nr",
-			    lookup (pentry, "nr", 0) - logicals_deleted);
+			    pentry["nr"]:0 - logicals_deleted);
 	    }
 	    return pentry;
 	});
@@ -415,11 +415,11 @@ define list<map<string, any> > renumber_logical_partitions (list<map<string, any
     // Find unused space at the end of the extended partition
 define list<integer> unused_extended_region (list<map> partitions) ``{
 	list<integer> extended = extended_region (partitions);
-	list logicals = filter (map pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
+	list logicals = filter (map pentry, partitions, ``(pentry["type"]:`unknown == `logical));
 	integer end_of_logicals = 0;
 
 	if (size (logicals) > 0)
-	    end_of_logicals = end_of_region (lookup ((map)select (logicals, size (logicals) - 1,$[]), "region", []));
+	    end_of_logicals = end_of_region(logicals[size(logicals)-1,"region"]:[]);
 	else
 	    end_of_logicals = start_of_region (extended);
 
@@ -432,11 +432,11 @@ define list<integer> unused_extended_region (list<map> partitions) ``{
     // Find unused space at the start of the extended partition
 define list<integer> unused_logical_region (list<map> partitions) ``{
 	list<integer> extended = extended_region (partitions);
-	list logicals = filter (map pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
+	list logicals = filter (map pentry, partitions, ``(pentry["type"]:`unknown == `logical));
 	integer start_of_logicals = 0;
 
 	if (size (logicals) > 0)
-	    start_of_logicals = start_of_region (lookup ((map)select (logicals, 0, $[]), "region", []));
+	    start_of_logicals = start_of_region (logicals[0,"region"]:[]);
 	else
 	    start_of_logicals = start_of_region (extended);
 

@@ -39,28 +39,27 @@ define list resize_partition( list<map> partitions, integer nr,
 			      integer win_max_length ) // in cyl
     ``{
 
-    map win_part = select(filter( map c_part, partitions,
-			``(lookup(c_part, "prop_reuse_nr", nil)==nr
-			   && (!lookup(c_part, "delete", false)))),0,$[]);
+    map win_part = filter( map c_part, partitions,
+			   ``(c_part["prop_reuse_nr"]:-1==nr &&
+			      !c_part["delete"]:false))[0]:$[];
 
-      list other_parts = filter( map c_part, partitions,
-			``( ! (lookup(c_part, "prop_reuse_nr", nil)==nr
-			       && (!lookup(c_part, "delete", false)))));
+    list other_parts = filter( map c_part, partitions,
+			       ``( c_part["prop_reuse_nr"]:-1!=nr ||
+			           c_part["delete"]:false ));
 
-      list region = lookup( win_part, "region", [] );
+    list region = win_part["region"]:[];
 
       // save the original length of windows partition, if it is not already saved
-      if ( lookup( win_part, "ori_length", -1 ) == -1 )
-      {
-          integer ori_length   = (integer) select( region, 1, 0 );
-	  win_part             = add( win_part, "ori_length", ori_length );
-      }
+    if( win_part["ori_length"]:-1 == -1 )
+	{
+	win_part["ori_length"] = region[1]:0;
+	}
 
-      win_part    = add( win_part, "resize",   true);
-      win_part    = add( win_part, "new_size", win_size / (1024*1024));
-      region      = [ select( region, 0,0), win_length ];
-      win_part    = add( win_part, "region", region );
-      win_part    = add( win_part, "win_max_length", win_max_length );
+      win_part["resize"] = true;
+      win_part["new_size"] = win_size / (1024*1024);
+      region      = [ region[0]:0, win_length ];
+      win_part["region"] = region;
+      win_part["win_max_length"] = win_max_length;
 
       if ( win_part == $[] || win_part == nil || nr == -1 || win_length == -1)
       {
@@ -96,13 +95,13 @@ define list resize_partition( list<map> partitions, integer nr,
 define list delete_partition( list<map> partitions, integer nr )
   ``{
 
-      map part = select(filter( map c_part, partitions,
-			    ``(     lookup(c_part, "prop_reuse_nr", nil) == nr
-				    && (!lookup(c_part, "delete", false)))),0,$[]);
+      map part = filter( map c_part, partitions,
+			 ``( c_part["prop_reuse_nr"]:-1 == nr &&
+			     !c_part["delete"]:false))[0]:$[];
 
       list<map> other_parts = filter( map c_part, partitions,
-			``( ! (lookup(c_part, "prop_reuse_nr", nil) == nr
-			       && (!lookup(c_part, "delete", false)))));
+				      ``( c_part["prop_reuse_nr"]:-1 != nr ||
+					  c_part["delete"]:false));
 
       part = add( part, "mount", "");
       part = add( part, "delete", true);
@@ -120,16 +119,16 @@ define list delete_partition( list<map> partitions, integer nr )
       ///////////////////////////////////////////////
       // renumber logical values
       partitions      = add( other_parts, part );
-      integer real_nr = lookup( part, "nr", 99);
+      integer real_nr = part["nr"]:99;
 
-      if ( lookup( part, "type", `unknown )  == `logical )
+      if ( part["type"]:`unknown == `logical )
       {
 	  partitions = maplist( map parti, partitions , ``(
 	  {
 	      // only the valid ones
-	      if ( (lookup( parti,"delete",false) == false) &&  (lookup( parti, "nr", 0) > real_nr) )
+	      if ( !parti["delete"]:false &&  parti["nr"]:0 > real_nr )
 	      {
-		  return( add( parti, "nr",  lookup( parti, "nr", 0)-1  ));
+		  return( add( parti, "nr",  parti["nr"]:1-1  ));
 	      }
 	      else
 	      {
@@ -171,13 +170,13 @@ define list delete_partition( list<map> partitions, integer nr )
 
 define list reuse_partition( list<map> partitions, integer nr, string mount )
   ``{
-      map part = (map) select(filter( map c_part, partitions,
-			    ``(     lookup(c_part, "prop_reuse_nr", nil) == nr
-				    && (!lookup(c_part, "delete", false)))),0,$[]);
+      map part = filter( map c_part, partitions,
+			 ``( c_part["prop_reuse_nr"]:-1 == nr &&
+			     !c_part["delete"]:false))[0]:$[];
 
       list other_parts = filter( map c_part, partitions,
-			``( ! (lookup(c_part, "prop_reuse_nr", nil)==nr
-			       && (!lookup(c_part, "delete", false)))));
+				 ``( c_part["prop_reuse_nr"]:-1 != nr ||
+				     c_part["delete"]:false));
 
       ////////////////////////////////////////////////
       // suggest the default filesystem,
@@ -296,7 +295,7 @@ define list create_partition( list<map>    partitions, integer start_cyl,
 	                          ``( find( integer nr, dev_nb, 
 				           ``(nr == base_nr)) == nil));
 
-	    nr = (integer) select( sort( result ), 0, 0 );
+	    nr = sort( result )[0]:0;
 	    y2debug( "New logical nr: %1", nr );
 	    }
 
@@ -449,12 +448,12 @@ define void AddHit( string mode, map slot, string type, map boot_slot,
 define void DumpPartitionList ( map<string,map> targets)
     ``{
 	foreach ( string disk_dev_name, map disk, targets, ``{
-	    integer cyl_count  = lookup ( disk, "cyl_count", 0  );
-	    integer cyl_size   = lookup ( disk, "cyl_size",  1000000    );
-	    string  vendor     = lookup ( disk, "vendor",    "" );
-	    string  model      = lookup ( disk, "model",     "" );
+	    integer cyl_count  = disk["cyl_count"]:0;
+	    integer cyl_size   = disk["cyl_size"]:1000000;
+	    string  vendor     = disk["vendor"]:"";
+	    string  model      = disk["model"]:"";
 
-	    y2debug( sformat( "OUT: %1 has %2cyl, cylsize: %3 KB", disk_dev_name, cyl_count,  cyl_size/1000 ) );
+	    y2debug( "OUT: %1 has %2cyl, cylsize: %3 KB", disk_dev_name, cyl_count,  cyl_size/1000 );
 
 	    if ( !disk["is_lvm_vg"]:false && find( disk_dev_name, "/dev/evms" )!=0 )
 		{
@@ -477,30 +476,30 @@ define void DumpPartitionList ( map<string,map> targets)
 
 			if ( !Arch::s390 () )
 			    {
-			    part_dev_name = Storage::GetDeviceName( disk_dev_name, lookup ( partition, "nr", 0) );
+			    part_dev_name = Storage::GetDeviceName( disk_dev_name, partition["nr"]:0 );
 			    }
 			else
 			    {
 			    // s390:
 			    part_dev_name = substring( disk_dev_name, 5);
-			    part_id       = sformat( " (%1)", lookup ( disk, "bios_id", "") );
+			    part_id = sformat( " (%1)", disk["bios_id"]:"");
 			    }
 
 
 			////////////////////////////////////////////////////////////
 			// Format other Colums:
 
-			integer  start_cyl       = (integer) select ( lookup ( partition, "region", []), 0, 0 );
-			integer  nb_cyl          = (integer) select ( lookup ( partition, "region", []), 1, 0 );
-			symbol   type            = lookup ( partition, "type", `unknown );
-			boolean  format          = lookup ( partition, "format",   false );
+			integer  start_cyl       = partition["region",0]:0;
+			integer  nb_cyl          = partition["region",1]:0;
+			symbol   type            = partition["type"]:`unknown;
+			boolean  format          = partition["format"]:false;
 			boolean  crypt_fs        = partition["loop_fs"]:false &&
 			                           partition["crypt"]:""!="none";
-			symbol   used_fs         = lookup ( partition, "used_fs", `unknown );
-			string   mount_point     = lookup ( partition, "mount", "" );
+			symbol   used_fs         = partition["used_fs"]:`unknown;
+			string   mount_point     = partition["mount"]:"";
 			string   filesystem_name = "";
 
-			filesystem_name = lookup ( partition, "fstype", "");
+			filesystem_name = partition["fstype"]:"";
 
 			string   format_flag      = "";
 			if ( format )   format_flag = "F";
@@ -513,7 +512,7 @@ define void DumpPartitionList ( map<string,map> targets)
 
 			string sta_str = ToLen(4, sformat("%1", start_cyl));
 			string end_str = ToLen(4, sformat("%1", start_cyl + nb_cyl - 1) );
-			y2debug( sformat( "OUT: %1 %2 %3 %4 %5", part_dev_name, part_id, bytes_of_part, sta_str, end_str));
+			y2debug( "OUT: %1 %2 %3 %4 %5", part_dev_name, part_id, bytes_of_part, sta_str, end_str);
 		    }}
 			  );
 	    }

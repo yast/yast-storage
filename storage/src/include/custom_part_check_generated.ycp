@@ -89,7 +89,7 @@ define boolean check_raid_possible( map<string,map> targetMap )
 
     foreach( string disk, map target, targetMap, 
 	``{
-	list<map> partitions = lookup( target, "partitions", [] );
+	list<map> partitions = target["partitions"]:[];
 
 	possible_parts_found = possible_parts_found +
 	       size(filter( map part, partitions, 
@@ -124,15 +124,14 @@ define boolean check_lvm_possible( map<string,map> targetMap )
 
    foreach( string disk, map target, targetMap, 
        ``{
-       list<map> partitions = lookup( target, "partitions", [] );
+       list<map> partitions = target["partitions"]:[];
 
 
        if( size(filter( map part, partitions, 
-                        ``(lookup( part, "raid_name","") == "" &&
-			   lookup( part, "delete", false) == false &&
-			   lookup( part, "format", false) == false &&
-			   (lookup( part, "mount" , ""  ) == "" ||
-			    substring(lookup( part, "mount" , ""), 0, 5) == "/data" )  &&
+                        ``(part["raid_name"]:"" == "" &&
+			   !part["delete"]:false && !part["format"]:false &&
+			   (part["mount"]:""  == "" ||
+			    substring(part["mount"]:"", 0, 5) == "/data" )  &&
 			   ( part["fsid"]:0 == Partitions::fsid_native ||
 			     part["fsid"]:0 == Partitions::fsid_lvm )))) > 0)
 	   {
@@ -213,9 +212,9 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 
     foreach( string disk, map diskinfo, targetMap,
         ``{
-	list<map> part_info     = lookup( diskinfo, "partitions", [] );
+	list<map> part_info     = diskinfo["partitions"]:[];
 	boolean whole_disk = true;
-	integer cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
+	integer cyl_size   = diskinfo["cyl_size"]:1000000;
 
 	//////////////////////////////////////////////////////////////
 	// for axp
@@ -236,12 +235,12 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 
 	foreach( map part, part_info, ``{
 
-	    if ( lookup( part, "delete", false) == false )
-	    {
+	    if( !part["delete"]:false )
+		{
 		// All valid partitions ...
-		integer fsid       =  lookup( part, "fsid", 0);
-		boolean is_mounted = (lookup( part, "mount", "") != "");
-		string  mountpoint = lookup( part, "mount", "" );
+		integer fsid       = part["fsid"]:0;
+		string  mountpoint = part["mount"]:"";
+		boolean is_mounted = size(mountpoint)>0;
 
 		//////////////////////////////////////////////////////////////
 		// axp+aboot (bsd-label): look for first cylinders of disk
@@ -255,7 +254,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		    axp_start_nth          = nth_cyl;
 		    y2error("WWWWWWWWWWWWWWW1 %1", nth_cyl );
 
-		    if ( lookup( part, "create", false) == true )
+		    if ( part["create"]:false )
 		    {
 			y2error("WWWWWWWWWWWWWWW2 %1", nth_cyl );
 			axp_start_Cr_failure = true;
@@ -279,9 +278,8 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		//////////////////////////////////////////////////////////////
 		// check for jfs: in ppc its experimental
 		//////////////////////////////////////////////////////////////
-		if ( Arch::ppc ()
-		     && (lookup( part, "used_fs", `unknown ) == `jfs)
-		     && lookup( part , "format" ,false) )
+		if ( Arch::ppc () && part["used_fs"]:`unknown == `jfs &&
+		     part["format"]:false )
 		{
 		    jfs_found = true;
 		}
@@ -308,7 +306,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		      root_end = 0;
 		      }
 		    root_fs = part["used_fs"]:`unknown;
-		    root_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
+		    root_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;   // 1GB/cylinder size
 
 		    if ( id_sw_raid_dev ) root_raid = true;
 		    if( !boot_raid ) raid_type = part["raid_type"]:"unknown";
@@ -777,26 +775,26 @@ define symbol check_partition_edit( map curr_part, boolean bsd_label )
     // with a BSD-Disklabel partition 3 is always an additional entry
     // which describes the disk and should not be edited
 
-    if( bsd_label && ( lookup( curr_part, "nr", 0 ) == 3 ) )
+    if( bsd_label && ( curr_part["nr"]:0 == 3 ) )
 	{
 	// popup text
 	Popup::Message(_("Partition 3 \"Entire Disk\" is not changeable"));
 	return `no_edit;
 	}
 
-    if( lookup( curr_part , "raid_name" , "") != "")
+    if( curr_part["raid_name"]:"" != "")
 	{
 	// popup text %1 is replaced by a raid name e.g. /dev/md0
 	Popup::Message(sformat(_("The selected partition belongs to the RAID (%1).
-Please remove it from the RAID before you edit it."),lookup( curr_part, "raid_name", "" )));
+Please remove it from the RAID before you edit it."),curr_part["raid_name"]:""));
 	return `no_edit;
 	}
 
-    if( lookup( curr_part , "lvm_group" , "") != "")
+    if( curr_part["lvm_group"]:"" != "")
 	{
 	// popup text %1 is replaced by a name
 	Popup::Message(sformat(_("The selected partition belongs to a volume group (%1).
-Please remove it from the volume group before you edit it."),lookup( curr_part, "lvm_group", "" )));
+Please remove it from the volume group before you edit it."),curr_part["lvm_group"]:"" ));
 	return `no_edit;
 	}
     return `edit;
@@ -833,7 +831,7 @@ define symbol check_partition_delete( map curr_disk, map curr_part,
 	    {
 	    // popup text %2 is a partition name, %1 is the volume group name
 	    Popup::Error(sformat(_("The partition (%2) belongs to a volume group (%1).
-Please remove it from the volume group before you delete it."),lookup( curr_part, "lvm_group", "" ) , part_name) );
+Please remove it from the volume group before you delete it."),curr_part["lvm_group"]:"" , part_name) );
 	    return  `no_delete;
 	    }
 	}
@@ -846,7 +844,7 @@ Please remove it from the volume group before you delete it."),lookup( curr_part
 	    {
 	    // popup text %2 is a partition name, %1 is the raid name
 	    Popup::Message(sformat(_("The partition (%2) belongs to the RAID (%1).
-Please remove it from the RAID before you delete it."), lookup( curr_part, "raid_name", "" ), part_name ));
+Please remove it from the RAID before you delete it."), curr_part["raid_name"]:"", part_name ));
 	    return `no_delete;
 	    }
 
@@ -912,7 +910,7 @@ define boolean check_extended_delete( string del_dev, map curr_disk,
 
     /////////////////////////////////////////////////
     // filter delete partitions
-    list<map> partitions =  lookup( curr_disk, "partitions", [] );
+    list<map> partitions =  curr_disk["partitions"]:[];
     partitions = filter( map part, partitions, ``( !part["delete"]:false ));
 
     /////////////////////////////////////////////////
@@ -938,7 +936,7 @@ define boolean check_extended_delete( string del_dev, map curr_disk,
 	{
 	list<map> mounts = Partitions::mountedPartitionsOnDisk( del_dev,
 							   Partitions::CurMounted() );
-	mounts      = filter( map mount, mounts, ``( contains( logical_parts_names, lookup(mount, "spec", ""))));
+	mounts      = filter( map mount, mounts, ``( contains( logical_parts_names, mount["spec"]:"")));
 
 	if ( size( mounts ) != 0 )
 	    {
@@ -952,7 +950,7 @@ define boolean check_extended_delete( string del_dev, map curr_disk,
 		//           /dev/hda1 on /
 		//           /dev/hdd1 on /usr
 		//   ....
-		mounted_parts = mounted_parts + sformat("%1 on %2",lookup( mount, "spec", "") , lookup( mount, "file", "")) + "\n";
+		mounted_parts = mounted_parts + sformat("%1 on %2",mount["spec"]:"", mount["file"]:"") + "\n";
 	    });
 
 	    // popup text
@@ -989,7 +987,7 @@ before deleting the extended partition.
     /////////////////////////////////////////////////////////////////////////////////////////
     // check RAID partitions
 
-    if( size(filter( map part, logical_parts, ``( lookup( part, "raid_name", "") != "" ))) != 0)
+    if( size(filter( map part, logical_parts, ``( part["raid_name"]:"" != "" ))) != 0)
 	{
 	// popup text, Do not translate LVM.
 	Popup::Message(_("
