@@ -496,28 +496,6 @@ EvmsAccess::EvmsAccess()
     else
 	{
 	RereadAllObjects();
-	if( !RunningFromSystem() )
-	    {
-	    list<const EvmsVolumeObject*> l;
-	    ListVolumes( l );
-	    for( list<const EvmsVolumeObject*>::iterator i=l.begin();
-		 i != l.end(); i++ )
-		{
-		if( !(*i)->Native() && 
-		    (*i)->Name().find( "/dev/evms/lvm/" )!=0 )
-		    {
-		    ret = evms_delete((*i)->Id());
-		    y2milestone( "evms_delete %d ret %d", (*i)->Id(), ret ); 
-		    if( ret )
-			{
-			Error_C = "could not delete compatible volume " + 
-			          (*i)->Name();
-			y2milestone( "error: %s", evms_strerror(ret) );
-			}
-		    }
-	        }
-	    EndEvmsCommand();
-	    }
 	}
     y2debug( "End Konstruktor EvmsAccess" );
     }
