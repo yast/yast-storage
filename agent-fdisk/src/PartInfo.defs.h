@@ -85,6 +85,7 @@ struct PartInfo
   PartitionType PType_e;
   string Device_C;
   string Info_C;
+  string RealStart_C;
   unsigned Id_i;
   unsigned Num_i;
   unsigned Start_i;

@@ -136,7 +136,9 @@ PartedAccess::NewPartition(const PartitionType Part_e,
   Data_Ci.str( Bis_Cv );
   Data_Ci >> Num_ui;
   y2debug( "Bis:%s bis:%u", Bis_Cv.c_str(), Num_ui );
-  Buf_Ci << std::setprecision(3) << ((double)Num_ui)*CylinderToKb(1)/1024;
+  Buf_Ci << std::setprecision(3) 
+         << std::setiosflags(std::ios_base::fixed) 
+         << ((double)Num_ui)*CylinderToKb(1)/1024;
   
   y2milestone( "ok:%d executing cmd:%s", Ok_bi, Buf_Ci.str().c_str() );
   if( Ok_bi )
@@ -221,10 +223,9 @@ PartedAccess::Resize(const unsigned Part_iv, const unsigned NewCylCnt_iv )
     }
   if( I_ii != Part_C.end() )
     {
-    Buf_Ci << std::setprecision(3) 
-           << std::setiosflags(std::ios_base::fixed) 
-	   << (double)I_ii->Start_i*CylinderToKb(1)/1024 << " "
-           << ((double)NewCylCnt_iv+I_ii->Start_i-0.1)*CylinderToKb(1)/1024 << " ";
+    Buf_Ci << I_ii->RealStart_C << " "
+           << ((double)NewCylCnt_iv+I_ii->Start_i-0.1)*CylinderToKb(1)/1024 
+	   << " ";
     Stderr_C.erase();
     y2milestone( "executing cmd:%s", Buf_Ci.str().c_str() );
     SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );
@@ -277,6 +278,10 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
       Data_Ci >> Num_ii >> Start_fi >> End_fi;
       PType_Ci = "primary";
       }
+  std::ostringstream Buf_Ci;
+  Buf_Ci << std::setprecision(3) << std::setiosflags(std::ios_base::fixed) 
+         << Start_fi;
+  Part_rr.RealStart_C = Buf_Ci.str().c_str();
   char c;
   Type_Ci = ",";
   Data_Ci.unsetf(ifstream::skipws);
