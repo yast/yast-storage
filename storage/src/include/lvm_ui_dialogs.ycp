@@ -55,10 +55,15 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 	{
 	new_size = Lv["lv_size"]:0;
 	}
-    else
+    else if( haskey( Lv, "size_byte" ) )
 	{
 	new_size = Lv["size_byte"]:0;
 	}
+    else
+	{
+	new_size = Lv["region",1]:0 * pesize;
+	}
+    y2milestone( "new_size %1", new_size );
     integer old_size     = Lv["ori_length"]:new_size;
     string  curr_size    = ByteToHumanStringWithZero(new_size);
     old_size = kmgt_str_to_byte(curr_size);
@@ -105,6 +110,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 	max_size = max_size+new_size;
 	y2milestone( "new max_size=%1", max_size );
 	}
+    y2milestone( "new_size %1", new_size );
     // header for input field maximum allowd size
     string max_text = sformat(_("max = %1 "), 
 			      ByteToHumanStringWithZero(max_size));
@@ -362,14 +368,17 @@ or cancel this dialog.
 		{
 		retval["stripesize"] = stripesize;
 		}
-	    retval["lv_size"] = new_size;
 	    retval["nr"] = volume_name;
 	    retval["device"] = Storage::GetDeviceName( "/dev/"+vgname, 
 	                                               volume_name );
-	    retval["region"] = [0, (new_size+pesize-1)/pesize ];
-	    if( new_size!=old_size && !haskey( retval, "ori_length"))
+	    if( new_size!=old_size )
 		{
-		retval["ori_length"] = old_size;
+		retval["lv_size"] = new_size;
+		retval["region"] = [0, (new_size+pesize-1)/pesize ];
+		if( !haskey( retval, "ori_length"))
+		    {
+		    retval["ori_length"] = old_size;
+		    }
 		}
 	    
       } until ( (c_ret==`ok&&input_is_ok) || c_ret == `cancel );
