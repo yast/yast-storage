@@ -386,6 +386,24 @@ global define map GetLoopOn( string device )
     return( ret );
     }
 
+define string TanslateMapperName( string device )
+    ``{
+    string ret = device;
+    string regex = "[^-]-[^-]";
+    if( find( device, "/dev/mapper/" )==0 )
+	{
+	list<integer> pos = regexppos( device, regex );
+	y2milestone( "pos=%1", pos );
+	if( size(pos)>0 )
+	    {
+	    ret = "/dev/" + substring(device,12,pos[0]:0-11) + "/" +
+	          substring(device,pos[0]:0+2);
+	    }
+	y2milestone( "TanslateMapperName %1 -> %2", device, ret );
+	}
+    return( ret );
+    }
+
 /**
  *	Return a list with all mounted partition
  *  @return list<map>
@@ -439,6 +457,12 @@ global define list<map> CurMounted()
 	    }
 	ret = add( ret, p );
 	});
+    ret = maplist( map p, ret, 
+	``{
+	p["spec"] = TanslateMapperName( p["spec"]:"" );
+	return( p );
+	});
+
 
     y2milestone( "CurMounted all mounts %1", ret);
     return ret;
