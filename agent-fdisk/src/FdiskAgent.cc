@@ -11,14 +11,6 @@
 
 using namespace std;
 
-#if defined(__sparc__)
-#define MINUS_1
-#define PLUS_1
-#else
-#define MINUS_1 -1
-#define PLUS_1 +1
-#endif
-
 FdiskAgent::FdiskAgent()
 {
     y2debug( "Constructor FdiskAgent" );
@@ -340,7 +332,7 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
 	       cpart != to_create.end (); ++cpart)
 	    {
 	      ostringstream buffer;
-	      buffer << cpart->start PLUS_1;
+	      buffer << cpart->start + 1;
 	      string start_string = buffer.str();
 	      buffer.seekp(0, ios::beg);
 	      buffer << cpart->start + cpart->length;
