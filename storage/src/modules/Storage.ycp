@@ -90,37 +90,27 @@
      */
 global define map GetTargetMap()
     ``{
+    map tmp = $[];
     boolean changed = false;
     if( !probe_done && !Mode::config)
 	{
 	y2milestone ("probing StorageDevices" );
-	StorageMap[targets_key] = StorageDevices::Probe (true);
+	tmp = StorageDevices::Probe (true);
 	y2milestone ("probing done" );
-	StorageMap[targets_backup_key,"initial"] = 
-	    eval(StorageMap[targets_key]:$[]);
-	StorageMap[targets_backup_l_key,"initial"] = false;
+	tmp = ReadLvmMd( tmp );
+	y2milestone ("lvm init done" );
+	StorageMap[targets_key] = tmp;
+	SCR::Write(Storage::SaveDumpPath("targetMap_i"), tmp );
+	StorageMap[targets_backup_key,"initial"] = eval(tmp);
+	StorageMap[targets_backup_l_key,"initial"] = true;
 	StorageMap[targets_backup_m_key,"initial"] = $[];
 	probe_done = true;
-	changed = true;
-	}
-    if( StorageMap[use_lvm_key]:false && !lvm_initialized )
-	{
-	map tmp = StorageMap[targets_key]:$[];
-	y2milestone ("initializing Lvm and Md" );
-	StorageMap[targets_key] = ReadLvmMd( tmp );
-	y2milestone ("lvm init done" );
 	lvm_initialized = true;
-	if( size(StorageMap[targets_backup_key,"initial"]:$[])==0 )
-	    {
-	    StorageMap[targets_backup_key,"initial"] = eval(tmp);
-	    StorageMap[targets_backup_l_key,"initial"] = true;
-	    StorageMap[targets_backup_m_key,"initial"] = $[];
-	    }
 	changed = true;
 	}
     if( changed )
 	{
-	map tmp =  StorageMap[targets_key]:$[];
+	tmp = StorageMap[targets_key]:$[];
 	y2milestone ("getting fsys type" );
 	tmp = GetFsysType( tmp );
 	y2milestone ("AddSwapMp" );
@@ -431,6 +421,7 @@ global define void ResetOndiskTarget()
     global define void CreateTargetBackup(string who)``{
 	if( size(StorageMap[targets_backup_key,who]:$[])==0 )
 	    {
+	    //SCR::Write(topath(".dumpto.tmp.b_"+who), StorageMap[targets_key]:$[] );
 	    y2milestone( "creating backup of TargetMap who=%1", who );
 	    StorageMap[targets_backup_key,who] = eval(StorageMap[targets_key]:$[]);
 	    StorageMap[targets_backup_l_key,who] = lvm_initialized;
@@ -453,6 +444,7 @@ global define void ResetOndiskTarget()
 	    {
 	    y2milestone( "restoring backup of TargetMap who=%1", who );
 	    StorageMap[targets_key] = eval(StorageMap[targets_backup_key,who]:$[]);
+	    //SCR::Write(topath(".dumpto.tmp.r_"+who), StorageMap[targets_key]:$[] );
 	    lvm_initialized = StorageMap[targets_backup_l_key,who]:false;
 	    StorageMap[modify_targets_key] = eval(StorageMap[targets_backup_m_key,who]:$[]);
 	    StorageMap[targets_backup_key,who] = $[];
@@ -2512,7 +2504,7 @@ global define path SaveDumpPath( string name )``{
 	if(size(e)>0)
 	    ret = ret + topath( "." + e );
 	});
-    y2milestone( "SaveDumpPath name=%1 path=%2", name, ret );
+    y2debug( "SaveDumpPath name=%1 path=%2", name, ret );
     return ret;
     }
 

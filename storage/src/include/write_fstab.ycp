@@ -195,20 +195,8 @@ global define map MakeCdromFstabEntry( map cd )
     ``{
     map entry = $[];
     string cdmount = cd["linkname"]:"";
-    string mpath = cdmount;
-    string short = substring(cdmount,5);
-    string media = "/media/"+short;
+    string media = "/media/"+substring(cdmount,5);
 
-    if( Installation::destdir != "/" )
-	{
-	mpath = Installation::destdir + "/" + short;
-	}
-    if( short == "cdrom" || short == "dvd" || short == "cdwriter" )
-	{
-	// symlink /xxx -> /media/xxx
-	y2milestone( "symlink mpath %2 to %1", media, mpath );
-	SCR::Execute(.target.symlink, substring(media,1), mpath);
-	}
     entry = $[ "spec":cdmount, "mount":media, "vfstype":"auto",
 	       "mntops":"ro,noauto,user,exec", "freq":0, "passno":0];
     if( Storage::SaneConsoleEncoding() != "iso8859-1" )
@@ -287,23 +275,13 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 		zfile = zfile + sformat("%1",zipnum);
 
 	    string media = "/media"+zfile;
-	    //SCR::Execute(.target.mkdir, media);
-	    if( Installation::destdir != "/" )
-		{
-		zfile = Installation::destdir + zfile;
-		}
-	    SCR::Execute(.target.symlink, substring(media,1), zfile);
-
-	    fstab[zfile] = $["spec":""+tdevice+"4", "mount":media, 
+	    fstab[media] = $["spec":""+tdevice+"4", "mount":media, 
 			     "vfstype":"auto", "mntops":"noauto,user", 
 			     "freq":0, "passno":0];
 	    zipnum = zipnum + 1;
 	    });
 	fstablist = union( fstablist, maplist (`k, `v, fstab, ``(v)));
 	fstab = $[];
-
-	// add all cd-drives to fstab
-	// cddevices is a list of symlinked names starting with "/dev/"
 
 	y2milestone( "cddevices=%1", cddevices );
 
@@ -336,11 +314,6 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 		if (fdnum > 0)
 		    fdname = fdname + fdnum;
 		string medianame = "/media"+fdname;
-                if( Installation::destdir != "/" )
-		    {
-		    fdname = Installation::destdir + fdname;
-		    }
-		SCR::Execute(.target.symlink, substring(medianame,1), fdname);
 		fstab[medianame] = $[ "spec":dev_name, "mount":medianame, 
 				      "vfstype":"auto", 
 				      "mntops":"noauto,user,sync", 

@@ -35,7 +35,7 @@
    * @return list list with fstab if only one existing fstab is found
    */
 global define findExistingFstab( map targetMap, map file_systems, 
-                                string search_point )
+                                 string search_point )
     ``{
     /////////////////////////////////////////////////////////////////
     // foreach partition on each target
@@ -44,17 +44,28 @@ global define findExistingFstab( map targetMap, map file_systems,
 
     foreach ( `dev, `disk, targetMap, ``{
 	foreach ( `partition, disk["partitions"]:[], ``{
-	    if( count_fstab_found==0 &&
+	    if( count_fstab_found==0 && 
 		partition["fsid"]:0 == Partitions::fsid_native )
 		{
 		/////////////////////////////////////////////////////
 		// try to mount
 
-		string mount_option = file_systems[partition["used_fs"]:`ext2,`mount_option]:"";
+		boolean mount_success = false;
 
-		SCR::Execute(.target.bash, "/bin/mount " + mount_option + "  " +  get_device_name(dev,partition["nr"]:0) + " " + search_point );
+		foreach( `fsys, `entry, file_systems,
+		    ``{
+		    if( !mount_success )
+			{
+			FileSystems::LoadModule( fsys );
+			string cmd = sformat( "/bin/mount %1 %2 %3", entry[`mount_option]:"", 
+					      partition["device"]:"", search_point );
+			y2milestone( "cmd %1", cmd );
+			mount_success = SCR::Execute(.target.bash, cmd ) == 0;
+			}
+		    });
 
-		if( SCR::Execute(.target.bash, sformat("/usr/bin/test -e %1/etc/fstab", search_point)) == 0 )
+		if( mount_success && 
+		    SCR::Read(.target.size, sformat("%1/etc/fstab", search_point)) > 0 )
 		    {
 		    if (SCR::Execute(.target.bash, "/bin/cp " + Installation::destdir + "/etc/fstab /etc") == 0)
 			{
@@ -69,7 +80,8 @@ global define findExistingFstab( map targetMap, map file_systems,
 		/////////////////////////////////////////////////////
 		// unmount
 
-		SCR::Execute(.target.bash, "/bin/umount " + search_point );
+		if( mount_success )
+		    SCR::Execute(.target.bash, "/bin/umount " + search_point );
 		}
 	    });
 	});
