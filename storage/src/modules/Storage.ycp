@@ -136,80 +136,80 @@ global define map GetDiskPartition( string device )
 	find( device, "/dev/sd" )==0 ||
 	find( device, "/dev/ed" )==0 )
 	{
-      dlen = findfirstof( device, "0123456789" );
-      if( dlen == nil )
+	dlen = findfirstof( device, "0123456789" );
+	if( dlen == nil )
 	    {
-	  dlen = size(device);
+	    dlen = size(device);
+	    }
 	}
-	    }
     else if( find( device, "/dev/md" )==0 )
-	    {
-      dlen = 7;
-	    }
+	{
+	dlen = 7;
+	}
     else if( find( device, "/dev/loop" )==0 )
-	    {
-      dlen = 9;
+	{
+	dlen = 9;
 	}
     else if( find( device, "/dev/i2o/hd" )==0 )
 	{
-      dlen = 12;
+	dlen = 12;
 	}
     else if( find( device, "/dev/rd/" )==0 ||
 	     find( device, "/dev/cciss/" )==0 ||
 	     find( device, "/dev/ataraid/" )==0 ||
 	     find( device, "/dev/ida/" )==0 )
 	{
-      integer pos = findlastof( device, "p" );
-      dlen = size(device);
-      if( pos!=nil )
-	{
-	  dlen = pos;
-	}
+	integer pos = findlastof( device, "p" );
+	dlen = size(device);
+	if( pos!=nil )
+	    {
+	    dlen = pos;
+	    }
 	}
     else if( find( device, "/dev/dasd" )==0 )
 	{
-      dlen = size(device);
-      if( findfirstof( device, "0123456789" )>0 )
+	dlen = size(device);
+	if( findfirstof( device, "0123456789" )>0 )
 	    {
-	  dlen = dlen-1;
+	    dlen = dlen-1;
+	    }
 	}
-		}
-	    else
+    else
+	{
+	as_string = true;
+	if( size( splitstring(device, "/"))>3 )
+	    {
+	    integer pos = findlastof( device, "/" );
+	    if( pos!=nil )
 		{
-      as_string = true;
-      if( size( splitstring(device, "/"))>3 )
-		    {
-	  integer pos = findlastof( device, "/" );
-	  if( pos!=nil )
-			{
-	      dlen = pos;
-			}
-			}
-      else
-			{
-	  dlen = size(device);
+		dlen = pos;
 		}
-		}
+	    }
+	else
+	    {
+	    dlen = size(device);
+	    }
+	}
     ret = add( ret, "disk", substring( device, 0, dlen ) );
     device = substring( device, dlen );
     if( size(device)>0 && findfirstof( device, "/p" )==0 )
-		{
-      device = substring( device, 1 );
-		}
+	{
+	device = substring( device, 1 );
+	}
     ret["nr"] = 0;
     if( as_string )
-		    {
-      ret["nr"] = device;
-		    }
-		else
-		    {
-      if( size(device)>0 )
-			{
-	  ret["nr"] = tointeger(device);
-		}
-    }
+	{
+	ret["nr"] = device;
+	}
+    else
+	{
+	if( size(device)>0 )
+	    {
+	    ret["nr"] = tointeger(device);
+	    }
+	}
     return( ret );
-  };
+    };
 
 
 
@@ -560,7 +560,7 @@ global define map ReadLvmMd( map targetMap )
      */
 global define map GetFsysType( map target)
     ``{
-    foreach ( string device, map disk, target,
+    foreach( string device, map disk, target,
 	``{
 	list partitions = disk["partitions"]:[];
 	list p_new = [];
@@ -579,7 +579,7 @@ global define map GetFsysType( map target)
 		}
 	    p_new = add( p_new, partition );
 	    });
-	disk["partitions"] = p_new;
+	target[device,"partitions"] = p_new;
 	});
     return target;
     }
@@ -625,7 +625,7 @@ global define map AddWinInfo( map targets )
     y2milestone( "AddWinInfo called" );
     foreach(string disk, map data, targets,
 	``{
-	data["partitions"] =
+	targets[disk,"partitions"] = 
 	    maplist(map p, data["partitions"]:[],
 		``{
 		if( Partitions::IsDosWinNtPartition(p["fsid"]:0) &&
@@ -635,12 +635,12 @@ global define map AddWinInfo( map targets )
 		    if( p["used_fs"]:`none == `ntfs )
 			{
 			used_fs = `ntfs;
-		    }
+			}
 		    p["winfo"] = FileSystems::GetFreeSpace( p["device"]:"", 0,
 		                                            used_fs );
-		}
+		    }
 		return( p );
-	    });
+		});
 	});
     return( targets );
     };

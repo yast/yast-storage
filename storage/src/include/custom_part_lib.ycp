@@ -493,7 +493,7 @@ define map CheckCryptOk( map new )
     return( ret );
     };
 
-define void HandleFsChanged( boolean init, map new, map file_systems )
+define map HandleFsChanged( boolean init, map new, map file_systems )
     ``{
     list not_used_mp = [];
     symbol used_fs = new["used_fs"]:`unknown;
@@ -567,11 +567,13 @@ define void HandleFsChanged( boolean init, map new, map file_systems )
 	    new["label"] = "";
 	    }
 	}
+    y2debug( "HandleFsChanged new %1", new );
+    return( new );
     };
 
 
 define map HandlePartWidgetChanges( boolean init, any ret, map file_systems,
-                                     map old, map new )
+                                    map old, map new )
     ``{
     y2milestone( "init:%1 ret:%2 new:%3", init, ret, new );
     symbol used_fs = new["used_fs"]:`unknown;
@@ -632,8 +634,9 @@ define map HandlePartWidgetChanges( boolean init, any ret, map file_systems,
 		}
 	    map selected_fs = file_systems[dfs]:$[];
 	    new["used_fs"] = dfs;
+	    y2milestone( "used_fs %1", dfs );
 	    if( new["used_fs"]:`unknown != old["used_fs"]:`unknown )
-		HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, file_systems );
 	    if( format )
 		{
 		new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
@@ -687,6 +690,7 @@ define map HandlePartWidgetChanges( boolean init, any ret, map file_systems,
 		new_fs  = (symbol)UI::QueryWidget(`id(`fs), `Value);
 	    }
 
+	y2milestone( "new_fs %1", UI::QueryWidget(`id(`fs), `Value) );
 	y2milestone( "ret==fs init=%1 used_fs:%2 new_fs:%3", init, used_fs,
 	             new_fs );
 	if( init || used_fs != new_fs )
@@ -695,7 +699,7 @@ define map HandlePartWidgetChanges( boolean init, any ret, map file_systems,
 	    map selected_fs = file_systems[used_fs]:$[];
 	    new["used_fs"] = used_fs;
 
-	    HandleFsChanged( init, new, file_systems );
+	    new = HandleFsChanged( init, new, file_systems );
 
 	    if( !init )
 		{
@@ -758,13 +762,13 @@ define map HandlePartWidgetChanges( boolean init, any ret, map file_systems,
 		{
 		new["used_fs"] = Partitions::default_fs;
 		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
-		HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, file_systems );
 		}
 	    else if( fs_int == Partitions::fsid_swap )
 		{
 		new["used_fs"] = `swap;
 		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
-		HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, file_systems );
 		}
 	    else if( contains( Partitions::fsid_wintypes, fs_int ) ||
 	             fs_int==Partitions::fsid_gpt_boot )
@@ -772,14 +776,14 @@ define map HandlePartWidgetChanges( boolean init, any ret, map file_systems,
 		new["mount"] = "";
 		new["used_fs"] = `fat32;
 		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
-		HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, file_systems );
 		}
 	    else if( fs_int == Partitions::fsid_mac_hfs )
 		{
 		new["mount"] = "";
 		new["used_fs"] = `hfs;
 		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
-		HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, file_systems );
 		}
 	    }
 	}
