@@ -1179,7 +1179,7 @@ global define FstabAddDialog( list table_input )
 	{
 	// popup text 
 	Popup::Message(_("No previous system with mount points was detected."));
-	return false;
+	return -1;
 	}
 	
     // heading text 
@@ -1193,44 +1193,80 @@ with mount points. On the right, see a list with the mount points found. </P>
 _("<P>To use these mount points, <BR>press <B>Yes</B>.</P>")+
     // help text, richtext format
 _("<P>To ignore these mount points, <BR> press <B>No</B>.</P>");
-		      
-    UI::OpenDialog(`opt(`decorated ),
-		   `HBox(
-			 `VBox( `HSpacing(20), `RichText(help_text)),
-			 `VBox(
-			       `VSpacing(1),
-			       // popup text
-			       `Heading(_("A previous system with the following mount points was detected:") ),
-			       `HBox(  
-				     `HSpacing(3.0),
-				     `VSpacing(8),
-				     `VBox(
-					   `VSpacing(1),
-					   `Table(`id(`table), header, table_input )
-					   ),
-				     `HSpacing(3.0)
-				     ),
-					
-			       `VSpacing(1),
-			       // popup text
-			       `Heading(_("Would you like to use these mount points
-for your new installation?")),	
-			       `VSpacing(1),
-			       `HBox(
-				     `PushButton(`id(`ok), `opt(`default), Label::YesButton()  ),
-				     `PushButton(`id(`cancel), Label::NoButton()  )
-				     )
-			       ))
-	       );
 
-    symbol userinput = UI::UserInput();
-    UI::CloseDialog();
-	
-    if( userinput == `ok )
+    UI::OpenDialog(
+	`opt(`decorated ),
+        `HBox(
+	    `VBox( `HSpacing(20), `RichText(help_text)),
+	    `VBox( `VSpacing(1),
+		   `ReplacePoint( `id(`heading), `Empty() ),
+		   `HBox(  
+		       `HSpacing(3.0),
+		       `VSpacing(8),
+		       `VBox( `VSpacing(1),
+			       `Table(`id(`table), header, [] )
+			    ),
+		       `HSpacing(3.0)
+		       ),
+					
+		   `VSpacing(1),
+		   // popup text
+		   `Heading(_("Would you like to use these mount points
+for your new installation?")),	
+		   `VSpacing(1),
+		   `ReplacePoint( `id(`bbox), `Empty() )
+		 ))
+	     );
+
+    symbol userinput = `none;
+    integer idx = 0;
+    repeat
 	{
-	return true;
+	// popup text %1 is replaced by a device name (e.g. /dev/hda1)
+	string tmp = sformat( 
+_("A previous system with the following mount points was detected:
+/etc/fstab found on %1"), table_input[idx,"root"]:"/dev/emil" );
+	UI::ReplaceWidget( `id(`heading), `Heading( tmp ) );
+
+	UI::ChangeWidget( `id(`table), `Items, table_input[idx,"tbl"]:[] );
+
+	term bbox = `HBox( `PushButton( `id(`ok), `opt(`default),
+					Label::YesButton() ),
+			   `PushButton(`id(`cancel), Label::NoButton())
+			 );
+	if( size(table_input)>0 )
+	    {
+	    bbox = add( bbox, `HSpacing(5) );
+	    if( idx>0 )
+		{
+		bbox = add( bbox, 
+		            `PushButton( `id(`show_p), _("Show &Previous") ));
+		}
+	    if( idx<size(table_input)-1 )
+		{
+		bbox = add( bbox, 
+		            `PushButton( `id(`show_n), _("Show &Next") ));
+		}
+	    }
+	UI::ReplaceWidget( `id(`bbox), bbox );
+		      
+	userinput = UI::UserInput();
+
+	if( userinput == `show_n )
+	    {
+	    idx = idx+1;
+	    }
+	else if( userinput == `show_p )
+	    {
+	    idx = idx-1;
+	    }
 	}
-    return false;
+    until( userinput == `ok || userinput == `cancel );
+    UI::CloseDialog();
+
+    integer ret = userinput == `ok ? idx : -1;
+    y2milestone( "ret %1", ret );
+    return ret;
     };
 
 
