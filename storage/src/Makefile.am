@@ -1,10 +1,10 @@
 #
-# Makefile.am for y2c_XXpkgXX/src
+# Makefile.am for storage/src
 #
 # $Id$
 #
 
-SUBDIRS = include modules
+SUBDIRS = include modules proposal
 
 client_DATA =			\
 	inst_custom_part.ycp	\
@@ -18,6 +18,4 @@ client_DATA =			\
 	inst_target_part.ycp	\
 	inst_target_selection.ycp 
 
-menu_DATA = 
-	
-EXTRA_DIST = $(client_DATA) $(menu_DATA)
+EXTRA_DIST = $(client_DATA)
