@@ -2366,25 +2366,33 @@ global define string CheckSwapConflicts()``{
     return( ret );
     }
 
-global define string GetForeignPrimary()
+global define list GetForeignPrimary()
     ``{
-    string foreign_primary = "";
+    list ret = [];
     if( Arch::i386 || Arch::ia64 || Arch::x86_64 )
 	{
-	list win = GetWinPrimPartitions( GetTargetMap() );
-	if( size(win)>0 )
-	    {
-	    foreign_primary = sformat( "%1 %2", win[0,"device"]:"",
-	                                        win[0,"string"]:"" );
-	    }
+	foreach( `e, GetWinPrimPartitions( GetTargetMap() ),
+	    ``{
+	    ret = add( ret, sformat( "%1 %2", e["device"]:"", e["string"]:"" ));
+	    });
 	}
-    y2milestone( "ret=%1", foreign_primary );
-    return( foreign_primary );
+    y2milestone( "ret=%1", ret );
+    return( ret );
     }
 
-global define list GetWinPrimPartitions( map targets )``{
+global define list GetWinPrimPartitions( map targets )
+    ``{
     list ret = [];
     map entry = $[];
+    string text = "";
+    integer num_dos = 0;
+    integer num_win = 0;
+    integer num_os2 = 0;
+    integer num_linux = 0;
+    string linux_text = "Linux other";
+    string dos_text = "dos";
+    string win_text = "windows";
+    string os2_text = "OS/2 Boot Manager";
 
     foreach( `disk, `data, targets,
 	``{
@@ -2393,22 +2401,83 @@ global define list GetWinPrimPartitions( map targets )``{
 	    string device = GetDeviceName( disk, part["nr"]:0 );
 	    if( part["type"]:`unknown == `primary &&
 		part["delete"]:false==false &&
-	        Partitions::IsDosWinNtPartition( part["fsid"]:0 ) &&
-	        SCR::Execute (.target.bash, "/usr/lib/YaST2/bin/check.boot "+device) == 0)
+	        SCR::Execute (.target.bash, 
+		              "/usr/lib/YaST2/bin/check.boot "+device) == 0)
 		{
-		entry["device"] = device;
-		if( contains( Partitions::fsid_dostypes, part["fsid"]:0 ) )
+		text = "";
+	        if( Partitions::IsDosWinNtPartition( part["fsid"]:0 ) )
 		    {
-		    entry["string"] = "dos";
+		    if( contains( Partitions::fsid_dostypes, part["fsid"]:0 ) )
+			{
+			num_dos = num_dos+1;
+			text = dos_text;
+			}
+		    else
+			{
+			num_win = num_win+1;
+			text = win_text;
+			}
 		    }
-		else
+		else if( part["fsid"]:0 == 0x12 )
 		    {
-		    entry["string"] = "windows";
+		    text = "Compaq diagnostic";
 		    }
-		ret = add( ret, eval(entry) );
+		else if( part["fsid"]:0 == 0x0a )
+		    {
+		    text = os2_text;
+		    num_os2 = num_os2+1;
+		    }
+		else if( part["fsid"]:0 == Partitions::fsid_native &&
+		         size(part["mount"]:"")==0 )
+		    {
+		    text = linux_text;
+		    num_linux = num_linux+1;
+		    }
+		if( size(text)>0 )
+		    {
+		    entry["device"] = device;
+		    entry["string"] = device;
+		    ret = add( ret, eval(entry) );
+		    }
 		}
 	    });
 	});
+    integer num = 1;
+    if( num_linux>1 )
+	{
+	foreach( `entry, filter( `e, ret, ``(e["string"]:""==linux_text)),
+	    ``{
+	    entry["string"] = linux_text + sformat( " %1", num );
+	    num = num+1;
+	    });
+	}
+    num = 1;
+    if( num_dos>1 )
+	{
+	foreach( `entry, filter( `e, ret, ``(e["string"]:""==dos_text)),
+	    ``{
+	    entry["string"] = dos_text + sformat( " %1", num );
+	    num = num+1;
+	    });
+	}
+    num = 1;
+    if( num_win>1 )
+	{
+	foreach( `entry, filter( `e, ret, ``(e["string"]:""==win_text)),
+	    ``{
+	    entry["string"] = win_text + sformat( " %1", num );
+	    num = num+1;
+	    });
+	}
+    num = 1;
+    if( num_os2>1 )
+	{
+	foreach( `entry, filter( `e, ret, ``(e["string"]:""==os2_text)),
+	    ``{
+	    entry["string"] = os2_text + sformat( " %1", num );
+	    num = num+1;
+	    });
+	}
     y2milestone( "GetWinPrimPartitions ret %1", ret );
     return( ret );
     }
