@@ -18,17 +18,19 @@
 {
 textdomain "storage";
 
+import "CommandLine";
 import "Wizard";
-import "Misc";
 import "AsciiFile";
 import "Partitions";
 
-import "Label";
 import "Popup";
 import "Storage";
 import "StorageDevices";
 
 map<integer,map> cdrom = $[];
+map<string,string> links = $[];
+map fstab = $[];
+integer num=0;
 
 define map<string,string> GetCdromLinks()
     ``{	    
@@ -135,11 +137,13 @@ of integration of an entry in the list.</p>
 "));
     }
 
-    Wizard::OpenAbortApplyFinishDialog();
+/**
+ * Read CDROM settings
+ */
+define boolean CDROMRead () {
 
-    map<string,string> links = GetCdromLinks();
-
-    map fstab = Partitions::GetFstab( "/etc/fstab" );
+    links = GetCdromLinks();
+    fstab = Partitions::GetFstab( "/etc/fstab" );
 
     list<map> tmp = maplist( map entry, (list<map>)SCR::Read(.probe.cdrom),
 	``{
@@ -187,11 +191,22 @@ of integration of an entry in the list.</p>
 	return( ret );
 	});
 
-    integer num=0;
+    num=0;
     cdrom = listmap( map e, tmp, 
 		     ``{num=num+1; e["index"]=num-1; return $[num-1:e];});
 
+    return true;
+}
+
+define any CDROMSequence () {
+
+    CDROMRead ();
+
     y2milestone( "cdrom=%1", cdrom );
+
+    Wizard::OpenAbortApplyFinishDialog();
+
+    list<map> tmp	= [];
 
     term dialog =
 	`VBox( 
@@ -223,7 +238,7 @@ of integration of an entry in the list.</p>
 	{
         // popup text
 	Popup::Message( _("No CD/DVD device found") );
-	return;
+	return `cancel;
 	}
     // header text
     Wizard::SetContents( _("CD/DVD device integration"), dialog, HelpText(), 
@@ -437,5 +452,54 @@ Discard changes?
 	}
     while( ret != `abort && ret != `finish );
     UI::CloseDialog();
+    return ret;
+}
+
+/**
+ * print cdrom summary
+ */
+define boolean CDROMSummaryHandler (map options) {
+
+    boolean more	= false;
+    foreach (any k, map entry, cdrom, {
+
+	if (more)
+	    CommandLine::Print ("");
+
+	// summary item
+	CommandLine::Print (sformat (_("Model: %1"), entry["model"]:""));
+	// summary item
+	CommandLine::Print (sformat (_("Device: %1"), entry["device"]:""));
+
+	if (entry["configured"]:false)
+	{
+	    // summary item
+	    CommandLine::Print (sformat(_("Link: /dev/%1"),entry["link",0]:""));
+	    // summary item
+	    CommandLine::Print(sformat(_("Mount Point: %1"),entry["mount"]:""));
+	}
+	more	= true;
+    });
+    return false;
+}
+
+/* -- the command line description map -------------------------------------- */
+map cmdline = $[
+    "id"		: "cdrom",
+    // translators: command line help text for ccdrom module
+    "help"		: _("CDROM configuration."),
+    "guihandler"	: CDROMSequence,
+    "initialize"	: CDROMRead,
+    "actions"		: $[
+	"summary" :$[
+	    "handler"	: CDROMSummaryHandler,
+	    // command line help text for 'summary' action
+	    "help"	: _("CDROM configuration summary."),
+	],
+    ],
+];
+
+CommandLine::Run (cmdline);
+return true;
 
 }
