@@ -30,9 +30,11 @@ import "Partitions";
 include "partitioning/propose_create_target.ycp";
 include "partitioning/propose_part_util.ycp";
 include "partitioning/propose_slot_util.ycp";
+include "partitioning/do_proposal_flexible.ycp";
 
 global define map do_proposal()
     ``{
+    boolean done = false;
     if ( !Mode::test )
 	{
 	// popup text
@@ -51,49 +53,53 @@ global define map do_proposal()
 	{
 	ret = proposal_s390( target );
 	}
+    else if( has_flex_proposal() )
+	{
+	ret = do_proposal_flexible( target );
+	y2milestone( "suggestion flex possible: %1", ret["ok"]:false);
+	}
     else
 	{
 	ret = do_proposal_real( Partitions::NeedBoot(), target );
-	}
-    y2milestone( "suggestion possible: %1", ret["ok"]:false);
-    if( !ret["ok"]:false && !Arch::s390 )
-	{
-	string use_disk = "";
-	list del_part = [];
-	list nodelpart = Partitions::do_not_delete;
-
-	foreach ( string dev, map disk, target, 
-	    ``{
-	    if( Storage::IsRealDisk( dev, disk ) && use_disk == "" && 
-	        !disk["readonly"]:false && find( dev, "/dev/" )==0 )
-		{
-		use_disk = dev;
-		list keep = [];
-		del_part = maplist( `p, disk["partitions"]:[], 
-				    ``{
-				    if( !contains( nodelpart, p["fsid"]:0 ))
-					{
-					p["delete"] = true;
-					}
-				    else
-					{
-					keep = add( keep, p );
-					}
-				    return( p );
-				    });
-		disk["partitions"] = keep;
-		}
-	    });
-	y2milestone( "use_disk %1 del_part %2", use_disk, del_part );
+	y2milestone( "suggestion possible: %1", ret["ok"]:false);
+	if( !ret["ok"]:false )
+	    {
+	    string use_disk = "";
+	    list del_part = [];
+	    list nodelpart = Partitions::do_not_delete;
+	    foreach ( string dev, map disk, target, 
+		``{
+		if( Storage::IsRealDisk( dev, disk ) && use_disk == "" && 
+		    !disk["readonly"]:false && find( dev, "/dev/" )==0 )
+		    {
+		    use_disk = dev;
+		    list keep = [];
+		    del_part = maplist( `p, disk["partitions"]:[], 
+					``{
+					if( !contains( nodelpart, p["fsid"]:0 ))
+					    {
+					    p["delete"] = true;
+					    }
+					else
+					    {
+					    keep = add( keep, p );
+					    }
+					return( p );
+					});
+		    disk["partitions"] = keep;
+		    }
+		});
+	    y2milestone( "use_disk %1 del_part %2", use_disk, del_part );
 	  
-	if( use_disk != "" )
-	    {
-	    ret = do_proposal_real( Partitions::NeedBoot(), target );
-	    }
-	if( ret["ok"]:false )
-	    {
-	    del_part = del_part + ret["target",use_disk,"partitions"]:[];
-	    ret["target",use_disk,"partitions"] = del_part;
+	    if( use_disk != "" )
+		{
+		ret = do_proposal_real( Partitions::NeedBoot(), target );
+		}
+	    if( ret["ok"]:false )
+		{
+		del_part = del_part + ret["target",use_disk,"partitions"]:[];
+		ret["target",use_disk,"partitions"] = del_part;
+		}
 	    }
 	}
     y2milestone( "suggestion possible: %1", ret );

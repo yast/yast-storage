@@ -21,6 +21,7 @@
     import "Wizard";
 
     include "partitioning/partition_defines.ycp";
+    include "partitioning/do_proposal_flexible.ycp";
 
   // Automatically return if resizing is not requested
   //
@@ -880,8 +881,27 @@ installation) on the partition.
       //
       // End quick hack
       // ############################################################
-      
-      partitions_new = create_partitions( target, partitions_new, region );
+
+      if( has_flex_proposal() )
+	{
+	map tt = eval(target);
+	tt["partitions"] = filter( `p, partitions_new,
+				   ``(p["type"]:`none!=`free));
+	map flex = do_flexible_disk( target_is, tt );
+	if(flex["ok"]:false)
+	    {
+	    partitions_new = flex["disk","partitions"]:[];
+	    }
+	else
+	    {
+	    UI::MessagePopup( _("The available space is not big enough to contain an installation.") );
+	    ret = `cancel;
+	    }
+	}
+      else
+	{
+	partitions_new = create_partitions( target, partitions_new, region );
+	}
       
       y2milestone( "New partition list with installation partitions: <%1>", partitions_new );
       

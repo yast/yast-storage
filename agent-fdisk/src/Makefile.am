@@ -61,3 +61,5 @@ libpy2ag_md_la_LDFLAGS = -version-info 2:0
 
 INCLUDES = -I$(includedir)
 
+install-data-hook:
+	rm -f $(DESTDIR)$(plugindir)/*.la

@@ -39,6 +39,7 @@
     include "partitioning/auto_part_create.ycp";
     include "partitioning/auto_finish.ycp";
     include "partitioning/partition_defines.ycp";
+    include "partitioning/do_proposal_flexible.ycp";
     include "ui/common_messages.ycp";
     include "ui/common_popups.ycp";
 
@@ -146,10 +147,18 @@
     
 
     boolean already_partitioned = false;
+    boolean flex_proposal = has_flex_proposal();
+    map flex = $[];
 
     integer highest_id = 0;	// this is the highest *selectable* ui_id
 
     term vbox = `Empty();
+
+    if( flex_proposal )
+	{
+	flex = do_flexible_disk( target_is, target );
+	can_do_auto = flex["ok"]:false;
+	}
 
     // show list of partitions if any found (else the disk is completely unpartitioned
 
@@ -165,8 +174,17 @@
 	    // There was enough free space on disk for linux
 	    // Ask the user if he wants to use the free space
 	    //	 
-	    if (ask_free_space()) {
-		partitions = create_partitions(target, partitions, unused_region);
+	    if (ask_free_space()) 
+		{
+		if( flex_proposal )
+		    {
+		    partitions = flex["disk","partitions"]:[];
+		    }
+		else
+		    {
+		    partitions = create_partitions( target, partitions, 
+		                                    unused_region );
+		    }
 		rewrite_settings (partitions, target, targetMap);
 		auto_undefine ();
 
@@ -253,7 +271,14 @@
 		{
 		if (ret == `next)
 		    {
-		    partitions = create_partitions (target, partitions, unused_region);
+		    if( flex_proposal )
+			{
+			partitions = flex["disk","partitions"]:[];
+			}
+		    else
+			{
+			partitions = create_partitions (target, partitions, unused_region);
+			}
 		    rewrite_settings (partitions, target, targetMap);
 		    }
 		break;
@@ -477,69 +502,92 @@ Are you sure you want to delete your Windows partition?
 		needed_partitions = needed_partitions+1;
 		}
 
-	    if (!contiguous_selection (selected_partitions))
+	    if( flex_proposal )
 		{
-		// consistency check: a condition for the installation is not fullfilled
-		// this condition is described within the reason
-		reason = _("The selected partitions are not contiguous.");
+		map tt = eval(target);
+		tt["partitions"] = filter( `p, all_partitions,  
+					   ``(p["type"]:`none!=`free));
+		flex = do_flexible_disk( target_is, tt );
+		ok = flex["ok"]:false;
+		if( !ok )
+		    {
+		    reason = _("Too few partitions are marked for removal or disk is generally too small. To install Linux, select more partitions to remove or select a larger disk.");
+		    }
 		}
-	    else if (contains_extended(old_partitions))
+	    else
 		{
-		selected = 
-		    calculate_selected_region( selected_partitions, 
-					       extended_region(old_partitions));
+		if (!contiguous_selection (selected_partitions))
+		    {
+		    // consistency check: a condition for the installation is not fullfilled
+		    // this condition is described within the reason
+		    reason = _("The selected partitions are not contiguous.");
+		    }
+		else if (contains_extended(old_partitions))
+		    {
+		    selected = 
+			calculate_selected_region( selected_partitions, 
+						   extended_region(old_partitions));
 
-		if (!can_create_logical(old_partitions))
+		    if (!can_create_logical(old_partitions))
+			{
+			// consistency check: a condition for the installation is not fullfilled
+			// this condition is described within the reason
+			reason = _("Too few partitions are marked for removal. To install Linux, select more partitions to remove.");
+			}
+		    else if( size_of_region(selected) < minimal_size)
+			{
+			y2debug("selected: %1", selected);
+			// consistency check: a condition for the installation 
+			// is not fullfilled this condition is described within 
+			// the reason
+			reason = _("The selected partitions are not big enough to contain a minimal installation.");
+			}
+		    else
+			{
+			ok = true;
+			if (!bootable (selected))
+			    warn_not_bootable ();
+			}
+		    }
+		else if( (target["label"]:"msdos"=="msdos" && 
+			  num_primary(old_partitions)==max_primary) ||
+			 (target["label"]:"msdos"!="msdos" &&
+			  (size(old_partitions)-size(selected_partitions)+needed_partitions >= max_partitions)))
 		    {
 		    // consistency check: a condition for the installation is not fullfilled
 		    // this condition is described within the reason
 		    reason = _("Too few partitions are marked for removal. To install Linux, select more partitions to remove.");
 		    }
-		else if( size_of_region(selected) < minimal_size)
-		    {
-		    y2debug("selected: %1", selected);
-		    // consistency check: a condition for the installation 
-		    // is not fullfilled this condition is described within 
-		    // the reason
-		    reason = _("The selected partitions are not big enough to contain a minimal installation.");
-		    }
 		else
 		    {
-		    ok = true;
-		    if (!bootable (selected))
-			warn_not_bootable ();
-		    }
-		}
-	    else if( (target["label"]:"msdos"=="msdos" && 
-	              num_primary(old_partitions)==max_primary) ||
-		     (target["label"]:"msdos"!="msdos" &&
-		      (size(old_partitions)-size(selected_partitions)+needed_partitions >= max_partitions)))
-		{
-		// consistency check: a condition for the installation is not fullfilled
-		// this condition is described within the reason
-		reason = _("Too few partitions are marked for removal. To install Linux, select more partitions to remove.");
-		}
-	    else
-		{
-		selected = calculate_selected_region(selected_partitions, nil);
-		if( size_of_region(selected) < minimal_size)
-		    {
-		    y2debug ("selected: %1", selected);
-		    // consistency check: a condition for the installation is not fullfilled
-		    // this condition is described by the reason
-		    reason = _("The selected partitions are not big enough to contain a minimal installation.");
-		    }
-		else
-		    {
-		    ok = true;
-		    if (!bootable (selected))
-			warn_not_bootable ();
+		    selected = calculate_selected_region(selected_partitions, nil);
+		    if( size_of_region(selected) < minimal_size)
+			{
+			y2debug ("selected: %1", selected);
+			// consistency check: a condition for the installation is not fullfilled
+			// this condition is described by the reason
+			reason = _("The selected partitions are not big enough to contain a minimal installation.");
+			}
+		    else
+			{
+			ok = true;
+			if (!bootable (selected))
+			    warn_not_bootable ();
+			}
 		    }
 		}
 
 	    if (ok)
 		{
-		partitions = create_partitions (target, all_partitions, selected);
+		if( flex_proposal )
+		    {
+		    partitions = flex["disk","partitions"]:[];
+		    }
+		else
+		    {
+		    partitions = create_partitions( target, all_partitions, 
+		                                    selected );
+		    }
 		y2milestone ("finale partitions %1", partitions);
 		rewrite_settings (partitions, target, targetMap);
 		break;

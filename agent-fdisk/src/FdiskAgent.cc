@@ -155,7 +155,7 @@ struct Created_partition
 namespace std
 {
 
-template<> struct std::less<Created_partition>
+template<> struct less<Created_partition>
 {
   bool operator() (const Created_partition &x, const Created_partition &y)
   { return x < y; }
