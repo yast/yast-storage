@@ -2845,28 +2845,30 @@ global define list AutodetectMultipathRaid( map tg )
     disks = filter( `key, `entry, disks, ``(size(entry)>=2) );
     y2milestone( "disks %1", disks );
     foreach( `key, `entry, disks,
-	     ``{
-	     foreach( `p, tg[entry[0]:"","partitions"]:[],
-		      ``{
-		      string dev1 = p["device"]:"";
-		      map tmp = GetDiskPartition( dev1 );
-		      string dev2 = GetDeviceName( entry[1]:"", tmp["nr"]:0 );
-		      map p1 = GetPartition( tg, dev1 );
-		      map p2 = GetPartition( tg, dev2 );
-		      if( p1["type"]:`primary != `extended &&
-		          p2["type"]:`primary != `extended &&
-		          size(p1["raid_name"]:"")==0 && 
-		          size(p1["mount"]:"")==0 &&
-			  size(p1["vg_name"]:"")==0 &&
-		          size(p2["raid_name"]:"")==0 && 
-		          size(p2["mount"]:"")==0 &&
-			  size(p2["vg_name"]:"")==0 )
-			  {
-			  ret = add( ret, [ dev1, dev2 ] );
-			  }
-		      });
-
-	     });
+	``{
+	foreach( `p, tg[entry[0]:"","partitions"]:[],
+	    ``{
+	    boolean ok = true;
+	    list dl = [];
+	    foreach( `disk, entry,
+		``{
+		string dev = GetDeviceName( disk, p["nr"]:0 );
+		map p1 = GetPartition( tg, dev );
+		if( p1["type"]:`primary == `extended ||
+		    size(p1["raid_name"]:"")>0 ||
+		    size(p1["mount"]:"")>0 ||
+		    size(p1["vg_name"]:"")>0 )
+		    {
+		    ok = false;
+		    }
+		dl = add( dl, dev );
+		});
+	    if( ok )
+		{
+		ret = add( ret, dl );
+		}
+	    });
+	});
     y2milestone( "ret %1", ret );
     return( ret );
     }

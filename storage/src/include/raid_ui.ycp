@@ -98,7 +98,7 @@ If one disk fails, all data is still intact. If two disks fail simultaneously, a
 
     // help text
      help = help +  _("<p><b>Multipath:</b> <br>This mode allow access to the same physical device
-over multiple controller for redundancy against a fault in a controller card. This mode can be used on exactly two devices<p>
+over multiple controller for redundancy against a fault in a controller card. This mode can be used with at least two devices<p>
 ");
 
      return help;
@@ -259,6 +259,13 @@ global define symbol RaidMultipathAuto()
 			                                       raid_list[key]:255 ));
 			   a = add( a, content[0]:"" );
 			   a = add( a, content[1]:"" );
+			   string rest = "";
+			   if( size(content)>2 )
+			       {
+			       rest = mergestring( remove(0,remove(0,content)),
+			                           " ");
+			       }
+			   a = add( a, rest );
 			   i = i + 1;
 			   return( a );
 			   });
@@ -267,6 +274,7 @@ global define symbol RaidMultipathAuto()
 	header = add( header, _("Raid Device") );
 	header = add( header, _("Partition 1") );
 	header = add( header, _("Partition 2") );
+	header = add( header, _("Other...") );
 	contents = `HBox(`HSpacing(8),
 	                 `VBox(`VSpacing(2), 
 			       `Table( `id(`mp_table), `opt(`notify), 
@@ -343,38 +351,26 @@ global define symbol RaidMultipathAuto()
 			        "persistent_superblock"  : true,
 			        "create"	    : true,
 			        "used_fs"    : Partitions::default_fs	];
-		    map p = Storage::GetPartition( tg, at[i,0]:"" );
-		    p["raid_name"] = dev;
-		    if( p["fsid"]:0 != Partitions::fsid_raid )
-			{
-			if( !p["change_fsid"]:false )
+		    map p = $[];
+		    foreach( `device, at[i]:[],
+			``{
+			p = Storage::GetPartition( tg, device );
+			p["raid_name"] = dev;
+			if( p["fsid"]:0 != Partitions::fsid_raid )
 			    {
-			    p["change_fsid"] = true;
-			    p["ori_fsid"] = p["fsid"]:0;
-			    p["ori_fstype"] = p["fstype"]:"";
+			    if( !p["change_fsid"]:false )
+				{
+				p["change_fsid"] = true;
+				p["ori_fsid"] = p["fsid"]:0;
+				p["ori_fstype"] = p["fstype"]:"";
+				}
+			    p["fsid"] = Partitions::fsid_raid;
+			    p["fstype"] = 
+				Partitions::FsIdToString(Partitions::fsid_raid);
 			    }
-			p["fsid"] = Partitions::fsid_raid;
-			p["fstype"] = 
-			    Partitions::FsIdToString(Partitions::fsid_raid);
-			}
-		    y2debug( "p1 %1", p );
-		    tg = Storage::SetPartition( tg, p );
-		    p = Storage::GetPartition( tg, at[i,1]:"" );
-		    p["raid_name"] = dev;
-		    if( p["fsid"]:0 != Partitions::fsid_raid )
-			{
-			if( !p["change_fsid"]:false )
-			    {
-			    p["change_fsid"] = true;
-			    p["ori_fsid"] = p["fsid"]:0;
-			    p["ori_fstype"] = p["fstype"]:"";
-			    }
-			p["fsid"] = Partitions::fsid_raid;
-			p["fstype"] = 
-			    Partitions::FsIdToString(Partitions::fsid_raid);
-			}
-		    y2debug( "p2 %1", p );
-		    tg = Storage::SetPartition( tg, p );
+			y2debug( "p1 %1", p );
+			tg = Storage::SetPartition( tg, p );
+			});
 
 		    integer mdsize = raid_size_byte(tg,rp);
 		    y2milestone( "mdsize=%1", mdsize );
@@ -663,7 +659,7 @@ global define symbol RaidDevices( symbol what )
     Wizard::SetContentsButtons( caption,
 				get_raid_devices_content(what,
 							 sformat(_("Current RAID: /dev/md%1"), subdevraidindex),
-							 get_raid_devices("0" ),
+							 get_raid_devices(subdevraid["nr"]:0),
 							 ""
 							 ),
 				RaidDevicesHelp(),
@@ -867,10 +863,10 @@ global define symbol RaidDevices( symbol what )
 			UI::ErrorPopup(sformat(_("For RAID 5, add at least three partitions to %1."), raid));
 			ret = `again;
 			}
-		    if( raid_type == "multipath" && (nr_of_parts != 2))
+		    if( raid_type == "multipath" && (nr_of_parts < 2))
 			{
 			// Error popup
-			UI::ErrorPopup(sformat(_("For Multipath raid, add ecactly two partitions to %1."), raid));
+			UI::ErrorPopup(sformat(_("For Multipath raid, add at least two partitions to %1."), raid));
 			ret = `again;
 			}
 		    }
