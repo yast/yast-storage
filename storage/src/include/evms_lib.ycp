@@ -1,0 +1,165 @@
+/**
+ * File:
+ *   evms_lib.ycp
+ *
+ * Module: 
+ *    utility functions for evms config
+ *
+ * Summary:
+ *
+ * Authors:
+ *   Thomas Fehr <fehr@suse.de>
+ *
+ *
+ * $Id$
+ *
+ */
+
+
+{
+
+textdomain "storage";
+
+#include "partitioning/signatures.ycp";
+
+//////////////////////////////////////////////////////////////////////
+// helptext for evms main dialog 
+//////////////////////////////////////////////////////////////////////
+
+define string getEvmsHelptext()
+    ``{
+    string help_text = "";
+
+ // helptext LVM partitioning. 
+    help_text =  _("<p>The upper part of this dialog contains the container related functionality. Here you can create, edit and modify EVMS containers. </p>");
+
+    // helptext LVM partitioning. 
+    help_text = help_text + _("<p>
+The lower part with the list contains all available EVMS devices.
+If at least one EVMS container is available you can create new 
+devices that use the available space of the current container.</p>
+");
+
+    return( help_text );
+    };
+    
+
+
+//////////////////////////////////////////////////////////////////////
+// show a new list of containers
+//////////////////////////////////////////////////////////////////////
+
+define void new_co_list( list co_list )
+    ``{
+    UI::ReplaceWidget(`id(`rcont), `ComboBox(`id(`cont), `opt(`notify),
+		      // button text
+		      _("EVMS &Container"), co_list ));
+    };
+
+define integer get_co_size( map co )
+    ``{
+    integer sum_byte = co["cyl_size"]:1 * co["cyl_count"]:0;
+    return( sum_byte );
+    }
+
+define void new_co_size( map co )
+    ``{
+    integer total = get_co_size(co);
+    integer free = co["cyl_size"]:1 * co["cyl_free"]:0;
+    y2milestone( "total %1 free %2", total, free );
+    string total_s = ByteToHumanStringWithZero( total );
+    string free_s = ByteToHumanStringWithZero( free );
+    UI::ChangeWidget( `id(`co_size), `Value, total_s );
+    UI::ChangeWidget( `id(`co_free), `Value, free_s );
+    if( UI::WidgetExists( `id(`co_graph)) )
+	{
+	UI::ChangeWidget( `id(`co_graph), `Labels,
+	                  // e.g. %1 is replaced with a size e.g.. "used 5 GB"
+			  [ sformat( _("used\n%1"), 
+				     ByteToHumanStringWithZero(total-free)),
+	                  // e.g. %1 is replaced with a size e.g.. "free 1 GB"
+			    sformat( _("free\n%1"), free_s ) ] );
+	UI::ChangeWidget( `id(`co_graph), `Values, [ (total-free)/1024/1024, 
+	                                              free/1024/1024 ] );
+	}
+    UI::RecalcLayout();
+    }
+
+define term get_bargraph_if_possible()
+    ``{
+    term ret = `Empty();
+    if( UI::HasSpecialWidget( `BarGraph ))
+        {
+        ret = `Left(`BarGraph( `id(`co_graph), `opt(`hstretch),
+                               [ 0, 10 ], [ "", ""]) );
+        }
+    y2milestone( "get_bargraph_if_possible ret %1", ret );
+    return( ret );
+    };
+
+define map get_co_map( string current, map tg )
+    ``{
+    return( tg["/dev/evms/"+current]:$[] );
+    }
+
+define list get_containers( map tg )
+    ``{
+    list ret = [];
+    foreach( string k, map e, tg, 
+	``{
+	if( e["is_evms_container"]:false )
+	    {
+	    ret = add( ret, substring( k, 10 ));
+	    }
+	});
+    y2milestone( "get_containers ret %1", ret );
+    return( ret );
+    }
+
+define list get_evms_volumes( map tg )
+    ``{
+    list tmp = [];
+    foreach( string k, map e, tg,
+	``{
+	if( find( k, "/dev/evms" )==0 && !e["is_evms_container"]:false )
+	    {
+	    tmp = add( tmp, k );
+	    }
+	});
+    list keys = sort( tmp );
+    tmp = [];
+    foreach( string k, map e, tg,
+	``{
+	if( find( k, "/dev/evms" )==0 && e["is_evms_container"]:false )
+	    {
+	    tmp = add( tmp, k );
+	    }
+	});
+    keys = merge( keys, sort(tmp) );
+    list parts = [];
+    y2milestone( "get_evms_volumes keys %1", keys );
+    foreach( string k, keys,
+	``{
+	list pa = maplist( map p, tg[k,"partitions"]:[], 
+	    ``{
+	    p["size"] = 
+		ByteToHumanStringWithZero( p["region",1]:0*tg[k,"cyl_size"]:0 );
+	    return( p );
+	    });
+	parts = merge( parts, sort( map x, map y, pa,
+	                            ``(x["nr"]:(any)""<=y["nr"]:(any)"")));
+	});
+    y2milestone( "get_evms_volumes parts %1", parts );
+    list ret = maplist( map p, parts, 
+	``{
+	return( `item( `id(p["device"]:""), 
+	               p["device"]:"", 
+		       p["size"]:"",
+		       p["mount"]:"",
+		       "" ));
+	});
+    y2milestone( "get_evms_volumes ret %1", ret );
+    return( ret );
+    }
+
+}

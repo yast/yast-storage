@@ -409,6 +409,77 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	p["fstype"] = Partitions::FsIdToString( p["fsid"]:0 );
 	targetMap = Storage::SetPartition( targetMap, p );
 	});
+    list cont = (list) SCR::Read (.evms.container);
+    foreach( map e, cont, 
+	``{
+	string key = "/dev/evms/" + e["name"]:"";
+	map entry = $[];
+	integer pesize = e["pesize"]:4096/1024;
+	entry["is_evms"] = true;
+	entry["is_evms_container"] = true;
+	entry["name"] = e["name"]:"";
+	entry["cyl_size"] = pesize*1024;
+	entry["cyl_count"] = e["size"]:0 / pesize;
+	entry["cyl_free"] = e["free"]:0 / pesize;
+	entry["partitions"] = [];
+	targetMap[key] = entry;
+	y2milestone ("e=%1 key:%2 map=%3", e, key, entry);
+	});
+    list vol = (list) SCR::Read (.evms.volume);
+    foreach( map e, vol, 
+	``{
+	integer pos = findlastof( e["device"]:"", "/" );
+	string key = substring( e["device"]:"", 0, pos );
+	y2milestone ("key:%1", key );
+	if( !haskey( targetMap, key ) )
+	    {
+	    map entry = $[];
+	    entry["is_evms"] = true;
+	    entry["name"] = "EVMS";
+	    entry["cyl_size"] = 1024*1024;
+	    entry["cyl_count"] = 0;
+	    entry["partitions"] = [];
+	    y2milestone ("add entry key:%1", entry );
+	    targetMap[key] = entry;
+	    }
+	map part = $[];
+	part["fstype"] = "EVMS";
+	part["type"] = `evms;
+	part["device"] = e["device"]:"";
+	part["nr"] = substring (e["device"]:"", size(key)+1);
+	part["id"] = e["evms_id"]:-1;
+	list region = [0, e["size"]:0 / (targetMap[key,"cyl_size"]:1/1024)];
+	part["region"] = region;
+	part = FileSystems::GetFsysInfos( part );
+	y2milestone ("part=%1", part);
+	targetMap[key,"partitions"] = add( targetMap[key,"partitions"]:[], 
+	                                   part );
+	});
+    foreach( map e, vol, 
+	``{
+	string cons = e["consumes",0]:"";
+	if( "/dev/evms/" + cons != e["device"]:"" )
+	    {
+	    string name = substring( e["device"]:"", 
+				     findlastof( e["device"]:"", "/" )+1 );
+	    if( find( cons, "lvm/" ) == 0 )
+		cons = substring( cons, 4 );
+	    string dev = "/dev/" + cons;
+	    map p = Storage::GetPartition( targetMap, dev );
+	    if( size(p)>0 )
+		{
+		p["evms_vol"] = name;
+		targetMap = Storage::SetPartition( targetMap, p );
+		}
+	    dev = "/dev/evms/" + cons;
+	    p = Storage::GetPartition( targetMap, dev );
+	    if( size(p)>0 )
+		{
+		p["evms_vol"] = name;
+		targetMap = Storage::SetPartition( targetMap, p );
+		}
+	    }
+	});
     if( Mode::normal )
 	{
 	list<map> mounts = (list<map>) SCR::Read(.proc.mounts);
@@ -687,7 +758,7 @@ global define list AddMountPointsForWinParts( list<map> partitions, boolean prim
 	map new_partition = partition;
 	integer fsid      = partition["fsid"]:Partitions::fsid_native;
 	integer partnum = 0;
-	if( haskey( partition, "nr") && is( partition["nr"]:0, integer ) )
+	if( haskey( partition, "nr") && is( partition["nr"]:(any)0, integer ) )
 	    {
 	    partnum = partition["nr"]:0;
 	    }
@@ -1348,102 +1419,49 @@ global define any GetMainDevParam( string maindevkey, string paramkey,
     return param;
     }
 
-     global define list GetSubDevFilterList(string maindevkey, string what , string how )``{
-	list<map> partitions		= [];
+global define list GetSubDevFilterList( string maindevkey, string what, 
+                                        string how )
+    ``{
+    list<map> partitions		= [];
 
-	if( maindevkey == "all" )
-	  {
-	    foreach(any maindevkey_inner, map maindev,GetTargetMap(),``{
+    if( maindevkey == "all" )
+	{
+	foreach( any maindevkey_inner, map maindev,GetTargetMap(),``{
 	        list part = maindev["partitions"]:[];
 		partitions = (list<map>)union( partitions, part );
 		});
-	  }
-	else
-	    {
-	    partitions 	= (list<map>) GetMainDevParam( maindevkey , "partitions", [] );
-      }
-	y2milestone("GetSubDevFilterList partitions %1", partitions );
-
-	list<map> filterPartitions 	= [];
-
-	if ( what == "all" )
-      {
-	    filterPartitions = partitions;
-      }
-	else if( what == "assigned_raid" )
-      {
-
-      }
-	else if( what == "assigned_vg" )
-      {
-
-      }
-	else if( what == "assigned" )
-      {
-
-	}
-	else if( what == "delete" )
-	  {
-
-	  }
-	else if ( what == "no_delete" )
-	{
-	    filterPartitions = FilterDelete( partitions );
-      }
-	else if( what == "edit_possible" )
-      {
-
-	}
-	else if( what == "delete_possible" )
-	  {
-
-	  }
-	else if ( what == "display_possible" )
-	{
-
-      }
-	else if ( what == "assign_vg_possible" )
-      {
-
-	}
-	else if ( what == "assign_raid_possible" )
-	  {
-
-	}
-	else if ( what == "no_virtal" )
-	      {
-
-	      }
-	else if ( what == "virtual")
-	{
-
-	  }
-      else
-	  {
-	    return nil;
-	  }
-
-	if( how == "all" )
-	{
-	    return filterPartitions;
-      }
-	else if ( how == "key_list" )
-      {
-
-      }
-	else if ( how == "index_list" )
-      {
-
-      }
+        }
     else
-      {
-	    return nil;
+	{
+	partitions = (list<map>) GetMainDevParam( maindevkey, "partitions", [] );
+        }
+    y2milestone("GetSubDevFilterList partitions %1", partitions );
+
+    list<map> filterPartitions 	= [];
+
+    if( what == "all" )
+	{
+	filterPartitions = partitions;
+	}
+    else if ( what == "no_delete" )
+	{
+	filterPartitions = FilterDelete( partitions );
+	}
+    else
+	{
+	return nil;
 	}
 
+    if( how == "all" )
+	{
+	return filterPartitions;
+	}
+    else
+	{
+	return nil;
+	}
 
-	/* TODO TODO */
-
-
+    /* TODO TODO */
     }
 
 
@@ -1475,7 +1493,7 @@ global define any GetMainDevParam( string maindevkey, string paramkey,
 	    dev = GetDiskPartition( part["device"]:"" );
 	    }
 	y2milestone( "root=%1 dev=%2", part, dev );
-      boolean ret = !is( dev["nr"]:0, integer );
+      boolean ret = !is( dev["nr"]:(any)0, integer );
       y2milestone( "ret=%1", ret );
       return ret;
     };
@@ -1926,16 +1944,7 @@ global define map GetSubDev( string subdevkey )
 
     global define boolean DelMainDev(string maindevkey )``{
 
-	if ( ExistsMainDevKeyEntry( maindevkey) )
-	{
-	    /* TODO TODO TODO */
-	    /* .. */
-	}
-	else
-	{
-	    return false;
-	}
-
+	return false;
     }
 
 
@@ -2732,7 +2741,7 @@ to the Linux kernel."));
 global define boolean IsRealDisk( string disk, map entry )
     ``{
     return( disk != "/dev/md" && disk != "/dev/loop" &&
-            !entry["is_lvm_vg"]:false );
+            !entry["is_lvm_vg"]:false && !entry["is_evms"]:false );
     }
 
 global define list GetPartitionList()``{
@@ -2746,7 +2755,7 @@ global define list GetPartitionList()``{
 				       ``(GetDeviceName(dev,p["nr"]:0))));
 	    }
 	});
-    sort( `x, `y, ret, ``(x<=y) );
+    ret = sort( ret );
     y2debug( "GetPartitionList ret=%1", ret );
     return( ret );
     }
@@ -3201,6 +3210,7 @@ global define map MakeCdromFstabEntry( map cd )
     y2milestone( "ret %1", entry );
     return( entry );
     };
+
 global define void WriteFstab( map targetMap )
     ``{
     y2milestone( "WriteFstab called" );
