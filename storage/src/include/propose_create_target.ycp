@@ -61,6 +61,10 @@ global define GetSwapSize( integer start_cyl, integer end_cyl, integer cyl_size)
 	{
 	swap_size = mem / 3; 
 	}
+    else 
+	{
+	swap_size = mem / 4;
+	}
 
     if( swap_size > oneGB )
 	{
@@ -93,6 +97,7 @@ global define GetSwapSize( integer start_cyl, integer end_cyl, integer cyl_size)
 	swap_size = (128 * oneMB) - mem;
 	}
 
+    y2milestone( "swap_size %1", swap_size );
 
     //debug( "Mem %2 MB  Disk %3 MB ==> Swap: %1 MB, ",
     //	    ToStringLen( 4, swap_size / ( 1024*1024)),
@@ -297,12 +302,20 @@ global define HitToTargetMap( map targetMap, map hit )
 	    rootnr = (slot_type == "linux" ? slot_nr: nr);
 	    }
 
+	y2milestone( "rootnr:%1 boot_nr:%2", rootnr, boot_nr );
 	if( boot_nr==-1 )
 	    {
 	    boot_nr = rootnr;
-	    rootnr = hit["nr"]:0;
+	    if( need_extended )
+		{
+		rootnr = rootnr+1;
+		}
+	    else
+		{
+		rootnr = hit["nr"]:0;
+		}
 	    }
-	y2milestone( "rootnr:%1", rootnr );
+	y2milestone( "rootnr:%1 boot_nr:%2", rootnr, boot_nr );
 
 	partitions = create_partition( partitions, slot_start_cyl,
 				       slot_start_cyl + min_nb_boot_cyl-1,
@@ -311,6 +324,9 @@ global define HitToTargetMap( map targetMap, map hit )
 
 	integer new_start_cyl = slot_start_cyl + min_nb_boot_cyl;
 	integer swap_end = GetSwapSize( new_start_cyl, slot_end_cyl, cyl_size);
+
+	y2milestone( "swap_end %1 slot_start_cyl %2 rootnr %3", swap_end,
+	             slot_start_cyl, rootnr );
 
 	if( !have_old_swap_part && swap_end != -1 && 
 	    swap_end > slot_start_cyl && 

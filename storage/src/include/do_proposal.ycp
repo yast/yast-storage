@@ -102,19 +102,19 @@ global define map do_proposal()
 global define map proposal_s390( map targetMap )
     ``{
     boolean found = false;
-    foreach( `dev, `disk, targetMap, 
-	``{
-	if( !found && find( dev, "/dev/dasd" )==0 && 
-	    size(disk["partitions"]:[])>0 )
-	    {
-	    found = true;
-	    targetMap[dev,"partitions",0,"format"] = true;
-	    targetMap[dev,"partitions",0,"mount"] = "/";
-	    targetMap[dev,"partitions",0,"used_fs"] = `reiser;
-	    targetMap[dev,"partitions",0,"fs_options"] = 
-		$["opt_blocksize":$["option_str":"-b", "option_value":"4096"]];
-	    }
-	});
+//    foreach( `dev, `disk, targetMap, 
+//	``{
+//	if( !found && find( dev, "/dev/dasd" )==0 && 
+//	    size(disk["partitions"]:[])>0 )
+//	    {
+//	    found = true;
+//	    targetMap[dev,"partitions",0,"format"] = true;
+//	    targetMap[dev,"partitions",0,"mount"] = "/";
+//	    targetMap[dev,"partitions",0,"used_fs"] = `reiser;
+//	    targetMap[dev,"partitions",0,"fs_options"] = 
+//		$["opt_blocksize":$["option_str":"-b", "option_value":"4096"]];
+//	    }
+//	});
     return( $[ "ok" : found, "target" : targetMap ] );
     }
   
@@ -142,7 +142,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	    if( disk["max_primary"]:4 > 4 )
 		{
 		extended_allowed = false;
-		integer i = 1;
+		integer i = 5;
 		while( i<=disk["max_primary"]:4 )
 		    {
 		    primary_possible = add( primary_possible, i );
@@ -153,8 +153,8 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 		    primary_possible = filter( `n, primary_possible, ``(n != 3 ));
 		    }
 		}
-	    y2debug( "extended_allowed %1, primary_possible %2", 
-	             extended_allowed, primary_possible );
+	    y2milestone( "extended_allowed %1, primary_possible %2", 
+			 extended_allowed, primary_possible );
 
 	    /////////////////////////////////////////////////////////
 	    // 1. Step:
@@ -170,7 +170,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	    integer min_nb_boot_cyl = (Partitions::MinimalNeededBootsize() / 
 	                               cyl_size) + 1;
 
-	    y2debug( "minimal_needed_cyl nb: %1", min_nb_boot_cyl );
+	    y2milestone( "minimal_needed_cyl nb: %1", min_nb_boot_cyl );
 
 	    list primary_list = 
 		filter( `part, disk["partitions"]:[],
@@ -187,8 +187,8 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 
 	    list    pri_extd_list   = primary_list + extended_list;
 	    boolean i_have_extended = ( size(extended_list) > 0);
-	    y2debug( "i_have_extended %1, extended_list %2", 
-	             i_have_extended, extended_list );
+	    y2milestone( "i_have_extended %1, extended_list %2", 
+			 i_have_extended, extended_list );
 
 
 	    pri_extd_list = sort(`p_x, `p_y, pri_extd_list, 
@@ -196,8 +196,8 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	    logical_list  = sort(`p_x, `p_y, logical_list, 
 	                         ``(p_x["region",0]:0 <= p_y["region",0]:0));
 
-	    y2debug( "pri+extd parts %1", pri_extd_list );
-	    y2debug( "logical_list   %1", logical_list  );
+	    y2milestone( "pri+extd parts %1", pri_extd_list );
+	    y2milestone( "logical_list   %1", logical_list  );
 
 	    // which primary partitions can I create?
 
@@ -207,7 +207,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 		filter( `nr, primary_possible, 
 		        ``( !contains( pri_extd_nr_list, nr )));
 
-	    y2debug( "free pri+extd parts %1", free_pri_extd_nr_list );
+	    y2milestone( "free pri+extd parts %1", free_pri_extd_nr_list );
 
 
 	    /////////////////////////////////////////////////////////
@@ -447,7 +447,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 		    if( free_primary >= 2 )
 			{
 			second_pri = free_pri_extd_nr_list[1]:-1;
-			if( free_primary >= 2 )
+			if( free_primary >= 3 )
 			    {
 			    third_pri = free_pri_extd_nr_list[2]:-1;
 			    }

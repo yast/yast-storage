@@ -36,7 +36,7 @@ global define get_boot_slot_list( list base_slots )
     list boot_slots = 
         filter( `slot, base_slots, 
 	        ``( slot["start_cyl"]:0+min_nb_boot_cyl<Partitions::BootCyl() && 
-		    slot["size"]:1 > Partitions::MinimalNeededBootsize() ));
+		    slot["size"]:1 >= Partitions::MinimalNeededBootsize() ));
 
     list boot_slots_win = 
         filter( `slot, boot_slots, 
@@ -82,7 +82,7 @@ global define GetSlots( list part_list, integer start_cyl, integer end_cyl,
 	integer end_of_part  = begin_of_part + part["region",1]:1 - 1;
 
 	y2debug( "last_border %1, begin %2, end %3", last_border, 
-	         begin_of_part, end_of_part );
+		 begin_of_part, end_of_part );
 
 	//////////////////////////////////////////////////////////////
 	// is there a gap between partitions -> create free slot
@@ -93,7 +93,7 @@ global define GetSlots( list part_list, integer start_cyl, integer end_cyl,
 	    // example: last = 1 begin = 10 -> free = 1..9  
 	    //          size = 10 - 1 * cylsize
 
-	    integer psize  = ((last_border - begin_of_part +1)*cyl_size);
+	    integer psize  = ((begin_of_part - last_border-1)*cyl_size);
 	    slot_list = 
 		add( slot_list, $[ "type"      : "free",
 				   "dev"       : dev,
@@ -128,7 +128,8 @@ global define GetSlots( list part_list, integer start_cyl, integer end_cyl,
 	    {
 	    win_dat = FileSystems::GetFreeSpace( part["device"]:"", psize, 
 	                                         `fat32 );
-	    if ( win_dat != nil  )
+	    y2milestone( "win_dat=%1", win_dat );
+	    if ( win_dat != nil && psize>300*1024*1024 )
 		{
 		type    = "win_resize";
 		psize   = win_dat["linux_size"]:-1;
@@ -139,7 +140,7 @@ global define GetSlots( list part_list, integer start_cyl, integer end_cyl,
 				     cyl_size );
 		pstart     = begin_of_part + win_len;
 		}
-	    else
+	    else if( win_dat == nil )
 		{
 		// error: to other -> not useable
 		y2error("Storage::GetFreeSpace -> nil from %1", 
@@ -151,6 +152,10 @@ global define GetSlots( list part_list, integer start_cyl, integer end_cyl,
 	if( fsid == Partitions::fsid_extended )     type = "extended";
 	if( fsid == Partitions::fsid_extended_win ) type = "extended";
 	if( Partitions::PrepBoot() && fsid == Partitions::fsid_prep_chrp_boot )
+	    type = "linux";
+	if( fsid == Partitions::FsidBoot() && psize < 150*1024*1024 )
+	    type = "linux";
+	if( fsid == Partitions::fsid_gpt_boot && psize < 1024*1024*1024 )     
 	    type = "linux";
 
 	// for now, this auto mode does not handle raid/lvm

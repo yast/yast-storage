@@ -225,7 +225,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
     integer boot_start_cyl       = 0;
     integer boot_cyl_size        = 0;
     integer boot_size            = 0;
-    boolean boot_size_check      = true; 
+    boolean boot_size_check      = !(Arch::board_chrp || Arch::board_prep || Arch::board_iseries);
     integer root_cyl_for_gb      = 0;
     integer boot_cyl_for_gb      = 0;
     string  axp_start_dev        = "";
@@ -354,7 +354,6 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		    if( Partitions::PrepBoot() &&
 			fsid == Partitions::fsid_prep_chrp_boot )
 		    {
-			boot_size_check = false; 
 			boot_found      = true;
 			boot_end        = part["region",0]:0 + part["region",1]:1-1;
 			boot_cyl_nb     = part["region",1]:0;
@@ -438,30 +437,6 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 
 
       Storage::SetWholeDisk( all_whole_disk );
-
-      if ( xfs_found || show_all_popups )
-      {
-	  boolean ret = UI::YesNoPopup(_("Warning:
-You chose to format one of your partitions with XFS.
-XFS is still experimental and not well tested.
-
-Select another format?
-"));
-	  if (ret == true) retval = `again;
-
-      }
-
-      if ( (Arch::ppc && jfs_found) || show_all_popups )
-      {
-	  boolean ret = UI::YesNoPopup(_("Warning:
-You want to format one of your partitiones with JFS.
-Please notice, that JFS for PPC is still experimental and not well tested! 
-
-Do you want to change this?
-"));
-	  if (ret == true) retval = `again;
-
-      }
 
       if ( (axp_start_Cr_failure && installation) || show_all_popups )
       {
@@ -552,15 +527,19 @@ Do you want to change this?
 	    ///////////////////////////////////////////////////////////
 	    // For PReP the boot partition has to be smaller than 4 MB if
 	    // possible
-	   
+	    // the OpenFirmware will load the whole content of the partition
+	    // and it will overwrite memory if the partition is too big
+	    // desired size on CHRP: max 5MB, at least 1MB (for yaboot)
+	    // FIXME: this function shrinks mount point /boot unconditional!!!
+
 	    if ( boot_cyl_nb > get_max_cyl_for_4mb( boot_cyl_size) )
 	    {
 		targetMap = change_boot_region( targetMap, [ boot_start_cyl, get_max_cyl_for_4mb(boot_cyl_size) ]);
 	    }
-	  
-	    y2debug( "PReP resized: %1 %2 %3",  boot_cyl_nb, get_max_cyl_for_4mb( boot_cyl_size), targetMap );
+
+	    y2milestone( "PReP resized: %1 %2 %3",  boot_cyl_nb, get_max_cyl_for_4mb( boot_cyl_size), targetMap );
 	}
-     
+
 	if ( (boot_size < 12*1024*1024 && boot_size_check) || show_all_popups )
 	{
 	    boolean ret = UI::YesNoPopup(_("Warning:
@@ -579,7 +558,9 @@ Do you want to do this?
     if( (! boot_found && installation ) || show_all_popups )
     {
 
-	if( Partitions::PrepBoot() || show_all_popups )
+	// iSeries does not really need a boot partition
+	// a bootable binary will be written to a kernel slot in /proc
+	if( (Partitions::PrepBoot() && ! Arch::board_iseries) || show_all_popups )
 	{
 	    // If the user chooses 'no' here, the system will not be able to
 	    // boot from the hard drive!
@@ -639,7 +620,9 @@ Do you want to change this?
 	    if (ret == true) retval = `again;
 	}
 
-	if ( (root_raid && !boot_found) || show_all_popups )
+	// iSeries has no problems with this configuration
+	// an initrd will be created and you can boot from a kernel slot
+	if ( (root_raid && !boot_found && !Arch::board_iseries) || show_all_popups )
 	{
 	    boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux
 installation might not be directly bootable, because
@@ -652,7 +635,9 @@ Do you want to change this?
 	    if (ret == true) retval = `again;
 	}
 
-	if ( (root_lvm && !boot_found) || show_all_popups )
+	// iSeries has no problems with this configuration
+	// an initrd will be created and you can boot from a kernel slot
+	if ( (root_lvm && !boot_found && !Arch::board_iseries) || show_all_popups )
 	{
 	    boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux installation 
 will encounter problems when booting, because you have no \"boot\" 
@@ -671,6 +656,25 @@ Change this?
 
 	
     }
+
+    if( (Arch::ia64 && installation && 
+         (!boot_found || (boot_fs != `fat16 && boot_fs != `fat32))) || 
+        show_all_popups )
+	{
+	boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux installation 
+will encounter problems when booting, because you have no 
+FAT partition mounted onto /boot.
+
+This will give severe problems with the normal boot setup!
+
+If you do not know exactly what you are doing, use a normal 
+FAT partition for your files below /boot.
+
+Change this?
+"));
+
+	if (ret == true) retval = `again;
+	}
 
     if ( !have_swap || show_all_popups )
     {

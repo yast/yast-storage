@@ -1309,6 +1309,24 @@ Use ReiserFS on larger partitions.
 		     continue;
 		     }
 		 }
+	     //////////////////////////////////////////////////////////////
+	     // Check if the user has a jfs partition with not enough space
+	     if ( retval["used_fs"]:`ext2 == `jfs && retval["format"]:false )
+		 {
+		 integer part_size =  retval["region",1]:0 * cyl_size;
+
+		 if ( part_size < 32000000 )		// 32MBlocks
+		     {
+		     UI::WarningPopup(_("Your partition is too small to use JFS.
+JFS is a journaling file system that requires
+at least 16 MB space for the journal alone.
+Use JFS on larger partitions.
+"));
+
+		     UI::SetFocus(`id(`end_part));
+		     continue;
+		     }
+		 }
 
 	     map ret_mp = CheckOkMount( dev, cur_val, retval );
 
@@ -1355,7 +1373,8 @@ Do you really want to change the FSID?
 
 
 	     map ret_cr = CheckCryptOk( retval );
-	     if( !ret_cr["ok"]:false )
+	     if( !ret_cr["ok"]:false &&
+	         UI::WidgetExists( `id(`crypt_fs) ))
 		 {
 		 ret = `retry;
 		 UI::ChangeWidget(`id(`crypt_fs), `Value, false);

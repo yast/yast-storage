@@ -34,7 +34,7 @@
    * @parm search_point mount point where partitions can be mounted
    * @return list list with fstab if only one existing fstab is found
    */
-global define findExistingFstab( map targetMap, map file_systems, 
+global define findExistingFstab( map targetMap, map file_systems,
                                  string search_point )
     ``{
     /////////////////////////////////////////////////////////////////
@@ -44,7 +44,7 @@ global define findExistingFstab( map targetMap, map file_systems,
 
     foreach ( `dev, `disk, targetMap, ``{
 	foreach ( `partition, disk["partitions"]:[], ``{
-	    if( count_fstab_found==0 && 
+	    if( count_fstab_found==0 &&
 		partition["fsid"]:0 == Partitions::fsid_native )
 		{
 		/////////////////////////////////////////////////////
@@ -57,14 +57,14 @@ global define findExistingFstab( map targetMap, map file_systems,
 		    if( !mount_success )
 			{
 			FileSystems::LoadModule( fsys );
-			string cmd = sformat( "/bin/mount %1 %2 %3", entry[`mount_option]:"", 
+			string cmd = sformat( "/bin/mount %1 %2 %3", entry[`mount_option]:"",
 					      partition["device"]:"", search_point );
 			y2milestone( "cmd %1", cmd );
 			mount_success = SCR::Execute(.target.bash, cmd ) == 0;
 			}
 		    });
 
-		if( mount_success && 
+		if( mount_success &&
 		    SCR::Read(.target.size, sformat("%1/etc/fstab", search_point)) > 0 )
 		    {
 		    if (SCR::Execute(.target.bash, "/bin/cp " + Installation::destdir + "/etc/fstab /etc") == 0)
@@ -101,7 +101,7 @@ global define findExistingFstab( map targetMap, map file_systems,
   */
 global define scanAndReadExistingFstab( map targetMap, map file_systems )
     ``{
-    string  search_point      = "/mnt";
+    string search_point = "/mnt";
     list fstab = [];
 
     /////////////////////////////////////////////////////////////////
@@ -131,10 +131,10 @@ global define scanAndReadExistingFstab( map targetMap, map file_systems )
 
 	if( part1["create"]:false )
 	    return true;
-	
+
 	y2debug("part1 : %1", part1);
 	y2debug("part2 : %1", part2);
-	
+
 	// -> not all keys
 	if( part1["nr"]:0 	       == part2["nr"]:0 &&
 	    part1["fsid"]:0 	       == part2["fsid"]:0 &&
@@ -260,7 +260,7 @@ global define check_mount_point( map targetMap, string dev, map part )
 	// check if the mount point is already in use
 	foreach( `disk, `diskinfo, targetMap, ``{
 	    foreach( `part, diskinfo["partitions"]:[], ``{
-		if ( !part["delete"]:false && 
+		if ( !part["delete"]:false &&
 		     Storage::GetDeviceName( disk, part["nr"]:0 ) != dev )
 		    {
 		    // all valid partitions
@@ -311,28 +311,32 @@ global define check_mount_point( map targetMap, string dev, map part )
     };
 
     /**
-     * Do all checks concerning mount points, uuid, volume labels and 
-     * fstab options 
+     * Do all checks concerning mount points, uuid, volume labels and
+     * fstab options
      * @param targetMap the TargetMap
      * @param mount mount point
      * @return map
      **/
 global define map CheckOkMount( string dev, map old, map new )
     ``{
-    y2milestone( "old:%2 new:%3", old, new );
+    y2milestone( "old:%1 new:%2", old, new );
     map ret = $[];
     ret["ok"] = true;
     new["mount"] = UI::QueryWidget(`id(`mount_point), `Value);
     new["mount"] = deletechars( new["mount"]:"", " \t" );
     if( size(new["mount"]:"")>0 )
 	{
+	boolean crypt_fs = false;
 	if( !check_mount_point( Storage::GetTargetMap(), dev, new ))
 	    {
 	    ret["ok"] = false;
 	    ret["field"] = `mount_point;
 	    }
-	if( !check_crypt_fs_mount_points(new["mount"]:"",
-					 UI::QueryWidget(`id(`crypt_fs), `Value ) ))
+	if( UI::WidgetExists( `id(`crypt_fs) ))
+	    {
+	    crypt_fs = UI::QueryWidget(`id(`crypt_fs), `Value );
+	    }
+	if( !check_crypt_fs_mount_points(new["mount"]:"", crypt_fs ))
 	    {
 	    ret["ok"] = false;
 	    ret["field"] = `mount_point;
@@ -354,7 +358,7 @@ global define map CheckOkMount( string dev, map old, map new )
 		}
 	    }
 	}
-    if( !new["format"]:false && !new["create"]:false && 
+    if( !new["format"]:false && !new["create"]:false &&
         old["mount"]:"" != new["mount"]:"" && ret["ok"]:false )
 	{
 	if( !haskey( new, "ori_mount" ) )
@@ -369,7 +373,7 @@ global define map CheckOkMount( string dev, map old, map new )
     };
 
 /**
-  * Do all checks concerning handling of crypt fs 
+  * Do all checks concerning handling of crypt fs
   * @param new partition map
   * @return map
   **/
@@ -378,7 +382,11 @@ global define map CheckCryptOk( map new )
     map ret = $[];
     ret["ok"] = true;
     y2milestone( "new:%1", new );
-    boolean crypt_fs = UI::QueryWidget(`id(`crypt_fs), `Value );
+    boolean crypt_fs = false;
+    if( UI::WidgetExists( `id(`crypt_fs) ))
+	{
+	crypt_fs = UI::QueryWidget(`id(`crypt_fs), `Value );
+	}
     new["crypt_fs"] = crypt_fs;
     if( crypt_fs && size(new["crypt_key"]:"")==0 )
 	{
@@ -405,10 +413,13 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
     map selected_fs = file_systems[used_fs]:$[];
     y2milestone( "init:%1 used_fs:%2 new:%3", init, used_fs, new );
 
-    UI::ChangeWidget(`id(`crypt_fs), `Enabled, selected_fs[`crypt]:false );
-    if( !selected_fs[`crypt]:false )
+    if( UI::WidgetExists( `id(`crypt_fs) ))
 	{
-	UI::ChangeWidget(`id(`crypt_fs), `Value, false );
+	UI::ChangeWidget(`id(`crypt_fs), `Enabled, selected_fs[`crypt]:false );
+	if( !selected_fs[`crypt]:false )
+	    {
+	    UI::ChangeWidget(`id(`crypt_fs), `Value, false );
+	    }
 	}
 
     ////////////////////////////////////////////////
@@ -423,8 +434,8 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
 	}
     else
 	{
-	not_used_mp = 
-	    notUsedMountpoints( Storage::GetTargetMap(), 
+	not_used_mp =
+	    notUsedMountpoints( Storage::GetTargetMap(),
 				selected_fs[`mountpoints]:[] );
 	if( new["type"]:`primary == `lvm || new["type"]:`primary == `sw_raid )
 	    {
@@ -435,9 +446,9 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
 	}
     UI::ReplaceWidget(`id(`mount_dlg_rp), MountDlg( new, not_used_mp));
     UI::ChangeWidget( `id(`mount_point), `Value, new["mount"]:"" );
-    
+
     UI::ChangeWidget(`id(`fstab_options), `Enabled, used_fs != `swap );
-    UI::ChangeWidget(`id(`fs_options), `Enabled, 
+    UI::ChangeWidget(`id(`fs_options), `Enabled,
                      new["format"]:false && selected_fs[`options]:[] != [] );
     if( !init )
 	{
@@ -453,12 +464,16 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
 	    {
 	    new["mountby"] = `device;
 	    }
+	if( !FileSystems::MountLabel( used_fs ) && size(new["label"]:"")>0 )
+	    {
+	    new["label"] = "";
+	    }
 	}
     };
 
 
-global define void HandlePartWidgetChanges( boolean init, any ret, 
-					    map file_systems, map old, 
+global define void HandlePartWidgetChanges( boolean init, any ret,
+					    map file_systems, map old,
 					    map new )
     ``{
     y2milestone( "init:%1 ret:%2 new:%3", init, ret, new );
@@ -466,9 +481,16 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
     map selected_fs = file_systems[used_fs]:$[];
     /////////////////////////////////////////////////////////
     // configure main dialog and modify map new
+    if( !init && new["mount"]:"" != old["mount"]:"" )
+	{
+	if( Arch::ia64 && new["mount"]:"" == "/boot" )
+	    {
+	    new = filter(`key, `value, new, ``( key != "fstopt"));
+	    }
+	}
     if( init || ret == `format_true || ret == `format_false )
 	{
-	boolean format = UI::QueryWidget(`id(`format), `CurrentButton) == 
+	boolean format = UI::QueryWidget(`id(`format), `CurrentButton) ==
 	                 `format_true;
 
 	boolean old_format = new["format"]:false;
@@ -480,9 +502,13 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	////////////////////////////////////////////////
 	// modify widgets
 	UI::ChangeWidget( `id(`fs), `Enabled, format );
-	UI::ChangeWidget( `id(`fs_options), `Enabled, 
+	UI::ChangeWidget( `id(`fs_options), `Enabled,
 			  format && selected_fs[`options]:[] != [] );
-	UI::ChangeWidget( `id(`crypt_fs), `Enabled, selected_fs[`crypt]:false );
+	if( UI::WidgetExists( `id(`crypt_fs) ))
+	    {
+	    UI::ChangeWidget( `id(`crypt_fs), `Enabled, 
+			      selected_fs[`crypt]:false );
+	    }
 	if( UI::WidgetExists( `id(`fsid_point) ))
 	    {
 	    UI::ChangeWidget( `id(`fsid_point), `Enabled, !format);
@@ -520,13 +546,20 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 		}
 	    if( UI::WidgetExists( `id(`fsid_point) ))
 		{
-		UI::ChangeWidget( `id(`fsid_point), `Value, 
+		UI::ChangeWidget( `id(`fsid_point), `Value,
 				  selected_fs[`fsid_item]:"");
 		}
 	    if( Arch::s390 && format )
 		{
-		new["fs_options"] = $["opt_blocksize":$["option_str":"-b", 
-		                                        "option_value":"4096"]];
+		    if (new["used_fs"]:`unknown != `jfs)
+		    {
+			new["fs_options"] = $["opt_blocksize":$["option_str":"-b",
+								"option_value":"4096"]];
+		    }
+		    else
+		    {
+			new["fs_options"] = $[];
+		    }
 		}
 	    if( !format )
 		{
@@ -553,8 +586,21 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 		new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
 		if( UI::WidgetExists( `id(`fsid_point) ))
 		    {
-		    UI::ChangeWidget( `id(`fsid_point), `Value, 
+		    UI::ChangeWidget( `id(`fsid_point), `Value,
 				      selected_fs[`fsid_item]:"");
+		    }
+		if( Arch::s390 && new["format"]:false )
+		    {
+			if (new["used_fs"]:`unknown != `jfs)
+			{
+			    new["fs_options"] =
+				$["opt_blocksize":$["option_str":"-b",
+						    "option_value":"4096"]];
+			}
+			else
+			{
+			    new["fs_options"] = $[];
+			}
 		    }
 		}
 	    }
@@ -573,13 +619,13 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	if( fs_int != old_id )
 	    {
 	    new["fsid"] = fs_int;
-	    boolean no_fs = contains( [ Partitions::fsid_lvm, 
+	    boolean no_fs = contains( [ Partitions::fsid_lvm,
 	                                Partitions::fsid_raid,
 					Partitions::fsid_hibernation,
 					Partitions::fsid_prep_chrp_boot ],
 				      fs_int );
 
-	    UI::ChangeWidget( `id(`fstab_options), `Enabled, 
+	    UI::ChangeWidget( `id(`fstab_options), `Enabled,
 	                      !no_fs && fs_int!=Partitions::fsid_swap );
 	    UI::ChangeWidget( `id(`format_true), `Enabled, !no_fs );
 	    UI::ChangeWidget( `id(`mount_point), `Enabled, !no_fs );
@@ -587,8 +633,11 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 		{
 		new["mount"] = "";
 		UI::ChangeWidget( `id(`mount_point), `Value, new["mount"]:"" );
-		ChangeExistingSymbolsState( [ `crypt_fs, `fs_options, `fs ],
-		                            false );
+		if( UI::WidgetExists( `id(`crypt_fs) ))
+		    {
+		    UI::ChangeWidget( `id(`crypt_fs), `Enabled, false );
+		    }
+		ChangeExistingSymbolsState( [ `fs_options, `fs ], false );
 		}
 	    else if( fs_int == Partitions::fsid_native )
 		{
@@ -624,7 +673,7 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	}
     if( ret == `fs_options )
 	{
-	new["fs_options"] = FileSystemOptions( new["fs_options"]:$[], 
+	new["fs_options"] = FileSystemOptions( new["fs_options"]:$[],
 	                                       selected_fs );
 	}
     y2debug( "HandlePartWidgetChanges old:%1", old );
@@ -635,7 +684,7 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
  * Merge readed list fstab with targetMap
  * @parm targetMap all targets
  * @parm fstab readed fstab list
- * @return return ( [ targetMap, table_input ] 
+ * @return return ( [ targetMap, table_input ]
  *
  */
 global define list AddFstabToData( map targetMap, list fstab )
@@ -646,11 +695,11 @@ global define list AddFstabToData( map targetMap, list fstab )
     map new_targetMap = eval( targetMap );
     list table_input = [];
 
-    foreach( `dev, `disk, targetMap, 
+    foreach( `dev, `disk, targetMap,
 	``{
 	list new_partitions = [];
 	map target = disk;
-	foreach( `partition, disk["partitions"]:[], 
+	foreach( `partition, disk["partitions"]:[],
 	    ``{
 	    map new_partition = partition;
 

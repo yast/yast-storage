@@ -119,7 +119,6 @@
 	      if (pentry["delete"]:false)
 		return;
 
-	      integer nr	= pentry["nr"]:0;
 	      integer fsid	= pentry["fsid"]:0;
 	      string  mount	= pentry["mount"]:"";
 	      boolean crypt_fs	= pentry["crypt_fs"]:false;
@@ -135,7 +134,7 @@
 	      change(bakpentry,"used_fs",used_fs);
 	      change(bakpentry,"format",format);
 	      change(bakpentry,"region",region);
-	      change(bakpartitionmap,nr,bakpentry);
+	      change(bakpartitionmap,pentry["nr"]:0,bakpentry);
 	  });
 	  change(baktargets,tdevice,$["partitions":bakpartitionmap]);
       });
@@ -155,10 +154,9 @@
 	  foreach (`pentry, partitions,
 	  ``{
 	      usebackup = true;
-	      integer nr = pentry["nr"]:0;
 
 	      //do we have data for that partition?
-	      map bakpentry=lookup(bakpartitionmap,nr,$[]);
+	      map bakpentry=lookup(bakpartitionmap,pentry["nr"]:0,$[]);
 
 	      // partition is (no longer) available
 	      if (bakpentry == $[])
@@ -559,6 +557,17 @@ damage to your file systems, it is safer to cancel and reboot.
 	    {
 	    path scrpath = lookup ( target, "scrpath", topath ("."+substring (tdevice, 5)));
 	    y2milestone ("partitioning %1 %2\n", .disk + scrpath + .partitions, partitions);
+	    if( Arch::ia64 )
+		{
+		partitions = 
+		    maplist( `p, partitions,
+			     ``{
+			     if( p["mount"]:"" == "/boot" )
+				 p["fsid"] = Partitions::fsid_gpt_boot;
+			     return( p );
+			     });
+		}
+	    y2milestone( "write partitions %1", partitions );
 	    do
 		{
 		retry = false;
@@ -757,8 +766,21 @@ Please repeat the installation with another swap partition selected
     if( this_is_for_real && md_active )
 	{
         map tg = Storage::GetTargetMap();
-	if( size( filter( `part,  tg["/dev/md","partitions"]:[], 
-	                  ``( !part["delete"]:false && part["create"]:false ))) > 0 )
+	y2milestone( "rd %1", tg["/dev/md","partitions"]:[] );
+	list rem_l = filter( `p, tg["/dev/md","partitions"]:[],
+	                     ``( p["delete"]:false && !p["create"]:false ));
+	list add_l = filter( `p, tg["/dev/md","partitions"]:[],
+	                     ``( !p["delete"]:false && p["create"]:false ));
+	y2milestone( "rem %1", rem_l ); 
+	y2milestone( "add %1", add_l );
+	foreach( `p, rem_l,
+	    ``{
+	    y2milestone( "p %1", p );
+	    string cmd = "/sbin/raidstop -c /dev/null " + p["device"]:"";
+	    y2milestone( "cmd %1", cmd );
+	    SCR::Execute( .target.bash, cmd );
+	    });
+	if( size( add_l )>0 )
 	    {
 	    y2milestone( "prepare raid" );
 	    do

@@ -110,7 +110,7 @@ PartedAccess::NewPartition(const PartitionType Part_e,
 	  {
 	  Buf_Ci << "linux-swap ";
 	  }
-      else if( Type_iv == 0x06 || Type_iv == 0x0c )
+      else if( Type_iv == 0x103 || Type_iv == 0x06 || Type_iv == 0x0c )
 	  {
 	  Buf_Ci << "fat32 ";
 	  }
@@ -171,6 +171,10 @@ PartedAccess::SetType(const unsigned Part_iv, const unsigned Type_iv)
   else if( Type_iv == 0x83 )
     {
     Buf_Ci << " raid off";
+    }
+  else if( Type_iv == 0x103 )
+    {
+    Buf_Ci << " boot on";
     }
   else
     {
@@ -269,7 +273,7 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
   std::istringstream Data_Ci( Line_Cv );
 
   Start_fi = End_fi = 0.0;
-  if( Label_C != "mac" )
+  if( Label_C != "mac" && Label_C != "gpt" )
       {
       Data_Ci >> Num_ii >> Start_fi >> End_fi >> PType_Ci;
       }
@@ -331,7 +335,7 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
     else if( Type_Ci.find( ",fat" )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_DOS;
-	Part_rr.Id_i = 0x0b;
+	Part_rr.Id_i = 0x0c;
 	}
     else if( Type_Ci.find( ",ntfs," )!=string::npos )
 	{
@@ -396,6 +400,13 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
 		    Part_rr.Id_i = 0x102;
 		    }
 		}
+	    }
+	}
+    if( Label_C == "gpt" )
+	{
+	if( Type_Ci.find( ",boot," ) != string::npos )
+	    {
+	    Part_rr.Id_i = 0x103;
 	    }
 	}
     y2debug( "Fields Num:%d Id:%x Ptype:%d Start:%d End:%d Block:%lu",

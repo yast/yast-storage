@@ -543,6 +543,7 @@ global define map GetFsysType( map target)``{
 	    ``{
 	    if( partition["used_fs"]:`none == `none &&
 		(partition["fsid"]:0 == Partitions::fsid_native ||
+		 partition["fsid"]:0 > 255 ||
 		 Partitions::IsDosWinNtPartition( partition["fsid"]:0 )))
 		{
 		partition = FileSystems::GetFsysInfos( device, partition );
@@ -1624,6 +1625,26 @@ global define boolean DelSubDev( string subdevkey )
 	curr_partitions = 
 	    filter( `parti, curr_partitions,
 		    ``( !(parti["nr"]:0 == number && parti["create"]:false )));
+	list create_next = 
+	    filter( `p, curr_partitions,
+		    ``( p["nr"]:0 > number && p["create"]:false ));
+	create_next = sort( `a, `b, create_next, ``( a["nr"]:0 <= b["nr"]:0 ));
+	y2milestone("curr_partitions %1", curr_partitions );
+	y2milestone("create_next %1", create_next );
+	integer del_num = number;
+	foreach( `p, create_next,
+	    ``{
+	    integer old = p["nr"]:0;
+	    map part = eval(p);
+	    part["nr"] = del_num;
+	    part["device"] = GetDeviceName( maindevkey, del_num );
+	    del_num = old;
+	    curr_partitions = filter( `t, curr_partitions,
+				      ``( !(t["nr"]:0 == old && 
+				            t["create"]:false )));
+	    curr_partitions = add( curr_partitions, part );
+	    });
+	y2milestone("curr_partitions %1", curr_partitions );
 	}	
 
     ///////////////////////////////////////////////
@@ -2090,6 +2111,23 @@ global define list GetRootInitrdModules()
 	    {
 	    initrdmodules = add (initrdmodules, "raid5");
 	    }
+	}
+    if( partition["type"]:`unknown == `lvm )
+	{
+	string vgname = substring( partition["device"]:"", 5 );
+	vgname = substring( vgname, 0, findfirstof( vgname, "/" ));
+	map tg = GetTargetMap();
+	list mod = maplist( `k, filter( `e, tg["/dev/md","partitions"]:[],
+	                                ``(e["lvm_group"]:""==vgname) ),
+			    ``(k["raid_type"]:""));
+	y2milestone( "mod %1", mod );
+	foreach( `e, mod,
+	    ``{
+	    if( size(e)>0 && !contains( initrdmodules, e ) )
+		{
+		initrdmodules = add( initrdmodules, e );
+		}
+	    });
 	}
     y2milestone ("initrdmodules %1", initrdmodules);
     return initrdmodules;
@@ -2960,6 +2998,7 @@ global define map SpecialBootHandling( map tg )
 	list new_part = [];
 	foreach( `part, disk["partitions"]:"",
 	    ``{
+	    // convert a mount point of /boot to a 41 PReP boot partition
 	    if( Partitions::PrepBoot() && !part["delete"]:false &&
 		part["mount"]:"" == "/boot" )
 		{
@@ -2984,6 +3023,14 @@ global define map SpecialBootHandling( map tg )
 		part["fsid"] = id;
 		part["used_fs"] = `hfs;
 		part["detected_fs"] = `hfs;
+		y2milestone( "part=%1", part );
+		}
+	    if( Arch::ia64 && !part["delete"]:false &&
+		part["mount"]:"" == "/boot" )
+		{
+		integer id = Partitions::fsid_gpt_boot;
+		part["fsid"] = id;
+		part["fstype"] = Partitions::FsIdToString( id );
 		y2milestone( "part=%1", part );
 		}
 	    new_part = add( new_part, part );
