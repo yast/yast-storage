@@ -43,6 +43,7 @@ struct VgInfo
     unsigned long Free_l;
     unsigned long PeSize_l;
     bool Active_b;
+    bool Lvm2_b;
     list<PvInfo> Pv_C;
     list<LvInfo> Lv_C;
     };
@@ -63,15 +64,17 @@ class LvmAccess
 	void ChangeId( int Idx_ii, int Id_iv );
 	void ChangePvVgName( const string& Device_Cv, const string& Name_Cv );
 	void DoExpensive();
-	bool CreatePv( const string& PvName_Cv );
+	bool CreatePv( const string& PvName_Cv, bool NewMeta_bv );
 	string GetErrorText();
 	string GetCmdLine();
+	int  LvmVersion() { return LvmVersion_i; };
+	bool Lvm2() { return LvmVersion_i==2; };
 	bool ChangeActive( const string& Name_Cv, bool Active_bv );
 	bool DeleteVg( const string& VgName_Cv );
 	bool ExtendVg( const string& VgName_Cv, const string& PvName_Cv );
 	bool ShrinkVg( const string& VgName_Cv, const string& PvName_Cv );
 	bool CreateVg( const string& VgName_Cv, unsigned long PeSize_lv,
-	               list<string>& Devices_Cv );
+	               bool NewMeta_bv, list<string>& Devices_Cv );
 	bool CreateLv( const string& LvName_Cv, const string& VgName_Cv,
 	               unsigned long Size_lv, unsigned long Stripe_lv );
 	bool ChangeLvSize( const string& LvName_Cv, unsigned long Size_lv );
@@ -90,6 +93,7 @@ class LvmAccess
 	    unsigned long Free_l;
 	    unsigned long PeSize_l;
 	    bool Active_b;
+	    bool Lvm2_b;
 	    list<PvInfo*> Pv_C;
 	    list<LvInfo*> Lv_C;
 	    operator VgInfo();
@@ -98,13 +102,19 @@ class LvmAccess
 	void ProcessMd();
 	void ScanForDisks();
 	void ScanForInactiveVg();
+	void ScanLvmStatus();
 	void ScanProcLvm();
+	void ScanVgdisplayOutput();
 	void PrepareLvmCmd();
 	list<PvInfo>::iterator SortIntoPvList( const PvInfo& PvElem_rv );
 	bool ExecuteLvmCmd( const string& Cmd_Cv );
 	bool MountRamdisk( const string& Path_Cv, unsigned SizeMb_iv );
 	string GetPvDevicename( const string& VgName_Cv, const string& FDev_Cv,
 	                        const string& Dev_Cv, int Num_iv, int Mp_iv );
+	void LvIntoList( VgIntern& VgElem_rr, list<LvInfo>& LvList_Cr,
+			 const LvInfo& LvElem_rv );
+	void PvIntoList( VgIntern& VgElem_rr, list<PvInfo>& PvList_Cr,
+			 const PvInfo& PvElem_rv );
 
 
 	list<VgIntern>::iterator FindVg( const string& Name_Cv );
@@ -119,6 +129,7 @@ class LvmAccess
 	string LvmOutput_C;
 	string CmdLine_C;
 	int LvmRet_i;
+	int LvmVersion_i;
     };
 
 #endif

@@ -379,36 +379,51 @@ global define DlgCreateVolumeGroup( list vgm_list )
     ``{
     string vgname = "";
     string pesize = "";
+    boolean old_metadata = false;
+    boolean lvm2 = SCR::Read(.lvm.version) == 2;
+
+    y2milestone( "lvm2 %1", lvm2 );
+
+    term Lvm2Type = `Empty();
+
+    if( lvm2 )
+	{
+	Lvm2Type = `CheckBox( `id("lvm1"), 
+	                      _("Use old LVM1 compatible metadata format"), 
+			      false );
+	}
    
     UI::OpenDialog(
-    `opt(`decorated ),
-    `HBox(
-	`HSpacing(2),
-	`VBox(
-	      // popup header
-	      `Heading(_("Create a Volume Group")),
-	      // popup description
-	      `Label( _("Now we have to create a volume group.
+	`opt(`decorated ),
+	`HBox(
+	    `HSpacing(2),
+	    `VBox(
+		  // popup header
+		  `Heading(_("Create a Volume Group")),
+		  // popup description
+		  `Label( _("Now we have to create a volume group.
 Typically you don't have to change anything,
 but if you are an expert, feel free to change
 our defaults:")),
-	      // label text
-	      `TextEntry(`id("vgname"), _("Volume Group &Name:"), size(vgm_list)==0?"system":""),
-	      // label text
-	      `TextEntry(`id("pesize"), _("&Physical Extent Size"), "4M"),
-	      `VSpacing(1),
-	      `HBox(
-		    // Ok button
-		    `PushButton(`id(`ok), `opt(`default), Label::OKButton()  ),
-		    // Cancel button
-		    `PushButton(`id(`cancel), Label::CancelButton() )
-		    ),
-	      `VSpacing(0.5)
-	      ),
-	`HSpacing(2)
-	)
-    );
-
+		  // label text
+		  `TextEntry( `id("vgname"), _("Volume Group &Name:"), 
+		              size(vgm_list)==0?"system":""),
+		  // label text
+		  `TextEntry(`id("pesize"), _("&Physical Extent Size"), "4M"),
+		  Lvm2Type,
+		  `VSpacing(1),
+		  `HBox(
+			// Ok button
+			`PushButton(`id(`ok), `opt(`default), 
+			             Label::OKButton()  ),
+			// Cancel button
+			`PushButton(`id(`cancel), Label::CancelButton() )
+		       ),
+		  `VSpacing(0.5)
+		 ),
+	    `HSpacing(2)
+	    )
+	);
 
     any     ret         = nil;
     boolean input_is_ok = false;
@@ -420,10 +435,14 @@ our defaults:")),
 	vgname = UI::QueryWidget(`id("vgname"),  `Value);
 	vgname = deletechars( vgname, " \t" );
 	pesize = UI::QueryWidget(`id("pesize"),  `Value);
+	if( UI::WidgetExists( `id("lvm1") ))
+	    {
+	    old_metadata = UI::QueryWidget( `id("lvm1"), `Value );
+	    }
 
 	if( ret != `cancel )
 	    {
-	    input_is_ok = icheck_vgname(vgname) && icheck_pesize(pesize);
+	    input_is_ok = true;
 	     
 	    if( !icheck_pesize(pesize) )
 	        {
@@ -432,41 +451,47 @@ our defaults:")),
 Insert a physical extent size from
 8KB to 512MB in powers of 2, for example, \"4M\" or \"512K\"
 "));
+		input_is_ok = false;
 		}
 
-	     if( !icheck_vgname(vgname) )
-		 {
-		 // error popup text
-		 Popup::Error(_("The data entered is invalid.
+	    if( !icheck_vgname(vgname) )
+		{
+		// error popup text
+		Popup::Error(_("The data entered is invalid.
 Insert a group name like \"system\" or \"test\".
 Do not use ;/`, in your group name.
 "));
-		 }
+		input_is_ok = false;
+		}
 	  
-	     if( contains( vgm_list, vgname ) )
-		 {
-		 // error popup text
-		 Popup::Error(sformat(_("The volume group \"%1\" already exists.
+	    if( contains( vgm_list, vgname ) )
+		{
+		// error popup text
+		Popup::Error(sformat(_("The volume group \"%1\" already exists.
 Choose a different name
 or cancel this dialog.
 "), vgname ));
-		 input_is_ok = false;
-		 }
-	     }
+		input_is_ok = false;
+		}
+	    }
 	  
-	} until ( input_is_ok || ret == `cancel );
+	} until( input_is_ok || ret == `cancel );
 
     UI::CloseDialog();
 	     
     if (ret == `ok )
 	{
-	return( $[  "vgname" : vgname, "pesize" : pesize ] );
+	map ret = $[ "vgname" : vgname, "pesize" : pesize ];
+	if( lvm2 )
+	    {
+	    ret["lvm2"] = !old_metadata;
+	    }
+	return( ret );
 	}
     else
 	{
 	return( nil );
 	}
-    
     };
 
 }

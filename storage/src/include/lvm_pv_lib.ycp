@@ -65,78 +65,60 @@ global define get_vg_size( list partition_list, string current_vg,
     // 	
     //////////////////////////////////////////////////////////////////////
 
-    global define addPhysicalVolume( map    modify_targets,
-				     map    targetMap,
-				     string id,
-				     string current_vg )
+global define addPhysicalVolume( map modify_targets, map targetMap,
+				 string id, string current_vg )
     ``{
-	string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
-	string subdev  = Storage::GetSubDevIndex( id);  // i.e. 1        for /dev/hda1
+    string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
+    string subdev  = Storage::GetSubDevIndex( id);  // i.e. 1  for /dev/hda1
 
-	map  disk       = lookup( targetMap, maindev, $[] );
-	list partitions = lookup( disk, "partitions", []  );
-	map partition   = select( filter( `part, partitions,
-					  ``( (sformat("%1", lookup(part, "nr", "")) == subdev)
-					       && (lookup( part, "delete", false) == false) ) ), 0, $[]);
-	
-	
-
-	
-	if( lookup( partition, "fsid", 0 )!=Partitions::fsid_lvm )
+    map  disk       = targetMap[maindev]:$[];
+    list partitions = disk["partitions"]:[];
+    map partition   = Storage::GetPartition( targetMap, maindev+subdev );
+    y2milestone( "partition %1", partition );
+    
+    if( partition["fsid"]:0 != Partitions::fsid_lvm )
+	{
+	if( !partition["change_fsid"]:false )
 	    {
-	    if( ! lookup( partition, "change_fsid", false ))
-		{
-		change ( partition , "change_fsid", true );
-		change ( partition , "ori_fsid",    lookup( partition, "fsid", 0 ));
-		change ( partition , "ori_fstype" , lookup( partition, "fstype" ,""));
-		}
-
-	    
-	    /*
-	    /////////////////////////////////////////////////
-	    // new entry in execution stack "modify_targets"
-	
-	    map new_chang_fsid = $[
-				  "use_module" : "fdisk_ll",
-				  "type"       : "change_id",
-				  "id"     : Partitions::fsid_lvm ];
-	    new_chang_fsid = add( new_chang_fsid, "nr", lookup(partition, "nr") );
-	    new_chang_fsid = add( new_chang_fsid, "disk", maindev );
-	
-	    modify_targets = addTargetModification( modify_targets, new_chang_fsid );
-	    */
+	    change( partition, "change_fsid", true );
+	    change( partition, "ori_fsid",    partition["fsid"]:0 );
+	    change( partition, "ori_fstype" , partition["fstype"]:"" );
+	    }
 	}
 
-        // if we have /data? the automatic generated mountpoint: delete it  
-	change( partition , "mount", "" );
-	if( haskey( partition, "format" ))
-	    {
-	    change( partition, "format", false );
-	    }
-	
-	/////////////////////////////////////////////////
-	// new entry in execution stack "modify_targets"
-	
-	map new_create_pv = $[
-			      "use_module" : "lvm_ll",
-			      "type"       : "create_pv",
-			      "vgname"     : current_vg,
-			      "device"     : Storage::GetDeviceName(maindev,partition["nr"]:"") ];
-	
-	modify_targets = addTargetModification( modify_targets, new_create_pv );
-	y2debug( "EEE s %1", modify_targets);
+    // if we have /data? the automatic generated mountpoint: delete it  
+    change( partition , "mount", "" );
+    if( haskey( partition, "format" ))
+	{
+	change( partition, "format", false );
+	}
+    
+    /////////////////////////////////////////////////
+    // new entry in execution stack "modify_targets"
+
+    string vg_key = "/dev/"+current_vg;
+    
+    map new_create_pv = $[
+			  "use_module" : "lvm_ll",
+			  "type"       : "create_pv",
+			  "vgname"     : current_vg,
+			  "lvm2"       : targetMap[vg_key,"lvm2"]:false,
+			  "device"     : partition["device"]:"" ];
+
+    modify_targets = addTargetModification( modify_targets, new_create_pv );
+    y2debug( "EEE s %1", modify_targets);
 
 
-	/////////////////////////////////////////////////
-	// change targetMap
+    /////////////////////////////////////////////////
+    // change targetMap
 
-	change( partition, "fsid",      Partitions::fsid_lvm);
-	change( partition, "fstype",    "Linux LVM");
-	change( partition, "lvm_group", current_vg);
+    change( partition, "fsid",      Partitions::fsid_lvm);
+    change( partition, "fstype",    "Linux LVM");
+    change( partition, "lvm_group", current_vg);
 
 
-	return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
-    };
+    return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
+};
 	
 
     //////////////////////////////////////////////////////////////////////

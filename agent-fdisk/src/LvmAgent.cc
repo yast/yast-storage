@@ -102,6 +102,11 @@ LvmAgent::Read(const YCPPath& path, const YCPValue& arg)
 	  }
       return Ret_Ci;
       }
+  else if (conf_name == (string)"version" )
+      {
+      YCPInteger Ret_Ci = Lvm_pC->LvmVersion();
+      return Ret_Ci;
+      }
   else
       {
       y2error("unknown command in path '%s'", path->toString().c_str());
@@ -114,6 +119,7 @@ YCPMap LvmAgent::CreateVgMap( const VgInfo& Vg_Cv )
     YCPMap VgMap_Ci;
     VgMap_Ci->add( YCPString ("blocks"), YCPInteger( Vg_Cv.Blocks_l ));
     VgMap_Ci->add( YCPString ("free"), YCPInteger( Vg_Cv.Free_l ));
+    VgMap_Ci->add( YCPString ("lvm2"), YCPBoolean( Vg_Cv.Lvm2_b ));
     VgMap_Ci->add( YCPString ("pesize"), YCPInteger( Vg_Cv.PeSize_l ));
     VgMap_Ci->add( YCPString ("active"), YCPBoolean( Vg_Cv.Active_b ));
     return( VgMap_Ci );
@@ -324,6 +330,7 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 		{
 		unsigned long size = 4096;
 		string vgname;
+		bool new_media = false;
 		list<string> devices;
 		YCPValue content = cmd->value(YCPString("vgname"));
 		if( !content.isNull() && content->isString())
@@ -335,9 +342,12 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 		    {
 		    size = content->asInteger()->value()/1024;
 		    }
+		content = cmd->value(YCPString("lvm2"));
+		if( !content.isNull() && content->isBoolean())
+		    {
+		    new_media = content->asBoolean()->value();
+		    }
 		content = cmd->value(YCPString("devices"));
-		y2debug( "isNull:%d", content.isNull() );
-		y2debug( "isList:%d", content->isList() );
 		if( !content.isNull() && content->isList())
 		    {
 		    YCPList devs = content->asList();
@@ -351,15 +361,14 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 			    devs->value(i)->asString()->value().length()>0 )
 			    {
 			    devices.push_back(devs->value(i)->asString()->value());
-
 			    }
 			}
 		    }
-		y2debug("vgname:%s pesize:%ld devices:%d",
-			vgname.c_str(), size, devices.size() );
+		y2debug("vgname:%s pesize:%ld new_media:%d devices:%d",
+			vgname.c_str(), size, new_media, devices.size() );
 		if( vgname.length()>0 && size>0 && devices.size()>0 )
 		    {
-		    if( !Lvm_pC->CreateVg( vgname, size, devices ) )
+		    if( !Lvm_pC->CreateVg( vgname, size, new_media, devices ) )
 			{
 			ErrText_Ci = Lvm_pC->GetErrorText();
 			CmdLine_Ci = Lvm_pC->GetCmdLine();
@@ -411,6 +420,7 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 		{
 		string vgname;
 		string device;
+		bool new_meta = false;
 		YCPValue content = cmd->value(YCPString("vgname"));
 		if( !content.isNull() && content->isString())
 		    {
@@ -421,11 +431,16 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 		    {
 		    device = content->asString()->value();
 		    }
-		y2milestone("vgname:%s device:%s",
-			     vgname.c_str(), device.c_str() );
+		content = cmd->value(YCPString("lvm2"));
+		if( !content.isNull() && content->isBoolean())
+		    {
+		    new_meta = content->asBoolean()->value();
+		    }
+		y2milestone("vgname:%s device:%s new_meta:%d",
+			     vgname.c_str(), device.c_str(), new_meta );
 		if( device.length()>0 )
 		    {
-		    if( !Lvm_pC->CreatePv( device ) )
+		    if( !Lvm_pC->CreatePv( device, new_meta ) )
 			{
 			ErrText_Ci = Lvm_pC->GetErrorText();
 			CmdLine_Ci = Lvm_pC->GetCmdLine();

@@ -53,52 +53,51 @@
     // all can be done properly!!!!!!!
     //////////////////////////////////////////////////////////////////////
 
-    global define c_and_p_ModifyTargets( map modify_targets, map targetMap, boolean check_mode )
+global define c_and_p_ModifyTargets( map modify_targets, map targetMap, 
+                                     boolean check_mode )
     ``{
-	y2milestone(" CHECK do the work mod %1", check_mode);
+    y2milestone(" CHECK do the work mod %1", check_mode);
 
-	symbol ret = `next;
+    symbol ret = `next;
 
-	do
+    do
 	{
+	map  new_vgs_mods = filter(  `key, `mod, modify_targets,
+				     ``( mod["type"]:"" == "create_vg" &&
+					 size(mod["devices"]:[]) == 0 ));
+    
+	// now we have the list of "create_vg"s where devices were misssing
+	list new_vgs      = maplist( `key, `mod, new_vgs_mods, ``( key )); 
 
-	    map  new_vgs_mods = filter(  `key, `mod, modify_targets,
-					 ``( lookup( mod, "type", "" )                == "create_vg"
-					     && size(lookup( mod, "devices", [])) == 0  ));
-	
-	    // now we have the list of "create_vg"s where devices were misssing
-	    list new_vgs      = maplist( `key, `mod, new_vgs_mods,  ``( key )); 
+	y2milestone( "checkModify new_vg_mods %1", new_vgs_mods);
 
-	
-	    y2milestone( "checkModify new_vg_mods %1", new_vgs_mods);
-
-	    if ( size(new_vgs) > 0 )
+	if ( size(new_vgs) > 0 )
 	    {
-		integer vg_nr = select( new_vgs, 0, 0);
+	    integer vg_nr = select( new_vgs, 0, 0);
+    
+	    // for every vg we look if there is a create_pv or an existing pv
+    
+	    y2milestone( "mod: %1", modify_targets);
+	    y2milestone( "checkModify %1", vg_nr);
 	
-		// for every vg we look if there is a create_pv or an existing pv
+	    string vg = modify_targets[vg_nr,"vgname"]:"";
 	
-		y2milestone( "mod: %1", modify_targets);
-		y2milestone( "checkModify %1", vg_nr);
-	    
-		string vg = lookup( lookup(modify_targets, vg_nr, $[]), "vgname", "" );
-	    
-		// look into execution stack
-		map pvs_to_create =  filter(  `key, `mod, modify_targets,
-					      ``(    lookup( mod, "type", "" )  == "create_pv"
-						     && lookup( mod, "vgname","") == vg         )) ;
+	    // look into execution stack
+	    map pvs_to_create =  filter( `key, `mod, modify_targets,
+					 ``( mod["type"]:"" == "create_pv" &&
+					     mod["vgname"]:"" == vg ));
 
-		// look into partition table
-		list existing_pvs  = filter( `part, get_possible_pvs( targetMap ),
-					     ``( lookup( part, "lvm_group", "") == vg ));
+	    // look into partition table
+	    list existing_pvs  = filter( `part, get_possible_pvs( targetMap ),
+					 ``( part["lvm_group"]:"" == vg ));
 
-		if ( check_mode )
+	    if ( check_mode )
 		{
-		    if ( (size(pvs_to_create) + size(existing_pvs)) == 0 )
+		if ( (size(pvs_to_create) + size(existing_pvs)) == 0 )
 		    {
-			ret = `again;
-		        // popup text
-			Popup::Error(sformat(_("Physical volume for volume group \"%1\" is missing.
+		    ret = `again;
+		    // popup text
+		    Popup::Error(sformat(_("Physical volume for volume group \"%1\" is missing.
 
 For every volume group, you must
 create at least one physical volume.
@@ -106,79 +105,74 @@ create at least one physical volume.
 
 		    }
 		}
-		else
+	    else
 		{
-		    y2debug(" START do the work mod");
-		    // here we know the check was ok :-)
-		    // so lets do the work ..
+		y2debug(" START do the work mod");
+		// here we know the check was ok :-)
+		// so lets do the work ..
+	    
+		if( size(pvs_to_create) > 0 )
+		    {
+		    y2milestone( "pvs_to_create %1", pvs_to_create);
 		
-		    if ( size(pvs_to_create) > 0 )
-		    {
+		    // so we have a created vg and a created pv
+		    // we will now switch the two procedures
+		    // into a pv without vgname and a vg with devices="pv"
 
-			y2milestone( "pvs_to_create %1", pvs_to_create);
-		    
-			// so we have a created vg and a created pv
-			// we will now switch the two procedures
-			// into a pv without vgname and a vg with devices="pv"
+		    // we take the first entry and read its key
+		    integer pv_nr = select( maplist(`k,`v,pvs_to_create, ``(k)), 0, 0 );
 
-			// we take the first entry and read its key
-			integer pv_nr = select( maplist(`k,`v,pvs_to_create, ``(k)), 0, 0 );
+		    map pv_val = modify_targets[pv_nr]:$[];
+		    map vg_val = modify_targets[vg_nr]:$[];
 
-			map pv_val = lookup( modify_targets, pv_nr, $[] );
-			map vg_val = lookup( modify_targets, vg_nr, $[] );
+		    // delete vgname
+		    pv_val = filter( `k,`v, pv_val, ``(k!="vgname"));
 
+		    // add pv to device of vg
+		    vg_val["devices"] = [ pv_val["device"]:"ll-error" ];
 
-			// delete vgname
-			pv_val = filter( `k,`v, pv_val, ``(k!="vgname"));
-
-			// add pv to device of vg
-			vg_val = add( vg_val, "devices", [ lookup(pv_val,"device", "ll-error") ] );
-
-			// and now we change the order of vg and pv creation
-			// preserving any commands between vg creation and pv creation
-			while( vg_nr+1 < pv_nr )
+		    // and now we change the order of vg and pv creation
+		    // preserving any commands between vg creation and pv creation
+		    while( vg_nr+1 < pv_nr )
 			{
-			    map tmp = lookup( modify_targets, vg_nr+1, $[] );
-			    if( size(tmp)>0 )
+			map tmp = modify_targets[vg_nr+1]:$[];
+			if( size(tmp)>0 )
 			    {
-				modify_targets = add( modify_targets, vg_nr, tmp );
+			    modify_targets[vg_nr] = tmp;
 			    }
-			    vg_nr = vg_nr + 1;
+			vg_nr = vg_nr + 1;
 			}
-			modify_targets = add( modify_targets, vg_nr, pv_val );
-			modify_targets = add( modify_targets, pv_nr, vg_val );
-
+		    modify_targets[vg_nr] = pv_val;
+		    modify_targets[pv_nr] = vg_val;
 		    }
-		    else if ( size(existing_pvs) > 0 )
+		else if ( size(existing_pvs) > 0 )
 		    {
-			map    vg_val  = modify_targets[vg_nr]:$[];
-			string devname = existing_pvs[0,"device"]:"";
+		    map vg_val = modify_targets[vg_nr]:$[];
+		    string devname = existing_pvs[0,"device"]:"";
 
-			// add pv to device of vg
-			vg_val["devices"] = [ devname ];
-			modify_targets[vg_nr] = vg_val;
+		    // add pv to device of vg
+		    vg_val["devices"] = [ devname ];
+		    modify_targets[vg_nr] = vg_val;
 		    }
-		    else
+		else
 		    {
-			y2error( "Ohhps, ... there was a processModifyTargets without checkModifyTargets");
+		    y2error( "Ohhps, ... there was a processModifyTargets without checkModifyTargets");
 		    }
 		}
 	    }
-
 	} while ( !check_mode && size(new_vgs) > 1 );
-	
+    
 
-	y2milestone( "mod: %1", modify_targets);
+    y2milestone( "mod: %1", modify_targets);
 
-	if ( check_mode )
+    if ( check_mode )
 	{
-	    return( ret);
+	return( ret);
 	}
-	else
+    else
 	{
-	    return( $[ "modify_targets":modify_targets, "targets":targetMap] );
+	return( $[ "modify_targets":modify_targets, "targets":targetMap] );
 	}
-
     };
 
 
@@ -227,66 +221,67 @@ global define integer vg_size( list partitions, string current_vg )
     // Let the User create a new Volume group: open dialog ...
     // return: the changed targetMap and lvm_vgs  and cancelled 
 
-    global define addVolumeGroup( map targetMap, list lvm_vgs, map modify_targets )
+global define addVolumeGroup( map targetMap, list lvm_vgs, map modify_targets )
     ``{
-	  boolean cancelled   = true;
-	  string  current_vg  = "";
-	  integer pesize      = 0;
-	  
-	  any vg = DlgCreateVolumeGroup( lvm_vgs );
+    boolean cancelled   = true;
+    string  current_vg  = "";
+    integer pesize      = 0;
+      
+    any vg = DlgCreateVolumeGroup( lvm_vgs );
 
-	  // has the user cancelled the dialog? 
-	  if ( vg != nil )
-	  {
-	      // Now the user has created a new vg: make it the current vg
-	      current_vg = lookup( vg, "vgname", "error" );
-	      lvm_vgs    = add(    lvm_vgs, current_vg);
-	      pesize     = pesize_str_to_byte( lookup( vg, "pesize", 0 ));
-	    
-	      // Display current vg:
-	      new_vg_list( lvm_vgs );
-	      UI::ChangeWidget( `id(`vg), `Value, current_vg);
+    // has the user cancelled the dialog? 
+    if( vg != nil )
+	{
+	// Now the user has created a new vg: make it the current vg
+	current_vg = vg["vgname"]:"error";
+	lvm_vgs    = add( lvm_vgs, current_vg);
+	pesize     = pesize_str_to_byte( vg["pesize"]:0 );
+      
+	// Display current vg:
+	new_vg_list( lvm_vgs );
+	UI::ChangeWidget( `id(`vg), `Value, current_vg);
 
-	      map new_volume = $[
-				"name"      : current_vg,    
-				"cyl_count" : 0,                
-				"cyl_size"  : pesize,              
-				"is_lvm_vg" : true,                
-				"partitions": []
-	                        ];
-	      
-	      targetMap = add( targetMap, "/dev/" + current_vg, new_volume);
-
-
-	      // insert an entry into execution stack
-	      /////////////////////////////////////////////////
-	      // new entry in execution stack "modify_targets"
+	map new_volume = $[
+			  "name"      : current_vg,    
+			  "cyl_count" : 0,                
+			  "cyl_size"  : pesize,              
+			  "lvm2"      : vg["lvm2"]:false,
+			  "is_lvm_vg" : true,                
+			  "partitions": []
+			  ];
 	
-	      map new_create_vg = $[
-			      "use_module" : "lvm_ll",
-			      "type"       : "create_vg",
-			      "vgname"     : current_vg,  
-			      "pesize"     : pesize,
-			      "devices"    : [] ];
-	
-	      modify_targets = addTargetModification( modify_targets, new_create_vg );
-	      y2debug( "EEE s %1", modify_targets);
+	targetMap = add( targetMap, "/dev/" + current_vg, new_volume);
 
-	      cancelled = false;
-	  }
-          else
-	  {
-	      cancelled = true;
-	  }
 
-	  return( $[
-		    "cancelled"      : cancelled,
-		    "targets"        : targetMap,
-		    "modify_targets" : modify_targets,
-		    "lvm_vgs"        : lvm_vgs,
-		    "current_vg"     : current_vg
-	        ]);
+	// insert an entry into execution stack
+	/////////////////////////////////////////////////
+	// new entry in execution stack "modify_targets"
+  
+	map new_create_vg = $[
+			"use_module" : "lvm_ll",
+			"type"       : "create_vg",
+			"vgname"     : current_vg,  
+			"lvm2"       : vg["lvm2"]:false,
+			"pesize"     : pesize,
+			"devices"    : [] ];
+  
+	modify_targets = addTargetModification( modify_targets, new_create_vg );
+	y2debug( "EEE s %1", modify_targets);
 
+	cancelled = false;
+	}
+    else
+	{
+	cancelled = true;
+	}
+
+    return( $[
+		"cancelled"      : cancelled,
+		"targets"        : targetMap,
+		"modify_targets" : modify_targets,
+		"lvm_vgs"        : lvm_vgs,
+		"current_vg"     : current_vg
+	    ]);
     };
 
     //////////////////////////////////////////////////////////////////////

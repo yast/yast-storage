@@ -24,9 +24,17 @@ LvmAccess::LvmAccess( bool Expensive_bv ) :
     {
     y2milestone( "Konstruktor LvmAccess Expensive:%d", Expensive_bv );
 
+    LvmVersion_i = 1;
+    if( !access( "/proc/lvm/global", R_OK )==0 && 
+        access( "/sbin/vgs", R_OK )==0 )
+	{
+	LvmVersion_i = 2;
+	}
+    y2milestone( "Ver %d", LvmVersion_i );
+
     ActivateLvm();
     LvmCmd_C.SetCombine();
-    ScanProcLvm();
+    ScanLvmStatus();
     Expensive_b = false;
     DidVgchangeA_b = false;
     if( Expensive_bv )
@@ -84,19 +92,26 @@ void LvmAccess::ActivateLvm()
     bool Activate_bi = true;
     if( RunningFromSystem() )
 	{
-	DIR *Dir_pri;
-	struct dirent *Entry_pri;
-	if( (Dir_pri=opendir( "/proc/lvm/VGs" ))!=NULL )
+	if( !Lvm2() )
 	    {
-	    while( Activate_bi && (Entry_pri=readdir( Dir_pri ))!=NULL ) 
+	    DIR *Dir_pri;
+	    struct dirent *Entry_pri;
+	    if( (Dir_pri=opendir( "/proc/lvm/VGs" ))!=NULL )
 		{
-		if( strcmp( Entry_pri->d_name, "." )!=0 &&
-		    strcmp( Entry_pri->d_name, ".." ) != 0 )
+		while( Activate_bi && (Entry_pri=readdir( Dir_pri ))!=NULL ) 
 		    {
-		    Activate_bi = false;
+		    if( strcmp( Entry_pri->d_name, "." )!=0 &&
+			strcmp( Entry_pri->d_name, ".." ) != 0 )
+			{
+			Activate_bi = false;
+			}
 		    }
+		closedir( Dir_pri );
 		}
-	    closedir( Dir_pri );
+	    }
+	else
+	    {
+	    Activate_bi = false;
 	    }
 	}
     if( Activate_bi )
@@ -110,7 +125,10 @@ void LvmAccess::ActivateLvm()
 	ExecuteLvmCmd( Cmd_Ci );
 	DidVgchangeA_b = true;
 	}
-    ScanProcLvm();
+    if( !Lvm2() )
+	{
+	ScanLvmStatus();
+	}
     }
 
 bool LvmAccess::ActivateVGs( bool Activate_bv )
@@ -122,9 +140,9 @@ bool LvmAccess::ActivateVGs( bool Activate_bv )
 	Cmd_Ci += " -A n"; 
 	}
     return( ExecuteLvmCmd( Cmd_Ci ) );
-    if( Activate_bv )
+    if( Activate_bv && !Lvm2() )
 	{
-	ScanProcLvm();
+	ScanLvmStatus();
 	}
     }
 
@@ -168,7 +186,7 @@ LvmAccess::DoExpensive()
     if( !Expensive_b )
 	{
 	ScanForDisks();
-	if( RunningFromSystem() && !DidVgchangeA_b )
+	if( !Lvm2() && RunningFromSystem() && !DidVgchangeA_b )
 	    ScanForInactiveVg();
 	Expensive_b = true;
 	}
@@ -228,6 +246,7 @@ LvmAccess::ScanForInactiveVg()
 	VgElem_ri.Lv_C.clear();
 	VgElem_ri.Name_C = *Idx_Ci;
 	VgElem_ri.Active_b = false;
+	VgElem_ri.Lvm2_b = false;
 	bool Ok_bi = true;
 
 	Cmd_Ci.Select( "PE Size" );
@@ -452,7 +471,7 @@ LvmAccess::ScanForDisks()
     while( File_Ci.good() )
 	{
 	std::istringstream Data_Ci( Line_Ci );
-	Device_Ci = "";
+	Device_Ci.erase();
 	Major_ii = Minor_ii = Blocks_ui = 0;
 	Data_Ci >> Major_ii >> Minor_ii >> Blocks_ui >> Device_Ci;
 	Device_Ci = "/dev/" + Device_Ci;
@@ -680,7 +699,7 @@ list<LvInfo>::iterator LvmAccess::FindLv( const string& Name_Cv )
     return( Pix_Ci );
     }
 
-bool LvmAccess::CreatePv( const string& PvName_Cv )
+bool LvmAccess::CreatePv( const string& PvName_Cv, bool NewMeta_bv )
     {
     y2milestone( "PV Name:%s", PvName_Cv.c_str() );
     list<PvInfo>::iterator Pix_Ci = PvList_C.begin();
@@ -705,7 +724,13 @@ bool LvmAccess::CreatePv( const string& PvName_Cv )
 	File_Ci.write( Buf_ti, sizeof(Buf_ti) );
 	File_Ci.close();
 	}
-    Ret_bi = ExecuteLvmCmd( (string)"/sbin/pvcreate -ff " + PvName_Cv );
+    string PvCmd_Ci = "/sbin/pvcreate -ff ";
+    if( Lvm2() )
+	{
+	PvCmd_Ci += NewMeta_bv ? "-M2 " : "-M1 ";
+	}
+    PvCmd_Ci += PvName_Cv;
+    Ret_bi = ExecuteLvmCmd( PvCmd_Ci );
     if( Ret_bi && Pix_Ci!=PvList_C.end() )
 	{
 	Pix_Ci->Created_b = true;
@@ -743,20 +768,24 @@ bool LvmAccess::ExtendVg( const string& VgName_Cv, const string& PvName_Cv )
     Ret_bi = ExecuteLvmCmd( Cmd_Ci );
     if( Ret_bi )
 	{
-	ScanProcLvm();
+	ScanLvmStatus();
 	}
     return( Ret_bi );
     }
 
 bool LvmAccess::CreateVg( const string& VgName_Cv, unsigned long PeSize_lv,
-			  list<string>& Devices_Cv )
+                          bool NewMeta_bv, list<string>& Devices_Cv )
     {
     y2milestone( "LvmAccess::CreateVg VG Name:%s PESize:%ld DevLen:%d",
                  VgName_Cv.c_str(), PeSize_lv, Devices_Cv.size() );
     bool Ret_bi=false;
     PrepareLvmCmd();
-    string Cmd_Ci = (string)"vgcreate";
     string Device_Ci = "/dev/";
+    string Cmd_Ci = (string)"vgcreate";
+    if( Lvm2() )
+	{
+	Cmd_Ci += NewMeta_bv ? " -M2" : " -M1";
+	}
     if( !RunningFromSystem() )
 	{
 	Cmd_Ci += " -A n";
@@ -786,7 +815,7 @@ bool LvmAccess::CreateVg( const string& VgName_Cv, unsigned long PeSize_lv,
     Ret_bi = ExecuteLvmCmd( Cmd_Ci );
     if( Ret_bi )
 	{
-	ScanProcLvm();
+	ScanLvmStatus();
 	}
     return( Ret_bi );
     }
@@ -823,8 +852,8 @@ bool LvmAccess::ShrinkVg( const string& VgName_Cv, const string& PvName_Cv )
     Ret_bi = ExecuteLvmCmd( Cmd_Ci );
     if( Ret_bi && Pv_Ci!=PvList_C.end() )
 	{
-	ScanProcLvm();
-	Pv_Ci->VgName_C = "";
+	ScanLvmStatus();
+	Pv_Ci->VgName_C.erase();
 	}
     return( Ret_bi );
     }
@@ -856,7 +885,7 @@ bool LvmAccess::DeleteVg( const string& VgName_C )
 	    {
 	    if( Pv_Ci->VgName_C==Vg_Ci->Name_C )
 		{
-		Pv_Ci->VgName_C = "";
+		Pv_Ci->VgName_C.erase();
 		}
 	    }
 	VgList_C.erase( Vg_Ci );
@@ -918,7 +947,7 @@ bool LvmAccess::CreateLv( const string& LvName_Cv, const string& VgName_Cv,
     Ret_bi = ExecuteLvmCmd( Tmp_Ci );
     if( Ret_bi )
 	{
-	ScanProcLvm();
+	ScanLvmStatus();
 	}
     return( Ret_bi );
     }
@@ -946,7 +975,7 @@ bool LvmAccess::DeleteLv( const string& LvName_Cv )
 	    {
 	    y2error( "Logical volume %s not found", LvName_Cv.c_str() );
 	    }
-	ScanProcLvm();
+	ScanLvmStatus();
 	}
     return( Ret_bi );
     }
@@ -998,7 +1027,7 @@ bool LvmAccess::ChangeLvSize( const string& LvName_Cv, unsigned long Size_lv )
 	Ret_bi = ExecuteLvmCmd( Tmp_Ci );
 	if( Ret_bi )
 	    {
-	    ScanProcLvm();
+	    ScanLvmStatus();
 	    }
 	}
     else if( NewPe_li > OldPe_li )
@@ -1015,7 +1044,7 @@ bool LvmAccess::ChangeLvSize( const string& LvName_Cv, unsigned long Size_lv )
 	Ret_bi = ExecuteLvmCmd( Tmp_Ci );
 	if( Ret_bi )
 	    {
-	    ScanProcLvm();
+	    ScanLvmStatus();
 	    }
 	}
     else
@@ -1060,7 +1089,10 @@ bool LvmAccess::ChangeActive( const string& Name_Cv, bool Active_bv )
 	    {
 	    if( Active_bv )
 		{
-		ScanProcLvm();
+		if( !Lvm2() )
+		    {
+		    ScanLvmStatus();
+		    }
 		}
 	    else
 		{
@@ -1122,6 +1154,236 @@ LvmAccess::GetPvDevicename( const string& VgName_Cv, const string& FDev_Cv,
     return( Ret_Ci );
     }
 
+void LvmAccess::ScanLvmStatus()
+    {
+    if( Lvm2() )
+	{
+	ScanVgdisplayOutput();
+	}
+    else
+	{
+	ScanProcLvm();
+	}
+    }
+
+void LvmAccess::ScanVgdisplayOutput()
+    {
+    string Line_Ci;
+    VgIntern VgElem_ri;
+    PvInfo PvElem_ri;
+    LvInfo LvElem_ri;
+    string Tmp_Ci;
+    SystemCmd Cmd_Ci;
+    int Cnt_ii;
+
+    Cmd_Ci.Execute( "LC_ALL=POSIX /sbin/vgdisplay -v" );
+    Cnt_ii = Cmd_Ci.NumLines();
+    int I_ii = 0;
+    while( I_ii<Cnt_ii )
+	{
+	Line_Ci = *Cmd_Ci.GetLine( I_ii++ );
+	if( Line_Ci.find( "Volume group" )!=string::npos )
+	    {
+	    VgElem_ri.Pv_C.clear();
+	    VgElem_ri.Lv_C.clear();
+	    VgElem_ri.Lvm2_b = false;
+	    VgElem_ri.Active_b = true;
+	    Line_Ci = *Cmd_Ci.GetLine( I_ii++ );
+	    while( Line_Ci.find( "Logical volume" )==string::npos &&
+	           Line_Ci.find( "Physical volume" )==string::npos &&
+		   I_ii<Cnt_ii )
+		{
+		if( Line_Ci.find( "VG Name" )!=string::npos )
+		    {
+		    VgElem_ri.Name_C = ExtractNthWord( 2, Line_Ci );
+		    }
+		if( Line_Ci.find( "Format" )!=string::npos )
+		    {
+		    VgElem_ri.Lvm2_b = ExtractNthWord( 1, Line_Ci )=="lvm2";
+		    }
+		if( Line_Ci.find( "PE Size" )!=string::npos )
+		    {
+		    double Val_fi = 0.0;
+		    Tmp_Ci = ExtractNthWord( 2, Line_Ci );
+		    sscanf( Tmp_Ci.c_str(), "%lf", &Val_fi );
+		    Tmp_Ci = ExtractNthWord( 3, Line_Ci );
+		    switch( *Tmp_Ci.c_str() )
+			{
+			case 'M':
+			case 'm':
+			    Val_fi = Val_fi * 1024;
+			    break;
+			case 'G':
+			case 'g':
+			    Val_fi = Val_fi * 1024 * 1024;
+			    break;
+			case 'T':
+			case 't':
+			    Val_fi = Val_fi * 1024 * 1024 * 1024;
+			    break;
+			default:
+			    break;
+			}
+		    VgElem_ri.PeSize_l = (unsigned long)Val_fi;
+		    }
+		if( Line_Ci.find( "Total PE" )!=string::npos )
+		    {
+		    Tmp_Ci = ExtractNthWord( 2, Line_Ci );
+		    sscanf( Tmp_Ci.c_str(), "%ld", &VgElem_ri.Blocks_l );
+		    VgElem_ri.Blocks_l *= VgElem_ri.PeSize_l;
+		    }
+		if( Line_Ci.find( "Alloc PE" )!=string::npos )
+		    {
+		    Tmp_Ci = ExtractNthWord( 4, Line_Ci );
+		    unsigned long Val_li;
+		    sscanf( Tmp_Ci.c_str(), "%ld", &Val_li );
+		    Val_li *= VgElem_ri.PeSize_l;
+		    VgElem_ri.Free_l = VgElem_ri.Blocks_l - Val_li;
+		    }
+		Line_Ci = *Cmd_Ci.GetLine( I_ii++ );
+		}
+	    LvElem_ri.Name_C.erase();
+	    LvElem_ri.VgName_C = VgElem_ri.Name_C;
+	    LvElem_ri.Active_b = true;
+	    LvElem_ri.Writable_b = true;
+	    LvElem_ri.Stripe_l = 1;
+	    while( Line_Ci.find( "Physical volume" )==string::npos &&
+		   I_ii<Cnt_ii )
+		{
+		if( Line_Ci.find( "Current LE" )!=string::npos )
+		    {
+		    Tmp_Ci = ExtractNthWord( 2, Line_Ci );
+		    sscanf( Tmp_Ci.c_str(), "%ld", &LvElem_ri.Blocks_l );
+		    LvElem_ri.Blocks_l *= VgElem_ri.PeSize_l;
+		    }
+		if( Line_Ci.find( "LV Write Access" )!=string::npos )
+		    {
+		    LvElem_ri.Writable_b = ExtractNthWord( 3, Line_Ci ) == 
+		                           "read/write";
+		    }
+		if( Line_Ci.find( "LV Name" )!=string::npos )
+		    {
+		    LvElem_ri.Name_C = ExtractNthWord( 2, Line_Ci );
+		    }
+		if( Line_Ci.find( "Allocation" )!=string::npos )
+		    {
+		    LvElem_ri.AllocCont_b = ExtractNthWord( 1, Line_Ci ) == 
+		                            "next";
+		    }
+		if( Line_Ci.find( "Logical volume" )!=string::npos &&
+		    LvElem_ri.Name_C.size()>0 )
+		    {
+		    LvIntoList( VgElem_ri, LvList_C, LvElem_ri );
+		    LvElem_ri.Name_C.erase();
+		    }
+		Line_Ci = *Cmd_Ci.GetLine( I_ii++ );
+		}
+	    if( LvElem_ri.Name_C.size()>0 )
+		{
+		LvIntoList( VgElem_ri, LvList_C, LvElem_ri );
+		LvElem_ri.Name_C.erase();
+		}
+	    PvElem_ri.Name_C.erase();
+	    PvElem_ri.RealDevList_C.clear();
+	    PvElem_ri.Allocatable_b = true;
+	    PvElem_ri.Active_b = true;
+	    PvElem_ri.Created_b = true;
+	    PvElem_ri.Multipath_b = false;
+	    PvElem_ri.PartitionId_i = LVM_PART_ID;
+	    PvElem_ri.VgName_C = VgElem_ri.Name_C;
+	    while( I_ii<Cnt_ii && Line_Ci.find( "Volume group" )==string::npos )
+		{
+		if( Line_Ci.find( "PV Status" )!=string::npos )
+		    {
+		    PvElem_ri.Allocatable_b = ExtractNthWord( 2, Line_Ci ) == 
+					      "allocatable";
+		    }
+		if( Line_Ci.find( "Total PE" )!=string::npos )
+		    {
+		    Tmp_Ci = ExtractNthWord( 5, Line_Ci );
+		    sscanf( Tmp_Ci.c_str(), "%ld", &PvElem_ri.Blocks_l );
+		    PvElem_ri.Blocks_l *= VgElem_ri.PeSize_l;
+		    Tmp_Ci = ExtractNthWord( 7, Line_Ci );
+		    sscanf( Tmp_Ci.c_str(), "%ld", &PvElem_ri.Free_l );
+		    PvElem_ri.Free_l *= VgElem_ri.PeSize_l;
+		    }
+		if( Line_Ci.find( "PV Name" )!=string::npos )
+		    {
+		    if( PvElem_ri.RealDevList_C.size()>0 )
+			{
+			PvIntoList( VgElem_ri, PvList_C, PvElem_ri );
+			PvElem_ri.Name_C.erase();
+			PvElem_ri.RealDevList_C.clear();
+			}
+		    PvElem_ri.Name_C = ExtractNthWord( 2, Line_Ci );
+		    PvElem_ri.RealDevList_C.push_back( PvElem_ri.Name_C );
+		    }
+		Line_Ci = *Cmd_Ci.GetLine( I_ii++ );
+		}
+	    if( PvElem_ri.RealDevList_C.size()>0 )
+		{
+		PvIntoList( VgElem_ri, PvList_C, PvElem_ri );
+		PvElem_ri.Name_C.erase();
+		PvElem_ri.RealDevList_C.clear();
+		}
+	    list<VgIntern>::iterator Pix_Ci;
+	    if( (Pix_Ci=FindVg( VgElem_ri.Name_C ))!=VgList_C.end() )
+		{
+		*Pix_Ci=VgElem_ri;
+		y2debug( "Replace VG Name:%s", VgElem_ri.Name_C.c_str() );
+		}
+	    else
+		{
+		VgList_C.push_back( VgElem_ri );
+		y2debug( "Append VG Name:%s", VgElem_ri.Name_C.c_str() );
+		}
+	    y2debug( "Lvm2:%d Act:%d PE:%ld Blocks:%ld Free:%ld Num PV:%d "
+	             "Num LV:%d", VgElem_ri.Lvm2_b, VgElem_ri.Active_b, 
+		     VgElem_ri.PeSize_l, VgElem_ri.Blocks_l,
+		     VgElem_ri.Free_l, VgElem_ri.Pv_C.size(),
+		     VgElem_ri.Lv_C.size() );
+	    if( Line_Ci.find( "Volume group" )!=string::npos )
+		{
+		I_ii--;
+		}
+	    }
+	}
+    }
+
+void LvmAccess::PvIntoList( VgIntern& VgElem_rr, list<PvInfo>& PvList_Cr,
+                            const PvInfo& PvElem_rv )
+    {
+    list<PvInfo>::iterator Pix_Ci = SortIntoPvList( PvElem_rv );
+    y2debug( "VG Name:%s Act:%d All:%d Crt:%d Id:%x Blocks:%ld Free:%ld", 
+	     PvElem_rv.VgName_C.c_str(), PvElem_rv.Active_b, 
+	     PvElem_rv.Allocatable_b, PvElem_rv.Created_b, 
+	     PvElem_rv.PartitionId_i, PvElem_rv.Blocks_l, PvElem_rv.Free_l );
+    VgElem_rr.Pv_C.push_back( &(*Pix_Ci) );
+    }
+
+void LvmAccess::LvIntoList( VgIntern& VgElem_rr, list<LvInfo>& LvList_Cr,
+                            const LvInfo& LvElem_rv )
+    {
+    y2debug( "before FindLv:%s", LvElem_rv.Name_C.c_str() );
+    list<LvInfo>::iterator Pix_Ci;
+    if( (Pix_Ci=FindLv( LvElem_rv.Name_C ))!=LvList_Cr.end() )
+	{
+	*Pix_Ci=LvElem_rv;
+	y2debug( "Replace LV Name:%s", LvElem_rv.Name_C.c_str() );
+	}
+    else
+	{
+	LvList_Cr.push_back( LvElem_rv );
+	Pix_Ci = FindLv( LvElem_rv.Name_C );
+	y2debug( "Append LV Name:%s", LvElem_rv.Name_C.c_str() );
+	}
+    y2debug( "VG Name:%s AlCnt:%d Act:%d Wri:%d Stripe:%ld Blocks:%ld", 
+             LvElem_rv.VgName_C.c_str(), LvElem_rv.Active_b, 
+	     LvElem_rv.AllocCont_b, LvElem_rv.Writable_b, 
+	     LvElem_rv.Stripe_l, LvElem_rv.Blocks_l );
+    VgElem_rr.Lv_C.push_back( &(*Pix_Ci) );
+    }
+
 void LvmAccess::ScanProcLvm()
     {
     std::ifstream File_Ci( "/proc/lvm/global" );
@@ -1138,6 +1400,7 @@ void LvmAccess::ScanProcLvm()
 	    {
 	    VgElem_ri.Pv_C.clear();
 	    VgElem_ri.Lv_C.clear();
+	    VgElem_ri.Lvm2_b = false;
 	    Tmp_Ci = ExtractNthWord( 1, Line_Ci );
 	    if( Tmp_Ci.find('I')==0 )
 		{
@@ -1195,13 +1458,7 @@ void LvmAccess::ScanProcLvm()
 		    Tmp_Ci = ExtractNthWord( 5, Line_Ci );
 		    PvElem_ri.Free_l = 0;
 		    sscanf( Tmp_Ci.c_str(), "%ld", &PvElem_ri.Free_l );
-		    list<PvInfo>::iterator Pix_Ci = SortIntoPvList( PvElem_ri );
-		    y2debug( "VG Name:%s Act:%d All:%d Crt:%d Id:%x Blocks:%ld "
-			     "Free:%ld", PvElem_ri.VgName_C.c_str(), 
-			     PvElem_ri.Active_b, PvElem_ri.Allocatable_b,
-			     PvElem_ri.Created_b, PvElem_ri.PartitionId_i,
-			     PvElem_ri.Blocks_l, PvElem_ri.Free_l );
-		    VgElem_ri.Pv_C.push_back( &(*Pix_Ci) );
+		    PvIntoList( VgElem_ri, PvList_C, PvElem_ri );
 		    }
 		getline( File_Ci, Line_Ci );
 		y2milestone( "MP Line %s", Line_Ci.c_str() );
@@ -1215,9 +1472,8 @@ void LvmAccess::ScanProcLvm()
 		    PvElem_ri.Multipath_b = true;
 		    PvElem_ri.RealDevList_C.clear();
 		    PvElem_ri.RealDevList_C.push_back( PvElem_ri.Name_C );
-		    list<PvInfo>::iterator Pix_Ci = SortIntoPvList( PvElem_ri );
 		    y2milestone( "MP add Name:%s", PvElem_ri.Name_C.c_str() );
-		    VgElem_ri.Pv_C.push_back( &(*Pix_Ci) );
+		    PvIntoList( VgElem_ri, PvList_C, PvElem_ri );
 		    getline( File_Ci, Line_Ci );
 		    Mp_ii++;
 		    }
@@ -1251,27 +1507,7 @@ void LvmAccess::ScanProcLvm()
 		    Tmp_Ci = ExtractNthWord( 1, Line_Ci );
 		    sscanf( Tmp_Ci.c_str(), "%ld", &LvElem_ri.Blocks_l );
 		    Tmp_Ci = ExtractNthWord( 5, Line_Ci );
-		    y2debug( "before FindLv:%s", LvElem_ri.Name_C.c_str() );
-		    list<LvInfo>::iterator Pix_Ci;
-		    if( (Pix_Ci=FindLv( LvElem_ri.Name_C ))!=LvList_C.end() )
-			{
-			*Pix_Ci=LvElem_ri;
-			y2debug( "Replace LV Name:%s", 
-			         LvElem_ri.Name_C.c_str() );
-			}
-		    else
-			{
-			LvList_C.push_back( LvElem_ri );
-			Pix_Ci = FindLv( LvElem_ri.Name_C );
-			y2debug( "Append LV Name:%s", 
-			         LvElem_ri.Name_C.c_str() );
-			}
-		    y2debug( "VG Name:%s Act:%d Wri:%d AlCnt:%d Stripe:%ld "
-		             "Blocks:%ld", LvElem_ri.VgName_C.c_str(), 
-			     LvElem_ri.Active_b, LvElem_ri.Writable_b,
-			     LvElem_ri.AllocCont_b, LvElem_ri.Stripe_l,
-			     LvElem_ri.Blocks_l );
-		    VgElem_ri.Lv_C.push_back( &(*Pix_Ci) );
+		    LvIntoList( VgElem_ri, LvList_C, LvElem_ri );
 		    }
 		getline( File_Ci, Line_Ci );
 		Tmp_Ci = ExtractNthWord( 0, Line_Ci );
@@ -1355,33 +1591,35 @@ void LvmAccess::PrepareLvmCmd()
     LvmRet_i = 1000;
     LvmOutput_C = "Internal YaST Error";
     }
-    
+
 bool LvmAccess::ExecuteLvmCmd( const string& Cmd_Cv )
     {
     vector<string> Plex_Ci;
-    AsciiFile Old_Ci( "/proc/lvm/global" );
+    AsciiFile Old_Ci;
     int Idx_ii;
     CmdLine_C  = Cmd_Cv;
-    if( (Idx_ii=Old_Ci.Find( 0, (string)"^Global:" )) )
+    if( !Lvm2() )
 	{
-	Old_Ci.Delete( Idx_ii, 1 );
+	Old_Ci.LoadFile( "/proc/lvm/global" );
+	if( (Idx_ii=Old_Ci.Find( 0, (string)"^Global:" )) )
+	    {
+	    Old_Ci.Delete( Idx_ii, 1 );
+	    }
 	}
     string Cmd_Ci = ExtractNthWord( 0, Cmd_Cv );
-//  string Tmp_Ci = App_pC->GetText( TXT_LVM_EXECUTE_LVM );
-//  Tmp_Ci.at( "@CMD@" ) = Cmd_Ci;
     if( Cmd_Ci == "/sbin/pvcreate" )
 	{
 	CmdLine_C = "echo y | " + CmdLine_C;
 	}
-//  App_pC->ShowWait( Tmp_Ci );
-    y2debug( "lvm cmd execute:%s", CmdLine_C.c_str() );
+    y2milestone( "lvm cmd execute:%s", CmdLine_C.c_str() );
     LvmCmd_C.Execute( CmdLine_C );
     LvmRet_i = LvmCmd_C.Retcode();
     if( LvmOutput_C.find( "ERROR" )!=string::npos )
 	{
 	LvmRet_i = 999;
 	}
-    if( LvmRet_i == 0 && Cmd_Ci!="/sbin/pvcreate" && Cmd_Ci!="/sbin/vgremove" )
+    if( LvmRet_i == 0 && !Lvm2() && 
+        Cmd_Ci!="/sbin/pvcreate" && Cmd_Ci!="/sbin/vgremove" )
 	{
 	AsciiFile New_Ci( "/proc/lvm/global" );
 	if( (Idx_ii=New_Ci.Find( 0, (string)"^Global:" )) )
@@ -1400,10 +1638,9 @@ bool LvmAccess::ExecuteLvmCmd( const string& Cmd_Cv )
 	}
     else
 	{
-	LvmOutput_C = "";
+	LvmOutput_C.erase();
 	}
-//  App_pC->EndWait();
-    y2debug( "lvm cmd output:%s", LvmOutput_C.c_str() );
+    y2milestone( "lvm cmd output:%s", LvmOutput_C.c_str() );
     return( LvmRet_i==0 );
     }
 
@@ -1415,6 +1652,7 @@ LvmAccess::VgIntern::operator VgInfo()
     New_Ci.Free_l = Free_l;
     New_Ci.PeSize_l = PeSize_l;
     New_Ci.Active_b = Active_b;
+    New_Ci.Lvm2_b = Lvm2_b;
     for( list<PvInfo*>::iterator I_Ci=Pv_C.begin(); I_Ci!=Pv_C.end(); I_Ci++ )
 	{
 	New_Ci.Pv_C.push_back(**I_Ci);
