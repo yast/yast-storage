@@ -21,6 +21,7 @@
 textdomain "storage";
 
 import "FileSystems";
+import "Mode";
 
 //////////////////////////////////////////////////////////////////////
 // helptext for evms main dialog 
@@ -759,9 +760,18 @@ define list get_evms_volumes( map<string,map> tg )
     y2milestone( "get_evms_volumes parts %1", parts );
     list ret = maplist( map p, parts, 
 	``{
+	string fo = "";
+	if( p["loop_fs"]:false && p["crypt"]:"" != "none" )
+	    {
+	    fo = fo + "C";
+	    }
+	if( p["format"]:false )
+	    {
+	    fo = fo + "F";
+	    }
 	return( `item( `id(p["device"]:""), 
 	               p["device"]:"", 
-		       p["size"]:"",
+		       p["size"]:"", fo,
 		       p["mount"]:"",
 		       "" ));
 	});
@@ -790,10 +800,16 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
     integer max_size = new_size + co["cyl_free"]:0 * co["cyl_size"]:0 - 1025;
     string  curr_size = ByteToHumanStringWithZero(new_size);
     string  vol_name  = part["nr"]:"";
-    string  mkey = "/dev/evms/" + co["name"]:"";
     integer stripes   = part["stripes"]:1;
     integer stripesize = part["stripesize"]:64;
     integer pesize = co["cyl_size"]:1;
+    string  mkey = "/dev/evms";
+    if( is_cont )
+	{
+	mkey = mkey + "/" + co["name"]:"";
+	}
+
+    y2milestone( "dlg_logical_volume mkey %1 vol_name %2", mkey, vol_name );
 
     list stripes_poss = [
 			  `item(`id(1), "1",  stripes == 1 ),
@@ -820,6 +836,7 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
     string  heading = "";
     boolean is_create_mode = false;
     boolean is_resize_mode = false;
+    boolean is_mount_mode = false;
     term    ui_vol_name = `Empty();
      
     // header for input field size of volume 
@@ -831,13 +848,13 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
 			      ByteToHumanStringWithZero(max_size));
 
 
-    if( create && part["created"]:false )
+    if( create && part["create"]:false )
         {
 	// popup heading 
 	heading = _("Create Logical Volume");
 	is_create_mode = true; 
 	}
-    else if ( !create && part["created"]:false )
+    else if( !create && part["create"]:false )
         {
 	// popup heading 
 	heading = _("Edit Logical Volume");
@@ -855,7 +872,8 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
 	    heading = _("Edit Logical Volume");
 	    }
 	is_create_mode = false;
-	is_resize_mode = true;
+	is_resize_mode = is_cont;
+	is_mount_mode = !is_resize_mode;
 	stripes_poss = [ `item(`id(1), "-", true) ];
 	stripe_size = [ `item(`id(1), "-", true) ];
 	}
@@ -869,7 +887,7 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
 			     `Left(`Label(_("(e.g. var, opt)")))
 			  );
 	}
-    else
+    else 
 	{
 	// display name of current volume group
 	ui_vol_name = `VBox( `Label(""),
@@ -880,8 +898,39 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
 				 ));
 	}
 
-    y2milestone( "is_create_mode %1 is_resize_mode %2", is_create_mode,
-                 is_resize_mode );
+    term evms_specials = `Epmty();
+
+    if( !is_mount_mode )
+	{
+	evms_specials = `VBox(
+	    `Top(`Left(ui_vol_name)),
+	    `Top(`VBox( 
+		`TextEntry(`id(`size), size_txt, curr_size),
+		`HBox(
+		    // set size to maxsize
+		    `Left(`Label( `id(`max_text), max_text )),
+		    // button text
+		    `PushButton( `id(`max_size), _("ma&x")))
+		)),
+	    `VStretch(),
+	    `Left(`ComboBox( `id(`stripes), `opt(`hstretch,`notify),
+			     // button text
+			     _("Stri&pes"), stripes_poss )),
+	    `VStretch(),
+	    `Left(`ComboBox( `id(`stripesize), `opt(`hstretch,`notify),
+			     // button text
+			     _("Stripe &Size"), stripe_size )),
+	    `VStretch());
+	}
+    else
+	{
+			      // label text %1 is prelaced by e.g. 4 GB
+	string txt = sformat( _("Size %1"), curr_size );
+        evms_specials = `VBox( `Right( `Label( txt ) ) );
+	}
+
+    y2milestone( "is_create_mode %1 is_resize_mode %2 is_mount_mode %3", 
+                 is_create_mode, is_resize_mode, is_mount_mode );
 
     map<symbol,map> fs = FileSystems::GetAllFileSystems(true, true);
  
@@ -896,35 +945,15 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
 		    `VStretch(),
 		    `VSpacing(1),
 		    `HBox(
-			 FormatDlg( part, fs ),
+			 `HWeight( 40, FormatDlg( part, fs )),
 			 `HStretch(),
-			 `HSpacing(2),
-			 `VBox(
-			     `Top(`Left(ui_vol_name)),
-			     `Top(`VBox( 
-				 `TextEntry(`id(`size), size_txt, curr_size),
-				 `HBox(
-				     // set size to maxsize
-				     `Left(`Label( `id(`max_text), max_text )),
-				     // button text
-				     `PushButton( `id(`max_size), _("ma&x")))
-						
-				  )),
-			     `VStretch(),
-			     `Left(`ComboBox( `id(`stripes), 
-			                      `opt(`hstretch,`notify),
-					      // button text
-					      _("Stri&pes"), stripes_poss )),
-			     `VStretch(),
-			     `Left(`ComboBox( `id(`stripesize), 
-			                      `opt(`hstretch,`notify),
-					      // button text
-					      _("Stripe &Size"), stripe_size )),
-			     `VStretch(),
+			 `HSpacing(0.5),
+			 `HWeight( 40, `VBox(
+			     `Top(evms_specials),
 			     `VSpacing(1),
 			     `ReplacePoint( `id(`mount_dlg_rp), 
 					    MountDlg(part, []))
-			     )
+			     ))
 			 ),
 		    `VStretch(),  
 		    `VSpacing(1),
@@ -948,10 +977,13 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
 	  UI::ChangeWidget( `id(`vol_name), `ValidChars, 
 			    FileSystems::nchars + "-._:" );
 	  }
-      UI::ChangeWidget( `id(`stripes), `Enabled, !is_resize_mode );
-      UI::ChangeWidget( `id(`stripesize), `Enabled, 
-                        !is_resize_mode && stripes>1 );
-      volume_handle_max( stripes, max_text );
+      if( !is_mount_mode )
+	  {
+	  UI::ChangeWidget( `id(`stripes), `Enabled, !is_resize_mode );
+	  UI::ChangeWidget( `id(`stripesize), `Enabled, 
+			    !is_resize_mode && stripes>1 );
+	  volume_handle_max( stripes, max_text );
+	  }
   
       ////////////////////////////////////////////////////////////////////
       // User mainloop for dialog
@@ -969,6 +1001,7 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
 	  input_is_ok  = true;
 	    
 	  ret = UI::UserInput();
+	  y2milestone( "dlg_logical_volume ret %1", ret );
 
 	  /////////////////////////////////////////////////////////
 	  if( ret == `stripes)
@@ -998,27 +1031,34 @@ define map<string,any> dlg_logical_volume( map<string,any> co,
 	      vol_name = deletechars( vol_name, " \t" );
 	      }
 
-	  stripes = (integer)UI::QueryWidget(`id(`stripes), `Value);
-	  stripesize = (integer)UI::QueryWidget(`id(`stripesize), `Value);
-	   
+	  if( UI::WidgetExists( `id(`stripes) ))
+	      {
+	      stripes = (integer)UI::QueryWidget(`id(`stripes), `Value);
+	      stripesize = (integer)UI::QueryWidget(`id(`stripesize), `Value);
+	      }
+
 	  if( ret==`ok )
 	      {
-	      new_size = kmgt_str_to_byte((string)UI::QueryWidget(`id(`size),
-	                                                          `Value));
-	      
-	      if( !check_max_size(new_size, max_size) )
+	      if( UI::WidgetExists( `id(`size) ))
 		  {
-		  input_is_ok = false;
-		  continue;
+		  new_size = 
+		      kmgt_str_to_byte( (string)UI::QueryWidget(`id(`size),
+				                                `Value));
+
+		  if( !check_max_size(new_size, max_size) )
+		      {
+		      input_is_ok = false;
+		      continue;
+		      }
+		  y2milestone( "new_size %1 old_size %2", new_size, old_size );
 		  }
-	      y2milestone( "new_size %1 old_size %2", new_size, old_size );
 
 	      if( is_resize_mode && !retval["format"]:false && 
 		  new_size!=old_size )
 		  {
 		  if( !CheckResizePossible( true, true, new_size-old_size,
-					    retval["used_fs"]:`unknown,
-					    retval["mount"]:"" ))
+			      retval["used_fs"]:`unknown,
+			      retval["mount"]:"" ))
 		      {
 		      UI::ChangeWidget(`id(`size), `Value, curr_size );
 		      continue;
@@ -1075,9 +1115,12 @@ or cancel this dialog.
 	      {
 	      retval["stripesize"] = stripesize;
 	      }
-	  retval["nr"] = vol_name;
-	  retval["device"] = Storage::GetDeviceName( mkey, vol_name );
-	  retval["region"] = [0, (new_size+pesize-1)/pesize ];
+	  if( !is_mount_mode )
+	      {
+	      retval["nr"] = vol_name;
+	      retval["device"] = Storage::GetDeviceName( mkey, vol_name );
+	      retval["region"] = [0, (new_size+pesize-1)/pesize ];
+	      }
 	  if( is_resize_mode && new_size!=old_size && 
 	      !haskey( retval, "ori_length"))
 	      {
@@ -1110,14 +1153,23 @@ define map add_evms_volume( string co_name, map<string,map> tg )
 	   "mount" : GetMountPointProposal( tg, [ Partitions::BootMount() ] )
 	];
     map<string,any> co = (map<string,any>)tg["/dev/evms/"+co_name]:$[];
-    part = dlg_logical_volume( co, part, true, true );
-    if( size(part)>0 )
+    if( co["cyl_free"]:0==0 )
 	{
-	ret["ok"] = true;
-	co["free_cyl"] = co["free_cyl"]:0 - part["region",1]:0;
-	tg["/dev/evms/"+co_name] = co;
-	tg = Storage::SetPartition( tg, part );
-	ret["tg"] = tg;
+	// popup text %1 is replaced by a container name
+	Popup::Message(sformat(_("There is no available space in the current container %1"), co_name ));
+	}
+    else
+	{
+	part["region"] = [ 0, co["cyl_free"]:0/4 ];
+	part = dlg_logical_volume( co, part, true, true );
+	if( size(part)>0 )
+	    {
+	    ret["ok"] = true;
+	    co["cyl_free"] = co["cyl_free"]:0 - part["region",1]:0;
+	    tg["/dev/evms/"+co_name] = co;
+	    tg = Storage::SetPartition( tg, part );
+	    ret["targets"] = tg;
+	    }
 	}
     return( ret );
     };
@@ -1146,10 +1198,58 @@ define map edit_evms_volume( string device, map<string,map> tg )
     if( size(part)>0 )
 	{
 	ret["ok"] = true;
-	tg[key,"free_cyl"] = tg[key,"free_cyl"]:0 + last_size - 
+	tg[key,"cyl_free"] = tg[key,"cyl_free"]:0 + last_size - 
 			     part["region",1]:0;
 	tg = Storage::SetPartition( tg, part );
-	ret["tg"] = tg;
+	ret["targets"] = tg;
+	}
+    return( ret );
+    };
+
+define map delete_evms_volume( string device, map<string,map> tg )
+    ``{
+    y2milestone( "delete_evms_volume device %1", device );
+    map ret = $[ "ok" : false ];
+
+    map d = Storage::GetDiskPartition( device );
+
+    string key = d["disk"]:"";
+    if( !haskey( tg, key ) )
+	{
+	key = "/dev/evms";
+	}
+
+    map<string,any> part = Storage::GetPartition( tg, device );
+    y2milestone( "delete_evms_volume part %1", part );
+
+    if( !tg[key,"is_evms_container"]:false )
+	{
+	// popup text %1 is replaced by a container name
+	Popup::Message(sformat(_("You can only delete logical volumes in a container.
+%1 is not a logical volumes produced by a container"), device ));
+	}
+    else if( check_partition_delete( tg[key]:$[], part, false, false,
+                                     false, false, Mode::installation ) == `delete )
+	{
+	string txt = sformat( _("Do you really want to delete %1?"), 
+	                      part["device"]:"" );
+	if( Popup::YesNo( txt ) )
+	    {
+	    ret["ok"] = true;
+	    if( part["create"]:true )
+		{
+		tg[key,"partitions"] = filter( map p, tg[key,"partitions"]:[],
+		                               ``(p["device"]:"" !=
+					          part["device"]:""));
+		}
+	    else
+		{
+		part["delete"] = true;
+		tg = Storage::SetPartition( tg, part );
+		}
+	    tg[key,"cyl_free"] = tg[key,"cyl_free"]:0 + part["region",1]:0;
+	    ret["targets"] = tg;
+	    }
 	}
     return( ret );
     };
