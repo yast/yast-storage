@@ -36,6 +36,7 @@
   import "Mode";
   import "Partitions";
   import "Popup";
+  import "Misc";
   import "StorageDevices";
 
 global boolean DoCheckEvmsNonEvms = true;
@@ -3445,6 +3446,38 @@ global define map MakeCdromFstabEntry( map cd )
     return( entry );
     };
 
+define void HandleModulesOnBoot( map<string,map> targetMap )
+    ``{
+    list<string> ml = filter( string e, 
+                              (list<string>) splitstring( Misc::SysconfigRead( .sysconfig.kernel.MODULES_LOADED_ON_BOOT, "" ), " \t"), 
+			      ``(size(e)>0));
+    y2milestone( "HandleModulesOnBoot ml %1", ml );
+    if( find( string e, ml, ``(e=="loop_fish2"))==nil )
+	{
+	boolean need_fish2 = false;
+	foreach( string disk, map e, targetMap,
+	    ``{
+	    foreach( map p, e["partitions"]:[],
+		``{
+		if( p["noauto"]:false && p["loop_fs"]:false && 
+		    p["crypt"]:"none" != "none" )
+		    {
+		    y2milestone( "HandleModulesOnBoot need %1", p );
+		    need_fish2 = true;
+		    }
+		});
+	    });
+	y2milestone( "HandleModulesOnBoot need_fish2 %1", need_fish2 );
+	if( need_fish2 )
+	    {
+	    ml = add( ml, "loop_fish2" );
+	    SCR::Write( .sysconfig.kernel.MODULES_LOADED_ON_BOOT,
+			mergestring( ml, " " ) );
+
+	    }
+	}
+    }
+
 global define void WriteFstab( map<string,map> targetMap )
     ``{
     y2milestone( "WriteFstab called" );
@@ -3457,6 +3490,7 @@ global define void WriteFstab( map<string,map> targetMap )
 	StorageDevices::MakeCDLinks();
 	}
     write_fstab( tg, StorageDevices::ZipDrives, StorageDevices::cddrives );
+    HandleModulesOnBoot( targetMap );
     }
 
 global define map GetS390DeviceMap( map<string,map> targetMap )
@@ -4322,6 +4356,7 @@ global define boolean CheckEvmsLvm()
 global define void FinishInstall()
     ``{
     map<string,map> tg = GetTargetMap();
+    HandleModulesOnBoot( tg );
     list evms = GetUsedEvmsDisks( tg );
     y2milestone( "FinishInstall evms %1", evms );
     if( size(evms)>0 )
