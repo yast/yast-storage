@@ -268,114 +268,123 @@ Try again.
 	      
   }
 
+global define symbol DoInputChecks( map entry, string query )
+    ``{
+    symbol ret = `ok;
+    list between = entry[`between]:[];
+    string valid_chars = entry[`valid_chars]:"";
+    integer str_length = entry[`str_length]:0;
+
+    if( between != [] )
+	{
+	if( between[0]:0 > tointeger(query)  ||
+	    ( (between[1]:0 != -1) && (between[1]:0 < tointeger(query) ) ) )
+	    {
+	    UI::ErrorPopup(entry[`error_text]:"");
+	    ret = `error;
+	    }
+	}
+
+    if( valid_chars != ""  && ret != `error )
+	{
+	if( nil != findfirstnotof( query, valid_chars ))
+	    {
+	    UI::ErrorPopup(entry[`error_text]:"");
+	    ret = `error;
+	    }
+	}
+
+    if( str_length != 0 && size(query) > str_length && ret != `error )
+	{
+	UI::ErrorPopup(entry[`error_text]:"");
+	ret = `error;
+	}
+    y2milestone( "value %1 ret %2", query, ret );
+    return( ret );
+    }
 
   /**
    * Dialog: Filesystem options
    * @parm new_val map that contains a partition
    * @parm file_systems filesystem definitions
    */
-  global define FileSystemOptions( map org_fs_options, map fs_define  ) ``{
-
-      map fs_options     = eval(org_fs_options);
-      term contents 	= `VBox(`VSpacing (1));
-      string helptext   = "";
-      
-      foreach( `option, lookup( fs_define, `options, []),  ``{
-	  contents = add( contents, lookup( option, `widget,   `empty));
-	  string add_help = lookup( option, `help_text, "");
-	  if ( add_help != "")
-	      helptext = helptext +  add_help ;
-      });
-   
-      UI::OpenDialog(`opt(`decorated), `HBox(
+global define FileSystemOptions( map org_fs_options, map fs_define  ) 
+    ``{
+    map fs_options     = eval(org_fs_options);
+    term contents 	= `VBox(`VSpacing (1));
+    string helptext   = "";
+    
+    foreach( `option, lookup( fs_define, `options, []),  
+	``{
+	contents = add( contents, option[`widget]:`empty);
+	string add_help = option[`help_text]:"";
+	if( add_help != "")
+	    helptext = helptext + add_help ;
+	});
+ 
+    UI::OpenDialog( `opt(`decorated), 
+		    `HBox(
 			`HWeight(4, `RichText( helptext )),
-			`HWeight(7, `VBox(
-					  `HSpacing(50),
-					  `Left(`Heading(_("File system options:"))),
-					  `VStretch(),
-					  `VSpacing(1),
-					  `HBox(`HStretch(),
-						`HSpacing(1),
-						contents,
-						`HStretch(),
-						`HSpacing(1)),
-					  `VSpacing(1),
-					  `VStretch(),
-					  `HBox(
-						`Bottom(`PushButton(`id(`ok),_("&Ok"))),
-						`Bottom(`PushButton(`id(`cancel), CancelButtonLabel())))
-					  ))));
+			`HWeight(7, 
+			    `VBox(
+				`HSpacing(50),
+				`Left(`Heading(_("File system options:"))),
+				`VStretch(),
+				`VSpacing(1),
+				`HBox(
+				    `HStretch(),
+				    `HSpacing(1),
+				    contents,
+				    `HStretch(),
+				    `HSpacing(1)),
+				    `VSpacing(1),
+				    `VStretch(),
+				    `HBox(
+					`Bottom(`PushButton(`id(`ok),_("&Ok"))),
+					`Bottom(
+					  `PushButton(`id(`cancel), 
+						      CancelButtonLabel())))
+					))));
 
-      foreach( `query_key, `option_map, fs_options , ``{
-	  UI::ChangeWidget(`id(query_key), `Value, 
-	                   option_map["option_value"]:nil);
-      });
+    foreach( `query_key, `option_map, fs_options , 
+	``{
+	UI::ChangeWidget( `id(query_key), `Value, 
+			  option_map["option_value"]:nil );
+	});
 
-	      
-      symbol ret = `ok;
-      repeat
+	    
+    symbol ret = `ok;
+    repeat
 	{
-	    ret = UI::UserInput();
-	    if ( ret == `ok )
+	ret = UI::UserInput();
+	if( ret == `ok )
 	    {
-		foreach( `option_map, lookup( fs_define, `options, []),  ``{
-		    
-		    if ( ret != `error )
+	    foreach( `entry, fs_define[`options]:[],  
+		``{
+		if( ret != `error )
 		    {
-			any query = UI::QueryWidget(`id(option_map[`query_key]:nil), `Value );
-			
-			map fs_option = $[ 
-			    "option_str"   : option_map[`option_str]:"", 
-			    "option_value" : query ];
+		    any query = UI::QueryWidget( `id(entry[`query_key]:nil), 
+		                                 `Value );
+		    map fs_option = $[ "option_str"   : entry[`option_str]:"", 
+				       "option_value" : query ];
 
-			if( option_map[`option_blank]:false )
-			    {
-			    fs_option["option_blank"] = true;
-			    }
-
-			list between = option_map[`between]:[];
-			string valid_chars  = option_map[`valid_chars]:"";
-			integer str_length  = option_map[`str_length]:0;
-
-			if( query != "auto" && query != "none" && query != "default" )
+		    if( option_map[`option_blank]:false )
 			{
-			    if( between != [] )
-			    {
-				if( between[0]:0 > tointeger(query)  ||
-				    ( (between[1]:0 != -1) && 
-				      (between[1]:0 < tointeger(query) ) ) )
-				{
-				    UI::ErrorPopup(option_map[`error_text]:"");
-				    ret = `error;
-				}
-			    }
-
-			    if( valid_chars != ""  && ret != `error)
-			    {
-				if(nil !=  findfirstnotof( query, valid_chars ))
-				{
-				    UI::ErrorPopup(option_map[`error_text]:"");
-				    ret = `error;
-				}
-			    }
-
-			    if( str_length != 0 && size(query) > str_length && 
-			        ret != `error )
-			    {
-				UI::ErrorPopup(option_map[`error_text]:"");
-				ret = `error;
-			    }
+			fs_option["option_blank"] = true;
 			}
 
-			if( query != option_map[`default]:nil && ret != `error )
+
+		    if( !contains( ["auto", "none", "default"], query ))
 			{
-			    fs_options[option_map[`query_key]:nil] = fs_option;
+			ret = DoInputChecks( entry, query );
+			}
+
+		    if( query != option_map[`default]:nil && ret != `error )
+			{
+			fs_options[option_map[`query_key]:nil] = fs_option;
 			}
 		    }
-		
 		});
-		
-		
 	    }
 	} until ( ret == `ok || ret == `cancel );
 
@@ -384,7 +393,7 @@ Try again.
     if( ret == `ok )
 	return fs_options;
     return ( org_fs_options );
-  }
+    }
 
   /**
    * Dialog: Fstab options
@@ -396,7 +405,7 @@ global define void FstabOptions( map old, map new )
     string helptext = "";
     term contents = `VBox();
 
-    if( !new["crypt_fs"]:false )
+    if( !new["crypt_fs"]:false && new["mount"]:"" != "swap" )
 	{
 	helptext = helptext + _("<p><b>Mount in /etc/fstab by:</b>
 Normally, a file system to mount is identified in /etc/fstab
@@ -538,21 +547,28 @@ makes sense when you activate the option for mounting by volume label.
 			)
 		  );
 
-    UI::ChangeWidget( `id(`mt_group), `CurrentButton, new["mountby"]:`device );
-    UI::ChangeWidget( `id(`label), `Enabled, 
-                      FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
-			  !new["crypt_fs"]:false );
-    UI::ChangeWidget( `id(`uuid), `Enabled, 
-                      (new["format"]:false || size(new["uuid"]:"")>0) &&
-			  FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
-			  !new["crypt_fs"]:false );
+    if( UI::WidgetExists( `id(`mt_group) ))
+	{
+	UI::ChangeWidget( `id(`mt_group), `CurrentButton, 
+	                  new["mountby"]:`device );
+	UI::ChangeWidget( `id(`label), `Enabled, 
+			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
+			      !new["crypt_fs"]:false );
+	UI::ChangeWidget( `id(`uuid), `Enabled, 
+			  (new["format"]:false || size(new["uuid"]:"")>0) &&
+			      FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
+			      !new["crypt_fs"]:false );
+	}
 
-    UI::ChangeWidget( `id(`vol_label), `Enabled, 
-                      FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
-			  !new["crypt_fs"]:false );
-    UI::ChangeWidget( `id(`vol_label), `ValidChars, 
-                      FileSystems::nchars + "-._:" );
-    UI::ChangeWidget( `id(`vol_label), `Value, new["label"]:"" );
+    if( UI::WidgetExists( `id(`vol_label) ))
+	{
+	UI::ChangeWidget( `id(`vol_label), `Enabled, 
+			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
+			      !new["crypt_fs"]:false );
+	UI::ChangeWidget( `id(`vol_label), `ValidChars, 
+			  FileSystems::nchars + "-._:" );
+	UI::ChangeWidget( `id(`vol_label), `Value, new["label"]:"" );
+	}
 
     foreach( `key, `value, old_state,
 	``{
@@ -563,46 +579,51 @@ makes sense when you activate the option for mounting by volume label.
     repeat
 	{
 	ret = UI::UserInput();
-	if ( ret == `ok )
+	if( ret == `ok )
 	    {
-	    new["mountby"] = UI::QueryWidget( `id(`mt_group), `CurrentButton );
-	    if( !new["format"]:false && !new["create"]:false &&
-	        new["mountby"]:`device != old["mountby"]:`device )
+	    if( UI::WidgetExists( `id(`mt_group) ))
 		{
-		if( !haskey( new, "ori_mountby" ) )
-		    new["ori_mountby"] = old["mountby"]:`device;
-		}
-	    new["label"] = UI::QueryWidget( `id(`vol_label), `Value );
-	    if( new["label"]:"" != old["label"]:"" )
-		{
-		integer max_len = FileSystems::LabelLength( new["used_fs"]:`unknown );
-		if( size(new["label"]:"") > max_len )
+		new["mountby"] = UI::QueryWidget( `id(`mt_group), 
+		                                  `CurrentButton );
+		if( !new["format"]:false && !new["create"]:false &&
+		    new["mountby"]:`device != old["mountby"]:`device )
 		    {
-		    new["label"] = substring( new["label"]:"", 0, max_len );
-		    UI::ErrorPopup( sformat(_("
+		    if( !haskey( new, "ori_mountby" ) )
+			new["ori_mountby"] = old["mountby"]:`device;
+		    }
+		new["label"] = UI::QueryWidget( `id(`vol_label), `Value );
+		if( new["label"]:"" != old["label"]:"" )
+		    {
+		    integer max_len = 
+			FileSystems::LabelLength( new["used_fs"]:`unknown );
+		    if( size(new["label"]:"") > max_len )
+			{
+			new["label"] = substring( new["label"]:"", 0, max_len );
+			UI::ErrorPopup( sformat(_("
 Maximum volume label length for the selected file system 
 is %1. Your volume label was truncated to this size.
 "), max_len ));
 
+			}
+		    if( !new["format"]:false && !new["create"]:false &&
+			!haskey( new, "ori_label" ) )
+			{
+			new["ori_label"] = old["label"]:"";
+			}
 		    }
-		if( !new["format"]:false && !new["create"]:false &&
-		    !haskey( new, "ori_label" ) )
+		if( new["mountby"]:`device == `label && size(new["label"]:"")==0 )
 		    {
-		    new["ori_label"] = old["label"]:"";
+		    ret = `again;
+		    UI::ErrorPopup( _("Provide a volume label to mount by label."));
+		    continue;
 		    }
-		}
-	    if( new["mountby"]:`device == `label && size(new["label"]:"")==0 )
-		{
-		ret = `again;
-		UI::ErrorPopup( _("Provide a volume label to mount by label."));
-		continue;
-		}
-	    if( new["mountby"]:`device == `label && 
-	        !check_unique_label( Storage::GetTargetMap(), new ))
-		{
-		ret = `again;
-		UI::ErrorPopup( _("This volume label is already in use. Select a different one."));
-		continue;
+		if( new["mountby"]:`device == `label && 
+		    !check_unique_label( Storage::GetTargetMap(), new ))
+		    {
+		    ret = `again;
+		    UI::ErrorPopup( _("This volume label is already in use. Select a different one."));
+		    continue;
+		    }
 		}
 	    map new_state = $[];
 	    string text = "";
@@ -610,7 +631,8 @@ is %1. Your volume label was truncated to this size.
 	    foreach( `entry, opt_list, 
 		``{
 		text = "";
-		any value = UI::QueryWidget( `id(entry[`query_key]:""), `Value );
+		any value = UI::QueryWidget( `id(entry[`query_key]:""), 
+		                             `Value );
 		new_state[entry[`query_key]:""] = value;
 		if( entry[`type]:`text == `boolean )
 		    {
@@ -626,7 +648,11 @@ is %1. Your volume label was truncated to this size.
 		    }
 		else
 		    {
-		    if( size(value)>0 )
+		    if( DoInputChecks( entry, value ) != `ok )
+			{
+			ret = `again;
+			}
+		    else if( size(value)>0 )
 			{
 			text = sformat( entry[`str_opt]:"%1", value );
 			}

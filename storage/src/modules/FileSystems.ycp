@@ -208,17 +208,25 @@ Mutiple options are separated by commas.</p>
     return( opt );
     };
 
-global define map GetFstabOptWidgets( symbol fsys )
+global define list GetFstabOptWidgets( symbol fsys )
     ``{
-    map fs = GetAllFileSystems( true, false );
-    list ret = fs[fsys,`fst_options]:$[];
-    if( contains( [`ext3, `reiser], fsys ) )
+    list ret = [];
+    if( fsys != `swap )
 	{
-	ret = union( ret, GetJournalFstabOptions() );
+	map fs = GetAllFileSystems( true, false );
+	ret = fs[fsys,`fst_options]:[];
+	if( contains( [`ext3, `reiser], fsys ) )
+	    {
+	    ret = union( ret, GetJournalFstabOptions() );
+	    }
+	if( contains( [`ext2, `ext3, `reiser], fsys ) )
+	    {
+	    ret = union( ret, GetAclFstabOptions() );
+	    }
 	}
-    if( contains( [`ext2, `ext3, `reiser], fsys ) )
+    else
 	{
-	ret = union( ret, GetAclFstabOptions() );
+	ret = swap_fst_options;
 	}
     y2milestone( "fsys %1", fsys );
     y2milestone( "ret %1", ret );
@@ -279,7 +287,7 @@ Specifies the type of file allocation tables used (12,  16,  or  32-bit). If aut
 	   `query_key 	: "opt_root_dir_entries",
 	   `option_str	: "-r",
 	   `between	: [ 112, -1],
-	   `valid_chars 	: "0123456789",
+	   `valid_chars : "0123456789",
 	   `error_text 	: _("The minimum size for \"Root dir entries\" is 112. Please try again."),
 	   `help_text	: _("<p><b>Root dir entries:</b>
 Select the number of entries available in the root directory.</p>")
@@ -550,18 +558,32 @@ number of inodes on a file system after its creation, so be sure to enter a reas
 			    ]
   ];
 
+  list swap_fst_options = [
+    $[ `widget 	    : `TextEntry( `id("priority"), `opt(`hstretch), 
+                                  _("Swap &Priority"), "42" ),
+       `query_key   : "priority",
+       `between	    : [ 0, 32767],
+       `valid_chars : "0123456789",
+       `error_text  : _("Value must be between 0 and 32767. Please try again."),
+       `type : `text,
+       `str_opt : "pri=%1",
+       `str_scan : "pri=\(.*\)",
+       `help_text   : _("<p><b>Swap Priority:</b>
+Enter the swap priority. Higher numbers mean mean higher priority.</p>")
+     ]];
 
-  map SwapFileSystems = $[
-			  `swap 	: $[
-					    `name 		: "Swap" ,
-					    `fsid 		: Partitions::fsid_swap,
-					    `supports_format 	: true ,
-					    `fsid_item 		: "0x82 Linux swap ",
-					    `fstype 		: "Linux swap",
-					    `crypt 		: false,
-					    `mountpoints 	: swap_m_points
-			    ]
-  ];
+  map SwapFileSystems = 
+    $[ `swap : 
+	$[ `name 	    : "Swap" ,
+	   `fsid 	    : Partitions::fsid_swap,
+	   `supports_format : true ,
+	   `fsid_item 	    : "0x82 Linux swap ",
+	   `fstype 	    : "Linux swap",
+	   `crypt 	    : false,
+	   `fst_options     : swap_fst_options,
+	   `mountpoints     : swap_m_points
+	 ]
+     ];
 
 
 
