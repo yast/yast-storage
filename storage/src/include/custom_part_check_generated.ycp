@@ -276,9 +276,8 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		// see comment above
 		//////////////////////////////////////////////////////////////
 
-		if ( (curr_boot_mode == "aboot")
-		     && select(lookup( part, "region", []), 0,0) <= nth_cyl
-		     && lookup( part, "nr", 0) != 3 )
+		if ( (curr_boot_mode == "aboot") &&
+		     part["region",0]:0 <= nth_cyl && part["nr"]:0 != 3 )
 		{
 		    axp_start_dev          = disk;
 		    axp_start_nth          = nth_cyl;
@@ -323,14 +322,14 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 
 		if ( mountpoint == "/" )
 		{
-		    root_found      = true;
-		    root_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
+		    root_found = true;
+		    root_end   = part["region",0]:0 + part["region",1]:1-1;
 		    if( part["raid_type"]:"" != "" || part["is_lvm_vg"]:false )
 		      {
 		      // root_end does not have anything to do with physical cylinders
 		      root_end = 0;
 		      }
-		    root_fs         = lookup( part, "used_fs", `unknown );
+		    root_fs = part["used_fs"]:`unknown;
 		    root_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
 		    
 		    if ( id_sw_raid_dev ) root_raid = true;
@@ -338,13 +337,14 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		else if ( mountpoint == "/boot" )
 		{
 		    boot_found      = true;
-		    boot_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
-		    boot_cyl_nb     = select(lookup( part, "region", []), 1,0);
-		    boot_fs         = lookup( part, "used_fs", `unknown );
-		    boot_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
-		    boot_cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
+		    boot_start_cyl  = part["region",0]:0;
+		    boot_cyl_nb     = part["region",1]:0;
+		    boot_end        = part["region",0]:0 + part["region",1]:1-1;
+		    boot_fs         = part["used_fs"]:`unknown;
+		    boot_cyl_size   = diskinfo["cyl_size"]:1000000;
+		    // 1GB/cylinder size
+		    boot_cyl_for_gb = 1073741824 / boot_cyl_size;
 		    boot_size       = boot_cyl_size * boot_cyl_nb; 
-		    boot_start_cyl  = select(lookup( part, "region", []), 0,0);
 		}
 		else if ( mountpoint == "" )
 		{
@@ -353,13 +353,13 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		    {
 			boot_size_check = false; 
 			boot_found      = true;
-			boot_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
-			boot_cyl_nb     = select(lookup( part, "region", []), 1,0);
-			boot_fs         = lookup( part, "used_fs", `unknown );
-			boot_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
-			boot_cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
+			boot_end        = part["region",0]:0 + part["region",1]:1-1;
+			boot_cyl_nb     = part["region",1]:0;
+			boot_fs         = part["used_fs"]:`unknown;
+			boot_cyl_size   = diskinfo["cyl_size"]:1000000;
+			boot_cyl_for_gb = 1073741824 / boot_cyl_size;
 			boot_size       = boot_cyl_size * boot_cyl_nb; 
-			boot_start_cyl  = select(lookup( part, "region", []), 0, 0);
+			boot_start_cyl  = part["region",0]:0;
 		    }
 		}
 
@@ -424,19 +424,6 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		    partition_mounted_but_not_formated = true;
 		}
 
-		///////////////////////////////////////////////////////
-		// For SW-RAID fill in the "syntetic" start/end cyl
-		// so that other programms knoe the size of the raid
-
-		if ( id_sw_raid_dev )
-		{
-		    // cyl_size should be constant 1MB
-		    integer nb_of_cyl  = (raid_size_byte( targetMap, part) / cyl_size);
-
-		    list raid_region  = [ 1, nb_of_cyl ]; 
-
-		    change( part, "region", raid_region);
-		}
 	    }
 	});
 

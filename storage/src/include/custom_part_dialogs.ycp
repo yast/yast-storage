@@ -830,63 +830,65 @@ global define FormatDlg( map new_val, map file_systems )
 
   
 
-  global define RaidOptionsDlg( map new_val, boolean edit_raid_type ) ``{
+global define RaidOptionsDlg( map new_val, boolean edit_raid_type )
+    ``{
+    string chunk_size = new_val["chunk_size"]:"";
+    string parity_algorithm = new_val["parity_algorithm"]:"";
+    boolean persistent_superblock = new_val["persistent_superblock"]:"";
+    string raid_type = new_val["raid_type"]:"";
+    term editRaid = `VSpacing(1);
 
-      string  chunk_size  		=   lookup( new_val, "chunk_size", "");
-      string  parity_algorithm    	=   lookup( new_val, "parity_algorithm", "");
-      boolean persistent_superblock	=   lookup( new_val, "persistent_superblock", "");
-      string  raid_type			=   lookup( new_val, "raid_type", "");
-      term   editRaid 			=   `VSpacing(1);
-
+    // 2KB .. 4096KB
+    list     chunk_list = [];
+    integer  i          = 2;
+    while(  i <= 4096 )
+	{
+        string chunk_item = sformat( "%1", i);
+        chunk_list = add( chunk_list, 
+	                  `item(`id(chunk_item), chunk_item, 
+			        chunk_size==chunk_item ));
+        i = i*2;
+        }
     
-     
-     // 2KB .. 4096KB
-     list     chunk_list = [];
-     integer  i          = 2;
-     while (  i <= 4096 )
-     {
-	 string chunk_item = sformat( "%1", i);
-	 chunk_list = add( chunk_list, `item(`id(chunk_item), chunk_item, chunk_size == chunk_item ));
-	 i = i*2;
-     }
-      
-      
-      if ( edit_raid_type )
-      {
-	  editRaid = `VBox(
-			   `VSpacing(),
-			  `Left (`ComboBox ( `id(`raid_combo), `opt(`notify, `hstretch ), _("RAID T&ype"),
-				      [ `item(`id("raid_0"),  "raid_0",  "raid_0"  == raid_type ),
-				        `item(`id("raid_1"),  "raid_1",  "raid_1"  == raid_type ),
-				        `item(`id("raid_5"),  "raid_5",  "raid_5"  == raid_type )
-				      ])),
-			   `VSpacing()
-			  );
-     }
-    
+    if( edit_raid_type )
+	{
+	editRaid = `VBox(
+			 `VSpacing(),
+			`Left (`ComboBox( `id(`raid_combo), `opt(`notify, `hstretch ), _("RAID T&ype"),
+				    [ `item(`id("raid_0"), "raid_0", 
+				            "raid0"==raid_type ),
+				      `item(`id("raid_1"), "raid_1", 
+				            "raid1"==raid_type ),
+				      `item(`id("raid_5"), "raid_5",
+				            "raid5"==raid_type ),
+				      `item(`id("multipath"), "multipath",
+				            "multipath"==raid_type )
+				    ])),
+			 `VSpacing()
+			);
+	}
+  
+    return `VSquash(
+		    `VBox(
+		 editRaid,
+		 // Raid combobox description (don't translate to much ..)       
+		 `Left (`ComboBox ( `id(`chunk_size),`opt(`hstretch ), _("Chunk s&ize in KB"), chunk_list )),
+		 `VSpacing (),
+		 // Raid combobox description (don't translate to much ..)       
+		 `Left (`ComboBox ( `id(`partity),`opt(`hstretch ), _("Parity &algorithm (only for RAID 5)"),
+				    [ `item(`id("left-asymmetric"),  "left-asymmetric",  "left-asymmetric"  == parity_algorithm ),
+				    `item(`id("left-symmetric"),   "left-symmetric",   "left-symmetric"   == parity_algorithm ),
+				    `item(`id("right-asymmetric"), "right-asymmetric", "right-asymmetric" == parity_algorithm ),
+				    `item(`id("right-symmetric"),  "right-symmetric",  "right-symmetric"  == parity_algorithm )
+				    ])),
+		 `VSpacing (),
+				
+		 // Raid checkbox option (don't translate to much ..)       
+		 `Left (`CheckBox (`id (`persist), _("Persistent s&uperblock"), persistent_superblock)),
+		 `VSpacing ()
+		 ));	
 
-    
-      return `VSquash(
-		      `VBox(
-		   editRaid,
-		   // Raid combobox description (don't translate to much ..)       
-		   `Left (`ComboBox ( `id(`chunk_size),`opt(`hstretch ), _("Chunk s&ize in KB"), chunk_list )),
-		   `VSpacing (),
-		   // Raid combobox description (don't translate to much ..)       
-		   `Left (`ComboBox ( `id(`partity),`opt(`hstretch ), _("Parity &algorithm (only for RAID 5)"),
-				      [ `item(`id("left-asymmetric"),  "left-asymmetric",  "left-asymmetric"  == parity_algorithm ),
-				      `item(`id("left-symmetric"),   "left-symmetric",   "left-symmetric"   == parity_algorithm ),
-				      `item(`id("right-asymmetric"), "right-asymmetric", "right-asymmetric" == parity_algorithm ),
-				      `item(`id("right-symmetric"),  "right-symmetric",  "right-symmetric"  == parity_algorithm )
-				      ])),
-		   `VSpacing (),
-				  
-		   // Raid checkbox option (don't translate to much ..)       
-		   `Left (`CheckBox (`id (`persist), _("Persistent s&uperblock"), persistent_superblock)),
-		   `VSpacing ()
-		   ));	
-
-  }
+    }
   
   /**
    * Change the state of all symbol from the list symbols

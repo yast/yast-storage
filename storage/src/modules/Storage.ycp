@@ -4,22 +4,21 @@
  * Authors:		Johannes Buchhold (jbuch@suse.de)
  *
  * Purpose: 		These module contains all settings/information which 
- * are needed to partitioning the harddisk. Futhermore it contains a interface to
- * access and modify the partitioning settings.  
+ * are needed to partitioning the harddisk. Futhermore it contains a interface 
+ * to * access and modify the partitioning settings.  
  *
  * Todo: Translate
- * Diese Modul enthält alle Informationen die für die Partitionierung der Festplatten
- * erforderlich sind. Diese Informationen bestehen aus der Beschreibung, der vor der
- * Partitionierung vorhandenen Platteneinstellungen, und der Art und Weise wie diese
- * verändert werden soll. 
- * Alle nötigen Zugriffsfunktionen auf diese Datenstruktur sind ebenfalls in diesem
- * Modul enthalten. Der Zugriff auf die Speicherung der Partitionseinstellungen läuft
- * also nur über dieses Modul.
- * Der Zufriff und die Rückgabe von Teilen der Partitionsdatenstruktur wurde versucht
- * "intelligent" zu gestallten und ist im einzelen bei den entspechenden Funktionen
- * näher erklärt.
- * Weiterhin bietet diese Modul einen Art "Record - Commit - Rollback" Mechanismus auf
- * die Datenstruktur(Beschreibung weiter unten). 
+ * Diese Modul enthält alle Informationen die für die Partitionierung der 
+ * Festplatten erforderlich sind. Diese Informationen bestehen aus der 
+ * Beschreibung, der vor der Partitionierung vorhandenen Platteneinstellungen,
+ * und der Art und Weise wie diese verändert werden soll. 
+ * Alle nötigen Zugriffsfunktionen auf diese Datenstruktur sind ebenfalls in 
+ * diesem Modul enthalten. Der Zugriff auf die Speicherung der 
+ * Partitionseinstellungen läuft * also nur über dieses Modul.
+ * Der Zufriff und die Rückgabe von Teilen der Partitionsdatenstruktur 
+ * wurde versucht * "intelligent" zu gestallten und ist im einzelen bei den 
+ * entspechenden Funktionen * näher erklärt.
+ *
  * $Id$
  */
 {
@@ -2064,6 +2063,13 @@ global define list GetRootInitrdModules()
 	    initrdmodules = add (initrdmodules, "raid1");
 	    }
 	}
+    if (partition["raid_type"]:"" == "multipath" )
+	{
+	if (!contains (initrdmodules, "multipath"))
+	    { 
+	    initrdmodules = add (initrdmodules, "multipath");
+	    }
+	}
     if (partition["raid_type"]:"" == "raid5" )
 	{
 	if (!contains (initrdmodules, "xor"))
@@ -2307,9 +2313,9 @@ global define list SwappingPartitions()``{
 global define boolean CheckSwapOn( string disk )``{
     boolean ret = false;
     list swaps = SwappingPartitions();
-    while( size(swaps)>0 && ret == false )
+    while( size(swaps)>0 && !ret )
 	{
-	if( find( swaps[0]:"", disk ))
+	if( find( swaps[0]:"", disk )==0)
 	    {
 	    ret = true;
 	    }
@@ -2563,6 +2569,7 @@ global define void AdaptResize( string maindev, list region, integer schange )
 global define map GetLvmMdSystemInfo( map targetMap ) 
     ``{
     map md = SCR::Read (.md.config);
+    y2debug( "md %1", md );
     if( size(md)>0 )
 	{
 	string key = "/dev/md";
@@ -2618,18 +2625,19 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    dcnt = dcnt + 1;
 	    if( dcnt <= spare )
 		{
-		change( partition, "raid_type", "spare" );
+		p["raid_type"] = "spare";
 		}
 	    else
 		{
-		change( partition, "raid_type", "raid" );
+		p["raid_type"] = "raid";
 		}
 */
 	    targetMap = Storage::SetPartition( targetMap, p );
-	    y2debug ("changed partition=%1", partition);
+	    y2debug ("changed partition=%1", p);
 	    });
 	});
     map lvm_vg = SCR::Read (.lvm.vg);
+    y2debug( "lvm vg %1", lvm_vg );
     foreach (`k, `v, lvm_vg, 
 	``{
 	string key = "/dev/" + k;
@@ -2661,6 +2669,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	});
     map lvm_pv = filter( `k, `v, SCR::Read(.lvm.pv), 
                          ``(size(v["vgname"]:"") > 0));
+    y2debug( "lvm pv %1", lvm_pv );
     foreach( `k, `v, lvm_pv,
 	``{
 	map p = Storage::GetPartition( targetMap, k );

@@ -195,18 +195,29 @@ void MdAccess::ReadMdData()
 	if( ExtractNthWord( 0, Line_Ci )=="raiddev" )
 	    {
 	    list<MdInfo>::iterator P_Ci = FindMd( ExtractNthWord(1, Line_Ci) );
-	    getline( Tab_Ci, Line_Ci );
-	    Key_Ci = ExtractNthWord( 0, Line_Ci );
-	    y2debug( "Key=\"%s\" P=%p End:%p", Key_Ci.c_str(), &(*P_Ci), 
-	             &(*List_C.end()) );
 	    if( P_Ci != List_C.end() )
 		{
+		string Device_Ci;
+		getline( Tab_Ci, Line_Ci );
+		Key_Ci = ExtractNthWord( 0, Line_Ci );
+		y2debug( "Key=\"%s\" P=%p End:%p", Key_Ci.c_str(), &(*P_Ci), 
+			 &(*List_C.end()) );
 		while( Tab_Ci.good() && Key_Ci!="raiddev" )
 		    {
+		    y2debug( "Key=\"%s\" Line:\"%s\"", Key_Ci.c_str(), 
+		             Line_Ci.c_str() );
 		    if( Key_Ci=="persistent-superblock" )
 			{
 			P_Ci->PersistentSuper_b = 
 			    ExtractNthWord(1,Line_Ci)=="1";
+			}
+		    else if( Key_Ci=="spare-disk" )
+			{
+			P_Ci->DevList_C.push_back( Device_Ci );
+			}
+		    else if( Key_Ci=="device" )
+			{
+			Device_Ci = ExtractNthWord(1,Line_Ci);
 			}
 		    getline( Tab_Ci, Line_Ci );
 		    Key_Ci = ExtractNthWord( 0, Line_Ci );
