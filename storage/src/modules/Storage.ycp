@@ -3038,4 +3038,107 @@ global define list AutodetectMultipathRaid( map tg )
     y2milestone( "ret %1", ret );
     return( ret );
     }
+
+/**
+ * Find next free loop device.
+ * @return string loop_dev ( e.g.: /dev/loop1 ) 
+ */
+global define string GetLoopDev()
+    ``{
+    if( Mode::test )
+	return "/dev/loop2";
+
+    integer max_loop_dev= 7;
+    integer loop_dev_nb = 0;
+    boolean found_free  = false;
+    string  loop_dev    = "";
+
+    while( !found_free  && loop_dev_nb <= max_loop_dev )
+	{
+	loop_dev = sformat("/dev/loop%1", loop_dev_nb );
+	loop_dev_nb = loop_dev_nb + 1;
+
+	// Test loop dev
+	if (SCR::Execute(.target.bash , "/sbin/losetup " + loop_dev ) != 0 )
+	    found_free = true;
+	}
+
+    if( loop_dev_nb >= 8 )
+	{
+	loop_dev = "";
+	// internal error popup
+	UI::ErrorPopup( _("Too many loop devices (cryptofs ...)") );
+	y2error( "Too many loop devices");
+	}
+
+    y2milestone("ret \"%1\"",loop_dev);
+
+    return( loop_dev );
+    };
+
+global define boolean SetCryptLoop( map part )
+    ``{
+    string crypt_passwd = lookup( GetClassifiedUserSettings(), 
+                                  part["crypt_key"]:"", "");
+    string loop_dev = GetLoopDev();
+
+    boolean crypt_ok = size(loop_dev)>0;
+
+    y2milestone( "crypt %1 %2", crypt_ok, loop_dev );
+
+    map loaded_modules = SCR::Read(.proc.modules);
+    if( !haskey( loaded_modules, "loop_fish2" ) )
+	{
+	crypt_ok = SCR::Execute( .target.modprobe, "loop_fish2", "");
+	}
+    y2milestone( "crypt mp: %1", crypt_ok);
+
+    boolean retry = false;
+
+    do
+	{
+	if( crypt_ok )
+	    {
+	    part["loop_dev"] = loop_dev;
+
+	    map setloop = 
+		$[ "encryption"    : "twofish",
+		   "passwd"        : crypt_passwd,
+		   "loop_dev"      : loop_dev,
+		   "partitionName" : part["device"]:"" ];
+
+	    crypt_ok = SCR::Write( .losetup, setloop );
+	    }
+	if( !crypt_ok )
+	    {
+	    retry = false;
+	    symbol ret=`yes;
+	    ret = UI::AnyQuestionPopup3( UI::NoHeadline(),
+		    sformat(_("Error crypting the file system %1."), 
+			    part["device"]:""),
+		    UI::ContinueButtonLabel(), UI::AbortButtonLabel(), 
+		    UI::RetryButtonLabel(), `focus_yes);
+	    if (ret == `retry)
+		{
+		retry=true;
+		}
+	    else if( ret != `no )
+		{
+		//set to ok, to suppress popup about formatting error
+		crypt_ok = true;
+		}
+	    }
+	}
+    while( !crypt_ok || retry );
+    if( !crypt_ok && size(loop_dev)>0 )
+	{
+	SCR::Execute( .target.bash, "/sbin/losetup -d "+loop_dev );
+	}
+
+    y2milestone( "ret %1", crypt_ok);
+    return( crypt_ok );
+    }
+
 }
+
+

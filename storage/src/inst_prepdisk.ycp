@@ -45,7 +45,6 @@
   include "partitioning/raid_lib.ycp";
 
   //integer loop_dev_nb	   = 0;
-  boolean first_crypt_fs   = true;
   boolean crypt_ok         = true;
   boolean reboot_necessary = false;
 
@@ -568,7 +567,7 @@ damage to your file systems, it is safer to cancel and reboot.
 
 		map args = $[ "parted" : Partitions::UseParted(),
 		              "label"  : target["label"]:"msdos" ];
-		y2milstone( "fdisk args %1", args );
+		y2milestone( "fdisk args %1", args );
 
 		/////////////////////////////////////////////////////
 		boolean result = SCR::Write(.disk + scrpath + .partitions,
@@ -929,14 +928,29 @@ damage to your file systems, it is safer to cancel and reboot.
 		partitionName = partition["device"]:"";
 		retry = false;
 
+		if( !crypt_fs && haskey( partition, "loop_dev" ))
+		    {
+		    SCR::Execute( .target.bash, 
+				  "/sbin/losetup -d "+partition["loop_dev"]:"" );
+		    }
+		///////////////////////////////
+		// CRYPT ?
+		if( crypt_fs )
+		    {
+		    cancel = !Storage::SetCryptLoop( partition );
+		    if( !cancel )
+			{
+			if( haskey( partition, "loop_dev" ))
+			    {
+			    partitionName = partition["loop_dev"]:"";
+			    activatedLoopDevices = add(activatedLoopDevices,
+			                               partitionName);
+			    }
+			}
+		    }
+		// announce partition to be formatted
 		if( !cancel && format && mountPoint != "swap")
 		    {
-		    if( !crypt_fs && haskey( partition, "loop_dev" ))
-			{
-		        SCR::Execute( .target.bash, 
-			              "/sbin/losetup -d "+partition["loop_dev"]:"" );
-			}
-		    // announce partition to be formatted
 		    string label = sformat(_("Formatting %1 as %2"), 
 		                           partitionName, mountPoint);
 
@@ -947,149 +961,64 @@ damage to your file systems, it is safer to cancel and reboot.
 			{
 			// Format partitions
 
-			symbol  used_fs   = partition["used_fs"]:`unknown;
-			string  crypt_key = partition["crypt_key"]:"";
-
-			//crypt_ok can only become false if cryptofs is used
-			crypt_ok = true;
+			symbol used_fs = partition["used_fs"]:`unknown;
 
 			y2milestone( "mkfs: used %1, crypt %2 ", used_fs, 
 			             crypt_fs);
 
-			/////////////////////////////////////////////
-			// load filesystem modules
-			if( size(partition["mount"]:"") > 0 )
-			    FileSystems::LoadModule( used_fs );
-
-			if (mountPoint == "/")
+			list options = [];
+			if( partition["format"]:false && 
+			    partition["fs_options"]:$[] != $[] )
 			    {
-			    foreach (`modname, FileSystems::GetNeededModules (used_fs),
-				``{
-				Boot::AddInitrdModule (modname, "");
-				});
+			    options = convertFsOptionMapInList( partition );
 			    }
 
-			///////////////////////////////
-			// CRYPT ?
-			if ( crypt_fs )
+			if( used_fs == `ext3 )
 			    {
-			    string crypt_passwd = lookup( Storage::GetClassifiedUserSettings(), crypt_key, "");
-			    string loop_dev = get_loop_dev();
-
-			    crypt_ok = loop_dev != nil ? true : false;
-
-			    y2milestone( "crypt %1 %2", crypt_ok, loop_dev );
-
-			    if ( crypt_ok && first_crypt_fs  )
-				{
-				first_crypt_fs = false;
-				crypt_ok = SCR::Execute( .target.modprobe, 
-				                         "loop_fish2", "");
-				}
-
-			    y2milestone( "crypt mp: %1", crypt_ok);
-
-			    if ( crypt_ok )
-				{
-				partition["loop_dev"] = loop_dev;
-
-				map setloop = 
-				    $[ "encryption"    : "twofish",
-				       "passwd"        : crypt_passwd,
-				       "loop_dev"      : loop_dev,
-				       "partitionName" : partitionName ];
-
-				crypt_ok = SCR::Write(.losetup, setloop );
-
-				if ( crypt_ok )
-				    {
-				    partitionName = loop_dev;
-				    activatedLoopDevices = add(activatedLoopDevices,loop_dev);
-				    }
-				y2milestone( "crypt loset: %1" , crypt_ok);
-				}
+			    // add -j to options
+			    options = add( options , "-j" );
 			    }
+			y2milestone( "Format options %1", options );
 
-			if ( !crypt_ok )
+			string makefs_type = FileSystems::GetMakeFsType( used_fs , "ext2");
+			string dd_sblocks = "";
+			string idev = crypt_fs ? "/dev/urandom" : 
+						 "/dev/zero";
+			dd_sblocks = 
+			    sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50",
+				     idev, partitionName );
+			y2milestone( "dd_sblocks=%1", dd_sblocks );
+			SCR::Execute (.target.bash, dd_sblocks );
+			if( used_fs != `hfs )
 			    {
-			    symbol ret=`yes;
-			    ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
-				    sformat(_("Error crypting the file system %1."), partitionName),
-				    UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_yes);
-			    if (ret == `retry)
-				{
-				retry=true;
-				}
-			    else if (ret == `no)
-				{
-				cancel=true;
-				}
-			    else
-				{
-				//set to ok, to suppress popup about formatting error
-				ret=`ok;
-				}
+			    ret = WFM::CallModule ("makefs", ["UpdateProgressBar", makefs_type, partitionName, options /*[ ]*/ ]);
+			    y2milestone( "format ret = %1", ret );
 			    }
-
-			if (crypt_ok)
+			else
 			    {
-			    list options = [ ];
-			    if( partition["format"]:false && 
-			        partition["fs_options"]:$[] != $[] )
+			    string cmd = sformat( "/usr/bin/hformat %1",
+						  partitionName );
+			    y2milestone( "cmd %1", cmd );
+			    SCR::Execute (.target.bash, cmd );
+			    ret = `ok;
+			    }
+			if( ret == `ok )
+			    {
+			    map info = 
+				FileSystems::GetUuidVolume( partitionName,
+							    used_fs );
+			    map tg = Storage::GetTargetMap();
+			    if( size(info["uuid"]:"")>0 )
 				{
-				options = convertFsOptionMapInList( partition );
+				tg = Storage::SetPartitionData( tg, 
+					    partition["device"]:"",
+					    "uuid", 
+					    info["uuid"]:"" );
 				}
-
-			    if( used_fs == `ext3 )
-				{
-				// add -j to options
-				options = add( options , "-j" );
-				}
-
-			    string makefs_type = FileSystems::GetMakeFsType( used_fs , "ext2");
-			    string dd_sblocks = "";
-			    string idev = "/dev/zero";
-			    if( crypt_fs )
-				{
-				idev = "/dev/urandom";
-				}
-			    dd_sblocks = 
-				sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50",
-					 idev, partitionName );
-			    y2milestone( "dd_sblocks=%1", dd_sblocks );
-			    SCR::Execute (.target.bash, dd_sblocks );
-			    if( used_fs != `hfs )
-				{
-				ret = WFM::CallModule ("makefs", ["UpdateProgressBar", makefs_type, partitionName, options /*[ ]*/ ]);
-				y2milestone( "format ret = %1", ret );
-				}
-			    else
-				{
-				string cmd = sformat( "/usr/bin/hformat %1",
-				                      partitionName );
-				y2milestone( "cmd %1", cmd );
-				SCR::Execute (.target.bash, cmd );
-				ret = `ok;
-				}
-			    if( ret == `ok )
-				{
-				map info = 
-				    FileSystems::GetUuidVolume( partitionName,
-								used_fs );
-				map tg = Storage::GetTargetMap();
-				if( size(info["uuid"]:"")>0 )
-				    {
-				    tg = 
-					Storage::SetPartitionData( tg, 
-						partition["device"]:"",
-						"uuid", 
-						info["uuid"]:"" );
-				    }
-				tg = Storage::DelPartitionData( tg, 
-					partition["device"]:"",
-					"create" );
-				Storage::SetTargetMap( tg );
-				}
+			    tg = Storage::DelPartitionData( tg, 
+				    partition["device"]:"",
+				    "create" );
+			    Storage::SetTargetMap( tg );
 			    }
 			}
 		    else
@@ -1163,7 +1092,7 @@ your file systems, it is safer to cancel and reboot.
 	}
 
 
-    // 5. Mount "/" and "/boot" and all other targets with mountpoints
+    // 5. Mount all targets with mountpoints
 
     // now select all native partitions with a mountpoint
     // and put them in a map. This ensures lexical ordering.
@@ -1181,20 +1110,19 @@ your file systems, it is safer to cancel and reboot.
 
 	    if( installation || running_system_create_part || 
 	        running_system_remound_part )
-	    {
-	    string mountPoint = part["mount"]:"";
+		{
+		string mountPoint = part["mount"]:"";
 
-	    if (mountPoint != "" && mountPoint != "swap" &&
-		part["fsid"]:0 != 7 &&        // ntfs is read-only anyway.
-		part["delete"]:false == false )
-	    {
-	    symbol  used_fs = part["used_fs"]:`unknown;
-	    if ( part["crypt_fs"]:false )
-	    partitionName = part["loop_dev"]:"";
-
-	    mountPoints[mountPoint] = [partitionName, used_fs, tdevice ];
-	    }
-	    }
+		if (mountPoint != "" && mountPoint != "swap" &&
+		    part["fsid"]:0 != 7 &&        // ntfs is read-only anyway.
+		    part["delete"]:false == false )
+		    {
+		    symbol  used_fs = part["used_fs"]:`unknown;
+		    if ( part["crypt_fs"]:false )
+			partitionName = part["loop_dev"]:"";
+		    mountPoints[mountPoint] = [partitionName, used_fs, tdevice];
+		    }
+		}
 	    });  // foreach (partition)
 	}); // foreach (tdevice)
 
@@ -1220,6 +1148,19 @@ your file systems, it is safer to cancel and reboot.
 	    if (cancel)
 		{
 		return;
+		}
+	    symbol used_fs = select (mountData, 1, `ext2);
+
+	    /////////////////////////////////////////////
+	    // load filesystem modules
+	    FileSystems::LoadModule( used_fs );
+
+	    if( mountPoint == "/")
+		{
+		foreach( `modname, FileSystems::GetNeededModules(used_fs),
+		    ``{
+		    Boot::AddInitrdModule (modname, "");
+		    });
 		}
 
 	    // eg /mnt + /usr

@@ -297,7 +297,7 @@
 			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4)"), part["nr"]:"", substring(disk,5), psize, mount ));
 			    }
 			}
-		    else
+		    else if( size(mount)>0 )
 			{
 			if( diskinfo["is_lvm_vg"]:false == false )
 			    {
@@ -308,6 +308,19 @@
 			    {
 			    // to translators: * format LV var in VG system 700 MB (for /var with ext2)
 			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
+			    }
+			}
+		    else
+			{
+			if( diskinfo["is_lvm_vg"]:false == false )
+			    {
+			    // to translators: * Format partition hda3 700 MB (with ext2)
+			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (with %3)"), device, psize, used_fs ));
+			    }
+			else
+			    {
+			    // to translators: * format LV var in VG system 700 MB (with ext2)
+			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (with %4)"), part["nr"]:"", substring(disk,5), psize, used_fs ));
 			    }
 			}
 		}
@@ -812,136 +825,33 @@ global define integer GetModifyIdx( map modify_targets, map new )
      * @parm targetMap all targets
      * @return string next mountpoint
      **/
-    global define GetMountPointProposal( map targetMap , list not_supported_mount_points )
+global define GetMountPointProposal( map targetMap, 
+                                     list not_supported_mount_points )
     ``{
-	list base = [ "/", "/usr", "/boot", "/var", "/opt", "/home" ];
-	base      = filter(`mount_point , base, ``( ! contains( not_supported_mount_points , mount_point )));
-
-	list free_list = filter( `point, base,
+    list base = [ "/", "/usr", "/boot", "/var", "/opt", "/home" ];
+    base      = filter( `mount_point, base, 
+                        ``( !contains( not_supported_mount_points, 
+			               mount_point )));
+    list free_list = filter( `point, base,
 	``{
-	    boolean found = false;
+	boolean found = false;
 
-	    foreach( `dev, `disk, targetMap, ``{
-		map parti = find( `part, lookup( disk, "partitions", []), ``( lookup( part, "mount", "") == point &&
-										      lookup( part, "delete", false) == false ));
-		if (parti != nil)
+	foreach( `dev, `disk, targetMap, 
+	    ``{
+	    map parti = find( `part, disk["partitions"]:[], 
+	                      ``( part["mount"]:"" == point && 
+			          !part["delete"]:false ));
+	    if (parti != nil)
 		{
-		    found = true;
+		found = true;
 		}
 	    });
 
-	    if (found)  return( false );
-	    return( true );
+	if (found)  return( false );
+	return( true );
 	});
 
-
-	if ( size( free_list ) == 0 )
-	{
-	    return( "/work" );
-	}
-	else
-	{
-	    return( select( free_list, 0, "" ));
-	}
-
-    };
-
-
-
-
-    /**
-     * Find next free loop device.
-     * @return string loop_dev ( e.g.: /dev/loop1 ) or nil
-     */
-    global define get_loop_dev()
-    ``{
-	if( Mode::test )
-	    return "/dev/loop2";
-
-	integer max_loop_dev= 7;
-	integer loop_dev_nb = 0;
-	boolean found_free  = false;
-	string  loop_dev    = "";
-
-	while( ! found_free  && loop_dev_nb <= max_loop_dev )
-	{
-	    loop_dev = sformat("/dev/loop%1", loop_dev_nb );
-	    loop_dev_nb = loop_dev_nb + 1;
-
-	    // Test loop dev
-	    if (SCR::Execute(.target.bash , "/sbin/losetup " + loop_dev ) != 0 )
-		found_free = true;
-
-	}
-
-
-	if ( loop_dev_nb >= 8 )
-	{
-	    // internal error popup
-	    UI::ErrorPopup( _("Too many loop devices (cryptofs ...)") );
-	    y2error( "Too many loop devices");
-	    return( nil );
-	}
-
-	y2milestone("free loop device: %1",loop_dev);
-
-	if( found_free )
-	{
-	    return( loop_dev );
-	}
-
-	return ( nil );
-    };
-
-
-
-    // check for ppc-PReP/CHRP system, they need a special boot partition
-
-    global define void prepare_ppc_boot_part()    
-    ``{
-	// Chancing patition-type of /boot to 0x41.
-	y2milestone( "Checking partitions for ppc prep chrp " );
-	map targets = Storage::GetTargetMap();
-
-	list ppc_partitions = [];
-	foreach (`targetdevice,`target, targets, ``{
-	    // every disk
-	    any partitions = lookup ( target, "partitions", [] );
-	    any boot_pentry = nil;
-	    ppc_partitions = [];
-
-	    y2debug("Target: %1", targetdevice );
-
-	    foreach (`pentry, partitions, ``{
-		string device = Storage::GetDeviceName( targetdevice, lookup (pentry, "nr", 0));
-		string mountpoint = lookup (pentry, "mount", "");
-		symbol type       = lookup (pentry, "type", `dummy);
-		boolean do_format = lookup (pentry, "format", false);
-		if (!lookup (pentry, "delete", false)) {		// only those which aren't deleted
-		    y2debug("Partition: %1", pentry);
-		    if ( mountpoint == "/boot" )
-		    {
-			boot_pentry = pentry;
-			change ( boot_pentry, "fsid", Partitions::fsid_prep_chrp_boot );
-			change ( boot_pentry, "fstype", "PPC PReP Boot" );
-			change ( boot_pentry, "mount",  "" );
-			ppc_partitions = add ( ppc_partitions, boot_pentry );
-			y2debug( "Set partition-type of /boot to 0x41" );
-		    }
-		    else
-			ppc_partitions = add ( ppc_partitions, pentry );
-		}
-		else
-		{
-		    ppc_partitions = add ( ppc_partitions, pentry );
-		}
-
-	    });
-	    targets[targetdevice] = target;
-	    targets[targetdevice,"partitions"] = ppc_partitions;
-	});
-	
-	Storage::SetTargetMap(  targets);
+    return( free_list[0]:"/work" );
     };
 
 }
