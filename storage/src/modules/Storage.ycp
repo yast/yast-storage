@@ -2007,68 +2007,69 @@ global define SetSubDev( string subdevkey , map newsubdev )
 
 
 
-    /**
-     * Insert Raid size info to Storage
-     **/
-    global define void AddRaidSizeInfo()``{
-
-	map targetMap = GetTargetMap();
-	
-    	targetMap = mapmap( `dev, `devmap, targetMap,
+/**
+  * Insert Raid size info to Storage
+ **/
+global define void AddRaidSizeInfo()
+    ``{
+    map targetMap = GetTargetMap();
+    
+    targetMap = mapmap( `dev, `devmap, targetMap,
 	``{
-		integer cyl_size   = lookup ( devmap, "cyl_size",  1000000 );
+	integer cyl_size = devmap["cyl_size"]:1000000;
 
-		list partitions = maplist( `part, lookup( devmap, "partitions", []),
-			``{
-			    integer nb_cyl        = select ( lookup ( part, "region", []), 1,0 );
+	list partitions = maplist( `part, devmap["partitions"]:[],
+	    ``{
+	    integer nb_cyl = part["region",1]:0;
 
-			    integer bytes_of_part =  ( nb_cyl ) * cyl_size;
-			    part = add( part, "size_byte", bytes_of_part);
-			    return( part );
-			});
+	    integer bytes_of_part =  ( nb_cyl ) * cyl_size;
+	    part["size_byte"] = bytes_of_part;
+	    return( part );
+	    });
 
-		return( [ dev, add( devmap, "partitions", partitions)] );
+	return( [ dev, add( devmap, "partitions", partitions)] );
 	});
 
-	SetTargetMap( targetMap );
+    SetTargetMap( targetMap );
     };
 
 
 
-    global define list GetRootInitrdModules()``{
+global define list GetRootInitrdModules()
+    ``{
+    map partition = GetEntryForMountpoint( "/" );
+    y2milestone("root partition in GetInitrdModules %1", partition );
 
-        map partition = GetEntryForMountpoint( "/" );
-	y2milestone("root partition in GetInitrdModules %1", partition );
+    list initrdmodules = 
+	FileSystems::GetNeededModules( partition["used_fs"]:`ext2 );
 
-	list initrdmodules  = FileSystems::GetNeededModules( partition["used_fs"]:`ext2);
-
-	if (partition["raid_type"]:"" == "raid0" )
+    if (partition["raid_type"]:"" == "raid0" )
 	{
-	    if (!contains (initrdmodules, "raid0"))
+	if (!contains (initrdmodules, "raid0"))
 	    {
-		initrdmodules = add (initrdmodules, "raid0");
+	    initrdmodules = add (initrdmodules, "raid0");
 	    }
 	}
-	if (partition["raid_type"]:"" == "raid1" )
+    if (partition["raid_type"]:"" == "raid1" )
 	{
-	    if (!contains (initrdmodules, "raid1"))
+	if (!contains (initrdmodules, "raid1"))
 	    { 
-		initrdmodules = add (initrdmodules, "raid1");
+	    initrdmodules = add (initrdmodules, "raid1");
 	    }
 	}
-	if (partition["raid_type"]:"" == "raid5" )
+    if (partition["raid_type"]:"" == "raid5" )
 	{
-	    if (!contains (initrdmodules, "xor"))
+	if (!contains (initrdmodules, "xor"))
 	    {
-		initrdmodules = add (initrdmodules, "xor");
+	    initrdmodules = add (initrdmodules, "xor");
 	    }
-	    if (!contains (initrdmodules, "raid5"))
+	if (!contains (initrdmodules, "raid5"))
 	    {
-		initrdmodules = add (initrdmodules, "raid5");
+	    initrdmodules = add (initrdmodules, "raid5");
 	    }
 	}
-	y2milestone ("initrdmodules %1", initrdmodules);
-	return initrdmodules;
+    y2milestone ("initrdmodules %1", initrdmodules);
+    return initrdmodules;
     };
 			
    
@@ -2356,7 +2357,7 @@ global define string GetForeignPrimary()
 	                                        win[0,"string"]:"" );
 	    }
 	}
-    y2milestone( "write_fstab ret=%1", foreign_primary );
+    y2milestone( "ret=%1", foreign_primary );
     return( foreign_primary );
     }
 
@@ -2718,6 +2719,11 @@ global define void WriteFstab( map targetMap )
 	map s390_device_map = GetS390DeviceMap( tg );
 	y2milestone ("s390_device_map=%1", s390_device_map );
 	tg = rename_s390_dasd_device( tg, s390_device_map );
+	}
+    if( Mode::initial )
+	{
+	list ide_recorders = StorageDevices::ProbeIDERecorders();
+	StorageDevices::MakeCDLinks(ide_recorders);
 	}
     write_fstab( tg, StorageDevices::zipDrives, StorageDevices::cddevices );
     }
