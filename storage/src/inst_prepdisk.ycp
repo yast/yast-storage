@@ -73,6 +73,7 @@
 	   if (0 != SCR::Execute (.target.bash, "/sbin/swapoff "+swapdev))
 	   {
 	       Report::Error(sformat(
+		  // popup text, %1 is replaced by partition name e.g. /dev/hda1
 		  _("Deactivating swap device %1 failed. You may have to reboot."),
 		  swapdev));
 	   }
@@ -90,6 +91,7 @@ define losetup_d(list activatedLoopDevices)
        {
 	 y2warning("detaching loop device %1 failed",loopdev);
 	 Report::Warning (sformat(
+	      // popup text, %1 is replaced by loop name e.g. /dev/loop0
 	      _("Detaching loop device %1 failed. Nothing serious, but you may run out of loop devices."),
 	      loopdev));
        }
@@ -219,7 +221,7 @@ global define MakefsDialog()
     string helptext = _("<p>
 Please wait while your hard disk is prepared for installation...
 <br></p>");
-    // part 2 of 2
+    // rich-text format help text part 2 of 2
     helptext = helptext + _("\
 <p>
 Depending on the size of your hard disk and your processor speed, this action
@@ -285,6 +287,7 @@ define boolean HandleFormatPartition( map partition )
 		{
 		tmp = partition["fpath"]:"";
 		}
+	    // label text, example: "Formatting /dev/hda1 for /usr"
 	    string label = sformat(_("Formatting %1 as %2"), tmp, mount);
 
 	    UI::ChangeWidget(`id(`progress), `Label, label );
@@ -376,6 +379,7 @@ define boolean HandleFormatPartition( map partition )
 		{
 		// report any formatting errors
 		ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
+			// popup text, %1 replaced by partition name e.g. /dev/hda1
 			sformat(_("Could not format partition %1.
 You can continue if you know what you are doing, but, to prevent damage to
 your file systems, it is safer to cancel and reboot."),
@@ -403,6 +407,8 @@ your file systems, it is safer to cancel and reboot."),
 	if( !FileSystems::SetVolumeLabel( device, partition ))
 	    {
 	    UI::ErrorPopup(
+		// popup text, %1 replaced by arbitrary name
+		// %2 replaced by partition name e.g. /dev/hda1
 		sformat(_("Error setting the volume label on device %2 to %1"),
 			partition["label"]:"", device ));
 	    }
@@ -501,6 +507,8 @@ define boolean DoMountList( map mp )
 		symbol ret=`yes;
 		// /bin/mount failed, report this to the user
 		ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
+			// popup text, %2 replaced by directory name e.g. /usr
+			// %1 replaced by partition name e.g. /dev/hda1
 			sformat(_("Could not mount partition %1 to %2.
 You can continue if you know what you are doing, but, to prevent damage to
 your file systems, it is safer to cancel and reboot."),
@@ -752,8 +760,10 @@ any ret = PollInput();
 	  if ( !mod_ok )
 	    {
 	    symbol ret = `yes;
-
+ 
+ 	    // heading text
 	    ret = UI::AnyQuestionPopup3(_("LVM setup 0 failed."),
+		  // popup text
 		  _("You can continue if you know what you are doing, but, to prevent
 damage to your file systems, it is safer to cancel and reboot.
 "),
@@ -806,6 +816,7 @@ damage to your file systems, it is safer to cancel and reboot.
 	    boolean ok = true;
 	    retry = false;
 	    UI::ChangeWidget(`id(`progress), `Label,
+			     // label text, %1 is replaced by disk name
 			     sformat(_("dasdfmt disk %1"), tdevice ));
 	    string cmd = sformat( "dasdfmt -y -v -b 4096 -d cdl -f %1", 
 	                          tdevice );
@@ -821,7 +832,9 @@ damage to your file systems, it is safer to cancel and reboot.
 		    }
 		if( !ok )
 		    {
+		    // heading text
 		    symbol ret = UI::AnyQuestionPopup3( _("dasdfm failed."),
+			// popup text, %1 is replaced by disk name
 			sformat( _("dasdfmt failed on disk %1"), tdevice),
 			UI::ContinueButtonLabel(),
 			UI::AbortButtonLabel(),
@@ -880,8 +893,9 @@ damage to your file systems, it is safer to cancel and reboot.
 		    {
 		    retry = false;
 		    UI::ChangeWidget(`id(`progress), `Label,
-					 sformat(_("partitioning disk %1"), 
-						 tdevice ));
+		                     // label text, %1 is replaced by disk name e.g. /dev/hda
+				     sformat(_("partitioning disk %1"), 
+					     tdevice ));
 
 		    map args = $[ "parted" : Partitions::UseParted(),
 				  "label"  : target["label"]:"msdos" ];
@@ -907,8 +921,10 @@ damage to your file systems, it is safer to cancel and reboot.
 			    else
 				{
 				ret = UI::AnyQuestionPopup3(
+				    // heading text
 				    _("fdisk failed."),
 				    sformat (
+					// popup text
 					_("Partitioning failed for unknown reason.
 Repartition disk %1.
     "),
@@ -932,8 +948,11 @@ Repartition disk %1.
 			// offer reboot in running system
 			else
 			    {
-			    ret = UI::AnyQuestionPopup3(_("fdisk failed."),
+			    // heading text
+			    ret = UI::AnyQuestionPopup3(_("parted failed."),
+				  // popup text
 				  _("It is strongly advised to reboot now to prevent damage to your file systems."),
+				  // button text
 				  UI::ContinueButtonLabel(), UI::AbortButtonLabel(), _("Reboot"), `focus_retry);
 
 				if( ret == `retry )
@@ -1043,6 +1062,7 @@ Repartition disk %1.
 	{
 	import "Misc";
 
+        // popup text 
 	Report::Message (_("Because swap needed to be activated while partitioning, rebooting
 is required. After that, restart the installation.
 "));
@@ -1054,6 +1074,7 @@ is required. After that, restart the installation.
 	{
 	import "Misc";
 
+        // popup text %1 replaced by partition name e.g. /dev/hda1
 	Report::Message (sformat(_("The swap partition %1 used during installation conflicts with the partitions needed for the system to be installed.\n
 Please repeat the installation with another swap partition selected
 "), swap_conflicts));
@@ -1114,6 +1135,7 @@ Please repeat the installation with another swap partition selected
 		    {
 		    symbol ret=`yes;
 		    ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
+						// popup text 
 						_("Preparing the RAID system failed"),
 						UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(),`focus_no);
 
@@ -1170,7 +1192,9 @@ Please repeat the installation with another swap partition selected
 	    {
 	    symbol ret = `yes;
 
+	    // heading text 
 	    ret = UI::AnyQuestionPopup3(_("LVM setup 1 failed."),
+		  // popup text 
 		  _("You can continue if you know what you are doing, but, to prevent
 damage to your file systems, it is safer to cancel and reboot.
 "),
@@ -1204,10 +1228,12 @@ damage to your file systems, it is safer to cancel and reboot.
 		string label = "";
 		if( format_swap )
 		    {
+		    // label text %1 replaced by partition name e.g. /dev/hda1
 		    label = sformat(_("Formatting %1 as swap"), swapdev );
 		    }
 		else
 		    {
+		    // label text %1 replaced by partition name e.g. /dev/hda1
 		    label = sformat(_("Activating %1 for swap"), swapdev );
 		    }
 		UI::ChangeWidget(`id(`progress), `Label, label );
@@ -1216,6 +1242,7 @@ damage to your file systems, it is safer to cancel and reboot.
 		   {
 		   if( SCR::Execute (.target.bash, "/sbin/mkswap "+ swapdev) != 0 )
 		      {
+		      // popup text %1 replaced by partition name e.g. /dev/hda1
 		      Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
 		      }
 		   else
@@ -1227,6 +1254,7 @@ damage to your file systems, it is safer to cancel and reboot.
 		   }
 		if (0 != SCR::Execute (.target.bash, "/sbin/swapon "+swapdev))
 		   {
+		   // popup text %1 replaced by partition name e.g. /dev/hda1
 		   Report::Error(sformat(_("Could not set up swap partition %1"), swapdev));
 		   }
 		else
@@ -1342,10 +1370,12 @@ damage to your file systems, it is safer to cancel and reboot.
 		    }
 		y2milestone( "cmd %1", cmd );
 		UI::ChangeWidget( `id(`progress), `Label, 
+				  // label text %1 replaced by pathname 
 				  sformat( _("Creating crypt file %1"), 
 					   p["fpath"]:"" ));
 		if( SCR::Execute (.target.bash, cmd ) != 0 )
 		    {
+		    // popup text %1 replaced by pathname 
 		    Report::Error(sformat(_("Could not create crypt file %1"), p["fpath"]:"" ));
 		    cancel = true;
 		    }
