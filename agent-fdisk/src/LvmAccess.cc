@@ -117,10 +117,6 @@ void LvmAccess::ActivateLvm()
 	{
 	ExecuteLvmCmd( "/sbin/vgscan" );
 	string Cmd_Ci = "/sbin/vgchange -a y";
-	if( !RunningFromSystem() )
-	    {
-	    Cmd_Ci += " -A n";
-	    }
 	ExecuteLvmCmd( Cmd_Ci );
 	DidVgchangeA_b = true;
 	}
@@ -134,10 +130,6 @@ bool LvmAccess::ActivateVGs( bool Activate_bv )
     {
     string Cmd_Ci = "/sbin/vgchange -a ";
     Cmd_Ci += Activate_bv?"y":"n";
-    if( !RunningFromSystem() )
-	{
-	Cmd_Ci += " -A n"; 
-	}
     return( ExecuteLvmCmd( Cmd_Ci ) );
     if( Activate_bv && !Lvm2() )
 	{
@@ -1081,10 +1073,6 @@ bool LvmAccess::ChangeActive( const string& Name_Cv, bool Active_bv )
 	string Tmp_Ci = "vgchange -a ";
 	Tmp_Ci += Active_bv?'y':'n';
 	Tmp_Ci += ' ';
-	if( !RunningFromSystem() )
-	    {
-	    Tmp_Ci += "-A n ";
-	    }
 	if( Vg_Ci!=VgList_C.end() )
 	    {
 	    Tmp_Ci += Vg_Ci->Name_C;
