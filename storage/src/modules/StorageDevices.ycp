@@ -38,7 +38,7 @@
      * @return map of $["device": $[..target..], ...] for each ZIP drive
      *
      */
-    global map zipDrives = $[];
+    global map ZipDrives = $[];
 
 
     /**
@@ -250,32 +250,15 @@ global define boolean FloppyReady ()
     }
 
 
-// check if this device is a ZIP drive
-
-define boolean check4zip (map disk)
-    ``{
-    list zlist = splitstring (disk["device"]:"", " ");
-    boolean zip_found = false;
-    foreach (`zelement, zlist,
-	``{
-	if (zelement == "ZIP")
-	    zip_found = true;
-	});
-    y2milestone( "zip %1 disk %2", zip_found, 
-                 filter( `k, `e, disk, ``(k!="partitions")));
-    return zip_found;
-    }
-
 // loop over floppy drives to find IDE ZIPs
 // return map of $[ "device" : $[target], ...]
 
 define map findZIPs ()
     ``{
-    map zipdrives = $[];
+    map zips = $[];
     foreach (`disk, FloppyDrives,
 	``{
-	boolean is_zip = check4zip (disk);
-	if (is_zip)
+	if (disk["zip"]:false)
 	    {
 	    map target = $[];
 	    string dname = "";
@@ -293,11 +276,11 @@ define map findZIPs ()
 	    target["name"] = dname;
 	    target["partitions"] = [];
 
-	    zipdrives[ddevice] = target;
+	    zips[ddevice] = target;
 	    }
 	});
-    y2milestone( "zipdrives %1", zipdrives );
-    return zipdrives;
+    y2milestone( "zips %1", zips );
+    return zips;
     }
 
 
@@ -342,13 +325,10 @@ define map localProbe ()
 	``{
 	map target = $[];
 
-	boolean is_zip = false;
-
 	boolean notready = disk["notready"]:false;
+	boolean is_zip = (notready || disk["zip"]:false);
 
-	is_zip = (notready || check4zip (disk));
-
-	y2milestone( "is_zip %1 notready:%2", is_zip, disk["notready"]:false );
+	y2milestone( "is_zip %1 notready:%2", is_zip, notready );
 
 	string bus = disk["bus"]:"?";
 	string dname = "";
@@ -550,7 +530,7 @@ define map localProbe ()
 	if (!notready && (size (target) > 0))
 	    {
 	    if (is_zip)
-		zipDrives[ddevice] = target;
+		ZipDrives[ddevice] = target;
 	    else
 		targets[ddevice] = target;
 	    }
@@ -561,7 +541,14 @@ define map localProbe ()
 
     SCR::UnmountAgent(.disk);
 
-    zipDrives = union (zipDrives, findZIPs ());
+    ZipDrives = union (ZipDrives, findZIPs ());
+
+    foreach( `k, `e, ZipDrives, 
+	``{
+	FloppyDrives = filter( `f, FloppyDrives, ``(f["dev_name"]:""!=k));
+	});
+    y2milestone( "FloppyDrives %1", FloppyDrives );
+    y2milestone( "ZipDrives %1", ZipDrives );
 
     if (Mode::test)
 	SCR::Write(.target.ycp, "/tmp/targets", targets);
