@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/mount.h>         /* for BLKGETSIZE */
 #include <linux/hdreg.h>       /* for HDIO_GETGEO */
+#include <linux/fs.h>          /* for BLKGETSIZE64 */
 
 #include <ycp/y2log.h>
 #include "AppUtil.h"
@@ -39,22 +40,43 @@ DiskAccess::DiskAccess(string Disk_Cv)
     {
       Head_i = Cylinder_i = Sector_i = 16;
       int Fd_ii = open (Disk_C.c_str(), O_RDONLY);
+      int Ret_ii;
       if (Fd_ii >= 0)
 	{
 	struct hd_geometry Geometry_ri;
-	if( ioctl(Fd_ii, HDIO_GETGEO, &Geometry_ri )==0 )
+	Ret_ii = ioctl(Fd_ii, HDIO_GETGEO, &Geometry_ri );
+	if( Ret_ii==0 )
 	    {
-	    Head_i = Geometry_ri.heads;
-	    Sector_i = Geometry_ri.sectors;
+	    Head_i = Geometry_ri.heads>0?Geometry_ri.heads:Head_i;
+	    Sector_i = Geometry_ri.sectors>0?Geometry_ri.sectors:Sector_i;
+	    Cylinder_i = Geometry_ri.cylinders>0?Geometry_ri.cylinders:Cylinder_i;
 	    }
-	unsigned long Sect_li;
-	if( ioctl(Fd_ii, BLKGETSIZE, &Sect_li) == 0 )
+	y2milestone( "After HDIO_GETGEO ret %d Head:%u Sector:%u Cylinder:%u", 
+	             Ret_ii, Head_i, Sector_i, Cylinder_i );
+	__uint64_t Sect_uli;
+	Sect_uli = 0;
+	Ret_ii = ioctl( Fd_ii, BLKGETSIZE64, &Sect_uli);
+	y2milestone( "BLKGETSIZE64 Ret:%d Bytes:%llu", Ret_ii, Sect_uli );
+	if( Ret_ii==0 && Sect_uli!=0 )
 	    {
-	    Cylinder_i = Sect_li / (Head_i*Sector_i);
+	    Sect_uli /= 512;
+	    Cylinder_i = (unsigned)(Sect_uli / (__uint64_t)(Head_i*Sector_i));
+	    y2milestone( "BLKGETSIZE64 Head:%u Sector:%u Cylinder:%u", 
+	                 Head_i, Sector_i, Cylinder_i );
+	    }
+	else
+	    {
+	    unsigned long Sect_li;
+	    Ret_ii = ioctl( Fd_ii, BLKGETSIZE, &Sect_li);
+	    y2milestone( "BLKGETSIZE Ret:%d Sect:%lu", Ret_ii, Sect_li );
+	    if( Ret_ii==0 && Sect_li!=0 )
+		{
+		Cylinder_i = Sect_li / (unsigned long)(Head_i*Sector_i);
+		}
+	    y2milestone( "BLKGETSIZE Head:%u Sector:%u Cylinder:%u", 
+	                 Head_i, Sector_i, Cylinder_i );
 	    }
 	close (Fd_ii);
-        y2milestone( "Head=%d Sector:%d Cylinder:%d", Head_i, Sector_i, 
-	             Cylinder_i );
 	}
       ByteCyl_l = Head_i * Sector_i * 512;
     }
