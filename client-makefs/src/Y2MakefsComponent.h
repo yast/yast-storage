@@ -10,7 +10,7 @@
 
 
 #include <Y2.h>
-
+#include <ycp/YCPList.h>
 
 /**
  * @short Install and uninstall packages

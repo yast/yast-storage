@@ -9,6 +9,9 @@
 
 #include <sys/statvfs.h>
 #include <ycp/y2log.h>
+#include <ycp/YCPSymbol.h>
+#include <ycp/YCPVoid.h>
+#include <ycp/YCPInteger.h>
 #include <y2/Y2ComponentBroker.h>
 #include <y2/Y2Component.h>
 #include <y2/Y2Namespace.h>
