@@ -27,6 +27,7 @@ LvmAccess::LvmAccess( bool Expensive_bv ) :
     LvmCmd_C.SetCombine();
     ScanProcLvm();
     Expensive_b = false;
+    DidVgchangeA_b = false;
     if( Expensive_bv )
 	{
 	DoExpensive();
@@ -79,13 +80,35 @@ string LvmAccess::GetCmdLine()
 void LvmAccess::ActivateLvm()
     {
     PrepareLvmCmd();
-    ExecuteLvmCmd( "/sbin/vgscan" );
-    string Cmd_Ci = "/sbin/vgchange -a y";
-    if( !RunningFromSystem() )
+    bool Activate_bi = true;
+    if( RunningFromSystem() )
 	{
-	Cmd_Ci += " -A n";
+	DIR *Dir_pri;
+	struct dirent *Entry_pri;
+	if( (Dir_pri=opendir( "/proc/lvm/VGs" ))!=NULL )
+	    {
+	    while( Activate_bi && (Entry_pri=readdir( Dir_pri ))!=NULL ) 
+		{
+		if( strcmp( Entry_pri->d_name, "." )!=0 &&
+		    strcmp( Entry_pri->d_name, ".." ) != 0 )
+		    {
+		    Activate_bi = false;
+		    }
+		}
+	    closedir( Dir_pri );
+	    }
 	}
-    ExecuteLvmCmd( Cmd_Ci );
+    if( Activate_bi )
+	{
+	ExecuteLvmCmd( "/sbin/vgscan" );
+	string Cmd_Ci = "/sbin/vgchange -a y";
+	if( !RunningFromSystem() )
+	    {
+	    Cmd_Ci += " -A n";
+	    }
+	ExecuteLvmCmd( Cmd_Ci );
+	DidVgchangeA_b = true;
+	}
     ScanProcLvm();
     }
 
@@ -143,8 +166,9 @@ LvmAccess::DoExpensive()
     {
     if( !Expensive_b )
 	{
-	ScanForDisks();
-	ScanForInactiveVg();
+	//ScanForDisks();
+	if( RunningFromSystem() && !DidVgchangeA_b )
+	    ScanForInactiveVg();
 	Expensive_b = true;
 	}
     }

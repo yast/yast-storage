@@ -408,6 +408,10 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
 	    {
 	    Part_rr.Id_i = 0x103;
 	    }
+	if( Type_Ci.find( ",hp-service," ) != string::npos )
+	    {
+	    Part_rr.Id_i = 0x104;
+	    }
 	}
     y2debug( "Fields Num:%d Id:%x Ptype:%d Start:%d End:%d Block:%lu",
 	     Part_rr.Num_i, Part_rr.Id_i, Part_rr.PType_e, Part_rr.Start_i,

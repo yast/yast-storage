@@ -114,6 +114,7 @@ class LvmAccess
 	list<PvInfo> PvList_C;
 	list<LvInfo> LvList_C;
 	bool Expensive_b;
+	bool DidVgchangeA_b;
 	SystemCmd LvmCmd_C;
 	string LvmOutput_C;
 	string CmdLine_C;
