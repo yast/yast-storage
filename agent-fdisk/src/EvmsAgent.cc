@@ -456,6 +456,32 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 		    ret = false;
 		    }
 		}
+	    else if( type_string == "create_vol" )
+		{
+		string name;
+		YCPValue content = cmd->value(YCPString("name"));
+		if( !content.isNull() && content->isString())
+		    {
+		    name = content->asString()->value();
+		    }
+		y2milestone("name:%s", name.c_str() );
+		if( name.length()>0 )
+		    {
+		    if( !Evms_pC->CreateCompatVol( name ) )
+			{
+			ErrText_Ci = Evms_pC->GetErrorText();
+			CmdLine_Ci = Evms_pC->GetCmdLine();
+			y2error( "evms error cmd:%s", CmdLine_Ci.c_str() );
+			ret = false;
+			}
+		    }
+		else
+		    {
+		    ErrText_Ci = "evms create_pv invalid values";
+		    y2error( ErrText_Ci.c_str() );
+		    ret = false;
+		    }
+		}
 	    else
 		{
 		ErrText_Ci = "evms invalid cmd";

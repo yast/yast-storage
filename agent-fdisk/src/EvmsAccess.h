@@ -137,6 +137,7 @@ class EvmsAccess
 	bool ChangeLvSize( const string& LvName_Cv, const string& Container_Cv,
 	                   unsigned long Size_lv );
 	bool DeleteLv( const string& LvName_Cv, const string& Container_Cv );
+	bool CreateCompatVol( const string& Volume_Cv );
 
     protected:
 	void AddObjectRelations();
@@ -146,6 +147,8 @@ class EvmsAccess
 	const EvmsContainerObject* FindContainer( const string& name );
 	const EvmsDataObject* FindRegion( const string& container, 
 	                                  const string& name );
+	const EvmsDataObject* FindSegment( const string& name );
+	const EvmsVolumeObject* FindVolume( const string& name );
 	static int PluginFilterFunction( const char* plugin );
 
 	list<EvmsObject*> objects;

@@ -496,6 +496,28 @@ EvmsAccess::EvmsAccess()
     else
 	{
 	RereadAllObjects();
+	if( !RunningFromSystem() )
+	    {
+	    list<const EvmsVolumeObject*> l;
+	    ListVolumes( l );
+	    for( list<const EvmsVolumeObject*>::iterator i=l.begin();
+		 i != l.end(); i++ )
+		{
+		if( !(*i)->Native() && 
+		    (*i)->Name().find( "/dev/evms/lvm/" )!=0 )
+		    {
+		    ret = evms_delete((*i)->Id());
+		    y2milestone( "evms_delete %d ret %d", (*i)->Id(), ret ); 
+		    if( ret )
+			{
+			Error_C = "could not delete compatible volume " + 
+			          (*i)->Name();
+			y2milestone( "error: %s", evms_strerror(ret) );
+			}
+		    }
+	        }
+	    EndEvmsCommand();
+	    }
 	}
     y2debug( "End Konstruktor EvmsAccess" );
     }
@@ -741,6 +763,38 @@ const EvmsDataObject* EvmsAccess::FindRegion( const string& container,
 	}
     y2milestone( "Region %s in Container %s has id %d", name.c_str(), 
                  container.c_str(), ret_pi==NULL?0:ret_pi->Id() );
+    return( ret_pi );
+    }
+
+const EvmsDataObject* EvmsAccess::FindSegment( const string& name )
+    {
+    EvmsDataObject* ret_pi = NULL;
+    for( list<EvmsObject*>::const_iterator Ptr_Ci = objects.begin(); 
+         Ptr_Ci != objects.end(); Ptr_Ci++ )
+	{
+	if( (*Ptr_Ci)->Type()==EVMS_SEGMENT && (*Ptr_Ci)->Name()==name )
+	    {
+	    ret_pi = (EvmsDataObject*)*Ptr_Ci;
+	    }
+	}
+    y2milestone( "Segment %s has id %d", name.c_str(), 
+                 ret_pi==NULL?0:ret_pi->Id() );
+    return( ret_pi );
+    }
+
+const EvmsVolumeObject* EvmsAccess::FindVolume( const string& name )
+    {
+    EvmsVolumeObject* ret_pi = NULL;
+    for( list<EvmsObject*>::const_iterator Ptr_Ci = objects.begin(); 
+         Ptr_Ci != objects.end(); Ptr_Ci++ )
+	{
+	if( (*Ptr_Ci)->Type()==EVMS_VOLUME && (*Ptr_Ci)->Name()==name )
+	    {
+	    ret_pi = (EvmsVolumeObject*)*Ptr_Ci;
+	    }
+	}
+    y2milestone( "Volume %s has id %d", name.c_str(), 
+                 ret_pi==NULL?0:ret_pi->Id() );
     return( ret_pi );
     }
 
@@ -1002,6 +1056,46 @@ bool EvmsAccess::CreateLv( const string& LvName_Cv, const string& Container_Cv,
 		}
 	    }
 	evms_free( output );
+	}
+    if( Error_C.size()==0 )
+	{
+	EndEvmsCommand();
+	}
+    if( Error_C.size()>0 )
+	{
+	y2milestone( "Error: %s", Error_C.c_str() );
+	}
+    else
+	{
+	y2milestone( "OK" );
+	}
+    return( Error_C.size()==0 );
+    }
+
+bool EvmsAccess::CreateCompatVol( const string& Volume_Cv )
+    {
+    int ret = 0;
+    y2milestone( "Name:%s", Volume_Cv.c_str() );
+    Error_C = "";
+    CmdLine_C = "CreateCompatVol " + Volume_Cv;
+    if( FindVolume( Volume_Cv )==NULL )
+	{
+	string name = Volume_Cv.substr( 10 );
+	const EvmsDataObject* Rg_p = FindSegment( name );
+	if( Rg_p != NULL )
+	    {
+	    ret = evms_create_compatibility_volume( Rg_p->Id() );
+	    if( ret )
+		{
+		y2milestone( "evms_create_compatibility_volume ret %d", ret );
+		y2milestone( "ret %s", evms_strerror(ret) );
+		Error_C = "could not create compatibility volume " + Volume_Cv;
+		}
+	    }
+	else
+	    {
+	    Error_C = "could not find segment " + name;
+	    }
 	}
     if( Error_C.size()==0 )
 	{
