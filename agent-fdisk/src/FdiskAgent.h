@@ -5,7 +5,6 @@
 #define FdiskAgent_h
 
 #include <scr/SCRAgent.h>
-#include <scr/SCRInterpreter.h>
 #include <Y2.h>
 
 /**
@@ -24,7 +23,8 @@ public:
    * @param path Specifies what part of the subtree should
    * be read. The path is specified _relatively_ to Root()!
    */
-  YCPValue Read(const YCPPath& path, const YCPValue& arg = YCPNull());
+  YCPValue Read( const YCPPath& path, const YCPValue& arg = YCPNull(),
+                 const YCPValue& opt = YCPNull() );
 
   /**
    * Writes data.

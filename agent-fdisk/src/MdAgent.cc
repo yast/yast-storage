@@ -2,7 +2,6 @@
 
 #include <set>
 #include <YCP.h>
-#include <ycp/YCPParser.h>
 #include "MdAgent.h"
 #include <ycp/y2log.h>
 
@@ -30,7 +29,7 @@ delete Md_pC;
 //
 
 YCPValue
-MdAgent::Read(const YCPPath& path, const YCPValue& arg)
+MdAgent::Read(const YCPPath& path, const YCPValue& arg, const YCPValue& )
 {
   if (path->length() < 1) {
       y2error("Path '%s' has incorrect length", path->toString().c_str());

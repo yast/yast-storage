@@ -2,7 +2,6 @@
 
 #include <set>
 #include <YCP.h>
-#include <ycp/YCPParser.h>
 #include "PartInfo.defs.h"
 #include "LvmAgent.h"
 #include <ycp/y2log.h>
@@ -31,7 +30,7 @@ LvmAgent::~LvmAgent()
 //
 
 YCPValue
-LvmAgent::Read(const YCPPath& path, const YCPValue& arg)
+LvmAgent::Read(const YCPPath& path, const YCPValue& arg, const YCPValue& )
 {
   y2debug("LvmAgent::Read Path:%s length:%ld", path->toString().c_str(),
           path->length() );

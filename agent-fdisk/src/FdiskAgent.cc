@@ -2,7 +2,6 @@
 
 #include <sstream>
 #include <set>
-#include <ycp/YCPParser.h>
 #include <ycp/y2log.h>
 
 #include "FdiskAgent.h"
@@ -35,7 +34,7 @@ FdiskAgent::~FdiskAgent()
 //
 
 YCPValue
-FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
+FdiskAgent::Read(const YCPPath& path, const YCPValue& arg, const YCPValue& )
 {
   YCPValue ret = YCPVoid();
   bool use_parted = false;
@@ -96,14 +95,14 @@ FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
 	      fdisk_cmd->DiskLabel() == "bsd" ||
 	      fdisk_cmd->DiskLabel() == "sun" )
 	      {
-	      pptype = new YCPSymbol("primary", true);
+	      pptype = new YCPSymbol("primary");
 	      }
 	  else
 	      {
 	      pptype = 
 		  new YCPSymbol(entry->PType_e==PAR_TYPE_EXTENDED?"extended" : 
 		                entry->Num_i >= 5 ? "logical" : 
-				                    "primary", true);
+				                    "primary");
 	      }
 #endif
 	  part_entry->add (YCPString ("type"), *pptype);

@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include <ycp/y2log.h>
 #include <ycp/YCPString.h>
-#include <y2util/ExternalDataSource.h>
+#include <y2/ExternalDataSource.h>
 
 #include "Xfs_Partition.h"
 

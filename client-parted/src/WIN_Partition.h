@@ -4,7 +4,7 @@
 #define WIN_Partition_h
 
 #include <YCP.h>
-#include <y2util/ExternalProgram.h>
+#include <y2/ExternalProgram.h>
 
 /**
  * @short Interface to the parted program

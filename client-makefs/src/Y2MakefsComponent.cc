@@ -18,9 +18,9 @@
 #include "Jfs_Partition.h"
 
 
-#define RETURN_OK      YCPSymbol("ok",     true)	// `ok
-#define RETURN_ERROR   YCPSymbol("error",  true)	// `error
-#define RETURN_CANCEL  YCPSymbol("cancel", true)	// `cancel
+#define RETURN_OK      YCPSymbol("ok")		// `ok
+#define RETURN_ERROR   YCPSymbol("error")	// `error
+#define RETURN_CANCEL  YCPSymbol("cancel")	// `cancel
 
 
 // MakefsComponent
@@ -126,7 +126,7 @@ Y2MakefsComponent::report_progress (Y2Component* displayserver, double percent)
 	return YCPVoid ();
 
     // build command
-    YCPTerm t (report_macro, false);		// command
+    YCPTerm t (report_macro);			// command
     t->add (YCPInteger ((long long) percent));	// percent
 
     // let the UI evaluate it

@@ -8,9 +8,9 @@
 #include "WIN_Partition.h"
 #include <ycp/y2log.h>
 
-#define RETURN_OK      YCPSymbol("ok",     true)     // `ok
-#define RETURN_ERROR   YCPSymbol("error",  true)     // `error
-#define RETURN_CANCEL  YCPSymbol("cancel", true)     // `cancel
+#define RETURN_OK      YCPSymbol("ok")     	// `ok
+#define RETURN_ERROR   YCPSymbol("error")	// `error
+#define RETURN_CANCEL  YCPSymbol("cancel")	// `cancel
 
 
 // PartedComponent work function
@@ -155,7 +155,7 @@ Y2PartedComponent::report_progress(Y2Component *displayserver,
    y2debug ("Reporting progress: <%lld>", percent );
 
    // build command
-   YCPTerm t(progress_macro, false);		// command
+   YCPTerm t(progress_macro);			// command
    t->add( YCPInteger( percent ) );		// percent
 
    // let the UI evaluate it
@@ -213,7 +213,7 @@ Y2PartedComponent::report_directory(Y2Component *displayserver,
    y2debug ("Reporting directory: <%s>", message_final );
 
    // build command
-   YCPTerm t(directory_macro, false);			// command
+   YCPTerm t(directory_macro);				// command
    t->add( YCPString( string(message_final) ) );	// directory
 
    // let the UI evaluate it
@@ -250,7 +250,7 @@ Y2PartedComponent::report_exception(Y2Component *displayserver,
   y2debug ("Reporting exception: <%s>", message_exception.c_str() );
 
   // build command
-  YCPTerm t(exception_macro, false);		// command
+  YCPTerm t(exception_macro);			// command
   t->add( YCPString( message_exception ) );	// exception
 
   // let the UI evaluate it
