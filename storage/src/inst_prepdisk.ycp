@@ -313,9 +313,9 @@ global define symbol UpdateProgressBar(integer percent)
 				   (haskey(part,"ori_mount") &&
 				    part["ori_mount"]:""!=part["mount"]:"") ||
 				   (haskey(part,"ori_fstopt") &&
-				    part["ori_fstopt"]:""!=part["fstopt"]:"") &&
+				    part["ori_fstopt"]:""!=part["fstopt"]:"") ||
 				   (haskey(part,"ori_label") &&
-				    FileSystems::ChangeLabelMounted( part["used_fs"]:`unkown ) &&
+				    !FileSystems::ChangeLabelMounted( part["used_fs"]:`unkown ) &&
 				    part["ori_label"]:""!=part["label"]:""))))>0;
 
 	      // mounted partition should formated
@@ -497,7 +497,8 @@ damage to your file systems, it is safer to cancel and reboot.
     //---------------------------------
     // PPC only ...
     // check for ppc-PReP/CHRP system, they need a special boot partition
-    if (Arch::ppc && (Arch::board_chrp || Arch::board_prep || Arch::board_iseries))
+    if( Arch::ppc && 
+        (Arch::board_chrp || Arch::board_prep || Arch::board_iseries))
         {
         prepare_ppc_boot_part();
         }
@@ -749,7 +750,17 @@ Please repeat the installation with another swap partition selected
 
 	    if( !contains( Storage::SwappingPartitions(), swapdev ) )
 		{
-		UI::ChangeWidget(`id(`progress), `Label, sformat(_("Formatting %1 as %2"), swapdev, "swap"));
+		boolean format_swap = swaplist[1]:false;
+		string label = "";
+		if( format_swap )
+		    {
+		    label = sformat(_("Formatting %1 as swap"), swapdev );
+		    }
+		else
+		    {
+		    label = sformat(_("Activating %1 for swap"), swapdev );
+		    }
+		UI::ChangeWidget(`id(`progress), `Label, label );
 
 		if (swaplist[1]:false == true)		// format == yes ?
 		   {
@@ -896,9 +907,8 @@ damage to your file systems, it is safer to cancel and reboot.
 
 	foreach(`partition, partitions,
 	    ``{
-
 	    if (partition["delete"]:false)
-	    return;
+		return;
 
 	    //every partition which is to be formatted
 	    boolean format = partition["format"]:false;
@@ -907,223 +917,227 @@ damage to your file systems, it is safer to cancel and reboot.
 
 	    //retry loop
 	    do
-	    {
-	    partitionName = Storage::GetDeviceName( tdevice, partition["nr"]:0);
-
-	    retry = false;
-
-	    if ( !cancel
-		&& format
-		&& (partition != $[])
-		&& (mountPoint != "swap"))
-	    {
-		// announce partition to be formatted
-		// force /boot on "milo" and ia64 machines to be FAT
-		if (mountPoint == "/boot" &&
-			(Boot::LoaderType == "milo" || Arch::ia64))
 		{
-		    partition["fsid"]    = Partitions::fsid_fat16;
-		    partition["fstype"]  = "FAT16";
-		    partition["used_fs"] = `vfat;
-		}
+		boolean crypt_fs  = partition["crypt_fs"]:false;
+		partitionName = partition["device"]:"";
+		retry = false;
 
-		UI::ChangeWidget(`id(`progress), `Label, sformat(_("Formatting %1 as %2"), partitionName, mountPoint));
-
-		any ret = `ok;
-
-		if ( this_is_for_real )
-		{
-		    // Format partitions
-
-		    symbol  used_fs   = partition["used_fs"]:`unknown;
-		    boolean crypt_fs  = partition["crypt_fs"]:false;
-		    string  crypt_key = partition["crypt_key"]:"";
-
-		    //crypt_ok can only become false if cryptofs is used
-		    crypt_ok = true;
-
-		    y2milestone( "mkfs: used %1, crypt %2 ", used_fs, crypt_fs);
-
-		    ////////////////////////////////////////////////////////////////////////////
-		    // load filesystem modules
-		    FileSystems::LoadModule( used_fs );
-
-		    if (mountPoint == "/")
+		if( !cancel && format && mountPoint != "swap")
 		    {
-			foreach (`modname, FileSystems::GetNeededModules (used_fs),
+		    if( !crypt_fs && haskey( partition, "loop_dev" ))
+			{
+		        SCR::Execute( .target.bash, 
+			              "/sbin/losetup -d "+partition["loop_dev"]:"" );
+			}
+		    // announce partition to be formatted
+		    // force /boot on "milo" and ia64 machines to be FAT
+		    if (mountPoint == "/boot" &&
+			    (Boot::LoaderType == "milo" || Arch::ia64))
+			{
+			partition["fsid"]    = Partitions::fsid_fat16;
+			partition["fstype"]  = "FAT16";
+			partition["used_fs"] = `vfat;
+			}
+		    string label = sformat(_("Formatting %1 as %2"), 
+		                           partitionName, mountPoint);
+
+		    UI::ChangeWidget(`id(`progress), `Label, label );
+		    any ret = `ok;
+
+		    if ( this_is_for_real )
+			{
+			// Format partitions
+
+			symbol  used_fs   = partition["used_fs"]:`unknown;
+			string  crypt_key = partition["crypt_key"]:"";
+
+			//crypt_ok can only become false if cryptofs is used
+			crypt_ok = true;
+
+			y2milestone( "mkfs: used %1, crypt %2 ", used_fs, 
+			             crypt_fs);
+
+			/////////////////////////////////////////////
+			// load filesystem modules
+			FileSystems::LoadModule( used_fs );
+
+			if (mountPoint == "/")
+			    {
+			    foreach (`modname, FileSystems::GetNeededModules (used_fs),
 				``{
 				Boot::AddInitrdModule (modname, "");
 				});
-		    }
+			    }
 
-		    ///////////////////////////////
-		    // CRYPT ?
-		    if ( crypt_fs )
-		    {
-			string crypt_passwd = lookup( Storage::GetClassifiedUserSettings(), crypt_key, "");
-			string loop_dev     = get_loop_dev();
+			///////////////////////////////
+			// CRYPT ?
+			if ( crypt_fs )
+			    {
+			    string crypt_passwd = lookup( Storage::GetClassifiedUserSettings(), crypt_key, "");
+			    string loop_dev = get_loop_dev();
 
-			crypt_ok            = loop_dev != nil ? true : false;
+			    crypt_ok = loop_dev != nil ? true : false;
 
-			y2milestone( "crypt gt: %1 %2", crypt_ok, loop_dev );
+			    y2milestone( "crypt %1 %2", crypt_ok, loop_dev );
 
-			if ( crypt_ok && first_crypt_fs  )
-			{
-			    first_crypt_fs = false;
-			    crypt_ok       = SCR::Execute (.target.modprobe, "loop_fish2", "");
-			}
+			    if ( crypt_ok && first_crypt_fs  )
+				{
+				first_crypt_fs = false;
+				crypt_ok = SCR::Execute( .target.modprobe, 
+				                         "loop_fish2", "");
+				}
 
-			y2milestone( "crypt mp: %1", crypt_ok);
-
-			if ( crypt_ok )
-			{
-			    partition["loop_dev"] = loop_dev;
-
-			    map setloop = $[ "encryption"    : "twofish",
-			    "passwd"        : crypt_passwd,
-			    "loop_dev"      : loop_dev,
-			    "partitionName" : partitionName ];
-
-			    crypt_ok = SCR::Write(.losetup, setloop );
+			    y2milestone( "crypt mp: %1", crypt_ok);
 
 			    if ( crypt_ok )
-			    {
-				partitionName = loop_dev;
-				activatedLoopDevices = add(activatedLoopDevices,loop_dev);
-			    }
-			    y2milestone( "crypt loset: %1" , crypt_ok);
-			}
-		    }
+				{
+				partition["loop_dev"] = loop_dev;
 
-		    if ( !crypt_ok )
-		    {
-			symbol ret=`yes;
+				map setloop = 
+				    $[ "encryption"    : "twofish",
+				       "passwd"        : crypt_passwd,
+				       "loop_dev"      : loop_dev,
+				       "partitionName" : partitionName ];
+
+				crypt_ok = SCR::Write(.losetup, setloop );
+
+				if ( crypt_ok )
+				    {
+				    partitionName = loop_dev;
+				    activatedLoopDevices = add(activatedLoopDevices,loop_dev);
+				    }
+				y2milestone( "crypt loset: %1" , crypt_ok);
+				}
+			    }
+
+			if ( !crypt_ok )
+			    {
+			    symbol ret=`yes;
+			    ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
+				    sformat(_("Error crypting the file system %1."), partitionName),
+				    UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_yes);
+			    if (ret == `retry)
+				{
+				retry=true;
+				}
+			    else if (ret == `no)
+				{
+				cancel=true;
+				}
+			    else
+				{
+				//set to ok, to suppress popup about formatting error
+				ret=`ok;
+				}
+			    }
+
+			if (crypt_ok)
+			    {
+			    list options = [ ];
+			    if( partition["format"]:false
+				    && partition["fs_options"]:$[] != $[] )
+				{
+				options = convertFsOptionMapInList( partition );
+				}
+
+			    if( used_fs == `ext3 )
+				{
+				// add -j to options
+				options = add( options , "-j" );
+				}
+
+			    string makefs_type = FileSystems::GetMakeFsType( used_fs , "ext2");
+			    string dd_sblocks = "";
+			    string idev = "/dev/zero";
+			    if( crypt_fs )
+				{
+				idev = "/dev/urandom";
+				}
+			    dd_sblocks = sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50",
+				    idev, partitionName );
+			    y2milestone( "dd_sblocks=%1", dd_sblocks );
+			    SCR::Execute (.target.bash, dd_sblocks );
+			    ret = WFM::CallModule ("makefs", ["UpdateProgressBar", makefs_type, partitionName, options /*[ ]*/ ]);
+			    y2milestone( "format ret = %1", ret );
+			    if( ret == `ok )
+				{
+				map info = 
+				    FileSystems::GetUuidVolume( partitionName,
+								used_fs );
+				map tg = Storage::GetTargetMap();
+				if( size(info["uuid"]:"")>0 )
+				    {
+				    tg = 
+					Storage::SetPartitionData( tg, 
+						partition["device"]:"",
+						"uuid", 
+						info["uuid"]:"" );
+				    }
+				tg = Storage::DelPartitionData( tg, 
+					partition["device"]:"",
+					"create" );
+				Storage::SetTargetMap( tg );
+				}
+			    }
+			}
+		    else
+			{
+			// Fake formatting
+
+			integer progress = 0;
+
+			while ( progress < 100 )
+			    {
+			    UI::UpdateProgressBar ( progress );
+			    sleep ( 300 ); // millisec
+			    progress = progress + 3;
+			    }
+			}
+
+		    if( ret == `cancel )
+			{
+			cancel = true;
+			}
+		    else if( ret != `ok )
+			{
+			// report any formatting errors
 			ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
-				sformat(_("Error crypting the file system %1."), partitionName),
-				UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_yes);
-			if (ret == `retry)
-			{
-			    retry=true;
-			}
-			else if (ret == `no)
-			{
-			    cancel=true;
-			}
-			else
-			{
-			    //set to ok, to suppress popup about formatting error
-			    ret=`ok;
-			}
-
-		    }
-
-		    if (crypt_ok)
-		    {
-			list options = [ ];
-			if (partition["format"]:false
-				&& partition["fs_options"]:$[] != $[] )
-			{
-			    options = convertFsOptionMapInList( partition );
-			    //options = lookup( partition, "fs_options", [] );
-			}
-
-			if ( used_fs == `ext3 )
-			{
-			    // add -j to options
-			    options = add( options , "-j" );
-			}
-
-			string makefs_type = FileSystems::GetMakeFsType( used_fs , "ext2");
-			string dd_sblocks = "";
-			string idev = "/dev/zero";
-			if( crypt_fs )
-			{
-			    idev = "/dev/urandom";
-			}
-			dd_sblocks = sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50",
-				idev, partitionName );
-			y2milestone( "dd_sblocks=%1", dd_sblocks );
-			SCR::Execute (.target.bash, dd_sblocks );
-			ret = WFM::CallModule ("makefs", ["UpdateProgressBar", makefs_type, partitionName, options /*[ ]*/ ]);
-			y2milestone( "format ret = %1", ret );
-			if( ret == `ok )
-			{
-			    map info = FileSystems::GetUuidVolume( partitionName,
-				    used_fs );
-			    map tg = Storage::GetTargetMap();
-			    if( size(info["uuid"]:"")>0 )
+				sformat(_("Could not format partition %1.
+					You can continue if you know what you are doing, but, to prevent damage to
+					your file systems, it is safer to cancel and reboot.
+					")
+				    , partitionName),
+				UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_no);
+			if (ret == `no)
 			    {
-				tg = 
-				    Storage::SetPartitionData( tg, 
-					    partition["device"]:"",
-					    "uuid", 
-					    info["uuid"]:"" );
+			    cancel=true;
 			    }
-			    tg = Storage::DelPartitionData( tg, 
-				    partition["device"]:"",
-				    "create" );
-			    Storage::SetTargetMap( tg );
+			else if (ret==`retry)
+			    {
+			    retry=true;
+			    }
 			}
 		    }
-		}
-		else
-		{
-		    // Fake formatting
-
-		    integer progress = 0;
-
-		    while ( progress < 100 )
-		    {
-			UI::UpdateProgressBar ( progress );
-			sleep ( 300 ); // millisec
-			progress = progress + 3;
-		    }
-		}
-
-		if ( ret == `cancel )
-		{
-		    cancel = true;
-		}
-		else if ( ret != `ok )
-		{
-		    // report any formatting errors
-		    ret = UI::AnyQuestionPopup3(UI::NoHeadline(),
-			    sformat(_("Could not format partition %1.
-				    You can continue if you know what you are doing, but, to prevent damage to
-				    your file systems, it is safer to cancel and reboot.
-				    ")
-				, partitionName),
-			    UI::ContinueButtonLabel(), UI::AbortButtonLabel(), UI::RetryButtonLabel(), `focus_no);
-		    if (ret == `no)
-		    {
-			cancel=true;
-		    }
-		    else if (ret==`retry)
-		    {
-			retry=true;
-		    }
-		}
-	    }
-	    } while (retry == true);
-	if( !cancel && size(partition["label"]:"")>0 &&
-		(format ||
+		} while (retry == true);
+	    if( !cancel && size(partition["label"]:"")>0 &&
+		(format || 
 		 (haskey(partition,"ori_label") &&
 		  partition["ori_label"]:""!=partition["label"]:"")))
-	{
-	    if( !FileSystems::SetVolumeLabel( partitionName, partition ))
-	    {
-		UI::ErrorPopup(
-			sformat(_("Error setting volume label on device %2 to %1"),
-			    partition["label"]:"", partitionName ));
-	    }
-	    else
-	    {
-		map tg = Storage::GetTargetMap();
-		tg = Storage::DelPartitionData( tg, partition["device"]:"",
-			"ori_label" );
-		Storage::SetTargetMap( tg );
-	    }
-	}
+		{
+		if( !FileSystems::SetVolumeLabel( partitionName, partition ))
+		    {
+		    UI::ErrorPopup(
+			    sformat(_("Error setting volume label on device %2 to %1"),
+				partition["label"]:"", partitionName ));
+		    }
+		else
+		    {
+		    map tg = Storage::GetTargetMap();
+		    tg = Storage::DelPartitionData( tg, partition["device"]:"",
+			    "ori_label" );
+		    Storage::SetTargetMap( tg );
+		    }
+		}
 	    });
 	});
 

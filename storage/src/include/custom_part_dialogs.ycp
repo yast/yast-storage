@@ -27,7 +27,6 @@
   import "FileSystems";
   import "Mode";
 
-  
   //////////////////////////////////////////////////////////////////////////////
   // Dialog Password for Crypted FS
   //////////////////////////////////////////////////////////////////////////////
@@ -391,8 +390,18 @@ Try again.
    * @parm old map with original partition
    * @parm new map with changes filled in
    */
-global define void FstabOptions( map old, map new ) 
+global define void FstabOptions( map old, map new, map fs_define ) 
     ``{
+    string helptext = _("<p><b>Mount in /etc/fstab by:</b>
+Normally the device to mount a filesystem is identified in /etc/fstab
+by the device name. This can be changed to find the filesystem to mount
+by search for an UUID or a volume label. Not all filesystems can by 
+mounted by UUID or volume label. If a option is disabled it is not possible.");
+
+    helptext = helptext + _("<p><b>Volume label:</b>
+The name you enter in thie field is usd as volume label. This normally makes
+only sense when you activate the option mounting by volume label.");
+
     term contents = 
 	`VBox(  
 	    `RadioButtonGroup( 
@@ -406,19 +415,89 @@ global define void FstabOptions( map old, map new )
 		    `Left( `RadioButton( `id(`uuid), "U&UID" ))
 		     )
 		),
-	   `TextEntry( `id(`vol_label), `opt(`hstretch), _("Volume &Label"))
+	   `TextEntry( `id(`vol_label), `opt(`hstretch), _("Volume &Label")),
+	   `VSpacing(1)
 	   );
-    string helptext   = "";
+    list opt_list = [];
+    foreach( `entry, FileSystems::GetGeneralFstabOptions(),
+	``{
+	opt_list = add( opt_list, entry );
+	contents = add( contents, entry[`widget]:`empty );
+	helptext = helptext + entry[`help_text]:"";
+	});
+    contents = add( contents, `VSpacing(1) );
+    foreach( `entry, fs_define[`fst_options]:[],
+	``{
+	opt_list = add( opt_list, entry );
+	contents = add( contents, entry[`widget]:`empty );
+	helptext = helptext + entry[`help_text]:"";
+	});
+    contents = add( contents, `VSpacing(1) );
+    map entry = FileSystems::GetArbitraryOptionField();
+    opt_list = add( opt_list, entry );
+    contents = add( contents, entry[`widget]:`empty );
+    helptext = helptext + entry[`help_text]:"";
 
-    helptext = helptext + _("<p><b>Mount in /etc/fstab by:</b>
-Normally the device to mount a filesystem is identified in /etc/fstab
-by the device name. This can be changed to find the filesystem to mount
-by search for an UUID or a volume label. Not all filesystems can by 
-mounted by UUID or volume label. If a option is disabled it is not possible.");
+    string fstopt = deletechars( new["fstopt"]:"", " \t" );
+    if( fstopt == "default" )
+	fstopt = "";
 
-    helptext = helptext + _("<p><b>Volume label:</b>
-The name you enter in thie field is usd as volume label. This normally makes
-only sense when you activate the option mounting by volume label.");
+    list opt_lstr = splitstring( fstopt, "," );
+    map old_state = $[];
+    integer pos = 0;
+    foreach( `opt, opt_list,
+	``{
+	if( opt[`type]:`text == `boolean )
+	    {
+	    boolean value = opt[`default]:false;
+	    pos = 0;
+	    while( pos < size(opt_lstr) )
+		{
+		foreach( `list_el, opt[`str_scan]:[],
+		    ``{
+		    if( list_el[0]:""==opt_lstr[pos]:"" )
+			{
+			value = list_el[1]:0 == 1;
+			opt_lstr[pos] = "";
+			}
+		    });
+		pos = pos + 1;
+		}
+	    old_state[opt[`query_key]:""] = value;
+	    }
+	else
+	    {
+	    string value = opt[`default]:"";
+	    integer pos = 0;
+	    while( pos < size(opt_lstr) )
+		{
+		if( size(opt[`str_scan]:"")>0 && 
+		    regexpmatch( opt_lstr[pos]:"", opt[`str_scan]:"" ))
+		    {
+		    value = regexpsub( opt_lstr[pos]:"", 
+		                       opt[`str_scan]:"", "\\1" );
+		    opt_lstr[pos] = "";
+		    }
+		pos = pos + 1;
+		}
+	    old_state[opt[`query_key]:""] = value;
+	    }
+	});
+
+    pos = size(opt_lstr)-1;
+    while( pos>=0 )
+	{
+	if( size(opt_lstr[pos]:"")==0 )
+	    {
+	    opt_lstr = remove( opt_lstr, pos );
+	    }
+	pos = pos - 1;
+	};
+    y2milestone( "key=%1 val:%2", opt_list[size(opt_list)-1,`query_key]:"",
+                 mergestring( opt_lstr, "," ) );
+    old_state[opt_list[size(opt_list)-1,`query_key]:""] = 
+	mergestring( opt_lstr, "," );
+    y2milestone( "old_state=%1", old_state );
 
     UI::OpenDialog( `opt(`decorated), 
                     `HBox(
@@ -448,7 +527,8 @@ only sense when you activate the option mounting by volume label.");
 
     UI::ChangeWidget( `id(`mt_group), `CurrentButton, new["mountby"]:`device );
     UI::ChangeWidget( `id(`label), `Enabled, 
-                      FileSystems::MountLabel( new["used_fs"]:`unknown ));
+                      FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
+			  !new["crypt_fs"]:false );
     UI::ChangeWidget( `id(`uuid), `Enabled, 
                       (new["format"]:false || size(new["uuid"]:"")>0) &&
 			  FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
@@ -460,7 +540,12 @@ only sense when you activate the option mounting by volume label.");
     UI::ChangeWidget( `id(`vol_label), `ValidChars, 
                       FileSystems::nchars + "-._:" );
     UI::ChangeWidget( `id(`vol_label), `Value, new["label"]:"" );
-	      
+
+    foreach( `key, `value, old_state,
+	``{
+	UI::ChangeWidget( `id(key), `Value, value );
+	});
+
     symbol ret = `ok;
     repeat
 	{
@@ -495,7 +580,7 @@ is %1. Volume label got truncated to thsi size."), max_len ));
 	    if( new["mountby"]:`device == `label && size(new["label"]:"")==0 )
 		{
 		ret = `again;
-		UI::ErrorPopup( _("You have to provide a volume labe if you want to moutnt by label"));
+		UI::ErrorPopup( _("You have to provide a volume label if you want to mount by label"));
 		continue;
 		}
 	    if( new["mountby"]:`device == `label && 
@@ -504,6 +589,52 @@ is %1. Volume label got truncated to thsi size."), max_len ));
 		ret = `again;
 		UI::ErrorPopup( _("This volume label is already in use. Select a different one."));
 		continue;
+		}
+	    map new_state = $[];
+	    string text = "";
+	    string new_fstopt = "";
+	    foreach( `entry, opt_list, 
+		``{
+		text = "";
+		any value = UI::QueryWidget( `id(entry[`query_key]:""), `Value );
+		new_state[entry[`query_key]:""] = value;
+		if( entry[`type]:`text == `boolean )
+		    {
+		    text = entry[`str_opt,"default"]:"";
+		    if( value == true && haskey( entry[`str_opt]:$[], 1 ))
+			{
+			text = entry[`str_opt,1]:"";
+			}
+		    else if( value == false && haskey( entry[`str_opt]:$[], 0 ))
+			{
+			text = entry[`str_opt,0]:"";
+			}
+		    }
+		else
+		    {
+		    if( size(value)>0 )
+			{
+			text = sformat( entry[`str_opt]:"%1", value );
+			}
+		    }
+		if( size(text)>0 )
+		    {
+		    if( size(new_fstopt)>0 )
+			new_fstopt = new_fstopt + ",";
+		    new_fstopt = new_fstopt + text;
+		    }
+		});
+	    y2milestone( "new_state=%1", new_state );
+	    y2milestone( "old_fstopt=%1 new_fstopt=%2", old["fstopt"]:"",
+	                 new_fstopt );
+	    if( old_state!=new_state && old["fstopt"]:"" != new_fstopt )
+		{
+		if( !new["format"]:false && !new["create"]:false &&
+		    !haskey( new, "ori_fstopt" ) )
+		    {
+		    new["ori_fstopt"] = old["fstopt"]:"";
+		    }
+		new["fstopt"] = new_fstopt;
 		}
 	    }
 	} until ( ret == `ok || ret == `cancel );
@@ -519,181 +650,183 @@ is %1. Volume label got truncated to thsi size."), max_len ));
    * @return term the term contains a ComboBox with the different filesystems
    */
 global define FileSystemsComboBox( map new_val , map file_systems  ) ``{
-      
-      map fs_sel = $[];
-      list filesystems = [ ];
-      boolean is_swap = new_val["fsid"]:0 == Partitions::fsid_swap;
-      
-      y2debug( "new=%1 swap=%2", new_val, is_swap );
-      foreach ( `file_system_name , `file_system_map , file_systems , ``{
-	  if( lookup( file_system_map, `supports_format, false ) )
-	      {
-	      fs_sel[file_system_name] = $[];
-	      fs_sel[file_system_name,"text"] = file_system_map[`name]:"Ext2";
-	      if( is_swap )
-		  fs_sel[file_system_name,"selected"] = file_system_name == `swap;
-	      else
-		  fs_sel[file_system_name,"selected"] = 
-		      new_val["used_fs"]:`reiserfs == file_system_name;
-	      }
-	  });
-      y2debug( "fs_sel=%1", fs_sel );
-      if( haskey( fs_sel, `reiser ) &&
-          size(filter( `k, `e, fs_sel, ``(e["selected"]:false) ))==0 )
-	  {
-	  fs_sel[`reiser,"selected"] = true;
-	  }
-      foreach( `fs_type, `entry, fs_sel, ``{
-	  if( fs_type != `swap )
-	      filesystems = add( filesystems, 
-	                         `item(`id(fs_type), entry["text"]:"Ext2", entry["selected"]:false ));
-	  });
-      if( haskey( fs_sel, `swap ))
-	  {
-	  filesystems = add( filesystems, `item( `id(`swap), fs_sel[`swap,"text"]:"Swap", 
-	                                         fs_sel[`swap,"selected"]:false ));
-	  }
-      
-      return `VBox(
-		  
-		   `ReplacePoint( `id(`type_dlg_rp), `ComboBox(`id(`fs), `opt(`hstretch, `notify), _("File &system"), filesystems )),
-		   //`VSpacing(0.7),
-		   `PushButton( `id(`fs_options ),`opt(`hstretch) ,  _("O&ptions") ),
-		   `VSpacing(0.7),
-		   `Left(`CheckBox(`id(`crypt_fs), _("&Encrypt file system"), lookup ( new_val , "crypt_fs" , false ) ))
-		   );		  
-  }
-  
-  /**
-   * Dialogpart: Filesystem ID
-   * @parm new_val map that contains a partition
-   * @parm file_systems filesystem definitions
-   * @return term the term contains a ComboBox that allow the user to  edit the filesystem ID
-   */
+
+    map fs_sel = $[];
+    list filesystems = [ ];
+    boolean is_swap = new_val["fsid"]:0 == Partitions::fsid_swap;
+
+    y2debug( "new=%1 swap=%2", new_val, is_swap );
+    foreach ( `file_system_name , `file_system_map , file_systems , 
+	``{
+	if( lookup( file_system_map, `supports_format, false ) )
+	    {
+	    fs_sel[file_system_name] = $[];
+	    fs_sel[file_system_name,"text"] = file_system_map[`name]:"Ext2";
+	    if( is_swap )
+		fs_sel[file_system_name,"selected"] = file_system_name == `swap;
+	    else
+		fs_sel[file_system_name,"selected"] = 
+	    new_val["used_fs"]:`reiserfs == file_system_name;
+	    }
+	});
+    y2debug( "fs_sel=%1", fs_sel );
+    if( haskey( fs_sel, `reiser ) &&
+	size(filter( `k, `e, fs_sel, ``(e["selected"]:false) ))==0 )
+	{
+	fs_sel[`reiser,"selected"] = true;
+	}
+    foreach( `fs_type, `entry, fs_sel, 
+	``{
+	if( fs_type != `swap )
+	    filesystems = add( filesystems, 
+		`item(`id(fs_type), entry["text"]:"Ext2", entry["selected"]:false ));
+	});
+    if( haskey( fs_sel, `swap ))
+	{
+	filesystems = add( filesystems, 
+	    `item( `id(`swap), fs_sel[`swap,"text"]:"Swap", 
+		    fs_sel[`swap,"selected"]:false ));
+	}
+
+    return `VBox(
+	    `ReplacePoint( `id(`type_dlg_rp), `ComboBox(`id(`fs), `opt(`hstretch, `notify), _("File &system"), filesystems )),
+	    //`VSpacing(0.7),
+	    `PushButton( `id(`fs_options ),`opt(`hstretch) ,  _("O&ptions") ),
+	    `VSpacing(0.7),
+	    `Left(`CheckBox(`id(`crypt_fs), _("&Encrypt file system"), lookup ( new_val , "crypt_fs" , false ) ))
+	    );		  
+}
+
+/**
+ * Dialogpart: Filesystem ID
+ * @parm new_val map that contains a partition
+ * @parm file_systems filesystem definitions
+ * @return term the term contains a ComboBox that allow the user to  edit the filesystem ID
+ */
 global define FsidComboBox( map new_val, map file_systems  ) 
     ``{
-    list items 	= [];
-    list added_items	= [];
-    list added_fsids   = [];
-    foreach( `fs_name , `fs_map,  file_systems , ``{
-	  
+    list items = [];
+    list added_items = [];
+    list added_fsids = [];
+    foreach( `fs_name, `fs_map, file_systems, 
+	``{
 	string fsid_item =  fs_map[`fsid_item]:" ";
-	if( ! contains( added_items, fsid_item ))
+	if( !contains( added_items, fsid_item ))
 	    {
 	    items = add( items, 
-	                 `item( `id(fsid_item), fsid_item, 
-			        fs_map[`fsid]:Partitions::fsid_swap == 
-				    new_val["fsid"]:0));
-	    added_fsids = add( added_fsids, 
-	                       fs_map[`fsid]:Partitions::fsid_swap );
+		`item( `id(fsid_item), fsid_item, 
+			fs_map[`fsid]:0 == new_val["fsid"]:0));
+	    added_fsids = add( added_fsids, fs_map[`fsid]:0 );
 	    added_items = add( added_items, fsid_item );
 	    }
-	  });
-      
-    if( new_val["fsid"]:0 != 0 &&
-        !contains( added_fsids, new_val["fsid"]:0 ) )
+	});
+
+    integer id = new_val["fsid"]:0;
+    if( id != 0 && !contains( added_fsids, id ) )
 	{
-	items = add( items, `item( sformat("%1", new_val["fsid"]:0), true) );
+	string part_id = Partitions::ToHexString(id) + " " +
+			 Partitions::FsIdToString(id);
+	items = add( items, `item( `id(part_id), part_id, true ));
 	}
-      
+
     return( `ComboBox(`id(`fsid_point), `opt(`notify,`editable, `hstretch), 
-		      _("File system &ID:"), items ));
+	    _("File system &ID:"), items ));
     };
-  
-  
-  /**
-   * Dialogpart: Size Dialog
-   * @parm new_val map that contains a partition
-   * @parm edit_size flag 
-   * @return term the term contains two TextEntries or to Labels with the start and the end cylinder of
-   * the partition in new_val
-   */
-  global define SizeDlg( map new_val , integer cyl_size , boolean edit_size ) ``{
-      
-      
-      string start_cyl = sformat( "%1", select(lookup( new_val, "region", []), 0, 0));
-      string end_part  = sformat( "%1", select(lookup( new_val, "region", []), 0, 0) +
-				  select(lookup( new_val, "region", []), 1,1) -1 );
 
-      float mb_cyl_size   =  ( tofloat(cyl_size) /1024.0 /1024.0 );
-      string str_cyl_size =  substring( sformat( "%1", mb_cyl_size ), 0, 4);
 
-  
-      if( lookup ( new_val , "create" , false ) && edit_size )
-      {		
-	  return `Frame ( _("Size"),
-			  `VBox(
-				`Left(`Label(_("Cylinder size: ")+ str_cyl_size + " M" )),
-				`VSpacing(0.5),
-				// popup create partition: Description Input field
-				`TextEntry(`id(`start_cyl), _("S&tart cylinder:"), start_cyl ),
-				`VSpacing(0.5),
-				// popup create partition: Description Inputfield +9M means add 9 MB
-				`TextEntry(`id(`end_part), _("En&d:  (9 or +9M or +3.2GB)"), end_part)
-				)
-			  );
-      }
-      else
-      {
-	  return ( 
-		  `HBox(      
-			// popup edit existing partition: Description
-			`Left(`Label( _("Type of partition: ")
-				      // popup edit existing partition: Description
-				      +  _("\nStart cylinder:")
-				      // popup edit existing partition: Description
-				      +  _("\nEnd cylinder:  ") )),
-			`Left(`Label( lookup( new_val , "fstype", "") 
-				      + "\n " + start_cyl
-				      + "\n " + end_part ))
-			));
-      }
-  }
-  
+/**
+ * Dialogpart: Size Dialog
+ * @parm new_val map that contains a partition
+ * @parm edit_size flag 
+ * @return term the term contains two TextEntries or to Labels with the start and the end cylinder of
+ * the partition in new_val
+ */
+global define SizeDlg( map new_val , integer cyl_size , boolean edit_size ) ``{
 
-  global define FormatDlg( map new_val, map file_systems ) 
-    ``{
-      y2debug( "FormatDlg val:%1", new_val );
 
-      term fsid = `Empty();
+    string start_cyl = sformat( "%1", select(lookup( new_val, "region", []), 0, 0));
+    string end_part  = sformat( "%1", select(lookup( new_val, "region", []), 0, 0) +
+	    select(lookup( new_val, "region", []), 1,1) -1 );
 
-      if( new_val["type"]:`primary != `lvm &&
-          new_val["type"]:`primary != `sw_raid &&
-	  !Partitions::no_fsid_menu )
-	  {
-	  fsid = `VBox( 
-		    `HBox( `HSpacing(2),
-			   `ReplacePoint( `id(`fsid_dlg_rp),  
-					  FsidComboBox( new_val, file_systems ))
-			 ),
+    float mb_cyl_size   =  ( tofloat(cyl_size) /1024.0 /1024.0 );
+    string str_cyl_size =  substring( sformat( "%1", mb_cyl_size ), 0, 4);
+
+
+    if( lookup ( new_val , "create" , false ) && edit_size )
+    {		
+	return `Frame ( _("Size"),
+		`VBox(
+		    `Left(`Label(_("Cylinder size: ")+ str_cyl_size + " M" )),
 		    `VSpacing(0.5),
-		    `VStretch() 
-		    );
-	  }
-      else
-	  {
-	  fsid = `VSpacing(0.5);
-	  }
+		    // popup create partition: Description Input field
+		    `TextEntry(`id(`start_cyl), _("S&tart cylinder:"), start_cyl ),
+		    `VSpacing(0.5),
+		    // popup create partition: Description Inputfield +9M means add 9 MB
+		    `TextEntry(`id(`end_part), _("En&d:  (9 or +9M or +3.2GB)"), end_part)
+		    )
+		);
+    }
+    else
+    {
+	return ( 
+		`HBox(      
+		    // popup edit existing partition: Description
+		    `Left(`Label( _("Type of partition: ")
+			    // popup edit existing partition: Description
+			    +  _("\nStart cylinder:")
+			    // popup edit existing partition: Description
+			    +  _("\nEnd cylinder:  ") )),
+		    `Left(`Label( lookup( new_val , "fstype", "") 
+			    + "\n " + start_cyl
+			    + "\n " + end_part ))
+		    ));
+    }
+}
 
-      return `Frame (substring(_("2:Format"),2),
-		     `RadioButtonGroup(`id(`format),
-				       `VBox(
-					     `VSpacing(1),
-					     // popup create partition: Dont format partition
-					     `Left(`RadioButton(`id(`format_false), `opt(`notify),_("Do &not format"), ! lookup(new_val, "format", false)  )),
-					     fsid,
-					     // popup create partition: Format partition (Vocative)
-					     `Left(`RadioButton(`id(`format_true), `opt(`notify),_("&Format"),  lookup(new_val, "format", false) )),
-					     `HBox(
-						   `HSpacing(2),
-						   FileSystemsComboBox( new_val , file_systems )
-						   //filesystems
-						   ),
-					     `VSpacing(0.5)
-					     )));
+
+global define FormatDlg( map new_val, map file_systems ) 
+    ``{
+    y2debug( "FormatDlg val:%1", new_val );
+
+    term fsid = `Empty();
+
+    if( new_val["type"]:`primary != `lvm &&
+	    new_val["type"]:`primary != `sw_raid &&
+	    !Partitions::no_fsid_menu )
+	{
+	fsid = `VBox( 
+		`HBox( `HSpacing(2),
+		    `ReplacePoint( `id(`fsid_dlg_rp),  
+			FsidComboBox( new_val, file_systems ))
+		    ),
+		`VSpacing(0.5),
+		`VStretch() 
+		);
+	}
+    else
+	{
+	fsid = `VSpacing(0.5);
+	}
+
+    return `Frame (substring(_("2:Format"),2),
+	    `RadioButtonGroup(`id(`format),
+		`VBox(
+		    `VSpacing(1),
+		    // popup create partition: Dont format partition
+		    `Left(`RadioButton(`id(`format_false), `opt(`notify),
+		                       _("Do &not format"), !new_val["format"]:false )),
+		    fsid,
+		    // popup create partition: Format partition (Vocative)
+		    `Left(`RadioButton(`id(`format_true), `opt(`notify),
+		                        _("&Format"), new_val["format"]:false )),
+		    `HBox(
+			`HSpacing(2),
+			FileSystemsComboBox( new_val , file_systems )),
+			`VSpacing(0.5)
+					 )));
 
 
-  }
+    }
 
   
 

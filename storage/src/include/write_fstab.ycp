@@ -56,7 +56,7 @@ global define onepartition2fstab (map part)
 	{
 	spec = sformat("UUID=%1", part["uuid"]:"" );
 	}
-    y2milestone( "spec=%1", spec );
+    y2debug( "spec=%1", spec );
     string  mount_point = part["mount"]:"";
     integer fsid = part["fsid"]:0;
 
@@ -93,7 +93,7 @@ global define onepartition2fstab (map part)
 	    {
 	    passno = 2;
 	    }
-	else
+	else if( Mode::initial )
 	    {
 	    mount_point = "/data" + other_nr;
 	    // Don't mount and fsck this filesystem during boot, its
@@ -150,16 +150,18 @@ global define onepartition2fstab (map part)
 	}
 
     map ret = $[ "spec":spec, 
-                 "file":mount_point, 
+                 "mount":mount_point, 
 		 "vfstype":vfstype,
                  "mntops":mntops, 
 		 "freq":freq, 
+		 "device":part["device"]:"", 
 		 "passno":passno ];
 
     if( part["fstabline"]:0 != 0 )
 	{
 	ret["line"] = part["fstabline"]:0;
 	}
+    y2milestone( "ret=%1", ret );
     return( ret );
     };
 
@@ -174,9 +176,9 @@ global define void allpartitions2fstab( map fstab, list partitions )
 	``{
 	map fstabentry = onepartition2fstab(partition);
 
-	if (size(fstabentry)>0 && size(fstabentry["file"]:"")>0)
+	if (size(fstabentry)>0 && size(fstabentry["mount"]:"")>0)
 	    {
-	    string mount_point = fstabentry["file"]:"";
+	    string mount_point = fstabentry["mount"]:"";
 	    // mount_point not enough !! ( two swap mount points )!!
 	    if( mount_point=="swap" )
 		{
@@ -202,6 +204,7 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 	{
 	tg = AddFstabInfo( tg, true );
 	}
+    SCR::Write(.dumpto.tmp.targetMap_wfs, tg );
     map fstab = $[];
     list dellines = [];
     string dir = "";
@@ -217,7 +220,10 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 				   ( p["delete"]:false ||
 				     p["crypt_fs"]:false ||
 				     size(p["mount"]:"")==0 )));
-	dellines = union( dellines, maplist( `p, delpart, ``(p["fstabline"]:0 )));
+	y2milestone( "partitions:%1", partitions );
+	y2milestone( "delpart:%1", delpart );
+	dellines = union( dellines, 
+			  maplist( `p, delpart, ``(p["fstabline"]:0 )));
 	});
 
     list fstablist = maplist (`k, `v, fstab, ``(v));
@@ -226,19 +232,19 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
     if( Mode::initial )
 	{
 	// proc
-	fstab["/proc"] = $["spec":"proc", "file":"/proc", "vfstype":"proc",
+	fstab["/proc"] = $["spec":"proc", "mount":"/proc", "vfstype":"proc",
 			   "mntops":"defaults", "freq":0, "passno":0];
 
 	// usbdevfs added with noauto
 	if (Hotplug::haveUSB)
 	    {
-	    fstab["/proc/bus/usb"] = $["spec":"usbdevfs", "file":"/proc/bus/usb", 
+	    fstab["/proc/bus/usb"] = $["spec":"usbdevfs", "mount":"/proc/bus/usb", 
 				       "vfstype":"usbdevfs", "mntops":"noauto", 
 				       "freq":0, "passno":0];
 	    }
 
 	// devpts
-	fstab["/dev/pts"] = $["spec":"devpts", "file":"/dev/pts", 
+	fstab["/dev/pts"] = $["spec":"devpts", "mount":"/dev/pts", 
 	                      "vfstype":"devpts", "mntops":"defaults", 
 			      "freq":0, "passno":0];
 	fstablist = union( fstablist, maplist(`k, `v, fstab, ``(v)));
@@ -262,7 +268,7 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 		}
 	    SCR::Execute(.target.symlink, media, zfile);
 
-	    fstab[zfile] = $["spec":""+tdevice+"4", "file":media, 
+	    fstab[zfile] = $["spec":""+tdevice+"4", "mount":media, 
 			     "vfstype":"auto", "mntops":"noauto,user", 
 			     "freq":0, "passno":0];
 	    zipnum = zipnum + 1;
@@ -290,8 +296,14 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 		}
 	    SCR::Execute(.target.symlink, media, cdmount);
 
-	    fstab[cdmount] = $["spec":cd, "file":media, "vfstype":"auto",
+	    fstab[cdmount] = $["spec":cd, "mount":media, "vfstype":"auto",
 			  "mntops":"ro,noauto,user,exec", "freq":0, "passno":0];
+	    if( Storage::SaneConsoleEncoding() != "iso8859-1" )
+		{
+		fstab[cdmount,"mntops"] = fstab[cdmount,"mntops"]:"" +
+		                          ",iocharset=" + 
+					  Storage::SaneConsoleEncoding();
+		}
 	    });
 	fstablist = union( fstablist, maplist (`k, `v, fstab, ``(v)));
 	fstab = $[];
@@ -320,7 +332,7 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 		    fdname = Installation::destdir + fdname;
 		    }
 		SCR::Execute(.target.symlink, medianame, fdname);
-		fstab[medianame] = $[ "spec":dev_name, "file":medianame, 
+		fstab[medianame] = $[ "spec":dev_name, "mount":medianame, 
 				      "vfstype":"auto", 
 				      "mntops":"noauto,user,sync", 
 				      "freq":0, "passno":0 ];
@@ -346,25 +358,30 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 
     foreach( `entry, fstablist,
 	``{
-	list fstlist = [ entry["spec"]:"", entry["file"]:"", entry["vfstype"]:"",
-	                 entry["mntops"]:"", 
+	list fstlist = [ entry["spec"]:"", entry["mount"]:"", 
+	                 entry["vfstype"]:"", entry["mntops"]:"", 
 			 sformat("%1",entry["freq"]:0),
 			 sformat("%1",entry["passno"]:0) ];
 	if( entry["line"]:0 > 0 )
 	    {
-	    map part = Storage::GetPartition( tg, entry["spec"]:"" );
+	    map part = Storage::GetPartition( tg, entry["device"]:(entry["spec"]:"") );
 	    if( part["format"]:false || 
-	        part["mountby"]:`device!=part["ori_mountby"]:`device ||
-	        part["ori_mount"]:""!=part["mount"]:"" ||
-	        part["ori_fstopt"]:""!=part["fstopt"]:"" ||
-	        part["ori_nr"]:""!=part["nr"]:"" ||
-	        (part["mountby"]:`device==`label && part["ori_label"]:"" != part["label"]:""))
+	        (haskey(part,"ori_mountby") &&
+	         part["mountby"]:`device!=part["ori_mountby"]:`device) ||
+		(haskey(part,"ori_mount") && 
+		 part["ori_mount"]:""!=part["mount"]:"") ||
+		(haskey(part,"ori_fstopt") && 
+	         part["ori_fstopt"]:""!=part["fstopt"]:"") ||
+		(haskey(part,"ori_nr") &&
+	         part["ori_nr"]:""!=part["nr"]:"") ||
+	        (part["mountby"]:`device==`label && haskey(part,"ori_label") &&
+		 part["ori_label"]:"" != part["label"]:""))
 		{
 		integer field = 0;
 		while( field<4 )
 		    {
 		    AsciiFile::ChangeLineField( fstab, entry["line"]:0, field, 
-		                                fstlist["field"]:"" );
+		                                fstlist[field]:"" );
 		    field = field+1;
 		    }
 		}
@@ -373,7 +390,7 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 	    {
 	    AsciiFile::AppendLine( fstab, fstlist );
 	    }
-	dir = entry["file"]:"";
+	dir = entry["mount"]:"";
 	if( substring( dir, 0, 1 )== "/" )
 	    {
 	    if( Installation::destdir != "/" )
@@ -400,7 +417,7 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
     };
 
 
-global define onepartition2cryptotab( map partition )
+global define map onepartition2cryptotab( map partition )
     ``{
     string  partitionName = partition["device"]:"";
     string  mountPoint    = partition["mount"]:"";
@@ -423,23 +440,23 @@ global define onepartition2cryptotab( map partition )
 
     string used_fs_str = FileSystems::GetMountString( used_fs, "auto" );
 
-    ret = $[ "file"	:	partitionName,
-	     "loop"	:	loop_dev,
-	     "mount"	:	mountPoint,
-	     "vfstype":	used_fs_str,
-	     "opt1"	:	"twofish",
-	     "opt2"	:	partition["fsopts"]:"noatime" ];
+    map ret = $[ "device"  : partitionName,
+		 "loop"    : loop_dev,
+		 "mount"   : mountPoint,
+		 "vfstype" : used_fs_str,
+		 "opt1"    : "twofish",
+		 "opt2"    : partition["fsopts"]:"noatime" ];
 
-    if( part["crtabline"]:0 != 0 )
+    if( partition["crtabline"]:0 != 0 )
 	{
 	ret["line"] = part["crtabline"]:0;
 	}
+    y2milestone( "ret=%1" );
     return( ret );
     };
 
 
-
-global define write_cryptotab (map targets)
+global define void write_cryptotab (map targets)
     ``{
     map crtab = $[];
     list dellines = [];
@@ -454,7 +471,7 @@ global define write_cryptotab (map targets)
 
 	    if( size(cryptotabentry)>0 )
 		{
-		crtab[partitions["mount"]:""] = cryptotabentry;
+		crtab[partition["mount"]:""] = cryptotabentry;
 		}
 	    });
 	list delpart = filter( `p, partitions, 
@@ -483,22 +500,27 @@ global define write_cryptotab (map targets)
 
     foreach( `entry, crtablist,
 	``{
-	list fstlist = [ entry["loop"]:"", entry["file"]:"", entry["mount"]:"",
-	                 entry["vfstype"]:"", entry["opt1"]:"", 
-			 entry["opt2"]:"" ];
+	list fstlist = [ entry["loop"]:"", entry["device"]:"", 
+	                 entry["mount"]:"", entry["vfstype"]:"", 
+			 entry["opt1"]:"", entry["opt2"]:"" ];
 	if( entry["line"]:0 > 0 )
 	    {
-	    map part = Storage::GetPartition( tg, entry["spec"]:"" );
+	    map part = Storage::GetPartition( tg, entry["device"]:"" );
 	    if( part["format"]:false ||
-		part["ori_mount"]:""!=part["mount"]:"" ||
-		part["ori_fstopt"]:""!=part["fstopt"]:"" ||
-		part["ori_nr"]:""!=part["nr"]:"" )
+		(haskey(part,"ori_mount") && 
+		 part["ori_mount"]:""!=part["mount"]:"") ||
+		(haskey(part,"ori_fstopt") && 
+	         part["ori_fstopt"]:""!=part["fstopt"]:"") ||
+		(haskey(part,"ori_nr") &&
+	         part["ori_nr"]:""!=part["nr"]:"") ||
+	        (part["mountby"]:`device==`label && haskey(part,"ori_label") &&
+		 part["ori_label"]:"" != part["label"]:""))
 		{
 		integer field = 0;
 		while( field<6 )
 		    {
 		    AsciiFile::ChangeLineField( crtab, entry["line"]:0, field, 
-						fstlist["field"]:"" );
+						fstlist[field]:"" );
 		    field = field+1;
 		    }
 		}

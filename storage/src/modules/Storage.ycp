@@ -31,6 +31,7 @@
   import "StorageDevices";
   import "FileSystems";
   import "AsciiFile";
+  import "Console";
 
   textdomain "storage";
   
@@ -142,90 +143,92 @@ global define map GetTargetMap()
 //  add info gotten from /etc/fstab to targetMap
 global define map AddFstabInfo( map target, boolean lineno )
     ``{
+    y2milestone( "lineno=%1", lineno );
     map fstab = Partitions::GetFstab( "/etc/fstab" );
     map crtab = Partitions::GetCrypto( "/etc/cryptotab" );
     foreach( `diskdev, `disk, target,
 	``{
+	list new_part = [];
 	foreach( `part, disk["partitions"]:[],
 	    ``{
 	    list rem = [];
 	    if( lineno )
 		{
-		rem = [ "fstabline", "cryptline" ];
+		rem = [ "fstabline", "crtabline" ];
 		}
 	    else
 		{
 		rem = [ "mountby", "fstopt" ];
 		}
 	    part = filter( `key, `val, part, ``(!contains( rem, key )));
-	    if( size(part["mount"]:"")>0 )
+	    string mp = part["mount"]:"";
+	    if( size(part["ori_mount"]:"")>0 )
 		{
-		if( !part["crypt_fs"]:false )
+		mp = part["ori_mount"]:"";
+		}
+	    if( size(mp)>0 )
+		{
+		list lines = AsciiFile::FindLineField( fstab, 1, mp );
+		if( size(lines)>0 )
 		    {
-		    list lines = AsciiFile::FindLineField( fstab, 1, 
-							   part["mount"]:"" );
-		    if( size(lines)>0 )
+		    if( size(lines)>1 )
 			{
-			if( size(lines)>1 )
+			string uuid = "UUID=" + part["uuid"]:"";
+			string label = "LABEL=" + part["label"]:"";
+			string device = part["device"]:"";
+			map tlines = AsciiFile::GetLines( fstab, lines );
+			map nlist = filter( `num, `line, tlines,
+					    ``( line["fields",0]:"" == device ||
+						line["fields",0]:"" == uuid ||
+						line["fields",0]:"" == label ));
+			if( size(nlist)>0 )
 			    {
-			    string uuid = "UUID=" + part["uuid"]:"";
-			    string label = "LABEL=" + part["label"]:"";
-			    string device = part["device"]:"";
-			    map tlines = AsciiFile::GetLines( fstab, lines );
-			    map nlist = filter( `num, `line, tlines,
-						``( line["fields",0]:"" == device ||
-						    line["fields",0]:"" == uuid ||
-						    line["fields",0]:"" == label ));
-			    if( size(nlist)>0 )
-				{
-				lines = maplist( `num, `line, nlist, ``(num));
-				}
+			    lines = maplist( `num, `line, nlist, ``(num));
 			    }
-			if( lineno )
+			}
+		    if( lineno )
+			{
+			part["fstabline"] = lines[0]:-1;
+			}
+		    else
+			{
+			map entry = AsciiFile::GetLine( fstab, lines[0]:-1 );
+			if( entry["fields",3]:"defaults" != "defaults" )
 			    {
-			    part["fstabline"] = lines[0]:-1;
+			    part["fstopt"] = entry["fields",3]:"";
 			    }
-			else
+			if( find(entry["fields",0]:"", "UUID=") > -1 )
 			    {
-			    map entry = AsciiFile::GetLine( fstab, lines[0]:-1 );
-			    if( entry["fields",3]:"defaults" != "defaults" )
-				{
-				part["fstopt"] = entry["fields",3]:"";
-				}
-			    if( find(entry["fields",0]:"", "UUID=") > -1 )
-				{
-				part["mountby"] = `uuid;
-				}
-			    else if( find(entry["fields",0]:"", "LABEL=") > -1 )
-				{
-				part["mountby"] = `label;
-				}
+			    part["mountby"] = `uuid;
+			    }
+			else if( find(entry["fields",0]:"", "LABEL=") > -1 )
+			    {
+			    part["mountby"] = `label;
 			    }
 			}
 		    }
-		else
+		lines = AsciiFile::FindLineField( crtab, 2, mp );
+		if( size(lines)>0 )
 		    {
-		    list lines = AsciiFile::FindLineField( crtab, 2, 
-							   part["mount"]:"" );
-		    if( size(lines)>0 )
+		    if( lineno )
 			{
-			if( lineno )
+			part["crtabline"] = lines[0]:-1;
+			}
+		    else
+			{
+			map entry = AsciiFile::GetLine( crtab, lines[0]:-1 );
+			if( entry["fields",5]:"defaults" != "defaults" )
 			    {
-			    part["cryptline"] = lines[0]:-1;
-			    }
-			else
-			    {
-			    map entry = AsciiFile::GetLine( crtab, lines[0]:-1 );
-			    if( entry["fields",5]:"defaults" != "defaults" )
-				{
-				part["fstopt"] = entry["fields",5]:"";
-				}
+			    part["fstopt"] = entry["fields",5]:"";
 			    }
 			}
 		    }
 		}
+	    y2milestone( "part=%1", part );
+	    new_part = add( new_part, part );
 	    });
 	target[diskdev] = disk;
+	target[diskdev,"partitions"] = new_part;
 	});
     return( target );
     }
@@ -234,15 +237,17 @@ global define map AddFstabInfo( map target, boolean lineno )
 global define map AddSwapMp( map target )
     ``{
     list swaps = [];
-    if( Mode::normal )
+    if( !Mode::initial )
 	swaps = SwappingPartitions();
     y2milestone( "swaps %1", swaps );
     foreach( `diskdev, `disk, target,
 	``{
 	 disk["partitions"] = maplist( `part, disk["partitions"]:[], 
 				 ``{
-				 if( part["fsid"]:0 == Partitions::fsid_swap ||
-				     contains( swaps, part["device"]:"" ))
+				 if( (Mode::initial && 
+				      part["fsid"]:0==Partitions::fsid_swap) ||
+				     (!Mode::initial &&
+				      contains( swaps, part["device"]:"" )))
 				     {
 				     part["mount"] = "swap";
 				     }
@@ -303,19 +308,39 @@ global define list AddMountPointsForWinParts( list partitions, boolean primary )
 	    }
 
 	if( !haskey( partition, "mount") && !partition["delete"]:false && 
-	    ((partnum<5)==primary) )
+	    ((partnum<5)==primary) && 
+	    contains(union(union(Partitions::fsid_dostypes,
+				 Partitions::fsid_ntfstypes),
+			   Partitions::fsid_wintypes), fsid ) &&
+	    (partition["used_fs"]:`none==`fat32||partition["used_fs"]:`none==`ntfs))
 	    {
-	    if( contains( Partitions::fsid_wintypes , fsid ) || 
-		contains( Partitions::fsid_ntfstypes, fsid))
+	    string mtops = "gid=users,umask=0002";
+	    string enc = "iso8859-1";
+	    string code = "437";
+	    if( (Console::encoding)>0 )
 		{
-		new_partition["mount"] = 
-		    "/windows/" + substring (foreign_ids, foreign_nr, 1);
-		foreign_nr = foreign_nr + 1;
+		enc = SaneConsoleEncoding();
 		}
+	    if( enc == "iso8859-2" )
+		{
+		code = "852";
+		}
+	    mntops = ",iocharset=" + enc + ",code=" + code;
+	    if( contains (Partitions::fsid_readonly, fsid))
+		{
+		mntops = "ro," + mntops;
+		}
+	    new_partition["fstopt"] = mntops;
 	    if( contains( Partitions::fsid_dostypes, fsid ))
 		{
 		new_partition["mount"] = 
 		    "/dos/" + substring (foreign_ids, foreign_nr, 1);
+		foreign_nr = foreign_nr + 1;
+		}
+	    else
+		{
+		new_partition["mount"] = 
+		    "/windows/" + substring (foreign_ids, foreign_nr, 1);
 		foreign_nr = foreign_nr + 1;
 		}
 	    }
@@ -324,6 +349,16 @@ global define list AddMountPointsForWinParts( list partitions, boolean primary )
 	});
     return new_partitions;
     };
+
+global define string SaneConsoleEncoding()
+    ``{
+    string enc = tolower(Console::encoding);
+    if( find( enc, "iso-" )==0 )
+	{
+	enc = "iso" + substring( enc, 4 );
+	}
+    return( enc );
+    }
 
 global define map AddMountPointsForWin( map targets )
     ``{

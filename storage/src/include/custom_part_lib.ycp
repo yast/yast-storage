@@ -308,7 +308,7 @@ global define check_mount_point( map targetMap, string dev, map part )
      **/
 global define map CheckOkMount( string dev, map old, map new )
     ``{
-    y2milestone( "CheckOkMount old:%2 new:%3", old, new );
+    y2milestone( "old:%2 new:%3", old, new );
     map ret = $[];
     ret["ok"] = true;
     new["mount"] = UI::QueryWidget(`id(`mount_point), `Value);
@@ -353,7 +353,7 @@ global define map CheckOkMount( string dev, map old, map new )
 	{
 	new = filter(`key, `value, new, ``( key != "fs_options"));
 	}
-    y2milestone( "CheckOkMount ret:%1 new:%2", ret, new );
+    y2milestone( "ret:%1 new:%2", ret, new );
     return( ret );
     };
 
@@ -366,7 +366,7 @@ global define map CheckCryptOk( map new )
     ``{
     map ret = $[];
     ret["ok"] = true;
-    y2milestone( "CheckCryptOk new:%1", new );
+    y2milestone( "new:%1", new );
     boolean crypt_fs = UI::QueryWidget(`id(`crypt_fs), `Value );
     new["crypt_fs"] = crypt_fs;
     if( crypt_fs && new["format"]:false )
@@ -383,7 +383,7 @@ global define map CheckCryptOk( map new )
 	    ret["ok"] = false;
 	    }
 	}
-    y2milestone( "CheckCryptOk ret:%1 new:%2", ret, new );
+    y2milestone( "ret:%1 new:%2", ret, new );
     return( ret );
     };
 
@@ -392,10 +392,10 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
     list not_used_mp = [];
     symbol used_fs = new["used_fs"]:`unknown;
     map selected_fs = file_systems[used_fs]:$[];
-    y2milestone( "HandleFsChanged init:%1 used_fs:%2 new:%3", 
-                 init, used_fs, new );
+    y2milestone( "init:%1 used_fs:%2 new:%3", init, used_fs, new );
 
-    UI::ChangeWidget(`id(`crypt_fs), `Enabled, selected_fs[`crypt]:false );
+    UI::ChangeWidget(`id(`crypt_fs), `Enabled, 
+                     new["format"]:false && selected_fs[`crypt]:false );
     if( !selected_fs[`crypt]:false )
 	{
 	UI::ChangeWidget(`id(`crypt_fs), `Value, false );
@@ -453,8 +453,7 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 					    map file_systems, map old, 
 					    map new )
     ``{
-    y2milestone( "HandlePartWidgetChanges init:%1 ret:%2 new:%3", 
-                 init, ret, new );
+    y2milestone( "init:%1 ret:%2 new:%3", init, ret, new );
     symbol used_fs = new["used_fs"]:`unknown;
     map selected_fs = file_systems[used_fs]:$[];
     /////////////////////////////////////////////////////////
@@ -486,22 +485,27 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	}
     if( init || ret == `fs )
 	{
-	symbol used_fs  = UI::QueryWidget(`id(`fs), `Value);
+	symbol new_fs  = UI::QueryWidget(`id(`fs), `Value);
 
-	if( init || new["used_fs"]:`unknown != used_fs )
+	y2milestone( "ret==fs init=%1 used_fs:%2 new_fs:%3", init, used_fs,
+	             new_fs );
+	if( init || used_fs != new_fs )
 	    {
+	    used_fs = new_fs;
 	    map selected_fs = file_systems[used_fs]:$[];
 	    new["used_fs"] = used_fs;
 
 	    HandleFsChanged( init, new, file_systems );
 
-	    new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
-	    if( UI::WidgetExists( `id(`fsid_point) ))
+	    if( !init )
 		{
-		UI::ChangeWidget( `id(`fsid_point), `Value, 
-				  selected_fs[`fsid_item]:"");
+		new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
+		if( UI::WidgetExists( `id(`fsid_point) ))
+		    {
+		    UI::ChangeWidget( `id(`fsid_point), `Value, 
+				      selected_fs[`fsid_item]:"");
+		    }
 		}
-
 	    }
 	}
     if( (init && UI::WidgetExists(`id(`fsid_point))) || ret == `fsid_point )
@@ -564,7 +568,7 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	}
     if( ret == `fstab_options )
 	{
-	FstabOptions( old, new );
+	FstabOptions( old, new, selected_fs );
 	}
     if( ret == `fs_options )
 	{
