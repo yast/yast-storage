@@ -51,9 +51,9 @@ protected:
   string Stderr_C;
   string Disk_C;
   string Label_C;
-  int Head_i;
-  int Cylinder_i;
-  int Sector_i;
+  unsigned Head_i;
+  unsigned Cylinder_i;
+  unsigned Sector_i;
   unsigned long ByteCyl_l;
   bool Changed_b;
   bool BsdLabel_b;
