@@ -2,10 +2,12 @@
 #include <iostream>
 #include <sstream>
 #include <iterator>
+#include <string.h>
 
 #include <ycp/y2log.h>
 
 #include "EvmsAccess.h"
+#include "AppUtil.h"
 
 EvmsObject::EvmsObject( object_handle_t obid ) 
     {
@@ -461,10 +463,26 @@ ostream& operator<<( ostream &str, const EvmsVolumeObject& obj )
     return( str );
     }
 
+int EvmsAccess::PluginFilterFunction( const char* plugin )
+    {
+    static char *ExcludeList[] = { "/ext2-", "/reiser-", "/jfs-", "/xfs-", 
+				   "/swap-" };
+    int ret = 0;
+    unsigned i = 0;
+    while( !ret && i<sizeof(ExcludeList)/sizeof(char*) )
+	{
+	ret = strstr( plugin, ExcludeList[i] )!=NULL;
+	i++;
+	}
+    y2milestone( "plugin %s ret:%d", plugin, ret );
+    return( ret );
+    }
+
 EvmsAccess::EvmsAccess()
     {
     y2debug( "begin Konstruktor EvmsAccess" );
     unlink( "/var/lock/evms-engine" );
+    evms_set_load_plugin_fct( PluginFilterFunction );
     int ret = evms_open_engine( NULL, (engine_mode_t)ENGINE_READWRITE, NULL, 
                                 EVERYTHING, NULL );
     y2debug( "evms_open_engine ret %d", ret );
@@ -474,20 +492,37 @@ EvmsAccess::EvmsAccess()
 	}
     else
 	{
-	handle_array_t* handle_p = 0;
-	ret = evms_get_object_list( (object_type_t)0, (data_type_t)0,
-				    (plugin_handle_t)0, (object_handle_t)0,
-				    (object_search_flags_t)0, &handle_p );
-	for( unsigned i=0; i<handle_p->count; i++ )
-	    {
-	    AddObject( handle_p->handle[i] );
-	    }
-	AddObjectRelations();
-	evms_free( handle_p );
+	RereadAllObjects();
 	}
     y2debug( "End Konstruktor EvmsAccess" );
     }
 
+void EvmsAccess::RereadAllObjects()
+    {
+    for( list<EvmsObject*>::iterator p=objects.begin(); p!=objects.end(); p++ )
+	{
+	delete *p;
+	}
+    objects.clear();
+
+    handle_array_t* handle_p = 0;
+    evms_get_object_list( (object_type_t)0, (data_type_t)0, (plugin_handle_t)0,
+                          (object_handle_t)0, (object_search_flags_t)0, 
+			  &handle_p );
+    for( unsigned i=0; i<handle_p->count; i++ )
+	{
+	AddObject( handle_p->handle[i] );
+	}
+    evms_free( handle_p );
+    evms_get_plugin_list( EVMS_REGION_MANAGER, (plugin_search_flags_t)0, 
+                          &handle_p );
+    for( unsigned i=0; i<handle_p->count; i++ )
+	{
+	AddObject( handle_p->handle[i] );
+	}
+    evms_free( handle_p );
+    AddObjectRelations();
+    }
 
 void EvmsAccess::AddObjectRelations()
     {
@@ -639,6 +674,776 @@ void EvmsAccess::ListContainer( list<const EvmsContainerObject*>& l ) const
 	    }
 	}
     y2milestone( "size %d", l.size() );
+    }
+
+plugin_handle_t EvmsAccess::GetLvmPlugin()
+    {
+    plugin_handle_t handle = 0;
+    for( list<EvmsObject*>::const_iterator Ptr_Ci = objects.begin(); 
+         Ptr_Ci != objects.end(); Ptr_Ci++ )
+	{
+	if( (*Ptr_Ci)->Type()==EVMS_PLUGIN && (*Ptr_Ci)->Name()=="LvmRegMgr" )
+	    {
+	    handle = (*Ptr_Ci)->Id();
+	    }
+	}
+    y2milestone( "handle %d", handle );
+    return( handle );
+    }
+
+object_handle_t EvmsAccess::FindUsingVolume( object_handle_t id )
+    {
+    object_handle_t handle = 0;
+    for( list<EvmsObject*>::const_iterator Ptr_Ci = objects.begin(); 
+         Ptr_Ci != objects.end(); Ptr_Ci++ )
+	{
+	if( (*Ptr_Ci)->Type()==EVMS_VOLUME && 
+	    ((EvmsVolumeObject*)*Ptr_Ci)->Consumes()->Id()==id )
+	    {
+	    handle = (*Ptr_Ci)->Id();
+	    }
+	}
+    y2milestone( "%d used by handle %d", id, handle );
+    return( handle );
+    }
+
+const EvmsContainerObject* EvmsAccess::FindContainer( const string& name )
+    {
+    EvmsContainerObject* ret_pi = NULL;
+    for( list<EvmsObject*>::const_iterator Ptr_Ci = objects.begin(); 
+         Ptr_Ci != objects.end(); Ptr_Ci++ )
+	{
+	if( (*Ptr_Ci)->Type()==EVMS_CONTAINER && (*Ptr_Ci)->Name()==name )
+	    {
+	    ret_pi = (EvmsContainerObject*)*Ptr_Ci;
+	    }
+	}
+    y2milestone( "Container %s has id %d", name.c_str(), 
+                 ret_pi==NULL?0:ret_pi->Id() );
+    return( ret_pi );
+    }
+
+const EvmsDataObject* EvmsAccess::FindRegion( const string& container, 
+					      const string& name )
+    {
+    EvmsDataObject* ret_pi = NULL;
+    string rname = container + "/" + name;
+    for( list<EvmsObject*>::const_iterator Ptr_Ci = objects.begin(); 
+         Ptr_Ci != objects.end(); Ptr_Ci++ )
+	{
+	if( (*Ptr_Ci)->Type()==EVMS_REGION && (*Ptr_Ci)->Name()==rname )
+	    {
+	    ret_pi = (EvmsDataObject*)*Ptr_Ci;
+	    }
+	}
+    y2milestone( "Region %s in Container %s has id %d", name.c_str(), 
+                 container.c_str(), ret_pi==NULL?0:ret_pi->Id() );
+    return( ret_pi );
+    }
+
+bool EvmsAccess::CreateCo( const string& Container_Cv, unsigned long PeSize_lv,
+                           bool NewMeta_bv, list<string>& Devices_Cv )
+    {
+    int ret = 0;
+    y2milestone( "Container:%s PESize:%lu", Container_Cv.c_str(), PeSize_lv );
+    int count = 0;
+    Error_C = "";
+    CmdLine_C = "CreateCo " + Container_Cv + " PeSize " + dec_string(PeSize_lv);
+    CmdLine_C += " <";
+    for( list<string>::const_iterator p=Devices_Cv.begin(); p!=Devices_Cv.end();
+         p++ )
+        {
+	if( count>0 )
+	    CmdLine_C += ",";
+	CmdLine_C += *p;
+        y2milestone( "Device %d %s", count++, p->c_str());
+        }
+    CmdLine_C += ">";
+    y2milestone( "CmdLine_C %s", CmdLine_C.c_str());
+    string name = Container_Cv;
+    if( Container_Cv.find( "lvm/" )!=0 )
+	{
+	Error_C = "unknown container type" + Container_Cv;
+	}
+    else
+	{
+	name.erase( 0, 4 );
+	}
+    handle_array_t* input = NULL;
+    if( Error_C.size()==0 )
+	{
+	int count = Devices_Cv.size();
+	input = (handle_array_t*)malloc( sizeof(handle_array_t)+
+	                                 sizeof(object_handle_t)*(count-1) );
+	if( input == NULL )
+	    {
+	    Error_C = "out of memory";
+	    }
+	else
+	    {
+	    input->count = count;
+	    }
+	}
+    unsigned i = 0;
+    list<string>::const_iterator p=Devices_Cv.begin(); 
+    while( Error_C.size()==0 && i<input->count )
+	{
+	object_type_t ot = (object_type_t)(REGION|SEGMENT);
+	int ret = evms_get_object_handle_for_name( ot, (char *)p->c_str(),
+						   &input->handle[i] );
+	if( ret )
+	    {
+	    y2milestone( "error: %s", evms_strerror(ret) );
+	    Error_C = "could not find object " + *p;
+	    }
+	y2milestone( "ret %d handle for %s is %d", ret, p->c_str(), 
+	             input->handle[i] );
+	p++;
+	i++;
+	}
+    i = 0;
+    while( Error_C.size()==0 && i<input->count )
+	{
+	object_handle_t use = FindUsingVolume( input->handle[i] );
+	if( use != 0 )
+	    {
+	    ret = evms_delete(use);
+	    y2milestone( "evms_delete %d ret %d", use, ret ); 
+	    if( ret )
+		{
+		Error_C = "could not delete using volume " + dec_string(use);
+		y2milestone( "error: %s", evms_strerror(ret) );
+		}
+	    }
+	i++;
+	}
+    plugin_handle_t lvm = 0;
+    if( Error_C.size()==0 )
+	{
+	lvm = GetLvmPlugin();
+	if( lvm == 0 )
+	    {
+	    Error_C = "could not find lvm plugin";
+	    }
+	}
+    option_array_t* option = NULL;
+    if( Error_C.size()==0 )
+	{
+	int count = 2;
+	option = (option_array_t*) malloc( sizeof(option_array_t)+
+	                                   (count-1)*sizeof(key_value_pair_t));
+	if( option == NULL )
+	    {
+	    Error_C = "out of memory";
+	    }
+	else
+	    {
+	    option->count = count;
+	    option->option[0].name = "name";
+	    option->option[0].is_number_based = false;
+	    option->option[0].type = EVMS_Type_String;
+	    option->option[0].flags = 0;
+	    option->option[0].value.s = (char*)name.c_str();
+	    option->option[1].name = "pe_size";
+	    option->option[1].is_number_based = false;
+	    option->option[1].type = EVMS_Type_Unsigned_Int32;
+	    option->option[1].flags = 0;
+	    option->option[1].value.i32 = PeSize_lv/512;
+	    }
+	}
+    object_handle_t output;
+    if( Error_C.size()==0 )
+	{
+	ret = evms_create_container( lvm, input, option, &output );
+	if( ret )
+	    {
+	    y2milestone( "evms_create_container ret %d", ret );
+	    y2milestone( "error: %s", evms_strerror(ret) );
+	    Error_C = "could not create container " + name;
+	    }
+	}
+    if( Error_C.size()==0 )
+	{
+	EndEvmsCommand();
+	}
+    if( Error_C.size()>0 )
+	{
+	y2milestone( "Error: %s", Error_C.c_str() );
+	}
+    else
+	{
+	y2milestone( "OK" );
+	}
+    if( option )
+	free( option );
+    if( input )
+	free( input );
+    return( Error_C.size()==0 );
+    }
+
+bool EvmsAccess::CreateLv( const string& LvName_Cv, const string& Container_Cv,
+                           unsigned long Size_lv, unsigned long Stripe_lv,
+			   unsigned long StripeSize_lv )
+    {
+    int ret = 0;
+    y2milestone( "Name:%s Container:%s Size:%lu Stripe:%lu StripeSize:%lu", 
+                 LvName_Cv.c_str(), Container_Cv.c_str(), Size_lv, Stripe_lv,
+		 StripeSize_lv );
+    Error_C = "";
+    CmdLine_C = "CreateLv " + LvName_Cv + " in " + Container_Cv + " Size:" + 
+                dec_string(Size_lv) + "k";
+    if( Stripe_lv>1 )
+	{
+	CmdLine_C += " Stripe:" + dec_string(Stripe_lv);
+	if( StripeSize_lv>1 )
+	    {
+	    CmdLine_C += " StripeSize:" + dec_string(StripeSize_lv);
+	    }
+	}
+    y2milestone( "CmdLine_C %s", CmdLine_C.c_str());
+    if( Container_Cv.find( "lvm/" )!=0 )
+	{
+	Error_C = "unknown container type" + Container_Cv;
+	}
+    handle_array_t reg;
+    reg.count = 1;
+    reg.handle[0] = 0;
+    if( Error_C.size()==0 )
+	{
+	string name = Container_Cv + "/Freespace";
+	int ret = evms_get_object_handle_for_name( REGION, 
+	                                           (char *)name.c_str(),
+						   &reg.handle[0] );
+	if( ret )
+	    {
+	    Error_C = "could not find object " + name;
+	    y2milestone( "ret %s", evms_strerror(ret) );
+	    }
+	y2milestone( "ret %d handle for %s is %u", ret, name.c_str(),
+	             reg.handle[0] );
+	}
+    plugin_handle_t lvm = 0;
+    if( Error_C.size()==0 )
+	{
+	lvm = GetLvmPlugin();
+	if( lvm == 0 )
+	    {
+	    Error_C = "could not find lvm plugin";
+	    }
+	}
+    option_array_t* option = NULL;
+    if( Error_C.size()==0 )
+	{
+	int count = 2;
+	if( Stripe_lv>1 )
+	    {
+	    count++;
+	    if( StripeSize_lv )
+		count++;
+	    }
+	option = (option_array_t*) malloc( sizeof(option_array_t)+
+	                                   (count-1)*sizeof(key_value_pair_t));
+	if( option == NULL )
+	    {
+	    Error_C = "out of memory";
+	    }
+	else
+	    {
+	    option->count = count;
+	    option->option[0].name = "name";
+	    option->option[0].is_number_based = false;
+	    option->option[0].type = EVMS_Type_String;
+	    option->option[0].flags = 0;
+	    option->option[0].value.s = (char*)LvName_Cv.c_str();
+	    option->option[1].name = "size";
+	    option->option[1].is_number_based = false;
+	    option->option[1].type = EVMS_Type_Unsigned_Int32;
+	    option->option[1].flags = 0;
+	    option->option[1].value.i32 = Size_lv*2;
+	    if( Stripe_lv>1 )
+		{
+		option->option[2].name = "stripes";
+		option->option[2].is_number_based = false;
+		option->option[2].type = EVMS_Type_Unsigned_Int32;
+		option->option[2].flags = 0;
+		option->option[2].value.i32 = Stripe_lv;
+		if( StripeSize_lv )
+		    {
+		    option->option[3].name = "stripe_size";
+		    option->option[3].is_number_based = false;
+		    option->option[3].type = EVMS_Type_Unsigned_Int32;
+		    option->option[3].flags = 0;
+		    option->option[3].value.i32 = StripeSize_lv/512;
+		    }
+		}
+	    }
+	}
+    handle_array_t* output = NULL;
+    if( Error_C.size()==0 )
+	{
+	ret = evms_create( lvm, &reg, option, &output );
+	if( ret )
+	    {
+	    y2milestone( "evms_create ret %d", ret );
+	    y2milestone( "ret %s", evms_strerror(ret) );
+	    Error_C = "could not create region " + LvName_Cv;
+	    }
+	else
+	    {
+	    ret = evms_create_compatibility_volume( output->handle[0] );
+	    if( ret )
+		{
+		y2milestone( "evms_create_compatibility_volume ret %d", ret );
+		y2milestone( "ret %s", evms_strerror(ret) );
+		Error_C = "could not create compatibility volume " + LvName_Cv;
+		}
+	    }
+	evms_free( output );
+	}
+    if( Error_C.size()==0 )
+	{
+	EndEvmsCommand();
+	}
+    if( Error_C.size()>0 )
+	{
+	y2milestone( "Error: %s", Error_C.c_str() );
+	}
+    else
+	{
+	y2milestone( "OK" );
+	}
+    return( Error_C.size()==0 );
+    }
+
+bool EvmsAccess::DeleteLv( const string& LvName_Cv, const string& Container_Cv )
+    {
+    int ret = 0;
+    y2milestone( "Name:%s Container:%s", LvName_Cv.c_str(), 
+                 Container_Cv.c_str() );
+    Error_C = "";
+    CmdLine_C = "RemoveLv " + LvName_Cv + " in " + Container_Cv;
+    y2milestone( "CmdLine_C %s", CmdLine_C.c_str());
+    if( Container_Cv.find( "lvm/" )!=0 )
+	{
+	Error_C = "unknown container type" + Container_Cv;
+	}
+    handle_array_t reg;
+    reg.count = 1;
+    reg.handle[0] = 0;
+    if( Error_C.size()==0 )
+	{
+	string name = Container_Cv + "/" + LvName_Cv;
+	int ret = evms_get_object_handle_for_name( REGION, 
+	                                           (char *)name.c_str(),
+						   &reg.handle[0] );
+	if( ret )
+	    {
+	    Error_C = "could not find object " + name;
+	    y2milestone( "ret %s", evms_strerror(ret) );
+	    }
+	y2milestone( "ret %d handle for %s is %u", ret, name.c_str(),
+	             reg.handle[0] );
+	}
+    if( Error_C.size()==0 )
+	{
+	object_handle_t use = FindUsingVolume( reg.handle[0] );
+	if( use != 0 )
+	    {
+	    ret = evms_delete(use);
+	    y2milestone( "evms_delete %d ret %d", use, ret ); 
+	    if( ret )
+		{
+		Error_C = "could not delete using volume " + dec_string(use);
+		y2milestone( "error: %s", evms_strerror(ret) );
+		}
+	    }
+	if( Error_C.size()==0 )
+	    {
+	    ret = evms_delete( reg.handle[0] );
+	    if( ret )
+		{
+		y2milestone( "evms_delete ret %d", ret );
+		y2milestone( "ret %s", evms_strerror(ret) );
+		Error_C = "could not delete region " + LvName_Cv;
+		}
+	    }
+	}
+    if( Error_C.size()==0 )
+	{
+	EndEvmsCommand();
+	}
+    if( Error_C.size()>0 )
+	{
+	y2milestone( "Error: %s", Error_C.c_str() );
+	}
+    else
+	{
+	y2milestone( "OK" );
+	}
+    return( Error_C.size()==0 );
+    }
+
+bool EvmsAccess::ExtendCo( const string& Container_Cv, const string& PvName_Cv )
+    {
+    int ret = 0;
+    y2milestone( "Container:%s PvName:%s", Container_Cv.c_str(), 
+                 PvName_Cv.c_str() );
+    Error_C = "";
+    CmdLine_C = "ExtendCo " + Container_Cv + " by " + PvName_Cv;
+    y2milestone( "CmdLine_C %s", CmdLine_C.c_str());
+    if( Container_Cv.find( "lvm/" )!=0 )
+	{
+	Error_C = "unknown container type" + Container_Cv;
+	}
+    object_handle_t region = 0;
+    if( Error_C.size()==0 )
+	{
+	object_type_t ot = (object_type_t)(REGION|SEGMENT);
+	int ret = evms_get_object_handle_for_name( ot, 
+	                                           (char *)PvName_Cv.c_str(),
+						   &region );
+	if( ret )
+	    {
+	    y2milestone( "error: %s", evms_strerror(ret) );
+	    Error_C = "could not find object " + PvName_Cv;
+	    }
+	y2milestone( "ret %d handle for %s is %d", ret, PvName_Cv.c_str(), 
+	             region );
+	}
+    if( Error_C.size()==0 )
+	{
+	object_handle_t use = FindUsingVolume( region );
+	if( use != 0 )
+	    {
+	    ret = evms_delete(use);
+	    y2milestone( "evms_delete %d ret %d", use, ret ); 
+	    if( ret )
+		{
+		Error_C = "could not delete using volume " + dec_string(use);
+		y2milestone( "error: %s", evms_strerror(ret) );
+		}
+	    }
+	}
+    const EvmsContainerObject* Co_p = NULL;
+    if( Error_C.size()==0 )
+	{
+	Co_p = FindContainer( Container_Cv );
+	if( Co_p == NULL )
+	    {
+	    Error_C = "could not find container " + Container_Cv;
+	    }
+	}
+    plugin_handle_t lvm = 0;
+    if( Error_C.size()==0 )
+	{
+	lvm = GetLvmPlugin();
+	if( lvm == 0 )
+	    {
+	    Error_C = "could not find lvm plugin";
+	    }
+	}
+    if( Error_C.size()==0 && Co_p )
+	{
+	ret = evms_transfer( region, lvm, Co_p->Id(), NULL );
+	if( ret )
+	    {
+	    Error_C = "could not transfer " + PvName_Cv + " to container " + 
+	              Container_Cv;
+	    y2milestone( "ret %s", evms_strerror(ret) );
+	    }
+	}
+    if( Error_C.size()==0 )
+	{
+	EndEvmsCommand();
+	}
+    if( Error_C.size()>0 )
+	{
+	y2milestone( "Error: %s", Error_C.c_str() );
+	}
+    else
+	{
+	y2milestone( "OK" );
+	}
+    return( Error_C.size()==0 );
+    }
+
+bool EvmsAccess::ShrinkCo( const string& Container_Cv, const string& PvName_Cv )
+    {
+    int ret = 0;
+    y2milestone( "Container:%s PvName:%s", Container_Cv.c_str(), 
+                 PvName_Cv.c_str() );
+    Error_C = "";
+    CmdLine_C = "ShrinkCo " + Container_Cv + " by " + PvName_Cv;
+    y2milestone( "CmdLine_C %s", CmdLine_C.c_str());
+    if( Container_Cv.find( "lvm/" )!=0 )
+	{
+	Error_C = "unknown container type" + Container_Cv;
+	}
+    object_handle_t region = 0;
+    if( Error_C.size()==0 )
+	{
+	object_type_t ot = (object_type_t)(REGION|SEGMENT);
+	int ret = evms_get_object_handle_for_name( ot, 
+	                                           (char *)PvName_Cv.c_str(),
+						   &region );
+	if( ret )
+	    {
+	    y2milestone( "error: %s", evms_strerror(ret) );
+	    Error_C = "could not find object " + PvName_Cv;
+	    }
+	y2milestone( "ret %d handle for %s is %d", ret, PvName_Cv.c_str(), 
+	             region );
+	}
+    if( Error_C.size()==0 )
+	{
+	if( evms_can_remove_from_container( region ) )
+	    {
+	    Error_C = "could not remove " + PvName_Cv + "  from container " + 
+	              Container_Cv;
+	    }
+	}
+    const EvmsContainerObject* Co_p = NULL;
+    if( Error_C.size()==0 )
+	{
+	Co_p = FindContainer( Container_Cv );
+	if( Co_p == NULL )
+	    {
+	    Error_C = "could not find container " + Container_Cv;
+	    }
+	}
+    plugin_handle_t lvm = 0;
+    if( Error_C.size()==0 )
+	{
+	lvm = GetLvmPlugin();
+	if( lvm == 0 )
+	    {
+	    Error_C = "could not find lvm plugin";
+	    }
+	}
+    if( Error_C.size()==0 && Co_p )
+	{
+	ret = evms_transfer( region, 0, 0, NULL );
+	if( ret )
+	    {
+	    Error_C = "could not transfer " + PvName_Cv + " out of container " +
+	              Container_Cv;
+	    y2milestone( "ret %s", evms_strerror(ret) );
+	    }
+	else
+	    {
+	    ret = evms_create_compatibility_volume( region );
+	    if( ret )
+		{
+		y2milestone( "evms_create_compatibility_volume ret %d", 
+			     ret );
+		y2milestone( "ret %s", evms_strerror(ret) );
+		Error_C = "could not create compatibility volume " + 
+			  PvName_Cv;
+		}
+	    }
+	}
+    if( Error_C.size()==0 )
+	{
+	EndEvmsCommand();
+	}
+    if( Error_C.size()>0 )
+	{
+	y2milestone( "Error: %s", Error_C.c_str() );
+	}
+    else
+	{
+	y2milestone( "OK" );
+	}
+    return( Error_C.size()==0 );
+    }
+
+bool EvmsAccess::DeleteCo( const string& Container_Cv )
+    {
+    int ret = 0;
+    y2milestone( "Container:%s", Container_Cv.c_str() );
+    Error_C = "";
+    CmdLine_C = "DeleteCo " + Container_Cv;
+    y2milestone( "CmdLine_C %s", CmdLine_C.c_str());
+    if( Container_Cv.find( "lvm/" )!=0 )
+	{
+	Error_C = "unknown container type" + Container_Cv;
+	}
+    const EvmsContainerObject* Co_p = NULL;
+    if( Error_C.size()==0 )
+	{
+	Co_p = FindContainer( Container_Cv );
+	if( Co_p == NULL )
+	    {
+	    Error_C = "could not find container " + Container_Cv;
+	    }
+	else
+	    {
+	    y2milestone( "handle for %s is %u", 
+	                 Container_Cv.c_str(), Co_p->Id() );
+	    for( list<EvmsObject *>::const_iterator p=Co_p->Consumes().begin(); 
+	         p!=Co_p->Consumes().end(); p++ )
+		{
+		y2milestone( "consumes %d", (*p)->Id() );
+		}
+	    }
+	}
+    if( Error_C.size()==0 )
+	{
+	ret = evms_delete( Co_p->Id() );
+	if( ret )
+	    {
+	    y2milestone( "evms_delete ret %d", ret );
+	    y2milestone( "ret %s", evms_strerror(ret) );
+	    Error_C = "could not delete container " + Container_Cv;
+	    }
+	else
+	    {
+	    for( list<EvmsObject *>::const_iterator p=Co_p->Consumes().begin(); 
+	         p!=Co_p->Consumes().end(); p++ )
+		{
+		ret = evms_create_compatibility_volume( (*p)->Id() );
+		if( ret )
+		    {
+		    y2milestone( "evms_create_compatibility_volume ret %d", 
+		                 ret );
+		    y2milestone( "ret %s", evms_strerror(ret) );
+		    Error_C = "could not create compatibility volume " + 
+		              (*p)->Name();
+		    }
+		}
+	    }
+	}
+    if( Error_C.size()==0 )
+	{
+	EndEvmsCommand();
+	}
+    if( Error_C.size()>0 )
+	{
+	y2milestone( "Error: %s", Error_C.c_str() );
+	}
+    else
+	{
+	y2milestone( "OK" );
+	}
+    return( Error_C.size()==0 );
+    }
+
+bool EvmsAccess::ChangeLvSize( const string& Name_Cv, 
+                               const string& Container_Cv,
+			       unsigned long Size_lv )
+    {
+    int ret = 0;
+    y2milestone( "LvName:%s Container:%s NewSize:%lu", Name_Cv.c_str(),
+                 Container_Cv.c_str(), Size_lv );
+    Error_C = "";
+    CmdLine_C = "ChangeLvSize of " + Name_Cv + " in " + Container_Cv +
+                " to " + dec_string(Size_lv) + "k";
+    y2milestone( "CmdLine_C %s", CmdLine_C.c_str());
+    if( Container_Cv.find( "lvm/" )!=0 )
+	{
+	Error_C = "unknown container type" + Container_Cv;
+	}
+    const EvmsDataObject* Rg_p = NULL;
+    if( Error_C.size()==0 )
+	{
+	Rg_p = FindRegion( Container_Cv, Name_Cv );
+	if( Rg_p == NULL )
+	    {
+	    Error_C = "could not find volume " + Name_Cv + " in " + Container_Cv;
+	    }
+	else
+	    {
+	    y2milestone( "handle for %s in %s is %u", Name_Cv.c_str(),
+	                 Container_Cv.c_str(), Rg_p->Id() );
+	    }
+	}
+    if( Error_C.size()==0 )
+	{
+	y2milestone( "old size:%llu new size:%lu", Rg_p->SizeK(), Size_lv );
+	option_array_t option;
+	option.count = 1;
+	/*
+	if( Size_lv != Rg_p->SizeK() && Rg_p->Volume()!=NULL )
+	    {
+	    ret = evms_delete( Rg_p->Volume()->Id() );
+	    if( ret )
+		{
+		y2milestone( "evms_delete ret %d", ret );
+		y2milestone( "ret %s", evms_strerror(ret) );
+		Error_C = "could not delete volume " + Container_Cv;
+		}
+	    }
+	*/
+	if( Size_lv > Rg_p->SizeK() )
+	    {
+	    option.option[0].name = "add_size";
+	    option.option[0].is_number_based = false;
+	    option.option[0].type = EVMS_Type_Unsigned_Int32;
+	    option.option[0].flags = 0;
+	    option.option[0].value.i32 = (Size_lv-Rg_p->SizeK())*2;
+	    ret = evms_expand( Rg_p->Id(), NULL, &option );
+	    if( ret )
+		{
+		y2milestone( "evms_expand ret %d", ret );
+		y2milestone( "ret %s", evms_strerror(ret) );
+		Error_C = "could not expand volume " + Name_Cv + " to " +
+		          dec_string(Size_lv) + "k";
+		}
+	    }
+	else if( Size_lv < Rg_p->SizeK() )
+	    {
+	    option.option[0].name = "remove_size";
+	    option.option[0].is_number_based = false;
+	    option.option[0].type = EVMS_Type_Unsigned_Int32;
+	    option.option[0].flags = 0;
+	    option.option[0].value.i32 = (Rg_p->SizeK()-Size_lv)*2;
+	    ret = evms_shrink( Rg_p->Id(), NULL, &option );
+	    if( ret )
+		{
+		y2milestone( "evms_shrink ret %d", ret );
+		y2milestone( "ret %s", evms_strerror(ret) );
+		Error_C = "could not shrink volume " + Name_Cv + " to " +
+		          dec_string(Size_lv) + "k";
+		}
+	    }
+	/*
+	if( Size_lv != Rg_p->SizeK() && Rg_p->Volume()!=NULL )
+	    {
+	    ret = evms_delete( Rg_p->Volume()->Id() );
+	    if( ret )
+		{
+		y2milestone( "evms_delete ret %d", ret );
+		y2milestone( "ret %s", evms_strerror(ret) );
+		Error_C = "could not delete volume " + Container_Cv;
+		}
+	    }
+	*/
+	}
+    if( Error_C.size()==0 )
+	{
+	EndEvmsCommand();
+	}
+    if( Error_C.size()>0 )
+	{
+	y2milestone( "Error: %s", Error_C.c_str() );
+	}
+    else
+	{
+	y2milestone( "OK" );
+	}
+    return( Error_C.size()==0 );
+    }
+
+boolean EvmsAccess::EndEvmsCommand()
+    {
+    int ret = evms_commit_changes();
+    if( ret )
+	{
+	y2milestone( "evms_commit_changes ret %d", ret );
+	Error_C = "could not commit changes";
+	}
+    RereadAllObjects();
+    return( ret==0 );
     }
 
 void EvmsAccess::Output( ostream& str ) const

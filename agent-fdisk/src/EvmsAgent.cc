@@ -177,10 +177,9 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 	    y2milestone("cmd %s", type_string.c_str());
 	    if( type_string == "create_lv" )
 		{
-	/*
 		string name;
 		unsigned long size = 0;
-		string vgname;
+		string container;
 		unsigned long stripes = 1;
 		unsigned long stripesize = 0;
 		YCPValue content = cmd->value(YCPString("name"));
@@ -188,10 +187,10 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 		    {
 		    name = content->asString()->value();
 		    }
-		content = cmd->value(YCPString("vgname"));
+		content = cmd->value(YCPString("container"));
 		if( !content.isNull() && content->isString())
 		    {
-		    vgname = content->asString()->value();
+		    container = content->asString()->value();
 		    }
 		content = cmd->value(YCPString("size"));
 		y2debug( "isInt:%d val:%s", content->isInteger(),
@@ -210,23 +209,23 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 		    {
 		    stripesize = content->asInteger()->value();
 		    }
-		y2milestone("name:%s vgname:%s size:%ld stripes:%ld",
-			     name.c_str(), vgname.c_str(), size,
+		y2milestone("name:%s container:%s size:%ld stripes:%ld",
+			     name.c_str(), container.c_str(), size,
 			     stripes );
-		if( name.length()>0 && vgname.length()>0 && size>0 )
+		if( name.length()>0 && container.length()>0 && size>0 )
 		    {
-		    if( !Evms_pC->CreateLv( name, vgname, size, stripes,
-		                           stripesize ))
+		    if( !Evms_pC->CreateLv( name, container, size, stripes,
+		                            stripesize ))
 			{
 			ErrText_Ci = Evms_pC->GetErrorText();
 			CmdLine_Ci = Evms_pC->GetCmdLine();
-			y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
+			y2error( "evms error cmd:%s", CmdLine_Ci.c_str() );
 			ret = false;
 			}
 		    }
 		else
 		    {
-		    ErrText_Ci = "lvm create_lv invalid values";
+		    ErrText_Ci = "evms create_lv invalid values";
 		    y2error( ErrText_Ci.c_str() );
 		    ret = false;
 		    }
@@ -235,39 +234,37 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 		{
 		string name;
 		unsigned long size = 0;
-		string vgname;
+		string container;
 		YCPValue content = cmd->value(YCPString("name"));
 		if( !content.isNull() && content->isString())
 		    {
 		    name = content->asString()->value();
 		    }
-		content = cmd->value(YCPString("vgname"));
+		content = cmd->value(YCPString("container"));
 		if( !content.isNull() && content->isString())
 		    {
-		    vgname = content->asString()->value();
+		    container = content->asString()->value();
 		    }
 		content = cmd->value(YCPString("size"));
 		if( !content.isNull() && content->isInteger())
 		    {
 		    size = content->asInteger()->value()/1024;
 		    }
-		string lv_name = (string)"/dev/" + vgname + "/" + name;
-		y2milestone("name:%s vgname:%s new size:%ld lv_name:%s",
-			     name.c_str(), vgname.c_str(), size,
-			     lv_name.c_str() );
-		if( name.length()>0 && vgname.length()>0 && size>0 )
+		y2milestone("name:%s container:%s new size:%ld",
+			     name.c_str(), container.c_str(), size );
+		if( name.length()>0 && container.length()>0 && size>0 )
 		    {
-		    if( !Evms_pC->ChangeLvSize( lv_name, size ) )
+		    if( !Evms_pC->ChangeLvSize( name, container, size ) )
 			{
 			ErrText_Ci = Evms_pC->GetErrorText();
 			CmdLine_Ci = Evms_pC->GetCmdLine();
-			y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
+			y2error( "evms error cmd:%s", CmdLine_Ci.c_str() );
 			ret = false;
 			}
 		    }
 		else
 		    {
-		    ErrText_Ci = "lvm resize_lv invalid values";
+		    ErrText_Ci = "evms resize_lv invalid values";
 		    y2error( ErrText_Ci.c_str() );
 		    ret = false;
 		    }
@@ -275,34 +272,32 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 	    else if( type_string == "remove_lv" )
 		{
 		string name;
-		string vgname;
+		string container;
 		YCPValue content = cmd->value(YCPString("name"));
 		if( !content.isNull() && content->isString())
 		    {
 		    name = content->asString()->value();
 		    }
-		content = cmd->value(YCPString("vgname"));
+		content = cmd->value(YCPString("container"));
 		if( !content.isNull() && content->isString())
 		    {
-		    vgname = content->asString()->value();
+		    container = content->asString()->value();
 		    }
-		string lv_name = (string)"/dev/" + vgname + "/" + name;
-		y2milestone("name:%s vgname:%s lv_name:%s",
-			    name.c_str(), vgname.c_str(),
-			    lv_name.c_str());
-		if( name.length()>0 && vgname.length()>0 )
+		y2milestone( "name:%s container:%s", name.c_str(), 
+		             container.c_str() );
+		if( name.length()>0 && container.length()>0 )
 		    {
-		    if( !Evms_pC->DeleteLv( lv_name ) )
+		    if( !Evms_pC->DeleteLv( name, container ) )
 			{
 			ErrText_Ci = Evms_pC->GetErrorText();
 			CmdLine_Ci = Evms_pC->GetCmdLine();
-			y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
+			y2error( "container error cmd:%s", CmdLine_Ci.c_str() );
 			ret = false;
 			}
 		    }
 		else
 		    {
-		    ErrText_Ci = "Evms remove_lv invalid values";
+		    ErrText_Ci = "evms remove_lv invalid values";
 		    y2error( ErrText_Ci.c_str() );
 		    ret = false;
 		    }
@@ -310,13 +305,13 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 	    else if( type_string == "create_vg" )
 		{
 		unsigned long size = 4096;
-		string vgname;
+		string container;
 		bool new_media = false;
 		list<string> devices;
-		YCPValue content = cmd->value(YCPString("vgname"));
+		YCPValue content = cmd->value(YCPString("container"));
 		if( !content.isNull() && content->isString())
 		    {
-		    vgname = content->asString()->value();
+		    container = content->asString()->value();
 		    }
 		content = cmd->value(YCPString("pesize"));
 		if( !content.isNull() && content->isInteger())
@@ -345,67 +340,60 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 			    }
 			}
 		    }
-		y2debug("vgname:%s pesize:%ld new_media:%d devices:%d",
-			vgname.c_str(), size, new_media, devices.size() );
-		if( vgname.length()>0 && size>0 && devices.size()>0 )
+		y2debug("container:%s pesize:%ld new_media:%d devices:%d",
+			container.c_str(), size, new_media, devices.size() );
+		if( container.length()>0 && size>0 && devices.size()>0 )
 		    {
-		    if( !Evms_pC->CreateVg( vgname, size, new_media, devices ) )
+		    if( !Evms_pC->CreateCo( container, size, new_media, devices ) )
 			{
 			ErrText_Ci = Evms_pC->GetErrorText();
 			CmdLine_Ci = Evms_pC->GetCmdLine();
-			y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
-			ret = false;
-			}
-		    else if( !Evms_pC->ChangeActive( vgname, true ) )
-			{
-			ErrText_Ci = Evms_pC->GetErrorText();
-			CmdLine_Ci = Evms_pC->GetCmdLine();
-			y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
+			y2error( "evms error cmd:%s", CmdLine_Ci.c_str() );
 			ret = false;
 			}
 		    }
 		else
 		    {
-		    ErrText_Ci = "lvm create_vg invalid values";
+		    ErrText_Ci = "evms create_vg invalid values";
 		    y2error( ErrText_Ci.c_str() );
 		    ret = false;
 		    }
 		}
 	    else if( type_string == "remove_vg" )
 		{
-		string vgname;
-		YCPValue content = cmd->value(YCPString("vgname"));
+		string container;
+		YCPValue content = cmd->value(YCPString("container"));
 		if( !content.isNull() && content->isString())
 		    {
-		    vgname = content->asString()->value();
+		    container = content->asString()->value();
 		    }
-		y2milestone("vgname:%s", vgname.c_str());
-		if( vgname.length()>0 )
+		y2milestone("container:%s", container.c_str());
+		if( container.length()>0 )
 		    {
-		    if( !Evms_pC->DeleteVg( vgname ) )
+		    if( !Evms_pC->DeleteCo( container ) )
 			{
 			ErrText_Ci = Evms_pC->GetErrorText();
 			CmdLine_Ci = Evms_pC->GetCmdLine();
-			y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
+			y2error( "evms error cmd:%s", CmdLine_Ci.c_str() );
 			ret = false;
 			}
 		    }
 		else
 		    {
-		    ErrText_Ci = "lvm remove_vg invalid values";
+		    ErrText_Ci = "evms remove_vg invalid values";
 		    y2error( ErrText_Ci.c_str() );
 		    ret = false;
 		    }
 		}
 	    else if( type_string == "create_pv" )
 		{
-		string vgname;
+		string container;
 		string device;
 		bool new_meta = false;
-		YCPValue content = cmd->value(YCPString("vgname"));
+		YCPValue content = cmd->value(YCPString("container"));
 		if( !content.isNull() && content->isString())
 		    {
-		    vgname = content->asString()->value();
+		    container = content->asString()->value();
 		    }
 		content = cmd->value(YCPString("device"));
 		if( !content.isNull() && content->isString())
@@ -417,68 +405,57 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 		    {
 		    new_meta = content->asBoolean()->value();
 		    }
-		y2milestone("vgname:%s device:%s new_meta:%d",
-			     vgname.c_str(), device.c_str(), new_meta );
-		if( device.length()>0 )
+		y2milestone("container:%s device:%s new_meta:%d",
+			     container.c_str(), device.c_str(), new_meta );
+		if( device.length()>0 && container.length()>0 )
 		    {
-		    if( !Evms_pC->CreatePv( device, new_meta ) )
+		    if( !Evms_pC->ExtendCo( container, device ) )
 			{
 			ErrText_Ci = Evms_pC->GetErrorText();
 			CmdLine_Ci = Evms_pC->GetCmdLine();
-			y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
+			y2error( "evms error cmd:%s", CmdLine_Ci.c_str() );
 			ret = false;
-			}
-		    else if( vgname.length()>0 )
-			{
-			if( !Evms_pC->ExtendVg( vgname, device ) )
-			    {
-			    ErrText_Ci = Evms_pC->GetErrorText();
-			    CmdLine_Ci = Evms_pC->GetCmdLine();
-			    y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
-			    ret = false;
-			    }
 			}
 		    }
 		else
 		    {
-		    ErrText_Ci = "lvm create_pv invalid values";
+		    ErrText_Ci = "evms create_pv invalid values";
 		    y2error( ErrText_Ci.c_str() );
 		    ret = false;
 		    }
 		}
 	    else if( type_string == "remove_pv" )
 		{
-		string vgname;
+		string container;
 		string device;
-		YCPValue content = cmd->value(YCPString("vgname"));
+		YCPValue content = cmd->value(YCPString("container"));
 		if( !content.isNull() && content->isString())
 		    {
-		    vgname = content->asString()->value();
+		    container = content->asString()->value();
 		    }
 		content = cmd->value(YCPString("device"));
 		if( !content.isNull() && content->isString())
 		    {
 		    device = content->asString()->value();
 		    }
-		y2milestone("vgname:%s device:%s",
-			     vgname.c_str(), device.c_str() );
-		if( device.length()>0 && vgname.size()>0 )
+		y2milestone("container:%s device:%s",
+			     container.c_str(), device.c_str() );
+		if( device.length()>0 && container.size()>0 )
 		    {
-		    if( !Evms_pC->ShrinkVg( vgname, device ) )
+		    if( !Evms_pC->ShrinkCo( container, device ) )
 			{
-			ErrText_Ci = Lvm_pC->GetErrorText();
-			CmdLine_Ci = Lvm_pC->GetCmdLine();
-			y2error( "lvm error cmd:%s", CmdLine_Ci.c_str() );
+			ErrText_Ci = Evms_pC->GetErrorText();
+			CmdLine_Ci = Evms_pC->GetCmdLine();
+			y2error( "evms error cmd:%s", CmdLine_Ci.c_str() );
 			ret = false;
 			}
 		    }
 		else
 		    {
-		    ErrText_Ci = "lvm remove_pv invalid values";
+		    ErrText_Ci = "evms remove_pv invalid values";
 		    y2error( ErrText_Ci.c_str() );
 		    ret = false;
 		    }
-	*/
 		}
 	    else
 		{

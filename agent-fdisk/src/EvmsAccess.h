@@ -123,9 +123,35 @@ class EvmsAccess
 	void Output( ostream &Stream ) const;
 	void ListVolumes( list<const EvmsVolumeObject*>& l ) const;
 	void ListContainer(list<const EvmsContainerObject*>& l ) const;
+	string GetErrorText();
+	string GetCmdLine();
+	bool ChangeActive( const string& Name_Cv, bool Active_bv );
+	bool DeleteCo( const string& Container_Cv );
+	bool ExtendCo( const string& Container_Cv, const string& PvName_Cv );
+	bool ShrinkCo( const string& Container_Cv, const string& PvName_Cv );
+	bool CreateCo( const string& Container_Cv, unsigned long PeSize_lv,
+		       bool NewMeta_bv, list<string>& Devices_Cv );
+	bool CreateLv( const string& LvName_Cv, const string& Container_Cv,
+		       unsigned long Size_lv, unsigned long Stripe_lv,
+		       unsigned long StripeSize_lv );
+	bool ChangeLvSize( const string& LvName_Cv, const string& Container_Cv,
+	                   unsigned long Size_lv );
+	bool DeleteLv( const string& LvName_Cv, const string& Container_Cv );
+
     protected:
 	void AddObjectRelations();
+	void RereadAllObjects();
+	plugin_handle_t GetLvmPlugin();
+	object_handle_t FindUsingVolume( object_handle_t id );
+	const EvmsContainerObject* FindContainer( const string& name );
+	const EvmsDataObject* FindRegion( const string& container, 
+	                                  const string& name );
+	static int PluginFilterFunction( const char* plugin );
+
 	list<EvmsObject*> objects;
+	boolean EndEvmsCommand();
+	string Error_C;
+	string CmdLine_C;
     };
 
 extern ostream& operator<<( ostream &Stream, const ObjType Obj );
