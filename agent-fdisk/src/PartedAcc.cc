@@ -35,7 +35,6 @@ void PartedAccess::GetPartitionList()
     y2milestone( "executing cmd:%s", Tmp_Ci.c_str() );
     SystemCmd Cmd_Ci( Tmp_Ci.c_str(), true );
     CheckError( Tmp_Ci, Cmd_Ci );
-    CheckOutput(Cmd_Ci, Disk_C);
     if( Cmd_Ci.Select( "Disk label type:" )>0 )
 	{
 	Tmp_Ci = *Cmd_Ci.GetLine(0, true);
@@ -43,6 +42,7 @@ void PartedAccess::GetPartitionList()
 	Label_C = ExtractNthWord( 3, Tmp_Ci );
 	}
     y2debug( "Label:%s", Label_C.c_str() );
+    CheckOutput(Cmd_Ci, Disk_C);
     }
 
 PartedAccess::~PartedAccess()
@@ -291,12 +291,13 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
   Type_Ci += ",";
   y2debug( "Fields Num:%d Start:%5.2f End:%5.2f PType:%s Type:%s",
 	   Num_ii, Start_fi, End_fi, PType_Ci.c_str(), Type_Ci.c_str() );
+  int Add_ii = CylinderToKb(1)*2/5;
   if( Num_ii>0 )
     {
     Part_rr.Num_i = Num_ii;
     Part_rr.Device_C = GetPartDeviceName(Num_ii);
-    Part_rr.Start_i = KbToCylinder( (unsigned long)(Start_fi*1024) );
-    Part_rr.End_i = KbToCylinder( (unsigned long)(End_fi*1024) ) - 1;
+    Part_rr.Start_i = KbToCylinder( (unsigned long)(Start_fi*1024)+Add_ii );
+    Part_rr.End_i = KbToCylinder( (unsigned long)(End_fi*1024)+Add_ii ) - 1;
     Part_rr.Blocks_l = CylinderToKb( Part_rr.End_i-Part_rr.Start_i+1 );
     Part_rr.PType_e = PAR_TYPE_LINUX;
     Part_rr.Id_i = PART_ID_LINUX_NATIVE;
