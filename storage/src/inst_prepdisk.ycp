@@ -846,6 +846,10 @@ damage to your file systems, it is safer to cancel and reboot.
 	if( this_is_for_real && !Arch::s390 && 
 	    Storage::IsRealDisk( tdevice, target ))
 	    {
+	    map bo = SCR::Execute( .target.bash_output, 
+	                           "echo YAST_IS_RUNNING=$YAST_IS_RUNNING" );
+	    y2milestone( "y2env %1", bo["stdout"]:"" );
+
             // handle all partitions resizings that decrease partition size
 	    cancel = !HandleResizePartitions( tdevice, target, true );
 
@@ -856,139 +860,139 @@ damage to your file systems, it is safer to cancel and reboot.
 	    y2milestone( "disk:%1 need_part:%2", tdevice, need_part );
 
 	    if( !cancel && need_part )
-	    {
+		{
 		path scrpath = 
 		    target["scrpath"]:topath("."+substring(tdevice, 5));
 		y2milestone( "partitioning %1 %2\n", 
 		             .disk + scrpath + .partitions, partitions );
-	    if( Arch::ia64 )
-		{
-		partitions = 
-		    maplist( `p, partitions,
-			     ``{
-			     if( p["mount"]:"" == "/boot" )
-				 p["fsid"] = Partitions::fsid_gpt_boot;
-			     return( p );
-			     });
-		}
-	    y2milestone( "write partitions %1", partitions );
-	    do
-		{
-		retry = false;
-	        UI::ChangeWidget(`id(`progress), `Label,
-				     sformat(_("partitioning disk %1"), 
-				             tdevice ));
+		if( Arch::ia64 )
+		    {
+		    partitions = 
+			maplist( `p, partitions,
+				 ``{
+				 if( p["mount"]:"" == "/boot" )
+				     p["fsid"] = Partitions::fsid_gpt_boot;
+				 return( p );
+				 });
+		    }
+		y2milestone( "write partitions %1", partitions );
+		do
+		    {
+		    retry = false;
+		    UI::ChangeWidget(`id(`progress), `Label,
+					 sformat(_("partitioning disk %1"), 
+						 tdevice ));
 
-		map args = $[ "parted" : Partitions::UseParted(),
-		              "label"  : target["label"]:"msdos" ];
-		y2milestone( "fdisk args %1", args );
+		    map args = $[ "parted" : Partitions::UseParted(),
+				  "label"  : target["label"]:"msdos" ];
+		    y2milestone( "fdisk args %1", args );
 
-		/////////////////////////////////////////////////////
-		boolean result = SCR::Write(.disk + scrpath + .partitions,
-					    partitions, args );
-		/////////////////////////////////////////////////////
+		    /////////////////////////////////////////////////////
+		    boolean result = SCR::Write(.disk + scrpath + .partitions,
+						partitions, args );
+		    /////////////////////////////////////////////////////
 
 		    if( !result )
-		    {
-		    y2error("Oops, fdisk failed for device ", tdevice);
+			{
+			y2error("Oops, fdisk failed for device ", tdevice);
 
-		    symbol ret=`yes;
-		    // continue/cancel/retry during installation
+			symbol ret=`yes;
+			// continue/cancel/retry during installation
 			if( installation )
-		        {
-			if( Storage::CheckSwapOn( tdevice ) )
 			    {
-			    reboot_necessary = true;
+			    if( Storage::CheckSwapOn( tdevice ) )
+				{
+				reboot_necessary = true;
+				}
+			    else
+				{
+				ret = UI::AnyQuestionPopup3(
+				    _("fdisk failed."),
+				    sformat (
+					_("Partitioning failed for unknown reason.
+Repartition disk %1.
+    "),
+					    tdevice),
+				    UI::ContinueButtonLabel(),
+				    UI::AbortButtonLabel(),
+				    UI::RetryButtonLabel(), `focus_no);
+
+				if( ret == `retry )
+				    {
+				    retry = true;
+				    }
+				else if ( ret == `no )
+				    {
+				    cancel = true;
+				    //abort foreach run
+				    return;
+				    }
+				}
 			    }
+			// offer reboot in running system
 			else
 			    {
-			    ret = UI::AnyQuestionPopup3(
-			        _("fdisk failed."),
-				sformat (
-				    _("Partitioning failed for unknown reason.
-    Repartition disk %1.
-"),
-					tdevice),
-				UI::ContinueButtonLabel(),
-				UI::AbortButtonLabel(),
-				UI::RetryButtonLabel(), `focus_no);
+			    ret = UI::AnyQuestionPopup3(_("fdisk failed."),
+				  _("It is strongly advised to reboot now to prevent damage to your file systems."),
+				  UI::ContinueButtonLabel(), UI::AbortButtonLabel(), _("Reboot"), `focus_retry);
 
 				if( ret == `retry )
 			    {
-			       retry = true;
+			      SCR::Execute (.target.bash,"/sbin/shutdown -r now");
+			      reboot = true;
+			      cancel = true;
+			      //abort foreach run
+			      return;
 			    }
-			    else if ( ret == `no )
+			    else if (ret == `no )
 			    {
 			      cancel = true;
 			      //abort foreach run
 			      return;
 			    }
+			  }
 			    }
-		      }
-		      // offer reboot in running system
-		      else
-		      {
-			ret = UI::AnyQuestionPopup3(_("fdisk failed."),
-			      _("It is strongly advised to reboot now to prevent damage to your file systems."),
-			      UI::ContinueButtonLabel(), UI::AbortButtonLabel(), _("Reboot"), `focus_retry);
-
-			    if( ret == `retry )
-			{
-			  SCR::Execute (.target.bash,"/sbin/shutdown -r now");
-			  reboot = true;
-			  cancel = true;
-			  //abort foreach run
-			  return;
-			}
-			else if (ret == `no )
-			{
-			  cancel = true;
-			  //abort foreach run
-			  return;
-			}
-		      }
-			}
 		    }
 		while ( retry );
-	    }
+		}
 	    if( !cancel )
-	    {
+		{
 		foreach( `pentry, partitions,
-		``{
-		/////////////////////////////////////////////////////
-		// look if we have to change an partition id
+		    ``{
+		    /////////////////////////////////////////////////////
+		    // look if we have to change an partition id
 
-		boolean change_fsid = pentry["change_fsid"]:false;
-		symbol type = pentry["type" ]:`unknown;
+		    boolean change_fsid = pentry["change_fsid"]:false;
+		    symbol type = pentry["type" ]:`unknown;
 
-		if( change_fsid )
-		    {
-		    integer ori_fsid = pentry["ori_fsid"]:0;
-		    integer fsid     = pentry["fsid"]:0;
-		    integer nr       = pentry["nr"]:0;
-
-		    y2milestone( "change_fsid disk:%1 readonly:%2", tdevice,
-		                 target["readonly"]:false );
-
-		    if( fsid!=ori_fsid && !target["readonly"]:false )
+		    if( change_fsid )
 			{
-			fdisk_change_id( tdevice, nr, fsid );
+			integer ori_fsid = pentry["ori_fsid"]:0;
+			integer fsid     = pentry["fsid"]:0;
+			integer nr       = pentry["nr"]:0;
+
+			y2milestone( "change_fsid disk:%1 readonly:%2", tdevice,
+				     target["readonly"]:false );
+
+			if( fsid!=ori_fsid && !target["readonly"]:false )
+			    {
+			    fdisk_change_id( tdevice, nr, fsid );
+			    }
 			}
-		    }
-		});
-	    }
+		    });
+		}
 
 	    if( !cancel )
 		cancel = !HandleResizePartitions( tdevice, target, false );
-	}  // partitioning
+	    }  // partitioning
 
 	if( !immediate_prepdisk )
-	{
+	    {
 	    // check all partitions and initialize
 	    // boot_device, root_device, and swap_devices
 
 	    foreach (`pentry, partitions,
-	    ``{
+		``{
 		string device = pentry["device"]:"";
 		string mountpoint = pentry["mount"]:"";
 		boolean do_format = pentry["format"]:false;
@@ -997,47 +1001,46 @@ damage to your file systems, it is safer to cancel and reboot.
 		             mountpoint, do_format );
 
 		if( !pentry["delete"]:false)
-		{		// only those which aren't deleted
+		    {		// only those which aren't deleted
 		    if( mountpoint == "/boot")
-		    {
+			{
 			boot_device = device;
-		    }
+			}
 			// only swaps which aren't running 
 			// (yast2 did enable any swap yet!!)
 		    else if( mountpoint=="swap" && 
 			     (running_swap[substring(device, 4, size(device))]:"" == ""))
-		    {
+			{
 			swap_devices = add( swap_devices, [device, do_format] );
-		    }
+			}
 		    else if (mountpoint == "/")
-		    {
+			{
 			root_device = device;
+			}
 		    }
-		}
 		y2debug("Partition: %1",pentry );
-	    });
-	}
+		});
+	    }
 
 	if ( boot_device == "" )
 	    boot_device = root_device;
-
-    });	// foreach target
+	});	// foreach target
 
     //fdisk failed
 
     if( reboot )
-    {
+	{
 	return `abort;
-    }
+	}
     if( cancel )
-    {
+	{
 	y2debug("fdisk failed");
 	restoretargetmap();
 	return `back;
-    }
+	}
 
     if( reboot_necessary || immediate_prepdisk )
-    {
+	{
 	import "Misc";
 
 	Report::Message (_("Because swap needed to be activated while partitioning, rebooting
@@ -1045,7 +1048,7 @@ is required. After that, restart the installation.
 "));
 	Misc::WriteYaSTInf($["Root" : "reboot", "RebootMsg" : "0"]);
 	return `abort;
-    }
+	}
 
     if( Storage::CheckSwapConflicts() != "" )
 	{

@@ -422,6 +422,10 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
 	    int new_cyl_cnt = -1;
 	    int part_nr = -1;
 	    YCPValue content = cmd->value(YCPString("new_cyl_cnt"));
+
+	    char * y2run = getenv( "YAST_IS_RUNNING" );
+	    y2milestone("YAST_IS_RUNNING %s", y2run );
+
 	    if( !content.isNull() && content->isInteger())
 		{
 		new_cyl_cnt = content->asInteger()->value();
