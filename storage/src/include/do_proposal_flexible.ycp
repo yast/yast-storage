@@ -141,34 +141,55 @@ global define map do_proposal_flexible( map target )
 		}
 	    y2milestone( "dlist %1", dlist );
 	    }
+	list save_dlist = eval(dlist);
 	repeat
 	    {
-	    integer idx = 0;
-	    list td = eval(ddev);
-	    while( idx<size(dlist) )
+	    integer count = 0;
+	    repeat
 		{
-		tc = eval(conf);
-		tc["partitions"] = eval( dlist[idx]:[] );
-		map md = find_matching_disk( td, target, tc );
-		y2milestone( "size(md) %1", size(md) );
-		if( size(md)>0 )
+		list td = eval(ddev);
+		integer idx = 0;
+		y2milestone( "start while count %1", count );
+		while( idx<size(dlist) && count<size(dlist) )
 		    {
-		    solutions = add( solutions, md );
-		    td = filter( `e, td, ``(e!=md["device"]:""));
-		    y2milestone( "new td %1", td );
-		    idx = idx+1;
-		    }
-		else
-		    {
-		    idx = size(dlist);
-		    solutions = [];
-		    if( size(dlist)>1 )
+		    y2milestone( "in while idx %1", idx );
+		    tc = eval(conf);
+		    tc["partitions"] = eval( dlist[idx]:[] );
+		    map md = find_matching_disk( td, target, tc );
+		    y2milestone( "size(md) %1", size(md) );
+		    if( size(md)>0 )
 			{
-			dlist[size(dlist)-2] = union( dlist[size(dlist)-2]:[],
-			                              dlist[size(dlist)-1]:[] );
-			dlist = remove( dlist, size(dlist)-1 );
+			solutions = add( solutions, md );
+			td = filter( `e, td, ``(e!=md["device"]:""));
+			y2milestone( "new td %1", td );
+			idx = idx+1;
+			}
+		    else
+			{
+			y2milestone( "no solution" );
+			idx = size(dlist);
+			td = eval(ddev);
+			solutions = [];
+			count = count + 1;
+			if( size(dlist)>1 )
+			    {
+			    list tfi = dlist[0]:[];
+			    dlist = remove( dlist, 0 );
+			    dlist = add( dlist, tfi );
+			    y2milestone( "new rotated dlist %1", dlist );
+			    }
 			}
 		    }
+		}
+	    until( size(solutions)>0 || count>=size(dlist) );
+	    if( size(solutions)==0 && size(dlist)>1 )
+		{
+		dlist = eval(save_dlist);
+		dlist[size(dlist)-2] = union( dlist[size(dlist)-2]:[],
+					      dlist[size(dlist)-1]:[] );
+		dlist = remove( dlist, size(dlist)-1 );
+		y2milestone( "new truncated dlist %1", dlist );
+		save_dlist = eval(dlist);
 		}
 	    }
 	until( size(solutions)>0 || size(dlist)<=1 );
