@@ -1298,31 +1298,30 @@ global define boolean SetVolumeLabel( string dev, map part )
     string cmd = "";
     symbol fs = part["used_fs"]:`unknown;
     string label = part["label"]:"";
-    y2milestone( "dev:%1 fs:%2 label:%3", dev, fs, label );
-    if( size(label)>0 )
+    y2milestone( "SetVolumeLabel dev:%1 fs:%2 label:%3", dev, fs, label );
+    if( fs == `ext2 || fs == `ext3 )
 	{
-	if( fs == `ext2 || fs == `ext3 )
-	    {
-	    cmd = sformat("/sbin/tune2fs -L %1 %2", label, dev );
-	    }
-	else if( fs == `xfs )
-	    {
-	    cmd = sformat("/usr/sbin/xfs_admin -L %1 %2", label, dev );
-	    }
-	else if( fs == `reiser )
-	    {
-	    cmd = sformat("/sbin/reiserfstune -l %1 %2", label, dev );
-	    }
-	if( size(cmd)>0 )
-	    {
-	    y2milestone( "Excuting cmd:%1", cmd );
-	    ret = SCR::Execute(.target.bash, cmd ) == 0;
-	    // /sbin/reiserfstune always seems to return 1 even on success
-	    if( fs == `reiser )
-		ret = true;
-	    }
+	cmd = sformat("/sbin/tune2fs -L \"%1\" %2", label, dev );
 	}
-    y2milestone( "ret:%1", ret );
+    else if( fs == `xfs )
+	{
+	if( size(label)==0 )
+	    label = "--";
+	cmd = sformat("/usr/sbin/xfs_admin -L %1 %2", label, dev );
+	}
+    else if( fs == `reiser )
+	{
+	cmd = sformat("/sbin/reiserfstune -l \"%1\" %2", label, dev );
+	}
+    if( size(cmd)>0 )
+	{
+	y2milestone( "Excuting cmd:%1", cmd );
+	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	// /sbin/reiserfstune always seems to return 1 even on success
+	if( fs == `reiser )
+	    ret = true;
+	}
+    y2milestone( "SetVolumeLabel ret:%1", ret );
     return( ret );
     };
 
