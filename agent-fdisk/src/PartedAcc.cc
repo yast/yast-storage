@@ -273,6 +273,7 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
   std::istringstream Data_Ci( Line_Cv );
 
   Start_fi = End_fi = 0.0;
+  PType_Ci = "primary";
   if( Label_C != "mac" && Label_C != "gpt" )
       {
       Data_Ci >> Num_ii >> Start_fi >> End_fi >> PType_Ci;
@@ -280,7 +281,6 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
   else
       {
       Data_Ci >> Num_ii >> Start_fi >> End_fi;
-      PType_Ci = "primary";
       }
   std::ostringstream Buf_Ci;
   Buf_Ci << std::setprecision(3) << std::setiosflags(std::ios_base::fixed) 
@@ -309,8 +309,8 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
       Data_Ci >> c;
       }
   Type_Ci += ",";
-  y2debug( "Fields Num:%d Start:%5.2f End:%5.2f PType:%s Type:%s",
-	   Num_ii, Start_fi, End_fi, PType_Ci.c_str(), Type_Ci.c_str() );
+  y2milestone( "Fields Num:%d Start:%5.2f End:%5.2f PType:%s Type:%s",
+	       Num_ii, Start_fi, End_fi, PType_Ci.c_str(), Type_Ci.c_str() );
   int Add_ii = CylinderToKb(1)*2/5;
   if( Num_ii>0 )
     {
@@ -413,11 +413,11 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
 	    Part_rr.Id_i = 0x104;
 	    }
 	}
-    y2debug( "Fields Num:%d Id:%x Ptype:%d Start:%d End:%d Block:%lu",
-	     Part_rr.Num_i, Part_rr.Id_i, Part_rr.PType_e, Part_rr.Start_i,
-	     Part_rr.End_i, Part_rr.Blocks_l );
-    y2debug( "Fields Device:%s Info:%s",
-	     Part_rr.Device_C.c_str(), Part_rr.Info_C.c_str() );
+    y2milestone( "Fields Num:%d Id:%x Ptype:%d Start:%d End:%d Block:%lu",
+	         Part_rr.Num_i, Part_rr.Id_i, Part_rr.PType_e, Part_rr.Start_i,
+	         Part_rr.End_i, Part_rr.Blocks_l );
+    y2milestone( "Fields Device:%s Info:%s",
+	         Part_rr.Device_C.c_str(), Part_rr.Info_C.c_str() );
     }
  return( Num_ii>0 );
 }

@@ -53,6 +53,12 @@ DiskAccess::DiskAccess(string Disk_Cv)
 	    Cylinder_i = Sect_li / (Head_i*Sector_i);
 	    }
 	close (Fd_ii);
+	if( Disk_C == "/dev/hdg" )
+	    {
+	    Head_i = 255;
+	    Sector_i = 63;
+	    Cylinder_i = 12514;
+	    }
         y2milestone( "Head=%d Sector:%d Cylinder:%d", Head_i, Sector_i, 
 	             Cylinder_i );
 	}
@@ -96,8 +102,11 @@ DiskAccess::CylinderToKb(int Cylinder_iv)
 int
 DiskAccess::KbToCylinder(unsigned long Kb_lv)
 {
-  int Val_ii = ByteCyl_l / 1024;
-  return (Kb_lv + Val_ii - 1) / Val_ii;
+  unsigned long long Bytes_li = Kb_lv;
+  Bytes_li *= 1024;
+  Bytes_li += ByteCyl_l - 1;
+  int Cyl_ii = Bytes_li / (unsigned long long)ByteCyl_l;
+  return (Cyl_ii);
 }
 
 int
