@@ -767,8 +767,9 @@ global define map CheckPartedValid( string ddevice, map disk,
     list ps = filter( `p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
     y2milestone( "ps %1", ps );
     integer cyl_blocks = disk["cyl_size"]:1000000 / 1024;
-    boolean openbsd = size(filter(`e,partitions,
-				  ``(e["fsid"]:0==Partitions::fsid_openbsd)))>0;
+    list bsd_part = [ Partitions::fsid_freebsd, Partitions::fsid_openbsd ];
+    boolean openbsd = find( `e,partitions, 
+                            ``(contains(bsd_part,e["fsid"]:0)))!=nil;
     y2milestone( "openbsd %1", openbsd );
     foreach( `p, ps,
 	``{
@@ -819,7 +820,7 @@ global define map CheckPartedValid( string ddevice, map disk,
 	}
     if( !ret )
 	{
-	partitions = [];
+	list new_p = [];
 	integer reg_start=0;
 	y2milestone( "ps=%1", ps );
 	foreach( `p, ps,
@@ -840,9 +841,17 @@ global define map CheckPartedValid( string ddevice, map disk,
 		part["type"] = pnr<5 ? `primary : `logical;
 		part["fsid"] = Partitions::fsid_native;
 		}
+	    map pp = find( `e, partitions, ``(e["nr"]:0==pnr));
+	    if( pp != nil )
+		{
+		y2milestone( "entry in parted list %1", pp );
+		part["fsid"] = pp["fsid"]:0;
+		part["type"] = pp["type"]:`primary;
+		}
 	    part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
-	    partitions = add( partitions, part );
+	    new_p = add( new_p, part );
 	    });
+	partitions = new_p;
 	y2milestone( "new p %1", partitions );
 	}
     y2milestone( "disk %1 ret:%2", ddevice, ret );
