@@ -20,7 +20,6 @@
 
     import "Label";
     include "ui/common_functions.ycp";
-    include "partitioning/write_fstab.ycp";
 
 global define target_modify( map modify_targets, boolean installation )
     ``{
@@ -56,6 +55,8 @@ global define target_modify( map modify_targets, boolean installation )
     integer number_of_modifications = size( modify_targets );
     integer curr_modification       = 0;
     boolean ok                      = true;
+    boolean writefstab              = false;
+    map     tg                      = Storage::GetTargetMap();
 
 
     while ( ok && (curr_modification < number_of_modifications) )
@@ -103,41 +104,21 @@ global define target_modify( map modify_targets, boolean installation )
 		string cmd = curr_map["type"]:"";
 		if( cmd=="remove_lv" || cmd=="create_lv" )
 		    {
-		    list fstab = SCR::Read( .etc.fstab );
-		    y2debug( "fstab=%1", fstab );
-		    map target = Storage::GetTargetMap();
-		    string device = "/dev/" + curr_map["vgname"]:"";
-		    string name = curr_map["name"]:"";
-		    boolean write_fstab = false;
-		    y2debug( "device=%1 name=%2", device, name );
-		    if( cmd=="remove_lv" )
+		    string device = "/dev/" + curr_map["vgname"]:"" + "/" +
+				    curr_map["name"]:"";
+		    map part = Storage::GetPartition( tg, device );
+		    if( cmd=="remove_lv" || cmd=="create_lv" )
 			{
-			device = device + "/" + name;
-			integer old = size(fstab);
-			fstab = filter( `e, fstab, ``(e["spec"]:""!=device ));
-			y2debug( "size=%1 old=%2", size(fstab), old );
-			write_fstab = old != size(fstab);
+			part["delete"] = true;
+			writefstab = writefstab || size(part["mount"]:"")>0;
 			}
 		    else if( cmd=="create_lv" )
 			{
-			list parts = target[device,"partitions"]:[];
-			map entry = 
-			    select( filter( `e, parts, 
-					    ``(e["nr"]:""==name )), 0, $[] );
-			y2debug( "entry=%1", entry );
-			if( entry["mount"]:"" !="" )
-			    {
-			    fstab = add( fstab, 
-					 onepartition2fstab( device, entry ));
-			    write_fstab = true;
-			    }
+			part["create"] = true;
+			writefstab = writefstab || size(part["mount"]:"")>0;
 			}
-		    y2debug( "write_fstab=%1", write_fstab );
-		    if( write_fstab )
-			{
-			y2debug( "new_fstab=%1", fstab );
-			SCR::Write(.etc.fstab, fstab);
-			}
+		    tg = Storage::SetPartition( tg, part );
+		    y2milestone( "writefstab=%1", writefstab );
 		    }
 		}
 	    }
@@ -145,6 +126,11 @@ global define target_modify( map modify_targets, boolean installation )
 	    {
 	    ok = fdisk_call( curr_map );
 	    }
+	}
+
+    if( writefstab )
+	{
+	Storage::WriteFstab( tg );
 	}
 
     y2debug("END target_modify");
