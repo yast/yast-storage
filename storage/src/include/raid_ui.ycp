@@ -50,6 +50,24 @@ global define symbol AbortDialog()
     }
 
 
+global define boolean CheckRaidNumbers( string raidnr )
+    ``{
+    integer max_raid = 12;
+    list parts = get_possible_rds( Storage::GetTargetMap() );
+    string dev = sformat( "/dev/md%1", raidnr );
+    parts = filter( `e, parts, ``(e["raid_name"]:""==dev));
+    y2milestone( "size %1 parts %2", size(parts), parts );
+    if( size(parts) >= max_raid )
+	{
+	string text = sformat(_("
+Maximal number of partitions in a software raid is %1.
+You want to add more partitions to the raid that can be
+handled by current version of stware raid."), max_raid);
+	UI::ErrorPopup(text);
+	}
+    return( size(parts) < max_raid );
+    }
+
 
 /**
  * Initialize RAID creation.
@@ -803,7 +821,8 @@ global define symbol RaidDevices( symbol what )
 	    subdevpartkey = UI::QueryWidget(`id(`raid_table), `CurrentItem);
 
 	    if( CheckItemIsNotRaid( subdevpartkey ) && 
-	        Storage::IsKeyKey( subdevraidkey ) )
+	        Storage::IsKeyKey( subdevraidkey ) &&
+		CheckRaidNumbers( subdevraidindex ) )
 		{
 		if ( IsRaidCreated( subdevraidindex, what )) // Popup!
 		    {
