@@ -20,23 +20,113 @@ textdomain "storage";
 
 import "Wizard";
 import "Misc";
+import "Bootloader";
 
 include "ui/common_popups.ycp";
 include "partitioning/write_fstab.ycp";
 
 map cdrom = $[];
 
+define map GetCdromLinks()
+    ``{	    
+    list pat = [ "cdrom*", "dvd*", "dvdrecorder*", "cdrecorder*", "dvdram*" ];
+    map links = $[];
+    foreach( `l, Storage::GetDirPatterns( "/dev", pat ),
+	``{
+	map st = SCR::Read( .target.lstat, l );
+	if( st["islink"]:false )
+	    {
+	    string content = SCR::Read( .target.symlink, l );
+	    integer pos = find( content, "/dev/" );
+	    y2milestone( "pos %1, cont %2", pos, content );
+	    if( pos >=0 )
+		{
+		content = substring( content, 5 );
+		}
+	    links[l] = content;
+	    }
+	});
+    y2milestone( "links %1", links );
+    return( links );
+    }
+
+define list CreateTableList( map cdrom )
+    ``{
+    list clist = maplist( `k, `entry, cdrom,
+	``{
+	term it = `item( `id(k) );
+	it = add( it, entry["model"]:"" );
+	it = add( it, entry["device"]:"" );
+	if( entry["configured"]:false )
+	    {
+	    it = add( it, "/dev/"+entry["link",0]:"" );
+	    it = add( it, entry["mount"]:"" );
+	    }
+	else
+	    {
+	    it = add( it, "" );
+	    it = add( it, "" );
+	    }
+	return( it );
+	});
+    y2milestone( "clist %1", clist );
+    return( clist );
+    }
+
+
+define void EnableButtons( map entry )
+    ``{
+    UI::ChangeWidget( `id(`add), `Enabled, !entry["configured"]:false );
+    UI::ChangeWidget( `id(`remove), `Enabled, entry["configured"]:false );
+    }
+
+define map IntegrateCd( map entry, map fstab )
+    ``{
+    map ret = $[];
+    y2milestone( "entry %1", entry );
+    string link = "/dev/" + entry["link",0]:"";
+    string t = substring(entry["device"]:"",5);
+    y2milestone( "link %1 to %2", link, t );
+    SCR::Execute( .target.symlink, t, link );
+    t = entry["mount"]:"";
+    if( SCR::Read( .target.size, t )<0 )
+	{
+	SCR::Execute( .target.bash, "mkdir " + t );
+	}
+    t = substring( t, findlastof(t,"/")+1 );
+    ret["d"] = t;
+    list lines = Storage::FindFstabLines( fstab, "", link, "", "" );
+    if( size(lines)>0 )
+	{
+	ret["l"] = lines[0]:-1;
+	AsciiFile::ChangeLineField( fstab, lines[0]:-1, 1, entry["mount"]:"" );
+	}
+    else
+	{
+	map new = MakeCdromFstabEntry( entry );
+	list fstlist = [ link, entry["mount"]:"",
+			 new["vfstype"]:"", new["mntops"]:"", 
+			 sformat("%1",new["freq"]:0),
+			 sformat("%1",new["passno"]:0) ];
+
+	AsciiFile::AppendLine( fstab, fstlist );
+	}
+    y2milestone( "ret %1", ret );
+    return( ret );
+    }
+
 define string HelpText()
     ``{
-    return( _("<p>This module configures the CD-ROM drives in your system.</p>
-<p>The list contains all detected CD/DVD drives the box to the left
-indicates if the CD/DVD is already integrated into the system.
-Integration into the system means that an entry in /etc/fstab exists,
-a subdirectory below /media is created, and possibly a kernel command-line
-parameter is provided (for IDE devices).</p>
-<p>Simply click the box of the CD/DVDs to integrate into
-the system. It normally makes no sense to click the box of already
-integrated CD/DVDs.</p>
+    return( _("<p>This module configures the CD/DVD drives in your system.</p>
+<p>The list contains all detected CD/DVD drives. If there are entries for
+the name of the Link and teh Mount Point displayed, the cdrom is integrated
+into the system. Integration into the system means that a symbolic link
+(e.g. /dev/cdrom, /dev/dvd, ...) to the device name (e.g. /dev/hdc, /dev/sr0,
+...) is present, an entry in /etc/fstab exists, a subdirectory below /media 
+is present, and possibly a kernel command-line parameter is provided 
+(for IDE devices).</p>
+<p>You can use the two buttons \"Add\" and \"Remove\" to change the state 
+of integration of an entry in the list.</p>
 "));
     }
 
@@ -54,112 +144,156 @@ define integer TermToId( term t )
 
     Wizard::OpenDialog( Wizard::GenericDialog( buttons ) );
 
-    list dev = [];
+    map links = GetCdromLinks();
 
-    /*
-    dev = add( dev, $[ "conf" : $[ "configured" : `new ],
-		       "dev_name" : "/dev/hda",
-		       "model" : "Test CD-ROM" ] );
-    */
+    map fstab = Partitions::GetFstab( "/etc/fstab" );
 
-    foreach( `entry, SCR::Read(.probe.cdrom), 
+    list tmp = maplist( `entry, SCR::Read(.probe.cdrom),
 	``{
-	map conf = SCR::Read(.probe.status, entry["unique_key"]:"");
-	y2milestone( "entry:%1", entry );
-	y2milestone( "conf:%1", conf );
-	if( conf["available"]:`no != `no )
+	map cd = StorageDevices::GetCdromEntry( entry["dev_name"]:"" );
+        cd = union( cd, entry );
+	y2milestone( "entry %1 is %2", entry["dev_name"]:"", cd );
+	map config = SCR::Read(.probe.status, entry["unique_key"]:"");
+	cd["configured"] = config["configured"]:`no == `yes;
+	cd["changed"] = false;
+	string device = cd["dev_name"]:(entry["dev_name"]:"");
+	cd["device"] = device;
+	map l = filter( `k, `e, links, ``(e==substring(device,5)));
+	y2milestone( "l %1", l );
+	list link = [];
+	link = maplist( `k, `e, l, ``(substring(k,5)));
+	link = sort( `a, `b, link, ``(a!="cdrom") );
+	cd["link"] = link;
+	cd["configured"] = cd["configured"]:false && size(link)>0;
+	list lines = [];
+	foreach( `l, link,
+	    ``{
+	    lines = union( lines, Storage::FindFstabLines( fstab, "", "/dev/"+l,
+							   "", "" ));
+	    });
+	if( size(lines)>0 )
 	    {
-	    entry["conf"] = conf;
-	    dev = add( dev, entry );
+	    map fse = AsciiFile::GetLine( fstab, lines[0]:-1 );
+	    cd["mount"] = fse["fields",1]:"";
 	    }
+	return( cd );
 	});
 
-    integer num = 0;
-    list clist = maplist( `entry, dev,
-	``{
-	boolean conf = entry["conf","configured"]:`no == `yes;
-	term it = `item( `id(num), entry["model"]:"", conf );
-	cdrom[num] = conf;
-	num = num+1;
-	return( it );
-	});
-    y2milestone( "clist=%1", clist );
-    y2milestone( "cdrom=%1", cdrom );
-
-    clist = sort( `a, `b, clist,
+    tmp = sort( `a, `b, tmp,
 	``{
 	boolean ret = true;
-	integer numa = 0;
-	integer numb = 0;
-	symbol conf = dev[TermToId(a),"conf","configured"]:`no;
-	if( conf == `yes )
-	    {
-	    numa = 1;
-	    }
-	else if( conf == `no )
-	    {
-	    numa = 2;
-	    }
-	else
-	    {
-	    numa = 3;
-	    }
-	conf = dev[TermToId(b),"conf","configured"]:`no;
-	if( conf == `yes )
-	    {
-	    numb = 1;
-	    }
-	else if( conf == `no )
-	    {
-	    numb = 2;
-	    }
-	else
-	    {
-	    numb = 3;
-	    }
-	y2debug( "numa:%1 numb:%2", numa, numb );
-	if( numa > numb )
-	    ret = false;
-	else
-	    ret = true;
-	y2debug( "ret %1", ret );
+	ret = a["configured"]:false || !b["configured"]:false;
+	y2milestone( "a:%1 b:%2 ret %3", a["configured"]:false, 
+                     b["configured"]:false, ret );
 	return( ret );
 	});
+
+    integer num=0;
+    cdrom = listmap( `e, tmp, 
+		     ``{num=num+1; e["index"]=num-1; return [num-1,e];});
+
+    y2milestone( "cdrom=%1", cdrom );
 
     term dialog =
 	`VBox( 
 	    `VSpacing(3),
 	    `HBox( 
-		`HWeight(20, `HSpacing() ),
+		`HWeight(3, `HSpacing() ),
 		`HWeight(60, 
-		    `MultiSelectionBox( `id(`cdroms), `opt(`notify),
-					_("&Detected CD/DVD Devices"), 
-					clist )), 
-		`HWeight(20, `HSpacing() )),
+		    `VBox(
+		        `Left(`Label(_("Detected CD/DVD Devices"))),
+			`Table( `id(`cdroms), 
+			        `opt(`notify,`immediate,`keepSorting),
+				`header( _("Name"), _("Device"), _("Link"), 
+				         _("Mount Point")),
+				CreateTableList( cdrom ) ))), 
+		`HWeight(2, `HSpacing() ),
+		`HWeight(15, `Top( `VBox( `VSpacing(3),
+					  `PushButton( `id(`add), 
+					               _("A&dd") ),
+					  `PushButton( `id(`remove), 
+					               _("&Remove") )))),
+		`HWeight(2, `HSpacing() )),
 	    `VSpacing(3) 
 	    );
 
-    if( size(dev)==0 )
+    if( size(cdrom)==0 )
 	{
 	UI::MessagePopup( _("No CD/DVD device found") );
 	return;
 	}
-    Wizard::SetContents( _("CD/DVD device integration"), dialog,
-			 HelpText(), false, false );
-
-    boolean changed = false;
+    Wizard::SetContents( _("CD/DVD device integration"), dialog, HelpText(), 
+                         false, false );
+    EnableButtons( cdrom[0]:$[] );
     symbol ret = `none;
     do
 	{
 	ret = UI::UserInput();
 	y2milestone( "ret = %1", ret );
+	if( ret == `add || ret == `remove )
+	    {
+	    num = UI::QueryWidget( `id(`cdroms), `CurrentItem );
+	    cdrom[num,"changed"] = true;
+	    cdrom[num,"configured"] = ret == `add;
+	    if( ret == `add )
+		{
+		string type = substring( cdrom[num,"linkname"]:"", 5 );
+		type = deletechars( type, "0123456789" );
+		y2milestone( "type %1", type );
+		tmp = maplist( `k, `e, 
+                               filter( `l, `f, cdrom, 
+				       ``(l!=num && f["configured"]:false)),
+			       ``(e) );
+		y2milestone( "tmp %1", tmp );
+		tmp = filter( `e, tmp, 
+		                  ``(find(e["linkname"]:"", "/dev/"+type)==0));
+		y2milestone( "tmp %1", tmp );
+		list lnames = [];
+		foreach( `e, tmp, 
+		    ``{
+		    if( size(e["link"]:[])>0 )
+			lnames = add(lnames, e["link",0]:"");
+		    });
+		y2milestone( "lnames %1", lnames );
+		lnames = filter( `e, lnames, ``(find(e, type)==0));
+		y2milestone( "lnames %1", lnames );
+		lnames = maplist( `e, lnames, ``(substring(e, size(type))));
+		y2milestone( "lnames %1", lnames );
+		lnames = maplist( `e, lnames, 
+				  ``{
+				  integer ret = 1;
+				  if( e=="1" )
+				      ret = 2;
+				  else if( size(e)>0 )
+				      ret = tointeger(e);
+				  return( ret );
+				  });
+		y2milestone( "lnames %1", lnames );
+		integer max = 1;
+		while( contains( lnames, max ) )
+		    {
+		    max = max+1;
+		    }
+		if( max>1 )
+		    {
+		    type = type + sformat("%1",max);
+		    }
+		cdrom[num,"link"] = [ type ];
+		cdrom[num,"mount"] = "/media/" + type;
+		}
+	    UI::ChangeWidget( `id(`cdroms), `Items, CreateTableList( cdrom ) );
+	    UI::ChangeWidget( `id(`cdroms), `CurrentItem, num );
+	    EnableButtons( cdrom[num]:$[] );
+	    y2milestone( "entry %1", cdrom[num]:$[] );
+	    }
 	if( ret == `cdroms )
 	    {
-	    changed = true;
+	    num = UI::QueryWidget( `id(`cdroms), `CurrentItem );
+	    EnableButtons( cdrom[num]:$[] );
 	    }
 	else if( ret == `abort )
 	    {
-	    if( changed )
+	    if( size(filter( `k, `e, cdrom, ``(e["changed"]:false)))>0 )
 		{
 		if( !UI::YesNoPopup( _("You have unsaved changes.
 These changes will be lost if you abort now.
@@ -173,75 +307,174 @@ Discard changes?
 	    }
 	else if( ret == `apply || ret == `finish )
 	    {
-	    list selected = UI::QueryWidget( `id(`cdroms), `SelectedItems );
-	    y2milestone( "selected:%1 cdrom:%2", selected, cdrom );
-	    foreach( `val, selected,
-		``{
-		string device = dev[val,"dev_name"]:"";
-		map cd = StorageDevices::GetCdromEntry( device );
-		if( !cdrom[val]:true && size(cd)>0 )
-		    {
-		    Storage::ChangeLineFstab( MakeCdromFstabEntry(cd) );
-
-		    string link = cd["linkname"]:"";
-		    if( SCR::Read( .target.size, link )>=0 )
-			SCR::Execute( .target.remove, link );
-		    y2milestone( "link %1 to %2", link, cd["dev_name"]:"" );
-		    SCR::Execute( .target.symlink, 
-				  substring(cd["dev_name"]:"",5), link );
-		    string text = 
-			sformat( _("CD/DVD device %1 successfully integrated."), 
-				 device );
-		    string disk = substring(device,5);
-		    if( contains( StorageDevices::ProbeIDERecorders(), disk ) )
+	    boolean ide_reboot = false;
+	    list ch = maplist( `l, `v, 
+	                       filter( `k, `e, cdrom, ``(e["changed"]:false)),
+			       ``(v));
+	    y2milestone( "changed %1", ch );
+	    if( size(ch)>0 && size(links)>0 )
+		{
+		string cmd = "rm -f ";
+                list keep = [];
+		foreach( `e, maplist( `l, `m,
+		                      filter( `k, `v, cdrom, 
+				              ``(v["configured"]:false)),
+				      ``(m)),
+		    ``{
+		    if( size(e["link"]:[])>0 )
 			{
-			string initmd = 
-			  Misc::SysconfigRead( .sysconfig.kernel.MODULES_LOADED_ON_BOOT, "" );
-			if( find( initmd, "ide-scsi" )<0 )
-			    {
-			    if( find( initmd, "cdrom" )<0 )
-				{
-				initmd = initmd + size(initmd)>0?" ":"" + "cdrom";
-				}
-			    if( find( initmd, "ide-cd" )<0 )
-				{
-				initmd = initmd + size(initmd)>0?" ":"" + "ide-cd";
-				}
-			    initmd = initmd + size(initmd)>0?" ":"" + "ide-scsi";
-			    SCR::Write( .sysconfig.kernel.MODULES_LOADED_ON_BOOT, initmd );
-			    }
-			saveBootloaderConfig( false );
+			keep = add( keep, e["link",0]:"" );
 			}
-		    cdrom[val] = true;
-		    UI::MessagePopup( text );
-		    }
+		    });
+		keep = maplist( `e, keep, ``("/dev/"+e));
+		list rem = filter( `e, maplist(`k,`e,links,``(k)),
+		                   ``(!contains(keep,e)));
+		y2milestone( "keep=%1 rem:%2", keep, rem );
+		cmd = cmd + mergestring( rem, " " );
+		y2milestone( "cmd=%1", cmd );
+		SCR::Execute( .target.bash, cmd );
+		}
+	    list remfstab = [];
+	    list remdirs = [];
+	    list idescsi = [];
+	    foreach( `e, filter( `v, ch, ``(!v["configured"]:false)),
+		``{
+		list lines = [];
+		foreach( `l, e["link"]:[], 
+		    ``{
+		    lines = union( lines,
+				   Storage::FindFstabLines( fstab, "", "/dev/"+l,
+							    "", "" ));
+		    });
+		remfstab = union( remfstab, lines );
+		remdirs = union( remdirs, e["link"]:[] );
+		cdrom[e["index"]:-1,"link"] = [];
 		});
-	    integer num = 0;
-	    foreach( `entry, dev,
+	    foreach( `e, filter( `v, ch, ``(v["configured"]:false)),
+		``{
+		string device = e["dev_orig"]:(e["dev_name"]:"");
+		device = substring(device,5);
+		if( contains( StorageDevices::ProbeIDERecorders(), device ) )
+		    {
+		    idescsi = add( idescsi, device );
+		    }
+		map ret = IntegrateCd( e, fstab );
+		remdirs = filter( `e, remdirs, ``(e!=ret["d"]:""));
+		remfstab = filter( `e, remfstab, ``(e!=ret["l"]:-1));
+		});
+	    remdirs = filter( `e, remdirs, ``(e!="cdrom"));
+	    if( size(remdirs)>0 )
+		{
+		string cmd = "cd /media && rmdir " + mergestring( remdirs, " ");
+		y2milestone( "cmd=%1", cmd );
+		SCR::Execute( .target.bash, cmd );
+		}
+	    if( size(ch)>0 )
+		{
+		boolean found = false;
+		integer n = 0;
+		while( !found && n<size(cdrom) )
+		    {
+		    found = cdrom[n,"configured"]:false &&
+		            cdrom[n,"link",0]:"" == "cdrom";
+		    n = n+1;
+		    };
+		integer k = 0;
+		integer idx = -1;
+		list nlist = StorageDevices::TypeNames;
+		while( !found && idx==-1 && k<size(nlist) )
+		    {
+		    n = 0;
+		    while( idx==-1 && n<size(cdrom) )
+			{
+			if( find( cdrom[n,"link",0]:"", nlist[k]:"" )==0 )
+			    {
+			    idx = n;
+			    }
+			n = n+1;
+			};
+		    k = k+1;
+		    }
+		if( !found && idx>=0 )
+		    {
+		    map entry = eval(cdrom[idx]:$[]);
+		    entry["link"] = [ "cdrom" ];
+		    entry["mount"] = "/media/cdrom";
+		    map ret = IntegrateCd( entry, fstab );
+		    remfstab = filter( `e, remfstab, ``(e!=ret["l"]:-1));
+		    cdrom[idx,"link"] = add( cdrom[idx,"link"]:[], "cdrom" );
+		    }
+		if( size(remfstab)>0 )
+		    {
+		    AsciiFile::RemoveLines( fstab, remfstab );
+		    }
+		AsciiFile::RewriteFile( fstab, "/etc/fstab" );
+		fstab = Partitions::GetFstab( "/etc/fstab" );
+		links = GetCdromLinks();
+		}
+	    y2milestone( "idescsi %1 remfstab %2 remdirs %3", idescsi, remfstab,
+	                 remdirs );
+	    if( size(ch)>0 && size(idescsi)>0 )
+		{
+		boolean loader_rewrite = false;
+		Bootloader::Read();
+		foreach( `d, idescsi, 
+		    ``{
+		    if( Bootloader::getKernelParam( "DEFAULT", d ) != "ide-scsi")
+			{
+			Bootloader::setKernelParam( "DEFAULT", d, "ide-scsi");
+			loader_rewrite = true;
+			}
+		    });
+		string initmd = 
+		    Misc::SysconfigRead( .sysconfig.kernel.MODULES_LOADED_ON_BOOT, "" );
+		if( find( initmd, "ide-scsi" )<0 )
+		    {
+		    if( find( initmd, "cdrom" )<0 )
+			{
+			initmd = initmd + size(initmd)>0?" ":"" + "cdrom";
+			}
+		    if( find( initmd, "ide-cd" )<0 )
+			{
+			initmd = initmd + size(initmd)>0?" ":"" + "ide-cd";
+			}
+		    initmd = initmd + size(initmd)>0?" ":"" + "ide-scsi";
+		    SCR::Write( .sysconfig.kernel.MODULES_LOADED_ON_BOOT, 
+		                initmd );
+		    ide_reboot = true;
+		    }
+		y2milestone( "loader_rewrite %1", loader_rewrite );
+		if( loader_rewrite )
+		    {
+		    Bootloader::Write();
+		    ide_reboot = true;
+		    }
+		}
+	    foreach( `e, ch, ``{ cdrom[e["index"]:-1,"changed"] = false; });
+	    y2milestone( "ide_reboot %1", ide_reboot );
+	    foreach( `k, `entry, cdrom,
 		``{
 		if( size(entry["unique_key"]:"")>0 )
 		    {
 		    SCR::Write( .probe.status.configured, 
 			        entry["unique_key"]:"", 
-				cdrom[num]:false?`yes:`no );
+				entry["configured"]:false?`yes:`no );
 		    }
-		num = num + 1;
 		});
-	    changed = false;
-	    }
-	else if( ret == `abort )
-	    {
-	    if( changed )
+	    if( size(ch)>0 )
 		{
-		if( !UI::YesNoPopup( _("You have unsaved changes.
-These changes will be lost if you abort now.
+		string text = _("CD/DVD device changes performed.");
 
-Discard changes?
-")))
+		if( ide_reboot )
 		    {
-		    ret = `continue;
+		    text = text + _("
+
+Since changed settings for IDE CD/DVD writers you may have
+to reboot for these settings to work.");
 		    }
+		UI::MessagePopup( text );
 		}
+	    y2milestone( "cdrom %1", cdrom );
 	    }
 	}
     while( ret != `abort && ret != `finish );
