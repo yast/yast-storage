@@ -53,12 +53,6 @@ DiskAccess::DiskAccess(string Disk_Cv)
 	    Cylinder_i = Sect_li / (Head_i*Sector_i);
 	    }
 	close (Fd_ii);
-	if( Disk_C == "/dev/hdg" )
-	    {
-	    Head_i = 255;
-	    Sector_i = 63;
-	    Cylinder_i = 12514;
-	    }
         y2milestone( "Head=%d Sector:%d Cylinder:%d", Head_i, Sector_i, 
 	             Cylinder_i );
 	}
