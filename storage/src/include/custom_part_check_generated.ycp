@@ -206,6 +206,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
     boolean show_all_popups = false;
 
     boolean partition_mounted_but_not_formated = false;
+    boolean swap_used_but_no_format = false;
     boolean have_swap            = false;
     symbol  retval               = `next;
     boolean sparc_first_is_swap  = false;
@@ -375,29 +376,36 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		//
 		//////////////////////////////////////////////////////////////
 
-		if ( ( mountpoint == "swap" ) )
-		{
+		if( mountpoint == "swap" )
+		    {
 		    have_swap = true;
 
-		    // first partition of a sparc system shouldn't be a swap parition
+		    // first partition of a sparc system shouldn't be a swap 
+		    // parition
 
-		    if ( Arch::sparc && lookup( part, "nr", 0) == 1 )
-		    {
+		    if( Arch::sparc && part["nr"]:0 == 1 )
+			{
 			sparc_first_is_swap = true;
 			sparc_first_dev     = disk;
+			}
+		    if( !part["format"]:false &&
+		        part["detected_fs"]:`none != `swap )
+			{
+			swap_used_but_no_format = true;
+			}
+		    y2milestone( "sw %1 part %2", swap_used_but_no_format, part );
 		    }
-		}
 
 
 		// check if a fat filesystem  is greater than 2 GB
 		if( (part["used_fs"]:`unknown==`fat32 ||
 		     part["used_fs"]:`unknown==`fat16) && part["format"]:false )
 		{	
-		    // usesd a mountpoint like /urs / /var /home /opt with fat 
+		    // uses a mountpoint like /usr / /var /home /opt with fat 
 		    if( ! fat_system_mount )
 		    {
-			if( mountpoint == "/usr"  ||   mountpoint == "/"     || 
-			    mountpoint == "/home" ||   mountpoint == "/var"  ||
+			if( mountpoint == "/usr"  || mountpoint == "/"     || 
+			    mountpoint == "/home" || mountpoint == "/var"  ||
 			    mountpoint == "/opt"  )
 			{
 			    fat_system_mount = true;
@@ -703,8 +711,8 @@ the disk label will be deleted.
 	retval = `again;
     }
 
-    if (( partition_mounted_but_not_formated && installation) || show_all_popups )
-    {
+    if( (partition_mounted_but_not_formated && installation) || show_all_popups )
+	{
 	string message = _("
 WARNING:
 
@@ -729,7 +737,23 @@ Do you want to change your setup?
 	boolean ret = UI::YesNoPopup( message);
 
 	if (ret == true) retval = `again;
-    }
+	}
+
+    if( swap_used_but_no_format || show_all_popups )
+	{
+	string message = _("
+WARNING:
+
+You choose a swap partition but did not direct YaST2 to format it.
+This swap partition will probably not be useable.
+
+Do you want to change your setup?
+");
+
+	boolean ret = UI::YesNoPopup( message);
+
+	if (ret == true) retval = `again;
+	}
 
     return( [targetMap, retval] );
 };
