@@ -21,4 +21,4 @@ libpy2makefs_la_LDFLAGS = -version-info 2:0
 INCLUDES = -I$(includedir)
 
 install-data-hook:
-	rm -f $(DESTDIR)$(plugindir)/*.la
+	rm -f $(DESTDIR)$(plugindir)/libpy2makefs.la

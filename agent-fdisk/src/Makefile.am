@@ -6,7 +6,7 @@ AM_CXXFLAGS = -DY2LOG=\"agent-storage\"
 INCLUDES = -I$(includedir)
 
 plugin_LTLIBRARIES = libpy2ag_storage.la
-noinst_LTLIBRARIES = liby2ag_storage.la 
+noinst_LTLIBRARIES = liby2ag_storage.la
 
 liby2ag_storage_la_SOURCES =			\
 	FdiskAgent.cc	FdiskAgent.h		\
@@ -30,4 +30,4 @@ libpy2ag_storage_la_SOURCES =				\
 libpy2ag_storage_la_LDFLAGS = -version-info 2:0
 
 install-data-hook:
-	rm -f $(DESTDIR)$(plugindir)/*.la
+	rm -f $(DESTDIR)$(plugindir)/libpy2ag_storage.la
