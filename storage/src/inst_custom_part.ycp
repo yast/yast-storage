@@ -92,6 +92,8 @@ HINTS: Always use
    string  focusline          = "";
    boolean focusset           = false;
 
+   integer last_sel_disk = 0;
+
 
    
 
@@ -2018,18 +2020,21 @@ fit into this new extended partition.
      *---------------------------------------------------------------------
      */
 
-global define string ChooseDisk(  map targetMap, string heading , symbol what )
+global define string ChooseDisk( map targetMap, string heading, symbol what )
     ``{
     // Header Choose disk dialog
     term diskgroup  = `VBox();
     list disks      = [];
     integer       n = 0;
+    string txt = "";
 
     foreach ( `dev, `disk, targetMap, 
 	``{
         if( !disk["is_lvm_vg"]:false && !issubstring( dev, "/dev/md") )
 	  {
-	  diskgroup = add( diskgroup, `Left( `RadioButton( `id( dev ), dev, n == 0 )));
+	  txt = sformat( "&%1: %2", n+1, dev );
+	  diskgroup = add( diskgroup, `Left( `RadioButton( `id(dev), txt, 
+	                                     n==last_sel_disk )));
 	  n = n + 1;
 	  disks = add ( disks,  dev );
 	  }
@@ -2060,6 +2065,15 @@ global define string ChooseDisk(  map targetMap, string heading , symbol what )
 	  {
 	  ret = UI::QueryWidget(`id(`choosedisk), `CurrentButton);
 	  UI::CloseDialog();
+	  n=0;
+	  foreach ( `dev, `disk, targetMap, 
+	      ``{
+	      if( dev==ret )
+		  {
+		  last_sel_disk = n;
+		  }
+	      n = n+1;
+	      });
 	  return(ret);
 	  }
       }
