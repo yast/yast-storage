@@ -86,6 +86,7 @@
     boolean lvm_initialized             = false;
     boolean probe_done             	= false;
     symbol  exit_key               	= `next;
+    boolean force_disk_probe            = false;
 
     /*
      */
@@ -96,7 +97,8 @@ global define map GetTargetMap()
     if( !probe_done && !Mode::config )
 	{
 	y2milestone ("probing StorageDevices" );
-	tmp = StorageDevices::Probe(false);
+	tmp = StorageDevices::Probe(force_disk_probe);
+	force_disk_probe = false;
 	y2milestone ("probing done" );
 	if( size(tmp)>0 )
 	    {
@@ -152,6 +154,28 @@ global define symbol GetExitKey()
     ``{
     return( exit_key );
     };
+
+global define map FindFstabEntry( map fstab, string mount, string device,
+			          string uuid, string label )
+    ``{
+    map ret = $[];
+    list lines = [];
+    lines = FindFstabLines( fstab, mount, device, uuid, label );
+    y2milestone( "mount=%1 device=%2 uuid=%3 label=%4", mount, device, uuid, 
+                 label );
+    if( size(lines)>0 )
+	{
+	map entry = AsciiFile::GetLine( fstab, lines[0]:-1 );
+	ret = $[ "spec" : entry["fields",0]:"",
+	         "file" : entry["fields",1]:"",
+	         "vfstype" : entry["fields",2]:"",
+	         "mntops" : entry["fields",3]:"",
+	         "freq" : entry["fields",4]:0,
+	         "passno" : entry["fields",5]:0 ];
+	}
+    y2milestone( "ret %1", ret );
+    return( ret );
+    }
 
 global define list FindFstabLines( map fstab, string mount, string device,
                                    string uuid, string label )
@@ -512,6 +536,7 @@ global define map ReReadTargetMap()
     SCR::Write( .md.init, "" );
     SCR::Write( .lvm.init, "" );
     SetModifyTargets( $[] );
+    force_disk_probe = true;
     return GetTargetMap();
     };
 
@@ -2356,7 +2381,7 @@ global define integer ZeroDevice(string del_device)
     ``{
     string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1", 
                          del_device );
-    integer ret_zero   = SCR::Execute(.target.bash, zero_string );
+    integer ret_zero = SCR::Execute(.target.bash, zero_string );
     map tg = GetTargetMap();
     if( tg[del_device,"label"]:"msdos" == "gpt" )
 	{
@@ -2379,6 +2404,13 @@ global define integer ZeroDevice(string del_device)
 				              del_device ));
     y2milestone( "Partitiontable of device %1 deleted (%2-%3)", del_device, 
                  ret_zero, ret_reread);
+    if( ret_reread != 0 )
+	{
+	UI::MessagePopup( _("ReRead of partition table failed.
+
+You have to reboot your system to make the changes visible 
+to the linux kernel"));
+	}
     return (ret_zero + ret_reread);
     }
 
@@ -3421,6 +3453,20 @@ global define string PathToDestdir( string pt )
 	pt = Installation::destdir + pt;
 	}
     return( pt );
+    }
+
+global define list GetDirPatterns( string dir, list patterns )
+    ``{
+    list ret = [];
+    string cmd = sformat( "cd %1 && (ls %2 2>/dev/null)", dir, 
+                          mergestring( patterns, " "));
+    map out = SCR::Execute( .target.bash_output, cmd );
+    ret = splitstring( out["stdout"]:"", "\n" );
+    ret = filter( `e, ret, ``(size(e)>0) );
+    ret = maplist( `e, ret, ``(dir+"/"+e));
+    y2milestone( "dir %1 pat %2", dir, patterns );
+    y2milestone( "ret %1", ret );
+    return( ret );
     }
 }
 
