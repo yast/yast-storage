@@ -265,7 +265,15 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
   std::istringstream Data_Ci( Line_Cv );
 
   Start_fi = End_fi = 0.0;
-  Data_Ci >> Num_ii >> Start_fi >> End_fi >> PType_Ci;
+  if( Label_C != "mac" )
+      {
+      Data_Ci >> Num_ii >> Start_fi >> End_fi >> PType_Ci;
+      }
+  else
+      {
+      Data_Ci >> Num_ii >> Start_fi >> End_fi;
+      PType_Ci = "primary";
+      }
   char c;
   Type_Ci = ",";
   Data_Ci.unsetf(ifstream::skipws);
@@ -301,7 +309,8 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
     Part_rr.Blocks_l = CylinderToKb( Part_rr.End_i-Part_rr.Start_i+1 );
     Part_rr.PType_e = PAR_TYPE_LINUX;
     Part_rr.Id_i = PART_ID_LINUX_NATIVE;
-    Part_rr.Info_C = "Linux native";
+    Part_rr.Info_C = "";
+    string OrigType_Ci = Type_Ci;
     for( string::iterator i=Type_Ci.begin(); i!=Type_Ci.end(); i++ )
 	{
 	*i = tolower(*i);
@@ -310,50 +319,58 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
 	{
 	Part_rr.PType_e = PAR_TYPE_EXTENDED;
 	Part_rr.Id_i = 0x0f;
-	Part_rr.Info_C = "Extended";
 	}
     else if( Type_Ci.find( ",fat" )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_DOS;
 	Part_rr.Id_i = 0x0b;
-	Part_rr.Info_C = "Win95 FAT32";
 	}
     else if( Type_Ci.find( ",ntfs," )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_HPFS;
 	Part_rr.Id_i = 0x07;
-	Part_rr.Info_C = "HPFS/NTFS";
 	}
     else if( Type_Ci.find( "swap," )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_SWAP;
 	Part_rr.Id_i = PART_ID_LINUX_SWAP;
-	Part_rr.Info_C = "Linux swap";
 	}
     else if( Type_Ci.find( ",raid," )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_RAID_PV;
 	Part_rr.Id_i = 0xFD;
-	Part_rr.Info_C = "Linux Raid";
 	}
     else if( Type_Ci.find( ",lvm," )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_LVM_PV;
 	Part_rr.Id_i = 0x8E;
-	Part_rr.Info_C = "Linux LVM";
 	}
     string::size_type pos = Type_Ci.find( ",type=" );
     if( pos != string::npos )
 	{
+	string val;
 	int id = 0;
-	string val = Type_Ci.substr( pos+6, 2 );
-	Data_Ci.clear();
-	Data_Ci.str( val );
-	Data_Ci >> std::hex >> id;
-	y2debug( "val=%s id=%d", val.c_str(), id );
-	if( id>0 )
+	if( Label_C != "mac" )
 	    {
-	    Part_rr.Id_i = id;
+	    val = Type_Ci.substr( pos+6, 2 );
+	    Data_Ci.clear();
+	    Data_Ci.str( val );
+	    Data_Ci >> std::hex >> id;
+	    y2debug( "val=%s id=%d", val.c_str(), id );
+	    if( id>0 )
+		{
+		Part_rr.Id_i = id;
+		}
+	    }
+	if( Label_C == "mac" )
+	    {
+	    pos = OrigType_Ci.find("type=");
+	    val = OrigType_Ci.substr( pos+5 );
+	    if( (pos=val.find_first_of( ", \t\n" )) != string::npos )
+		{
+		val = val.substr( 0, pos );
+		}
+	    Part_rr.Info_C = val;
 	    }
 	}
     y2debug( "Fields Num:%d Id:%x Ptype:%d Start:%d End:%d Block:%lu",
