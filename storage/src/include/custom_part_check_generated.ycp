@@ -41,11 +41,11 @@ HINTS: Always use
   import "Storage";
   import "Partitions";
   import "Label";
-  
+
   include "partitioning/partition_defines.ycp";
-  
+
   textdomain "storage";
-  
+
 
 /*---------------------------------------------------------------------
  * change_boot_region
@@ -57,7 +57,7 @@ HINTS: Always use
 
 global define change_boot_region( map targetMap, list new_region )
   ``{
-  foreach( `disk, `diskinfo, targetMap, 
+  foreach( `disk, `diskinfo, targetMap,
       ``{
       list new_part_info = [];
       list part_info     = diskinfo["partitions"]:[];
@@ -66,7 +66,7 @@ global define change_boot_region( map targetMap, list new_region )
 	  ``{
 	  map new_part = part;
 
-	  if( !part["delete"]:false && 
+	  if( !part["delete"]:false &&
 	      part["fsid"]:0 == Partitions::fsid_prep_chrp_boot )
 	      {
 	      new_part["region"] = new_region;
@@ -82,7 +82,7 @@ global define change_boot_region( map targetMap, list new_region )
 
 
 
-  
+
   /*---------------------------------------------------------------------
    *  get_max_cyl_for_4mb
    *---------------------------------------------------------------------
@@ -96,9 +96,9 @@ global define change_boot_region( map targetMap, list new_region )
    ``{
        // tell me the maximal number of cylinders, which can be stored in a 4 MB partition
        // if even one cylinder is to big, return "1"
-     
+
        integer raw_cyl = tointeger( 4194304 / cyl_size);
-  
+
        if (raw_cyl == 0)
        {
            return( 1 );
@@ -113,13 +113,13 @@ global define change_boot_region( map targetMap, list new_region )
 
    global define check_raid_possible( map targetMap  )``{
        integer possible_parts_found = 0;
-       
+
 
        foreach( `disk, `target, targetMap, ``{
 
 	   list partitions = lookup( target, "partitions", [] );
 
-	   
+
 	   possible_parts_found = possible_parts_found +
 	       size(filter( `part, partitions, ``( lookup( part,  "lvm_group" ,"") == ""    &&
 						   lookup( part, "delete", false) == false &&
@@ -127,7 +127,7 @@ global define change_boot_region( map targetMap, list new_region )
 						   ( lookup( part, "mount" , ""  ) == ""
 						     ||  substring(lookup( part, "mount" , ""), 0, 5) == "/data" )  &&
 						   lookup( part, "raid_name","") == ""    &&
-						   ( part["fsid"]:0 == Partitions::fsid_native || 
+						   ( part["fsid"]:0 == Partitions::fsid_native ||
 						     part["fsid"]:0 == Partitions::fsid_raid))));
        });
 
@@ -146,12 +146,12 @@ click 'Create', select 'Do not format', and set the partition ID to 0xFD.
    }
 
 
-   
 
-   
+
+
    global define check_lvm_possible( map targetMap  )``{
        boolean possible_part_fond      = false;
-       
+
 
        foreach( `disk, `target, targetMap, ``{
 
@@ -163,7 +163,7 @@ click 'Create', select 'Do not format', and set the partition ID to 0xFD.
 						  lookup( part, "format", false)  == false &&
 						  ( lookup( part, "mount" , ""  ) == ""
 						    ||  substring(lookup( part, "mount" , ""), 0, 5) == "/data" )  &&
-						   ( part["fsid"]:0 == Partitions::fsid_native || 
+						   ( part["fsid"]:0 == Partitions::fsid_native ||
 						     part["fsid"]:0 == Partitions::fsid_lvm )))) > 0)
 	   {
 	       possible_part_fond = true;
@@ -180,7 +180,7 @@ click 'Create', select 'Do not format', and set the partition ID to 0x8e.
 "));
        }
        return possible_part_fond;
-       
+
    }
 
     /*---------------------------------------------------------------------
@@ -237,10 +237,10 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
     boolean fat_system_mount     = false;
     //boolean crypt_fs_system      = false;
     //boolean lvm_part_found       = false;
-    
-    //list 	  bad_mountpoints      = [ "/lib", "/bin" , "/etc", "/sbin", "/dev" ];	
+
+    //list 	  bad_mountpoints      = [ "/lib", "/bin" , "/etc", "/sbin", "/dev" ];
     //boolean bad_mountpoint_found = false;
-    
+
     foreach( `disk, `diskinfo, targetMap, ``{
 
 	list part_info     = lookup( diskinfo, "partitions", [] );
@@ -300,7 +300,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		//////////////////////////////////////////////////////////////
 		// check for xfs: its experimental
 		//////////////////////////////////////////////////////////////
-		if ( part["used_fs"]:`unknown == `xfs && 
+		if ( part["used_fs"]:`unknown == `xfs &&
 		     part["format"]:false )
 		{
 		    xfs_found = true;
@@ -324,7 +324,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 
 		if ( mountpoint == "/" )
 		{
-		    if( diskinfo["label"]:"" = "gpt" )
+		    if( diskinfo["label"]:"" == "gpt" )
 			{
 			gpt_warning = true;
 			}
@@ -338,13 +338,13 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		      }
 		    root_fs = part["used_fs"]:`unknown;
 		    root_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
-		    
+
 		    if ( id_sw_raid_dev ) root_raid = true;
 		    if ( part["type"]:`unknown==`lvm ) root_lvm = true;
 		}
 		else if ( mountpoint == "/boot" )
 		{
-		    if( diskinfo["label"]:"" = "gpt" )
+		    if( diskinfo["label"]:"" == "gpt" )
 			{
 			gpt_warning = true;
 			}
@@ -356,7 +356,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		    boot_cyl_size   = diskinfo["cyl_size"]:1000000;
 		    // 1GB/cylinder size
 		    boot_cyl_for_gb = 1073741824 / boot_cyl_size;
-		    boot_size       = boot_cyl_size * boot_cyl_nb; 
+		    boot_size       = boot_cyl_size * boot_cyl_nb;
 		    if ( id_sw_raid_dev ) boot_raid = true;
 		}
 		else if ( mountpoint == "" )
@@ -370,7 +370,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 			boot_fs         = part["used_fs"]:`unknown;
 			boot_cyl_size   = diskinfo["cyl_size"]:1000000;
 			boot_cyl_for_gb = 1073741824 / boot_cyl_size;
-			boot_size       = boot_cyl_size * boot_cyl_nb; 
+			boot_size       = boot_cyl_size * boot_cyl_nb;
 			boot_start_cyl  = part["region",0]:0;
 		    }
 		}
@@ -389,7 +389,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		    {
 		    have_swap = true;
 
-		    // first partition of a sparc system shouldn't be a swap 
+		    // first partition of a sparc system shouldn't be a swap
 		    // parition
 
 		    if( Arch::sparc && part["nr"]:0 == 1 )
@@ -403,27 +403,27 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 		// check if a fat filesystem  is greater than 2 GB
 		if( (part["used_fs"]:`unknown==`fat32 ||
 		     part["used_fs"]:`unknown==`fat16) && part["format"]:false )
-		{	
-		    // uses a mountpoint like /usr / /var /home /opt with fat 
+		{
+		    // uses a mountpoint like /usr / /var /home /opt with fat
 		    if( ! fat_system_mount )
 		    {
-			if( mountpoint == "/usr"  || mountpoint == "/"     || 
+			if( mountpoint == "/usr"  || mountpoint == "/"     ||
 			    mountpoint == "/home" || mountpoint == "/var"  ||
 			    mountpoint == "/opt"  )
 			{
 			    fat_system_mount = true;
 			}
 		    }
-		    
+
 		}
 
 		//    | NOT
 		//    v
-		if (  ! ( fsid==Partitions::fsid_native || 
-			  fsid==Partitions::fsid_swap || 
-			  fsid==Partitions::fsid_extended || 
-			  fsid==Partitions::fsid_extended_win || 
-			  fsid==Partitions::fsid_raid || 
+		if (  ! ( fsid==Partitions::fsid_native ||
+			  fsid==Partitions::fsid_swap ||
+			  fsid==Partitions::fsid_extended ||
+			  fsid==Partitions::fsid_extended_win ||
+			  fsid==Partitions::fsid_raid ||
 			  fsid==Partitions::fsid_lvm ) )
 		{
 		    whole_disk = false;
@@ -460,8 +460,8 @@ or delete this partition"), axp_start_nth +1, axp_start_dev ));
 	  retval = `again;
       }
 
-    
-      
+
+
       if ( ( axp_start_Ex_failure && installation ) || show_all_popups )
       {
           // popup text %2 is a disk name e.g. /dev/hda %1 is a number
@@ -482,11 +482,11 @@ Do you want to change your partitioning?
 	  boolean ret = Popup::YesNo( sformat(_("The disk label type on your system disk is GPT.
 Linux can handle GPT partition table fine but most BIOS
 versions cannot handle the disk label. To remove the GPT
-disk label from a disk you can use the menue entry 
+disk label from a disk you can use the menue entry
 \"%1\" of the \"%2\" button.
 
 Do you want to change your partitioning?
-"), 
+"),
 	deletechars( _("Delete partition &table and disk label"), "&"),
 	deletechars( _("E&xpert.."), "&") ) );
 
@@ -496,7 +496,7 @@ Do you want to change your partitioning?
 
     if (( !root_found  && installation ) || show_all_popups  )
     {
-          // popup text 
+          // popup text
 	Popup::Error(_("
 YaST2 needs a root partition to install SuSE Linux.
 Assign the root mount point \"/\" to a partition.
@@ -505,17 +505,17 @@ Assign the root mount point \"/\" to a partition.
 	retval = `again;
     }
 
-    
-    
+
+
     if( fat_system_mount || show_all_popups )
     {
-        // popup text 
+        // popup text
 	Popup::Error(_("You tried to mount a fat partition to
 one of the following mount points: / /usr /home /opt /var.
 Use a Linux file system, such as ext2 or reiserfs, for these mount points.
 "));
-	
-	retval = `again;  
+
+	retval = `again;
     }
 
     if( (boot_found) && installation || show_all_popups )
@@ -536,11 +536,11 @@ Change this?
 	    if ( ret ) retval = `again;
 	}
 
-   
+
 	// not substring sparc!
 	if ( ( Arch::sparc32 && boot_end >= boot_cyl_for_gb ) || show_all_popups )
 	{
-	    // popup text 
+	    // popup text
 	    boolean ret = Popup::YesNo(_("Warning:
 With the current setup, your SuSE Linux
 installation might not be directly bootable.
@@ -550,10 +550,10 @@ partition with an end cylinder above 1 GB.
 Do you want to change this?
 "));
 
-	  
+
 	    if (ret == true) retval = `again;
 	}
-      
+
 
 	if( Partitions::PrepBoot() )
 	{
@@ -575,7 +575,7 @@ Do you want to change this?
 
 	if ( (boot_size < 12*1024*1024 && boot_size_check) || show_all_popups )
 	{
-	    // popup text 
+	    // popup text
 	    boolean ret = Popup::YesNo(_("Warning:
 Your boot partition is less than 12MB.
 It is recommended to increase the size of /boot.
@@ -596,7 +596,7 @@ Do you want to do this?
 	// a bootable binary will be written to a kernel slot in /proc
 	if( (Partitions::PrepBoot() && ! Arch::board_iseries) || show_all_popups )
 	{
-	    // popup text 
+	    // popup text
 	    // If the user chooses 'no' here, the system will not be able to
 	    // boot from the hard drive!
 	    boolean ret = Popup::YesNo(_("Warning: There is no partition mounted as /boot.
@@ -614,9 +614,9 @@ Do you want to change your setup?
 
 
 	// no boot but root
-	if( root_end >= Partitions::BootCyl() || show_all_popups ) 
+	if( root_end >= Partitions::BootCyl() || show_all_popups )
 	{
-	    // popup text 
+	    // popup text
 	    boolean ret = Popup::YesNo(sformat(_("Warning: According to your setup, you intend to
 boot your machine from the root partition (/), which, unfortunately,
 has an end cylinder above %1. Your BIOS does not seem capable
@@ -632,7 +632,7 @@ Change this?
 
 	if ( (Arch::sparc32 && root_end >= root_cyl_for_gb) || show_all_popups )
 	{
-	    // popup text 
+	    // popup text
 	    boolean ret = Popup::YesNo(_("Warning: With your current setup, your SuSE Linux
 installation might not be directly bootable, because
 some PROM versions have problems with a boot partition
@@ -646,7 +646,7 @@ Do you want to change this?
 
 	if ( (Arch::sparc && root_fs != `ext2) || show_all_popups )
 	{
-	    // popup text 
+	    // popup text
 	    boolean ret = Popup::YesNo(_("Warning: With your current setup, your SuSE Linux
 installation might not be directly bootable, because
 some PROM versions have problems with a boot partition
@@ -662,7 +662,7 @@ Do you want to change this?
 	// an initrd will be created and you can boot from a kernel slot
 	if ( (root_raid && !boot_found) || boot_raid || show_all_popups )
 	{
-	    // popup text 
+	    // popup text
 	    boolean ret = Popup::YesNo(_("Warning: With your current setup, your SuSE Linux
 installation might not be directly bootable, because
 your files below \"/boot\" are on a software RAID device.
@@ -678,14 +678,14 @@ Do you want to change this?
 	// an initrd will be created and you can boot from a kernel slot
 	if ( (root_lvm && !boot_found && !Arch::board_iseries) || show_all_popups )
 	{
-	    // popup text 
-	    boolean ret = Popup::YesNo(_("Warning: With your current setup, your SuSE Linux installation 
-will encounter problems when booting, because you have no \"boot\" 
-partition and your \"root\" partition is a LVM logical volume. 
+	    // popup text
+	    boolean ret = Popup::YesNo(_("Warning: With your current setup, your SuSE Linux installation
+will encounter problems when booting, because you have no \"boot\"
+partition and your \"root\" partition is a LVM logical volume.
 
 This does not work.
 
-If you do not know exactly what you are doing, use a normal 
+If you do not know exactly what you are doing, use a normal
 partition for your files below /boot.
 
 Change this?
@@ -694,21 +694,21 @@ Change this?
 	    if (ret == true) retval = `again;
 	}
 
-	
+
     }
 
-    if( (Arch::ia64 && installation && 
-         (!boot_found || (boot_fs != `fat16 && boot_fs != `fat32))) || 
+    if( (Arch::ia64 && installation &&
+         (!boot_found || (boot_fs != `fat16 && boot_fs != `fat32))) ||
         show_all_popups )
 	{
-	// popup text 
-	boolean ret = Popup::YesNo(_("Warning: With your current setup, your SuSE Linux installation 
-will encounter problems when booting, because you have no 
+	// popup text
+	boolean ret = Popup::YesNo(_("Warning: With your current setup, your SuSE Linux installation
+will encounter problems when booting, because you have no
 FAT partition mounted onto /boot.
 
 This will give severe problems with the normal boot setup.
 
-If you do not know exactly what you are doing, use a normal 
+If you do not know exactly what you are doing, use a normal
 FAT partition for your files below /boot.
 
 Change this?
@@ -719,7 +719,7 @@ Change this?
 
     if ( !have_swap || show_all_popups )
     {
-	// popup text 
+	// popup text
 	boolean ret = Popup::YesNo(_("
 You have not assigned a swap partition. There is nothing wrong with that, but
 in most cases it is highly recommended to create and assign a swap partition.
@@ -747,7 +747,7 @@ the disk label will be deleted.
 
     if( (partition_mounted_but_not_formated && installation) || show_all_popups )
 	{
-	// popup text 
+	// popup text
 	string message = _("
 WARNING:
 
@@ -755,18 +755,18 @@ You chose to install onto an existing partition that will not be
 formatted. YaST2 cannot guarantee your installation will succeed,
 particularly in any of the following cases:
 ") +
-// continued popup text 
+// continued popup text
 _("- if this is an existing ReiserFS partition
 - if this partition already contains a Linux distribution that will be
 overwritten
 - if this partition does not yet contain a file system
 ") +
-// continued popup text 
+// continued popup text
 _("If in doubt, you might want to go back and mark this partition for
 formatting, especially if it is assigned to one of the standard mount points
 like /, /boot, /usr, /opt, or /var.
 ") +
-// continued popup text 
+// continued popup text
 _("If you decide to format the partition, all data on it will be lost.
 
 Do you want to change your setup?
@@ -783,18 +783,18 @@ Do you want to change your setup?
 
 
 
-      
+
     global define check_partition_edit(string dev,  map curr_part, boolean bsd_label )``{
 
-	///////////////////////////////////////////////////////	
+	///////////////////////////////////////////////////////
 	// with a BSD-Disklabel partition 3 is always an additional entry
 	// which describes the disk and should not be edited
 
 	if ( bsd_label && ( lookup( curr_disk, "nr", 0 ) == 3 ) )
 	{
-	    // popup text 
+	    // popup text
 	    Popup::Message(_("Partition 3 \"Entire Disk\" is not changeable"));
-	    return `no_edit;	 
+	    return `no_edit;
 	}
 
 	if( lookup( curr_part , "raid_name" , "") != "")
@@ -802,23 +802,23 @@ Do you want to change your setup?
 	    // popup text %1 is replaced by a raid name e.g. /dev/md0
 	    Popup::Message(sformat(_("The selected partition belongs to the RAID (%1).
 Please remove it from the RAID before you edit it."),lookup( curr_part, "raid_name", "" )));
-	    return `no_edit;	 
+	    return `no_edit;
 	}
-		   
+
 	if( lookup( curr_part , "lvm_group" , "") != "")
 	{
-	    // popup text %1 is replaced by a name 
+	    // popup text %1 is replaced by a name
 	    Popup::Message(sformat(_("The selected partition belongs to a volume group (%1).
 Please remove it from the volume group before you edit it."),lookup( curr_part, "lvm_group", "" )));
 	    return `no_edit;
 	}
 	return `edit;
     }
-    
-    
 
-    
-    
+
+
+
+
 global define check_partition_delete( string dev, map curr_disk, map curr_part,
                                       boolean bsd_label, boolean c_bsd,
 				      boolean c_lvm, boolean c_raid,
@@ -834,7 +834,7 @@ global define check_partition_delete( string dev, map curr_disk, map curr_part,
 
 	if( bsd_label && curr_part["nr"]:0==3 )
 	    {
-	    // popup text 
+	    // popup text
 	    Popup::Message(_("Partition 3 \"Entire Disk\" is not changeable"));
 	    return `no_delete;
 	    }
@@ -862,26 +862,26 @@ Please remove it from the volume group before you delete it."),lookup( curr_part
 Please remove it from the RAID before you delete it."), lookup( curr_part, "raid_name", "" ), part_name ));
 	    return `no_delete;
 	    }
-       
+
 	}
-    
+
     if( !installation )
 	{
-	string mounts =  Partitions::MountedOn( part_name, 
+	string mounts =  Partitions::MountedOn( part_name,
 						Partitions::CurMounted() );
-	if( mounts != "" ) 
+	if( mounts != "" )
 	    {
 	    // popup text %1 is directory name
 	    string message = sformat(_("The selected partition is currently mounted on %1.
-It is *strongly* recommended to unmount this partition manually 
-before deleting it. 
+It is *strongly* recommended to unmount this partition manually
+before deleting it.
 
 Click Cancel unless you know exactly what you are doing.
 
 If you proceed, YaST2 will try unmounting the partition before deleting it.
 "), mounts );
 
-    
+
 	    if( ! Popup::ContinueCancel(message))
 		{
 		return  `no_delete;
@@ -909,16 +909,16 @@ Remove partition anyway?
 		if( ret == `no )
 		    return `no_delete;
 		}
-	    } 
+	    }
 	}
-    
+
     return `delete;
     };
 
 
 
 
-    
+
     global define check_extended_delete(string del_dev,  map curr_disk, boolean installation ) ``{
 
 	/////////////////////////////////////////////////
@@ -932,23 +932,23 @@ Remove partition anyway?
 	list logical_parts_names = [];
 
 	foreach( `logical_part, logical_parts , ``{
-	    logical_parts_names = 
-		add( logical_parts_names, 
+	    logical_parts_names =
+		add( logical_parts_names,
 		     Storage::GetDeviceName( del_dev, logical_part["nr"]:0));
 	});
 
 	if( logical_parts_names == [] )
 	    return true;
-	
-	
+
+
 	/////////////////////////////////////////////////
 	// check mounted partitions
 	if ( ! installation )
 	{
-	    list mounts = Partitions::mountedPartitionsOnDisk( del_dev, 
+	    list mounts = Partitions::mountedPartitionsOnDisk( del_dev,
 							       Partitions::CurMounted() );
 	    mounts      = filter( `mount, mounts, ``( contains( logical_parts_names, lookup(mount, "spec", ""))));
-	    
+
 	    if ( size( mounts ) != 0 )
 	    {
 		/////////////////////////////////////////////////////////////////////////////////////////
@@ -956,7 +956,7 @@ Remove partition anyway?
 
 		string mounted_parts  = "";
 		foreach( `mount , mounts , ``{
-		    
+
 		    //The selected extended partition contains partitions which are currently mounted:
 		    //           /dev/hda1 on /
 		    //           /dev/hdd1 on /usr
@@ -978,7 +978,7 @@ Please choose Cancel unless you know exactly what you are doing.
 	    }
 	}
 
-	
+
 	/////////////////////////////////////////////////////////////////////////////////////////
 	// check LVM partitions
 
@@ -1009,7 +1009,7 @@ deleting the extended partition.
 "));
 	    return false;
 	}
-	
+
 	return true;
     };
 }
