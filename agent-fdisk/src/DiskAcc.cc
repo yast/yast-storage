@@ -124,11 +124,14 @@ DiskAccess::CapacityInKb()
 bool
 DiskAccess::IsKnownDevice(const string& Part_Cv)
     {
-    bool Ret_bi;
-    Ret_bi = Part_Cv.find("/dev/sd")==0 || Part_Cv.find("/dev/hd")==0 ||
-             Part_Cv.find("/dev/ed")==0 || Part_Cv.find( "/dev/i2o/hd" )==0 ||
-             Part_Cv.find("/dev/ida/")==0 || Part_Cv.find("/dev/rd/")==0 ||
-             Part_Cv.find("/dev/cciss/")==0 || Part_Cv.find("/dev/dasd")==0;
+    bool Ret_bi = false;
+    struct stat sbuf;
+    if( stat( Part_Cv.c_str(), &sbuf )==0 && S_ISBLK(sbuf.st_mode) &&
+        Part_Cv.find("/dev/ram")!=0 && Part_Cv.find("/dev/loop")!=0 &&
+        Part_Cv.find("/dev/evms")!=0 && Part_Cv.find("/dev/mapper")!=0 )
+	{
+	Ret_bi = true;
+	}
     return( Ret_bi );
     }
 

@@ -41,6 +41,7 @@
 		   `fat32  	: true,
 		   `xxefi  	: false,
 		   `xbootdisk  	: false,
+		   `xbootfat  	: false,
 		   `xhibernate 	: true,
 		   `raid       	: true,
 		   `lvm        	: true
@@ -661,6 +662,12 @@ Enter the swap priority. Higher numbers mean higher priority.</p>
 					   `supports_format 	: false,
 					   `fsid_item 		: "0x41 PPC PReP Boot"
 			    ],
+			    `xbootfat  : $[
+					   `name 		: "FATBOOT",
+					   `fsid 		: Partitions::fsid_fat16,
+					   `supports_format 	: false,
+					   `fsid_item 		: "0x06 FAT16 Boot"
+			    ],
 			    `xhibernate : $[
 					   `name 		: "Hibernate",
 					   `fsid 		: Partitions::fsid_hibernation,
@@ -740,6 +747,7 @@ global define void FileSystems()
 	support[`fat16] = Arch::board_chrp;
 	support[`fat32] = Arch::board_chrp;
 	support[`xbootdisk] = true;
+	support[`xbootfat] = Arch::board_chrp;
 	}
     if( Arch::s390 )
 	{
@@ -881,10 +889,9 @@ global define boolean LoadModule( symbol used_fs )
     y2milestone("all needed modules for %1: %2", used_fs, all_needed_modules );
     boolean load_success = true;
 
+    SCR::UnmountAgent (.proc.modules);
     map loaded_modules = (map) SCR::Read(.proc.modules);
     y2milestone( "loaded_modules %1", loaded_modules );
-    string pm = (string) SCR::Read(.target.string, "/proc/modules" );
-    y2milestone( "/proc/modules %1", splitstring(pm,"\n") );
 
     foreach( string modulename, all_needed_modules,
 	``{
@@ -896,8 +903,6 @@ global define boolean LoadModule( symbol used_fs )
 	    y2milestone ("Loaded fs module %1 %2", modulename, load_success?"Ok":"Failed");
 	    }
 	});
-    pm = (string) SCR::Read(.target.string, "/proc/modules" );
-    y2milestone( "/proc/modules %1", splitstring(pm,"\n") );
     return load_success;
     };
 
@@ -1304,16 +1309,17 @@ global define map GetFreeSpace( string device, integer testsize,
 
     if( !Mode::initial )
 	{
-	list mounts = filter(map e, (list<map>) SCR::Read(.proc.mounts),
-			      ``(e["spec"]:""==device));
+	map mounts = find( map e, Partitions::CurMounted(), 
+	                   ``(e["spec"]:""==device ));
 	y2milestone( "mounts %1", mounts );
-        if( size(mounts)>0 && size(mounts[0,"file"]:"")>0 )
+        if( size(mounts["file"]:"")>0 )
 	    {
-	    mount_point = mounts[0,"file"]:"";
+	    mount_point = mounts["file"]:"";
 	    mounted = true;
 	    }
 	}
-    y2milestone( "mount_point %1 mounted %2", mount_point, mounted );
+    y2milestone( "GetFreeSpace mount_point %1 mounted %2", mount_point, 
+                 mounted );
 
     if( !mounted )
 	{
@@ -1526,7 +1532,7 @@ global define string DefaultFstabOptions( map part )
     symbol fsys = part["used_fs"]:`none;
     string old = part["fstopt"]:"";
     string fst_default = "";
-    if( contains( [`ext2, `ext3, `reiser], fsys ) )
+    if( part["format"]:false && contains( [`ext2, `ext3, `reiser], fsys ) )
 	{
 	fst_default = "acl,user_xattr";
 	}

@@ -83,35 +83,6 @@ define map<string,map> change_boot_region( map<string,map> targetMap, list new_r
   };
 
 
-
-
-  /*---------------------------------------------------------------------
-   *  get_max_cyl_for_4mb
-   *---------------------------------------------------------------------
-   *  tell me the maximal number of cylinders, which can be stored in a
-   *  4 MB partition
-   *  if even one cylinder is to big, return "1"
-   *---------------------------------------------------------------------
-   */
-
-define integer get_max_cyl_for_4mb( integer cyl_size )
-   ``{
-   // tell me the maximal number of cylinders, which can be stored in a 4 MB partition
-   // if even one cylinder is to big, return "1"
-
-   integer raw_cyl = tointeger( 4194304 / cyl_size);
-
-   if (raw_cyl == 0)
-       {
-       return( 1 );
-       }
-   else
-       {
-       return( raw_cyl );
-       }
-   };
-
-
 define boolean check_raid_possible( map<string,map> targetMap )
     ``{
     integer possible_parts_found = 0;
@@ -547,31 +518,13 @@ installation might not be directly bootable.
 Some PROM versions have problems with a boot
 partition with an end cylinder above 1 GB.
 
-Do you want to change this?
+Change this?
 "),Product::name));
 
 
 	    if (ret == true) retval = `again;
 	}
 
-
-	if( Partitions::PrepBoot() )
-	{
-	    ///////////////////////////////////////////////////////////
-	    // For PReP the boot partition has to be smaller than 4 MB if
-	    // possible
-	    // the OpenFirmware will load the whole content of the partition
-	    // and it will overwrite memory if the partition is too big
-	    // desired size on CHRP: max 5MB, at least 1MB (for yaboot)
-	    // this function shrinks mount point /boot unconditional!!!
-
-	    if( boot_cyl_nb > get_max_cyl_for_4mb( boot_cyl_size) )
-		{
-		targetMap = change_boot_region( targetMap, [ boot_start_cyl, get_max_cyl_for_4mb(boot_cyl_size) ]);
-		}
-
-	    y2milestone( "PReP resized: %1 %2 %3",  boot_cyl_nb, get_max_cyl_for_4mb( boot_cyl_size), targetMap );
-	}
 
 	if ( (boot_size < 12*1024*1024 && boot_size_check) || show_all_popups )
 	{
@@ -638,7 +591,7 @@ installation might not be directly bootable, because
 some PROM versions have problems with a boot partition
 ending above the 1 GB boundary.
 
-Do you want to change this?
+Change this?
 "),Product::name));
 
 	    if (ret == true) retval = `again;
@@ -653,7 +606,7 @@ installation might not be directly bootable, because
 some PROM versions have problems with a boot partition
 ending above the 1 GB boundary.
 
-Do you want to change this?
+Change this?
 "),Product::name));
 
 	    if (ret == true) retval = `again;
@@ -777,6 +730,29 @@ Do you want to change your setup?
 	boolean ret = Popup::YesNo( message);
 
 	if (ret == true) retval = `again;
+	}
+
+    if( !Storage::CheckEvmsLvm() )
+	{
+	if( Popup::YesNo( evms_texts_evms_lvm() ))
+	    {
+	    Storage::DoCheckEvmsLvm = false;
+	    }
+	else
+	    {
+	    retval = `again;
+	    }
+	}
+    if( !Storage::CheckEvmsNonEvms() )
+	{
+	if( Popup::YesNo( evms_texts_evms_nonevms() ))
+	    {
+	    Storage::DoCheckEvmsNonEvms = false;
+	    }
+	else
+	    {
+	    retval = `again;
+	    }
 	}
 
     return( [targetMap, retval] );

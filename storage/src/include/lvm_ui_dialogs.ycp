@@ -50,19 +50,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
     ``{
     y2milestone( "dev=%1 pesize=%2 max_size=%3", dev, pesize, max_size );
 
-    integer new_size     = 0;
-    if( haskey( Lv, "lv_size" ) )
-	{
-	new_size = Lv["lv_size"]:0;
-	}
-    else if( haskey( Lv, "size_byte" ) )
-	{
-	new_size = Lv["size_byte"]:0;
-	}
-    else
-	{
-	new_size = Lv["region",1]:0 * pesize;
-	}
+    integer new_size     = Lv["region",1]:0 * pesize;
     y2milestone( "new_size %1", new_size );
     integer old_size     = Lv["ori_length"]:new_size;
     string  curr_size    = ByteToHumanStringWithZero(new_size);
@@ -299,6 +287,13 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 		    }
 		y2milestone( "new_size %1 old_size %2", new_size, old_size );
 
+		if( !check_ok_fssize(new_size, retval) )
+		    {
+		    input_is_ok = false;
+		    c_ret = `again;
+		    continue;
+		    }
+
 		if( is_resize_mode && !retval["format"]:false && 
 		    new_size!=old_size )
 		    {
@@ -373,9 +368,10 @@ or cancel this dialog.
 	                                               volume_name );
 	    if( new_size!=old_size )
 		{
-		retval["lv_size"] = new_size;
 		retval["region"] = [0, (new_size+pesize-1)/pesize ];
-		if( !haskey( retval, "ori_length"))
+		retval["lv_size"] = retval["region",1]:0 * pesize;
+		retval["size_byte"] = retval["region",1]:0 * pesize;
+		if( is_resize_mode && !haskey( retval, "ori_length"))
 		    {
 		    retval["ori_length"] = old_size;
 		    }

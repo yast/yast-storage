@@ -216,6 +216,12 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 	list<map>    partitions = (list<map>) (diskinfo["partitions"]:[]);
 	integer cyl_size  = diskinfo["cyl_size"]:1;
 
+	if( diskinfo["dasdfmt"]:false )
+	    {
+	    // to translators: * dasdfmt disk /dev/dasda 
+	    reuse_lst = add( reuse_lst, sformat(_("<font color=red>dasdfmt disk</font> %1"), disk ));
+	    }
+
 	foreach(map part, partitions,
 	    ``{
 	    string  device  = part["device"]:"";
@@ -265,7 +271,7 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 	    y2debug( "WWW %1", part);
 
 	    if( part["delete"]:false && !diskinfo["is_lvm_vg"]:false && 
-	        !diskinfo["is_evms"]:false )
+	        !diskinfo["dasdfmt"]:false && !diskinfo["is_evms"]:false )
 		{
 		if( is_fat )
 		    {
@@ -347,14 +353,18 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 			// to translators: * Create LV var in VG system 700 MB (for /var with ext2)
 			create_lst = add( create_lst, debugstr + sformat(_("Create LV %1 in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
 			}
-		    else if( diskinfo["is_evms"]:false )
+		    else if( diskinfo["is_evms_container"]:false )
 			{
 			// to translators: * Create EVMS var in container system 700 MB (for /var with ext2)
 			create_lst = add( create_lst, debugstr + sformat(_("Create EVMS %1 in container %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
 			}
+		    else if( diskinfo["is_evms"]:false )
+			{
+			// to translators: * Create EVMS var 700 MB (for /var with ext2)
+			create_lst = add( create_lst, debugstr + sformat(_("Create EVMS %1 %2 (for %3 with %4)"), part["nr"]:"", psize, mount, used_fs ));
+			}
 		    }
 		}
-
 	    else if( part["resize"]:false )
 		{
 		if( is_fat )
@@ -370,7 +380,7 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 		    resize_lst = add( resize_lst, debugstr + sformat(_("Resize partition %1 to %2"),  device, psize  ));
 		    }
 		}
-	    else if ( part["format"]:false )
+	    else if ( part["format"]:false && !part["delete"]:false )
 		{
 		if( mount == "swap")
 		    {
@@ -385,10 +395,15 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 			// to translators: * Format LV swap in VG system 700 MB (for swap)
 			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4)"), part["nr"]:"", substring(disk,5), psize, mount ));
 			}
-		    else if( diskinfo["is_evms"]:false )
+		    else if( diskinfo["is_evms_container"]:false )
 			{
 			// to translators: * Format EVMS swap in container system 700 MB (for swap)
 			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format EVMS %1</font> in container %2 %3 (for %4)"), part["nr"]:"", substring(disk,5), psize, mount ));
+			}
+		    else if( diskinfo["is_evms"]:false )
+			{
+			// to translators: * Format EVMS swap 700 MB (for swap)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format EVMS %1</font> %2 (for %3)"), part["nr"]:"", psize, mount ));
 			}
 		    }
 		else if( size(mount)>0 )
@@ -404,10 +419,15 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 			// to translators: * format LV var in VG system 700 MB (for /var with ext2)
 			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
 			}
-		    else if( diskinfo["is_evms"]:false )
+		    else if( diskinfo["is_evms_container"]:false )
 			{
 			// to translators: * format EVMS var in container system 700 MB (for /var with ext2)
 			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format EVMS %1</font> in container %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
+			}
+		    else if( diskinfo["is_evms"]:false )
+			{
+			// to translators: * format EVMS var 700 MB (for /var with ext2)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format EVMS %1</font> %2 (for %3 with %4)"), part["nr"]:"", psize, mount, used_fs ));
 			}
 		    }
 		else
@@ -423,14 +443,19 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 			// to translators: * format LV var in VG system 700 MB (with ext2)
 			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1</font> in VG %2 %3 (with %4)"), part["nr"]:"", substring(disk,5), psize, used_fs ));
 			}
-		    else if( diskinfo["is_evms"]:false )
+		    else if( diskinfo["is_evms_container"]:false )
 			{
 			// to translators: * format EVMS var in container system 700 MB (with ext2)
 			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format EVMS %1</font> in container %2 %3 (with %4)"), part["nr"]:"", substring(disk,5), psize, used_fs ));
 			}
+		    else if( diskinfo["is_evms"]:false )
+			{
+			// to translators: * format EVMS var 700 MB (with ext2)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format EVMS %1</font> %2 (with %3)"), part["nr"]:"", psize, used_fs ));
+			}
 		    }
 		}
-	    else if( haskey(part,"ori_label") &&
+	    else if( haskey(part,"ori_label") && !part["delete"]:false &&
 		     part["ori_label"]:"" != part["label"]:"" )
 		{
 		other_lst = 
@@ -439,10 +464,11 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 			 sformat(_("Set volume label of %1 to %2"),
 				 device, part["label"]:"" ));
 		}
-	    else if( (Mode::initial && size(part["mount"]:"") > 0 && 
+	    else if( ((Mode::initial && size(part["mount"]:"") > 0 && 
 		      part["mount"]:""!="swap" ) ||
-		     (!Mode::initial && haskey(part,"ori_mount") && 
-		      part["ori_mount"]:""!=part["mount"]:"" ))
+		      (!Mode::initial && haskey(part,"ori_mount") && 
+		       part["ori_mount"]:""!=part["mount"]:"" )) && 
+		       !part["delete"]:false )
 		{
 		if( size(part["mount"]:"") > 0 )
 		    other_lst = 
@@ -457,10 +483,11 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 			     sformat(_("Remove device %1 from /etc/fstab"),
 				       device ));
 		}
-	    else if( !Mode::initial && (haskey(part,"ori_fstopt") && 
-		      part["ori_fstopt"]:""!=part["fstopt"]:"") ||
-		     (haskey(part,"ori_mountby") &&
-		      part["ori_mountby"]:`device!=part["mountby"]:`device))
+	    else if( (!Mode::initial && (haskey(part,"ori_fstopt") && 
+		       part["ori_fstopt"]:""!=part["fstopt"]:"") ||
+		      (haskey(part,"ori_mountby") &&
+		       part["ori_mountby"]:`device!=part["mountby"]:`device)) &&
+		     !part["delete"]:false )
 		{
 		other_lst = 
 		    add( other_lst, 
@@ -484,15 +511,15 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 
 	if( entry["type"]:"" == "create_vg" )
 	    {
-	    create_lst = 
-		add( create_lst, 
-		     // to translators: * create VG system
-		     sformat(_("Create VG %1"), entry["vgname"]:"" ));
+				  // to translators: * create VG system
+	    create_lst = merge( [ sformat(_("Create VG %1"),
+					  entry["vgname"]:"" )],
+				create_lst );
 	    }
 	if( entry["type"]:"" == "remove_vg" )
 	    {
-	    create_lst = 
-		add( create_lst, 
+	    delete_lst = 
+		add( delete_lst, 
 		     // to translators: * remove VG system
 		     sformat(_("Remove VG %1"), entry["vgname"]:"" ));
 	    }
@@ -500,7 +527,7 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 	    {
 	    resize_lst = 
 		add( resize_lst, 
-		    // to translators: * create VG system
+		     // to translators: * resize LV /dev/system/usr to 5 GB
 		     sformat(_("Resize LV /dev/%1/%2 to %3"), 
 			     entry["vgname"]:"", entry["name"]:"",
 			     ByteToHumanString(entry["size"]:0)));
@@ -514,8 +541,9 @@ define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
 
     string ret = "";
 
-    list<string> all = (list<string>)flatten( [ delete_lst, reuse_lst, resize_lst,
-			  create_lst, other_lst ] );
+    list<string> all = (list<string>)flatten( [ delete_lst, reuse_lst, 
+                                                resize_lst, create_lst, 
+						other_lst ] );
     if( size(all)>0 )
 	{
 	ret = HTML::List( all );
@@ -699,7 +727,7 @@ define string ByteToHumanStringWithZero ( integer number )
 	    ``{
 		if ( (partition["fsid"]:0 == 5) &&
 		     (partition["create"]:false ) &&
-		     (!partition["define"]:false)    )
+		     (!partition["delete"]:false)    )
 	       {
 		    modify_targets = addTargetModification( modify_targets, $[
 									      "disk" : dev,
@@ -712,7 +740,6 @@ define string ByteToHumanStringWithZero ( integer number )
 	});
 
 
-	//SCR::Write(.target.ycp, "/tmp/my_modify", modify_targets );
 	Storage::SetModifyTargets( modify_targets);
     };
 
@@ -853,4 +880,31 @@ define string GetMountPointProposal( map<string,map> targetMap,
     return( free_list[0]:"/work" );
     };
 
+define string evms_texts_evms_nonevms()
+    ``{
+    string t = 
+_("It is normally not a good idea to use EVMS and non-EVMS
+entities on the same disk. 
+While it is possible in principle and may make sense
+for experienced users, it also can easily create 
+unexpected problems.
+
+Really do this?
+");
+    return( t );
+    }
+
+define string evms_texts_evms_lvm()
+    {
+    string t = 
+_("It is normally not a good idea to use EVMS and LVM
+on the same system.
+While it is possible in principle and may make sense
+for experienced users, it also can easily create 
+unexpected problems.
+
+Really do this?
+");
+    return( t );
+    }
 }

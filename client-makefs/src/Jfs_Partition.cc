@@ -33,7 +33,9 @@ bool
 Jfs_Partition::get_progress_status (double &percent)
 {
     percent = 42.0;    // What else ?
-    return false;      // immediate end
+    usleep( 100000 );
+    bool ret = process->running();
+    return ret;
 }
 
 

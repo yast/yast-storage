@@ -5,7 +5,6 @@
 #
 
 scrconf_DATA = etc_cryptotab.scr \
-               pdisk.scr	 \
 	       proc_meminfo.scr  \
 	       parted_check.scr  \
 	       proc_swaps.scr	 \

@@ -12,6 +12,7 @@ client_DATA =			\
 	inst_do_resize.ycp	\
 	inst_lvm_lv.ycp		\
 	inst_lvm_pv.ycp		\
+	inst_evms.ycp		\
 	inst_part_proposal.ycp	\
 	inst_prepdisk.ycp	\
 	inst_resize_ui.ycp      \

@@ -153,6 +153,7 @@ class EvmsAccess
 
 	list<EvmsObject*> objects;
 	boolean EndEvmsCommand();
+	boolean EvmsOpen_b;
 	string Error_C;
 	string CmdLine_C;
     };

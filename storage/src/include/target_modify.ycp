@@ -284,7 +284,7 @@ define boolean HandleFilesystem( string device, symbol fs, integer new_size,
 	}
     else if( fs == `ntfs )
 	{
-	string cmd = sformat( "echo y | ntfsresize -s %1k %2",
+	string cmd = sformat( "echo y | ntfsresize -f -s %1k %2",
 	                      new_size*1024*1024/1000, device );
 	y2milestone( "cmd %1", cmd );
 	ret = SCR::Execute(.target.bash, cmd ) == 0;
@@ -575,6 +575,7 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 		    });
 		}
 	    });
+	m = $[ "use_module" : "evms_ll" ];
 	m["type"] = "resize_lv";
 	foreach( string k, map e, tg,
 	    ``{
@@ -599,6 +600,7 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 		    });
 		}
 	    });
+	m = $[ "use_module" : "evms_ll" ];
 	m["type"] = "remove_pv";
 	foreach( string k, map e, tg,
 	    ``{
@@ -612,6 +614,7 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 		    });
 		}
 	    });
+	m = $[ "use_module" : "evms_ll" ];
 	m["type"] = "remove_vg";
 	foreach( string k, map e, tg,
 	    ``{
@@ -629,7 +632,7 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 		                    e["part"]:$[], e["size"]:0, 
 				    e["old_size"]:0 );
 		});
-	    integer n = -1;
+	    integer n = 0;
 	    map t = listmap( map e, todo, ``{n=n+1; return( $[n:e]);});
 	    y2milestone( "t = %1", t );
 	    ret = target_modify( t, Mode::initial );
@@ -648,14 +651,15 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 		{
 		m["container"] = substring( k, 10 );
 		m["pesize"] = e["cyl_size"]:0;
-		m["pvs"] = e["added"]:"";
+		m["devices"] = e["added"]:[];
 		todo = add( todo, m );
 		}
 	    });
-	m["type"] = "add_pv";
+	m = $[ "use_module" : "evms_ll" ];
+	m["type"] = "create_pv";
 	foreach( string k, map e, tg,
 	    ``{
-	    if( e["is_evms_container"]:false )
+	    if( e["is_evms_container"]:false && !e["create"]:false )
 		{
 		foreach( string d, e["added"]:[],
 		    ``{
@@ -665,6 +669,7 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 		    });
 		}
 	    });
+	m = $[ "use_module" : "evms_ll" ];
 	m["type"] = "create_lv";
 	foreach( string k, map e, tg,
 	    ``{
@@ -685,6 +690,7 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 		    });
 		}
 	    });
+	m = $[ "use_module" : "evms_ll" ];
 	m["type"] = "resize_lv";
 	foreach( string k, map e, tg,
 	    ``{
@@ -709,6 +715,7 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 		    });
 		}
 	    });
+	m = $[ "use_module" : "evms_ll" ];
 	m["type"] = "create_vol";
 	foreach( string k, map e, tg,
 	    ``{
@@ -723,7 +730,7 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
 	    });
 	if( doit )
 	    {
-	    integer n = -1;
+	    integer n = 0;
 	    map t = listmap( map e, todo, ``{n=n+1; return( $[n:e]);});
 	    y2milestone( "t = %1", t );
 	    ret = target_modify( t, Mode::initial );

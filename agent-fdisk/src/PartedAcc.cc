@@ -43,6 +43,15 @@ void PartedAccess::GetPartitionList( bool OnlyLabel_bv )
 	{
 	CheckOutput(Cmd_Ci, Disk_C);
 	}
+    if( Label_C.size()==0 )
+	{
+	Cmd_Ci.SetCombine();
+	Cmd_Ci.Execute( "/sbin/fdisk -l " + Disk_C );
+	if( Cmd_Ci.Select( "AIX label" )>0 )
+	    {
+	    Label_C = "aix";
+	    }
+	}
     }
 
 PartedAccess::~PartedAccess()
@@ -79,7 +88,7 @@ PartedAccess::NewPartition(const PartitionType Part_e,
   bool Ok_bi = true;
   Changed_b = true;
   Stderr_C.erase();
-  if( Label_C.length()==0 )
+  if( Label_C.length()==0 || Label_C == "aix" )
       {
       Buf_Ci << PARTEDCMD << Disk_C << " mklabel " << DefLabel_Cv;
       SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );

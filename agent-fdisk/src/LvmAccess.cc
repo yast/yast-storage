@@ -715,6 +715,10 @@ bool LvmAccess::CreatePv( const string& PvName_Cv, bool NewMeta_bv )
 	File_Ci.write( Buf_ti, sizeof(Buf_ti) );
 	File_Ci.close();
 	}
+    string MdCmd_Ci = "mdadm --zero-superblock " + PvName_Cv;
+    y2milestone( "Executing %s", MdCmd_Ci.c_str() );
+    SystemCmd Cmd_Ci;
+    Cmd_Ci.Execute( MdCmd_Ci );
     string PvCmd_Ci = "/sbin/pvcreate -ff ";
     if( Lvm2() )
 	{

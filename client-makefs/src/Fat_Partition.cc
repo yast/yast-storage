@@ -23,6 +23,14 @@ Fat_Partition::Fat_Partition (string partition_name, bool as_fat32)
     y2milestone ("partition: <%s, FAT%d>", partition_name.c_str (), as_fat32?32:16);
 }
 
+bool
+Fat_Partition::get_progress_status (double &percent)
+    {
+    percent = 42.0;    // What else ?
+    usleep( 100000 );
+    bool ret = process->running();
+    return ret;
+    }
 
 // Run mkdosfs with the specified arguments, handling stderr as specified
 // by disp

@@ -30,7 +30,7 @@
     import "Kernel";
 
     import "Arch";
-    import "Popup";
+    import "Report";
 
     textdomain "storage";
 
@@ -379,16 +379,16 @@ global define map CheckPartedValid( string ddevice, map disk,
     map<integer,integer> plist1 = $[];
     map<integer,integer> plist2 = $[];
     boolean ret = true;
-    y2milestone( "target %1", disk );
-    string regex = substring( ddevice, 5 )+"[p]*[0-9]+";
-    y2milestone( "ddevice %1 regex %2", ddevice, regex );
+    y2milestone( "CheckPartedValid target %1", disk );
+    string regex = "^" + substring( ddevice, 5 )+"[p]*[0-9]+";
+    y2milestone( "CheckPartedValid ddevice %1 regex %2", ddevice, regex );
     list<map> ps = filter( map p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
-    y2milestone( "ps %1", ps );
+    y2milestone( "CheckPartedValid ps %1", ps );
     integer cyl_blocks = disk["cyl_size"]:1000000 / 1024;
     list bsd_part = [ Partitions::fsid_freebsd, Partitions::fsid_openbsd ];
     boolean openbsd = find(map e,partitions, 
                             ``(contains(bsd_part,e["fsid"]:0)))!=nil;
-    y2milestone( "openbsd %1", openbsd );
+    y2milestone( "CheckPartedValid openbsd %1", openbsd );
     foreach(map p, ps,
 	``{
 	integer pnr = tointeger(deletechars(substring(p["name"]:"",size(ddevice)-5),"p"));
@@ -404,8 +404,8 @@ global define map CheckPartedValid( string ddevice, map disk,
 	plist1 = filter(integer k, integer e, plist1, ``(k!=ext["nr"]:0));
 	plist2 = filter(integer k, integer e, plist2, ``(k!=ext["nr"]:0));
 	}
-    y2milestone( "plist1 %1", plist1 );
-    y2milestone( "plist2 %1", plist2 );
+    y2milestone( "CheckPartedValid plist1 %1", plist1 );
+    y2milestone( "CheckPartedValid plist2 %1", plist2 );
     ret = size(plist1) >= size(plist2);
     if( ret )
 	{
@@ -421,7 +421,8 @@ global define map CheckPartedValid( string ddevice, map disk,
 		if( diff < 0 ) diff = -diff;
 		if( diff <= 2 ) diff = 0;
 		ret = ret && diff <= plist2[k]:0/100;
-		y2milestone( "k:%1 diff:%2 ret:%3", k, diff, ret );
+		y2milestone( "CheckPartedValid k:%1 diff:%2 ret:%3", k, diff, 
+		             ret );
 		}
 	    });
 	foreach(integer k, integer e, plist2, 
@@ -436,7 +437,8 @@ global define map CheckPartedValid( string ddevice, map disk,
 		if( diff < 0 ) diff = -diff;
 		if( diff <= 2 ) diff = 0;
 		ret = ret && diff <= plist2[k]:0/100;
-		y2milestone( "k:%1 diff:%2 ret:%3", k, diff, ret );
+		y2milestone( "CheckPartedValid k:%1 diff:%2 ret:%3", k, diff,  
+		             ret );
 		}
 	    });
 	}
@@ -444,7 +446,7 @@ global define map CheckPartedValid( string ddevice, map disk,
 	{
 	list new_p = [];
 	integer reg_start=0;
-	y2milestone( "ps=%1", ps );
+	y2milestone( "CheckPartedValid ps=%1", ps );
 	foreach(map p, ps,
 	    ``{
 	    map part = $[];
@@ -480,9 +482,9 @@ global define map CheckPartedValid( string ddevice, map disk,
 	    new_p = add( new_p, part );
 	    });
 	partitions = (list<map>)new_p;
-	y2milestone( "new p %1", partitions );
+	y2milestone( "CheckPartedValid new p %1", partitions );
 	}
-    y2milestone( "disk %1 ret:%2", ddevice, ret );
+    y2milestone( "CheckPartedValid disk %1 ret:%2", ddevice, ret );
     return( $["ret":ret, "partitions":partitions ] );
     };
 
@@ -496,11 +498,13 @@ global define list GetS390Partitions( string ddev, map target, list<map> ppart )
     list<map> ps = filter(map p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
     y2milestone( "ps %1", ps );
     integer cyl_blocks = target["cyl_size"]:1000000 / 1024;
+    integer start = 0;
     foreach(map p, ps,
 	``{
 	map part = $[];
 	part["nr"] = tointeger(substring(p["name"]:"",size(ddev)-5));
-	part["region"] = [ 0, p["size"]:0/cyl_blocks ];
+	part["region"] = [ start, p["size"]:0/cyl_blocks ];
+	start = start + p["size"]:0/cyl_blocks;
 	part["fsid"] = Partitions::fsid_native;
 	part["type"] = `s390;
 	part["fstype"] = "S390 DASD";
@@ -508,19 +512,11 @@ global define list GetS390Partitions( string ddev, map target, list<map> ppart )
 	partitions = add( partitions, part );
 	});
 
-    /* TODO: no partition found ==> "fdasd -a" needed instead of
-       simply pretending a first partition.  this needs to be done on a
-       *disk* level, not on partition level.
-
-       This hack is needed, however, to have a partiton visible, so
-       the user can choose 'low level format dasd'.
-
-    */
-
     if( size(ps)==0 )
 	{
 	map part = $[];
 	part["nr"] = 1;
+	part["create"] = true;
 	part["region"] = [ 0, target["cyl_count"]:0 ];
 	part["fsid"] = Partitions::fsid_native;
 	part["type"] = `s390;
@@ -552,13 +548,13 @@ define map localProbe ()
 	return fakeProbe();
 	}
     ppart = (list<map>) SCR::Read(.proc.partitions);
-    y2milestone( "ppart %1", ppart );
+    y2milestone( "localProbe: ppart %1", ppart );
 
     // do the probing
     list<map> all_disks = (list<map>) SCR::Read(.probe.disk);
 
-    y2milestone("disks probed");
-    y2milestone( "all_disks %1", all_disks );
+    y2milestone( "localProbe: disks probed");
+    y2milestone( "localProbe: all_disks %1", all_disks );
 
     if( size(all_disks)==0 )
 	{
@@ -572,11 +568,14 @@ define map localProbe ()
     integer ide_count = 0;
     integer scsi_count = 0;
     integer raid_count = 0;
+    integer other_count = 0;
     string fake_raid = "";
 
     foreach (map disk, filter(map e,all_disks,``(size(e["dev_name"]:"")>0)),
 	``{
 	map target = $[];
+
+	y2milestone( "localProbe: disk %1", disk );
 
 	boolean notready = disk["notready"]:false;
 	boolean is_zip = (notready || disk["zip"]:false);
@@ -588,11 +587,11 @@ define map localProbe ()
 		fake_raid = fake_raid + " ";
 		}
 	    fake_raid = fake_raid + disk["dev_name"]:"";
-	    y2milestone( "fake_raid %1", fake_raid );
+	    y2milestone( "localProbe: fake_raid %1", fake_raid );
 	    }
 
-	y2milestone( "is_zip %1 notready:%2 sofraid %3", is_zip, notready,
-	             disk["softraiddisk"]:false );
+	y2milestone( "localProbe: is_zip %1 notready:%2 sofraid %3", 
+	             is_zip, notready, disk["softraiddisk"]:false );
 
 	string bus = disk["bus"]:"?";
 	string dname = "";
@@ -623,7 +622,8 @@ define map localProbe ()
 	    }
 	else
 	    {
-	    i = 1;		// Oops, which bus ?
+	    other_count = other_count + 1;
+	    i = other_count;
 	    }
 
 	target["bus"] = bus;
@@ -631,7 +631,16 @@ define map localProbe ()
 	// ------------------------------------------------------
 	// construct disk name for user
 
-	dname = ""+i+". "+bus+", ";
+	dname = ""+i+". ";
+	if( bus != "None" )
+	    {
+	    dname = dname + bus;
+	    }
+	else
+	    {
+	    dname = dname + _("Disk");
+	    }
+	dname = dname + ", ";
 
 	// needed also later as key
 	string ddevice = disk["dev_name"]:"?";
@@ -683,14 +692,14 @@ define map localProbe ()
 	path diskpath = topath (stringpath);
 	path fullpath = .disk + diskpath;
 
-	y2milestone("disk_size: %1", ddevice);
+	y2milestone("localProbe: disk_size: %1", ddevice);
 
 	// call fdisk agent to get size information
 
 	integer cyl_count = 0;
 	integer cyl_size = 0;
 
-	if( !Arch::s390 )
+	if( find( ddevice, "/dev/dasd" )!=0 )
 	    {
 	    // call fdisk agent to get size information
 	    if (!is_zip && !notready )
@@ -702,8 +711,8 @@ define map localProbe ()
 	    target["cyl_count"] = cyl_count;
 	    target["cyl_size"] = cyl_size;
 
-	    y2milestone( "diskinfo: cyl_count %1 cyl_size %2", cyl_count, 
-	                 cyl_size );
+	    y2milestone( "localProbe: diskinfo: cyl_count %1 cyl_size %2", 
+	                 cyl_count, cyl_size );
 	    }
 	else
 	    {
@@ -718,10 +727,15 @@ define map localProbe ()
 	    cyl_count  = disk["resource", "disk_log_geo", 0, "cylinders"]:1;
 	    cyl_size   = disk_size / cyl_count;
 
+	    target["bios_id"] = disk["sysfs_bus_id"]:"";
 	    target["cyl_count"] = cyl_count;
 	    target["cyl_size"] = cyl_size;
+	    target["tracks"] = disk["resource", "disk_log_geo", 0, "heads"]:1;
 
-	    y2milestone( "diskinfo: sizemap %1 disksize %2 cyl_count %3 cyl_size %4", size_map, disk_size, cyl_count, cyl_size);
+
+	    y2milestone( "localProbe: diskinfo sizemap %1 disksize %2 cyl_count %3 cyl_size %4 tracks %5", 
+	                 size_map, disk_size, cyl_count, cyl_size, 
+			 target["tracks"]:0 );
 	    }
 
 	// ------------------------------------------------------
@@ -750,28 +764,43 @@ define map localProbe ()
 	// Partitions
 
 	list partitions = [];
-	if( !is_zip && !notready )
+	if( !is_zip )
 	    {
-	    if( find( ddevice, "/dev/dasd" )!=0 )
+	    if( find( ddevice, "/dev/dasd" )!=0 && !notready )
 		{
 		target = Check4partitions (ddevice, target, diskpath);
 		partitions = target["partitions"]:[];
-		y2milestone( "old p %1", partitions );
+		y2milestone( "localProbe: old p %1", partitions );
 		map r = CheckPartedValid( ddevice, target, (list<map>)partitions, ppart );
 		if( !r["ret"]:true )
 		    {
 		    partitions = r["partitions"]:[];
-		    y2milestone( "new p %1", partitions );
-		    target["readonly"] = !disk["softraiddisk"]:false;
+		    y2milestone( "localProbe: new p %1", partitions );
+		    target["readonly"] = !disk["softraiddisk"]:false &&
+		                         target["label"]:"" != "aix";
 		    if( Mode::initial && !Mode::autoinst && 
-		        !disk["softraiddisk"]:false )
+		        target["readonly"]:false )
 			{
-			Popup::Error( Partitions::RdonlyText(ddevice,false) );
+			Report::Error( Partitions::RdonlyText(ddevice,false) );
 			}
 		    }
+		if( target["label"]:"" == "aix" )
+		    {
+		    target["label"] = Partitions::DefaultPartLabel();
+		    target["max_primary"] = 
+			Partitions::MaxPrimary( target["label"]:"" );
+		    partitions = [];
+		    }
 		}
-	    else
+	    else if( find( ddevice, "/dev/dasd" )==0 )
 		{
+		if( notready && Mode::initial )
+		    {
+		    target["dasdfmt"] = true;
+		    }
+		target["label"] = "dasd";
+		target["max_primary"] = 
+		    Partitions::MaxPrimary( target["label"]:"" );
 		partitions = GetS390Partitions( ddevice, target, ppart );
 		}
 	    }
@@ -781,14 +810,15 @@ define map localProbe ()
 
 	// add constructed target map to list of all targets
 
-	if (!notready && (size (target) > 0))
+	if( (!notready||find(ddevice,"/dev/dasd")==0) && (size (target) > 0))
 	    {
 	    if (is_zip)
 		ZipDrives[ddevice] = target;
 	    else
 		targets[ddevice] = target;
 	    }
-	y2milestone( "disk %1 tg: %2", ddevice, targets[ddevice]:$[] );
+	y2milestone( "localProbe: disk %1 tg: %2", ddevice, 
+	             targets[ddevice]:$[] );
 	}); // foreach (disk)
 
     SCR::UnmountAgent(.disk);
@@ -797,18 +827,18 @@ define map localProbe ()
 	{
 	string txt = sformat( _("
 WARNING: This system has at least one hard disk with a RAID configuration
-sold by the BIOS as RAID that is in fact a software RAID. We detected the
-Following Disks to be Part of such a RAID:
+presented by the BIOS as RAID that is in fact a software RAID. The
+following disks were detected as part of such a RAID:
 
     %1
 
 The Linux kernel 2.4 supported some of these systems (like Promise FastTrack and
-HighPoint RocketRaid), the Linux kernel 2.6 does not support them at all.
+HighPoint RocketRaid), but the Linux kernel 2.6 does not support them at all.
 
-If you do an installation onto these Disks your RAID configuration and any Data
-on the RAID will be lost! Have a look at http://portal.suse.com to learn how to
-migrate to a Linux Software Raid"), fake_raid );
-	Popup::Error( txt );
+If you install onto these disks, your RAID configuration and any data
+on the RAID will be lost! Refer to http://portal.suse.com to learn how to
+migrate to a Linux software RAID."), fake_raid );
+	Report::Error( txt );
 	}
 
     ZipDrives = (map<string,any>)union (ZipDrives, findZIPs ());
@@ -817,11 +847,8 @@ migrate to a Linux Software Raid"), fake_raid );
 	``{
 	FloppyDrives = filter(map f, FloppyDrives, ``(f["dev_name"]:""!=k));
 	});
-    y2milestone( "FloppyDrives %1", FloppyDrives );
-    y2milestone( "ZipDrives %1", ZipDrives );
-
-    if (Mode::test)
-	SCR::Write(.target.ycp, "/tmp/targets", targets);
+    y2milestone( "localProbe: FloppyDrives %1", FloppyDrives );
+    y2milestone( "localProbe: ZipDrives %1", ZipDrives );
 
     return targets;
     } // localProbe()

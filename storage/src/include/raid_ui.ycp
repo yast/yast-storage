@@ -89,7 +89,7 @@ define void InitMainDevRaid()
 			 ];
 
 	Storage::AddMainDev("/dev/md", maindev );
-	Storage::DebugStorage();
+	//Storage::DebugStorage();
 	}
     };
 
@@ -524,6 +524,12 @@ define symbol ChooseRaidType(symbol  what)
 
 	if( subdevraid == $[] || what == `settings )
 	    {
+	    string mprop = GetMountPointProposal( Storage::GetTargetMap(), [] );
+	    symbol used_fs = Partitions::default_fs;
+	    if( mprop == Partitions::BootMount() )
+		{
+		used_fs = Partitions::DefaultBootFs();
+		}
 	    subdevraid = $[ "nr" 	 : tointeger(subdevindex),
 			    "device"     : Storage::GetDeviceName( "/dev/md", tointeger(subdevindex) ),
 			    "raid_type"  : subdevtype,
@@ -535,7 +541,8 @@ define symbol ChooseRaidType(symbol  what)
 			    "persistent_superblock" : true,
 			    "create"	 : true,
 			    "format"	 : true,
-			    "used_fs"	 : Partitions::default_fs	
+			    "mount"      : mprop,
+			    "used_fs"    : used_fs
 			  ];
 	    }
 	else
@@ -548,7 +555,7 @@ define symbol ChooseRaidType(symbol  what)
 	    subdevraid["parity_algorithm"] = "left-symmetric";
 
         Storage::SetSubDev( Storage::GetWizardKey() , subdevraid );
-        Storage::DebugStorage();
+        //Storage::DebugStorage();
         }
 
     if( what == `settings)
@@ -956,6 +963,7 @@ define symbol RaidDevices( symbol what )
 		}
 	    }
 	y2milestone( "Current raid; subdevraidkey=%1", subdevraidkey );
+	y2milestone( "ret %1", ret );
 
 	///////////////////////////////////////////////////////////
 	// Update raid widget table
@@ -1000,6 +1008,7 @@ define symbol RaidDevices( symbol what )
 	/////////////////////////////////////////////////////////////////
 	// Wait for User input
 	ret = (symbol)UI::UserInput();
+	y2milestone( "ret %1", ret );
 
 	/////////////////////////////////////////////////////////////////
 	// Edit raid (1//dev/md) settings - not in wizard
@@ -1023,14 +1032,20 @@ define symbol RaidDevices( symbol what )
 		continue;
 	    }
 
-	    list<integer> old = maplist( map e,
-	                        (list<map>)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
-				``(e["nr"]:-1));
+	    list<integer> old = 
+		maplist( map e,
+			 filter( map p,
+				 (list<map>)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
+				 ``(!p["delete"]:false)),
+			 ``(e["nr"]:-1));
 
 	    ChooseRaidType( `settings );    
-	    list<integer> new = maplist( map e,
-	                        (list<map>)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
-				``(e["nr"]:-1));
+	    list<integer> new = 
+		maplist( map e,
+			 filter( map p,
+	                         (list<map>)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
+				 ``(!p["delete"]:false)),
+			 ``(e["nr"]:-1));
 	    integer new_num = -1;
 	    foreach( integer e, new,
 		``{
@@ -1208,13 +1223,14 @@ Continue?
 	{
 	// fix the raid size in all raid devices
 	map<string,any> target = Storage::GetMainDev( "/dev/md" );
-	
-	foreach( map part, target["partitions"]:[],
-		 ``({
-		 integer len = raid_size_byte( Storage::GetTargetMap(), part);
-		 part["region"] = [0, len / (1024 * 1024)];
-		 return( part );
-		 }));
+
+	target["partitions"] = maplist( map part, target["partitions"]:[],
+	    ``({
+	    integer len = raid_size_byte( Storage::GetTargetMap(), part);
+	    part["region"] = [0, len / (1024 * 1024)];
+	    y2milestone( "region = %1", part["region"]:[] );
+	    return( part );
+	    }));
 
 	Storage::SetMainDev("/dev/md", target );
 	Storage::Commit();

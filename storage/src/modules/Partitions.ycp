@@ -51,10 +51,10 @@
     global list fsid_dostypes = [ 1, 4 ];          /* FAT12, FAT16  */
 
     // filesystems for /windows
-    global list fsid_ntfstypes = [ 7 ];            /* NTFS  */
+    global list fsid_ntfstypes = [ 7, 23 ];       /* NTFS  */
 
     // filesystems mounted read-only
-    global list fsid_readonly = [ 7 ];
+    global list fsid_readonly = [ 7, 23 ];
 
     // filesystems skipped on sparc and axp
     global list fsid_skipped = [ 0, 5 ];
@@ -128,9 +128,17 @@ global define integer MinimalNeededBootsize()
 	    {
 	    minimal_needed_bootsize = 200*1024*1024;
 	    }
-	else if( Arch::board_chrp || Arch::board_prep )
+	else if( Arch::board_chrp )
 	    {
-	    minimal_needed_bootsize = 3*1024*1024;
+	    minimal_needed_bootsize = 16*1024*1024;
+	    }
+	else if( Arch::board_prep )
+	    {
+	    minimal_needed_bootsize = 5*1024*1024;
+	    }
+	else if( Arch::board_iseries )
+	    {
+	    minimal_needed_bootsize = 8*1024*1024;
 	    }
 	else if( Arch::board_mac )
 	    {
@@ -223,6 +231,7 @@ global define integer SwapSizeMb( integer slot_size )
     if( !Mode::test )
 	{
         map mem_info_map = (map) SCR::Read(.proc.meminfo);
+	y2milestone( "mem_info_map %1", mem_info_map );
         mem = mem_info_map["memtotal"]:0;
 	mem = mem / 1024;
 	}
@@ -336,9 +345,6 @@ global define list<map> mountedPartitionsOnDisk( string dev_str, list<map> mount
     list<map> mounts = filter(map mount, mounts_read,
                          ``( issubstring(mount["spec"]:"", dev_str )));
 
-    if( Mode::test )
-        SCR::Write(.target.ycp, "/tmp/mounts1", mounts );
-
     // reset
     if( mounts == nil ) mounts = [];
 
@@ -350,9 +356,6 @@ global define string MountedOn( string partition_str, list<map> mounts_read )
 
     list mounts = filter(map mount, mounts_read,
                           ``( mount["spec"]:""==partition_str) );
-
-    if( Mode::test )
-        SCR::Write(.target.ycp, "/tmp/mount_part", mounts );
 
     if( size( mounts) > 0 )
         return mounts[0, "file"]:"";
@@ -389,6 +392,9 @@ global define map GetLoopOn( string device )
  */
 global define list<map> CurMounted()
     ``{
+    SCR::UnmountAgent (.proc.mounts);
+    SCR::UnmountAgent (.proc.swaps);
+    SCR::UnmountAgent (.etc.mtab);
     list<map> mounts = (list<map>) SCR::Read(.proc.mounts);
     list<map> swaps  = (list<map>) SCR::Read(.proc.swaps );
     list<map> mtab   = (list<map>) SCR::Read(.etc.mtab );
@@ -406,13 +412,20 @@ global define list<map> CurMounted()
 
     map mtab_root = (map) find(map mount, mtab, ``( mount["file"]:"" == "/" ));
     map root_map  = (map) find(map mount, mounts, 
-                               ``( contains( ["/dev/root", "rootfs"], mount["spec"]:"" )));
+                               ``( mount["spec"]:"" == "/dev/root" ));
+    if( root_map == nil )
+	{
+	root_map = (map) find(map mount, mounts, 
+                              ``( mount["spec"]:"" != "rootfs"&&
+			          mount["file"]:"" == "/"));
+	}
     y2milestone( "mtab_root %1 root_map %2", mtab_root, root_map );
-    root_map = add (root_map, "spec", mtab_root["spec"]:"");
+//    root_map = add (root_map, "spec", mtab_root["spec"]:"");
+    if( root_map["spec"]:"" == "/dev/root" )
+	root_map["spec"] = mtab_root["spec"]:"";
     y2milestone( "root_map %1", root_map );
 //    this version makes some problems with interpreter, above lookup/add is OK
-//    root_map["spec"] = mtab_root["spec"]:"";
-    mounts = filter(map mount, mounts, ``( mount["spec"]:"" != "/dev/root"));
+    mounts = filter(map mount, mounts, ``( mount["file"]:"" != "/"));
     mounts = add( mounts, root_map );
     list<map> ret = [];
     foreach(map p, mounts, ``{
@@ -427,7 +440,7 @@ global define list<map> CurMounted()
 	ret = add( ret, p );
 	});
 
-    y2milestone( "all mounts %1", ret);
+    y2milestone( "CurMounted all mounts %1", ret);
     return ret;
     };
 
@@ -587,7 +600,8 @@ map capabilities = $[ "msdos" : $[ "extended" : true,
 		      "gpt"   : $[ "max_primary" : 16 ],
 		      "mac"   : $[ "max_primary" : 16 ],
 		      "sun"   : $[ "max_primary" : 8 ],
-		      "bsd"   : $[ "max_primary" : 8 ]
+		      "bsd"   : $[ "max_primary" : 8 ],
+		      "dasd"  : $[ "max_primary" : 3 ]
 		    ];
 
 global define integer MaxPrimary( string label )

@@ -521,7 +521,7 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 	    }
 	for( YCPMapIterator I_ii=Err_C.begin(); I_ii!=Err_C.end(); I_ii++ )
 	    {
-	    Err_C.remove( I_ii.key() );
+	    Err_C = YCPMap();
 	    }
 	if( !ret->asBoolean()->value() )
 	    {

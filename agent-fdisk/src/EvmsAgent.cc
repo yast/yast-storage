@@ -315,7 +315,7 @@ EvmsAgent::Write( const YCPPath& path, const YCPValue& value,
 		content = cmd->value(YCPString("pesize"));
 		if( !content.isNull() && content->isInteger())
 		    {
-		    size = content->asInteger()->value()/1024;
+		    size = content->asInteger()->value();
 		    }
 		content = cmd->value(YCPString("lvm2"));
 		if( !content.isNull() && content->isBoolean())

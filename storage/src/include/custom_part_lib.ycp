@@ -385,6 +385,35 @@ Change the setup?
     return( allowed );
     };
 
+define boolean check_ok_fssize( integer siz, map part )
+    ``{
+    boolean ret = true;
+    if( part["format"]:false )
+	{
+	y2milestone( "check_ok_fssize size:%1", siz );
+	if( part["used_fs"]:`ext2==`reiser && siz<60000000 )
+	    {
+	    // popup text
+	    Popup::Warning(_("Your partition is too small to use ReiserFS.
+ReiserFS is a journaling file system that requires
+at least 30 MB space for the journal alone.
+Use ReiserFS on larger partitions.
+"));
+	    ret = false;
+	    }
+	if( part["used_fs"]:`ext2==`jfs && siz<32000000 )
+	    {
+	    Popup::Warning(_("Your partition is too small to use JFS.
+JFS is a journaling file system that requires
+at least 16 MB space for the journal alone.
+Use JFS on larger partitions.
+"));
+	    ret = false;
+	    }
+	}
+    return( ret );
+    };
+
     /**
      * Do all checks concerning mount points, uuid, volume labels and
      * fstab options
@@ -399,7 +428,7 @@ define map CheckOkMount( string dev, map old, map<string,any> new )
     ret["ok"] = true;
     new["mount"] = UI::QueryWidget(`id(`mount_point), `Value);
     new["mount"] = deletechars( new["mount"]:"", " \t" );
-    if( size(new["mount"]:"")>0 )
+    if( ret["ok"]:false && size(new["mount"]:"")>0 )
 	{
 	boolean crypt_fs = false;
 	if( !check_mount_point( Storage::GetTargetMap(), dev, new ))
@@ -689,12 +718,16 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 		{
 		new["fs_options"] = $[];
 		}
+	    new["fstopt"] = FileSystems::DefaultFstabOptions( new );
 	    }
 	}
     if( init || ret == `fs )
 	{
 	symbol new_fs = (symbol)UI::QueryWidget(`id(`fs), `Value);
-
+	if( init && !new["format"]:false && new["detected_fs"]:`none != `none )
+	    {
+	    new_fs = new["detected_fs"]:`none;
+	    }
 	y2milestone( "new_fs %1", UI::QueryWidget(`id(`fs), `Value) );
 	y2milestone( "ret==fs init=%1 used_fs:%2 new_fs:%3", init, used_fs,
 	             new_fs );
@@ -722,7 +755,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 			    $["opt_blocksize":$["option_str":"-b",
 						"option_value":"4096"]];
 			}
-			else
+		    else
 			{
 			new["fs_options"] = $[];
 			}
@@ -955,16 +988,16 @@ define boolean CheckResizePossible( boolean ask, boolean lvm, integer resize,
     map poss = FileSystems::IsResizable( fsys );
     boolean ret = true;
 
-    y2milestone( "resize %1 ask %2 lvm %3 fsys %4 mount %5", resize, ask, lvm,
-                 fsys, mount );
-    if( size(mount)>0 && resize < 0 && !poss["mount_shrink"]:false &&
-        poss["shrink"]:false )
+    y2milestone( "CheckResizePossible resize %1 ask %2 lvm %3 fsys %4 mount %5",
+                 resize, ask, lvm, fsys, mount );
+    if( size(mount)>0 && !Mode::initial && resize < 0 && 
+        !poss["mount_shrink"]:false && poss["shrink"]:false )
         {
 	FsysCannotResizeMountPopup( lvm, mount );
 	ret = false;
 	}
-    else if( size(mount)>0 && resize > 0 && !poss["mount_extend"]:false &&
-	    poss["extend"]:false )
+    else if( size(mount)>0 && !Mode::initial && resize > 0 && 
+             !poss["mount_extend"]:false && poss["extend"]:false )
         {
 	FsysCannotResizeMountPopup( lvm, mount );
 	ret = false;

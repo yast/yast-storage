@@ -26,6 +26,9 @@ public:
      * Create an new instance.
      */
     Fat_Partition (string partition_name, bool as_fat32);
+
+    bool get_progress_status (double &percent);
+
     
     /**
      * Run mkdosfs with the specified arguments and handle stderr.

@@ -38,6 +38,8 @@
   import "Popup";
   import "StorageDevices";
 
+global boolean DoCheckEvmsNonEvms = true;
+global boolean DoCheckEvmsLvm = true;
 
  /*
   include "storage/routines.ycp";
@@ -240,8 +242,9 @@ global define map<string,any> GetPartition( map<string,map> tg, string device )
 /* set <part>, return changed map <tg> */
 global define map<string,map> SetPartition( map<string,map> tg, map part )
     ``{
-    y2debug( "SetPartition part=%1", part );
+    y2milestone( "SetPartition part=%1", part );
     map tmp = GetDiskPartition( part["device"]:"" );
+    y2milestone( "SetPartition tmp=%1", tmp );
     string disk = tmp["disk"]:"";
     if( find(part["device"]:"", "/dev/evms")==0 && !haskey( tg, disk ) )
 	{
@@ -420,7 +423,9 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 	targetMap = Storage::SetPartition( targetMap, p );
 	});
     string evms_ag = "/usr/lib/YaST2/plugin/libpy2ag_evms.so.2";
-    if( SCR::Read( .target.size, evms_ag )>=0 )
+    string evms64_ag = "/usr/lib64/YaST2/plugin/libpy2ag_evms.so.2";
+    if( SCR::Read( .target.size, evms_ag )>=0 ||
+        SCR::Read( .target.size, evms64_ag )>=0 )
 	{
 	list<map> cont = (list<map>) SCR::Read (.evms.container);
 	foreach( map e, cont, 
@@ -533,9 +538,11 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 	}
     if( Mode::normal )
 	{
+	SCR::UnmountAgent (.proc.mounts);
 	list<map> mounts = (list<map>) SCR::Read(.proc.mounts);
 	list<map> loop = [];
 	list<map> tab = [];
+	SCR::UnmountAgent (.etc.cryptotab);
 	if( SCR::Read( .target.size, "/etc/cryptotab" ) > 0 )
 	    tab = (list<map>) SCR::Read( .etc.cryptotab );
 	foreach (map e, tab,
@@ -550,6 +557,7 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 	    });
 	y2milestone( "loop %1", loop );
 	tab = [];
+	SCR::UnmountAgent (.etc.fstab);
 	if( SCR::Read( .target.size, "/etc/fstab" ) > 0 )
 	    tab = (list<map>) SCR::Read( .etc.fstab );
 	foreach (map e, tab,
@@ -721,6 +729,7 @@ global define map<string,map> GetFsysType( map<string,map> target)
 
 global define list SwappingPartitions()``{
     list ret = [];
+    SCR::UnmountAgent (.proc.swaps);
     list<map> swaps = filter(map e, (list<map>) SCR::Read( .proc.swaps ),
                          ``(e["type"]:""=="partition"));
     ret = maplist(map e, swaps, ``(e["file"]:"") );
@@ -742,6 +751,7 @@ global define map<string,map> AddSwapMp( map<string,map> target )
 				 if( (Mode::initial &&
 				      !Partitions::IsDosWinNtPartition(part["fsid"]:0) &&
 				      part["detected_fs"]:`unknown==`swap &&
+				      !part["old_swap"]:false &&
 				      find( diskdev, "/dev/evms" )!=0 ) ||
 				     (!Mode::initial &&
 				      contains( swaps, part["device"]:"" )))
@@ -1088,7 +1098,7 @@ global define map<string,map> GetTargetMap()
 	StorageMap[targets_backup_key,"initial"] = eval(tmp);
 	StorageMap[targets_backup_l_key,"initial"] = true;
 	StorageMap[targets_backup_m_key,"initial"] = $[];
-	if( Mode::initial )
+	if( Mode::initial || Mode::repair )
 	    {
 	    y2milestone( "AddMountPointsForWin" );
 	    tmp = AddMountPointsForWin( tmp );
@@ -1167,7 +1177,6 @@ global define void ResetOndiskTarget()
     global define void CreateTargetBackup(string who)``{
 	if( size(StorageMap[targets_backup_key,who]:$[])==0 )
 	    {
-	    //SCR::Write(.target.ycp, "/tmp/b_"+who, StorageMap[targets_key]:$[] );
 	    y2milestone( "creating backup of TargetMap who=%1", who );
 	    StorageMap[targets_backup_key,who] = eval(StorageMap[targets_key]:$[]);
 	    StorageMap[targets_backup_l_key,who] = lvm_initialized;
@@ -1190,7 +1199,6 @@ global define void ResetOndiskTarget()
 	    {
 	    y2milestone( "restoring backup of TargetMap who=%1", who );
 	    StorageMap[targets_key] = eval(StorageMap[targets_backup_key,who]:$[]);
-	    //SCR::Write(.target.ycp, "/tmp/r_"+who, StorageMap[targets_key]:$[] );
 	    lvm_initialized = StorageMap[targets_backup_l_key,who]:false;
 	    StorageMap[modify_targets_key] = eval(StorageMap[targets_backup_m_key,who]:$[]);
 	    StorageMap[targets_backup_key,who] = $[];
@@ -1562,8 +1570,9 @@ global define list GetSubDevFilterList( string maindevkey, string what,
 	    {
 	    dev = GetDiskPartition( part["device"]:"" );
 	    }
-	y2milestone( "CheckForLvmRootFs root=%1 dev=%2", part, dev );
-      boolean ret = !is( dev["nr"]:(any)0, integer );
+      y2milestone( "CheckForLvmRootFs root=%1 dev=%2", part, dev );
+      boolean ret = !is( dev["nr"]:(any)0, integer ) && 
+                    find( part["device"]:"", "/dev/evms" )!=0;
       y2milestone( "CheckForLvmRootFs ret=%1", ret );
       return ret;
     };
@@ -1577,7 +1586,7 @@ global define list GetSubDevFilterList( string maindevkey, string what,
 global define boolean CheckForEvmsRootFs()
     ``{
     map part = GetEntryForMountpoint( "/" );
-    boolean ret = find( "/dev/evms/", part["device"]:"" )==0;
+    boolean ret = find( part["device"]:"", "/dev/evms/" )==0;
     y2milestone( "CheckForEvmsRootFs ret=%1", ret );
     return ret;
     };
@@ -2187,12 +2196,34 @@ global define map<string,map> RemoveAllPartEntry( map<string,map> tg, string ske
     return( new_tg );
     };
 
+global define list<map> RenumberS390Partitions( string dname,
+                                                list<map> partitions )
+    ``{
+    integer cnt = 1;
+    partitions = sort( map a, map b, partitions, 
+                       ``(a["region",0]:0<b["region",0]:0));
+    partitions = maplist( map p, partitions,
+	``{
+	if( !p["delete"]:false )
+	    {
+	    if( p["nr"]:0 != cnt )
+		{
+		if( !haskey( p, "ori_nr" ) )
+		    {
+		    p["ori_nr"] = p["nr"]:0;
+		    }
+		p["nr"] = cnt;
+		p["device"] = GetDeviceName( dname, cnt );
+		}
+	    cnt = cnt+1;
+	    }
+	return( p );
+	});
+    y2milestone( "RenumberS390Partions %1", partitions ); 
+    return( partitions );
+    }
 
-    /* partition_defines -> deletePartitionInTargetMap */
-    /* intelligent defines - check dependency
-                           - check logical
-			   - check posible
-    */
+
     /*
       Do not use DelSubDev for LVM !!!!!!!!!!!!!!!!!!
       ToDo Fix
@@ -2201,13 +2232,14 @@ global define boolean DelSubDev( string subdevkey )
     ``{
     if ( ! IsKeySubDevKey( subdevkey ) ) return false;
 
-    string  maindevkey    	= GetMainDevKey( subdevkey  );
-    string  subdevindex 	= GetSubDevIndex( subdevkey );
-    integer number     	= tointeger( subdevindex );
+    string  maindevkey         = GetMainDevKey( subdevkey  );
+    string  subdevindex        = GetSubDevIndex( subdevkey );
+    integer number             = tointeger( subdevindex );
 
-    list<map> curr_partitions 	= (list<map>) GetMainDevParam( maindevkey, "partitions", []);
-    map<string, any> curr_part 	= GetSubDev(subdevkey);
-    map<string, any> curr_disk	= GetMainDev( maindevkey );
+    list<map> curr_partitions  = (list<map>) GetMainDevParam( maindevkey, 
+                                                              "partitions", []);
+    map<string, any> curr_part = GetSubDev(subdevkey);
+    map<string, any> curr_disk = GetMainDev( maindevkey );
 
     // if it is an extended partition -> delete all logical!
     // -----------
@@ -2226,7 +2258,8 @@ global define boolean DelSubDev( string subdevkey )
 
     if ( curr_part["type"]:`unknown == `extended )
 	{
-	curr_partitions = filter(map parti, curr_partitions, ``(parti["nr"]:(any)0<5));
+	curr_partitions = filter( map parti, curr_partitions, 
+	                          ``(parti["nr"]:(any)0<5));
 	}
 
     map part_created = (map) find(map parti, curr_partitions,
@@ -2259,7 +2292,8 @@ global define boolean DelSubDev( string subdevkey )
 	list<map> create_next = (list<map>)
 	    filter(map p, curr_partitions,
 		    ``( p["nr"]:(any)0 > number && p["create"]:false ));
-	create_next = sort(map a, map b, create_next, ``( a["nr"]:(any)0 < b["nr"]:(any)0 ));
+	create_next = sort( map a, map b, create_next, 
+	                    ``( a["nr"]:(any)0 < b["nr"]:(any)0 ));
 	y2milestone("curr_partitions %1", curr_partitions );
 	y2milestone("create_next %1", create_next );
 	integer del_num = number;
@@ -2304,6 +2338,10 @@ global define boolean DelSubDev( string subdevkey )
 	    }));
 	}
 
+    if( curr_disk["label"]:"msdos" == "dasd" )
+	{
+	curr_partitions = RenumberS390Partitions( maindevkey, curr_partitions );
+	}
     curr_disk["partitions"] = curr_partitions;
 
     SetMainDev( maindevkey, curr_disk );
@@ -2311,15 +2349,20 @@ global define boolean DelSubDev( string subdevkey )
     }
 
 
+global define void AddSubDev( string subdevkey, map newsubdev )
+    ``{
+    string maindevkey = GetMainDevKey( subdevkey );
+    list<map> partitions = (list<map>) GetMainDevParam( maindevkey, 
+                                                        "partitions", [] );
 
-    global define void AddSubDev( string subdevkey, map newsubdev )``{
+    partitions        = add( partitions, newsubdev );
 
-	string maindevkey = GetMainDevKey( subdevkey );
-	list partitions   = (list) GetMainDevParam( maindevkey , "partitions", [] );
-
-	partitions        = add( partitions, newsubdev );
-
-	SetMainDevParam( maindevkey, "partitions", partitions);
+    string label = (string) GetMainDevParam( maindevkey, "label", "msdos" );
+    if( label == "dasd" )
+	{
+	partitions = RenumberS390Partitions( maindevkey, partitions );
+	}
+    SetMainDevParam( maindevkey, "partitions", partitions);
     }
 
 /* set <key> in partition <device> to the given <value> and return changed map <tg> */
@@ -2327,7 +2370,8 @@ global define map<string,map> SetPartitionData( map<string,map> tg,
                                                 string device, string key, 
 						any value )
     ``{
-    y2debug( "device=%1 key=%2 value=%3", device, key, value );
+    y2milestone( "SetPartitionData device=%1 key=%2 value=%3", device, key, 
+                 value );
     map tmp = GetDiskPartition( device );
     string disk = tmp["disk"]:"";
     list r_part = filter(map part, tg[disk,"partitions"]:[],
@@ -2368,10 +2412,10 @@ global define map<string,map> DelPartitionData( map<string,map> tg,
 	    p = filter(string k, any e, (map<string,any>)p, ``(k != key) );
 	    r_part    = add( r_part, p );
 	    tg[disk,"partitions"] = r_part;
-	}
+	    }
 	}
     return( tg );
-	}
+    }
 
 
 /* replace SubDev entry with newsubdev */
@@ -2592,6 +2636,13 @@ global define list GetRootInitrdModules()
 	    initrdmodules = add (initrdmodules, "raid5");
 	    }
 	}
+    if (partition["raid_type"]:"" == "raid6" )
+	{
+	if (!contains (initrdmodules, "raid6"))
+	    {
+	    initrdmodules = add (initrdmodules, "raid6");
+	    }
+	}
     if( partition["type"]:`unknown == `lvm )
 	{
 	string vgname = substring( partition["device"]:"", 5 );
@@ -2704,8 +2755,6 @@ global define void SetWizardKey( string key )
     classified["crypt_nb"] = crypt_nb+1;
     classified[crypt_key] = fs_passwd;
 
-    if( Mode::test )
-	SCR::Write( .target.ycp, "/tmp/classified_user_settings", classified );
     SetClassifiedUserSettings(classified);
     return crypt_key;
     }
@@ -2729,14 +2778,6 @@ global define void SetWizardKey( string key )
     y2debug( "IdFromTarget id:%1 map:%2", id, part );
     return( part );
     }
-
-
-    /* Save Storage to dir for debug */
-    global define void TestWrite()``{
-
-	 SCR::Write(.target.ycp, "/tmp/Storage", StorageMap );
-	 SCR::Write(.target.ycp, "/tmp/StorageMaps", StorageMaps );
-    };
 
 
     /* Functions for testing */
@@ -2800,6 +2841,12 @@ to the Linux kernel."));
     }
 
 
+global define boolean IsRealDisk( string disk, map entry )
+    ``{
+    return( disk != "/dev/md" && disk != "/dev/loop" &&
+            !entry["is_lvm_vg"]:false && find( disk, "/dev/evms")!=0 );
+    }
+
  /**
    * Determine if there is any Linux partition on this system.
    * If there is none, we don't need to ask if the user wants to update or
@@ -2815,21 +2862,18 @@ to the Linux kernel."));
     foreach ( string dev, map disk, GetTargetMap(), ``{
         if( !ret )
 	    {
-	    foreach( map e, disk["partitions"]:[], ``{
-		ret = ret ||
-		      Partitions::IsLinuxPartition( e["fsid"]:Partitions::fsid_native );
-		});
+	    if( IsRealDisk( dev, disk ) )
+		{
+		foreach( map e, disk["partitions"]:[], ``{
+		    ret = ret ||
+			  Partitions::IsLinuxPartition( e["fsid"]:Partitions::fsid_native );
+		    });
+		}
 	    }
 	});
     y2milestone( "HaveLinuxPartitions ret=%1", ret );
     return( ret );
     };
-
-global define boolean IsRealDisk( string disk, map entry )
-    ``{
-    return( disk != "/dev/md" && disk != "/dev/loop" &&
-            !entry["is_lvm_vg"]:false && find( disk, "/dev/evms")!=0 );
-    }
 
 global define list GetPartitionList()``{
     list ret = [];
@@ -3473,6 +3517,7 @@ global define map<string,map> SpecialBootHandling( map<string,map> tg )
 		part["format"] = false;
 		part["mount"] = "";
 		part["fstype"] = Partitions::FsIdToString( id );
+		part["prep_install"] = true;
 		if( !part["create"]:false && part["fsid"]:0 != id )
 		    {
 		    part["ori_fsid"] = part["fsid"]:0;
@@ -3612,7 +3657,7 @@ global define boolean PerformLosetup( map loop, boolean format )
 	    crypt_ok = r["exit"]:1 == 0;
 	    }
 	}
-    //SCR::Execute( .target.remove, tmpf );
+    SCR::Execute( .target.remove, tmpf );
     y2milestone( "PerformLosetup ret %1", crypt_ok );
     return( crypt_ok );
     }
@@ -3627,6 +3672,7 @@ global define boolean SetCryptLoop( map part )
 
     y2milestone( "SetCryptLoop crypt %1 %2", crypt_ok, loop_dev );
 
+    SCR::UnmountAgent (.proc.modules);
     map loaded_modules = (map) SCR::Read(.proc.modules);
     if( part["loop_fs"]:false && find(part["crypt"]:"","twofish")==0 &&
         !haskey( loaded_modules, "loop_fish2" ) )
@@ -3884,18 +3930,300 @@ global define void UpdateFstabSubfs()
     AsciiFile::RewriteFile( fstab, tabpath );
     }
 
+global string HdToIseries( string input )
+    ``{
+    string ret = input;
+    string regex = "/dev/hd[a-z][0-9]*";
+    if( regexpmatch( input, regex ))
+	{
+	ret = "/dev/iseries/vd" + substring( ret, 7 );
+	}
+    y2milestone( "HdToIseries input:%1 ret:%2", input, ret );
+    return( ret );
+    }
+
+global define void UpdateFstabIseriesVd()
+    ``{
+    y2milestone( "UpdateFstabIseriesVd updating hdx to iseries/vdx" );
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    string n = "";
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	n = HdToIseries( l["fields",0]:"" );
+	if( n != l["fields",0]:"" )
+	    {
+	    AsciiFile::ChangeLineField( fstab, line, 0, n );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( fstab, tabpath );
+    tabpath = PathToDestdir( "/etc/fstab" );
+    map crtab = Partitions::GetCrypto( tabpath );
+    line = 0;
+    while( line<=AsciiFile::NumLines( crtab ) )
+	{
+	map l = AsciiFile::GetLine( crtab, line );
+	n = HdToIseries( l["fields",1]:"" );
+	if( n != l["fields",1]:"" )
+	    {
+	    AsciiFile::ChangeLineField( crtab, line, 1, n );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( crtab, tabpath );
+    }
+
+global define void UpdateFstabUsbdevfs()
+    ``{
+    y2milestone( "UpdateFstabUsbdevfs updating usbdevfs to usbfs" );
+    boolean changed = false;
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	if( l["fields",2]:"" == "usbdevfs" )
+	    {
+	    AsciiFile::ChangeLineField( fstab, line, 2, "usbfs" );
+	    changed = true;
+	    }
+	line = line+1;
+	}
+    if( changed )
+	{
+	y2milestone( "UpdateFstabUsbdevfs changed" );
+	AsciiFile::RewriteFile( fstab, tabpath );
+	}
+    }
+
 global define void Update( map oldv, map newv )
     ``{
     y2milestone( "UpdateFstab old:%1 new:%2", oldv, newv );
+    if( oldv["major"]:0<9 )
+	{
+	UpdateFstabUsbdevfs();
+	}
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
 	{
 	StorageDevices::MakeCDLinks();
 	UpdateFstabSubfs();
+	if( Arch::board_iseries )
+	    {
+	    UpdateFstabIseriesVd();
+	    }
+	string cmd = "cd / && /sbin/insserv -r /etc/init.d/boot.evms";
+	y2milestone( "Update cmd %1", cmd );
+	map bo = (map)SCR::Execute (.target.bash_output, cmd );
+	y2milestone( "Update bo %1", bo );
 	}
     }
 
+global define list<string> GetTranslatedDevices( map oldv, map newv, 
+						 list<string> names )
+    {
+    list<string> ret = names;
+    y2milestone( "GetTranslatedDevices old:%1 new:%2", oldv, newv );
+    if( (oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0)) &&
+        Arch::board_iseries )
+	{
+	ret = maplist( string n, names, ``(HdToIseries( n )));
+	y2milestone( "GetTranslatedDevices ret %1", ret );
+	}
+    return( ret );
+    }
+
+global define list GetUsedLvmGroups( map<string,map> tg )
+    ``{
+    list groups = [];
+    foreach( string disk, map data, tg,
+	``{
+	if( data["is_lvm_vg"]:false &&
+	    size( filter( map p, data["partitions"]:[], 
+	                  ``(size(p["mount"]:"")>0 ) )) > 0 )
+	    {
+	    y2milestone( "GetUsedLvmGroups %1", 
+	                 filter( map p, data["partitions"]:[],
+				 ``(size(p["mount"]:"")>0 ) ) );
+	    groups = add( groups, substring( disk, 5 ) );
+	    }
+	});
+    y2milestone( "GetUsedLvmGroups ret %1", groups );
+    return( groups );
+    };
+
+global define list<string> GetUsedRealDisks( map<string,map> tg )
+    ``{
+    list<string> disks = [];
+    list lvmgr = GetUsedLvmGroups( tg );
+    list mdlist = [];
+    foreach( map p, tg["/dev/md","partitions"]:[],
+	``{
+	if( size(p["mount"]:"")>0  ||
+	    contains( lvmgr, p["lvm_group"]:"" ) )
+	    {
+	    mdlist = add( mdlist, p["device"]:"" );
+	    }
+	});
+    foreach( string disk, map data, tg,
+	``{
+	if( IsRealDisk( disk, data ) && 
+	    size( filter( map p, data["partitions"]:[], 
+	                  ``(size(p["mount"]:"")>0 ||
+			     contains( mdlist, p["raid_name"]:"" )  ||
+			     contains( lvmgr, p["lvm_group"]:"" ) ) )) > 0 )
+	    {
+	    disks = add( disks, disk );
+	    }
+	});
+    y2milestone( "GetUsedRealDisks ret %1", disks );
+    return( disks );
+    };
+
+global define list<string> GetEvmsRealDisk( map<string,map> tg, map p )
+    ``{
+    list<string> rdisk = [];
+    string name = "";
+    if( size(p["device"]:"")>10 )
+	name = substring( p["device"]:"", 10 );
+    if( find( name, "lvm/" ) == 0 )
+	{
+	name = substring( name, 0, findlastof( name, "/" ));
+	}
+    y2milestone( "GetEvmsRealDisk name is %1", name );
+    foreach( string disk, map data, tg,
+	``{
+	if( size(name)>0 && 
+	    (IsRealDisk( disk, data ) || disk=="/dev/md") &&
+	    size( filter( map p, data["partitions"]:[], 
+	                  ``(p["evms_vol"]:"" == name)))>0 )
+	    {
+	    rdisk = (list<string>)union( rdisk, [ disk ] );
+	    }
+	});
+    if( size(rdisk)==0 && !p["evms_native"]:false )
+	{
+	map d = GetDiskPartition( "/dev/" + name );
+	if( haskey( tg, d["disk"]:"" ))
+	    {
+	    rdisk = [ d["disk"]:"" ];
+	    }
+	}
+    y2milestone( "GetEvmsRealDisk %1 is %2", p["device"]:"", rdisk );
+    return( rdisk );
+    }
+
+global define list<string> GetUsedEvmsDisks( map<string,map> tg )
+    ``{
+    list<string> disks = [];
+    list mdlist = [];
+    foreach( string disk, map data, tg,
+	``{
+	if( find( disk, "/dev/evms" )==0 )
+	    {
+	    foreach( map p, data["partitions"]:[],
+		``{
+		if( size(p["mount"]:"")>0 )
+		    {
+		    list<string> dl = GetEvmsRealDisk( tg, p );
+		    foreach( string d, dl,
+			``{
+			if( find( d, "/dev/md" ) == 0 )
+			    {
+			    list<string> ndl = [];
+			    foreach( string dd, map pp, tg,
+				``{
+				if( pp["raid_name"]:"" == d )
+				    {
+				    ndl = add( ndl, dd );
+				    }
+				});
+			    disks = (list<string>)union( disks, ndl );
+			    }
+			else
+			    {
+			    disks = (list<string>)add( disks, d );
+			    }
+			});
+		    }
+		});
+	    }
+	});
+    disks = sort( disks );
+    y2milestone( "GetUsedEvmsDisks ret %1", disks );
+    return( disks );
+    };
+
+global define boolean CheckEvmsNonEvms()
+    ``{
+    boolean ret = true;
+    if( DoCheckEvmsNonEvms )
+	{
+	map<string,map> tg = GetTargetMap();
+	list<string> evms = GetUsedEvmsDisks( tg );
+	list<string> nonevms = GetUsedRealDisks( tg );
+	evms = filter( string d, evms, ``(contains( nonevms, d )));
+	y2milestone( "CheckEvmsNonEvms intersec %1", evms );
+	ret = size(evms)==0;
+	}
+    y2milestone( "CheckEvmsNonEvms ret %1", ret );
+    return( ret );
+    };
+
+global define boolean CheckEvmsLvm()
+    ``{
+    boolean ret = true;
+    if( DoCheckEvmsLvm )
+	{
+	map<string,map> tg = GetTargetMap();
+	list evms = GetUsedEvmsDisks( tg );
+	list lvms = GetUsedLvmGroups( tg );
+	ret = size(evms)==0 || size(lvms)==0;
+	}
+    y2milestone( "CheckEvmsLvm ret %1", ret );
+    return( ret );
+    };
+
 global define void FinishInstall()
     ``{
+    map<string,map> tg = GetTargetMap();
+    list evms = GetUsedEvmsDisks( tg );
+    y2milestone( "FinishInstall evms %1", evms );
+    if( size(evms)>0 )
+	{
+	string cmd = "cd / && /sbin/insserv /etc/init.d/boot.evms";
+	y2milestone( "FinishInstall cmd %1", cmd );
+	map bo = (map)SCR::Execute (.target.bash_output, cmd );
+	y2milestone( "FinishInstall bo %1", bo );
+	list<string> nonevms = GetUsedRealDisks( tg );
+	nonevms = filter( string d, nonevms, ``(!contains( evms, d )));
+	if( size(nonevms)>0 && SCR::Read( .target.size, "/etc/evms.conf" )>=0 )
+	    {
+	    map evmsconf = $[];
+	    AsciiFile::ReadFile( evmsconf, "/etc/evms.conf" );
+	    boolean found = false;
+	    integer i = 1;
+	    string regex = "^[ \t]*exclude[ \t]*=";
+	    while( i<=AsciiFile::NumLines(evmsconf) && !found )
+		{
+		map l = AsciiFile::GetLine( evmsconf, i );
+		if( regexpmatch( l["line"]:"", regex ))
+		    {
+		    found = true;
+		    string li = "\texclude = [ " + mergestring( nonevms, " " ) +
+		                " ]";
+		    y2milestone( "FinishInstall li = %1", li );
+		    evmsconf["l",i,"line"] = li;
+		    evmsconf["l",i,"buildline"] = false;
+		    AsciiFile::RewriteFile( evmsconf, "/etc/evms.conf" );
+		    }
+		i = i+1;
+		}
+	    }
+	}
     y2milestone( "FinishInstall" );
     }
 }

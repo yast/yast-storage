@@ -478,7 +478,7 @@ int EvmsAccess::PluginFilterFunction( const char* plugin )
     return( ret );
     }
 
-EvmsAccess::EvmsAccess()
+EvmsAccess::EvmsAccess() : EvmsOpen_b(false)
     {
     y2debug( "begin Konstruktor EvmsAccess" );
     if( !RunningFromSystem() )
@@ -487,7 +487,7 @@ EvmsAccess::EvmsAccess()
 	}
     evms_set_load_plugin_fct( PluginFilterFunction );
     int ret = evms_open_engine( NULL, (engine_mode_t)ENGINE_READWRITE, NULL, 
-                                EVERYTHING, NULL );
+                                DEBUG, NULL );
     y2debug( "evms_open_engine ret %d", ret );
     if( ret != 0 )
 	{
@@ -495,6 +495,7 @@ EvmsAccess::EvmsAccess()
 	}
     else
 	{
+	EvmsOpen_b = true;
 	RereadAllObjects();
 	}
     y2debug( "End Konstruktor EvmsAccess" );
@@ -587,7 +588,11 @@ EvmsAccess::~EvmsAccess()
 	 {
 	 delete *Ptr_Ci;
 	 }
-    evms_close_engine();
+    if( EvmsOpen_b )
+	{
+	evms_close_engine();
+	EvmsOpen_b = false;
+	}
     }
 
 EvmsObject *const EvmsAccess::AddObject( object_handle_t id )
@@ -1074,10 +1079,10 @@ bool EvmsAccess::CreateCompatVol( const string& Volume_Cv )
 	    {
 	    Error_C = "could not find segment " + name;
 	    }
-	}
-    if( Error_C.size()==0 )
-	{
-	EndEvmsCommand();
+	if( Error_C.size()==0 )
+	    {
+	    EndEvmsCommand();
+	    }
 	}
     if( Error_C.size()>0 )
 	{

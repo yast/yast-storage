@@ -55,6 +55,7 @@
   //integer loop_dev_nb	   = 0;
   boolean crypt_ok         = true;
   boolean reboot_necessary = false;
+  boolean reboot           = false;
 
   map<integer,map>     modify_targets        = (map<integer,map>)Storage::GetModifyTargets();
   boolean test_mode		= Mode::test;
@@ -145,10 +146,7 @@ define void restoretargetmap()
 	    });
 	baktargets[ tdevice ] = $["partitions":bakpartitionmap];
 	});
-//      SCR::Write(.target.ycp, "/tmp/targetMap_orig", targets );
-//      SCR::Write(.target.ycp, "/tmp/targetMap_backup", baktargets );
     map<string,map> targets = Storage::ReReadTargetMap();
-//      SCR::Write(.target.ycp, "/tmp/targetMap_reread", targets );
 
     //see if theres info available in backupmap
     foreach (string tdevice, map target, targets,
@@ -499,6 +497,260 @@ your file systems, it is safer to cancel and reboot."),
     return( !cancel );
     };
 
+boolean HandlePartitionDisk( string device, map disk )
+    ``{
+    boolean retry = false;
+    list<map> partitions = disk["partitions"]:[];
+    path scrpath = disk["scrpath"]:topath("."+substring(device, 5));
+    y2milestone( "HandlePartitionDisk partitions %1\n", partitions );
+    if( find( device, "/dev/dasd" )!=0 )
+	{
+	y2milestone( "HandlePartitionDisk path %1\n", 
+		     .disk + scrpath + .partitions );
+	if( Arch::ia64 )
+	    {
+	    partitions = 
+		maplist( map p, partitions,
+			 ``{
+			 if( p["mount"]:"" == Partitions::BootMount() )
+			     p["fsid"] = Partitions::fsid_gpt_boot;
+			 return( p );
+			 });
+	    }
+	y2milestone( "HandlePartitionDisk write partitions %1", partitions );
+	do
+	    {
+	    retry = false;
+	    UI::ChangeWidget(`id(`progress), `Label,
+			     // label text, %1 is replaced by disk name e.g. /dev/hda
+			     sformat(_("partitioning disk %1"), device ));
+
+	    map args = $[ "parted" : Partitions::UseParted(),
+			  "label"  : disk["label"]:"msdos" ];
+	    y2milestone( "HandlePartitionDisk fdisk args %1", args );
+
+	    /////////////////////////////////////////////////////
+	    boolean result = SCR::Write(.disk + scrpath + .partitions,
+					partitions, args );
+	    /////////////////////////////////////////////////////
+
+	    if( !result )
+		{
+		y2error("Oops, fdisk failed for device ", device);
+
+		symbol ret=`yes;
+		// continue/cancel/retry during installation
+		if( Mode::initial )
+		    {
+		    if( Storage::CheckSwapOn( device ) )
+			{
+			reboot_necessary = true;
+			}
+		    else
+			{
+			ret = Popup::AnyQuestion3(
+			    // heading text
+			    _("fdisk failed."),
+			    sformat (
+				// popup text
+				_("Partitioning failed for unknown reason.
+Repartition disk %1."),
+				   device),
+			    Label::ContinueButton(),
+			    Label::AbortButton(),
+			    Label::RetryButton(), `focus_no);
+
+			if( ret == `retry )
+			    {
+			    retry = true;
+			    }
+			else if ( ret == `no )
+			    {
+			    return( false );
+			    }
+			}
+		    }
+		// offer reboot in running system
+		else
+		    {
+		    // heading text
+		    ret = Popup::AnyQuestion3(_("parted failed."),
+			  // popup text
+			  _("It is strongly advised to reboot now to prevent damage to your file systems."),
+			  // button text
+			  Label::ContinueButton(), Label::AbortButton(), 
+			  _("Reboot"), `focus_retry);
+
+		    if( ret == `retry )
+			{
+			SCR::Execute (.target.bash,"/sbin/shutdown -r now");
+			reboot = true;
+		        return( false );
+			}
+		    else if (ret == `no )
+			{
+		        return( false );
+			}
+		    }
+		}
+	    }
+	while ( retry );
+	}
+    else
+	{
+	string cmd = sformat( "/sbin/fdasd -p %1 | grep '^[ ]*/dev/dasd' | tr -s ' '", 
+	                      device );
+	if( disk["dasdfmt"]:false )
+	    {
+	    partitions = filter( map p, partitions, ``(!p["delete"]:false));
+	    y2milestone( "HandlePartitionDisk partitions %1", partitions );
+	    }
+	map bo = (map)SCR::Execute( .target.bash_output, cmd );
+	list<string> lines = filter( string l,
+	                             splitstring( bo["stdout"]:"", "\n" ),
+				     ``(size(l)>0));
+	y2milestone( "HandlePartitionDisk lines %1", lines );
+	list<map> fp = maplist( string s, lines, 
+	    ``{
+	    map p = $[];
+	    list <string> fl = filter( string f, splitstring( s, " " ), 
+	                               ``(size(f)>0));
+	    p["name"] = fl[0]:"";
+	    p["start"] = tointeger(fl[1]:"0");
+	    p["end"] = tointeger(fl[2]:"0");
+	    p["nr"] = tointeger(fl[4]:"0");
+	    return( p );
+	    });
+	y2milestone( "HandlePartitionDisk fp %1", fp );
+	foreach( map p, partitions,
+	    ``{
+	    if( p["delete"]:false )
+		{
+		fp = filter( map f, fp, ``(f["nr"]:0!=p["nr"]:0));
+		}
+	    });
+	y2milestone( "HandlePartitionDisk fp %1", fp );
+	foreach( map p, partitions,
+	    ``{
+	    if( p["create"]:false )
+		{
+		map new = $[ "new" : true ];
+		new["nr"] = p["nr"]:0;
+		new["start"] = p["region",0]:0 * disk["tracks"]:1;
+		new["end"] = (p["region",0]:0+p["region",1]:0) * 
+		             disk["tracks"]:1 - 1;
+		fp = add( fp, new );
+		}
+	    });
+	fp = sort( map a, map b, fp, ``(a["start"]:0<b["start"]:0));
+	y2milestone( "HandlePartitionDisk fp %1", fp );
+	boolean map_ok = true;
+	integer cnt = 1;
+	foreach( map p, fp, 
+	    ``{
+	    if( cnt<size(fp) )
+		{
+		if( p["end"]:0 - fp[cnt,"start"]:0 > disk["tracks"]:1 )
+		    {
+		    map_ok = false;
+		    }
+		}
+	    cnt = cnt+1;
+	    });
+	if( !map_ok )
+	    {
+	    y2error( "This should not happen" );
+	    y2error( "impossible partition list %1", fp );
+	    return( false );
+	    }
+	else
+	    {
+	    integer diff = 0;
+	    cnt = 1;
+	    fp = maplist( map p, fp,
+		``{
+		if( cnt<size(p) )
+		    {
+		    diff = p["end"]:0 - fp[cnt,"start"]:0;
+		    if( diff<0 )
+			diff = -diff;
+		    if( diff <=disk["tracks"]:1 )
+			{
+			p["end"] = fp[cnt,"start"]:1-1;
+			}
+		    }
+		return( p );
+		});
+	    y2milestone( "HandlePartitionDisk fp %1", fp );
+	    if( size(fp)>0 )
+		{
+		if( fp[0,"start"]:0 <= disk["tracks"]:1 )
+		    {
+		    fp[0,"start"] = "first";
+		    }
+		diff = disk["tracks"]:1*disk["cyl_count"]:0 - 
+		       fp[size(fp)-1,"end"]:0;
+		if( diff <= disk["tracks"]:1 )
+		    {
+		    fp[size(fp)-1,"end"] = "last";
+		    }
+		}
+	    y2milestone( "HandlePartitionDisk fp %1", fp );
+	    string conf = "";
+	    foreach( map p, fp,
+		``{
+		conf = conf + sformat( "[%1,%2]\n", p["start"]:nil, 
+		                       p["end"]:nil );
+		});
+	    y2milestone( "HandlePartitionDisk conf %1", conf );
+	    string tmpf = Storage::SaveDumpPath( "tmpf" );
+	    y2milestone( "HandlePartitionDisk tmpf %1", tmpf );
+	    SCR::Write( .target.string, tmpf, conf );
+	    string cmd = sformat( "/sbin/fdasd -c %1 %2", tmpf, device );
+	    do
+		{
+		retry = false;
+		UI::ChangeWidget(`id(`progress), `Label,
+				 // label text, %1 is replaced by disk name e.g. /dev/hda
+				 sformat(_("partitioning disk %1"), device ));
+		y2milestone( "HandlePartitionDisk Executing cmd = %1", cmd );
+		map bo = (map)SCR::Execute( .target.bash_output, cmd );
+		boolean result = bo["exit"]:1 == 0;
+		y2milestone( "HandlePartitionDisk bo = %1", bo );
+		if( !result )
+		    {
+		    y2error("Oops, fdasd failed for device ", device);
+
+		    symbol ret=`yes;
+		    // continue/cancel/retry during installation
+		    ret = Popup::AnyQuestion3(
+			// heading text
+			_("fdasd Failed"),
+			sformat (
+			    // popup text
+			    _("Partitioning failed for unknown reason.
+Repartition disk %1."),
+			       device),
+			Label::ContinueButton(), Label::AbortButton(),
+			Label::RetryButton(), `focus_no);
+
+		    if( ret == `retry )
+			{
+			retry = true;
+			}
+		    else if ( ret == `no )
+			{
+			return( false );
+			}
+		    }
+		}
+	    while ( retry );
+	    //SCR::Execute( .target.remove, tmpf );
+	    }
+	}
+    return( true );
+    }
+
 define list CreateAndActivateSwap( list<list> swd )
     ``{
     list ret = [];
@@ -557,8 +809,11 @@ define list CreateAndActivateSwap( list<list> swd )
 
 define map DetermineMountPoints(string disk, map target, map mp )
     ``{
+    y2milestone( "DetermineMountPoints disk %1 tg %2", disk, target );
+    y2milestone( "DetermineMountPoints installation %1", installation );
     foreach ( map part, target["partitions"]:[],
 	``{
+	y2milestone( "DetermineMountPoints part %1", part );
 	string device = part["device"]:"";
 	string mount = part["mount"]:"";
 	boolean running_system_create_part = 
@@ -571,20 +826,20 @@ define map DetermineMountPoints(string disk, map target, map mp )
 	    {
 	    if( mount != "" && mount != "swap" && !part["delete"]:false &&
 	        !part["noauto"]:false &&
-		(!installation||part["fsid"]:0 != 7)) // ntfs is read-only anyway.
+		(!installation||!contains(Partitions::fsid_ntfstypes, part["fsid"]:0))) // ntfs is read-only anyway.
 		{
 		symbol used_fs = part["used_fs"]:`unknown;
 		if( used_fs == `unknown )
 		    {
 		    used_fs = part["detected_fs"]:`unknown;
 		    }
-		if( part["loop_fs"]:false )
+		if( part["loop_fs"]:false && size(part["loop_dev"]:"")>0 )
 		    device = part["loop_dev"]:"";
 		mp[mount] = [device, used_fs, disk];
 		}
 	    }
 	});  // foreach (partition)
-    y2milestone( "disk %1 mp %2", disk, mp );
+    y2milestone( "DetermineMountPoints disk %1 mp %2", disk, mp );
     return( mp );
     };
 
@@ -684,8 +939,8 @@ define void DoUmountAndReset( list mounts )
     integer num = size(mounts)-1;
     while( num>=0 )
 	{
-	y2milestone( "umount: %1", mounts[num]:"" );
-	SCR::Execute( .target.umount, mounts[num]:"" );
+	y2milestone( "umount: %1", Storage::PathToDestdir( mounts[num]:"" ) );
+	SCR::Execute( .target.umount, Storage::PathToDestdir( mounts[num]:"" ) );
 	num = num-1;
 	}
     doswapoff(activatedswaps);
@@ -693,7 +948,7 @@ define void DoUmountAndReset( list mounts )
     restoretargetmap();
     };
 
-  y2debug( "BEGINNING of inst_prepdisk" );
+  y2milestone( "BEGINNING of inst_prepdisk" );
 
   if ( Mode::autoinst )
   {
@@ -840,7 +1095,6 @@ define void DoUmountAndReset( list mounts )
 
     boolean cancel = false;
     boolean retry = false;
-    boolean reboot = false;
     map<string,map> tg = Storage::GetTargetMap();
     integer num_lvm_vg = size (filter (string dev, map disk, tg,
                                        ``(disk["is_lvm_vg"]:false)));
@@ -961,6 +1215,58 @@ damage to your file systems, it is safer to cancel and reboot.
 
     y2milestone("running_swap: %1", running_swap);
 
+    if( Arch::s390 )
+	{
+        map<string,map> tg = filter( string d, map disk, 
+	                             Storage::GetTargetMap(),
+				     ``(disk["dasdfmt"]:false));
+	list<string> ddf = maplist( string d, map disk, tg, ``{return(d);});
+	if( size(ddf)>0 )
+	    {
+	    boolean ok = true;
+	    retry = false;
+	    string txt = "";
+	    if( size(ddf)>1 )
+		{
+		// label text, %1 is replaced by multiple disk names
+		txt = sformat(_("dasdfmt Disks %1"), mergestring( ddf, " " ) );
+		}
+	    else
+		{
+		// label text, %1 is replaced by disk name
+		txt = sformat(_("dasdfmt disk %1"), ddf[0]:"" );
+		}
+	    UI::ChangeWidget(`id(`progress), `Label, txt );
+	    string cmd = "dasdfmt -y -F -Y -b 4096 -P 4 -d cdl";
+	    cmd = cmd + mergestring( maplist( string d, ddf, 
+	                             ``{return( " -f "+d);}), "" );
+	    do
+		{
+		y2milestone( "Executing cmd = %1", cmd );
+		ok = SCR::Execute( .target.bash, cmd ) == 0; 	
+		if( !ok )
+		    {
+		    // heading text
+		    symbol ret = Popup::AnyQuestion3( _("dasdfmt Failed"),
+			_("dasdfmt failed."),
+			Label::ContinueButton(),
+			Label::AbortButton(),
+			Label::RetryButton(), `focus_no);
+
+		    if( ret == `retry )
+			{
+			retry = true;
+			}
+		    else if ( ret == `no )
+			{
+			cancel = true;
+			}
+		    }
+		}
+	    while( !ok && retry && !cancel );
+	    }
+	}
+
     foreach (string tdevice, map target, Storage::GetTargetMap(),
 	``{
 	if (cancel)
@@ -973,53 +1279,8 @@ damage to your file systems, it is safer to cancel and reboot.
 
 	y2debug("Target: %1", tdevice );
 
-	if( Arch::s390 && target["dasdfmt"]:false )
-	    {
-	    boolean ok = true;
-	    retry = false;
-	    UI::ChangeWidget(`id(`progress), `Label,
-			     // label text, %1 is replaced by disk name
-			     sformat(_("dasdfmt disk %1"), tdevice ));
-	    string cmd = sformat( "dasdfmt -y -v -b 4096 -d cdl -f %1", 
-	                          tdevice );
-	    do
-		{
-		y2milestone( "Executing cmd = %1", cmd );
-		ok = SCR::Execute( .target.bash, cmd ) == 0; 	
-		if( ok )
-		    {
-		    cmd = sformat( "fdasd -a %1", tdevice );
-		    y2milestone( "Executing cmd = %1", cmd );
-		    ok = SCR::Execute( .target.bash, cmd ) == 0; 
-		    }
-		if( !ok )
-		    {
-		    // heading text
-		    symbol ret = Popup::AnyQuestion3( _("dasdfm failed."),
-			// popup text, %1 is replaced by disk name
-			sformat( _("dasdfmt failed on disk %1"), tdevice),
-			Label::ContinueButton(),
-			Label::AbortButton(),
-			Label::RetryButton(), `focus_no);
-
-		    if( ret == `retry )
-			{
-			retry = true;
-			}
-		    else if ( ret == `no )
-			{
-			cancel = true;
-			//abort foreach run
-			return;
-			}
-		    }
-		}
-	    while( !ok && retry );
-	    }
-
 	// Partitioning with fdisk agent  (s390 needs no partitioning)
-	if( this_is_for_real && !Arch::s390 && 
-	    Storage::IsRealDisk( tdevice, target ))
+	if( this_is_for_real && Storage::IsRealDisk( tdevice, target ))
 	    {
 	    map bo = (map)SCR::Execute( .target.bash_output, 
 				        "echo YAST_IS_RUNNING=$YAST_IS_RUNNING" );
@@ -1036,109 +1297,13 @@ damage to your file systems, it is safer to cancel and reboot.
 
 	    if( !cancel && need_part )
 		{
-		path scrpath = 
-		    target["scrpath"]:topath("."+substring(tdevice, 5));
-		y2milestone( "partitioning %1 %2\n", 
-		             .disk + scrpath + .partitions, partitions );
-		if( Arch::ia64 )
-		    {
-		    partitions = 
-			maplist( map p, partitions,
-				 ``{
-				 if( p["mount"]:"" == Partitions::BootMount() )
-				     p["fsid"] = Partitions::fsid_gpt_boot;
-				 return( p );
-				 });
-		    }
-		y2milestone( "write partitions %1", partitions );
-		do
-		    {
-		    retry = false;
-		    UI::ChangeWidget(`id(`progress), `Label,
-		                     // label text, %1 is replaced by disk name e.g. /dev/hda
-				     sformat(_("partitioning disk %1"), 
-					     tdevice ));
-
-		    map args = $[ "parted" : Partitions::UseParted(),
-				  "label"  : target["label"]:"msdos" ];
-		    y2milestone( "fdisk args %1", args );
-
-		    /////////////////////////////////////////////////////
-		    boolean result = SCR::Write(.disk + scrpath + .partitions,
-						partitions, args );
-		    /////////////////////////////////////////////////////
-
-		    if( !result )
-			{
-			y2error("Oops, fdisk failed for device ", tdevice);
-
-			symbol ret=`yes;
-			// continue/cancel/retry during installation
-			if( installation )
-			    {
-			    if( Storage::CheckSwapOn( tdevice ) )
-				{
-				reboot_necessary = true;
-				}
-			    else
-				{
-				ret = Popup::AnyQuestion3(
-				    // heading text
-				    _("fdisk failed."),
-				    sformat (
-					// popup text
-					_("Partitioning failed for unknown reason.
-Repartition disk %1.
-    "),
-					    tdevice),
-				    Label::ContinueButton(),
-				    Label::AbortButton(),
-				    Label::RetryButton(), `focus_no);
-
-				if( ret == `retry )
-				    {
-				    retry = true;
-				    }
-				else if ( ret == `no )
-				    {
-				    cancel = true;
-				    //abort foreach run
-				    return;
-				    }
-				}
-			    }
-			// offer reboot in running system
-			else
-			    {
-			    // heading text
-			    ret = Popup::AnyQuestion3(_("parted failed."),
-				  // popup text
-				  _("It is strongly advised to reboot now to prevent damage to your file systems."),
-				  // button text
-				  Label::ContinueButton(), Label::AbortButton(), _("Reboot"), `focus_retry);
-
-				if( ret == `retry )
-			    {
-			      SCR::Execute (.target.bash,"/sbin/shutdown -r now");
-			      reboot = true;
-			      cancel = true;
-			      //abort foreach run
-			      return;
-			    }
-			    else if (ret == `no )
-			    {
-			      cancel = true;
-			      //abort foreach run
-			      return;
-			    }
-			  }
-			    }
-		    }
-		while ( retry );
+		cancel = !HandlePartitionDisk( tdevice, target );
 		}
 	    if( !cancel && need_part && Storage::ZeroNewPartitions )
 		{
-		foreach( map p, filter( map e, partitions, ``(e["create"]:false)),
+		foreach( map p, filter( map e, partitions, 
+		                        ``(e["create"]:false && 
+					   CheckExistDevice(e["device"]:""))),
 		    ``{
 		    string dd_sblocks =
 			sformat( "/bin/dd if=/dev/zero of=%1 bs=1024 count=200 2>&1",
@@ -1219,6 +1384,9 @@ Repartition disk %1.
 	    boot_device = root_device;
 	});	// foreach target
 
+    y2milestone( "root:%1 boot:%2 swap:%3", root_device, boot_device, 
+                 swap_devices );
+
     //fdisk failed
 
     if( reboot )
@@ -1256,10 +1424,6 @@ Please repeat the installation with another swap partition selected
 	Misc::WriteYaSTInf($["Root" : "reboot", "RebootMsg" : "0"]);
 	return `abort;
 	}
-
-    y2milestone("boot_device: %1", boot_device );
-    y2milestone("swap_devices: %1", swap_devices);
-    y2milestone("root_device: %1", root_device );
 
     //------------------------------------------------------------------
     // partitioner isn't needed any more
@@ -1354,10 +1518,27 @@ Please repeat the installation with another swap partition selected
 	                  ``(p["type"]:""!="remove_pv" &&
 			     p["type"]:""!="remove_lv" &&
 			     p["type"]:""!="remove_vg") );
-        mod = mapmap( integer num, map p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	y2milestone( "mod=%1", mod );
 
-	boolean ret = target_modify( mod, installation );
+	map<integer,map> mod1 = filter( integer num, map p, mod,
+					``(p["type"]:""=="create_vg" ||
+					   p["type"]:""=="create_pv"));
+        mod1 = mapmap( integer num, map p, mod1, 
+	               ``{ n=n+1; return( $[n: p] ); } );
+	y2milestone( "mod1=%1", mod1 );
+
+	boolean ret = target_modify( mod1, installation );
+	if( ret )
+	    {
+	    mod1 = filter( integer num, map p, mod,
+			   ``(p["type"]:""!="create_vg" &&
+			      p["type"]:""!="create_pv"));
+	    n = 0;
+	    mod1 = mapmap( integer num, map p, mod1, 
+			   ``{ n=n+1; return( $[n: p] ); } );
+	    y2milestone( "mod1=%1", mod );
+	    ret = target_modify( mod1, installation );
+	    }
 	if( ret )
 	    {
 	    mod = filter( integer num, map p, modify_targets,
@@ -1365,7 +1546,8 @@ Please repeat the installation with another swap partition selected
 	    if( size(mod)>0 )
 	      {
 	      n = 0;
-	      mod = mapmap( integer num, map p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	      mod = mapmap( integer num, map p, mod, 
+	                    ``{ n=n+1; return( $[n: p] ); } );
 	      y2milestone( "mod=%1", mod );
 	      ret = HandleResizeLvm( Storage::GetTargetMap(), mod, false );
 	      }
@@ -1467,7 +1649,8 @@ damage to your file systems, it is safer to cancel and reboot.
 	// some mount failed, try to umount all already mounted partitions
 	if( cancel )
 	    {
-	    list mlist = maplist( any k, any e, mountPoints, ``(k) );
+	    list<string> mlist = maplist( string k, any e, mountPoints, ``(k) );
+	    mlist = sort( string a, string b, mlist, ``(size(a)<size(b)) );
 	    DoUmountAndReset( mlist );
 	    return `back;
 	    }
@@ -1521,14 +1704,21 @@ damage to your file systems, it is safer to cancel and reboot.
 	    }
 
 	tg = Storage::GetTargetMap();
-	mountPoints = $[];
+	list<string> mlist = maplist( string k, any e, mountPoints, ``(k) );
+	mlist = sort( string a, string b, mlist, ``(size(a)>size(b)) );
+	 y2milestone( "umount list %1", mlist );
+	foreach( string m, mlist, 
+	    ``{
+	    y2milestone( "umount %1", Storage::PathToDestdir( m ) );
+	    SCR::Execute( .target.umount, Storage::PathToDestdir( m ) );
+	    });
 	foreach( string tdevice, map target, 
 		 filter( string k, map e, tg, ``(find(k,"/dev/evms")==0 )),
 	    ``{
 	    mountPoints = (map<string,list>)DetermineMountPoints( tdevice, target, mountPoints );
 	    }); // foreach (tdevice)
 
-	y2milestone("EVMS-MountPoints: %1",mountPoints);
+	y2milestone("added EVMS-MountPoints: %1",mountPoints);
 
 	if( installation )
 	    SCR::Execute( .target.bash, 
@@ -1541,7 +1731,8 @@ damage to your file systems, it is safer to cancel and reboot.
 	    // some mount failed, try to umount all already mounted partitions
 	    if( cancel )
 		{
-		list mlist = maplist( any k, any e, mountPoints, ``(k) );
+		list<string> mlist = maplist( string k, any e, mountPoints, ``(k) );
+		mlist = sort( string a, string b, mlist, ``(size(a)<size(b)) );
 		DoUmountAndReset( mlist );
 		return `back;
 		}
@@ -1621,6 +1812,8 @@ damage to your file systems, it is safer to cancel and reboot.
 		cancel = !HandleFormatPartition( p );
 		}
 	    });
+	tg = Storage::GetTargetMap();
+	loop = tg["/dev/loop"]:$[];
 	if( !cancel )
 	    {
 	    map<string,list> loop_mp = (map<string,list>)DetermineMountPoints( "/dev/loop", loop, $[] );
@@ -1657,6 +1850,14 @@ damage to your file systems, it is safer to cancel and reboot.
 	    SCR::Execute (.target.mount, ["sysfs", destproc], "-t sysfs");
 	    }
 	Storage::WriteFstab( Storage::GetTargetMap() );
+	if( Mode::initial && Storage::CheckForEvmsRootFs() )
+	    {
+	    string cmd = "/bin/cp -av /dev/evms " + 
+	                 Storage::PathToDestdir("/dev");
+	    y2milestone( "cmd %1", cmd );
+	    map m = (map) SCR::Execute(.target.bash_output, cmd );
+	    y2milestone( "ret %1", m );
+	    }
 	}
 
     y2milestone( "Disable automatic module loading");
@@ -1692,7 +1893,7 @@ damage to your file systems, it is safer to cancel and reboot.
 
     Storage::SetModifyTargets( $[] );
 
-    y2debug("END inst_prepdisk.ycp");
+    y2milestone("END of inst_prepdisk.ycp");
 
 //XXX
   //Popup::Message("finish");

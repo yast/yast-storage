@@ -38,23 +38,24 @@ include "partitioning/do_proposal_flexible.ycp";
 
 define boolean ignore_disk( string dev, map entry, boolean soft )
     ``{
-    boolean ret = Storage::IsRealDisk( dev, entry );
-    if( ret && Arch::board_iseries && find( dev, "/dev/sd" )==0 )
+    boolean ret = !Storage::IsRealDisk( dev, entry );
+    if( Arch::board_iseries && find( dev, "/dev/sd" )==0 )
 	{
-	ret = false;
+	ret = true;
 	}
     if( soft && entry["softraiddisk"]:false )
 	{
-	ret = false;
+	ret = true;
 	}
-    if( !ret )
+    if( ret )
 	{
 	y2milestone( "ignoring disk %1 soft %2", dev, soft );
 	}
     return( ret );
     };
   
-define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
+define map do_proposal_real( boolean need_boot, map<string,map> targetMap,
+                             boolean ignore_soft )
     ``{
     map<string,map> tmptargetMap = $[];
 
@@ -66,7 +67,8 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
     /////////////////////////////////////////////////////////////////
 
     foreach( string dev, map disk, 
-	     filter( string k, map e, targetMap, ``(ignore_disk(k,e,true))),
+	     filter( string k, map e, targetMap, 
+	             ``(!ignore_disk(k,e,ignore_soft))),
 	``{
 	y2milestone( "checking disk %1", dev );
 
@@ -501,13 +503,12 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
 				y2debug( "OUT: currReu %1 R %2 HavepR %3",
 					 (stype == "linux"),  
 					 (mode == "reuse"),
-					 HaveBootSlot( "p_reuse", 
-						       slotnb, mode, 
+					 HaveBootSlot( "reuse", slotnb, mode, 
 						       boot_slot_list));
 				y2debug( "OUT: cr one %1 R %2 HavepR %3", 
 					 free_primary>0,  (mode == "reuse"),
-					 HaveBootSlot( "p_reuse", slotnb, 
-						       mode, boot_slot_list));
+					 HaveBootSlot( "reuse", slotnb, mode, 
+					               boot_slot_list));
 
 				if( free_primary>0 && 
 				    split_boot_end<Partitions::BootCyl() )
@@ -580,7 +581,7 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
 
 			    y2debug( "OUT: test of primary slot extd %1", 
 				     slotnb);
-			    y2debug( "OUT: cr one %1 HaveL%2 ", 
+			    y2debug( "OUT: cr one %1 HaveL %2 ", 
 				     free_primary>0, 
 				     HaveBootSlot("logical", slotnb, mode, 
 						  boot_slot_list) );
@@ -593,15 +594,16 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
 						   boot_slot_list) );
 			    y2debug( "OUT: currReu %1 R %2 HavepR %3", 
 				     (stype == "linux"), (mode == "reuse"),
-				     HaveBootSlot( "p_reuse", slotnb, mode,
+				     HaveBootSlot( "reuse", slotnb, mode,
 						   boot_slot_list));
 			    y2debug( "OUT: cr one %1 R %2 HavepR %3", 
 				     free_primary>0, (mode == "reuse"),
-				     HaveBootSlot( "p_reuse", slotnb, mode,
+				     HaveBootSlot( "reuse", slotnb, mode,
 						   boot_slot_list) );
 
 
 			    if( (stype == "linux") && (mode == "reuse") &&
+			        extended_allowed &&
 				HaveBootSlot( "reuse", slotnb, mode, 
 					      boot_slot_list))
 				{
@@ -615,6 +617,7 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
 				}
 
 			    if( free_primary>0 && (mode == "reuse") && 
+			        extended_allowed &&
 				HaveBootSlot( "reuse", slotnb, mode, 
 					      boot_slot_list))
 				{
@@ -660,11 +663,11 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
 				AddHit( mode, slot, "2p-E-2pri-have", 
 					GetBootSlot( "primary", slotnb, 
 						     mode, boot_slot_list),
-					curr_second_pri, "no_extd", 
+					curr_first_pri, "no_extd", 
 					"no_boot_split", "need_boot", 
-					curr_first_pri, "no_root_split",
+					-1, "no_root_split",
 					swap_slot, boot_reuse_slot,
-					curr_third_pri, free_primary );
+					curr_second_pri, free_primary );
 				}
 			    }
 			else
@@ -762,7 +765,7 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
 				    "no_need_boot", -1, "no_root_split", 
 				    swap_slot, boot_reuse_slot, curr_second_pri,
 				    free_primary );
-			    if( !i_have_extended )
+			    if( !i_have_extended && extended_allowed )
 				{
 				AddHit( mode, slot, "1p-e-pri", $[],
 					curr_first_pri, "extd", "no_boot_split",
@@ -891,7 +894,7 @@ define map do_proposal()
 	}
     else
 	{
-	ret = do_proposal_real( Partitions::NeedBoot(), target );
+	ret = do_proposal_real( Partitions::NeedBoot(), target, true );
 	y2milestone( "suggestion possible: %1", ret["ok"]:false);
 	if( !ret["ok"]:false )
 	    {
@@ -929,7 +932,7 @@ define map do_proposal()
 	  
 	    if( use_disk != "" )
 		{
-		ret = do_proposal_real( Partitions::NeedBoot(), target );
+		ret = do_proposal_real( Partitions::NeedBoot(), target, false );
 		}
 	    if( ret["ok"]:false )
 		{
