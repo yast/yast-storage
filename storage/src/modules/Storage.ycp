@@ -3504,6 +3504,19 @@ global define string MapS390Device( string device, map device_map )
 
 global define map<string,map> SpecialBootHandling( map<string,map> tg )
     ``{
+    boolean have_ppc_boot = false;
+    foreach( string dev, map disk, tg,
+	``{
+	foreach(map part, disk["partitions"]:[],
+	    ``{
+	    if( !part["delete"]:false && !have_ppc_boot &&
+	        part["fsid"]:0 == Partitions::fsid_prep_chrp_boot )
+		{
+		have_ppc_boot = true;
+		}
+	    });
+	});
+    y2milestone( "SpecialBootHandling: have_ppc_boot:%1", have_ppc_boot );
     foreach( string dev, map disk, tg,
 	``{
 	list new_part = [];
@@ -3511,7 +3524,7 @@ global define map<string,map> SpecialBootHandling( map<string,map> tg )
 	    ``{
 	    // convert a mount point of /boot to a 41 PReP boot partition
 	    if( Partitions::PrepBoot() && !part["delete"]:false &&
-		part["mount"]:"" == Partitions::BootMount() )
+		part["mount"]:"" == Partitions::BootMount() && !have_ppc_boot )
 		{
 		integer id = Partitions::fsid_prep_chrp_boot;
 		part["format"] = false;
@@ -3524,7 +3537,7 @@ global define map<string,map> SpecialBootHandling( map<string,map> tg )
 		    part["change_fsid"] = true;
 		    }
 		part["fsid"] = id;
-		y2milestone( "part=%1", part );
+		y2milestone( "modified Prep part=%1", part );
 		}
 	    if( Arch::board_mac && !part["delete"]:false &&
 		part["mount"]:"" == Partitions::BootMount() )
@@ -3535,7 +3548,7 @@ global define map<string,map> SpecialBootHandling( map<string,map> tg )
 		part["fsid"] = id;
 		part["used_fs"] = `hfs;
 		part["detected_fs"] = `hfs;
-		y2milestone( "part=%1", part );
+		y2milestone( "modified hfs part=%1", part );
 		}
 	    if( Arch::ia64 && !part["delete"]:false &&
 		part["mount"]:"" == Partitions::BootMount() )
@@ -3548,7 +3561,7 @@ global define map<string,map> SpecialBootHandling( map<string,map> tg )
 		    {
 		    part["format"] = false;
 		    }
-		y2milestone( "part=%1", part );
+		y2milestone( "modified GPT boot part=%1", part );
 		}
 	    new_part = add( new_part, part );
 	    });
