@@ -58,7 +58,8 @@ define boolean CheckItemIsNotMounted( string id )
 	                                        Storage::GetSubDevIndex(id));
 	string cmd = "mount | grep \"^" + device + " \"";
 	y2milestone( "mounts cmd=%1", cmd );
-	string line = (string)lookup((map)SCR::Execute(.target.bash_output, cmd), "stdout", "");
+	map bo = (map)SCR::Execute(.target.bash_output, cmd);
+	string line = bo["stdout"]:"";
 	y2milestone( "mounts line=%1", line );
 	ret = size(line)<size(device);
 	if( !ret )
@@ -111,7 +112,8 @@ A mounted file system cannot be added to a volume group."),
     
     if( size( lvm_vgs ) == 0 )
 	{
-	map addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
+	map vg = DlgCreateVolumeGroup( lvm_vgs );
+	map addVG = addVolumeGroup( vg, targetMap, lvm_vgs, modify_targets );
 	
 	// has the user cancelled the dialog? 
 	if( !addVG["cancelled"]:false )
@@ -129,7 +131,7 @@ A mounted file system cannot be added to a volume group."),
     else
 	{
 	// there are already vgs ... select the first one
-	current_vg = (string)select( lvm_vgs, 0, "" ); 
+	current_vg = lvm_vgs[0]:""; 
 	}
 
     vg_key = "/dev/" + current_vg;
@@ -248,7 +250,8 @@ A mounted file system cannot be added to a volume group."),
 
         if( ret == `vg_add_vg )
 	    {
-            map addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
+	    map vg = DlgCreateVolumeGroup( lvm_vgs );
+            map addVG = addVolumeGroup( vg, targetMap, lvm_vgs, modify_targets );
 
             // has the user cancelled the dialog?
             if( !addVG["cancelled"]:false )
@@ -317,8 +320,8 @@ A mounted file system cannot be added to a volume group."),
 	    
 	    if( id!=nil && CheckItemIsPv(targetMap,id) )
 		{
-	        string vg = lookup( Storage::IdFromTarget( targetMap, id ),
-				    "lvm_group", "" );
+		map ttt = Storage::IdFromTarget( targetMap, id );
+	        string vg = ttt["lvm_group"]:"";
 
 		if( check_pv_delete( targetMap, id, vg ) == `nodelete )
 		    {
