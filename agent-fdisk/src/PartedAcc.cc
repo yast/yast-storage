@@ -377,6 +377,10 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
 		{
 		if( val.find( "Apple_partition" ) != string::npos || 
 		    val.find( "Apple_Driver" ) != string::npos ||
+		    val.find( "Apple_Loader" ) != string::npos ||
+		    val.find( "Apple_Boot" ) != string::npos ||
+		    val.find( "Apple_ProDOS" ) != string::npos ||
+		    val.find( "Apple_FWDriver" ) != string::npos ||
 		    val.find( "Apple_Patches" ) != string::npos )
 		    {
 		    Part_rr.Id_i = 0x101;
