@@ -771,17 +771,29 @@ global define string SaveDumpPath( string name )``{
     return ret;
     }
 
-global define string SaneConsoleEncoding()
+map lenc = $[ "el" : "iso8859-7",
+              "hu" : "iso8859-2",
+              "cs" : "iso8859-2",
+              "hr" : "iso8859-2",
+              "sl" : "iso8859-2",
+              "sk" : "iso8859-2",
+              "en" : "iso8859-1",
+              "tr" : "iso8859-9",
+	      "lt" : "iso8859-13",
+	      "bg" : "iso8859-5",
+	      "ru" : "iso8859-5"];
+
+global define string LangTypicalEncoding()
     ``{
-    string enc = tolower(Encoding::console);
-    if( find( enc, "iso-" )==0 )
+    string lang = Encoding::GetEncLang();
+    lang = substring(lang, 0, 2);
+    lang = tolower(lang);
+    string enc = "iso8859-15";
+    if( haskey( lenc, lang ) )
 	{
-	enc = "iso" + substring( enc, 4 );
+	enc = lenc[lang]:"";
 	}
-    if( find( enc, "utf-" )==0 )
-	{
-	enc = "";
-	}
+    y2milestone( "LangTypicalEncoding lang %1 ret %2", lang, enc );
     return( enc );
     }
 
@@ -818,20 +830,8 @@ global define list AddMountPointsForWinParts( list<map> partitions, boolean prim
 	    contains( [`fat32, `fat16, `ntfs], partition["used_fs"]:`none ))
 	    {
 	    string mntops = "users,gid=users,umask=0002";
-	    string enc = "iso8859-1";
-	    string code = "437";
-	    if(size(Encoding::console)>0 )
-		{
-		enc = SaneConsoleEncoding();
-		}
-	    if( enc == "" )
-		{
-		code = "";
-		}
-	    if( enc == "iso8859-2" )
-		{
-		code = "852";
-		}
+	    string enc = LangTypicalEncoding();
+	    string code = Encoding::GetCodePage(enc);
 	    if( size(enc)>0 )
 		{
 		if( partition["used_fs"]:`none!=`ntfs )
@@ -845,7 +845,7 @@ global define list AddMountPointsForWinParts( list<map> partitions, boolean prim
 		}
 	    if( size(code)>0 && partition["used_fs"]:`none!=`ntfs )
 		{
-		mntops = mntops + ",code=" + code;
+		mntops = mntops + ",codepage=" + code;
 		}
 	    if( partition["used_fs"]:`none == `ntfs )
 		{
@@ -3311,12 +3311,10 @@ global define map MakeCdromFstabEntry( map cd )
     entry = $[ "spec":cdmount, "mount":media, "vfstype":"subfs",
 	       "mntops": CdromMntops(),
 	       "freq":0, "passno":0];
-    if( Storage::SaneConsoleEncoding() != "iso8859-1" &&
-        Storage::SaneConsoleEncoding() != "iso8859-15" &&
-	Storage::SaneConsoleEncoding() != "" )
+    string enc = Storage::LangTypicalEncoding();
+    if( !contains( [ "iso8859-1", "iso8859-15", "" ], enc ))
 	{
-	entry["mntops"] = entry["mntops"]:"" + ",iocharset=" +
-			  Storage::SaneConsoleEncoding();
+	entry["mntops"] = entry["mntops"]:"" + ",iocharset=" + enc;
 	}
     y2milestone( "ret %1", entry );
     return( entry );
