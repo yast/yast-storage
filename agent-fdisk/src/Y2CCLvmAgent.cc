@@ -1,24 +1,18 @@
 
-#include <string.h>
 
-#include "Y2CCLvmAgent.h"
-#include "Y2LvmAgentComponent.h"
+/*
+ *  Author: Arvin Schnell <arvin@suse.de>
+ */
 
-Y2CCLvmAgent::Y2CCLvmAgent()
-  : Y2ComponentCreator(Y2ComponentBroker::BUILTIN)
-{
-}
 
-bool Y2CCLvmAgent::isServerCreator() const
-{
-  return true;
-}
+#include <scr/Y2AgentComponent.h>
+#include <scr/Y2CCAgentComponent.h>
+#include <scr/SCRInterpreter.h>
 
-Y2Component *Y2CCLvmAgent::create(const char *name) const
-{
-  if (!strcmp(name, "ag_lvm"))
-      return new Y2LvmComponent();
-  else return 0;
-}
+#include "LvmAgent.h"
 
-Y2CCLvmAgent g_y2ccag_lvm;
+
+typedef Y2AgentComp <LvmAgent> Y2LvmAgentComp;
+
+Y2CCAgentComp <Y2LvmAgentComp> g_y2ccag_lvm ("ag_lvm");
+

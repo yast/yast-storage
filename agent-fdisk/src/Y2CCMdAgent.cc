@@ -1,24 +1,18 @@
 
-#include <string.h>
 
-#include "Y2CCMdAgent.h"
-#include "Y2MdAgentComponent.h"
+/*
+ *  Author: Arvin Schnell <arvin@suse.de>
+ */
 
-Y2CCMdAgent::Y2CCMdAgent()
-  : Y2ComponentCreator(Y2ComponentBroker::BUILTIN)
-{
-}
 
-bool Y2CCMdAgent::isServerCreator() const
-{
-  return true;
-}
+#include <scr/Y2AgentComponent.h>
+#include <scr/Y2CCAgentComponent.h>
+#include <scr/SCRInterpreter.h>
 
-Y2Component *Y2CCMdAgent::create(const char *name) const
-{
-  if (!strcmp(name, "ag_md"))
-      return new Y2MdComponent();
-  else return 0;
-}
+#include "MdAgent.h"
 
-Y2CCMdAgent g_y2ccag_md;
+
+typedef Y2AgentComp <MdAgent> Y2MdAgentComp;
+
+Y2CCAgentComp <Y2MdAgentComp> g_y2ccag_md ("ag_md");
+

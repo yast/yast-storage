@@ -1,5 +1,5 @@
 #
-# Makefile.am for ag_fdisk/src
+# Makefile.am for storage/agent-fdisk/src
 #
 
 AM_CXXFLAGS = -DY2LOG=\"agent-fdisk\"
@@ -20,8 +20,7 @@ liby2ag_fdisk_la_SOURCES =			\
 
 libpy2ag_fdisk_la_SOURCES =				\
 	$(liby2ag_fdisk_la_SOURCES)			\
-	Y2CCFdiskAgent.cc Y2CCFdiskAgent.h		\
-	Y2FdiskAgentComponent.cc Y2FdiskAgentComponent.h
+	Y2CCFdiskAgent.cc
 
 libpy2ag_fdisk_la_LDFLAGS = -version-info 2:0
 
@@ -39,8 +38,7 @@ liby2ag_lvm_la_SOURCES =			\
 
 libpy2ag_lvm_la_SOURCES =				\
 	$(liby2ag_lvm_la_SOURCES)			\
-	Y2CCLvmAgent.cc Y2CCLvmAgent.h		        \
-	Y2LvmAgentComponent.cc Y2LvmAgentComponent.h
+	Y2CCLvmAgent.cc
 
 libpy2ag_lvm_la_LDFLAGS = -version-info 2:0
 
@@ -57,8 +55,7 @@ liby2ag_md_la_SOURCES =			\
 
 libpy2ag_md_la_SOURCES =				\
 	$(liby2ag_md_la_SOURCES)			\
-	Y2CCMdAgent.cc Y2CCMdAgent.h		        \
-	Y2MdAgentComponent.cc Y2MdAgentComponent.h
+	Y2CCMdAgent.cc
 
 libpy2ag_md_la_LDFLAGS = -version-info 2:0
 

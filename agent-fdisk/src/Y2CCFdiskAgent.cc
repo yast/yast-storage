@@ -1,24 +1,18 @@
 
-#include <string.h>
 
-#include "Y2CCFdiskAgent.h"
-#include "Y2FdiskAgentComponent.h"
+/*
+ *  Author: Arvin Schnell <arvin@suse.de>
+ */
 
-Y2CCFdiskAgent::Y2CCFdiskAgent()
-  : Y2ComponentCreator(Y2ComponentBroker::BUILTIN)
-{
-}
 
-bool Y2CCFdiskAgent::isServerCreator() const
-{
-  return true;
-}
+#include <scr/Y2AgentComponent.h>
+#include <scr/Y2CCAgentComponent.h>
+#include <scr/SCRInterpreter.h>
 
-Y2Component *Y2CCFdiskAgent::create(const char *name) const
-{
-  if (!strcmp(name, "ag_fdisk"))
-      return new Y2FdiskComponent();
-  else return 0;
-}
+#include "FdiskAgent.h"
 
-Y2CCFdiskAgent g_y2ccag_fdisk;
+
+typedef Y2AgentComp <FdiskAgent> Y2FdiskAgentComp;
+
+Y2CCAgentComp <Y2FdiskAgentComp> g_y2ccag_fdisk ("ag_fdisk");
+
