@@ -1,0 +1,215 @@
+/**
+ * Module: 		auto_part_prepare.ycp
+ *
+ * Authors: 		Andreas Schwab (schwab@suse.de)
+ *			Klaus Kämpf (kkaempf@suse.de)
+ *
+ * Purpose: 		This module preparse the raw targetMap to
+ *			cover the whole disk, including unpartitioned
+ *			areas as 'dummy' partitions.
+ *
+ * $Id$
+ *
+ * global vars
+ *
+ * integer size_of_boot
+ * integer size_of_swap
+ * boolean test_mode
+ * list full_region
+ * integer bytes_per_unit
+ * integer disk_size
+ * integer max_primary
+ */
+{
+    textdomain "partitioning";
+    import "Storage";
+    import "Mode";
+
+  global define prepare_partitions (map target, list partitions) ``{
+
+    // --------------------------------------------------------------
+    // The size of a unit (eg. one cylinder)
+    bytes_per_unit = lookup (target, "cyl_size", 1);
+    y2debug("bytes_per_unit: %1", bytes_per_unit);
+
+    // The size of the disk in units
+    disk_size = lookup (target, "cyl_count", 1);
+    y2debug("disk_size: %1", disk_size);
+    
+    // alpha bsd need first 4 MB reserved, the /boot partition
+    //  won't be created
+    if (partition_type == `ABSD)
+	size_of_boot = 4 * 1024 * 1024;
+
+    // On PPC / PReP the boot partition should be smaller than 4MB if possible
+    if ( Arch::ppc
+  	 && (Arch::board_prep || Arch::board_chrp))
+    {
+	if ( bytes_per_unit >= ((4 * 1024 * 1024) +1) )
+	{
+	    size_of_boot = 1; // this will result to the minimal boot_partition of one cylinder
+	}
+        else {
+	    size_of_boot = (4 * 1024 * 1024) + 1 - bytes_per_unit;
+	}
+    }
+
+    // The minimum size needed to install a minimal system
+    minimal_size = 160 * 1024 * 1024 + size_of_boot + size_of_swap;
+
+    // The minimum size needed to install a default system
+    integer required_size = 950 * 1024 * 1024 + size_of_boot + size_of_swap;
+
+    // --------------------------------------------------------------
+    // partition data
+
+    path scrpath = .;
+    // FIXME: GetMustRereadPart() not in Storage anymore
+    // if ( Storage::GetMustRereadPart() && !Mode::test )
+    boolean GetMustRereadPart = false; //FIXME: must be defined somewhere else
+    if (GetMustRereadPart && !Mode::test )
+    {
+	scrpath = lookup ( target, "scrpath", topath ("."+target_is));
+	partitions = Storage::Check4partitions (target, scrpath);
+	y2milestone("re-read partitions");
+    }
+    if (Mode::test)
+    {
+	SCR::Write (Storage::SaveDumpPath("initial_partitions"), partitions);
+    }
+    
+
+    // filter out all "create" paritions, they will be re-created at exit
+    //   (this ensures a 'clean' partition list if this dialogue is re-entered
+
+    partitions = filter (`pentry, partitions, ``(!lookup (pentry, "create", false)));
+
+    // reset all "delete" paritions, they will be re-created at exit
+    //   (this ensures a 'clean' partition list if this dialogue is re-entered
+
+    partitions = maplist (`pentry, partitions, ``(add (pentry, "delete", false)));
+
+    if ( Mode::test ) {
+	SCR::Write (.dumpto.tmp.cleaned_partitions, partitions);
+    }
+
+    // The region that describes the full disk
+    full_region = [ 0, disk_size ];
+
+    //-------------------------------------------------------------------------
+    // The action
+    //-------------------------------------------------------------------------
+
+    // First sort the partitions on the starting cylinder
+    partitions = sort (`p1, `p2, partitions,
+		       ``(start_of_region (lookup (p1, "region", []))
+			  <= start_of_region (lookup (p2, "region", []))));
+
+    // now check if automatic partitioning if feasible
+
+    // unpartitioned disk -> yes
+
+    if (size (partitions) == 0) {
+	// No partitions -> use the entire disk
+	can_do_auto = true;
+	unused_region = full_region;
+    }
+
+    // extended region with enough free space -> yes
+
+    if ((!can_do_auto) && contains_extended (partitions)) {
+	    // Extended partition already exists -> look for free space at
+	    // the end of it
+	    unused_region = unused_extended_region (partitions);
+
+	    // check if this is enough
+	    if ((size_of_region (unused_region) > required_size)
+		&& can_create_logical (partitions))
+		can_do_auto = true;
+    }
+
+    // no extended region, but primaries left
+    //   if there is enough space after the last defined primary -> yes
+
+    if ((!can_do_auto) && (!contains_extended (partitions))
+	&& num_primary (partitions) != max_primary) {
+
+	map last_partition = select (partitions, size (partitions) - 1, $[]);
+	// skip #3 on AlphaBSD and SparcBSD
+	if ((partition_type == `ABSD || partition_type == `SBSD) && (lookup (last_partition, "nr", 0) == 3))
+	    last_partition = select (partitions, size (partitions) - 2,$[]);
+	list last_region = lookup (last_partition, "region", []);
+	integer last_used = end_of_region (last_region);
+
+	if (last_used < disk_size) {
+	    unused_region = [ last_used, disk_size - last_used ];
+	    if (size_of_region (unused_region) > required_size)
+		can_do_auto = true;
+	}
+    }
+
+
+    //-------------------------------------------------------------------------
+    // Augment the partition list with a description for holes
+
+    integer last_end = 0;
+    integer free_nr = 0;
+
+    // first the mid-disk holes
+
+    partitions = flatten (maplist (`pentry, partitions, ``{
+	list ret = [];
+	list region = lookup (pentry, "region", []);
+
+	// skip #3 on AlphaBSD and SparcBSD
+	if (((partition_type != `ABSD && partition_type != `SBSD) || (lookup (pentry, "nr", 0) != 3))
+	   && (start_of_region (region) > last_end)) {
+	    free_nr = free_nr + 1;
+	    ret = add (ret, $["type":`free,
+			     "region": [ last_end,
+				       start_of_region (region) - last_end ]]);
+	    // if free space is directly located before extended partition
+	    last_end = start_of_region (region);
+	}
+
+	// if this partition is not the extended partition,
+	//    use its end_of_region as last_end
+	// on BSD-like partitions, partition # 3 is handled similary
+
+	if ((lookup (pentry, "type", `unknown) != `extended)
+	    && (!(
+		((partition_type == `ABSD || partition_type == `SBSD)
+		  && (lookup (pentry, "nr", 0) == 3))
+		))
+	   )
+	    last_end = end_of_region (lookup (pentry, "region", []));
+	return add (ret, pentry);
+    }));
+
+    // then the end-disk hole
+
+    if (last_end < disk_size) {
+	free_nr = free_nr + 1;
+	partitions = add (partitions,
+			  $[ "type":`free,
+			   "region": [ last_end, disk_size - last_end ]]);
+    }
+
+    // now the partitions list spans the whole disk
+    if (Mode::test) y2milestone("all partitions: %1", partitions);
+
+    //-------------------------------------------------------------------------
+    // Create a checkbox for every real (primary or logical) partition
+    // and any free space
+
+    // give each partition a unique id
+
+    integer ui_id = 0;
+    partitions = maplist (`pentry, partitions, ``{
+	ui_id = ui_id + 1;
+	return add (pentry, "ui_id", ui_id);
+    });
+
+    return partitions;
+  };
+}

@@ -1,0 +1,680 @@
+/**
+ * File:
+ *	StorageDevices.ycp
+ *
+ * Module:
+ *	StorageDevices
+ *
+ * Depends:
+ *	StorageControllers
+ *
+ * Summary:
+ *	This module does all storage device related stuff:
+ *	- hard disk drives
+ *	- removable drives (ZIP)
+ *	- floppy devices
+ *
+ * $Id$
+ *
+ * Author:
+ *	Klaus Kaempf <kkaempf@suse.de> (initial)
+ */
+{
+    module "StorageDevices";
+
+    import "Mode";
+    import "HwStatus";
+
+    include "partitioning/read_storage.ycp";
+    include "ui/common_functions.ycp";
+    
+    /**
+     * @return	boolean	true if this is a mixed ide/scsi system
+     * (used in LILO configuration to generate proper 'bios=' entries
+     */
+    global boolean mixedDevices = false;
+
+
+    /**
+     * @return list of /dev/* symlinks to cd drives
+     * This returns ["/dev/dvd", "/dev/cdrom", "/dev/dvd1", ...]
+     * instead of the real devices.
+     * @see cddrives
+     */
+    global list cddevices = [];
+
+
+    /**
+     * @return map of $["device": $[..target..], ...] for each ZIP drive
+     *
+     */
+    global map zipDrives = $[];
+
+
+    /**
+     * @return list of maps: all kinds of removable media, esp. ZIP drives
+     * @see: FloppyDevice
+     * @see: FloppyReady
+     */
+    global list FloppyDrives = [];
+
+
+    /**
+     * @return true if floppy drive present
+     * @see: FloppyDevice
+     * @see: FloppyReady
+     */
+    global boolean FloppyPresent = false;
+
+
+    /**
+     * @return Device name of floppy, empty string if no floppy present
+     * @see: FloppyPresent
+     * @see: FloppyReady
+     */
+    global string FloppyDevice = "";	// set in constructor
+
+
+    //---------------------------------------------------------------
+
+    /**
+     * local !
+     * list of real cd-rom drives, i.e. ["/dev/hdc", "/dev/sr0", ...]
+     * @see cddevices
+     */
+    list cddrives = [];
+
+    // storage for localProbe, see Probe()
+    map targetMap = $[];
+
+    //---------------------------------------------------------------
+
+
+    /**
+     * ProbeCDROMs()
+     *
+     * Initialize cddrives
+     *
+     */
+    global define boolean ProbeCDROMs()
+    ``{
+	if (size (cddrives) == 0)
+	{
+	    if (Mode::initial
+		|| Mode::cont)
+	    {
+		cddrives = SCR::Read (.probe.cdrom);
+		// write out data for hardware status check
+		foreach (`drive, cddrives,
+		``{
+		    HwStatus::Set (drive["unique_key"]:"", `yes);
+		});
+	    }
+	    else
+	    {
+		cddrives = SCR::Read (.probe.cdrom.manual);
+		if ((cddrives == nil)
+		    || (size (cddrives) == 0))
+		{
+		    cddrives = $["dev_name":"/dev/cdrom"];
+		}
+	    }
+	}
+	y2milestone ("ProbeCDROMs (%1)", cddrives);
+	return (size (cddrives) > 0);
+    }
+
+    /**
+     * FloppyReady ()
+     * @return floppy media status
+     * determines if a media is present.
+     * @see: FloppyPresent
+     * @see: FloppyDevice
+     */
+
+    global define boolean FloppyReady ()
+    ``{
+	if (Mode::initial)
+	{
+	    FloppyDrives = SCR::Read(.probe.floppy);
+
+	    if (!FloppyPresent)	// only once !
+	    {
+		// write out data for hardware status check
+		foreach (`drive, FloppyDrives,
+		``{
+		    HwStatus::Set (drive["unique_key"]:"", `yes);
+		});
+	    }
+	}
+	else
+	{
+	    FloppyDrives = SCR::Read(.probe.floppy.manual);
+	}
+
+	map floppy_data = FloppyDrives[0]:$[];
+	FloppyDevice = floppy_data["dev_name"]:"";
+	if ((FloppyDevice != "")
+	    || Mode::test)
+	{
+	    FloppyPresent = true;
+	}
+	return !(floppy_data["notready"]:false);
+    }
+
+
+    // check if this device is a ZIP drive
+
+    define boolean check4zip (map disk)
+    ``{
+	list zlist = splitstring (disk["device"]:"", " ");
+	boolean zip_found = false;
+	foreach (`zelement, zlist,
+	``{
+	    if (zelement == "ZIP")
+		zip_found = true;
+	});
+	return zip_found;
+    }
+
+    // loop over floppy drives to find IDE ZIPs
+    // return map of $[ "device" : $[target], ...]
+
+    define map findZIPs ()
+    ``{
+	map zipdrives = $[];
+	foreach (`disk, FloppyDrives,
+	``{
+	    boolean is_zip = check4zip (disk);
+	    if (is_zip)
+	    {
+		map target = $[];
+		string dname = "";
+
+		string ddevice = disk["dev_name"]:"?";
+	        string dinfo = disk["vendor"]:"";
+
+		target["vendor"] = dinfo;
+		if (dinfo != "") dname = dname + dinfo + "-";
+
+		dinfo = disk["device"]:"";
+		target["model"] = dinfo;
+
+		if (dinfo != "") dname = dname + dinfo;
+		target["name"] = dname;
+		target["partitions"] = [];
+
+		zipdrives[ddevice] = target;
+	    }
+	});
+	return zipdrives;
+    }
+
+
+    /**
+     * Probe for storage devices attached to storage controllers
+     * Should be called after StorageControllers::Initialize
+     * @return	map	TargetMap
+     */
+
+    define map localProbe ()
+    ``{
+	map targets = $[];
+
+	if ( Mode::test )
+	{
+	    return fakeProbe();
+	}
+
+	// do the probing
+	list all_disks = SCR::Read(.probe.disk);
+
+	y2milestone("disks probed");
+
+	if (size (all_disks) == 0)
+	{
+	    // somehow, we couldn't find any harddisks for installation. This is a fatal error,
+	    // we can't do anything about it
+	    return targets;
+	}
+
+	// loop over all_disks, constructing targets map
+
+	integer ide_count = 0;
+	integer scsi_count = 0;
+	integer raid_count = 0;
+	integer foreign_nr = 0; // for /windows and /dos mountpoints
+
+	foreach (`disk, all_disks,
+	``{
+	    map target = $[];
+
+	    boolean is_zip = false;
+
+	    boolean notready = disk["notready"]:false;
+
+	    is_zip = (notready || check4zip (disk));
+
+	    string bus = disk["bus"]:"?";
+	    string dname = "";
+	    integer i = 0;
+
+	    // write out data for hardware status check
+	    HwStatus::Set (disk["unique_key"]:"", `yes);
+
+	    // ------------------------------------------------------
+	    // check bus, count disks per bus
+
+	    if (bus == "IDE")
+	    {
+		ide_count = ide_count + 1;
+		i = ide_count;
+	    }
+	    else if (bus == "SCSI")
+	    {
+		scsi_count = scsi_count + 1;
+		i = scsi_count;
+	    }
+	    else if (bus == "RAID")
+	    {
+		raid_count = raid_count + 1;
+		i = raid_count;
+	    }
+	    else
+	    {
+		i = 1;		// Oops, which bus ?
+	    }
+
+	    target["bus"] = bus;
+
+	    // ------------------------------------------------------
+	    // construct disk name for user
+
+	    dname = ""+i+". "+bus+", ";
+
+	    // needed also later as key
+	    string ddevice = disk["dev_name"]:"?";
+
+	    // remember bios id code if set
+	    string bios_id = disk["bios_id"]:"";
+	    if (bios_id != "")
+	    {
+		if ((bios_id == "0x80")		// first BIOS drive
+		    && (ddevice != "/dev/hda"))	// is not hda
+		{
+		    mixedDevices = true;
+		}
+		target["bios_id"] = bios_id;
+	    }
+
+	    // - - - - - - - - - - - - - - - - - - - - 
+	    // split /dev/... -> [ "", "dev", "hda" ]
+
+	    list listpath = splitstring (ddevice, "/");
+
+	    if (size (listpath) < 3)
+	    {
+		y2error("too few / in %1", ddevice);
+	    }
+
+	    if (listpath[1]:"" != "dev")
+	    {
+		y2error("not /dev in %1", ddevice);
+	    }
+
+	    // get first path after /dev
+
+	    string stringpath = "." + listpath[2]:"";
+
+	    // might be RAID /dev/ida/xy -> [ "", "dev", "ida", "xy" ]
+
+	    if (size (listpath) > 3)
+	    {
+		list raidpathes = [ ".rd", ".ida", ".cciss", ".ataraid" ];
+		if (contains (raidpathes, stringpath))
+		{
+		    target["raid"] = true;
+		}
+	    }
+
+	    integer pathidx = 3;
+	    while (pathidx < size (listpath))
+	    {
+		stringpath = stringpath + "." + listpath[pathidx]:"";
+		pathidx = pathidx + 1;
+	    }
+
+	    path diskpath = topath (stringpath);
+	    path fullpath = .disk + diskpath;
+
+	    y2milestone("disk_size: %1", ddevice);
+
+	    // call fdisk agent to get size information
+
+	    integer cyl_count = 0;
+	    integer cyl_size = 0;
+	    integer max_primary = 4;
+
+	    if ( !Arch::s390 )
+	    {
+		// call fdisk agent to get size information
+	
+		if (!is_zip)
+		{
+		    cyl_count = SCR::Read(fullpath+.disk_size);
+		    cyl_size= SCR::Read(fullpath+.bytes_per_unit);
+		    max_primary= SCR::Read(fullpath+.max_primary);
+		}
+
+		target["cyl_count"] = cyl_count;
+		target["cyl_size"] = cyl_size;
+		target["max_primary"] = max_primary;
+
+		y2milestone( "diskinfo: cyl_count %1 cyl_size %2 max_primary %3", 
+		             cyl_count, cyl_size, max_primary);
+	    }
+	    else
+	    {
+		// on s390 look at libhd-info for diskinfo
+		// "resource":$["disk_log_geo":[$["cylinders":2226, "heads":15, "sectors":12]
+		//              "size":[$["unit":"sectors", "x":400680, "y":4096]]
+
+		map     size_map   = disk["resource", "size", 0]:$[];
+		integer disk_size  = size_map["x"]:0 * size_map["y"]:0;
+
+		cyl_count  = disk["resource", "disk_log_geo", 0, "cylinders"]:1;
+		cyl_size   = disk_size / cyl_count;
+
+		target["cyl_count"] = cyl_count;
+		target["cyl_size"] = cyl_size;
+
+		y2milestone( "diskinfo: sizemap %1 disksize %2 geometry %3 cyl_count %4 cyl_size %5", size_map, disk_size, geometry, cyl_count, cyl_size);
+	    }
+
+	    // ------------------------------------------------------
+	    // construct full target name
+
+	    dname = dname + size_text(cyl_count * cyl_size) + ", " + ddevice + ", ";
+
+	    string dinfo = disk["vendor"]:"";
+	    target["vendor"]:dinfo;
+
+	    if (dinfo != "")
+	    {
+	        dname = dname + dinfo + "-";
+	    }
+	    dinfo = disk["device"]:"";
+	    target["model"] = dinfo;
+
+	    if (dinfo != "")
+	    {
+	        dname = dname + dinfo;
+	    }
+
+	    target["name"] = dname;
+
+	    // ----------------------------------------------------------
+	    // Partitions
+
+	    list partitions = [];
+	    if (!is_zip)
+	    {
+		// -> read_storage.ycp
+		partitions = Check4partitions (target, diskpath);
+	    }
+
+	    target["scrpath"] = diskpath;
+	    target["partitions"] = partitions;
+
+	    // add constructed target map to list of all targets
+
+	    if (!notready
+		&& (size (target) > 0))
+	    {
+		if (is_zip)
+		    zipDrives[ddevice] = target;
+		else
+		    targets[ddevice] = target;
+	    }
+
+	}); // foreach (`disk)
+
+	if ((ide_count > 0)
+	     && (scsi_count > 0))
+	{
+	    mixedDevices = true;
+	}
+
+	SCR::UnmountAgent(.disk);
+
+	zipDrives = union (zipDrives, findZIPs ());
+
+	if( Mode::installation )
+	    targets = AddMountPointsForWin( targets );
+
+	if (Mode::test)
+	    SCR::Write(.dumpto.tmp.targets, targets);
+
+	return targets;
+
+    } // localProbe()
+
+
+    /**
+     * Probe ()
+     * probe for target devices, return map
+     * used like proposal-api
+     *
+     * @param boolean force_reset
+     */
+    global define map Probe (boolean force_reset)
+    ``{
+	if (force_reset)
+	    targetMap = $[];
+
+	if (targetMap == $[])
+	{
+	    targetMap = localProbe();
+	}
+	return targetMap;
+    }
+
+    
+    /**
+     * Fake probing for storage devices in test or demo mode -
+     * read ready-made target maps from file.
+     *
+     * @return	map	TargetMap
+     */
+
+    global define map fakeProbe ()
+    ``{
+	string fake_map_file = "/usr/lib/YaST2/test/"
+	    + ( Mode::demo ? "demo_target_map.ycp" : "test_target_map.ycp" );
+	y2milestone( "%1 mode - using fake target map from %2", Mode::demo ? "Demo" : "Test", fake_map_file );
+	map target_map = SCR::Read( .target.ycp, fake_map_file );
+	y2debug( "Fake target map: %1", target_map );
+
+	return target_map;
+    } // fakeProbe()
+
+
+    //---------------------------------------------------------------
+    // CD Recorders and CD-ROM links
+
+    list idecdrws = [];		// list of IDE CD-RW drivers for ide-scsi
+    list scsicds = [];		// list of SCSI CDs
+
+    /**
+     * ProbeIDERecorders ()
+     *
+     * probe for IDE cd recorders and return list of hdX names
+     * for ide-scsi setup
+     */
+
+    global define list ProbeIDERecorders ()
+    ``{
+	idecdrws = [];
+	scsicds = [];
+
+	if (ProbeCDROMs ())
+	{
+	    // build up ide-scsi information
+	    // loop over CDROMs and select IDE and SCSI drives
+
+	    foreach (`drive, cddrives,
+	    ``{
+		if ((drive["cdtype"]:"" == "cdrw")
+		    && (drive["bus"]:"" == "IDE"))
+		{
+		    string devname = substring (drive["dev_name"]:"", 5);
+		    idecdrws = add (idecdrws, devname);
+		    y2milestone ("IDE CD-RW /dev/%1", devname);
+
+		    // ** must reboot
+
+		}
+		else if (drive["bus"]:"" == "SCSI")
+		{
+		    scsicds = add (scsicds, drive["dev_name"]:"");
+		}
+	    });
+
+	}
+	y2milestone ("idecdrws %1", idecdrws);
+	return idecdrws;
+    }
+
+    /**
+     * symlink_cdrom
+     *
+     * make proper symlink for cd-rom/dvd/cdrecorder drive
+     *
+     * @param	map	cdinfo	result of .probe.cdrom
+     * @param	string	cdrom	device for /dev/cdrom, or ""
+     */
+
+    // count the links for "pseudo" devices
+
+    map linknum = $[ "cdrom":0, "cdrecorder":0, "dvd":0];
+
+    define void symlink_cdrom (map cdinfo)
+    ``{
+
+	// first, determine the drive type and make a linkname guess
+
+	string cddevice = cdinfo["dev_name"]:"";
+	string cdtype = cdinfo["cdtype"]:"cdrom";
+
+	string linkname = "cdrom";
+	if (cdtype == "dvd")
+	{
+	    linkname = "dvd";
+	}
+	else if ((cdtype == "cdr")
+		|| (cdtype == "cdrw")
+		|| (cdtype == "dvdr")
+		|| (cdtype == "dvdram"))
+	{
+	    linkname = "cdrecorder";
+	}
+
+	// now check the number (for /dev/cdrom, /dev/cdrom1, ...)
+	integer number = linknum[linkname]:0;
+
+	string devname = "/dev/" + linkname;
+
+	if (number > 0)
+	  devname = devname + number;
+
+	cddevices = add (cddevices, devname);
+
+	if (cddevice != "")
+	{
+	    SCR::Execute (.target.symlink, cddevice, devname);
+	    number = number + 1;
+	    linknum[linkname] = number;
+	}
+	return;
+    }
+
+
+    /**
+     * Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
+     * create cdtype dependant links (i.e. /dev/dvd for a DVD drive
+     * but make sure that at least /dev/cdrom exists.
+     */
+
+    global define void MakeCDLinks (list ide_recorders)
+    ``{
+	if (ProbeCDROMs ())
+	{
+	    string boot_device = Mode::installMap["cdrom"]:"";
+
+	    if (boot_device != "")
+		boot_device = "/dev/" + boot_device;
+
+	    // build up ide-scsi information
+
+	    // now look again and rewrite the /dev-names for the IDE drives
+	    // as they appear _after_ loading of ide-scsi
+
+	    foreach (`drive, cddrives,
+	    ``{
+		string devname = substring (drive["dev_name"]:"", 5);
+		if (contains (ide_recorders, devname))
+		{
+		    string scsiname = "/dev/sr" + size (scsicds);
+		    y2milestone ("IDE CD-RW %1 -> %2", devname, scsiname);
+		    scsicds = add (scsicds, scsiname);
+		    drive["dev_name"] = scsiname;
+
+		    // our boot device might be re-mapped due to ide-scsi
+		    if (("/dev/" + devname) == boot_device)
+			boot_device = scsiname;
+	        }
+		symlink_cdrom (drive);
+	    });
+
+	    // if we didn't made a /dev/cdrom link, we dont have a
+	    // plain cdrom drive (only cdrecorders, dvds, etc.)
+	    // force such a link here.
+
+	    if (!contains (cddevices, "/dev/cdrom"))
+	    {
+		// if we didnt boot from cd, just link to the first drive
+		if (boot_device == "")
+		{
+		    boot_device = cddevices[0]:"";
+		}
+		if (boot_device != "")
+		{
+		    symlink_cdrom ($["dev_name" : boot_device, "cdtype" : "cdrom"]);
+		}
+	    }
+	}
+	return;
+    }
+
+    /**
+     * Initialize
+     */
+
+    global define void FullProbe ()
+    ``{
+	FloppyReady();		// probe floppy
+	ProbeCDROMs();		// probe CDs
+    }
+
+
+    /**
+     * Constructor
+     */
+
+    global define void StorageDevices ()
+    ``{
+	if (!Mode::initial && !Mode::config)
+	    FullProbe ();
+	return;
+    }
+}

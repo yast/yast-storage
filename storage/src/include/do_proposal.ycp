@@ -1,0 +1,701 @@
+/*
+ *************************************************************
+ *
+ *     YaST2      SuSE Labs                        -o)
+ *     --------------------                        /\\
+ *                                                _\_v
+ *           www.suse.de / www.suse.com
+ * ----------------------------------------------------------
+ *
+ * Author:        Thomas Fehr <fehr@suse.de>
+ *
+ * Description:   Make a proposal for partitioning
+ *
+ *
+ *************************************************************
+
+ $Id$
+
+
+*/
+{
+
+textdomain "partitioning";
+
+import "Arch";
+import "Mode";
+import "Storage";
+import "Partitions";
+
+include "partitioning/propose_create_target.ycp";
+include "partitioning/propose_part_util.ycp";
+include "partitioning/propose_slot_util.ycp";
+
+global define map do_proposal()
+``{
+  if ( !Mode::test )
+  {
+    string message = _("Analyzing Partitioning. One moment please ...");
+    UI::OpenDialog(`opt(`decorated), `Label(message));
+  }
+
+  map target = eval(Storage::GetTargetMap());
+  map ret = do_proposal_real( Arch::ia64||Arch::ppc, target );
+  y2milestone( "suggestion possible: %1", ret["ok"]:false);
+  if( !ret["ok"]:false )
+      {
+      string use_disk = "";
+      list del_part = [];
+      foreach ( string dev, map disk, target, ``{
+	if( dev != "/dev/md" && !disk["is_lvm_vg"]:false && use_disk == "" && 
+	    find( dev, "/dev/" )==0 )
+	    {
+	    use_disk = dev;
+	    del_part = maplist( `p, disk["partitions"]:[], 
+	               ``(add(p,"delete",true)));
+	    disk["partitions"] = [];
+	    }
+	});
+      y2milestone( "use_disk %1 del_part %2", use_disk, del_part );
+	
+      if( use_disk != "" )
+	{
+	ret = do_proposal_real( Arch::ia64||Arch::ppc, target );
+	}
+      if( ret["ok"]:false )
+	{
+	del_part = del_part + ret["target",use_disk,"partitions"]:[];
+	ret["target",use_disk,"partitions"] = del_part;
+	}
+      }
+
+  if ( !Mode::test ) UI::CloseDialog();
+  return( ret );
+  }
+
+global define map do_proposal_real( boolean need_boot, map targetMap )
+``{
+    map tmptargetMap = $[];
+    list     hitlist = [];
+
+    y2milestone( "test with need_boot == %1", need_boot);
+    
+
+    //////////////////////////////////////////////////////////////////////////////////////////
+    // Now we generate a proposal
+    //////////////////////////////////////////////////////////////////////////////////////////
+
+    foreach( `dev, `disk, targetMap,
+	     ``{
+	y2debug( "analyse disk: %1 %2", dev, disk);
+	if( !lookup( disk, "is_lvm_vg", false ) && (dev != "/dev/md")  )
+	{
+	    y2debug( "not an lvm");
+
+	    list primary_possible = [1,2,3,4];
+	    boolean extended_allowed = true;
+	    if( disk["max_primary"]:4 == 8 )
+		{
+		extended_allowed = false;
+		primary_possible = [1,2,4,5,6,7,8];
+		}
+	    y2debug( "extended_allowed %1, primary_possible %2", extended_allowed, primary_possible );
+
+	    //////////////////////////////////////////////////////////////////////////////////////////
+	    // 1. Step:
+	    // We collect info about the partitions on the disk
+	    //////////////////////////////////////////////////////////////////////////////////////////
+
+	    map main_slots      = $[];
+	    map extended_slots  = $[];
+
+	    integer cyl_count = lookup( disk, "cyl_count", 1 );
+	    integer cyl_size  = lookup( disk, "cyl_size",  1 );
+
+	    integer min_nb_boot_cyl = (Partitions::minimal_needed_bootsize / cyl_size) + 1;
+
+	    y2debug( "minimal_needed_cyl nb: %1", min_nb_boot_cyl );
+
+	    list primary_list        = filter( `part, lookup( disk, "partitions", [] ),
+					       ``( (lookup( part, "type", `unknown) == `primary)  && (!lookup( part, "delete", false) )));
+	    list extended_list       = filter( `part, lookup( disk, "partitions", []),
+					       ``( (lookup( part, "type", `unknown) == `extended) && (!lookup( part, "delete", false) )));
+	    list logical_list        = filter( `part, lookup( disk, "partitions", []),
+					       ``( (lookup( part, "type", `unknown) == `logical)  && (!lookup( part, "delete", false) )));
+
+	    list    pri_extd_list   = primary_list + extended_list;
+	    boolean i_have_extended = ( size(extended_list) > 0);
+	    y2debug( "i_have_extended %1, extended_list %2", i_have_extended, extended_list );
+
+
+	    pri_extd_list = sort(`part_x, `part_y, pri_extd_list, ``(select(lookup(part_x, "region", []), 0, 0) <= select(lookup(part_y, "region", []), 0, 0)));
+	    logical_list  = sort(`part_x, `part_y, logical_list,  ``(select(lookup(part_x, "region", []), 0, 0) <= select(lookup(part_y, "region", []), 0, 0)));
+
+	    y2debug( "pri+extd parts %1", pri_extd_list );
+	    y2debug( "logical_list   %1", logical_list  );
+
+	    // which primary partitions can I create?
+
+	    list pri_extd_nr_list      = maplist(`part, pri_extd_list, ``( lookup(part, "nr", 0)));
+	    list free_pri_extd_nr_list = filter( `nr, primary_possible, ``( !contains( pri_extd_nr_list, nr )));
+
+	    y2debug( "free pri+extd parts %1", free_pri_extd_nr_list );
+
+
+	    //////////////////////////////////////////////////////////////////////////////////////////
+	    // 2. Step
+	    // We look at the partitions, and create the list of possible slots
+	    //////////////////////////////////////////////////////////////////////////////////////////
+
+	    ////////////////////////////////////////////////////////////////////////////////
+	    //  a slot: a partition or the unallocated space between two partitions
+	    //
+	    // example a disk with two partitions windows:hda1 (cyl 10--100) linux-root: hda2 (cyl 200-300)
+	    // [ slot1: free slot cyl 1   -   9 ]
+	    // [ slot2: slot hda1 cyl 10  - 100 ]
+	    // [ slot3: free slot cyl 101 - 199 ]
+	    // [ slot4: slot hda2 cyl 200 - 300 ]
+	    // [ slot5: free slot cyl 301 - 799 ]
+	    //
+	    // cyl:     1       9    10    100    101   199    200    300   556     998
+	    // nb:      [ slot1 ]    [ slot2 ]    [ slot3 ]    [ slot 4 ]   [ slot 5  ]
+	    // type        free        win           free         linux         free
+	    //
+	    ////////////////////////////////////////////////////////////////////////////////
+	    // base-slot: big slot which can contain the root partition
+	    //            (probably it will be splitted in 2 or 3 parts:  boot-[swap]-root partitions
+	    // boot-slot: little slot wich can contain a boot partition
+
+
+	    // slottype::
+	    //   $[
+	    //         "type"      :    "free" | "win_resize" | "linux" | "extended" | "swap" | "other"
+	    //                      "win_resize" are all windows types, we can resize
+	    //
+	    //         "dev"       :     "/dev/hda" | "/dev/sdb" | ...
+	    //     "p_or_l"    :     "primary", "logical"
+	    //     "start_cyl" :     <start of slot>
+	    //     "end_cyl"   :     <end of slot>,
+	    //         "size"      :     <size in byte>   // for win_resize its the max free space I can get if I resize this windows
+	    //     --- optional ----
+	    //     "nr"        :     nr,    // partition number, 1 in /dev/hda1 // valid if type != "free
+	    //         "win_size"  :    <new size of the win partition>             // only for type == "win_resize"
+	    //         "win_length":    <length of the new win partition in cyl>    // only for type == "win_resize"
+	    //            ]
+
+	    list primary_slots = GetSlots( pri_extd_list, 0, cyl_count-1, cyl_size);
+	    list logical_slots = [];
+
+	    if ( size(extended_list) >= 1 && extended_allowed )
+	    {
+		map extended = select( extended_list, 0, $[] );
+
+		integer begin_extd =  select(lookup(extended, "region", []), 0, 0);
+		integer end_extd   =  begin_extd + select(lookup(extended, "region", []), 1, 1) - 1;
+
+		y2debug( "The extended: %1", extended );
+		logical_slots = GetSlots( logical_list, begin_extd, end_extd, cyl_size );
+	    }
+
+	    logical_slots = maplist( `slot, logical_slots, ``(add(slot, "p_or_l", "logical")));
+	    primary_slots = maplist( `slot, primary_slots, ``(add(slot, "p_or_l", "primary")));
+
+	    //SCR::Write(.dumpto.tmp.l_slot_list, logical_slots );
+	    //SCR::Write(.dumpto.tmp.p_slot_list, primary_slots );
+
+	    list base_slots = primary_slots + logical_slots;
+
+	    integer i   = 0;
+	    base_slots = maplist( `slot, base_slots, ``{ i = i+1; return(add(slot, "slotnb", i)); }  );
+
+	    y2debug( "pri+extd parts %1", pri_extd_list );
+	    y2debug( "primary_slots  %1",  primary_slots );
+	    y2debug( "logical_list   %1", logical_list  );
+	    y2debug( "logical_slots  %1",  logical_slots );
+
+
+	    //////////////////////////////////////////////////////////////////////////////
+	    // now the boot slots
+
+	    map boot_slot_list = get_boot_slot_list( base_slots );
+	    //SCR::Write(.dumpto.tmp.boot_slots, boot_slot_list );
+
+	    y2debug( "OUT: ////////////// targetMap /////////////////");
+	    DumpPartitionList ( targetMap);
+
+	    y2debug( "OUT: //////////////   slots   /////////////////");
+	    foreach( `slot, base_slots,
+		     ``{
+		string end_cyl    = ToLen(6, sformat("%1", lookup( slot, "end_cyl"  , 0 )));
+		string start_cyl  = ToLen(6, sformat("%1", lookup( slot, "start_cyl", -1 )));
+		string psize      = ToLen(6, sformat("%1", lookup( slot, "size",      0 )/1000000  ));
+		string slotnb     = ToLen(2, sformat("%1", lookup( slot, "slotnb", -1 )));
+		string stype      = ToLen(10, lookup( slot, "type",     "other" ));
+
+		y2debug( "OUT: Slot %1:  %2   %3   %4  to  %5   %6MB",
+			 slotnb, stype, lookup( slot, "p_or_l","?" ), start_cyl, end_cyl, psize );
+	    });
+
+	      
+	    //////////////////////////////////////////////////////////////////////////////////////
+	    // is there a reusable swap slot?
+	      
+	    list swap_slots_only = filter( `slot, base_slots, ``( lookup( slot, "type", "") == "swap" ));
+	    swap_slots_only      = sort(`part_x, `part_y, swap_slots_only, ``(lookup(part_x, "size", 0) >= lookup(part_y, "size", 0)));
+
+	    map swap_slot = $[];
+
+	    if ( size(swap_slots_only) >= 1 ) swap_slot = select( swap_slots_only, 0, $[] );
+
+	    //////////////////////////////////////////////////////////////////////////////////////
+	    // is there a reusable boot slot?
+	      
+	    list boot_slots_only = filter( `slot, base_slots, 
+	                                   ``( slot["type"]:""=="linux" && slot["size"]:0>=8*1024*1024 && 
+					       slot["size"]:0<=100*1024*1024));
+	    boot_slots_only      = sort(`p_x, `p_y, boot_slots_only, ``(p_x["size"]:0 >= p_y["size"]:0));
+
+
+
+
+	    //////////////////////////////////////////////////////////////////////////////////////////
+	    // LOOK FOR POSS
+	    //////////////////////////////////////////////////////////////////////////////////////////
+
+	    // look for possibilities to partitioning in three
+	    // modes:
+	    // "use_free" : this is the mode, I like most: Try to install Linux without
+	    //              changeing the rest of my system
+	    // "reuse"    : use old linux partitions
+	    // "use_win"  : try to get space by resizing windows
+	    //              win HAS TO BE the LAST MODE! we made irreversible changes to slot-db
+
+	    foreach( `mode, [ "use_free", "reuse", "use_win" ],
+		     ``{
+		map boot_reuse_slot = $[];
+
+		if ( size(boot_slots_only) >= 1 && mode != "use_free" ) 
+		    {
+		    boot_reuse_slot = boot_slots_only[0]:$[];
+		    }
+		else
+		    {
+		    boot_reuse_slot = $[];
+		    }
+
+		y2debug( "OUT: //////////// MODE == %1 //////////////////", mode);
+
+		/////////////////////////////////////////////////////////
+		// be sure "use_win" is the last mode!
+		//
+		// Now we change the slots a little bit ...
+		//
+		// if I have      [win_free 100MB] [free 200BM]  I make
+		// one big slot   [  win_free 300MB           ]
+		// only if freeslot is too little
+
+		if ( mode == "use_win" )
+		{
+		    boolean melted           = false;
+		    list    new_base_slots   = [];
+		    map     old_slot         = $[ "type":"other" ];
+		    boolean first_slot       = true;
+		    boolean melted_last_slot = false;
+
+		    foreach( `slot, base_slots,
+			     ``{
+			if ( lookup( old_slot, "type", "" ) == "win_resize" &&
+			     lookup( slot,     "type", "" ) == "free"       &&
+			     lookup( slot,     "size", -1 ) <= 1000000000
+			     )
+			{
+			    // melt the two slots
+			    old_slot = add( old_slot, "end_cyl", lookup( slot, "end_cyl", -1));
+			    old_slot = add( old_slot, "size",    lookup( old_slot, "size", -1) + lookup( slot, "size", -1));
+
+			    new_base_slots   = add( new_base_slots, old_slot );
+			    melted_last_slot = true;
+			    melted           = true;
+			}
+			else
+			{
+			    if ( !melted_last_slot && !first_slot ) new_base_slots   = add( new_base_slots, old_slot );
+			    melted_last_slot = false;
+			}
+
+			first_slot = false;
+			old_slot   = slot;
+		    });
+
+		    if ( !melted_last_slot && !first_slot ) new_base_slots   = add( new_base_slots, old_slot );
+
+		    if ( melted )
+		    {
+			y2debug("OUT: SLOTS MELTED !");
+			//SCR::Write(.dumpto.tmp.pre_win_slots,  base_slots );
+			//SCR::Write(.dumpto.tmp.post_win_slots, new_base_slots );
+			base_slots     = new_base_slots;
+			boot_slot_list = get_boot_slot_list( base_slots );
+			//SCR::Write(.dumpto.tmp.post_boot_slots, boot_slot_list );
+		    }
+		}
+
+
+		//////////////////////////////////////////////////////////////////////
+		// look how many primary partitions we can create and which number
+		// they will get
+		integer free_primary    = size(free_pri_extd_nr_list);
+
+		integer second_pri        = -1;
+		integer first_pri         = -1;
+		integer third_pri         = -1;
+
+		if ( free_primary >= 1 )
+		    {
+		    first_pri = select( free_pri_extd_nr_list, 0, -1);
+		    if( free_primary >= 2 )
+			{
+			second_pri = select( free_pri_extd_nr_list, 1, -1);
+			if( free_primary >= 2 )
+			    {
+			    third_pri = select( free_pri_extd_nr_list, 2, -1);
+			    }
+			}
+		    }
+
+		integer first_free_logical = 5 + (size(logical_list));
+
+		// ap disk_info = $[ "dev":dev,
+		//                "first_free_logical":first_free_logical,
+		//                "first_pri"         :first_pri,  // not valid if reuse!!!!
+		//                "second_pri"        :second_pri,
+		//                "min_nb_boot_cyl"   :min_nb_boot_cyl];
+		//
+		// 2milestone( "disk_prop_info: %1", disk_info );
+
+
+		//////////////////////////////////////////////////////////////////////
+		// for every partition of this disk do ...
+		//--------------------------------------------------------------------
+		//
+		// DO THE CENTRAL ALGORITHM ... see README.auto_partitiong
+		//
+		// find partition proposals, and add every proposal as hit to the hitlist
+		//
+		//////////////////////////////////////////////////////////////////////
+
+		foreach( `slot, base_slots,
+			 ``{
+		    integer end_cyl    = lookup( slot, "end_cyl"  , -1 );
+		    integer start_cyl  = lookup( slot, "start_cyl", -1 );
+		    integer psize      = lookup( slot, "size",      -1 );
+		    string  stype      = lookup( slot, "type",     "other" );
+		    integer slotnb     = lookup( slot, "slotnb", -1 );
+		    boolean is_primary = (lookup( slot, "p_or_l", "" ) == "primary" );
+
+		    y2debug( "OUT: -- Working on slot %1", slotnb);
+
+		    if ( psize > Partitions::minimal_needed_disksize
+			 &&
+			 (     (stype=="free")                                   // not && mode=free see testsuite diffs!
+			       || ((stype=="win_resize") && (mode=="use_win"))
+			       || ((stype=="linux")      && (mode=="reuse"))))
+		    {
+			integer split_boot_end = start_cyl + min_nb_boot_cyl; // end of boot partition if I spilt the base slot into two parts
+			//////////////////////////////////////////////////////////////////
+			//     !!!!!! have a look at this !!!!!!
+			//////////////////////////////////////////////////////////////////
+			free_primary    = size(free_pri_extd_nr_list);
+			integer curr_second_pri     = second_pri;
+			integer curr_first_pri      = first_pri;
+			integer curr_third_pri      = third_pri;
+			if ( stype == "linux" )
+			{
+			    // in mode reuse, I can reuse the primary base-slot, so I have "one primary more"
+			    free_primary = free_primary + 1;
+			    curr_third_pri      = second_pri;
+			    curr_second_pri     = first_pri;
+			    curr_first_pri      = -1;
+			}
+
+
+			//////////////////////////////////////
+			// Do I need a boot partition?
+			//////////////////////////////////////
+			if (  need_boot
+			      ||
+			      ((end_cyl > 1024 ) && !Boot::LbaSupport() )) // due to dist team
+			{
+			    // yes I need a boot partition
+
+
+			    if ( is_primary )
+			    {
+
+				//////////////////////////////////
+				// base-slot is a primary-slot
+
+				if ( ! i_have_extended )
+				{
+				    y2debug( "OUT: test of primary slot no extd  %1", slotnb);
+
+				    //  if I have two or more primary free
+				    //     b1: yes, if, start_cyl +3 < 1024   // then I create two extd partitions in slot
+				    //     b2: yes  if I have a free boot-slot // it is always a primary-slot!
+				    //  if I have one primary free
+				    //     b1:  yes, if, start_cyl +3 < 1024   // then I create two extd partitions in slot
+				    //     b2:  no! if I have a free boot-slot its primary-slot! but I NEED TO MAKE ANOTHER PARTITION
+				    //  if I have no  primary free -> no way cause I can not create a partition
+
+				    y2debug( "OUT: cr one %1 split %2 ", free_primary>0, split_boot_end < 1024);
+				    y2debug( "OUT: cr two %1 HavePL %2", free_primary>1, HaveBootSlot( "p_or_l", slotnb, mode, boot_slot_list));
+				    y2debug( "OUT: currReu %1 R %2 HavepR %3",  (stype == "linux"),  (mode == "reuse"),
+					     HaveBootSlot( "p_reuse", slotnb, mode, boot_slot_list));
+				    y2debug( "OUT: cr one %1 R %2 HavepR %3", free_primary>0,  (mode == "reuse"),
+					     HaveBootSlot( "p_reuse", slotnb, mode, boot_slot_list) );
+
+				    if ( free_primary>0 && split_boot_end < 1024 )
+				    {
+					AddHit( mode, slot, "2p-nE-2pri-split", $[],
+						curr_first_pri, "extd", "boot_split", "need_boot", -1, "root_split", 
+						swap_slot, boot_reuse_slot, 
+						curr_second_pri, free_primary );
+				    }
+
+				    if ( (stype == "linux") && (mode == "reuse") && HaveBootSlot( "reuse", slotnb, mode, boot_slot_list))
+				    {
+					AddHit( mode, slot, "2p-nE-2pri-RRhave", GetBootSlot( "reuse", slotnb, mode, boot_slot_list),
+						-1, "extd", "no_boot_split", "need_boot", -1, "root_split", swap_slot,
+						boot_reuse_slot, curr_first_pri,
+						free_primary );
+				    }
+
+				    if ( free_primary>0 && (mode == "reuse") && HaveBootSlot( "reuse", slotnb, mode, boot_slot_list))
+				    {
+					AddHit( mode, slot, "2p-nE-2pri-Rhave", GetBootSlot( "reuse", slotnb, mode, boot_slot_list),
+						curr_first_pri, "extd", "no_boot_split", "need_boot", -1, "root_split", 
+						swap_slot, boot_reuse_slot, 
+						curr_second_pri, free_primary );
+				    }
+
+				    if ( free_primary>1 && HaveBootSlot( "p_or_l", slotnb, mode, boot_slot_list) )
+				    {
+					AddHit( mode, slot,  "2p-nE-2pri-have", GetBootSlot( "p_or_l", slotnb, mode, boot_slot_list),
+						curr_first_pri, "extd", "no_boot_split", "need_boot", curr_second_pri, "root_split", 
+						swap_slot, boot_reuse_slot, 
+						curr_third_pri, free_primary );
+
+				    }
+				}
+				//          Try without an extended 
+
+				//            if I have no  primary free -> no way I cannot create the roor partition
+				//            if I have one primary free
+				//              b1: no way, cause I need second partition and the split requires a second possible primary partition
+				//              b2: yes if there is a free boot-slot in the extended partition
+				//                  -> I need a boot partition, so it must be in the extended partition
+				//            if I have two or more free primary
+				//              b1: yes, if, start_cyl +3 < 1024
+				//              b2: yes, if I have a free boot-slot // primary or not is not important
+
+				y2debug( "OUT: test of primary slot extd %1", slotnb);
+				y2debug( "OUT: cr one %1 HaveL%2 ", free_primary>0, HaveBootSlot("logical", slotnb, mode, boot_slot_list) );
+				y2debug( "OUT: cr two %1 split %2", free_primary>1, split_boot_end < 1024 );
+				y2debug( "OUT: cr two %1 HavePL %2", free_primary>1, HaveBootSlot( "p_or_l", slotnb, mode, boot_slot_list) );
+				y2debug( "OUT: currReu %1 R %2 HavepR %3",  (stype == "linux"),  (mode == "reuse"),
+					 HaveBootSlot( "p_reuse", slotnb, mode, boot_slot_list));
+				y2debug( "OUT: cr one %1 R %2 HavepR %3", free_primary>0,  (mode == "reuse"),
+					 HaveBootSlot( "p_reuse", slotnb, mode, boot_slot_list) );
+
+
+				if ( (stype == "linux") && (mode == "reuse") && HaveBootSlot( "reuse", slotnb, mode, boot_slot_list))
+				    {
+				    AddHit( mode, slot, "2p-E--RRhave", GetBootSlot( "reuse", slotnb, mode, boot_slot_list),
+					    -1, "extd", "no_boot_split", "need_boot", -1, "no_root_split", 
+					    swap_slot, boot_reuse_slot, 
+					    curr_first_pri, free_primary );
+				    }
+
+				if ( free_primary>0 && (mode == "reuse") && HaveBootSlot( "reuse", slotnb, mode, boot_slot_list))
+				    {
+				    AddHit( mode, slot, "2p-E--Rhave", GetBootSlot( "reuse", slotnb, mode, boot_slot_list),
+					    curr_first_pri, "extd", "no_boot_split", "need_boot", -1, "no_root_split",
+					    swap_slot, boot_reuse_slot,
+					    curr_second_pri, free_primary );
+				    }
+
+				if ( free_primary>0 && HaveBootSlot("logical", slotnb, mode, boot_slot_list) )
+				    {
+				    AddHit( mode, slot, "2p-E-1pri-have", GetBootSlot("logical", slotnb, mode, boot_slot_list),
+					    curr_first_pri, "no_extd", "no_boot_split", "need_boot", first_free_logical, "no_root_split",
+					    swap_slot, boot_reuse_slot,
+					    curr_second_pri, free_primary );
+				    }
+
+				if ( free_primary>1 && split_boot_end < 1024 )
+				    {
+				    AddHit( mode, slot, "2p-E-2pri-split", $[],
+					    curr_second_pri, "no_extd", "boot_split", "need_boot", curr_first_pri, "no_root_split",
+					    swap_slot, boot_reuse_slot,
+					    curr_third_pri, free_primary );
+				    }
+
+				if ( free_primary>1 && HaveBootSlot( "primary", slotnb, mode, boot_slot_list) )
+				    {
+				    AddHit( mode, slot, "2p-E-2pri-have", GetBootSlot( "primary", slotnb, mode, boot_slot_list),
+					    curr_second_pri, "no_extd", "no_boot_split", "need_boot", curr_first_pri, "no_root_split",
+					    swap_slot, boot_reuse_slot,
+					    curr_third_pri, free_primary );
+				    }
+			    }
+			    else
+			    {
+				y2debug( "OUT: test of logical slot %1", slotnb);
+				y2debug( "OUT: split %1", split_boot_end < 1024 );
+				y2debug( "OUT: HaveL %1", HaveBootSlot("logical", slotnb, mode, boot_slot_list));
+				y2debug( "OUT: HaveP %1", HaveBootSlot("primary", slotnb, mode, boot_slot_list) );
+				y2debug( "OUT: less4 %1", free_primary>0 );
+
+
+				///////////////////////
+				// base slot is logical
+
+				if ( split_boot_end < 1024 )
+				{
+				    AddHit( mode, slot, "2p-log-split", $[],
+					    first_free_logical, "no_extd", "boot_split", "need_boot", first_free_logical+1, "no_root_split", 
+					    swap_slot, boot_reuse_slot,
+					    first_free_logical+2, free_primary );
+				}
+
+				if ( (stype == "linux") && HaveBootSlot("logical", slotnb, mode, boot_slot_list) )
+				{
+				    AddHit( mode, slot, "2p-log-log-have", GetBootSlot("logical", slotnb, mode, boot_slot_list),
+					    -1, "no_extd", "no_boot_split", "need_boot", first_free_logical, "no_root_split",
+					    swap_slot, boot_reuse_slot, 
+					    first_free_logical+1, free_primary );
+				}
+				if ( mode != "reuse" && HaveBootSlot("logical", slotnb, mode, boot_slot_list) )
+				{
+				    AddHit( mode, slot, "2p-log-log-have", GetBootSlot("logical", slotnb, mode, boot_slot_list),
+					    first_free_logical, "no_extd", "no_boot_split", "need_boot", first_free_logical+1, "no_root_split",
+					    swap_slot, boot_reuse_slot, first_free_logical+2, free_primary );
+				}
+
+
+				if ( free_primary>0 && HaveBootSlot("primary", slotnb, mode, boot_slot_list) )
+				{
+				    AddHit( mode, slot, "2p-log-1pri-have", GetBootSlot("primary", slotnb, mode, boot_slot_list),
+					    first_free_logical, "no_extd", "no_boot_split", "need_boot", curr_first_pri, "no_root_split",
+					    swap_slot, boot_reuse_slot, first_free_logical+1, free_primary );
+				}
+
+			    }
+			}
+			else
+			{
+			    ///////////////////////////////////////////
+			    // no, only one partition needed
+			    ///////////////////////////////////////////
+
+			    y2debug( "OUT: test of slot %1 %2 %3", slotnb, is_primary, free_primary>0);
+
+			    // ** it is a primary base-slot
+			    //    if I have no  primary free -> no way I cannot create the roor partition
+			    //         no! I can not create the root partition
+			    //    if I have one or more free primary
+			    //         yes: I always can create the root partition
+			    //
+
+			    if ( is_primary && free_primary>0 )
+			    {
+				AddHit( mode, slot, "1p-ne-pri", $[],
+					curr_first_pri, "no_extd", "no_boot_split", "no_need_boot", -1, "no_root_split",
+					swap_slot, boot_reuse_slot, 
+					curr_second_pri, free_primary );
+				if ( !i_have_extended )
+				{
+				    AddHit( mode, slot, "1p-e-pri", $[],
+					    curr_first_pri, "extd", "no_boot_split", "no_need_boot", -1, "root_split",
+					    swap_slot, boot_reuse_slot,
+					    curr_second_pri, free_primary );
+				}
+			    }
+
+
+			    // ** is the base-slot in an extended partition
+			    //    yes: I always can create the root partition
+
+			    if ( ! is_primary )
+			    {
+				AddHit( mode, slot, "1p-log", $[],
+					first_free_logical, "no_extd", "no_boot_split", "no_need_boot", -1, "no_root_split",
+					swap_slot, boot_reuse_slot,
+					first_free_logical+1, free_primary );
+			    }
+			}
+		    }
+		});
+
+	    });
+	}
+    });
+
+
+    //SCR::Write( .dumpto.tmp.hitlist, hitlist );
+
+    if ( size(hitlist) > 0 )
+    {
+	/////////////////////////////////////////////////////////////////////
+	// next step is find the best hit
+	//    hit rating for the best proposal:
+	//    all mode==free are better than win_reuse/reuse
+	//    all mode==reuse better than win_reuse
+	//
+	//  one slot: if biggest slot <  1.5G  1p-pri == 1p-log      //win-mode!
+	//  one slot: if biggest slot >= 1.5G  1p-pri <  1p-log
+	//
+	//  if size is > 2G or size_have <= size_split * 1.1
+	//  -split is better than -have, because an own boot-slot will not be used
+	//  really good.
+	//
+	//  If I can make a swap partition:  size_ns = ns-proposal
+	//  size_s
+	//  450-800   size_ns >= size_s*1.2
+	//  800-1.2   size_ns >= size_s*1.2
+	//  1.2-1.6   size_ns >= size_s*1.3
+	//  1.6-2     size_ns >= size_s*1.5
+	//  >2        use swap
+	//
+
+	map the_hit = GetTheBestHit( hitlist );
+
+
+	if ( Mode::test )
+	{
+	    // OLNLY FOR DEBUG
+	    foreach( `hit, hitlist, ``{
+		y2debug( "OUT: ---------------- new hit-----------------");
+		map tmp_targetMap = filter( `key, `val, targetMap, ``(true));
+		TargetChangesToRichText( HitToTargetMap( tmp_targetMap, hit ));
+	    });
+
+	    map tmp_targetMap = filter( `key, `val, targetMap, ``(true));
+	    y2debug( "OUT: ============== THE HIT =======================-");
+	    TargetChangesToRichText( HitToTargetMap( tmp_targetMap, the_hit ));
+	    y2debug( "OUT: ---------------------------");
+	}
+
+
+	/////////////////////////////////////////////////////////////////////
+	// next step to create the new target map from hit
+
+	tmptargetMap = HitToTargetMap( filter( `key, `val, targetMap, ``(true)), the_hit );
+
+    }
+      
+    return( $[ "ok" : size(tmptargetMap)>0, "target" : tmptargetMap ] );
+  }
+  
+}
+  

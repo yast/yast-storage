@@ -1,0 +1,548 @@
+/**
+ * File:
+ *   lvm_ui_dialogs.ycp
+ *
+ * Module: 
+ *    configuration of lvm: lib for the user interface
+ *    - contains only dialogs    
+ *
+ * Summary:
+ *
+ * Authors:
+ *   mike <mike@suse.de>
+ *
+ *
+ * $Id$
+ *
+ */
+
+
+{
+
+textdomain "partitioning";
+
+include "ui/common_popups.ycp";
+include "partitioning/custom_part_dialogs.ycp";
+include "partitioning/lvm_ui_lib.ycp";
+
+    
+  //----------------------------------------------------------------------------------------
+    
+  global define DlgCreateEditLogicaVolume( string  create_or_edit,
+					   map     Lv,
+					   integer max_size,
+					   string  vgname,
+					   list    lvs,
+					   map     file_systems,
+					   boolean installation,
+					   string  dev )
+
+      ``{
+            map return_value	 = $[];
+      
+            string  curr_size    =    ByteToHumanStringWithZero(lookup( Lv, "size", 1));
+	    string  volume_name  =    lookup(  Lv, "subdev",     "");
+	    integer stripes_b    =    lookup(  Lv, "stripes",    nil);
+	    map fs_options       =    lookup(  Lv, "fs_options", $[] );
+	    symbol fs_option_fs  =    lookup(  Lv, "used_fs", `unknown );
+	    boolean format	 =    lookup(  Lv, "format", false);
+	    boolean create	 =    lookup(  Lv, "create", false );
+	    boolean crypt_fs	 =    lookup(  Lv, "crypt_fs" ,false);
+	    string old_mpoint    =    lookup(  Lv, "mount", "" );
+
+	    if( fs_option_fs == `unknown )
+		{
+		fs_option_fs = Storage::DetectFs( dev );
+		}
+
+	    list not_used_mountpoints   = notUsedMountpoints( targetMap, lookup( lookup( file_systems, fs_option_fs, $[]), `mountpoints, []));
+	    not_used_mountpoints        = filter( `mount_point, not_used_mountpoints, ``( mount_point != "/"  &&
+											  mount_point != "swap" &&
+											  mount_point != "/boot" ));
+	    
+	    
+	    list stripes_poss =  [
+				  `item(`id(1),   "1",  stripes_b == 1	  ),
+				  `item(`id(2),   "2",  stripes_b == 2	  ),
+				  `item(`id(3),   "3",  stripes_b == 3	  ),
+				  `item(`id(4),   "4",  stripes_b == 4	  ),
+				  `item(`id(5),   "5",  stripes_b == 5	  ),
+				  `item(`id(6),   "6",  stripes_b == 6	  ),
+				  `item(`id(7),   "7",  stripes_b == 7	  ),
+				  `item(`id(8),   "8",  stripes_b == 8	  )
+	    ];
+	    
+	     string lv_size      = "";   
+	     string mountpoint   = "";
+	     string crypt_key    = "";
+	     string crypt_passwd = "";
+	     boolean new_crypt   = false;
+	     symbol filesystem   = fs_option_fs;
+	     integer stripes_k   = 1;
+	
+	     
+	      string  heading        = "";
+	      boolean is_create_mode = false;
+	      boolean is_resize_mode = false;
+	      term    ui_volume_name = `Dummy();
+	      any     c_ret          = "cancel";
+	     
+	      // header for input field "size of Logical volume 
+	      string size_txt = _("&Size:  (e.g., 4.1G  210MB)");
+	      string max_text  = sformat( _("max = %1 "), ByteToHumanStringWithZero(max_size-1025));
+
+
+	      if ( create_or_edit == "create" )
+	      {
+		  // popup heading 
+		  heading        = _("Create Logical Volume");
+		  is_create_mode = true; 
+		  ui_volume_name = `VBox( `TextEntry(`id("volume_name"),
+						     // choose name of current volume group
+						     _("Logical volume &name "),
+						     volume_name),
+					  `Left(`Label(_("(e.g. var, opt)")))
+					  );
+	      }
+	      else if ( create_or_edit == "edit" )
+	      {
+		  // popup heading 
+		  heading = _("Edit Logical Volume");
+		  is_create_mode = false;
+				   // display name of current volume group
+		  // display name of current volume group
+		  ui_volume_name = `VBox( `Label(""),
+					  `HBox(`Label( _("Logical volume name: ")),
+						`Heading(`opt(`outputField), volume_name ),
+						`HStretch()
+						));
+	      }
+	      else if ( create_or_edit == "resize" )
+	      {
+		  // popup heading 
+		  heading = _("Edit Logical Volume");
+		  is_create_mode = false;
+		  is_resize_mode = true;
+		  // display name of current volume group
+		  ui_volume_name = `VBox( `Label(""),
+					  `HBox(`Label( _("Logical volume name: ")),
+						`Heading(`opt(`outputField), volume_name ),
+						`HStretch()
+						)
+					 );
+		  stripes_poss = [ `item(`id(1), "-", true) ];
+	      }
+	      else
+	      {
+		  // internal error message 
+		  heading = _("INTERNAL ERROR");
+	      }
+
+	   
+								
+
+	      
+	      UI::OpenDialog(
+	        `opt(`decorated ),
+		`HBox(
+		      //`HWeight(10, `RichText( getCreateEditLogicaVolumeHelptext() )),
+		      
+		      `HWeight(30, `HBox(
+					`HSpacing(1),
+					`HStretch(),
+					`VBox(
+					      `Heading(heading),
+					      `VStretch(),
+					      `VSpacing(2),
+					      `HBox(
+						    UI::FormatDlg( Lv, file_systems ),
+						    `HStretch(),
+						    `HSpacing(2),
+						    `VBox(
+							  `Top(`Left(ui_volume_name)),
+							  `VSpacing(1),
+							  `Top(`VBox( `TextEntry(`id("size"), size_txt, curr_size),
+								      `HBox(
+									    // set size to maxsize
+									    `Left(`Label( max_text )),
+									    `PushButton( `id("max_size"), _("&max")))
+								      
+								      )),
+							  `VSpacing(1),
+							  `VStretch(),
+							  `Left(`ComboBox( `id("stripes"), `opt(`hstretch),
+									   _("Stri&pes"), stripes_poss )),
+							  `VSpacing(1),
+							  `VStretch(),
+							  //`Left(`ComboBox( `id("mp"), `opt(`hstretch, `editable),
+							  //_("Mount Point"), mountpoints ))
+							  UI::MountDlg(Lv, not_used_mountpoints )
+							  )
+						    ),
+					      `VStretch(),  
+					      `VSpacing(2),
+					      `HBox(
+						    // Ok button
+						    `PushButton(`id("ok"), `opt(`default), OKButtonLabel()  ),
+						    // Cancel button
+						    `PushButton(`id("cancel"), CancelButtonLabel() )
+						    )
+					      ),
+					`HStretch(),
+					`HSpacing(1)
+					)
+			       )));
+
+
+
+	      ////////////////////////////////////////////////////////////////////////////////////////
+	      // configure main dialog for the first call
+	      if ( is_resize_mode )  UI::ChangeWidget( `id("stripes"), `Enabled, false );
+
+	      if( ! format ) {
+		  if( create ) UI::ChangeWidget( `id(`mount_point),`Enabled, false );
+		  UI::ChangeExistingSymbolsState( [  `crypt_fs, `fs_options, `fs] , false);  
+	      }
+	      UI::ChangeWidget( `id(`fsid_point), `Enabled, false );
+	      
+	      if( ! create ) UI::ChangeWidget( `id("stripes"),`Enabled, false );
+	  
+	      ////////////////////////////////////////////////////////////////////////////////////////
+	      // warning if partition is mounted
+	      if(  ! installation )
+	      {
+		  string mounts = PartitionMountedOn( dev  , WFM::CurrentMounted()  );
+		  if( mounts != "" ) 
+		  {
+		      UI::ModifyPartitionInSystemWarningPopup();
+		  }
+	      }
+		  
+	      
+	      ////////////////////////////////////////////////////////////////////
+	      // User mainloop for dialog
+	      ////////////////////////////////////////////////////////////////////
+	      
+	      boolean input_is_ok = true;
+	      repeat
+	      {
+		    input_is_ok  = true;
+		    
+		    c_ret = UI::UserInput();
+
+		    ////////////////////////////////////////////////////////////////////////////////////////
+		    // maxsize
+		    if( c_ret == "max_size")
+		    {
+			UI::ChangeWidget(`id("size"), `Value , ByteToHumanStringWithZero(max_size));
+			continue;
+		    }
+		    
+
+		    
+		     ////////////////////////////////////////////////////////////////////////////////////////
+		    // modify widgets format -> not format
+		    if( UI::QueryWidget(`id(`format),  `CurrentButton) == `format_true )
+		    {
+			
+			format = true;
+			UI::ChangeExistingSymbolsState( [  `crypt_fs, `fs_options, `fs] , true);  
+			mountpoint  = UI::QueryWidget(`id(`mount_point),      `Value);
+			mountpoint = deletechars( mountpoint, " \t" );
+			UI::ChangeWidget(`id(`mount_point) , `Enabled, format );
+		    }
+		    else
+		    {
+			format = false;
+			UI::ChangeExistingSymbolsState( [  `crypt_fs, `fs_options, `fs] , false);
+			UI::ChangeWidget(`id(`crypt_fs), `Value, false);
+			mountpoint  = UI::QueryWidget(`id(`mount_point),      `Value);
+			if( create )
+			{
+			    mountpoint = "";
+			    UI::ChangeWidget(`id(`mount_point) , `Value,   mountpoint );	
+			    UI::ChangeWidget(`id(`mount_point) , `Enabled, false );
+			}
+		    }
+		  
+		    
+		    ////////////////////////////////////////////////////////////////////////////////////////
+		    // filesystem options
+		    if( c_ret == `fs_options )
+		    {
+			
+			filesystem  =  UI::QueryWidget(`id(`fs), `Value);
+			if( fs_option_fs != filesystem )
+			{
+			    fs_options = $[];
+			    fs_option_fs = filesystem;
+			}
+			
+			map selected_fs =  lookup( file_systems, fs_option_fs , $[] );
+			fs_options      =  UI::FileSystemOptions( fs_options, selected_fs);
+		    }
+
+
+
+		    
+		    if ( is_create_mode ) 
+		    {
+			volume_name = UI::QueryWidget(`id("volume_name"),  `Value);
+			volume_name = deletechars( volume_name, " \t" );
+		    }
+
+
+		
+			    
+		    stripes_k   = UI::QueryWidget(`id("stripes"), `Value);
+		    lv_size     = UI::QueryWidget(`id("size"),    `Value);
+		   
+
+		    filesystem  = UI::QueryWidget(`id(`fs), `Value);
+		    new_crypt   = UI::QueryWidget(`id(`crypt_fs), `Value );
+
+		    y2debug("STRI ---- i%1i", stripes_k);
+		    y2debug("STRI ---- i%1i", filesystem);
+		    if ( c_ret=="ok")
+		    {
+			
+			if ( ! icheck_lv_size(lv_size, max_size) )
+			{
+			    input_is_ok = false;
+			    continue;
+			}
+
+
+			
+			if ( is_create_mode )
+			{
+			    if( !icheck_volume_name(volume_name) )
+				{
+				input_is_ok = false;
+				// Errorpopup
+				// xgettext:no-c-format
+				UI::ErrorPopup(_("Check your volume name, use \"opt\", \"var\" ...
+don't use ;/\`',!\"%#"));
+				UI::SetFocus(`id("volume_name"));
+				continue;
+				}
+			    else 
+				{
+				if( contains( lvs, volume_name ) )
+				    {
+				    input_is_ok = false;
+				    // Errorpopup
+				    UI::ErrorPopup(sformat(_("A logical volume named \"%1\" already exists
+in volume group \"%2\". Choose another name
+or cancel this dialog.
+"), volume_name, vgname ));
+				    UI::SetFocus(`id("volume_name"));
+				    continue;
+				    }
+				}   
+			}
+
+			if( ! UI::check_lvm_mount_points( mountpoint ))
+			{
+			    UI::SetFocus(`id(`mount_point ));
+			    input_is_ok = false;
+			    continue;
+			}
+			
+			
+			if ( mountpoint!=old_mpoint && 
+			     !UI::check_mount_point( targetMap, mountpoint, fs_option_fs ) )
+			{
+			    // ErrorPopup
+			    UI::SetFocus(`id(`mount_point));
+			    input_is_ok = false;
+			    continue;
+			}
+
+			
+			if( ! UI::check_crypt_fs_mount_points( mountpoint,  new_crypt ))
+			{
+			    // ErrorPopup
+			    UI::SetFocus(`id(`mount_point));
+			    input_is_ok = false;
+			    continue;
+			 }	
+			
+
+			if( !crypt_fs && new_crypt && input_is_ok )
+			{
+			    crypt_passwd = UI::DlgCreateCryptFs();
+			    crypt_key    = "";
+
+			    if( crypt_passwd == nil )
+			    {
+				new_crypt = false;
+			    }
+			    else
+			    {
+				crypt_key =  Storage::AddCryptToClassified( crypt_passwd );
+			    }
+
+			}
+		    }
+
+		    //y2milestone ( " %1 %2 " , fs_option_fs , filesystem );
+		    if( fs_option_fs != filesystem )
+		    {
+			fs_options = $[];
+		    }
+		    
+		    ////////////////////////////////////////////////////////////////////////////////////////
+		    // build new return value
+		    return_value =  	$[
+					  "create"	  : create,
+					  "format"	  : format,
+					  "fs_options"  : fs_options,
+					  "stripes"     : stripes_k,
+					  "lv_size"     : kmgt_str_to_byte(lv_size),
+					  "mountpoint"  : mountpoint,
+					  "changed_size": lv_size!=curr_size,
+					  "volume_name" : volume_name,
+					  "filesystem"  : filesystem,
+					  "crypt_fs"    : new_crypt,
+					  "crypt_key"   : crypt_key	  ];
+
+		    
+		    ////////////////////////////////////////////////////////////////////////////////////////
+		    // modified partition and partition is mounted
+		    if( ! installation  && ! arePartitionsEqual( Lv , return_value ) )
+		    {
+			string mounts =  PartitionMountedOn( dev  , WFM::CurrentMounted() );
+			if( mounts != "" ) 
+			{
+			    if( ! UI::UseChangedPartitionContinueCancelPopup()) 
+			    {
+				ret = "cancel";
+			    }
+			} 
+		    }
+
+	      } until ( (c_ret=="ok"&&input_is_ok) || c_ret == "cancel" );
+
+	      UI::CloseDialog();
+	      
+	      //y2milestone( "%1", return_value );
+	      
+	      if (c_ret != "cancel" && input_is_ok )
+	      {
+		  return( return_value );
+	      }
+	      else
+	      {
+		  return( nil );
+	      }
+	    };
+    
+
+
+	 //////////////////////////////////////////////////////////////////////////////
+	 // Dialog "Create a Volume Group
+	 //////////////////////////////////////////////////////////////////////////////
+	 
+	 global define DlgCreateVolumeGroup( list vgm_list )
+	 ``{
+	      string vgname = "";
+	      string pesize = "";
+	     
+	      UI::OpenDialog(
+	      `opt(`decorated ),
+	      `HBox(
+		  `HSpacing(2),
+		  `VBox(
+			// popup header
+			`Heading(_("Create a Volume Group")),
+			// popup description
+			`Label( _("Now we have to create a volume group.
+Typically you don't have to change anything,
+but if you are an expert, feel free to change
+our defaults:")),
+			// textentry description LVM
+			`TextEntry(`id("vgname"), _("Volume Group &Name:"), size(vgm_list)==0?"system":""),
+			// textentry description LVM
+			`TextEntry(`id("pesize"), _("&Physical Extent Size"), "4M"),
+			`VSpacing(1),
+			`HBox(
+			      // Ok button
+			      `PushButton(`id("ok"), `opt(`default), OKButtonLabel()  ),
+			      // Cancel button
+			      `PushButton(`id("cancel"), CancelButtonLabel() )
+			      ),
+			`VSpacing(0.5)
+			),
+		  `HSpacing(2)
+		  )
+	      );
+
+
+	      any     ret         = nil;
+	      boolean input_is_ok = false;
+		
+	      repeat
+	      {
+
+		    ret = UI::UserInput();
+
+		    vgname = UI::QueryWidget(`id("vgname"),  `Value);
+		    vgname = deletechars( vgname, " \t" );
+		    pesize = UI::QueryWidget(`id("pesize"),  `Value);
+
+		    if ( ret != "cancel")
+		    {
+
+   		       input_is_ok = icheck_vgname(vgname) && icheck_pesize(pesize);
+
+		       
+   		       if ( !icheck_pesize(pesize) )
+   		       {
+			   // Errorpopup
+   			   UI::ErrorPopup(_("The data entered is invalid.
+Insert a physical extent size from
+8KB to 512MB in powers of 2, for example, \"4M\" or \"512K\"
+"));
+			   
+   		       }
+
+   		       if ( !icheck_vgname(vgname) )
+   		       {
+			   // Errorpopup
+   			   UI::ErrorPopup(_("The data entered is invalid.
+Insert a group name like \"system\" or \"test\".
+Do not use ;/`, in your group name.
+"));
+   			   
+   		       }
+		    
+		       if ( contains( vgm_list, vgname ) )
+		       {
+			   // Errorpopup
+			   UI::ErrorPopup(sformat(_("The volume group \"%1\" already exists.
+Choose a different name
+or cancel this dialog.
+"), vgname ));
+			   input_is_ok = false;
+		       }
+		    }
+		    
+	      } until ( input_is_ok || ret == "cancel" );
+
+	      UI::CloseDialog();
+		       
+	      if (ret == "ok")
+	      {
+		  return( $[  "vgname" : vgname,
+			      "pesize" : pesize
+		           ] );
+	      }
+	      else
+	      {
+		  return( nil );
+	      }
+	      
+          };
+
+}

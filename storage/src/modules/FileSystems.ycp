@@ -1,0 +1,586 @@
+/**
+ * Module: 		FileSystems.ycp
+ *
+ * Authors:		Johannes Buchhold (jbuch@suse.de)
+ *
+ * Purpose: 		
+ * These module contains the supported filesystems and their settings. 	
+ * 
+ *				
+ * $Id$
+ */
+{
+  module "FileSystems";
+  textdomain "partitioning";
+  import "Arch";
+  import "Partitions";
+ 
+
+
+  
+  global list system_m_points = [ "/", "/boot", "/usr" , "/var", "/home", "/opt" , "/local" , ""];
+  list swap_m_points   = [ "swap", ""  ];
+
+  /* All supported filesystems */
+  map support 	= $[
+		   `reiser	: true,
+		   `xfs		: true,
+		   `ext2        : true,
+		   `ext3        : true,
+		   `jfs    	: true,
+		   `fat16  	: true,
+		   `fat32  	: true
+  ];
+
+
+ 
+    /**
+     * Return a map that contains the mount option for each used_fs (-t)
+     * @return map
+     */
+  /*
+    to mount_string 
+    global define used2typeMap()
+    ``{
+	return $[
+		 `ext2   : "ext2",
+		 `ext3   : "ext3",
+		 `reiser : "reiserfs",
+		 `xfs    : "xfs",
+		 `jfs    : "jfs",
+		 `fat16  : "vfat",
+		 `fat32  : "vfat" ];
+    };
+  */
+
+    ///////////////////////////////
+		      // FORMAT
+  /*
+		      map fs_used_2_makefstype = $[
+			  `ext2   : "ext2",
+			  `ext3   : "ext2",
+			  `reiser : "reiserfs",
+			  `xfs    : "xfs",
+			  `jfs    : "jfs",
+			  `fat16  : "fat16",
+			  `fat32  : "fat32"];
+  */
+
+			  
+
+define map GetNormalFilesystems()``{
+
+  list fat32_options =
+      [
+       $[
+	 `widget		: `ComboBox(`id("opt_number_of_fats"), `opt(`hstretch), _("Number of &FATs"), ["auto" , "1", "2"  ]),
+	 `query_key	: "opt_number_of_fats",
+	 `option_str	: "-f",
+	 `help_text	: _("<p><b>Number of FATs:</b>
+Specify the number of file allocation tables in the file system. The default is 2.</p>")
+       ],
+	 $[
+	   `widget	: `ComboBox(`id("opt_fat_size"), `opt(`hstretch), _("FAT &size"), ["auto",
+											  `item(`id("12"), "12 bit"),
+											  `item(`id("16"), "16 bit"),
+											  `item(`id("32"), "32 bit") ]),
+	   `query_key 	: "opt_fat_size",
+	   `option_str	: "-F",
+	   `help_text	: _("<p><b>FAT size:</b>
+Specifies the type of file allocation tables used (12,  16,  or  32-bit). If auto is specified, YaST2 will automatically select the value most suitable for the file system size.</p>
+")
+	 ],
+	 $[
+	   `widget 	: `TextEntry(`id("opt_volume_name"), `opt(`hstretch), _("Volume &name"), "none"),
+	   `query_key 	: "opt_volume_name",
+	   `option_str	: "-n",
+	   `str_length	: 11,
+	   `error_text 	: _("The volume name can be a maximum of 11 characters long. Try again."),
+	   `help_text	: _("<p><b>Volume name:</b>
+Sets the volume name (label) of the file system. The volume name can be up to 11 characters long. The default is no label.</p>
+")
+	 ],
+	 $[
+	   `widget 	: `TextEntry(`id("opt_root_dir_entries"), `opt(`hstretch), _("Root &dir entries"), "auto"),
+	   `query_key 	: "opt_root_dir_entries",
+	   `option_str	: "-r",
+	   `between	: [ 112, -1],
+	   `valid_chars 	: "0123456789",
+	   `error_text 	: _("The minimum size for \"Root dir entries\" is 112. Please try again."),
+	   `help_text	: _("<p><b>Root dir entries:</b>
+Select the number of entries available in the root directory.</p>")
+	 ]
+  ];
+
+  
+  list reiserfs_options =   [
+			     $[
+			       `widget     	: `ComboBox(`id("opt_hash"), `opt(`hstretch), _("Hash &function"), ["auto", "r5", "tea" ,"rupasov" ]),
+			       `query_key		: "opt_hash",
+			       `option_str	: "--hash",
+			       `option_blank    : true,
+			       `help_text		: _("<p><b>Hash function:</b>
+This specifies the name of the hash function which will be used to sort the file names in directories.</p>")
+			     ],
+			       $[
+				 `widget     	: `ComboBox(`id("opt_format"), `opt(`hstretch), _("FS &revision"), ["auto", "3.5", "3.6" ]),
+				 `query_key		: "opt_format",
+				 `option_str	: "--format",
+			         `option_blank  : true,
+				 `help_text		: _("<p><b>FS revision:</b>
+This option defines the reiserfs format revision to use. '3.5' is for backwards compatibility with kernels of the 2.2.x series. '3.6' is more recent, but can only be used with kernel versions greater than or equal to 2.4.</p>
+")	
+			       ]
+  ];
+  
+
+  list xfs_options	=  [
+			    $[
+			      `widget	: `ComboBox(`id("opt_block_size"), `opt(`hstretch), _("Block &size"), [ "auto", "512", "1024", "2048","4092","8192", "16384","32768","65536"]),
+			      
+			      `query_key : "opt_block_size",
+			      `option_str: "-b size=",
+			      `help_text	: _("<p><b>Block size</b> This option specifies the fundamental block size of the file system.</p>")
+			    ],
+			      $[
+				`widget   	: `ComboBox(`id("opt_bytes_per_indoe"), `opt(`hstretch), _("Bytes per &inode"),["auto","256", "512", "1024", "2048"]),
+				`query_key	: "opt_bytes_per_indoe",
+				`option_str  	: "-i size=",
+				`help_text  	: _("<p><b>Bytes per inode:</b>
+This option specifies the inode size of the file system.</p>
+")
+			      ],
+			      $[
+				`widget   	: `ComboBox(`id("opt_max_inode_space"), `opt(`hstretch), _("&Percentage of inode space"),["auto", "5", "10", "15", "20","25","30",
+																	 "35", "40", "45", "50", "55", "60", "65",
+																	 "70", "75", "80", "85", "90", "95",
+																	 `item(`id("0"), "100") ]),
+				`query_key	: "opt_max_inode_space",
+				`option_str  	: "-i maxpct=",
+				`help_text  	: _("<p><b>Percentage of inode space:</b>
+The option \"Percentage of inode space\" specifies the maximum percentage of space in the file system that can be allocated to inodes.</p>
+")
+			      ],
+			      $[
+				`widget   	: `ComboBox(`id("opt_inode_align"), `opt(`hstretch), _("Inode &aligned"),[ "auto", `item(`id("1"), "true"),
+															 `item( `id("0"), "false")  ]),
+				`query_key	: "opt_inode_align",
+				`option_str  	: "-i align=",
+				`help_text  	: _("<p><b>Inode aligned:</b>
+The option \"Inode aligned\" is used to specify whether inode allocation is or 
+is not aligned. The default is that inodes are aligned. Aligned inode access 
+is normally more efficient than unaligned access.</p>
+")
+			      ],
+			      $[
+				`widget 		: `TextEntry(`id("opt_volume_name"), `opt(`hstretch), _("Volume &name"), "none"),
+				`query_key 	: "opt_volume_name",
+				`option_str	: "-L",
+				`str_length	: 12,
+				`error_text 	: _("The volume name can be a maximum of 12 characters long. Try again."),
+				`help_text	: _("<p><b>Volume name:</b>
+Sets the volume name (label) of the file system. The volume name can be up to 12 characters long. The default is no label.</p>
+")
+			      ]
+  ];
+
+  
+  list jfs_options = [
+		    $[
+		      `widget 		: `TextEntry(`id("opt_volume_name"), `opt(`hstretch), _("Volume &name"), "none"),
+		      `query_key 	: "opt_volume_name",
+		      `option_str	: "-v:",
+		      `str_length	: 12,
+		      `error_text 	: _("The volume name can be a maximum of 12 characters long. Try again."),
+		      `help_text		: _("<p><b>Volume name:</b>
+Sets the volume name (label) of the file system. The volume name can be up to 12 characters long. The default is no label.</p>
+")
+		    ],
+		      $[
+			`widget 		: `TextEntry(`id("opt_log_size"), `opt(`hstretch),_("&Log size in megabytes"), "auto"),
+			`query_key	: "opt_log_size",
+			`option_str	: "-ls:",
+			// no way to find out the max log size ????
+			`between		: [ 0 , -1 ], //  -> -1 = infinite
+			`valid_chars 	: "0123456789",
+			`error_text 	: _("The \"Log size\" value is incorrect.\nPlease enter a value greater than zero."),
+			// xgettext: no-c-format						       
+			`help_text  	: _("<p><b>Log size</b>
+Set the log size (in megabytes). If auto, the default is 40% of the aggregate size.</p>")
+		      ],
+		      $[	
+			`widget		: `CheckBox(`id("opt_blocks_utility"), _("Invoke Bad Blocks List &Utility"), false),
+			`query_key	: "opt_blocks_utility",
+			`option_str	: "-l"
+		      ]
+  ];
+  
+  list ext2and3_options  =  [
+			       $[
+				 `widget     	: `TextEntry(`id("opt_raid"), `opt(`hstretch), _("Stride &length in blocks"), "none" ),
+				 `query_key	: "opt_raid",
+				 `option_str	: "-Rstride=",
+				 `valid_chars	: "0123456789",
+				 `between		: [ 1, -1],
+				 `error_text	: _("The \"Stride length in blocks\" value is not possible.\nPlease select a value greater than 1."),
+				 `help_text	: _("<p><b>Stride length in blocks:</b>  
+Set RAID-related options for the file system. Currently the only supported 
+argument is 'stride' which takes the number of blocks in a 
+RAID stripe as its argument.</p>
+")
+			       ],
+				 $[
+				   `widget     	: `ComboBox(`id("opt_blocksize"), `opt(`hstretch), _("Block &size in bytes"), ["auto","1024", "2048","4096" /*,"8192", "16384","32768"*/ ]),
+				   `query_key	: "opt_blocksize",
+				   `option_str	: "-b",
+				   `help_text  	: _("<p><b>Block size:</b>
+Specify the size of blocks in bytes. Valid block size values are 1024, 2048, and 4096 bytes per block. If auto is selected, the block size is determined by the file system size and the expected use of the file system.</p>\n")
+				 ],
+				 $[
+				   `widget   	: `ComboBox(`id("opt_bytes_per_indoe"), `opt(`hstretch), _("Bytes per &inode"),["auto","1024", "2048","4096","8192", "16384","32768" ]),
+				   `query_key	: "opt_bytes_per_indoe",
+				   `option_str 	: "-i",
+				   `help_text  	: _("<p><b>Bytes per inode:</b>
+Specify the bytes to inode ratio. YaST2 creates an inode for every &lt;bytes-per-inode&gt; bytes of space on the disk. The larger the bytes-per-inode ratio, the fewer inodes will be created.
+Generally, this value should not be smaller than the block size of the file system, since too many inodes will be created in this case.  It is not possible to expand the
+number of inodes on a file system after its creation, so be sure to enter a reasonable value for this parameter.</p>
+")
+				 ],
+				 $[
+				   `widget   	: `TextEntry(`id("opt_reserved_blocks"), `opt(`hstretch), _("Percentage of blocks &reserved for root"), "auto" ),
+				   `query_key	: "opt_reserved_blocks",
+				   `option_str  : "-m",
+				   //`default 	: 5,
+				   `between	: [ 0 , 99 ], //  -> -1 = infinite
+				   `str_length	: 2,
+				   `valid_chars : "0123456789",
+				   `error_text  : _("The \"Percentage of blocks reserved for root\" value is incorrect.\nPlease use a value between 0 and 99."),
+				   // xgettext: no-c-format						       
+				   `help_text  	: _("<p><b>Percentage of blocks reserved for root:</b> Specify the percentage of blocks reserved for the super user. This value defaults to 5%.</p>")
+				 ],
+				 $[
+				   `widget 	: `TextEntry(`id("opt_volume_name"), `opt(`hstretch), _("Volume &name"), "none"),
+				   `query_key 	: "opt_volume_name",
+				   `option_str	: "-L",
+				   `str_length	: 12,
+				   `error_text 	: _("The volume name can be a maximum of 12 characters long. Try again."),
+				   `help_text	: _("<p><b>Volume name:</b>
+Sets the volume name (label) of the file system. The default is no label.</p>
+")
+				 ]  
+      ];
+
+
+
+
+  map RealFileSystems  = $[
+		      `ext2	: $[
+				    `name 		: "Ext2",
+				    `fsid 		: Partitions::fsid_native,
+				    `supports_format 	: true,
+				    `fsid_item 		: "0x83 Linux ",
+				    `fstype 		: "Linux native" ,
+				    `crypt 		: true ,
+				    `mountpoints 	: system_m_points,
+				    `mount_option	: "-t ext2",
+				    `mount_string	: "ext2",
+				    `makefstype		: "ext2",
+				    `options  		: ext2and3_options
+		      ],
+		      `fat32	: $[
+				    `name 		: "FAT",
+				    `fsid 		: 12,
+				    `supports_format 	: true ,
+				    `fsid_item 		: "0x0c Win95 FAT32 ",
+				    `fstype 		: "Fat32",
+				    `crypt 		: true ,
+				    `mountpoints 	: system_m_points ,
+				    `mount_option	: "-t vfat",
+				    `mount_string	: "vfat",
+				    `makefstype		: "fat32",
+				    `options 		: fat32_options
+					
+		      ],
+		      `reiser 	: $[
+				    `name 		: "ReiserFS",
+				    `fsid 		: Partitions::fsid_native,
+				    `supports_format 	: true ,
+				    `fsid_item 		: "0x83 Linux " ,
+				    `fstype 		: "Linux native",
+				    `crypt 		: true,
+				    `mountpoints 	: system_m_points,
+				    `mount_option 	: "-t reiserfs",
+				    `mount_string	: "reiserfs",
+				    `needed_modules	: [ "reiserfs" ],
+				    `makefstype		: "reiserfs",
+				    `options 		: reiserfs_options
+		      ],
+		      `xfs 	: $[
+				    `name 		: "XFS",
+				    `fsid 		: Partitions::fsid_native,
+				    `supports_format 	: true ,
+				    `fsid_item 		: "0x83 Linux " ,
+				    `fstype 		: "Linux native" ,
+				    `crypt 		: true,
+				    `mountpoints 	: system_m_points,
+				    `mount_option 	: "-t xfs",
+				    `mount_string	: "xfs",
+				    `needed_modules	: [ "xfs_support", "xfs_dmapi", "xfs" ],
+				    `makefstype		: "xfs",
+				    `options 		: xfs_options
+		      ], 
+		      `jfs 	: $[
+				    `name 		: "JFS",
+				    `fsid 		: Partitions::fsid_native,
+				    `supports_format 	: true ,
+				    `fsid_item 		: "0x83 Linux " ,
+				    `fstype 		: "Linux native" ,
+				    `crypt		: true,
+				    `mountpoints 	: system_m_points,
+				    `mount_string	: "jfs",
+				    `needed_modules	: [ "jfs" ],
+				    `makefstype		: "jfs",
+				    `options      	: jfs_options
+		      ],
+		      `ext3 	: $[
+				    `name 		: "Ext3",
+				    `fsid 		: Partitions::fsid_native,
+				    `supports_format 	: true ,
+				    `fsid_item 		: "0x83 Linux " ,
+				    `fstype 		: "Linux native" ,
+				    `crypt		: true,
+				    `mountpoints 	: system_m_points,
+				    `mount_string	: "ext3",
+				    `needed_modules	: [ "jbd",  "ext3" ],
+				    `makefstype		: "ext2", // format ext3 as ext2 !!!!!!!!!!!!!!!
+				    `options      	: ext2and3_options
+		      ]
+  ];
+
+  return( RealFileSystems );
+  };
+
+			      
+  map PseudoFileSystems = $[
+			    `lvm	: $[
+					    `name 		: "LVM",
+					    `fsid 		: Partitions::fsid_lvm,
+					    `supports_format 	: false,
+					    `fsid_item 		: "0x8e Linux LVM "
+			    ],
+			    `raid	: $[
+					    `name 		: "RAID",
+					    `fsid 		: Partitions::fsid_raid,
+					    `supports_format 	: false,
+					    `fsid_item 		: "0xFD Linux RAID "
+			    ],
+			    `xbootpdisk : $[
+					   `name 		: "PPCBOOT",
+					   `fsid 		: Partitions::fsid_prep_chrp_boot,
+					   `supports_format 	: false,
+					   `fsid_item 		: "0x41 PPC PReP Boot"
+			    ],
+			    `xhibernate : $[
+					   `name 		: "Hibernate",
+					   `fsid 		: Partitions::fsid_hibernation,
+					   `supports_format 	: false,
+					   `fsid_item 		: "0xA0 Hibernation"
+			    ]
+  ];
+
+  
+  map SwapFileSystems = $[
+			  `swap 	: $[
+					    `name 		: "Swap" ,
+					    `fsid 		: Partitions::fsid_swap,
+					    `supports_format 	: true ,
+					    `fsid_item 		: "0x82 Linux swap ",
+					    `fstype 		: "Linux swap",
+					    `crypt 		: false,
+					    `mountpoints 	: swap_m_points
+			    ]
+  ];
+  
+
+  
+  /* FileS build fss map with all supported filesystems ( list support ) */
+  global define void FileSystems()``{
+
+
+  if( Arch::ppc || Arch::s390 || Arch::alpha || Arch::sparc32 )
+	{
+	reiserfs_support = false;
+	}
+    if( Arch::sparc32 )
+	{
+	xfs_support = false;
+        jfs_support = false;
+	ext3_support = false;
+	}
+    if( Arch::sparc64 )
+	{
+        jfs_support = false;
+	}
+
+    
+      
+      if ( Arch::ppc )
+      {
+	  support[ `xfs ]   = false;
+      }
+
+      if ( Arch::s390 )
+      {
+	  support[ `reiser] = false;
+      }
+
+      if ( Arch::alpha )
+      {
+	  support[ `reiser] = false;
+      }	
+
+      if ( Arch::sparc32 )
+      {
+	  support[ `reiser] = false;
+	  support[ `xfs ]   = false;
+	  support[ `jfs ]   = false;
+	  support[ `ext3 ]  = false;       
+      }
+  }
+  
+
+ /**
+   * Filesystem Definitions
+   * @return map map with all supported filesystems
+   */
+  global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo  )``{
+
+      map ret = filter( `fs_key, `fs_map, GetNormalFilesystems(), ``( support[fs_key]:false == true ));
+
+      if( add_swap )
+      {
+	  ret = union( ret, SwapFileSystems);
+      }
+      if( add_pseudo )
+      {
+	  ret = union( ret, PseudoFileSystems);
+      }
+      return ret;
+  } 
+
+
+  global define boolean IsSupported( symbol used_fs)``{
+      return support[ used_fs ]:false;
+  }
+  
+  global define map GetFsMap( symbol used_fs )``{
+      map allfs =  GetAllFileSystems( true, true  );
+      return allfs[ used_fs]:$[];
+  }
+  
+  global define string GetName( symbol used_fs , string default )``{
+      map fsmap 	= GetFsMap( used_fs);
+      string ret        = fsmap[`name]:"";
+      if ( ret == "" ) ret = default;
+      return ret;
+  }
+
+  global define integer GetFsid( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`fsid]:Partitions::fsid_native;
+  }
+
+  global define boolean GetSupportFormat( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`supports_format]:nil;  
+  }
+
+  global define string GetFsidItem( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`fsid_item ]:"";  
+  }
+
+  global define string GetFstype( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`fstype ]:"";  
+  }
+
+  global define boolean GetCrypt( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`crypt ]:nil;  
+  }
+
+  global define list GetPossibleMountPoints( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`mountpoints ]:[];  
+  }
+
+  global define string GetMountOption( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`mount_option ]:"";  
+  }
+
+  global define list GetOptions( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`options ]:[];  
+  }
+
+  
+    /**
+     * Return the mount option for each used_fs (-t)
+     * @return string
+     */
+  global define string GetMountString(symbol used_fs ,string default )``{
+      map fsmap 	= GetFsMap( used_fs);
+      string ret        = fsmap[`mount_string ]:"";
+      if( ret == "" ) ret = default;
+      return ret;
+  }
+
+  global define list GetNeededModules( symbol used_fs )``{
+      map fsmap 	= GetFsMap( used_fs);
+      return fsmap[`needed_modules ]:[]; 
+  }
+
+  global define string GetMakeFsType( symbol used_fs , string default )``{
+      map fsmap 	= GetFsMap( used_fs);
+      string ret        = fsmap[`makefstype ]:"";
+      if( ret == "" ) ret = default;
+      return ret;
+  }
+
+  
+  
+  /**
+     * Load the kernel module which is necessary to mount a partition with used_fs!
+     * @param used_fs filesystem
+     * @return boolean
+     * old load_fs_module
+     */
+    global define boolean LoadModule( symbol used_fs )``{
+
+	list all_needed_modules = GetNeededModules( used_fs );
+	y2milestone("all needed modules : %1", all_needed_modules );
+	boolean load_success 	= true;
+	
+	foreach(`modulename, all_needed_modules , ``{
+
+	    map loaded_modules   = SCR::Read(.proc.modules);
+	 
+	    if ( modulename != "" &&  size (lookup (loaded_modules, modulename , $[])) == 0  )
+	    {
+	
+		if( load_success )
+		    load_success = SCR::Execute(.target.insmod, modulename , "" );
+	    
+		y2milestone ("Loaded fs module %1  %2", modulename, load_success?"Ok":"Failed");
+	    }
+	});
+	return load_success;
+    };
+
+
+
+
+  
+}

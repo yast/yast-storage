@@ -1,0 +1,700 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd">
+<html>
+<head>
+        <title>
+                YaST2 Expert Partitioner
+        </title>
+</head>
+
+<body>
+<h1 align=center>YaST2 Expert Partitioner</h1>
+<h1 align=center>Specification</h1>
+
+<p align=center>
+Author: <a href="mailto:sh@suse.de">Stefan Hundhammer (sh@suse.de)</a>
+</p>
+
+<p align=center>
+Updated: Dec 16, 1999 - see the <a href="#Change_Log">change log</a> for details.
+<p>
+
+
+<h2>Abstract</h2>
+
+<p>
+This document is the specification for a new YaST2 partitioner module.
+</p>
+
+
+<h2>Intentions</h2>
+
+<p>
+This new partitioner is intended for <b>experts</b> who know what they are
+doing. Novice users should stick with the automatic mode that will
+still be available.
+</p>
+
+<p>
+Being fool-proof is not one of the primary goals for this expert
+partitioner. But providing the required functionality is. So excessive
+input and logic validations will be sacrificed for the sake of
+completeness. If the user decides it is OK the way he specified the
+partitioner will not question that.
+</p>
+
+<p>
+At least the first version of this partitioner will be limited to the
+i386 PC platform. It will not support BSD disk labels or any other
+platform specific partitioning schemes.
+</p>
+
+
+<h1>Functional Specification</h1>
+
+<p>
+This section describes the functionality required for any partitioner
+regardless of its respective user interface.
+</p>
+
+
+<h2>Required Functionality</h2>
+
+<h3>Create A Partition</h3>
+
+<p>(i386 specific)</p>
+
+<p>
+Any of the following partition types can be created:
+</p>
+
+<ul>
+<li>Primary</li>
+<li>Extended</li>
+<li>Logical</li>
+</ul>
+
+<p>
+This is subject so the following restrictions:
+</p>
+
+<ul>
+<li>
+No more than four primary partitions per disk may be created.
+</li>
+
+<li>
+No more than one extended partition per disk may be created.
+</li>
+
+<li>
+An extended partition may only be created if no more than three
+primary partitions exist on that disk yet (since the extended
+partition is nothing else than a special primary partition).
+</li>
+
+<li>
+Logical partitions may only be created if an extended partition
+already exists on that disk.
+</li>
+
+<li>
+A new logical partition can only be appended at the end of the list of
+logical partitions. This is a restriction the underlying 'fdisk'
+program imposes. If there is free space within the extended partition
+between logical partitions, the partitions following the free space
+will have to be deleted before the free space can be used.
+</li>
+
+</ul>
+
+<p>
+For primary partitions and the extended partition, the partition name
+(e.g. /dev/hda1 - /dev/hda2) needs to be specified.
+</p>
+
+<p>
+In order to stay compatible with other operating systems on the same
+machine, those partition names cannot be selected automatically:
+PC technology does not require the table entries to be sorted
+according to starting cylinder etc. - they might as well be mixed at
+random, and other OSes might rely on one of the slots to contain the
+address (i.e. the start and end cylinders) of one of their
+partitions. 
+</p>
+
+<p>
+For logical partitions, the partition name will be automatically
+generated: There is no central table for logical partitions within the
+extended partition. Rather, one logical partition points to the next
+one (or, more precisely, wraps the next one). So always the next free
+slot will be used.
+</p>
+
+<p>
+For all types of partitions, the following values need to be specified:
+</p>
+
+<ul>
+<li>
+Start cylinder.
+</li>
+
+<li>
+End cylinder.
+</li>
+
+<li>
+File system type - one of
+	<ul>
+	<li>Linux ext2</li>
+	<li>Linux swap</li>
+	</ul>
+</li>
+
+<li>
+Mount point.
+</li>
+
+<li>
+Whether or not this partition should be formatted. This is necessary
+because the user might be forced to delete and then re-create
+partitions in order to perform certain modifications (e.g. delete a
+logical partition other than the last) where only partiton table
+information will be modified, not the data within the partition. This
+is some kind of last resort when all else fails.
+</li>
+
+<li>
+Optional: The inode density.
+</li>
+</ul>
+
+<p>
+Start and end cylinder values are subject to the following
+restrictions:
+</p>
+
+<ul>
+
+<li>
+1 <= start cylinder <= end cylinder <= last cylinder on this disk
+</li>
+
+<li>
+Primary partitions (including an extended partition!) may not overlap.
+</li>
+
+<li>
+Logical partitions are limited by the extended partition's boundaries.
+</li>
+
+<li>
+Logical partitions may not overlap.
+</li>
+
+</ul>
+
+
+<h3>Delete A Partition</h3>
+
+<p>(i386 specific)</p>
+
+<p>
+The user can delete a partition subject to the following restrictions:
+</p>
+
+<ul>
+<li>
+An extended partition can only be deleted if there are no more logical
+partitions within it.
+</li>
+
+<li>
+Only the last of the logical partitions can be deleted.
+</li>
+</ul>
+
+
+<h2>Optional Functionality</h2>
+
+<h3>Modify A Partition</h3>
+
+<p>
+Since the underlying 'fdisk' program does not provide a facility to
+actually modify a partition's cylinder boundaries other than deleting
+and re-creating a partition, this "modify" facility cannot offer
+modification of all of the "create" facility's fields, namely the
+start and end cylinders.
+</p>
+
+<p>
+The following values can be changed:
+<p>
+
+<ul>
+<li>File system type (ext2/swap)</li>
+<li>Mount point</li>
+<li>Format flag (i.e. whether or not this partition should be formatted)</li>
+<li>Optional: Inode density</li>
+</ul>
+
+
+<h3>Re-Read Partition Table</h3>
+
+<p>
+This function abandons all modifications to the original partitioning
+on the hard disk(s) and re-reads the original partition tables.
+</p>
+
+
+
+<h3>Default Partitioning</h3>
+
+<p>
+This will do the same as the novice mode automatic partitioning. The
+resulting partitioning scheme can be used as a basis for further
+customization.
+</p>
+
+
+
+<h2>Data Flow</h2>
+
+<h3>Input Data</h3>
+
+<ul>
+<li>A list of available hard disks including</li>
+	<ul>
+	<li>Hard disk device name (e.g. "/dev/hda")</li>
+	<li>Total number of cylinders</li>
+	<li>Size of one cylinder in bytes</li>
+	<li>Optional: Hard disk vendor string (e.g. "SEAGATE ST48012")</li>
+	</ul>
+<li>A list of existing partitions on those hard disks including</li>
+	<ul>
+	<li>Partition slot (e.g. "/dev/hda2")</li>
+	<li>Start cylinder</li>
+	<li>End cylinder</li>
+	<li>File system type (numerical)</li>
+	<li>File system type as string</li>
+	<li>Optional: Mount point</li>
+	</ul>
+</ul>
+
+
+<h3>Output Data</h3>
+
+<ul>
+<li>A list of partitions to be deleted including</li>
+	<ul>
+	<li>Partition slot</li>
+	</ul>
+</ul>
+
+<ul>
+<li>A list of partitions to be created including</li>
+	<ul>
+	<li>Partition slot</li>
+	<li>Start cylinder</li>
+	<li>End cylinder</li>
+	<li>File system type (numerical)</li>
+	<li>Mount point</li>
+	<li>Format flag</li>
+	<li>Optional: inode density</li>
+	</ul>
+</ul>
+
+
+<ul>
+<li>A list of partitions to be modified including</li>
+	<ul>
+	<li>Partition slot</li>
+	<li>Start cylinder</li>
+	<li>End cylinder</li>
+	<li>File system type (numerical)</li>
+	<li>Mount point</li>
+	<li>Format flag</li>
+	<li>Optional: inode density</li>
+	</ul>
+</ul>
+
+
+
+<h1>User Interface Specification</h1>
+
+
+<h2>Lessons Learned - The YaST1 Partitioner In Comparison</h2>
+
+<p>
+The YaST1 partitioner provided all of the required and most of the
+optional functionality described above.
+</p>
+
+<p>
+YaST1 used to have a sequence of screens like this:
+</p>
+
+<ol>
+<li>
+Select one of the available hard disks or skip partitioning alltogether.
+</li>
+
+<li>Create / delete partitions on that selected disk, set file system
+type for individual partitions.
+</li>
+
+<li>
+Set mount points and inode density for partitions on the selected
+disk and/or read the /etc/fstab of an existing installation (for the
+mount points specified there).
+</li>
+
+<li>
+Go back to 1., i.e. if the user is finished with all of his hard disks
+he has to choose "skip partitioning" there in order to get out of this
+cycle.
+</li>
+
+</ol>
+
+<p>
+A lot of confusion can be avoided if the new partitioner does not
+require the user to go through a sequence of screens like this,
+manually choosing when to terminate that process and continue with the
+installation. <b>Avoiding this is a design goal.</b>
+</p>
+
+<p>
+Providing a <b>better overview</b> of the system's hard disks and their
+respective partitions (and any free space left) is another. It is much
+easier to have all information on one screen when trying to decide
+which disk should hold what part of the Linux system to be installed
+than switching back and forth between several screens.
+</p>
+
+<p>
+Users should not be required to make notes on paper during that
+process just to keep track of partitions on several disks and their
+respective sizes.
+</p>
+
+<p>
+Plus, many low-end PC systems only have one single hard disk to begin
+with. So step (1) above most of the times is unnecessary but still
+required here since this is the only exit from that screen sequence
+loop.
+</p>
+
+<p>
+And this category of users will not be overloaded with information in
+one single dialog because this dialog of course will contain
+information about their one single hard disk.
+</p>
+
+
+<h2>The YaST2 Expert Partitioner User Interface</h2>
+
+<p>
+All hard disks and all partitions on them will be displayed on the
+screen in a scrolled window.
+</p>
+
+<p>
+Each hard disk will be displayed in one line including:
+</p>
+
+<ul>
+<li>Name (e.g. /dev/hda)</li>
+<li>Start cylinder (always 1)</li>
+<li>End cylinder (i.e. number of cylinders)</li>
+<li>Capacity (human readable, i.e. in mega- or gigabytes)</li>
+<li>Vendor string (i.e. hard disk name, e.g. "SEAGATE ST48012").
+</ul>
+
+
+<p>
+Each partition will be displayed in one line including:
+</p>
+
+<ul>
+<li>Name (e.g. /dev/hda2)</li>
+<li>Start cylinder</li>
+<li>End cylinder</li>
+<li>Size (human readable, i.e. in mega- or gigabytes)</li>
+<li>The format flag. If the partition is to be formatted, the letter
+"F" will be displayed here. If not, this field will remain empty.</li>
+<li>Partition type (human readable, i.e. in text format -
+e.g. "FAT16", "Linux ext2", "Linux swap")</li>
+<li>Mount point, if applicable</li>
+<li>Format flag</li>
+</ul>
+
+<p>
+Free space between partitions or at the end of a disk will be
+displayed along with the partitions. This will include:
+</p>
+
+<ul>
+<li>Start cylinder</li>
+<li>End cylinder</li>
+<li>Size (human readable, i.e. in mega- or gigabytes)</li>
+<li>Indication of free space (e.g. fixed text "[free]")</li>
+</ul>
+
+<p>
+Partition and segments of free space will be displayed sorted by (a)
+hard disk and (b) start cylinder.
+</p>
+
+<h4>Subject to discussion:</h4>
+
+<p>
+Hard disks, primary, extended and logical partitions and free space
+should be indented to reflect hierarchy they have. Thus it would be
+much easier to explain to the not-yet-so-expert user the connections
+between extended and logical partitions and why he cannot simply
+delete an extended partition as long as there are still logical
+partitions within it.
+</p>
+
+<p>
+The tradeoff, however, is screen space. This indentation might eat up
+just the screen space necessary to avoid horizontal scrolling (which
+makes operating this screen very annoying). But if possible with a
+reasonable amount of work, this indentation should be done.
+</p>
+
+
+<h2>Selection</h2>
+
+<p>
+Before any action (create, delete, ...) can be performed, a list entry
+(i.e. a hard disk, a partition or a segment of free space) has to be
+selected. Depending on that selection, the user can perform actions:
+</p>
+
+<ul>
+<li>Hard disk selected:</li>
+	<ul><li>Create (primary or extended)</li></ul>
+
+<li>Primary partition selected:</li>
+	<ul><li>Delete</li></ul>
+	<ul><li>Modify</li></ul>
+
+<li>Extended partition selected:</li>
+	<ul><li>Create (logical)</li></ul>
+	<ul><li>Delete</li></ul>
+
+<li>Logical partition selected:</li>
+	<ul><li>Delete</li></ul>
+	<ul><li>Modify</li></ul>
+
+<li>Free space selected:</li>
+
+	<ul><li>Create (free space boundaries as
+	start/end cylinder defaults)</li></ul>
+</ul>
+
+<p>
+Modifying hard disks, extended partitions or free space does not make
+any sense. Neither does deleting hard disks (automatic eject?) or free
+space.
+</p>
+
+<p>
+"Default Partitioning" and "Re-Read Partition Table" are independent
+of any selection. They may be performed at any time.
+</p>
+
+
+<h2>Operations</h2>
+
+<p>
+For each of the required and optional functions, a push button will be
+provided:
+</p>
+
+<ul>
+<li>Create</li>
+<li>Delete</li>
+<li>Modify</li>
+<li>Default Partitioning</li>
+<li>Re-Read from Disk</li>
+</ul>
+
+<h3>Create</h3>
+
+<p>
+The "create" button will open a popup dialog window to select a
+partition type (primary, extended or logical). This popup window
+includes an "OK" button and a "Cancel" button.
+</p>
+
+<p>
+Upon making a selection and pressing the "OK" button, another dialog
+window will be popped up with the following fields:
+</p>
+
+<ul>
+<li>
+Partition name. For primary and extended partitions only. Select
+one of the four primary partition slots. For logical partitions, this
+will be an output-only field containing the next available partition
+slot name.
+</li>
+
+<li>
+Start cylinder - absolute cylinder address.
+</li>
+
+<li>
+End cylinder - either as an absolute cylinder address (e.g. "120")
+or relative to the starting cylinder (e.g. "+70") or in megabytes
+(e.g. "+300M"). A megabyte value will be rounded to the next cylinder
+boundary.
+</li>
+
+<li>
+The file system type (list box or radio box) - one of
+	<ul>
+	<li>Linux ext2</li>
+	<li>Linux swap</li>
+	</ul>
+Linux ext2 is the default.
+</li>
+
+<li>
+A mount point. No automagic here, just a plain text entry field.
+</li>
+
+<li>
+The format flag (a check box).
+</li>
+
+<li>
+Inode density (plain entry field). This may be left blank. In this
+case, a reasonable default value will be used.
+</li>
+
+</ul>
+
+
+<h3>Delete</h3>
+
+<p>
+The user will be prompted for confirmation when activating this
+function.
+</p>
+
+
+<h3>Modify</h3>
+
+<p>
+This opens the same dialog like the "create" function's second popup
+dialog with the fields for partition name, start cylinder, and end
+cylinder disabled. Those values will be displayed, however.
+</p>
+
+
+<h3>Re-Read Partition Table</h3>
+
+<p>
+The user will be prompted for confirmation when activating this
+function.
+</p>
+
+
+<h3>Default Partitioning</h3>
+
+
+<p>
+If the partitioning has been modified in any way, the user will be
+prompted for confirmation when activating this function since this
+will essentially abandon all changes.
+</p>
+
+
+<h2>Prototype</h2>
+
+
+<h3>Main dialog</h3>
+
+
+<blockquote><table border cellpadding=10><tr><td><pre>
+Partition your hard disk:
+
+/dev/hda          1-1115    8.5 GB    SEAGATE ST48012
+  /dev/hda1       1-  65  509.8 MB    FAT16
+  /dev/hda2      66- 150  666.7 MB    NTFS
+                151- 300    1.1 GB    [free]
+  /dev/hda3     301-1024    5.5 GB    Extended
+    /dev/hda5   301- 302    7.8 MB  F Linux ext2   /boot
+    /dev/hda6   303- 318  128.0 MB  F Linux Swap
+    /dev/hda7   319-1024    5.4 GB  F Linux ext2   /
+               1025-1115  713.0 MB    [free]
+				        
+/dev/hdb          1-1115    8.5 GB    SEAGATE ST48012
+  /dev/hdb1       1- 260    2.0 GB    NTFS
+  /dev/hdb2     261-1115    6.5 GB    Extended
+    /dev/hdb5   261- 276  128.0 MB  F Linux Swap
+    /dev/hdb6   277-1115    6.4 GB  F Linux ext2   /work
+
+  [Create]  [Delete]  [Modify]  [Default]  [Re-Read]
+</pre></td></tr></table></blockquote>
+
+<h3><br><br></h3>
+<h3>"Create partition" Dialog</h3>
+
+<h4>Version 1</h4>
+
+<blockquote><table border cellpadding=10><tr><td><pre>
+Create new primary partition
+
+Name:          [/dev/hda1]
+Start Cyl:     [____1]
+End Cyl:       [__512] (99/+99/+99M)
+Type:          Linux ext2
+               Linux Swap
+Mount Point:   [/_________]
+               [ ] Format this partition
+Inode Density: [______]
+
+            [OK]   [Cancel]
+</pre></td></tr></table></blockquote>
+
+
+<h4><br><br></h4>
+<h4>Version 2</h4>
+
+<blockquote><table border cellpadding=10><tr><td><pre>
+Create new primary partition
+
+Name   Start Cyl  End Cyl Type        Mount Point  Format Inode Dens.
+[hda1] [____1]    [__512] Linux ext2  [/________]   [ ]   [_______]
+                          Linux swap
+
+                          [OK]     [Cancel]
+</pre></td></tr></table></blockquote>
+
+<br>
+<br>
+<hr>
+<h2><a name="Change_Log"></a>Change Log</h2>
+
+<table border>
+<tr>
+	<td>Dec 16, 1999</td>
+	<td><a href="mailto:sh@suse.de">sh@suse.de</a></td>
+	<td>
+		<ul>
+			<li>Changed status from <i>Draft Proposal</i> to <i>Final</i></li>
+			<li>Added section <i>Change Log</i></li>
+		</ul>
+	</td>
+</tr>
+</table>
+
+<br>
+
+</body>
+</html>

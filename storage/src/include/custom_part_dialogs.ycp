@@ -1,0 +1,1122 @@
+/*
+ *************************************************************
+ *
+ *     YaST2      SuSE Labs                        -o)
+ *     --------------------                        /\\
+ *                                                _\_v
+ *           www.suse.de / www.suse.com
+ * ----------------------------------------------------------
+ *
+ * Author:        Michael Hager <mike@suse.de>
+ *                Johannes Buchhold <jbuch@suse.de>
+ *
+ *
+ * Description:   Partitioner for experts.
+ *                include for dialogs
+ *
+ *************************************************************
+
+ $Id$
+
+*/
+{
+  textdomain "partitioning";
+
+  import "Storage";
+  import "Partitions";
+  import "Mode";
+
+  
+  //////////////////////////////////////////////////////////////////////////////
+  // Dialog Password for Crypted FS
+  //////////////////////////////////////////////////////////////////////////////
+
+  
+  UI(``{ global define DlgCreateCryptFs()
+  ``{
+      string helptext = GetCreateCryptFsHelptext();
+	     
+      OpenDialog(
+	     `opt(`decorated ),
+	     `HBox(
+		   `HWeight(3,    `RichText( helptext ) ),
+		   `HWeight(6,    `VBox(
+					`VSpacing(0.3),
+					`HBox(
+					      `HSpacing(1),
+					      `Heading(_("Enter your password for the encrypted file system")),
+					      `HSpacing(1)
+					     ),
+					`VSpacing(4),
+					`HBox(
+					      `HSpacing(4),
+					      `VBox(
+						    // advise user to remember his new password
+						    `Label(_("Don't forget what you enter here!")),
+						    `VSpacing(),
+	     
+						    `Left(`Password(`id("pw1"),
+						     // Label: get password for user root
+						     // Please use newline if label is longer than 40 characters
+								    _("&Enter a password for your file system:"), "")),
+						    `VSpacing(0.5),
+						    
+						    `Left(`Password(`id("pw2"),
+						     // Label: get same password again for verification
+						     // Please use newline if label is longer than 40 characters
+								    _("Reenter the password for &verification:"), ""))
+						    ),
+					      `HSpacing(4)
+					      ),
+					`VSpacing(3),
+					`HBox(
+					      // Ok button
+					      `PushButton(`id("ok"), `opt(`default),  OKButtonLabel()),
+					      // Cancel button
+					      `PushButton(`id("cancel"),   CancelButtonLabel())
+					      ),
+					`VSpacing(0.5)
+					)
+			    )
+	     ));
+
+      
+      string  ret         = "";
+      boolean input_is_ok = false;
+      string pw1 	  = "";
+      string pw2 	  = "";
+	  
+      repeat
+      {
+	  // Clear password fields on every round.
+	  ChangeWidget(`id("pw1"), `Value, "");
+	  ChangeWidget(`id("pw2"), `Value, "");
+      
+	  SetFocus(`id("pw1"));
+	  
+	  ret = UserInput();
+
+      
+	  if (ret != "cancel")
+	  {
+	      pw1 = QueryWidget(`id("pw1"), `Value);
+	      pw2 = QueryWidget(`id("pw2"), `Value);
+	  
+	      if ( pw1 != pw2 )
+	      {
+		  // report misspellings of the password
+		  MessagePopup(_("The first and the second version\nof the password do not match!\nPlease try again."));
+	      }
+	      else  if (pw1 == "")
+	      {
+		  // report if user forgot to enter a password
+		  MessagePopup(_("You did not enter a password.
+Try again.
+"));
+	      }
+	      else if (size (pw1) < 5)
+	      {
+		  // explain how a password has to be formed
+		  MessagePopup(_("The password must have at least 5 characters.
+Try again.
+"));
+	      }
+	      else if ( size(pw1) >= 5 )
+	      {
+		  any ret2 = findfirstnotof( pw1, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#* ,.;:._-+!$%&/|\?{[()]}" );
+
+		  if ( ret2 != nil )
+		  {
+		      // There is a check whether the information from the UI is correct and complete
+		      // The root password may contain only certain characters
+		      MessagePopup(_("The password may only contain the following characters:
+ 0..9, a..z, A..Z, and any of \"#* ,.;:._-+!$%&/|\?{[()]}\".
+Please try again."));
+		  }
+		  else
+		  {
+		      input_is_ok = true;
+		  }
+	      }
+	  }
+
+      } until ( input_is_ok || ret == "cancel" );
+
+      CloseDialog();
+		       
+      if (ret != "cancel")
+      {
+	  return( pw1 );
+      }
+      else
+      {
+	  return( nil );
+      }
+	      
+  }
+
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Dialog Password for Crypted FS Update
+  //////////////////////////////////////////////////////////////////////////////
+
+  
+  global define DlgUpdateCryptFs( string device, string mount )
+  ``{
+      string helptext = GetUpdateCryptFsHelptext();
+
+// translator comment: %1 is the device name, %2 is a directory
+//            example: "...password for device /dev/hda6 mounted on /var"
+      string enter = _("You have to enter your crypt password for 
+device %1 mounted on %2");
+	     
+      OpenDialog(
+	     `opt(`decorated ),
+	     `HBox(
+		   `HWeight(3,    `RichText( helptext ) ),
+		   `HWeight(6,    `VBox(
+					`VSpacing(0.3),
+					`HBox(
+					      `HSpacing(1),
+					      `Heading(_("Enter your password for the encrypted file system")),
+					      `HSpacing(1)
+					     ),
+					`VSpacing(2),
+					`HBox(
+					      `HSpacing(4),
+					      `VBox(
+						    // advise user to remember his new password
+						    `Label(sformat(enter,device,mount)),
+						    `VSpacing(),
+	     
+						    `Left(`Password(`id("pw1"),
+						     // Label: get password for user root
+						     // Please use newline if label is longer than 40 characters
+								    _("&Enter a password for your file system:"), "")),
+						    `VSpacing(0.5),
+						    
+						    `Left(`Password(`id("pw2"),
+						     // Label: get same password again for verification
+						     // Please use newline if label is longer than 40 characters
+								    _("Reenter the password for &verification:"), ""))
+						    ),
+					      `HSpacing(4)
+					      ),
+					`VSpacing(2),
+					`HBox(
+					      // Ok button
+					      `PushButton(`id("ok"), `opt(`default),  OKButtonLabel()),
+					      // Cancel button
+					      `PushButton(`id("cancel"),   CancelButtonLabel())
+					      ),
+					`VSpacing(0.5)
+					)
+			    )
+	     ));
+
+      
+      string  ret         = "";
+      boolean input_is_ok = false;
+      string pw1 	  = "";
+      string pw2 	  = "";
+	  
+      repeat
+      {
+	  // Clear password fields on every round.
+	  ChangeWidget(`id("pw1"), `Value, "");
+	  ChangeWidget(`id("pw2"), `Value, "");
+      
+	  SetFocus(`id("pw1"));
+	  
+	  ret = UserInput();
+
+      
+	  if (ret != "cancel")
+	  {
+	      pw1 = QueryWidget(`id("pw1"), `Value);
+	      pw2 = QueryWidget(`id("pw2"), `Value);
+	  
+	      if ( pw1 != pw2 )
+	      {
+		  // report misspellings of the password
+		  MessagePopup(_("The first and the second version\nof the password do not match!\nPlease try again."));
+	      }
+	      else  if (pw1 == "")
+	      {
+		  // report if user forgot to enter a password
+		  MessagePopup(_("You did not enter a password.
+Try again.
+"));
+	      }
+	      else if ( size(pw1) >= 5 )
+	      {
+		  input_is_ok = true;
+	      }
+	  }
+
+      } until ( input_is_ok || ret == "cancel" );
+
+      CloseDialog();
+		       
+      if (ret != "cancel")
+      {
+	  return( pw1 );
+      }
+      else
+      {
+	  return( nil );
+      }
+	      
+  }
+
+
+  /**
+   * Dialog: Filesystem options
+   * @parm new_val map that contains a partition
+   * @parm file_systems filesystem definitions
+   */
+  global define FileSystemOptions( map org_fs_options , map fs_define  ) ``{
+
+      map fs_options     = org_fs_options;
+      term contents 	= `VBox(`VSpacing (1));
+      string helptext   = "";
+      
+      foreach( `option, lookup( fs_define, `options, []),  ``{
+	  contents = add( contents, lookup( option, `widget,   `empty));
+	  string add_help = lookup( option, `help_text, "");
+	  if ( add_help != "")
+	      helptext = helptext +  add_help ;
+      });
+   
+      OpenDialog(`opt(`decorated), `HBox(
+			`HWeight(4, `RichText( helptext )),
+			`HWeight(7, `VBox(
+					  `HSpacing(50),
+					  `Left(`Heading(_("File system options:"))),
+					  `VStretch(),
+					  `VSpacing(1),
+					  `HBox(`HStretch(),
+						`HSpacing(1),
+						contents,
+						`HStretch(),
+						`HSpacing(1)),
+					  `VSpacing(1),
+					  `VStretch(),
+					  `HBox(
+						`Bottom(`PushButton(`id(`ok),_("&Ok"))),
+						`Bottom(`PushButton(`id(`cancel), CancelButtonLabel())))
+					  ))));
+
+      foreach( `query_key, `option_map, fs_options , ``{
+	  ChangeWidget(`id(query_key), `Value, lookup(option_map, "option_value", nil));
+      });
+
+	      
+      symbol ret = `ok;
+      repeat
+	{
+	    ret =  UserInput();
+	    if ( ret == `ok )
+	    {
+		foreach( `option_map, lookup( fs_define, `options, []),  ``{
+		    
+		    if ( ret != `error )
+		    {
+			any query     = QueryWidget(`id(lookup( option_map, `query_key, nil )), `Value );
+			
+			map fs_option = $[ "option_str" : lookup(option_map, `option_str, ""), "option_value" : query ];
+
+			if( option_map[`option_blank]:false )
+			    {
+			    fs_option["option_blank"] = true;
+			    }
+
+			list between        = lookup( option_map, `between, [] );
+			string valid_chars  = lookup( option_map, `valid_chars, "");
+			integer str_length  = lookup( option_map, `str_length, 0  );
+
+			if( query != "auto" && query != "none" && query != "default" )
+			{
+			    if( between != [] )
+			    {
+				if( select ( between, 0, 0 ) > tointeger(query)  ||
+				    ( (select ( between , 1, 0) != -1) && (select( between, 1, 0) < tointeger(query) ) ) )
+				{
+				    ErrorPopup(lookup( option_map, `error_text, ""));
+				    ret = `error;
+				}
+			    }
+
+			    if( valid_chars != ""  && ret != `error)
+			    {
+				if(nil !=  findfirstnotof( query, valid_chars ))
+				{
+				    ErrorPopup(lookup( option_map, `error_text, ""));
+				    ret = `error;
+				}
+			    }
+
+			    if(  str_length != 0 && size( query ) > str_length  && ret != `error )
+			    {
+				ErrorPopup(lookup( option_map, `error_text, ""));
+				ret = `error;
+			    }
+			}
+
+			if( query != lookup( option_map, `default, nil )  && ret != `error )
+			{
+			    fs_options = add( fs_options, lookup( option_map, `query_key, nil ), fs_option );
+			}
+		    }
+		
+		});
+		
+		
+	    }
+	} until ( ret == `ok || ret == `cancel );
+
+    CloseDialog();
+
+    if( ret == `ok )
+	return fs_options;
+    return ( org_fs_options );
+  }
+
+
+/**
+   * Dialogpart: Filesystem
+   * @parm new_val map that contains a partition
+   * @parm file_systems filesystem definitions
+   * @return term the term contains a ComboBox with the different filesystems
+   */
+  global define FileSystemsComboBox( map new_val , map file_systems  ) ``{
+      
+      map fs_sel = $[];
+      list filesystems = [ ];
+      boolean is_swap = new_val["fsid"]:0 == WFM::Partitions::fsid_swap;
+      
+      y2debug( "new=%1 swap=%2", new_val, is_swap );
+      foreach ( `file_system_name , `file_system_map , file_systems , ``{
+	  if( lookup( file_system_map, `supports_format, false ) )
+	      {
+	      fs_sel[file_system_name] = $[];
+	      fs_sel[file_system_name,"text"] = file_system_map[`name]:"Ext2";
+	      if( is_swap )
+		  fs_sel[file_system_name,"selected"] = file_system_name == `swap;
+	      else
+		  fs_sel[file_system_name,"selected"] = 
+		      new_val["used_fs"]:`reiserfs == file_system_name;
+	      }
+	  });
+      y2debug( "fs_sel=%1", fs_sel );
+      if( haskey( fs_sel, `reiser ) &&
+          size(filter( `k, `e, fs_sel, ``(e["selected"]:false) ))==0 )
+	  {
+	  fs_sel[`reiser,"selected"] = true;
+	  }
+      foreach( `fs_type, `entry, fs_sel, ``{
+	  if( fs_type != `swap )
+	      filesystems = add( filesystems, 
+	                         `item(`id(fs_type), entry["text"]:"Ext2", entry["selected"]:false ));
+	  });
+      if( haskey( fs_sel, `swap ))
+	  {
+	  filesystems = add( filesystems, `item( `id(`swap), fs_sel[`swap,"text"]:"Swap", 
+	                                         fs_sel[`swap,"selected"]:false ));
+	  }
+      
+      return `VBox(
+		  
+		   `ReplacePoint( `id(`type_dlg_rp), `ComboBox(`id(`fs), `opt(`hstretch, `notify), _("File &system"), filesystems )),
+		   //`VSpacing(0.7),
+		   `PushButton( `id(`fs_options ),`opt(`hstretch) ,  _("O&ptions") ),
+		   `VSpacing(0.7),
+		   `Left(`CheckBox(`id(`crypt_fs), _("&Encrypt file system"), lookup ( new_val , "crypt_fs" , false ) ))
+		   );		  
+  }
+  
+  /**
+   * Dialogpart: Filesystem ID
+   * @parm new_val map that contains a partition
+   * @parm file_systems filesystem definitions
+   * @return term the term contains a ComboBox that allow the user to  edit the filesystem ID
+   */
+  global define FsidComboBox( map new_val , map file_systems  ) ``{
+      list items 	= [];
+      list added_items	= [];
+      list added_fsids   = [];
+      foreach (  `file_system_name , `file_system_map,  file_systems , ``{
+	  
+	  string fsid_item =  lookup( file_system_map, `fsid_item, " " );
+	  if( ! contains( added_items, fsid_item ))
+	  {
+	      items = add( items, `item( `id(fsid_item), fsid_item, lookup(file_system_map, `fsid , WFM::Partitions::fsid_swap) == lookup( new_val, "fsid", 0)));
+	      added_fsids = add( added_fsids , lookup(file_system_map, `fsid , WFM::Partitions::fsid_swap) );
+	      added_items = add( added_items , fsid_item );
+	  }
+	  
+	  
+      });
+      
+      if( new_val["fsid"]:0 != 0 &&
+          !contains( added_fsids, new_val["fsid"]:0 ) )
+      {
+	  items = add( items, `item( sformat("%1", new_val["fsid"]:0), true) );
+      }
+      
+      return ( `ComboBox(`id(`fsid_point), `opt(`editable, `hstretch), _("File &system ID:"), items ));
+  }
+  
+  
+  /**
+   * Dialogpart: Size Dialog
+   * @parm new_val map that contains a partition
+   * @parm edit_size flag 
+   * @return term the term contains two TextEntries or to Labels with the start and the end cylinder of
+   * the partition in new_val
+   */
+  global define SizeDlg( map new_val , integer cyl_size , boolean edit_size ) ``{
+      
+      
+      string start_cyl = sformat( "%1", select(lookup( new_val, "region", []), 0, 0));
+      string end_part  = sformat( "%1", select(lookup( new_val, "region", []), 0, 0) +
+				  select(lookup( new_val, "region", []), 1,1) -1 );
+
+      float mb_cyl_size   =  ( tofloat(cyl_size) /1024.0 /1024.0 );
+      string str_cyl_size =  substring( sformat( "%1", mb_cyl_size ), 0, 4);
+
+	  
+      if( lookup ( new_val , "create" , false ) && edit_size )
+      {		
+	  return `Frame ( _("Size"),
+			  `VBox(
+				`Left(`Label(_("Cylinder size: ")+ str_cyl_size + " M" )),
+				`VSpacing(0.5),
+				// popup create partition: Description Input field
+				`TextEntry(`id(`start_cyl), _("S&tart cylinder:"), start_cyl ),
+				`VSpacing(0.5),
+				// popup create partition: Description Inputfield +9M means add 9 MB
+				`TextEntry(`id(`end_part), _("En&d:  (9 or +9M or +3.2GB)"), end_part)
+				)
+			  );
+      }
+      else
+      {
+	  return ( 
+		  `HBox(      
+			// popup edit existing partition: Description
+			`Left(`Label( _("Type of file system: ")
+				      // popup edit existing partition: Description
+				      +  _("\nStart cylinder:")
+				      // popup edit existing partition: Description
+				      +  _("\nEnd cylinder:  ") )),
+			`Left(`Label( lookup( new_val , "fstype", "") 
+				      + "\n " + start_cyl
+				      + "\n " + end_part ))
+			));
+      }
+  }
+  
+
+  global define FormatDlg(  map new_val , map file_systems  ) ``{
+
+      return `Frame (substring(_("2:Format"),2),
+		     `RadioButtonGroup(`id(`format),
+				       `VBox(
+					     `VSpacing(1),
+					     // popup create partition: Dont format partition
+					     `Left(`RadioButton(`id(`format_false), `opt(`notify),_("Do &not format"), ! lookup(new_val, "format", false)  )),
+					     `HBox(
+						   `HSpacing(2),
+						   `ReplacePoint( `id(`fsid_dlg_rp),  FsidComboBox( new_val , file_systems ))
+						   ),
+					     `VSpacing(0.5),
+					     `VStretch(),
+					     // popup create partition: Format partition (Vocative)
+					     `Left(`RadioButton(`id(`format_true), `opt(`notify),_("&Format"),  lookup(new_val, "format", false) )),
+					     `HBox(
+						   `HSpacing(2),
+						   FileSystemsComboBox( new_val , file_systems )
+						   //filesystems
+						   ),
+					     `VSpacing(0.5)
+					     )));
+
+
+  }
+
+  
+
+  global define RaidOptionsDlg( map new_val, boolean edit_raid_type ) ``{
+
+      string  chunk_size  		=   lookup( new_val, "chunk_size", "");
+      string  parity_algorithm    	=   lookup( new_val, "parity_algorithm", "");
+      boolean persistent_superblock	=   lookup( new_val, "persistent_superblock", "");
+      string  raid_type			=   lookup( new_val, "raid_type", "");
+      term   editRaid 			=   `VSpacing(1);
+
+    
+     
+     // 2KB .. 4096KB
+     list     chunk_list = [];
+     integer  i          = 2;
+     while (  i <= 4096 )
+     {
+	 string chunk_item = sformat( "%1", i);
+	 chunk_list = add( chunk_list, `item(`id(chunk_item), chunk_item, chunk_size == chunk_item ));
+	 i = i*2;
+     }
+      
+      
+      if ( edit_raid_type )
+      {
+	  editRaid = `VBox(
+			   `VSpacing(),
+			  `Left (`ComboBox ( `id(`raid_combo), `opt(`notify, `hstretch ), _("RAID &Type"),
+				      [ `item(`id("raid_0"),  "raid_0",  "raid_0"  == raid_type ),
+				        `item(`id("raid_1"),  "raid_1",  "raid_1"  == raid_type ),
+				        `item(`id("raid_5"),  "raid_5",  "raid_5"  == raid_type )
+				      ])),
+			   `VSpacing()
+			  );
+     }
+    
+
+    
+      return `VSquash(
+		      `VBox(
+		   editRaid,
+		   // Raid combobox description (don't translate to much ..)       
+		   `Left (`ComboBox ( `id(`chunk_size),`opt(`hstretch ), _("Chunk s&ize in KB"), chunk_list )),
+		   `VSpacing (),
+		   // Raid combobox description (don't translate to much ..)       
+		   `Left (`ComboBox ( `id(`partity),`opt(`hstretch ), _("Parity &algorithm (only for RAID 5)"),
+				      [ `item(`id("left-asymmetric"),  "left-asymmetric",  "left-asymmetric"  == parity_algorithm ),
+				      `item(`id("left-symmetric"),   "left-symmetric",   "left-symmetric"   == parity_algorithm ),
+				      `item(`id("right-asymmetric"), "right-asymmetric", "right-asymmetric" == parity_algorithm ),
+				      `item(`id("right-symmetric"),  "right-symmetric",  "right-symmetric"  == parity_algorithm )
+				      ])),
+		   `VSpacing (),
+				  
+		   // Raid checkbox option (don't translate to much ..)       
+		   `Left (`CheckBox (`id (`persist), _("Persistent s&uperblock"), persistent_superblock)),
+		   `VSpacing ()
+		   ));	
+
+  }
+  
+  /**
+   * Change the state of all symbol from the list symbols
+   * @parm symbols all symbols
+   * @parm what true or false
+   * @return nil
+   */
+  global define ChangeExistingSymbolsState( list symbols , boolean what ) ``{
+      foreach( `sym, symbols, ``{
+	  ChangeWidget(`id(sym), `Enabled, what );
+      });
+  }
+  
+ 
+  /**
+   * Return a map with the filesystem definitions for the map new_val
+   * @parm new_val map that contains a partition
+   * @parm file_systems filesystem definitions
+   * @return map
+   */
+  global define GetFirstFilesystemDefinition( integer fsid , map  file_systems ) ``{
+      map  define_map  = filter( `key, `value, file_systems , ``( fsid == lookup( value, `fsid, WFM::Partitions::fsid_native )));
+      list define_list = maplist( `k, `v , define_map, ``( v ));
+      if( size( define_list ) == 0) return $[];
+      else return select(define_list, 0, $[]);
+
+  }
+  
+  
+  /**
+   * Dialogpart: Mount part	
+   * @parm new_val map that contains a partition
+   * @parm file_systems filesystem definitions
+   * @return term ComboBox with all mountpoints
+   */
+  global define MountDlg( map new_val , list mountpoints ) ``{
+
+      if( mountpoints == nil  )
+	  mountpoints = [ "/", "/usr", "/boot", "/var", "/home", "/opt" , ""];
+
+      mountpoints      = add( mountpoints , "");
+      string mount     = lookup ( new_val , "mount", "");
+
+      mountpoints = union( [ mount], mountpoints);
+      
+      ////////////////////////////////////////////////////////////////////////////////////////
+      // return term
+      /*
+      return ( `Frame ( _("Mount Point"),
+			// popup create partition: Description Inputfield
+			`ComboBox(`id(`mount_point), `opt(`editable, `hstretch), "", mountpoints  )
+			) );
+      */
+      return (// popup create partition: Description Inputfield
+	      `ComboBox(`id(`mount_point), `opt(`editable, `hstretch),  _("&Mount Point"), mountpoints  ));
+			
+
+      
+  }
+
+
+  global define ModifyPartitionInSystemWarningPopup(string part, string mount )``{
+      
+      string warning = sformat(_("
+The selected partition (%1) is currently mounted on %2.
+If you change parameters (such as the mount point or the file system type),
+your Linux installation might be damaged.
+
+Unmount the partition if possible. If you are unsure,
+it is recommended to abort. Do not proceed unless you know
+exactly what you are doing.
+"), part, mount );
+
+          
+      WarningPopup( warning );
+  };
+
+
+  
+  global define  UseChangedPartitionContinueCancelPopup()``{
+
+  
+      if( ContinueCancelPopup(_("CAUTION:
+You have changed the parameters of a partition currently
+mounted. In some cases, this can damage your Linux installation.
+
+Proceed only if you know what you are doing. If you are unsure,
+press Cancel.
+    
+")))
+       return true;
+
+      return false;
+  };
+  
+  });
+
+
+
+  /** 
+     * Scan exiting partitions for fstab files and if one found read the mountpoints
+     * from the fstab file and build a new targetMap.
+     * Ask the user if he like to use the new or old targetMap
+     * (with or without found mountpoints)
+     *------------------------------------
+     * @parm targetMap all targets
+     * @parm installation !!
+     * @parm file_systems  filesystems definition map
+     * @return targetMap new or unmodified targetMap
+     *---------------------------------------------------------------------
+     */
+    global define FstabAddDialog( list table_input )
+    ``{  
+	if( table_input == [] || table_input == nil )
+	{
+	    UI::MessagePopup(_("No previous system with mount points was detected."));
+	    return false;
+	}
+	
+	
+	term header = `header( _("Device      "),  _("Mount       "));
+	    
+	string help_text = UI(_("<P><B><BIG>Attention:</BIG></B><BR>YaST2 has scanned your hard disks and found an old Linux system
+with mount points. On the right, see a list with the mount points found. </P>
+"))+
+UI(_("<P>To use these mount points, <BR>press <B>Yes</B>.</P>"))+
+UI(_("<P>To ignore these mount points, <BR> press <B>No</B>.</P>"));
+		      
+	UI::OpenDialog(`opt(`decorated ),
+		       `HBox(
+			     `VBox(
+				   `HSpacing(20),
+				   `RichText(help_text)
+				   ),
+			     `VBox(
+				   `VSpacing(1),
+				   `Heading(_("A previous system with the following mount points was detected:") ),
+				   `HBox(  
+					 `HSpacing(3.0),
+					 `VSpacing(8),
+					 `VBox(
+					       `VSpacing(1),
+					       `Table(`id(`table),  header , table_input )
+					       ),
+					 `HSpacing(3.0)
+					 ),
+					    
+				   `VSpacing(1),
+				   `Heading(_("Would you like to use these mount points
+for your new installation?")),	
+				   `VSpacing(1),
+				   `HBox(
+					 `PushButton(`id(`ok), `opt(`default), YesButtonLabel()  ),
+					 `PushButton(`id(`cancel), NoButtonLabel()  )
+					 )
+				   ))
+		   );
+
+	symbol userinput = UI::UserInput();
+	UI::CloseDialog();
+	
+	if( userinput == `ok )
+	{
+	    return true;
+	}
+    
+	return false;
+    };
+
+
+    global define TargetShowBarGraph( map target , string dev )``{
+
+	list partitions_size = [];
+	list partitions_text = [];
+	integer sum_used     = 0;
+	integer cyl_size     = lookup( target, "cyl_size", 1);
+	integer cyl_count    = lookup( target, "cyl_count", 1);
+	integer min_size     = tointeger( cyl_count / 8 );
+	boolean pdisk_disk   = check_pdisk( target, `warn_not );
+
+	
+	y2milestone( " target %1" ,target );
+	y2milestone( " parts %1", lookup( target, "partitions", [] ));
+	
+	foreach( `part, lookup( target, "partitions", [] ), ``{
+
+	    if( lookup (part, "type" , `primary ) != `extended &&
+		lookup (part, "delete", false   ) == false )
+	    {
+		integer part_size       =  select( lookup( part, "region", [0,0]),1,0);
+		string  part_size_str   =  "";
+
+		if ( pdisk_disk )
+		{
+		    part_size_str = ByteToHumanString(part_size * 512);
+		}
+		else
+		{
+		    part_size_str = ByteToHumanString(part_size * cyl_size);
+		}
+
+		sum_used        = sum_used + part_size;
+		if( part_size < min_size )
+		    part_size = min_size;
+	  
+		partitions_size = add( partitions_size , part_size);
+
+		string part_text =  lookup( part, "mount","");
+
+		if( part_text  == "" || part_text == nil )
+		    part_text = dev + sformat("%1", lookup( part, "nr", 0));
+
+		part_text = part_text + "\n" + part_size_str; 
+		
+		partitions_text = add( partitions_text , part_text );
+	    }
+	});
+
+	integer free  = cyl_count - sum_used;
+
+	if( free > 0 )
+	{
+	    if( free > min_size )
+		partitions_size = add( partitions_size, free );
+	    else partitions_size = add( partitions_size, min_size );
+	    partitions_text = add( partitions_text, _("free"));
+	}
+
+	if( Mode::test )
+	{
+	    y2milestone(" partitions_size : %1", partitions_size);
+	    y2milestone(" partitions_text : %1", partitions_text);
+	}
+			
+	return `BarGraph(`opt(`vstretch), partitions_size , partitions_text );
+    };
+
+
+    
+    global define TargetAllocationDlg(map target , string dev) ``{
+	if ( ! UI::HasSpecialWidget(`BarGraph) )
+	{
+	    // %1 is a disk device, example: You have selected the disk /dev/hda, but can only edit a partition like /dev/hda11, /dev/hda2,
+	    UI::WarningPopup(sformat(UI(_("\n You have selected the disk %1, but you can \n  only edit a partition like %11, %12, ... \n")), dev));
+	}
+	else
+	{
+	
+	    UI::OpenDialog(`opt(`decorated ),     
+			   `VBox(
+				 `VSpacing(1),
+				 `Left( `Heading( dev + ":")),
+				 `VSpacing(1),
+				 `VStretch(),
+				 `HSpacing(80),
+				 TargetShowBarGraph(target ,dev),
+				 `VStretch(),
+				 `VSpacing(1),
+				 `HBox(
+				       `PushButton(`id(`close), CloseButtonLabel()  )
+				       )
+				 ));
+
+	    UI::UserInput();
+	    UI::CloseDialog();
+	}
+
+	return true;
+    };
+
+    
+
+
+    global define DDZeroPartitionTable( string del_dev  )``{
+	
+	string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1", del_dev );
+	
+	if( UI::YesNoPopup(sformat(_("CAUTION!
+If you delete the partition table and disk label of
+device %1, data on this device will be lost.
+
+The executed command will be: (%2)
+Do you really want to do this now?
+"), del_dev , zero_string )))
+	{
+
+	     UI:: OpenDialog(`opt(`decorated, `warncolor),
+					  `HBox(
+						`HSpacing(1),
+						`VBox(
+						      `VSpacing(0.2),
+						      `Heading(_("Warning:
+
+Do you really want to do this now?
+") ),
+						      `HBox(
+							    // all right, start installation *now*
+							    `PushButton(`id(`yes),  _("&Yes, delete the partition table now.")),
+							    `HStretch(),
+							    // no, don't go on, i just changed my mind
+							    `PushButton(`opt(`default), NoButtonLabel() )
+							    ),
+						      `VSpacing(0.2)
+						      ),
+						`HSpacing(1)
+						)
+					  );
+
+	     symbol  ret = UI::UserInput();
+	     UI::CloseDialog();
+	    
+	     if( ! Mode::test  && ret == `yes )
+	     {
+		 Storage::ZeroDevice(del_dev);			   
+		 return true;
+	     }	    
+	}
+	return false;
+	
+    };
+
+    
+    global define ReallyInstPrepdisk( )``{
+
+	map targetMap = Storage::GetTargetMap();
+	
+	string doto = TargetChangesToRichText(  targetMap);
+	term dlg = `Empty();
+	if( size(doto) > size("<ul></ul>")+1 )
+	    {
+	    dlg = `VBox( `VSpacing(1),
+			 `HSpacing(60),
+			 `Left(`Heading(_("Changes:"))),
+			 `RichText( doto ) );
+	    }
+
+
+	UI::OpenDialog(`opt(`decorated, `warncolor),
+					  `HBox(
+						`HSpacing(1),
+						`VBox( 
+						      dlg,
+						      `VSpacing(1),
+						      `Heading(_(" Do you really want to execute these changes?")),
+						      `VSpacing(1),   
+						      
+						      `HBox(
+							    // all right, start installation *now*
+							  
+							    `PushButton(`id(`back), CancelButtonLabel()),
+							    `HStretch(),
+							    `PushButton(`id(`apply),   _("&Apply")),
+							    `PushButton(`id(`finish),  FinishButtonLabel() )
+							    // no, don't go on, i just changed my mind
+							    ),
+						      `VSpacing(0.2)
+						      ),
+						`HSpacing(1)
+						)
+					  );
+
+	symbol  ret = UI::UserInput();
+	UI::CloseDialog();
+	    
+	return ret;
+	     
+	
+    };
+
+
+    /**
+     * Delete all partition in targetMap from the device "del_dev" and return
+     * a new targetMap.
+     * Check if LVM partition exists on the device.
+     * Check if at least on partition is mounted.
+     * @return map targetMap
+     */
+    global define deleteAllDevPartitions( map targetMap , string del_dev , boolean installation,  boolean bsd_label )``{
+
+	map new_targetMap = targetMap;
+	boolean go_on     = true;
+
+	/////////////////////////////////////////////////////////////////////////////////////////
+	// check mount points if not installation
+
+	if ( ! installation )
+	{
+	    list mounts      = mountedPartitionsOnDevice( del_dev,  CurrentMounted() );
+
+	    if ( size( mounts ) != 0 )
+	    {
+		/////////////////////////////////////////////////////////////////////////////////////////
+		// mount points found
+
+		string mounted_parts  = "";
+		foreach( `mount , mounts , ``{
+		    
+		    //The selected device contains partitions which are currently mounted:
+		    //           /dev/hda1 on /
+		    //           /dev/hdd1 on /usr
+		    //   ....
+		    mounted_parts = mounted_parts + sformat("%1 on %2",lookup( mount, "spec", "") , lookup( mount, "file", "")) + "\n";
+		});
+
+		string message = sformat(_("The selected device contains partitions that are currently mounted:
+%1
+It is *strongly* recommended to unmount these partitions before deleting the partition table.
+Choose Cancel unless you know exactly what you are doing.
+"), mounted_parts );
+
+		if( ! UI::ContinueCancelPopup(message))
+		{
+		    go_on = false;
+		}
+	    }
+	}
+
+
+	if( go_on )
+	{
+	    foreach( `dev, `target, targetMap, ``{
+
+
+		/////////////////////////////////////////////////////////////////////////////////////////
+		// find device
+
+		if ( dev == del_dev )
+		{
+		    list partitions =  lookup( target, "partitions", [] );
+		    partitions      =  filter( `part, partitions, ``( lookup( part ,"delete",false) == false));
+
+		    map part_nr_3_bsd_check =  find( `part, partitions, ``( lookup( part ,"nr", 0 ) == 3));
+		    
+		    symbol ret_delete = check_partition_delete( del_dev, target , part_nr_3_bsd_check , bsd_label ,
+								true,  // pdisk_check
+								true,  // bsd_check
+								false,  // lvm_check
+								false ,
+								true ); // raid_check
+
+		    if ( ret_delete == `no_delete )
+		    {
+			go_on = false;
+		    }
+
+		  
+		    if ( partitions != []  && go_on )
+		    {
+
+			/////////////////////////////////////////////////////////////////////////////////////////
+			// check LVM partitions
+
+			if( size(filter( `part, partitions, ``( lookup( part, "lvm_group", "") != "" ))) != 0)
+			{
+			    // Translators: Do not translate LVM.
+			    UI::MessagePopup(_("
+The selected device contains at least one LVM partition
+assigned to a volume group. Remove all
+partitions from their respective volume groups
+before deleting the partition table.
+"));
+			    go_on = false;
+			}
+
+
+			/////////////////////////////////////////////////////////////////////////////////////////
+			// check RAID partitions
+
+			if( size(filter( `part, partitions, ``( lookup( part, "raid_name", "") != "" ))) != 0)
+			{
+			    // Translators: Do not translate LVM.
+			    UI::MessagePopup(_("
+The selected device contains at least one partition
+that is part of a RAID system. Unassign the
+partitions from their respective RAID systems before
+deleting the partition table.
+"));
+			    go_on = false;
+			}
+			
+
+			
+
+		    }
+		    if( go_on )
+		    {
+			/////////////////////////////////////////////////////////////////////////////////////////
+			// delete all partition in targetMap and add dd string to targetMap
+
+			// add delete -> true to all partitions
+			list partitions = [];
+			foreach(`part, lookup( target, "partitions", [] ), ``{
+
+			    part       = add( part, "delete" , true);
+			    partitions = add( partitions , part);
+			});
+
+			partitions = filter( `parti, partitions,
+					     ``(  !  (lookup( parti, "create", false ) == true)  ));
+			
+			target        = add( target, "partitions", partitions );
+			new_targetMap = add( new_targetMap , dev, target );
+		    }
+		}
+	    });
+	}
+
+	if( go_on )
+	{
+	    return new_targetMap;
+	}
+	return (nil);
+    };
+
+  
+}

@@ -1,0 +1,78 @@
+/**
+ * Module: 		Partitions.ycp
+ *
+ * Authors:		Thomas Fehr (fehr@suse.de)
+ *
+ * Purpose: 		Provides information about partitions
+ *
+ * $Id$
+ */
+{
+    module "Partitions";
+
+    import "Arch";
+
+    // The filesystem ids for the partitions
+    global integer fsid_empty    = 0;
+    global integer fsid_native   = 131;
+    global integer fsid_swap     = 130;
+    global integer fsid_lvm      = 142;
+    global integer fsid_raid     = 253;
+    global integer fsid_hibernation = 160;
+    global integer fsid_extended = 5;
+    global integer fsid_extended_win = 15;
+    global integer fsid_fat16    = 6;
+    global integer fsid_prep_chrp_boot = 0x41;
+    global integer fsid_root = fsid_native;
+    global integer fsid_boot = fsid_native;
+
+    // filesystems for /win
+    global list fsid_wintypes = [ 6, 11, 12, 14 ]; /* FAT32, Win95-Fat32, Win95LBA, Win95-Fat16  */
+
+    // filesystems for /dos
+    global list fsid_dostypes = [ 1, 4 ];          /* FAT12, FAT16  */
+
+    // filesystems for /windows
+    global list fsid_ntfstypes = [ 7 ];            /* NTFS  */
+
+    // filesystems mounted read-only
+    global list fsid_readonly = [ 7 ];
+
+    // filesystems skipped on sparc and axp
+    global list fsid_skipped = [ 0, 5 ];
+
+    global integer minimal_needed_disksize = 400 * 1024 * 1024;  // for installation of a minimal system
+    global integer minimal_needed_bootsize = 12  * 1024 * 1024;  // for installation
+
+    global symbol default_fs      = `reiser;
+    global symbol default_boot_fs = `ext2;
+
+    global define Partitions()
+    ``{
+	import "Boot";
+	if (Arch::ia64
+	    || Boot::LoaderType == "milo")
+	{
+	    fsid_boot = fsid_fat16;
+	    default_boot_fs = `fat16;
+	}
+    }
+
+    global define boolean IsDosPartition( integer fsid )
+    ``{
+	return (contains( fsid_dostypes, fsid)
+		|| contains( fsid_wintypes, fsid));
+    }
+
+    global define boolean IsDosWinNtPartition( integer fsid )
+    ``{
+    return( IsDosPartition( fsid ) || 
+            contains( fsid_ntfstypes, fsid ));
+    }
+
+    global define boolean IsLinuxPartition( integer fsid )
+    ``{
+	return ( fsid==fsid_native || fsid==fsid_swap || fsid==fsid_lvm ||
+	         fsid==fsid_raid );
+    }
+}

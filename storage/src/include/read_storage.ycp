@@ -1,0 +1,689 @@
+/**
+ * File:
+ *   read_storage.ycp
+ *
+ * Module:
+ *   Storage
+ *
+ * Summary:
+ *   main lib for partitioning defines
+ *
+ * Authors:
+ *   mike <mike@suse.de>
+ *
+ *
+ * $Id$
+ *
+ */
+{
+  import "Arch";
+  import "Mode";
+  import "Partitions";
+  import "Installation";
+  include "partitioning/custom_part_testdata.ycp";
+  textdomain "partitioning";
+  
+ 
+
+						       
+
+  
+  /*
+   * for PPC: convert pdisk output to fdisk output format
+   */
+  define list pdisk2target (list pdisk_data) ``{
+
+      list partitions = [];
+      
+      foreach (`pentry, pdisk_data, ``{
+	  // make partition entry map, start with dummy fsid entry
+	    map part = $["fsid":0, "type":`pdisk];
+
+ 	    if (lookup (pentry, "type", `unknown) == nil) continue;
+
+ 	    string fstype = lookup (pentry, "type", `unknown);
+
+ 	    if (lookup (pentry, "name", nil) != nil)
+ 	    fstype = fstype + " (" + lookup (pentry, "name", nil) + ")";
+
+ 	    // fstype
+ 	    part = add (part, "fstype", fstype);
+
+	    // nr
+            if      ( lookup (pentry, "nr", nil) != nil )
+            {
+               part = add (part, "nr", lookup (pentry, "nr", 0));
+            }
+            else if ( lookup (pentry, "ten_nr", nil) != nil )
+            {
+               part = add( part, "nr", lookup (pentry, "ten_nr", 0) +10 );
+            }
+	    else
+            {
+               part = add( part, "nr", lookup (pentry, "twen_nr", 0) +20 );
+            }
+
+ 	    part = add (part, "region", [(lookup (pentry, "base", 0)), (lookup (pentry, "length", -1))]);
+
+ 	    partitions = add (partitions, part);
+
+ 	}); // foreach
+
+        return partitions;
+
+    }; // pdisk2target
+
+
+  /**
+   * check partitions for given disk (as path, i.e. '.sda')
+   * returns list as specified in README.target_partition
+   **/
+  global define list Check4partitions (map disk, path diskpath)
+    ``{
+
+	list partitions = [];
+
+	if ( ! Arch::s390 )
+	{  
+	    partitions = SCR::Read(.disk + diskpath + .partitions, true);
+	    SCR::Write( Storage::SaveDumpPath( "" + diskpath + "/parted"), partitions );
+	   
+	    partitions = SCR::Read(.disk + diskpath + .partitions, false);
+	    SCR::Write( Storage::SaveDumpPath( "" + diskpath + "/fdisk"), partitions );
+	   
+	    // fdisk may fail on ppc, check with pdisk in this case
+
+	    if (Arch::ppc
+		&& (size (partitions) == 0))
+	    {
+		// ppath == ".hda"
+		string ppath = "" + diskpath;
+		// llpath == [ "", "hda" ]
+		list lppath = splitstring (ppath, ".");
+		// ppath = "/hda"
+		ppath = mergestring (lppath, "/");
+		y2milestone("ppath: %1", ppath);
+		partitions = pdisk2target (SCR::Read(.pdisk, [ "/dev"+ppath ]));
+	    }
+	}
+	else
+	{
+	    // On s390 there is only one partition per device /dev/dasd*
+
+	    integer cyl_count  = lookup ( disk, "cyl_count", 0  );
+	    integer cyl_size   = lookup ( disk, "cyl_size",  1000000    );
+
+	    map partition = $[];
+
+	    partition = add( partition, "create",  true );
+	    partition = add( partition, "nr",      1 );
+	    partition = add( partition, "format",  true );
+	    partition = add( partition, "region",  [0, cyl_count-1] );
+	    partition = add( partition, "fsid",    Partitions::fsid_native  );
+	    partition = add( partition, "type",    `s390 );
+	    partition = add( partition, "used_fs", `ext2 );
+
+	    partitions = [ partition ];
+	}
+
+	return partitions;
+    };
+
+
+
+  /**
+   *
+   * check if disk describes a ZIP drive	
+   **/
+  global define boolean Check4Zip (map disk) ``{
+	list zlist = splitstring (lookup (disk, "device", ""), " ");
+	boolean zip_found = false;
+	foreach (`zelement, zlist, ``{
+	    if (zelement == "ZIP")
+		zip_found = true;
+	});
+	return zip_found;
+    };
+
+
+
+  /**
+   *
+   */
+  global define map GetLvmMdSystemInfo( map targetMap ) ``{
+      map md = SCR::Read (.md.config);
+      if( size(md)>0 )
+	  {
+	  string key = "/dev/md";
+	  integer total_size = 0;
+	  map entry = $[];
+	  list partitions = [];
+	  entry = add (entry, "name", "Linux Software Raid" );
+	  entry = add (entry, "cyl_size", (1024 * 1024));
+	  foreach (`pk, `pv, md, ``{
+	      map part = $[];
+	      integer lsize = 0;
+	      y2debug ("key=%1 map=%2", pk, pv );
+	      part = add (part, "fsid", Partitions::fsid_native );
+	      part = add (part, "fstype", "Linux Raid");
+	      part = add (part, "used_fs", DetectFs (pk));
+	      list region = [0];
+	      lsize = lookup (pv, "blocks",0) / 1024;
+	      total_size = total_size + lsize;
+	      region = add (region, lsize);
+	      part = add (part, "region", region);
+	      part = add (part, "nr", tointeger(substring (pk, 7)));
+	      part = add (part, "ori_nr", tointeger(substring (pk, 7)));
+	      part = add( part, "size_byte", pv["blocks"]:0 * 1024);
+	      if( lookup (pv, "chunk", 0 )>0 )
+		  {
+		  part = add( part, "chunk_size",
+			      sformat("%1",lookup (pv, "chunk", 0)));
+		  }
+	      if( size(lookup( pv, "parity_algorithm",""))>0 )
+		  {
+		  part = add( part, "parity_algorithm",
+			      lookup (pv, "parity_algorithm", "") );
+		  }
+	      part = add (part, "persistent_superblock",
+	                        lookup (pv, "persistent_superblock",false));
+	      part = add (part, "raid_type", lookup (pv, "raid_type",""));
+	      part = add( part, "raid_nb", sformat("%1",lookup( pv, "nr", 0 )) );
+
+	      if( !Mode::installation )
+		{
+	        string name = "";
+	        // root filesystem is shown as /dev/root in /proc/mounts, /etc/mtab has right device
+	        foreach (`file, ["/proc/mounts","/etc/mtab"], ``{
+		  if ( name == "" )
+		  {
+		      string cmd = "grep " + pk + " "+ file +" | sed -e \"s:^[^ ]* ::\" -e \"s: .*::\"";
+		      name = lookup (SCR::Execute (.target.bash_output, cmd), "stdout", "");
+		  }
+	        });
+
+	        integer pos = findlastof (name, "\n");
+	        if (pos != nil)
+		   {
+		   name = substring (name, 0, pos);
+		   }
+
+	        part = add (part, "mount", name);
+		}
+	      part = add (part, "type", `sw_raid);
+	      y2debug ("key=%2 part=%1", part, pk);
+	      partitions = add (partitions, part);
+	      });
+	  entry = add (entry, "cyl_count", total_size);
+          entry = add (entry, "partitions", partitions);
+          targetMap = add (targetMap, key, entry);
+	  }
+      foreach (`k, `v, md, ``{
+          integer dcnt = 0;
+	  list devices = lookup( v, "devices", "");
+	  integer spare = size(devices) -
+	                  lookup(v, "used_disks", size(devices));
+	  foreach( `e, devices, ``{
+	      map device = GetDiskPartition (e);
+	      map disk = lookup (targetMap, lookup (device, "disk","" ), $[]);
+	      map partition =
+		  select (filter (`p, lookup (disk, "partitions", []),
+			     ``(((lookup (p, "nr", "") == lookup (device, "nr", 0)) &&
+				 (lookup (p, "delete", false) == false)))), 0, $[]);
+	      dcnt = dcnt + 1;
+	      change( partition, "raid_name", k );
+	      change( partition, "raid_nb", sformat("%1",lookup( v, "nr", 0 )) );
+/*
+	      if( dcnt <= spare )
+		  {
+		  change( partition, "raid_type", "spare" );
+		  }
+	      else
+		  {
+		  change( partition, "raid_type", "raid" );
+		  }
+*/
+	      change( partition, "raid_type", v["raid_type"]:"" );
+	      y2debug ("changed partition=%1", partition);
+	  });
+      });
+      map lvm_vg = SCR::Read (.lvm.vg);
+      foreach (`k, `v, lvm_vg, ``{
+	  string key = ("/dev/" + k);
+	  map entry = $[];
+	  integer `pesize = lookup (v, "pesize", 4096);
+	  list partitions = [];
+	  entry = add (entry, "is_lvm_vg", true);
+	  entry = add (entry, "name", k);
+	  entry = add (entry, "cyl_size", (pesize * 1024));
+	  entry = add (entry, "cyl_count", (lookup (v, "blocks", 0) / pesize));
+	  y2debug ("key=%1 pesize=%2 map=%3", key, pesize, entry);
+	  foreach (`pk, `pv, lookup (v, "lv", $[]), ``{
+	      map part = $[];
+	      part = add (part, "fsid", Partitions::fsid_lvm);
+	      part = add (part, "fstype", "LV");
+	      string name = substring (pk, (findlastof (pk, "/") + 1));
+	      part = add (entry, "used_fs", DetectFs (pk));
+	      list region = [0];
+	      region = add (region, (lookup (pv, "blocks", 1) / pesize));
+	      part = add (part, "region", region);
+	      part = add (part, "nr", name);
+	      part = add (part, "ori_nr", name);
+	      if( !Mode::installation )
+		{
+	        name = "";
+	      
+	        // root filesystem is shown as /dev/root in /proc/mounts, /etc/mtab has right device
+	        foreach (`file, ["/proc/mounts","/etc/mtab"], ``{
+		  if ( name == "" )
+		  {
+		      string cmd = "grep " + pk + " "+ file +" | sed -e \"s:^[^ ]* ::\" -e \"s: .*::\"";
+		      name = lookup (SCR::Execute (.target.bash_output, cmd), "stdout", "");
+		  }
+	        });
+
+	        integer pos = findlastof (name, "\n");
+	        if (pos != nil)
+		   {
+		   name = substring (name, 0, pos);
+		   }
+	        part = add (part, "mount", name);
+		}
+	      part = add (part, "type", `lvm);
+	      y2debug ("key=%2 part=%1", part, pk);
+	      partitions = add (partitions, part);
+	      });
+        entry = add (entry, "partitions", partitions);
+        targetMap = add (targetMap, key, entry);
+      });
+      map lvm_pv = filter (`k, `v, SCR::Read (.lvm.pv), ``((size (lookup (v, "vgname", "")) > 0)));
+      foreach (`k, `v, lvm_pv, ``{
+	  map device = GetDiskPartition (k);
+	  map disk = lookup (targetMap, lookup (device, "disk", ""), $[]);
+	  map partition = select (filter (`p, lookup (disk, "partitions", []),
+                                   ``(((lookup (p, "nr", "") == lookup (device, "nr", 0)) &&
+                                       (lookup (p, "delete", false) == false)))), 0, $[]);
+	  change( partition, "lvm_group", lookup (v, "vgname",""));
+	  change( partition, "lvm_size_bytes", (lookup (v, "blocks",1) * 1024));
+	  y2debug ("changed partition=%1", partition);
+      });
+      if( !Mode::installation )
+	{
+	list crypto = SCR::Read (.etc.cryptotab);
+	if( size(crypto)>0 )
+	  {
+	  foreach (`e, crypto, ``{
+	      if( size( e["file"]:"" )>0 )
+		{
+		map device = GetDiskPartition( e["file"]:"" );
+		targetMap = Storage::SetPartitionData( targetMap, device["disk"]:"",
+		                                       device["nr"]:-1, "crypt_fs",
+						       true );
+		targetMap = Storage::SetPartitionData( targetMap, device["disk"]:"",
+		                                       device["nr"]:-1, "mount",
+						       e["mount"]:"" );
+		string loop = e["loop"]:"";
+		y2milestone( "loop=%1 fs=%2", loop, DetectFs(loop) );
+		if( size(loop)>0 )
+		    {
+		    targetMap = Storage::SetPartitionData( targetMap, device["disk"]:"",
+							   device["nr"]:-1, "loop_dev",
+							   loop );
+		    targetMap = Storage::SetPartitionData( targetMap, device["disk"]:"",
+							   device["nr"]:-1, "used_fs",
+							   DetectFs(loop) );
+		    }
+		}
+	      });
+	  }
+	}
+      return targetMap;
+    };
+
+
+  /*
+   * DetectFs
+   *---------------------------------------------------------------------
+   * Detect the existing fs on the partition. Right now only ext2 and
+   * reiserfs are detected.
+   * arguments: <partition> for ex. "/dev/sda1"
+   * returns:   `ext2 or `reiser or `unknown
+   *---------------------------------------------------------------------
+   */
+  global define symbol DetectFs( string current_dev )
+  ``{
+      symbol  return_value = `unknown;
+      string  testcall     = "";
+      map bash_call        = $[];
+
+      testcall  = sformat( "/bin/guessfstype %1", current_dev );
+      bash_call = SCR::Execute (.target.bash_output, testcall, $[] );
+
+      if (bash_call["exit"]:1 == 0)
+	  {
+	  string type = bash_call["stdout"]:"";
+	  integer pos = findlastof(type, "\n");
+	  if (pos != nil)
+	     {
+	     type = substring (type, 0, pos);
+	     }
+	  pos = findlastof(type, " ");
+	  if (pos != nil)
+	     {
+	     type = substring (type, pos+1);
+	     }
+	  pos = findfirstof(type, " ,");
+	  if (pos != nil)
+	     {
+	     type = substring (type, 0, pos);
+	     }
+	  y2milestone( "type %1", type );
+	  if( type == "ext2" )
+	    {
+	    return_value = `ext2;
+	    }
+	  else if( type == "ext3" )
+	    {
+	    return_value = `ext3;
+	    }
+	  else if( type == "reiserfs" )
+	    {
+	    return_value = `reiser;
+	    }
+	  else if( type == "jfs" )
+	    {
+	    return_value = `jfs;
+	    }
+	  else if( type == "xfs" )
+	    {
+	    return_value = `xfs;
+	    }
+	  else if( type == "vfat" )
+	    {
+	    return_value = `fat32;
+	    }
+          }
+      y2debug( "detect fs ret %1 bash %2", return_value, bash_call );
+
+      y2milestone( "DetectFs %1: %2", current_dev, return_value );
+      return( return_value );
+  };
+
+
+    /*---------------------------------------------------------------------
+     * Initialize Partitiontable:
+     *
+     * - all really existing partition get a ori_nr
+     *   We need this number, when a logical partition is deleted and
+     *   other logical partition change their number
+     *
+     * - delete pseudo partitions with `free from target_partitioner
+     *
+     * - mark swap-partition with pseudo Mountpoint swap
+     *----------------------------------------------------------------------
+     */
+    global define map InitTargets ( map targets )
+    ``{
+            foreach( `disk_dev_name, `disk, targets,
+            ``{
+                // only really existing!
+                list    partitions      = lookup ( disk, "partitions", [] );
+
+		  partitions = filter(  `partition, partitions, ``(  lookup(partition, "type", `free) != `free ) );
+
+                  partitions = maplist( `partition, partitions, ``(
+                  {
+		      map result  = partition;
+
+		      // we can do this, because swapon does no harm, even if is no swap partition
+		      if ( lookup(partition, "fsid",  Partitions::fsid_native) == Partitions::fsid_swap )
+		      {
+			  // if the user has not delete the mountpoint ( set to "")
+			  if( lookup( partition, "mount", " " ) != "" && Mode::installation )
+			      result = add( result, "mount", "swap");
+		      }
+
+		      if ( lookup(partition, "ori_nr", nil) == nil )
+                      {
+                          result =  add( result, "ori_nr", lookup(partition, "nr", 0));
+                      }
+
+		      y2debug( "WW %1", result);
+		      return ( result );
+
+                  }));
+
+                disk = add( disk, "partitions", partitions );
+                targets = add( targets, disk_dev_name, disk );
+             });
+
+            return targets;
+    };
+
+
+    /*
+     * Reread the targetMap
+     * and delete target_modify actions
+     */
+    global define map ReReadTargetMapInSystem( map targetMap, boolean setup_lvm  )
+    ``{
+	y2milestone("start reread");
+	SCR::Write( .lvm.init, "" );
+	SCR::Write( .md.init, "" );
+	Storage::SetLvmUse( setup_lvm );
+	Storage::SetModifyTargets( $[] );
+	targetMap = Storage::GetTargetMap();
+
+	y2milestone( "Mode::initial=%1 Mode::cont:%1", Mode::initial, Mode::cont );
+	                                                    
+	if( ! Mode::initial && ! Mode::cont )
+	{
+	   // read mount points from /etc/fstab
+	   list fstab   = ReadExistingFstab();
+	   y2milestone( "fstab %1", fstab );
+	   targetMap    = select( AddFstabToWhat( targetMap,  fstab , `targetMap ), 0, $[] );
+	}
+
+	y2milestone( "end reread");
+        return( targetMap );
+    };
+
+
+    /**
+     * Reads LVM (vgscan ...) and MD data (/proc) 
+     */
+    global define map ReadLvmMd( map targetMap )
+    ``{
+	SCR::UnmountAgent(.md);
+	targetMap  = GetLvmMdSystemInfo( targetMap );
+	
+	if( Mode::initial == true )
+	{
+	    SCR::Write (.lvm.deactivate, "" );
+	    SCR::Write (.md.deactivate, "" );
+	}
+
+	return( targetMap );
+    };
+	
+
+
+    
+    /*
+     * Reset Info about LVM and Partitioning
+     */
+    /* TODO  Return Typ  map or symbol
+       ErrorPopup
+    */
+    global define ResetLVMandPartitionInfo( boolean local_test_mode )
+    ``{
+	map targets = $[];
+
+	if (!local_test_mode)
+	{
+	    // for LVM Data
+	    targets = ReReadTargetMapInSystem( targets, true);
+	    y2milestone( "LVM data read");
+	}
+	else
+	{
+	    targets = getLvmTestTargetMap();  // from include custom_part_testdata.ycp
+	}
+
+	return( targets );
+    }
+
+  
+    /**
+     * Read and return fstab. ( no installation )
+     * @return list list with fstab
+     */
+    global define list ReadExistingFstab()
+    ``{
+	list fstab = [];
+	if( ! Mode::installation )
+	{
+	    fstab = SCR::Read(.etc.fstab);
+	    if( Mode::test )
+		SCR::Write(.dumpto.tmp.fstabmap_no_install,   fstab );
+	}
+	return fstab;
+    };
+
+
+    /**
+     * Merge readed list fstab with targetMap
+     * @parm targetMap all targets
+     * @parm fstab  readed fstab list
+     * @parm what ->`targetMap return ( [ targetMap ])
+     *            ->`table     return ( [ table_input ])
+     * 		  ->`targetMap_table  return ( [ targetMap, table_input ](
+     * @return list dependent on what
+     *
+     */
+    global define list AddFstabToWhat( map targetMap, list fstab , symbol what )
+    ``{
+	if( fstab == nil )
+	    return [ targetMap] ;
+
+	map new_targetMap   = $[];
+	list    table_input = [];
+
+	foreach ( `dev, `disk, targetMap, ``{
+
+	    list  new_partitions   = [];
+	    map   target           = disk;
+	    foreach ( `partition, lookup ( disk, "partitions", []), ``{
+
+		map new_partition = partition;
+
+		/////////////////////////////////////////////////////////////////////////////////////////
+		// if the partition is not to delete
+		if( lookup( partition, "delete" ,false) == false)
+		{
+
+		    foreach( `fstab_entry, fstab, ``{
+			string dev_fstab   = lookup(fstab_entry, "spec", "");
+			string mount_fstab = lookup(fstab_entry, "file", "");
+
+			/////////////////////////////////////////////////////////////////////////////////////////
+			//  find equal device
+			if( dev_fstab == GetDeviceName(dev,  lookup ( partition, "nr",   0 )))
+			{
+			    new_partition = add(new_partition, "mount", mount_fstab );
+
+			    /////////////////////////////////////////////////////////////////////////////////////////
+			    // entries for table
+			    term a = `item(`id(dev_fstab));
+			    a = add(a, dev_fstab   );
+			    a = add(a, mount_fstab );
+			    table_input = add( table_input, a );
+			}
+		    });
+		    new_partitions = add( new_partitions, new_partition);
+		}
+	    });
+	    target = add(target, "partitions", new_partitions);
+	    new_targetMap = add(new_targetMap, dev, target );
+	});
+
+	if ( new_targetMap == nil ) new_targetMap = targetMap;
+	if ( table_input   == nil ) table_input   = [];
+
+	if( what == `targetMap )
+	    return [ new_targetMap ];
+	if( what == `table )
+	    return [ table_input ];
+	if( what == `targetMap_table )
+	    return [ new_targetMap, table_input ];
+	return [];
+    };
+
+
+    
+   /**
+     * Search in the list partitions for windows partitions and add the key "mount" to
+     * the founded windows partitions.
+     * @parm partitions the partitions list
+     * @return list new partitions with windows mountpoints
+     */
+    global define list AddMountPointsForWinParts( list partitions, boolean primary ) ``{
+
+       if( !Arch::i386)
+	   return partitions;
+
+       string foreign_ids = "CDEFGHIJKLMNOPQRSTUVW";
+
+       list new_partitions = [];
+
+       foreach(`partition, partitions, ``{
+
+	   map new_partition = partition;
+	   integer fsid      = lookup( partition, "fsid", Partitions::fsid_native );
+	   integer partnum = 0;
+	   if( haskey( partition, "nr") && is( partition["nr"]:0, integer ) )
+	       {
+	       partnum = partition["nr"]:0;
+	       }
+	   //symbol  used_fs   = lookup( partition, "used_fs", `ext2 );
+
+	   if( ! haskey( partition, "mount") && lookup( partition , "delete" , false) == false && 
+	       ((partnum<5)==primary) )
+	   {
+		  
+	       if( contains( Partitions::fsid_wintypes , fsid ) || 
+	           contains( Partitions::fsid_ntfstypes, fsid))
+	       {
+		   new_partition = add( new_partition , "mount",  "/windows/" + substring (foreign_ids, foreign_nr, 1));
+		   foreign_nr    = foreign_nr + 1;
+	       }
+	       if( contains( Partitions::fsid_dostypes, fsid ))
+	       {
+		   new_partition = add( new_partition , "mount",  "/dos/" + substring (foreign_ids, foreign_nr, 1));
+		   foreign_nr    = foreign_nr + 1;
+	       }
+	   }
+
+	   new_partitions = add ( new_partitions , new_partition );
+       });
+
+       return new_partitions;
+
+    };
+
+global define map AddMountPointsForWin( map targets )``{
+
+    y2milestone( "AddMountPointsForWin called" );
+    integer foreign_nr = 0;
+    foreach( `disk, `data, targets,
+	``{
+	data["partitions"] = AddMountPointsForWinParts( data["partitions"]:[], true );
+	});
+    foreach( `disk, `data, targets,
+	``{
+	data["partitions"] = AddMountPointsForWinParts( data["partitions"]:[], false );
+	});
+    return( targets );
+    }
+}
+

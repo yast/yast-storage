@@ -1,0 +1,3304 @@
+/*
+ *************************************************************
+ *
+ *     YaST2      SuSE Labs                        -o)
+ *     --------------------                        /\\
+ *                                                _\_v
+ *           www.suse.de / www.suse.com
+ * ----------------------------------------------------------
+ *
+ * Author:        Michael Hager <mike@suse.de>
+ *
+ * Description:   Partitioner for experts.
+ *
+ *
+ * Purpose:
+ *                      -Determing possible partitions.
+ *                      -Ask the user which partition to use.
+ *                      -Check the input and return error-messages.
+ *                      -Writing user_settings with the selected partitions.
+ *
+ * user_settings:       used:   targets
+ *
+ * external function:   get_partition_info: get a list of current partitions
+ *                      check4partitions:   read the disk-information
+ *
+ *
+ *************************************************************
+
+ $Id$
+
+HINTS: Always use
+         lookup( part, "delete", false)
+         lookup( part, "create", false)
+       instead of
+         lookup( part, "delete")
+         lookup( part, "create")
+       cause delete, create are not always set to  false
+
+*/
+{
+  textdomain "partitioning";
+
+  import "Arch";
+  import "Boot";
+  import "Installation";
+  import "Mode";
+  import "Wizard";
+  import "Storage";
+  import "FileSystems";
+  import "Partitions";
+  
+
+  // include "partitioning/custom_part_testdata.ycp";
+  include "ui/common_popups.ycp";
+  include "partitioning/propose_part_util.ycp";
+
+  
+  // Which columns show the main window have
+  boolean showT_dev 		  = true;      // show /dev/hda1
+  boolean showT_id 		  = false;     // s390 show FD01
+  boolean showT_cyl 		  = true;      // show start and endcyl
+  boolean showT_size 		  = true;      // show size of partition
+  boolean showT_format 		  = true;      // show format flag
+  boolean showT_fs 		  = true;      // show filesystem
+  boolean showT_mount 		  = true;      // show mountpoint
+  boolean showT_RAID		  = true;      // show assigned RAID device
+  boolean showT_LVM	          = true;      // show assigned LVM device
+  
+  boolean show_disk               = true;
+  boolean edit_formatflag         = true;
+  boolean edit_cylinder           = true;
+  boolean bsd_label               = false;
+
+
+  boolean button_resize 	  = true;    // Should the "Resize Partition"-Button be shown in main window
+  boolean button_create 	  = true;    // Should the "Create Partition"-Button be shown in main window
+  boolean button_delete 	  = true;    // Should the "Delete Partition"-Button be shown in main window
+  boolean button_edit             = true;    // Should the "Edit   Partition"-Button be shown in main window
+  boolean button_reread           = true;    // Should the "Reread Partition"-Button be shown in Expert menu
+  boolean button_raid 	          = true;    // Should the "RAID"  -Button be shown in main window
+  boolean button_lvm              = true;    // Should the "LVM"   -Button be shown in main window
+  boolean button_expert           = true;    // Should the "EXPERT"-Button be shown in main window
+  boolean button_delete_parttable = true;    // Should the "Delete partition table and disk label"
+                                             // -Button be shown in Expert menu 
+  boolean button_adapt_mp	  = false;   // Should the "Adapt mount points from 
+                                             // existing /etc/fstab" -Button be shown in Expert menu
+  
+  list not_shown_partitions = [ 
+			"Apple_partition_map",
+			"Apple_Patches",
+			"Apple_Driver",
+			"Apple_Loader",
+			"Apple_Boot",
+			"Apple_Bootstrap",
+			"Apple_FWDriver",
+			"Apple_ProDOS" ];
+
+
+   boolean test_mode          = Mode::test;
+   string  boot_mode	      =	Boot::LoaderType;
+   boolean immediate_prepdisk = Installation::immediate_prepdisk;
+   string  focusline          = "";
+   boolean focusset           = false;
+
+
+   
+
+   ////////////////////////////////////////////////
+   // Testmode, should be commented in release
+   // test_mode   = true;
+   // test_mode   = false;
+   // Arch::architecture = "ppc";
+   // Arch::architecture = "axp";
+   ////////////////////////////////////////////////
+
+   if ( Arch::ppc )
+   {
+       showT_cyl	 = false;
+       bsd_label         = false;
+   }
+
+   if ( Arch::s390 )
+   {
+       showT_cyl	 = false;
+       showT_format	 = false;
+       showT_id 	 = true;
+       show_disk         = false;
+       edit_formatflag   = false;
+       edit_cylinder     = false;
+       button_create     = false;
+       button_delete	 = false;
+       button_resize	 = false;
+    }
+
+   if ( Arch::alpha )
+   {
+	if (boot_mode == "aboot")
+	{
+	    bsd_label         = true;
+	}
+	else
+	{
+	    bsd_label         = false;
+	}
+   }
+
+   if ( Arch::sparc )
+   {
+       bsd_label         = true;
+   }
+
+   if( Mode::installation )
+   {
+       button_adapt_mp	       = true; 
+   }
+
+  
+   y2debug( "ARCHIT %1", Arch::architecture );
+
+
+   Storage::SetWizardKey("");
+   ////////////////////////////////////////////////////////////////////////
+   //                          DEFINES                                   //
+   ////////////////////////////////////////////////////////////////////////
+
+
+
+    /*---------------------------------------------------------------------
+     * Check if the numer is in the format <number>
+     *
+     * Returns true or false
+     *----------------------------------------------------------------------
+     */
+
+    UI(``{
+     global define IsNumber( string input )
+     ``{
+           integer n = 0;
+           while (n < size(input))
+           {
+              string erg = filterchars(substring(input, n,1), "0123456789.");
+
+              if (size(erg) != 1)
+              {
+               return(false);
+              }
+              n = n + 1;
+           }
+
+           return(true);
+        };
+    });   
+	
+    /*---------------------------------------------------------------------
+     * Check if the number is in the format [+]<number>[kKmMgGtT][bBoO]
+     *
+     * Returns true or false
+     *----------------------------------------------------------------------
+     */
+     UI(``{
+     global define IsCylNumber( string input )
+     ``{
+           if (substring( input, 0, 1) == "+")
+           {
+               input = substring( input, 1);
+           }
+
+           if ( !IsNumber(input))
+           {
+               // check whether the last char is in "gGtTkKmM" or "bBoO"
+               string last_char = substring( input, size(input)-1, 1);
+
+	       if ( last_char == "b" || last_char == "B"  ||
+	            last_char == "o" || last_char == "O" )
+               {
+                   input = substring( input, 0, size(input)-1);
+		   // check whether the last char is in "gGtTkKmM"
+		   last_char = substring( input, size(input)-1, 1);
+               }
+
+               string erg = filterchars(last_char, "kKmMgGtT");
+
+               if (size(erg) != 1)
+               {
+                   // the last isn't in "kKmMgGtT"
+                   return( false );
+               }
+               else
+               {
+                   // the last is in "kKmMgGtT" check whether the rest is a number
+                   return( IsNumber( substring(input, 0, size(input)-1)));
+               }
+           }
+           else
+           {
+               return( true );
+           }
+     };
+     });
+
+
+     /*---------------------------------------------------------------------
+     * Parse the end_partition String
+     * Input:
+     *  - start_cylinder,
+     *  - end of partition in
+     *    valid is [+]<number>[kKmMgGtT][bBoO]
+     *    insert a valid string! consistency must be already checked
+     * - size of a cylinder in byte
+     *
+     * Returns (endcylinder -startcylinder +1) as integer
+     *----------------------------------------------------------------------
+     */
+
+     UI(``{
+     global define ToEndRegion(string start_cyl, string end_part, integer cyl_size )
+           ``{
+           boolean is_add = false;
+           string input   = end_part;
+
+           if (substring( input, 0, 1) == "+")
+           {
+               input = substring( input, 1);
+               is_add = true;
+           }
+
+
+           if ( !IsNumber(input))
+           {
+               is_add = true;  //  44k is the same as +44k
+
+               // take last char
+               string last_char = substring( input, size(input)-1, 1);
+
+	       // accept also +4kb or 7GB
+	       if ( last_char == "b" || last_char == "B" || 
+	            last_char == "o" || last_char == "O" )
+               {
+                   input     = substring( input, 0, size(input)-1);
+                   last_char = substring( input, size(input)-1, 1);
+               }
+
+               //integer base     = tointeger(substring( input, 0, size(input)-1 ));
+               float base     = tofloat(substring( input, 0, size(input)-1 ));
+
+               if ( last_char == "k" || last_char == "K" )
+               {
+                   return( tointeger((base*1024.0)/tofloat(cyl_size) +1.0 ));
+               }
+               if ( last_char == "m" || last_char == "M" )
+               {
+                   return( tointeger((base*1048576.0)/tofloat(cyl_size) +1.0 ));
+               }
+               if ( last_char == "g" || last_char == "G" )
+               {
+		    return( tointeger((base*1073741824.0)/tofloat(cyl_size) +1.0 ));
+               }
+               if ( last_char == "t" || last_char == "T" )
+               {
+		   return( tointeger((base*1099511627776.0)/tofloat(cyl_size) +1.0 ));
+               }
+
+               y2error("Error in parsing end_cylinder" );
+               return( base );
+           }
+           else
+           {
+               if (is_add)
+               {
+                   return( tointeger(tofloat(input)) );
+               }
+               else
+               {
+                   return( tointeger(tofloat(input))-tointeger(start_cyl)+1 );
+               }
+           }
+     };
+     });
+
+
+    /*---------------------------------------------------------------------
+     * tests which Partition types on a disk can be created
+     * for Intel-I386!
+     *
+     * Input: map disk    // (the map out of the targets map)
+     *        string dev  // /dev/hda
+     *
+     *  Return value: [ <primary_poss>, <extended_poss>, <logical_poss> ]
+     *  boolean primary_poss;   // Is a primary partition possible
+     *  boolean extended_poss;  // Is a extended partition possible
+     *  boolean logical_poss;   // Is a logical partition possible
+     *----------------------------------------------------------------------
+     * DESCRIPTION
+     *
+     * primary_part_is_possible  = false; // can I create a primary part ?
+     * extended_part_is_possible = false; // can I create a extended part ?
+     * logial_part_is_possible  = false; // ...
+     *
+     *
+     *   if (one of the partitions <disk>1 <disk>2 <disk>3 <disk>4
+     *       is not used )
+     *   {
+     *      primary_part_is_possible = true;
+     *   }
+     *
+     *   if  primary_part_is_possible && (no extended partition exists)
+     *   {
+     *     extended_part_is_possible = true;
+     *   }
+     *
+     *   if (extended partition already exists) && (extended partition has
+     *                                       space left)
+     *      && (not more than 15 logical parts already exist)
+     *   {
+     *     logial_part_is_possible = true;
+     *   }
+     *
+     *
+     *   At the same time is not possible, that both "logial_part_is_possible"
+     *   and "extended_part_is_possible" are true
+     *   so we have 6 possible situations
+     *
+     *   to show this we use
+     *   "P" for primary_part_is_possible
+     *   "E" for extended_part_is_possible
+     *   "L" for logial_part_is_possible
+     *
+     *   "p" for primary_part_is_possible  == false
+     *   "e" for extended_part_is_possible == false
+     *   "l" for logial_part_is_possible  == false
+     *
+     *
+     *   PE  : I can create a primary or exended part.
+     *   PL  : Extended part. exist. I can create a primary or a logical
+     *   Pel : only a priary is possible, when the extended part. has no space left
+     *
+     *   pE  : Not possible, if "E" is possible always "P" is possible too.
+     *   pL  : only a logical is possible, if together 4 primary and extended
+     *  partitions are already created
+     *   pel : no partitions are possible
+     *
+     *----------------------------------------------------------------------
+     */
+
+    define CheckCreatePossibilities( string dev, map disk )
+    ``{
+          string type = substring(dev, 5, 2);
+
+          boolean extended_exists      = false;
+
+	  symbol no_logical_cause     = `no_ext;
+	  symbol no_primary_cause     = `dev_full;
+	  symbol no_extended_cause    = `dev_full;
+
+          boolean     primary_is_possible  = false;
+          boolean     extended_is_possible = false;
+          boolean     logical_is_possible  = false;
+
+          list primary_list  = filter( `part, lookup( disk, "partitions", []),
+                                        ``( (lookup( part, "type", `unknown) == `primary)  && (!lookup( part, "delete", false) )));
+          list extended_list = filter( `part, lookup( disk, "partitions", []),
+                                        ``( (lookup( part, "type", `unknown) == `extended) && (!lookup( part, "delete", false) )));
+          list logical_list  = filter( `part, lookup( disk, "partitions", []),
+                                          ``( (lookup( part, "type",`unknown) == `logical)  && (!lookup( part, "delete", false) )));
+
+	  if ( !bsd_label )
+	  {
+	      if (  (size(extended_list) + size(primary_list)) <= 3 )
+	      {
+		  primary_is_possible = true;
+	      }
+
+	      if ( primary_is_possible && (size(extended_list) == 0) )
+	      {
+		  extended_is_possible = true;
+	      }
+
+	      if ( size(extended_list) > 0 )            // "== 1" should also work, but ">" for safety
+	      {
+		  no_extended_cause = `already;
+		  extended_exists = true;
+	      }
+	  }
+	  else
+	  {
+	      list primary_list  = filter( `part, lookup( disk, "partitions", []),
+					   ``( (lookup( part, "type",`unknown) == `primary)
+					       && (!lookup( part, "delete", false))
+					       && (lookup( part, "nr", 0) != 3)	 ));
+
+	      y2debug("primary list: %1", primary_list );
+
+	      if (  size(primary_list) <= 6 )
+	      {
+		  primary_is_possible  = true;
+                  extended_is_possible = false;
+                  logical_is_possible  = false;
+	      }
+	      else
+	      {
+		  primary_is_possible  = false;
+                  extended_is_possible = false;
+                  logical_is_possible  = false;
+	      }
+
+	  }
+
+          if ( extended_exists )
+          {
+   	      no_logical_cause = `no_extsp;
+
+              // test if extended partition has space left == a slot exists
+              boolean slot_exist = false;
+
+              // Start-End of the extended partition
+
+              integer start_ext_cyl = select( lookup( select( extended_list, 0, 0 ), "region", [0,0] ), 0,0);
+              integer end_ext_cyl   = select( lookup( select( extended_list, 0, 0 ), "region", [0,0] ), 1,1) + start_ext_cyl -1;
+
+
+              // logical_cyl_list = [ <start_cyl.firstLogPart> , <end_cyl.firstLogPart> , <start.nextLogPart> ,....., <end.lastLogPart>]
+              //
+              // example:  input: hda5:region [255,100] hda6:region[355,100] hda7[455,100]
+              //           is al list generatated: logical_cyl_list = [255,354,355,454,455,555]
+              //
+              list logical_cyl_list = sort(flatten(maplist( `part, logical_list, ``([select(lookup(part, "region", [0,0]), 0,0),
+                                                   select(lookup(part, "region", [0,0]), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+
+              // Look for a slot in the list of cylinders
+              integer  n          = 0;
+
+              if (size(logical_cyl_list) == 0 )
+              {
+                  // no logical partitions exist
+                  slot_exist = true;
+              }
+              else
+              {
+                  repeat
+                      {
+                          if ( n == 0 )
+                          {
+                              // first
+                              if ( select( logical_cyl_list, 0,0 ) != start_ext_cyl ) slot_exist = true;
+                          }
+                          else if ( n == (size(logical_cyl_list)/2))
+                          {
+                              // last
+                              if ( select( logical_cyl_list, size(logical_cyl_list)-1,0 ) != end_ext_cyl ) slot_exist = true;
+                          }
+                          else
+                          {
+                              //check if between logical partition n-1 and n is a slot
+                              if ( (select( logical_cyl_list, 2*n-1, 0 )+1) !=  (select( logical_cyl_list, 2*n, 0 )  )) slot_exist = true;
+                          }
+
+                          n = n+1;
+                      } until ( n == ( (size(logical_cyl_list)/2 +1)) || slot_exist );
+              }
+
+              if (slot_exist)
+              {
+	 	  no_logical_cause     = `to_many;
+
+		  y2debug( "Logical: %1 %2", type, logical_cyl_list);
+
+                  if  ( type == "hd" )                                        // EIDE supports 63 partitions
+                  {
+                      if (size(logical_cyl_list)/2 < 59 ) logical_is_possible = true;
+                  }
+                  if  ( type == "sd" )                                        // SCSI supports 15 partitions
+                  {
+                      if (size(logical_cyl_list)/2 < 11 ) logical_is_possible = true;
+                  }
+                  else
+                  {
+                      logical_is_possible = true;
+                  }
+              }
+          }
+
+          return( [primary_is_possible, extended_is_possible, logical_is_possible, no_primary_cause, no_extended_cause, no_logical_cause ]);
+    };
+
+
+    /*---------------------------------------------------------------------
+     * Find bigest slot
+     * return [start, end] or nil
+     *---------------------------------------------------------------------
+     */
+
+    define GetSlot( string dev, map disk )
+    ``{
+            string type = substring(dev, 5, 2);
+            list global_list  = filter( `part, lookup( disk, "partitions", []), ``( (lookup(part, "type", `unknown) != `logical) && !lookup( part, "delete", false) ));
+
+	    if ( bsd_label )
+	    {
+		 global_list  = filter( `part, global_list, ``( lookup(part, "nr", 0) != 3 ) );
+	    }
+
+
+            list global_cyl_list = sort(flatten(maplist( `part, global_list, ``([select(lookup(part, "region", []), 0,0),
+                                            select(lookup(part, "region", []), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+
+            // Look for a slot in the list of cylinders
+            integer  n          = 0;
+            integer start_cyl   = 0;
+            integer end_cyl     = lookup( disk, "cyl_count", 1 )-1;
+
+            integer sl_start   = 0;
+            integer sl_end     = 0;
+            integer curr_start = 0;
+            integer curr_end   = 0;
+
+            boolean slot_exist = false;
+
+
+          if (size(global_cyl_list) == 0 )
+          {
+              // no partition exist
+              return( [start_cyl, end_cyl]);
+          }
+          else
+          {
+              repeat
+                  {
+                      if ( n == 0 )
+                      {
+                          // first
+                          curr_start  =  start_cyl-1;
+                          curr_end    =  select( global_cyl_list, 0, 0 );
+                      }
+                      else if ( n == (size(global_cyl_list)/2))
+                      {
+                          // last
+                          curr_start = select( global_cyl_list, size(global_cyl_list)-1, 0);
+                          curr_end   = end_cyl+1;
+                      }
+                      else
+                      {
+                          //check if between global partition n-1 and n is a slot
+                          curr_start = select( global_cyl_list, 2*n-1, 0 );
+                          curr_end   = select( global_cyl_list, 2*n, 0 );
+                      }
+
+                      if ( curr_start+1 != curr_end )
+                      {
+                          slot_exist = true;
+
+                          y2debug( "A Slot at: %1 %2",  curr_start, curr_end );
+
+                          if (  (curr_end - curr_start -2) >= (sl_end - sl_start) )
+                          {
+                              sl_start = curr_start+1;
+                              sl_end   = curr_end-1;
+                          }
+                      }
+                      y2debug("SLOT- %1 %2 %3", slot_exist, curr_start, curr_end, n );
+
+                      n = n+1;
+                  } until ( n == ( (size(global_cyl_list)/2 +1)));
+          }
+
+          if (slot_exist)
+          {
+              return( [sl_start, sl_end] );
+          }
+          else
+          {
+              return(nil);
+          }
+    };
+
+    /*---------------------------------------------------------------------
+     * test primary and extended slot
+     * return [start, end] or nil
+     * Input: start_cyl of the tested slot, /dev/hda1,  diskmap
+     * return [max-end_cyl] or "nil" if its no valid start_cyl
+     * todo: GetSlo TestSlot should be one function
+     *---------------------------------------------------------------------
+     */
+
+    UI(``{
+    global define TestSlot( integer slot_start_cyl, string dev, map disk, boolean bsd_label )
+    ``{
+            string type = substring(dev, 5, 2);
+            list global_list  = filter( `part, lookup( disk, "partitions", []), ``( (lookup(part, "type", `unknown) != `logical) && !lookup( part, "delete", false) ));
+
+	    if ( bsd_label )
+	    {
+		 global_list  = filter( `part, global_list, ``( lookup(part, "nr", 0) != 3 ) );
+	    }
+
+            list global_cyl_list = sort(flatten(maplist( `part, global_list, ``([select(lookup(part, "region", []), 0,0),
+                                            select(lookup(part, "region", []), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+
+            // Look for a slot in the list of cylinders
+            integer  n          = 0;
+            integer start_cyl   = 0;
+            integer end_cyl     = lookup( disk, "cyl_count", 1 )-1;
+
+            integer sl_start   = 0;
+            integer sl_end     = 0;
+            integer curr_start = 0;
+            integer curr_end   = 0;
+
+            boolean slot_exist = false;
+
+
+          if (size(global_cyl_list) == 0 )
+          {
+              y2debug( "Testing Slot : disk empty");
+              if ( start_cyl <= slot_start_cyl  && slot_start_cyl <= end_cyl )   return( end_cyl );
+          }
+          else
+          {
+              repeat
+                  {
+                      if ( n == 0 )
+                      {
+                          // first
+                          curr_start  =  start_cyl-1;
+                          curr_end    =  select( global_cyl_list, 0, 0 );
+                      }
+                      else if ( n == (size(global_cyl_list)/2))
+                      {
+                          // last
+                          curr_start = select( global_cyl_list, size(global_cyl_list)-1,0);
+                          curr_end   = end_cyl+1;
+                      }
+                      else
+                      {
+                          //check if between global partition n-1 and n is a slot
+                          curr_start = select( global_cyl_list, 2*n-1, 0 );
+                          curr_end   = select( global_cyl_list, 2*n, 0 );
+                      }
+
+                      y2debug( "Testing Slot %1 < x < %2", curr_start, curr_end );
+                      if ( curr_start < slot_start_cyl && slot_start_cyl < curr_end )
+                      {
+
+                          // If the slot was found ...
+                          y2debug( "X Slot at: %1 %2 ",  curr_start, curr_end );
+                          //////////////////
+                          return( curr_end-1 );
+                          //////////////////
+                      }
+                      y2debug("SLOT- %1 %2 %3 %4", slot_exist, curr_start, curr_end, n );
+
+                      n = n+1;
+                  } until ( n == ( (size(global_cyl_list)/2 +1)));
+          }
+
+          return(nil);
+    };
+    });
+
+
+
+    /*---------------------------------------------------------------------
+     * Find bigest slot for logical
+     * return [start, end] or nil
+    /*---------------------------------------------------------------------
+     */
+
+    define GetLogicalSlot( string dev, map disk )
+    ``{
+
+            string type = substring(dev, 5, 2);
+
+            list     global_list   = filter( `part, lookup( disk, "partitions", []), ``( (lookup(part, "type", `unknown) == `logical) && !lookup( part, "delete", false) ));
+            map	     extended      = find( `part, lookup( disk, "partitions", []), ``( (lookup(part, "type", `unknown) == `extended)  && !lookup( part, "delete", false) ));
+
+	    //////////////////////////////////
+	    if (extended == nil)
+	    {
+		return(nil);
+	    }
+	    //////////////////////////////////
+
+            list global_cyl_list = sort(flatten(maplist( `part, global_list, ``([select(lookup(part, "region", []), 0, 0),
+                                            select(lookup(part, "region", []), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+
+            // Look for a slot in the list of cylinders
+            integer  n          = 0;
+            integer start_cyl   = tointeger( select(lookup( extended, "region", []),0,0) );
+            integer end_cyl     = start_cyl + tointeger(select(lookup( extended, "region", []),1,1)) -1;
+
+            integer sl_start   = 0;
+            integer sl_end     = 0;
+            integer curr_start = 0;
+            integer curr_end   = 0;
+
+            boolean slot_exist = false;
+
+
+          if (size(global_cyl_list) == 0 )
+          {
+              // no partition exist
+              return( [start_cyl, end_cyl]);
+          }
+          else
+          {
+              repeat
+                  {
+                      if ( n == 0 )
+                      {
+                          // first
+                          curr_start  =  start_cyl-1;
+                          curr_end    =  select( global_cyl_list, 0, 0 );
+                      }
+                      else if ( n == (size(global_cyl_list)/2))
+                      {
+                          // last
+                          curr_start = select( global_cyl_list, size(global_cyl_list)-1, 0);
+                          curr_end   = end_cyl+1;
+                      }
+                      else
+                      {
+                          //check if between global partition n-1 and n is a slot
+                          curr_start = select( global_cyl_list, 2*n-1, 0 );
+                          curr_end   = select( global_cyl_list, 2*n, 0 );
+                      }
+
+                      if ( curr_start+1 != curr_end )
+                      {
+                          slot_exist = true;
+
+                          y2debug( "A Slot at: %1 %2  ",  curr_start, curr_end );
+
+                          if (  (curr_end - curr_start -2) >= (sl_end - sl_start) )
+                          {
+                              sl_start = curr_start+1;
+                              sl_end   = curr_end-1;
+                          }
+                      }
+                      y2debug("SLOT- %1 %2 %3 %4  ", slot_exist, curr_start, curr_end, n );
+
+                      n = n+1;
+                  } until ( n == ( (size(global_cyl_list)/2 +1)));
+          }
+
+          if (slot_exist)
+          {
+              return( [sl_start, sl_end] );
+          }
+          else
+          {
+              return(nil);
+          }
+    };
+
+
+    /*---------------------------------------------------------------------
+     * Check slot for logical partition
+     * Input: start_cyl of the tested slot, /dev/hda5,  diskmap, in edit_mode or create_mode
+     *
+     * return [max-end_cyl] or nil if its no valisd start_cyl
+     *
+     * todo: GetLogicalSlot TestLogicalSlot should be one function
+     *---------------------------------------------------------------------
+     */
+
+    UI(``{
+    global define TestLogicalSlot( integer slot_start_cyl, string dev, map disk)
+    ``{
+            string type = substring(dev, 5, 2);
+
+            list global_list  = filter( `part, lookup( disk, "partitions", []), ``( (lookup(part, "type", `unknown) == `logical) && !lookup( part, "delete", false) ));
+            map extended      = find( `part, lookup( disk, "partitions", []), ``( (lookup(part, "type", `unknown) == `extended)  && !lookup( part, "delete", false) ));
+
+            list global_cyl_list = sort(flatten(maplist( `part, global_list, ``([select(lookup(part, "region", []), 0,0),
+                                            select(lookup(part, "region", []), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+
+            // Look for the slot in the list of cylinders
+            integer  n          = 0;
+            integer start_cyl   = tointeger( select(lookup( extended, "region", []),0,0) );
+            integer end_cyl     = start_cyl + tointeger(select(lookup( extended, "region", []), 1,1)) -1 ;
+
+            integer sl_start   = 0;
+            integer sl_end     = 0;
+            integer curr_start = 0;
+            integer curr_end   = 0;
+
+            boolean slot_exist = false;
+
+
+          if (size(global_cyl_list) == 0 )
+          {
+              if ( start_cyl <= slot_start_cyl  && slot_start_cyl <= end_cyl )   return( end_cyl );
+          }
+          else
+          {
+              repeat
+                  {
+                      if ( n == 0 )
+                      {
+                          // first
+                          curr_start  =  start_cyl-1;
+                          curr_end    =  select( global_cyl_list, 0, 0 );
+                      }
+                      else if ( n == (size(global_cyl_list)/2))
+                      {
+                          // last
+                          curr_start = select( global_cyl_list, size(global_cyl_list)-1, 0);
+                          curr_end   = end_cyl+1;
+                      }
+                      else
+                      {
+                          //check if between global partition n-1 and n is a slot
+                          curr_start = select( global_cyl_list, 2*n-1, 0 );
+                          curr_end   = select( global_cyl_list, 2*n, 0 );
+                      }
+
+                      y2debug( "Testing Slot %1  < x < %2  ", curr_start, curr_end );
+
+                      if ( curr_start < slot_start_cyl && slot_start_cyl < curr_end )
+                      {
+
+                          // If the slot was found ...
+                          y2debug( "X Slot at:  %1 %2 ",  curr_start, curr_end );
+                          //////////////////
+                          return( curr_end -1);
+                          //////////////////
+                      }
+                      y2debug("SLOT- %1 %2 %3 %4", slot_exist, curr_start, curr_end, n );
+
+                      n = n+1;
+                  } until ( n == ( (size(global_cyl_list)/2 +1)));
+          }
+
+          return(nil);
+    };
+    });
+
+
+    /*---------------------------------------------------------------------
+     * returns for nonnegative numbers a string with a minimum of 4 characters:
+     * 1      -> "   1"
+     * 22     -> "  22"
+     * 145    -> " 145"
+     * 2134   -> "2134"
+     * 34111 -> "34111"
+     *----------------------------------------------------------------------
+     */
+    define to4string( integer nb )
+    ``{
+	if ( nb < 10 )   return( sformat( "   %1", nb ));
+	if ( nb < 100 )  return( sformat( "  %1",  nb ));
+	if ( nb < 1000 ) return( sformat( " %1",   nb ));
+	return( sformat( "%1", nb ));
+    };
+
+
+    /**
+     * Build the id for a partition entry in the man table.
+     * @parm disk_dev_name name of the devie e.g.: /dev/hda
+     * @parm nr number of the partition e.g.: 1
+     * @return string e.g.: 01./dev/hda
+     */
+    /*
+    define build_id(  string disk_dev_name , any nr )``{
+
+	//sformat( "%2/%1", dev, lookup(part, "nr", ""));
+	string id =  sformat( "%2/%1", disk_dev_name, nr);
+	
+	return id;
+    };
+    */
+
+    /*---------------------------------------------------------------------
+     * Fill the selection box with ID 'selbox_id' inside widget tree
+     * 'widget' with disk and partition info from 'all_disks'.
+     *
+     *  Return value:
+     * term contents = `VBox(`Label("Partitions"),
+     *                        `Table(`header("Device", "Start", "End", "Size", "F", "Type", "Mount", "RAID" , "LVM" ),
+     *                               [
+     *                                `item(`id("/dev/hda"),    "/dev/hda",      "8.5 GB",   " ", "Seagate ST 48012", " ",	  "1",  "1115"	,"",	""),
+     *                                `item(`id("1//dev/hda"), "  /dev/hda1",   "509.8 MB", " ", "FAT16",            " ",	  "1",  "65"	,"",	""),
+     *                                `item(`id("2//dev/hda"), "  /dev/hda2",   "666.7 MB", " ", "NTFS",             " ",	  "66", "150"	,"",	""),
+     *                                `item(`id("3//dev/hda"), "  /dev/hda3",   "5.5 GB",   " ", "Extended",         " ",	  "301","1024"	,"",	""),
+     *                                `item(`id("4//dev/hda"), "  /dev/hda5",   "7.8 MB",   "F", "Linux ",           "/boot",	  "301","302"	,"",	""),
+     * 				      `item(`id("5//dev/hda"), "  /dev/hda6",   "7.8 MB",   "", "Linux LVM ",         "",         "303","304"	,"",	"system"),
+     *				      `item(`id("6//dev/hda"), "  /dev/hda7",   "7.8 MB",   "", "Linux RAID ",        "",         "305","307"	,"/dev/md1",	""),
+     *                               ] )) ;
+     *
+     *  PPC: without Start End
+     *
+     *----------------------------------------------------------------------
+     */
+
+    define FillPartitionList ()
+    ``{
+	     // fill in size_bytes for raid
+	     Storage::AddRaidSizeInfo();
+	     map  targets 	= Storage::GetTargetMap();
+             list table_input 	= [];
+             //boolean log_mode = true;          // more logging info in main dialog!!
+             boolean log_mode 	= false;
+
+	     
+            foreach ( `disk_dev_name, `disk, targets,
+                      ``{
+		            if (!focusset)
+			    {
+				focusline = disk_dev_name;
+			        focusset  = true;
+			    }
+
+                            integer cyl_count     = lookup ( disk, "cyl_count", 0  );
+                            integer cyl_size      = lookup ( disk, "cyl_size",  1000000    );
+                            string  vendor        = lookup ( disk, "vendor",    "" );
+                            string  model         = lookup ( disk, "model",     "" );
+			    string  dev_size      = ByteToHumanString(cyl_count * cyl_size);
+			    string  dev_start_cyl =  to4string(0);
+			    string  dev_nb_cyl    =  to4string(cyl_count-1);
+			    
+			    if ( (model != "") && (vendor != "") )  vendor = vendor + "-" + model;
+			    else 				    vendor = vendor +       model;
+
+			    // entry in column "Type" for a unknown disk
+			    if ( vendor == "" ) {
+				if (lookup (disk, "bus", "") == "RAID")
+				    vendor = "RAID "+disk_dev_name;
+				else if ( lookup( disk, "is_lvm_vg", false))
+				    vendor = "LVM " + substring( disk_dev_name, 5 );
+				else
+				    vendor = sformat( UI(_("DISK %1")) , substring( disk_dev_name, 5 ));
+			    }
+
+			    boolean id_sw_raid_dev = (disk_dev_name == "/dev/md");
+
+			    /////////////////////////////////////////////////////////////
+                            // Insert line for the entire disk into selection box widget
+			    // Look, if for the architecture disk, and Cylinder are shown
+			    
+
+			    /////////////////////////////////////////////////////////////
+			    // if LVM device get new size
+			    if ( lookup(disk,"is_lvm_vg",false) )
+			    {	
+				list parts    = get_possible_pvs(    targets );
+				dev_size      = get_vg_size( parts,  substring(disk_dev_name, 5) , `string );
+				dev_nb_cyl    = " -- ";
+				dev_start_cyl = " -- ";
+			    }
+			    
+
+			    if ( show_disk  && !id_sw_raid_dev )
+				{
+
+				   term a = `item(`id(disk_dev_name));
+
+				   if  ( showT_dev )    a = add(a, disk_dev_name );
+				   if  ( showT_id )     a = add(a, "" );
+				   if  ( showT_size )   a = add(a, dev_size );
+				   if  ( showT_format ) a = add(a, " ");
+				   if  ( showT_fs )     a = add(a, vendor);
+				   if  ( showT_mount )  a = add(a, "" );
+				   if  ( showT_cyl )    a = add(a, dev_start_cyl );
+				   if  ( showT_cyl )    a = add(a, dev_nb_cyl    );
+				   if  ( showT_RAID )   a = add(a, "");
+				   if  ( showT_LVM  )   a = add(a, "");
+				   
+				   table_input = add( table_input, a );
+				}
+
+				/////////////////////////////////////////////////////////////
+				// Now we come to the partitions ...
+
+				list        partitions      = lookup ( disk,     "partitions", []    );
+				boolean     pdisk_disk      = check_pdisk( disk, `warn_not );
+
+				foreach ( `partition, partitions,
+					  ``{
+						// dont show "system partitions"
+						string fstype = lookup ( partition, "fstype", "");
+						list   hit    = filter(`v, not_shown_partitions, ``(issubstring(fstype, v)) );
+						if ( hit != [] ) continue;
+
+
+						if ( !lookup ( partition, "delete", false ) || log_mode )
+						{
+						    string id = "";
+						    id = Storage::GetSubDevKey ( disk_dev_name, lookup ( partition, "nr", 0));
+
+
+
+						   //////////////////////////////////////////////////////////
+						   // Format Devicename:
+
+						   string   part_dev_name   = "";
+						   string   part_id         = "";
+
+						   if ( !Arch::s390 )
+						   {
+						      part_dev_name = Storage::GetDeviceName( disk_dev_name, lookup ( partition, "nr", 0) );
+						   }
+						   else
+						   {
+						       // s390:
+						       part_dev_name = substring( disk_dev_name, 5);
+						       part_id       = sformat( " (%1)", lookup ( disk, "bios_id", "") );
+						   }
+
+
+						   ////////////////////////////////////////////////////////////
+						   // Format other Colums:
+
+						   integer  start_cyl       = select ( lookup ( partition, "region", []), 0, 0 );
+						   integer  nb_cyl          = select ( lookup ( partition, "region", []), 1, 0 );
+						   symbol   type            = lookup ( partition, "type", `unknown            );
+						   boolean  format          = lookup ( partition, "format",    false );
+						   boolean  crypt_fs        = lookup ( partition, "crypt_fs",  false );
+						   symbol   used_fs         = lookup ( partition, "used_fs", `unknown );
+						   string   mount_point     = lookup ( partition, "mount",   ""       );
+						   string   filesystem_name = "";
+						   string   lvm_group	    = lookup ( partition, "lvm_group", "");
+						   string   raid_name       = lookup ( partition, "raid_name", "");
+
+						   if (lookup ( partition, "type", `unknown) == `pdisk)
+						   {
+						       filesystem_name = lookup ( partition, "ppc_name", "" );
+						       if ( filesystem_name == "" ) filesystem_name = lookup ( partition, "fstype", "");
+						   }
+						   else
+						   {
+						       filesystem_name = lookup ( partition, "fstype", "");
+						   }
+
+						   if( format && (lookup(partition, "fsid", WFM::Partitions::fsid_swap) == WFM::Partitions::fsid_native))
+						   {
+						       string fs_name =  FileSystems::GetName( used_fs, "Ext2" );
+						       filesystem_name = filesystem_name + " (" + fs_name + ")  ";
+						   }
+
+
+						   string   format_flag      = "";
+						   if ( format )   format_flag = "F";
+						   if ( crypt_fs ) format_flag = "C" + format_flag;
+
+						   if ( log_mode )
+						   {
+						       string       ori_str = "";
+						       boolean del = lookup ( partition, "delete", false );
+						       boolean cre = lookup ( partition, "create", false );
+						       integer ori = lookup ( partition, "ori_nr", 0 );
+						       if ( del == nil)    format_flag = format_flag + " dn";
+						       if ( del == true )  format_flag = format_flag + " dT";
+						       if ( del == false ) format_flag = format_flag + " dF";
+						       if ( cre == nil)    format_flag = format_flag + " cn";
+						       if ( cre == true )  format_flag = format_flag + " cT";
+						       if ( cre == false ) format_flag = format_flag + " cF";
+						       if ( ori == nil)    ori_str = " o- ";
+						       else 		   ori_str = sformat( " o%1 ", ori );
+						       format_flag = format_flag + ori_str;
+						   }
+
+						   string bytes_of_part = "";
+
+						   if ( id_sw_raid_dev )
+						   {
+						       bytes_of_part = raid_size_str( targets, partition);
+						       y2debug( "--RAID: %1 -- %2 ", id_sw_raid_dev, bytes_of_part);
+						   }
+						   else if ( pdisk_disk )
+						   {
+						       bytes_of_part = ByteToHumanString(( nb_cyl ) * 512);
+						   }
+						   else
+						   {
+						       bytes_of_part = ByteToHumanString(( nb_cyl ) * cyl_size);
+						   }
+
+
+						   /////////////////////////////////////////////////////////////////
+						   // Insert line for this partition into selection box widget
+						   //
+						   // Start- and EndCly are shown (intel) or not (ppc) ...
+
+						   term a = `item(`id(id));
+
+						   if  ( showT_dev )                     a = add(a, part_dev_name );
+						   if  ( showT_id )                      a = add(a, part_id );
+						   if  ( showT_size )                    a = add(a, bytes_of_part);
+						   if  ( showT_format )                  a = add(a, format_flag);
+						   if  ( showT_fs )                      a = add(a, filesystem_name);
+						   if  ( showT_mount )                   a = add(a, mount_point );
+						   if  ( showT_cyl && !id_sw_raid_dev)   a = add(a, to4string(start_cyl));
+						   if  ( showT_cyl && !id_sw_raid_dev)   a = add(a, to4string(start_cyl + nb_cyl - 1));
+						   if  ( showT_cyl &&  id_sw_raid_dev)   a = add(a, " -- ");
+						   if  ( showT_cyl &&  id_sw_raid_dev)   a = add(a, " -- ");
+						   if  ( showT_RAID )		         a = add(a, raid_name);
+						   if  ( showT_LVM  ) 			 a = add(a, lvm_group);
+
+						   table_input = add( table_input, a );
+						}
+						else
+						{
+						    // as deleted marked
+						    // y2debug( "ddddddddddddd----");
+						}
+					  }
+				      );
+				//} // test lvm
+                        }
+                    );
+            return sort( `lineA, `lineB, table_input, ``(
+            {
+                //return( select(lineA, 1) <= select(lineB, 1 ));
+
+
+		boolean ret = false;
+		integer length_lineA = size(select(lineA, 1, 0));
+		integer length_lineB = size(select(lineB, 1, 0));
+
+		if(select(lineA, 1, 0) <= select(lineB, 1, 0 ))
+		{
+		    ret = true;
+		}
+
+
+		if( length_lineA > 8 && length_lineB > 8 &&
+		    length_lineA != length_lineB            ) //more than /dev/hda
+		{
+		    if( length_lineA <= length_lineB )
+		    {
+			ret = true;
+		    }
+		    else
+		    {
+			ret = false;
+		    }
+		}
+
+
+		return ret;
+
+            }));
+          };
+
+
+    /*---------------------------------------------------------------------
+     * Change a key/value in a partition in a disk in the target-map
+     * example:
+     * in: target disk_dev_name number
+     * out: target with new part. entry
+     *---------------------------------------------------------------------*/
+    /*
+    define ChangePartitionValue( map new_targets, string disk_dev_name, integer number, any key, any value )
+    ``{
+	// read disk content
+	map curr_disk      = lookup( new_targets, disk_dev_name, $[] );
+	// search for curr partition
+	map  curr_part     = find  ( `c_part, lookup( curr_disk, "partitions", []), ``(lookup(c_part, "nr", 0)==number
+										   && (lookup(c_part, "delete", false) == false) ));
+	// replace old items in partition with new one:
+	curr_part 	   = add( curr_part, key, value );
+
+	// delete old curr_part (cause its a list, we cant use add to replace the "old curr_part")
+	list partitions_without_curr_part   = filter( `c_part, lookup( curr_disk, "partitions", []),
+							     ``(lookup(c_part, "nr", 0)!=number || (lookup(c_part, "delete", false) == true)));
+
+	// insert changed partition in list
+	partitions_without_curr_part        = add( partitions_without_curr_part,    curr_part );
+	curr_disk     	                    = add( curr_disk, "partitions", partitions_without_curr_part );
+	new_targets                         = add( new_targets, disk_dev_name, curr_disk );
+
+	return( new_targets );
+    };
+    */
+
+    /*---------------------------------------------------------------------
+     * Create typical mountpoints and fill it inti target_map
+     * in: target
+     * out: target with typical mountpoints
+     *---------------------------------------------------------------------*/
+
+    /*
+    define CreateMountpoints ( map targets )
+    ``{
+	       list    table_input = [];
+	       map     nnew_targets = targets;
+
+//	       SCR::Execute (.target.mkdir, "/Yast2_ppc_mnt");
+
+	       foreach ( `dev, `disk, targets,
+			``{
+			      list        partitions      = lookup ( disk,     "partitions", []    );
+			      boolean     pdisk_disk      = check_pdisk( disk, `warn_not );
+
+			      foreach ( `partition, partitions,
+					``{
+				                if  ( !lookup( partition, "delete", false) )
+					      {
+						  string fstype        = lookup ( partition, "fstype", "");
+						  string disk_dev_name = substring( dev, 5 );
+					      }
+					      else
+					      {
+						  // y2debug( "ddddddddddddd----");
+					      }
+					}
+				    );
+			  }
+		      );
+	      return( nnew_targets );
+
+    };
+    */
+    
+    /*---------------------------------------------------------------------
+     * Checks if the mountpoint is valid
+     * - /proc /mnt /lost+found contain Installation::sourcedir are not allowd
+     * - double entries are not allowed ( mountpoints with no / and "" are always allowed )
+     *
+     *----------------------------------------------------------------------
+
+     /**
+      * Dialog: "Create a partition Dialog"
+      * @parm new_val map that contains a partition
+      * @parm file_systems filesystem definitions
+      * @parm tilte	title string
+      * @parm dev device string for the new/edit partition
+      * @parm disk a map with the disk data  CAUTION: in Edit-Mode, the edited partition, must not be in this map!!
+      * @parm targetList a list with all targets  CAUTION: in Edit-Mode, the edited partition, must not be in this map!
+      * @parm bsd_label
+      * @parm edit_format flag
+      * @parm edit_size flag
+      * @parm pdisk_disk
+      * @parm cyl_size
+      * @return map modified partition or nil by cancel
+      */
+    UI(``{
+	global define EditOrCreatePartDlg( map new_val, map file_systems, string title, string dev, map    disk, map targetList,
+					   boolean bsd_label, boolean edit_format, boolean edit_size, boolean pdisk_disk ,integer cyl_size ,
+					   map targetMap,
+					   boolean installation  )
+
+	    ``{
+
+	    
+	    boolean create      	= lookup ( new_val , "create", false);
+	    boolean format 		= lookup ( new_val , "format", false);
+	    symbol last_option_fs	= lookup ( new_val , "used_fs", `unknown);
+	    map fs_options		= lookup ( new_val , "fs_options" , $[]);
+
+	    if( last_option_fs == `unknown )
+		{
+		last_option_fs = WFM::Storage::DetectFs( dev );
+		}
+
+	    list not_used_mountpoints   = WFM::notUsedMountpoints( targetMap, lookup( lookup( file_systems, last_option_fs, $[]), `mountpoints, []));
+
+
+	    if( lookup ( new_val , "fsid", WFM::Partitions::fsid_native ) == WFM::Partitions::fsid_swap )
+		not_used_mountpoints = add( not_used_mountpoints , "swap");
+
+	    string helptextCR 		= getEditOrCreateHelptext(new_val , pdisk_disk , edit_format);
+
+	  
+	    /////////////////////////////////////////////////////////////////////////////////////////
+	    // Now create "main" dialog with all elements needed
+	    /////////////////////////////////////////////////////////////////////////////////////////
+
+	    /////////////////////////////////////////////////////////////////////////////////////////
+	    // right side of the main dialog
+	    term field_dlg_right = `VBox(
+					 `Top(
+					      SizeDlg( new_val , cyl_size, edit_size )
+					      ),
+					 `VSpacing(1),
+					 `ReplacePoint( `id(`mount_dlg_rp), MountDlg( new_val , not_used_mountpoints ))
+					 );
+
+
+
+	      /////////////////////////////////////////////////////////////////////////////////////////
+	      // left side of the main dialog
+	      term field_dlg_left = `HSpacing(1);
+
+	      if( edit_format/*& (! pdisk_disk) */ )
+	      {
+		  field_dlg_left = `Top( `ReplacePoint( `id( `format_dlg_rp), FormatDlg( new_val, file_systems) ));
+	      }
+
+
+	      ////////////////////////////////////////////////////////////////////////////////////////////
+	      // Open main dialog for editing and creation of partitions
+	      ////////////////////////////////////////////////////////////////////////////////////////////
+	      OpenDialog( `opt(`decorated  ),
+			  `HBox(
+				`HWeight(30, `RichText( helptextCR )),
+				`HStretch(),
+				`HSpacing(1),
+				`HWeight(70,`VBox(
+						  `Heading( title),
+					       `VSpacing(1),
+					       `VStretch(),
+					       `HBox(
+						     field_dlg_left,
+						     `HSpacing(2),
+						     field_dlg_right //,
+						     //`HSpacing(2)
+						     ),
+					       `VSpacing(1),
+					       `VStretch(),
+					       `HBox(
+						     // popup create partition:
+						     `PushButton(`id(`ok), `opt(`default),  OKButtonLabel()   ),
+						     // popup create partition:
+						     `PushButton(`id(`cancel),  CancelButtonLabel() )
+						     )
+					       )
+					 ),
+				`HSpacing(1),
+				`HStretch()
+				)
+				);
+
+
+
+	      ////////////////////////////////////////////////////////////////////////////////////////
+	      // configure main dialog for the first call
+	      list set_false = [];
+
+	      
+	      if ( edit_format  )
+	      {
+		  if( ! format )
+		  {
+		      set_false = union( set_false, [ `crypt_fs, `fs, `fs_options] );
+		      if( create ) set_false = union( set_false, [`mount_point ] );
+		      if( pdisk_disk ) set_false = add( set_false, `fsid_point);
+		  }
+		  else set_false = union( set_false, [ `fsid_point ]);
+	      }
+
+	      if ( lookup( new_val, "fsid", WFM::Partitions::fsid_native) == WFM::Partitions::fsid_swap  )
+	      {
+		  set_false = union( set_false, [ `crypt_fs, `fs_options ] );
+		  //ChangeWidget(`id(`fs), `Value, "Swap");
+	      }
+
+	      //ChangeWidget(`id(`mount_point), `Value, lookup( new_val, "mount", "" ));
+	      ChangeExistingSymbolsState( set_false, false);
+	      
+
+	   
+	      ////////////////////////////////////////////////////////////////////////////////////////
+	      // warning if partition is mounted
+	      if( ! installation )
+	      {
+		  string mounts = WFM::PartitionMountedOn( dev  , WFM::CurrentMounted()  );
+		  if( mounts != "" ) 
+		  {      
+		      ModifyPartitionInSystemWarningPopup( dev, mounts );
+		  }
+	      }
+	      
+
+	      map return_value     = new_val;
+	      any ret = `ok;
+
+	      repeat
+		 {
+		     ///////////////////////////////////////////////////////////////////////////////////////
+		     // Check the User input
+		     ret = UserInput();
+		     return_value     = new_val;
+
+		     if ( ret != `cancel )
+		     {
+			 ////////////////////////////////////////////////////////////////////////////////////////
+			 // configure main dialog and modify map return_value
+			 if (  edit_format /* && (! pdisk_disk)*/)
+			 {
+			     if( QueryWidget(`id(`format),  `CurrentButton) == `format_true )
+			     {
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // format partition
+
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // modify map return_value
+				 symbol used_fs  =  QueryWidget(`id(`fs), `Value);
+				 map selected_fs =  lookup( file_systems, used_fs , $[] );
+
+
+				 //Messages( sformat( "%1", selected_fs));
+				 return_value     = add( return_value , "format",  true );
+				 return_value     = add( return_value , "used_fs", used_fs );
+
+				 if ( !pdisk_disk )
+				 {
+				    return_value = add( return_value, "fsid", lookup( selected_fs, `fsid, WFM::Partitions::fsid_native));
+				 }
+
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // switch between swap and other mountpoints
+				 string mount	   =  QueryWidget( `id(`mount_point), `Value);
+				 return_value      =  add( return_value , "mount" , mount);
+				 not_used_mountpoints =  WFM::notUsedMountpoints( targetMap, lookup(selected_fs, `mountpoints, []));
+
+				 if( used_fs == `swap )
+				 {
+				     not_used_mountpoints = add( not_used_mountpoints , "swap" );
+				     if( mount != "swap" )
+				     {
+					 return_value = add (return_value , "mount" , "swap" );
+					 ReplaceWidget(`id(`mount_dlg_rp), MountDlg( return_value ,not_used_mountpoints));
+				     }
+				 }
+				 else
+				 {
+				     if( mount == "swap" || mount == "")
+				     {
+					 if( mount == "swap")
+					     return_value = add (return_value , "mount" , WFM::GetMountPointProposal( targetMap, [] ));
+	
+					 ReplaceWidget(`id(`mount_dlg_rp), MountDlg( return_value, not_used_mountpoints ));
+				     }
+				 }
+
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // modify widgets
+                                 ChangeExistingSymbolsState( [ `mount_point, `fs ], true);
+				 ChangeWidget(`id(`fsid_point) , `Value  , lookup( selected_fs , `fsid_item, ""));
+				 ChangeWidget(`id(`fsid_point) , `Enabled, false);
+				 ChangeWidget(`id(`fs_options) , `Enabled, (lookup( selected_fs, `options, []) != [] ));
+				 if( lookup( selected_fs, `crypt, false))
+				 {
+				     ChangeWidget(`id(`crypt_fs) , `Enabled, true);
+				 }
+				 else
+				 {
+				     ChangeWidget(`id(`crypt_fs) , `Enabled, false);
+				     ChangeWidget(`id(`crypt_fs),  `Value,   false );
+				 }
+
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // filesystem options
+				 if( used_fs != last_option_fs )
+				     fs_options = $[];
+				 last_option_fs = used_fs;
+
+				 if( ret == `fs_options )
+				 {
+				     fs_options =  FileSystemOptions( fs_options, selected_fs );
+				 }
+			     }
+			     else
+			     {
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // don't format partition
+
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // modify widgets
+				 fs_options     = $[];
+				 list set_true  = [ `fsid_point ];
+
+				 if(pdisk_disk ) set_true = [];
+				 
+				 list set_false = [ `crypt_fs, `fs, `fs_options ];
+
+				 if( create )  set_false = add( set_false, `mount_point );
+				 else          set_true  = add( set_true , `mount_point );
+
+				 ChangeExistingSymbolsState( set_true  ,true );
+				 ChangeExistingSymbolsState( set_false ,false );
+
+
+
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // modify map return_value
+				 return_value     = filter(`k, `v , return_value , ``( k != "used_fs" && k != "fs_options"));
+				 return_value["used_fs"] = last_option_fs;
+				 string fs_string = QueryWidget(`id(`fsid_point ) , `Value);
+				 fs_string        = substring( fs_string, 0, 4  );
+				 integer fs_int   = tointeger( fs_string        );
+
+				 if( fs_int >= 0 && fs_int <= 255 )
+				 {
+				     return_value = add( return_value, "format",  false );
+				     return_value = add( return_value, "fsid", fs_int   );
+				     if( create )
+				     {
+					 return_value = add( return_value, "used_fs", `unknown);
+				     }
+				 }
+				 else
+				 {
+				     WarningPopup(_("The fsid must be between 0x00 and 0xff"));
+				     SetFocus(`id(`fsid_point));
+				     continue;
+				 }
+			     }
+			 }
+		     }
+
+
+
+
+		     ////////////////////////////////////////////////////////////////////////////////////////
+		     // if the user has pushed the button ok
+		     if ( ret == `ok )
+		     {
+			 ////////////////////////////////////////////////////////////////////////////////////////
+			 // save mountpoint
+			 if ( create && (! lookup( return_value, "format" , true )))
+			 {
+			     return_value = add( return_value, "mount", "");
+			 }
+			 else return_value = add( return_value, "mount",  WFM::CutBlanks( QueryWidget(`id(`mount_point),   `Value)));
+
+
+			 ////////////////////////////////////////////////////////////////////////////////////////
+			 // add fstype to return_value
+
+			 if ( !pdisk_disk )
+			 {
+			     integer fs_id =  lookup( return_value, "fsid", 0 );
+			     return_value = add( return_value, "fstype", "");
+			     foreach( `file_system_name, `file_system_map, file_systems, ``{
+				 if ( lookup(file_system_map, `fsid, WFM::Partitions::fsid_native) == fs_id )
+				     return_value = add( return_value, "fstype", lookup( file_system_map, `fstype, ""));
+			     });
+
+			     if( lookup( return_value, "fstype" , "" ) == "")
+				 return_value = add( return_value, "fstype",  FsIdToString( fs_id ));
+			 }
+
+
+			 if( create && edit_size )
+			 {
+			     //////////////////////////////////////////////////////////////
+			     // Get start and end cyl and check if the user input for start und end cyl are valid
+			     list ret = [];
+			     string start_cyl =  QueryWidget(`id(`start_cyl),     `Value);
+			     string end_part  =  QueryWidget(`id(`end_part),      `Value);
+
+			     ret = TestStartEndCyl( start_cyl, end_part,  dev, disk, lookup( return_value, "type", `primary) , cyl_size, bsd_label );
+
+			     if (select( ret, 0, `error) == `error )
+			     {
+				 SetFocus(`id(`end_part));
+				 continue;
+			     }
+			     if (select( ret, 0, `error ) == `max )
+			     {
+				 end_part =  select( ret, 1, "");
+			     }
+
+			     //////////////////////////////////////////////////////////////
+			     // add start_cyl and end_part to region and add region to return_value
+			     list region = [  tointeger(  start_cyl ), ToEndRegion(  start_cyl,
+										 end_part,
+										 cyl_size )];
+
+			     return_value = add( return_value, "region", region );
+			 }
+
+
+			 //////////////////////////////////////////////////////////////
+			 // Check if the user has a reiserfs with  not enough space
+			 if ( lookup( return_value, "used_fs" , `ext2) == `reiser)
+			 {
+			     integer part_size =  select(lookup( return_value, "region", []), 1, 0)  * cyl_size;
+
+			     if ( part_size < 60000000 )
+			     {
+				 WarningPopup(_("Your partition is too small to use ReiserFS.
+ReiserFS is a journaling file system that requires
+at least 30 MB space for the journal alone.
+Use ReiserFS on larger partitions.
+"));
+
+				 SetFocus(`id(`end_part));
+				 continue;
+			     }
+			 }
+
+
+			 //////////////////////////////////////////////////////////////
+			 // Check if the user input for mount point are valid
+			 if( !check_mount_point( targetList, return_value["mount"]:"", return_value["used_fs"]:`unknown))
+			 {
+			     SetFocus(`id(`mount_point));
+			     continue;
+			 }
+
+			 if( !check_crypt_fs_mount_points(lookup(return_value, "mount", ""),
+							  QueryWidget(`id(`crypt_fs), `Value ) ))
+			 {
+			     SetFocus(`id(`mount_point));
+			     continue;
+			 }
+			 
+			
+			 
+
+			 //////////////////////////////////////////////////////////////
+			 //  user chnaged fsid  by existing partition
+			 symbol par_type = new_val["type"]:`empty;
+			 y2milestone( "par_type %1", par_type );
+			 if(!pdisk_disk &&
+			    lookup( return_value, "fsid" ,0 ) !=  lookup( new_val, "fsid" ,0 ) &&
+			    (par_type==`primary||par_type==`logical||par_type==`extended) &&
+			     (! haskey( new_val, "change_fsid") ) && ! lookup( return_value, "create" ,false))
+			 {
+			      boolean ret = YesNoPopup(_("WARNING:
+You have changed the FSID of an existing partition.
+In some cases, this could have serious consequences, especially
+if you change the FSID of a partition belonging to a different
+operating system. Only proceed if you know exactly
+what you are doing.
+Do you really want to change the FSID?
+"));
+
+			      if (! ret )
+			      {
+				  ReplaceWidget(`id(`fsid_dlg_rp),  FsidComboBox( new_val, file_systems ));
+				  ChangeWidget(`id(`format) , `CurrentButton , `format_false );
+				  continue;
+			      }
+
+			      if( ! haskey( new_val, "change_fsid"))
+			      {
+				  return_value = add( return_value, "change_fsid", true );
+				  return_value = add( return_value, "ori_fsid", lookup( new_val, "fsid" ,0 ));
+			      }
+
+			 }
+
+
+			 if( edit_format /* && (! pdisk_disk)*/)
+			 {
+			     ////////////////////////////////////////////////////////////////////////////////////////
+			     // crypto settings
+			     boolean crypt_fs = QueryWidget(`id(`crypt_fs), `Value );
+			     return_value = add( return_value, "crypt_fs",   crypt_fs );
+
+			     if ( crypt_fs && return_value["format"]:false )
+			     {
+				 string fs_passwd = DlgCreateCryptFs();
+
+				 ////////////////////////////////////////////////////////////////////////////////////////
+				 // Ask the user for a password for cryptofs, else set crypto to nil??
+				 if ( fs_passwd != nil )
+				 {
+				     string crypt_key = WFM::Storage::AddCryptToClassified( fs_passwd );
+
+				     return_value = add( return_value, "crypt_key", crypt_key );
+				 }
+				 else
+				 {
+				     ret = `retry;
+				     ChangeWidget(`id(`crypt_fs), `Value, false);
+				 }
+			     }
+			 }
+
+
+			 ////////////////////////////////////////////////////////////////////////////////////////
+			 // modified partition and partition is mounted
+			      
+			 if( ! installation &&  ! WFM::arePartitionsEqual( new_val , return_value )  && ! create )
+			 {
+			     string mounts =  WFM::PartitionMountedOn( dev  , WFM::CurrentMounted() );
+			     if( mounts != "" ) 
+			     {
+				 if( ! UseChangedPartitionContinueCancelPopup()) 
+				 {
+				     ret = `cancel;
+				 }
+			     } 
+			 }
+			 
+			 
+		     }     
+		 } until (  ret == `ok  || ret == `cancel );
+
+
+
+	      //////////////////////////////////////////////////////////////
+	      // If the users is not allowed to edit size and format, fill in defaults
+	      if ( !edit_format ) return_value = add( return_value, "format",       true) ;
+
+	      //////////////////////////////////////////////////////////////
+	      // exemptions
+	      if( ! haskey( return_value, "crypt_key") )
+		  return_value = add( return_value ,"crypt_key", "");
+
+	      if( ! haskey( return_value, "crypt_fs"))
+		  return_value = add( return_value, "crypt_fs" , false);
+
+	       // filesystem options
+	      if( lookup( return_value, "used_fs" , "") != last_option_fs  )
+		  fs_options = $[];
+			
+	      if( fs_options != $[] && lookup( return_value, "format" ,false))
+		  return_value = add( return_value, "fs_options", fs_options);
+	      else return_value = filter(`key, `value, return_value, ``( key != "fs_options"));
+
+	      //y2milestone( "%1", return_value );
+	      
+	      CloseDialog();
+
+	      if ( ret == `cancel )
+	      {
+		  return( nil );
+	      }
+	      else
+	      {
+		  return( return_value );
+	      }
+	 }
+     });
+
+
+     /**
+      * Dialog: "Resize a FAT partition Dialog"
+      * @parm new_val map that contains a partition
+      * @parm targetList a list with all targets  
+      * @return map modified partition or nil by cancel
+      */
+    UI(``{
+	global define ResizePartDlg( map new_val, string device, integer cyl_size )
+
+	    ``{
+	    boolean test_simple_ui = false;
+
+	    y2milestone( "ResizePartDlg dev:%1, cyl:%2 map:%3", device, cyl_size, new_val );
+
+	    string  unit = _("MB");
+
+	    // Labels for bar graph. "%1" will be replace with a numeric value.
+	    string bargraph_label_win_used  = _("Windows\nused\n%1 ") + unit;
+	    string bargraph_label_win_free  = _("Windows\nfree\n%1 ") + unit;
+	    string bargraph_label_linux     = _("free\nspace\n%1 ") + unit;
+
+	    // Labels for input fields. "%1" will be replaced with the current unit (MB).
+	    string field_label_win_free     = sformat( _("Windows free (%1)"), unit);
+	    string field_label_linux        = sformat( _("free space (%1)"), unit);
+
+	    integer min_win_free  = -1;
+	    integer new_win_size  = -1;
+	    integer linux_size    = 0;
+	    integer linux_min     = 0;
+
+	    map win = WFM::GetWinFree( device, 0 );
+
+	    y2milestone( "ResizePartDlg win:%1", win );
+
+	    integer win_used = win["win_used"]:0 / (1024*1024);
+	    integer win_free = win["win_free"]:0 / (1024*1024);
+
+	    min_win_free = win_free / 10;
+
+	    if( haskey( new_val, "new_size" ) )
+		{
+		linux_size = win_used + win_free - new_val["new_size"]:0;
+		}
+
+	    y2milestone( "min_win_free:%1 win_free:%2 win_used:%3 linux_size:%4", 
+	                 min_win_free, win_free, win_used, linux_size );
+
+	    // Help text for Windows partition resizing - 
+	    // common part for both graphical mode (with bar graphs) 
+	    // and non-graphical mode (text only).
+	    string helptext = _("<p>
+Choose the new size for your Windows partition.
+</p>");
+
+	    // help text (common to both modes), continued
+	    helptext = helptext + _("
+<p>
+The actual resizing will be performed only after you confirm all your
+settings in the last installation dialog. Until then, your Windows
+partition will remain untouched.
+</p>");
+
+	    // help text (common to both modes), continued
+	    helptext = helptext + _("
+<p>
+If you decide not to resize your partition after all, press the 
+<b>No Resize</b> button. This sets the value back to the original
+size of the partition.
+</p>
+");
+
+	    if( UI::HasSpecialWidget(`Slider   ) &&
+	        UI::HasSpecialWidget(`BarGraph ) && !test_simple_ui )
+	      {
+	      // help text, continued - graphical mode only
+	      // this help text will be appended to the help text common to both modes.
+	      helptext = helptext + _("
+<p>
+The upper bar graph displays the current situation.
+The lower bar graph displays the situation after the installation -- after
+the partition resize.
+</p>
+");
+	      // help text (graphical mode), continued
+	      helptext = helptext + _("
+<p>
+Drag the slider or enter a numeric value in either
+input field to adjust the suggested value.
+</p>");
+      
+	      ////////////////////////////////////////////////////////////////////////////////////////////
+	      // Open main dialog for resizing of partitions
+	      ////////////////////////////////////////////////////////////////////////////////////////////
+	      OpenDialog( `opt(`decorated  ),
+			  `HBox(
+				`HWeight(30, `RichText( helptext )),
+				`HStretch(),
+				`HSpacing(1),
+				`HWeight(70,`VBox(
+				    `HSpacing(50),
+				    `VStretch(),
+				    `VSpacing(1),
+				    // Headline above bar graph that displays current windows partition size
+				    `Left( `Label( _("Now:")) ),
+				    `BarGraph( [ win_used, win_free ],
+				               [ bargraph_label_win_used,
+					         bargraph_label_win_free ] ),
+				    `VSpacing(1),
+				    `VStretch(),
+				    // Headline above bar graph that displays future windows and linux partitions
+				    `Left( `Label( _("After installation:") ) ),
+				    `PartitionSplitter( `id(`linux_size), 
+				                        win_used, win_free,
+							linux_size, linux_min, min_win_free,
+							bargraph_label_win_used,
+							bargraph_label_win_free,
+							bargraph_label_linux,
+							field_label_win_free,
+							field_label_linux ),
+				    `HBox( `PushButton(`id(`rem_resize), _("&No Resize") )),
+				    `VSpacing(1),
+				    `HBox(
+					 `PushButton(`id(`ok), `opt(`default),  OKButtonLabel()   ),
+					 `PushButton(`id(`cancel),  CancelButtonLabel() ))
+				    ))));
+		}
+	      else
+		{
+		// help text, continued - non-graphical mode only
+		// this help text will be appended to the help text common to both modes.
+		helptext = helptext + _("
+<p>Enter a value for the size to which to shrink the Windows partition.
+</p>
+");
+      
+		// help text (non-graphical mode), continued
+		helptext = helptext + _("
+<p>
+<b>Windows used</b> is the size of the used part of your Windows partition.
+</p>");
+
+		// help text (non-graphical mode), continued
+		helptext = helptext + _("
+<p><b>Free</b> indicates the current free space (before shrinking)
+on the partition.
+</p>");
+  
+		OpenDialog( `opt(`decorated  ),
+			    `HBox(
+				`HWeight(30, `RichText( helptext )),
+				`HStretch(),
+				`HSpacing(1),
+			        `HWeight(70,
+				  `VBox(
+				    `HBox(
+				        // Label for used part of the Windows partition in non-graphical mode
+					`HWeight(3, `Right(`Label(_("Windows used:")))),
+					`HWeight(2, `Label(`opt(`outputField), sformat("%1", win_used ))),
+					`HWeight(3, `Left(`Label( unit )))),
+				    `VSpacing(0.5),
+				    `HBox(
+				        // Label for free part of the Windows partition in non-graphical mode
+					`HWeight(3, `Right(`Label(_("Free:")))),
+					`HWeight(2, `Label(`opt(`outputField), sformat("%1", win_free ))), 
+					`HWeight(3, `Left(`Label( unit )))),
+				    `VSpacing(0.5),
+				    `HBox(
+					// Edit field label for linux partition size in non-graphical mode
+					`HWeight(3, `Right(`Bottom(`Label(_("free space:"))))),
+					`HWeight(2, `IntField( `id(`linux_size), "", 
+					                       linux_min, win_free - min_win_free, 
+							       linux_size )),
+					`HWeight(3, `Left(`Bottom(`Label( unit ))))),
+				    `HBox( `PushButton(`id(`rem_resize), _("&No Resize") )),
+				    `VSpacing(1),
+				    `HBox(
+					 `PushButton(`id(`ok), `opt(`default),  OKButtonLabel()   ),
+					 `PushButton(`id(`cancel),  CancelButtonLabel() ))
+				   ))));
+		    }
+
+
+	      map return_value     = new_val;
+	      any ret = `ok;
+
+	      repeat
+		 {
+		 ///////////////////////////////////////////////////////////////////////////////////////
+		 // Check the User input
+		 ret = UserInput();
+		 return_value = new_val;
+
+		 y2milestone( "ret=%1", ret );
+
+		 if( ret == `rem_resize )
+		     {
+		     UI::ChangeWidget(`id(`linux_size), `Value,  0);
+		     }
+
+		 if ( ret == `ok )
+		     {
+		     // Get the value the user adjusted. If s/he entered a value
+		     // too big or too small this is automatically adjusted to the
+		     // biggest/smallest value possible (by Qt).
+		
+		     linux_size   = UI::QueryWidget(`id(`linux_size), `Value);
+		     new_win_size = win_used + win_free - linux_size;
+		     y2milestone("Linux size: <%1> - New Win size: <%2>", linux_size, new_win_size);
+		     if( linux_size != 0 )
+			{
+			return_value["resize"] = true;
+			return_value["new_size"] = new_win_size;
+			if( !haskey( return_value, "ori_length" ))
+			    {
+			    integer ori_length = return_value["region",1]:0;
+			    return_value["ori_length"] = ori_length;
+			    }
+			list new_reg = [ return_value["region",0]:0, 
+			                 WFM::PartedSizeToCly( (tofloat(new_win_size) * 1024.0 * 1024.0),
+							  cyl_size ) ];
+			return_value["region"] = new_reg;
+			}
+		    else
+			{
+			return_value["resize"] = false;
+			if( haskey( return_value, "ori_length" ))
+			    {
+			    list new_reg = [ return_value["region",0]:0, 
+			                     return_value["ori_length"]:0 ];
+			    return_value["region"] = new_reg;
+			    }
+			}
+		     }
+		 y2milestone("ret = %1", return_value );
+		 } 
+	      until (  ret == `ok  || ret == `cancel );
+
+
+	      //y2milestone( "%1", return_value );
+	      
+	      CloseDialog();
+
+	      if ( ret == `cancel )
+	      {
+		  return( nil );
+	      }
+	      else
+	      {
+		  return( return_value );
+	      }
+	 }
+     });
+
+
+
+
+
+
+     /*--------------------------------------------------------------------------------------------
+      *
+      *    Now check start an end cylinder
+      *    caution: there is no differenc in edit and create cause the partition, which is to edited,
+      *    is not in the disk map!
+      *
+      *    Check:
+     *    A. Is start_cyl ist a number?  no-> try again
+     *    B. is start_cyl valid ( can the partition start there?) no -> try again
+     *          (when this is tested, the maximal possible end cylinder is computed, too)
+     *    C.    Now we check the syntax of the endCylinder
+     *    D.    If the syntax is valid, the requested end cylinder is checked
+     *    E.  If it is not valid, the user gets a popup and the maximal possible end cylinder is set
+     *
+     *    returns  [<symbol>, <value>]
+     *
+     *             [`ok,  <effektive end cyl>]
+     *             [`max, <max-value as str> ]   // case E
+     *             [`error, 0]
+     *---------------------------------------------------------------------------------------------
+     */
+
+
+   UI(``{
+   global define TestStartEndCyl( string str_start_cyl, string str_end_part, string dev, map disk, symbol type, integer cyl_size, boolean bsd_label )
+   ``{
+
+      integer	max_end_cyl   = 0;
+      string    max_end_str   = "";
+      symbol    input         = `ok;
+      integer   int_start_cyl = tointeger(str_start_cyl);
+      integer   int_end_cyl   = 0;
+
+      ////////////////////////////////// STEP A ////////////////////////////////////////////////
+      if (!IsNumber( str_start_cyl ))
+      {
+          input = `error;
+          ErrorPopup(_("Wrong input for the start of the partition. 
+Enter the start cylinder (e.g., 77).
+"));
+      }
+      else
+      {
+          ////////////////////////////// STEP B ////////////////////////////////////////////////
+
+          integer      int_start_cyl = tointeger(str_start_cyl);
+
+          if ( type == `logical )         max_end_cyl = TestLogicalSlot( int_start_cyl, dev, disk );
+          else                            max_end_cyl = TestSlot(        int_start_cyl, dev, disk, bsd_label );  // primary && extended
+          if (max_end_cyl == nil)
+          {
+              ErrorPopup(_("You entered an invalid value. Please try again."));
+              input = `error;
+          }
+
+          if ( input == `ok )
+          {
+              ////////////////////////// STEP C ////////////////////////////////////////////////
+              if (!IsCylNumber(str_end_part))
+              {
+                  input = `error;
+		  // for translators
+                  ErrorPopup(_("The value for the partition end is invalid.
+
+Enter the end cylinder number (e.g., 77), an offset (e.g., +122),
+or specify the size of the partition directly (e.g., +100M or 1.8GB )
+"));
+              }
+              else
+              {
+                  ////////////////////// STEP D ////////////////////////////////////////////////
+
+                  int_end_cyl = int_start_cyl + ToEndRegion( str_start_cyl, str_end_part, cyl_size ) -1;
+
+                  if ( int_end_cyl > max_end_cyl || int_end_cyl < int_start_cyl)
+                  {
+                           ////////////////// STEP E ////////////////////////////////////////////////
+
+		      WarningPopup(_("The value of the end cylinder was not valid.
+YaST2 has replaced it with the maximum possible value.
+"));
+                      max_end_str = sformat("%1", max_end_cyl);
+                      input = `max;
+                  }
+              }
+          }
+      }
+      // END Check
+
+      if ( input == `ok )  return( [`ok,  int_end_cyl ]);
+      if ( input == `max ) return( [`max, max_end_str ]);
+
+      // if  ( input == `error )
+      return( [`error, 0]);
+
+   };
+   });
+
+
+
+
+    /*---------------------------------------------------------------------
+     * Display "Create a extended partition Dialog"
+     *
+     * return: nil bei cancel
+     *         [fsid,format,mount,start_cyl,end_cyl] bei ok
+     *
+     *----------------------------------------------------------------------
+     */
+   UI(``{
+       global define CreateEditExtendedPartDlg(map new_val , string title, string dev,
+					       map disk, integer cyl_size, boolean edit, boolean bsd_label  )  ``{
+
+	   string helptextCR = getCreateEditExtendedHelptext();
+
+	   /////////////////////////////////////////////////////////////////////////////////////////
+	   // title of the dialog
+	   term header = `Heading(title);
+
+	   /*
+	     if ( HasSpecialWidget(`BarGraph) )
+	   {
+	       header = `BarGraph(`opt(`hstretch), [2], [title]);
+	   }
+	   */
+
+	   OpenDialog( `opt(`decorated ),
+		       `VBox(
+			     //`Heading(title),
+			     header,
+			     `VSpacing(0.5),
+			     `HBox(
+				   /// left side
+				   `HWeight(50,`RichText( helptextCR )),
+				   /// right side
+				   // popup create partition: frame description Start/End Cylinder
+				   `HWeight( 40,   SizeDlg( new_val , cyl_size, true) )
+				   ),
+			     `VSpacing(0.5),
+			     `HBox(
+				   // popup create partition:
+				   `PushButton(`id(`ok), `opt(`default),  OKButtonLabel()   ),
+				   // popup create partition:
+				   `PushButton(`id(`cancel), CancelButtonLabel())
+				   )
+			     )
+		       );
+
+	   SetFocus(`id(`start_cyl));
+
+	   map     return_value    = $[];
+	   symbol  doit            = `cancel;
+	   repeat
+	       {
+		   //-------------------------------
+		   // Check the User input
+		   //-------------------------------
+		   doit = UserInput();
+
+		   if ( doit != `cancel )
+		   {
+
+		       return_value = new_val;
+
+		       list ret = [];
+		       string start_cyl =  QueryWidget(`id(`start_cyl),     `Value);
+		       string end_part  =  QueryWidget(`id(`end_part),      `Value);
+
+		       ret = TestStartEndCyl( start_cyl, end_part,  dev, disk, lookup( return_value, "type", `primary) , cyl_size, bsd_label );
+
+		       if (select( ret, 0, `error ) == `error )  continue;
+		       if (select( ret, 0, `error ) == `max )
+		       {
+			   end_part =  select( ret, 1, "");
+		       }
+
+		       //////////////////////////////////////////////////////////////
+		       // add start_cyl and end_part to region and add region to return_value
+		       list region = [  tointeger(  start_cyl ), ToEndRegion(  start_cyl,
+									       end_part,
+									       cyl_size )];
+
+		       return_value = add( return_value, "region", region );
+
+		   }
+
+	       } until (  doit == `cancel || doit == `ok );
+
+
+	   //------------------------------------------------------------------------------------
+	   // Check if the start end cylinder are changed: PopUp // todo change logical cylinders
+	   //------------------------------------------------------------------------------------
+	   if ( doit != `cancel && edit &&
+		(      select( lookup(return_value, "region", []),0,0)  >  select( lookup( new_val, "region", []),0,0)
+		       || select( lookup(return_value, "region", []),1,0)  != select( lookup( new_val, "region", []),1,0)))
+	   {
+	       WarningPopup(_("You have changed the start or end cylinders.
+Make sure all logical partitions 
+fit into this new extended partition.
+"));
+	   }
+
+	   CloseDialog();
+
+	   if ( doit == `cancel )
+	   {
+	       return( nil );
+	   }
+	   else
+	   {
+	       return( return_value );
+	   }
+       };
+   });
+
+
+
+    /*---------------------------------------------------------------------
+     * Dialog choose disk
+     * return /dev/xxx  or nil if cancel
+     * what -> `create or `delete
+     *---------------------------------------------------------------------
+     */
+
+    UI(``{
+              global define string ChooseDisk(  map targetMap, string heading , symbol what )
+              ``{
+                  // Header Choose disk dialog
+                  term diskgroup  = `VBox();
+                  list disks      = [];
+                  integer       n = 0;
+
+		 
+		  foreach ( `dev, `disk, targetMap, ``{
+		      
+		      if( !lookup( disk, "is_lvm_vg", false ) )
+		      {
+			  if( ! issubstring( dev , "/dev/md") )
+			  {
+			      diskgroup = add ( diskgroup, `Left( `RadioButton( `id( dev ), dev, n == 0 )));
+			      n = n + 1;
+			      disks     = add ( disks,  dev );
+			  }
+		      }
+		  });
+	      
+
+		
+                  if (size(disks) != 1 )
+                  {
+                      OpenDialog( `opt(`decorated),  `VBox(`Heading( heading ),
+                                        `VSpacing(0.5),
+                                        `RadioButtonGroup( `id(`choosedisk), diskgroup ),
+                                        `VSpacing(0.5),
+                                        `HBox(
+                                              // popup edit existing partition: OK
+                                              `PushButton(`id(`ok), `opt(`default), OKButtonLabel() ),
+                                              // popup edit existing partition: Cancel
+                                              `PushButton(`id(`cancel), CancelButtonLabel() )
+                                              )
+                                        )
+                                  );
+                      any ret = UserInput();
+
+                      if (ret == `cancel)
+                      {
+                          CloseDialog();
+                          return( nilstring );
+                      }
+                      else
+                      {
+                          ret     = QueryWidget(`id(`choosedisk), `CurrentButton);
+                          CloseDialog();
+                          return(ret);
+                      }
+                  }
+                  else
+                  {
+                      // if there is only one disk: no
+                      return( select( disks, 0 , nilstring) );
+                  }
+              }; });
+
+
+
+    /*---------------------------------------------------------------------
+     * Dialog choose primary extended or logical Partition
+     * Input "PL", "PE" or "PEL"
+     * return `primary or `logical or `extended or `none
+     *---------------------------------------------------------------------
+     */
+
+    UI(``{
+                  global define ChoosePart( string usage )
+                  ``{
+                      term PL = `VBox(
+                                      `Left( `RadioButton( `id(`primary ), _("&Primary partition"), true )),
+                                      `Left( `RadioButton( `id(`logical ), _("&Logical partition"), false ))
+                                      );
+                      term PE = `VBox(
+                                      `Left( `RadioButton( `id(`primary ), _("&Primary partition"), true )),
+                                      `Left( `RadioButton( `id(`extended ), _("&Extended partition"), false ))
+                                      );
+                      term PEL = `VBox(
+                                      `Left( `RadioButton( `id(`primary ), _("&Primary partition"), true )),
+                                      `Left( `RadioButton( `id(`logical ), _("&Logical partition"), false )),
+                                      `Left( `RadioButton( `id(`extended ), _("&Extended partition"), false ))
+                                      );
+
+                      term                 current = PEL;        // default
+                      if ( usage == "PL" ) current = PL;
+                      if ( usage == "PE" ) current = PE;
+
+
+                          OpenDialog( `opt(`decorated ),  `VBox(`Heading(_("Which type of partition do you want to create?") ),
+                                            `VSpacing(0.5),
+                                            `RadioButtonGroup( `id(`choosePL), current ),
+                                            `VSpacing(0.5),
+                                            `HBox(
+                                                  // popup edit existing partition: OK
+                                                  `PushButton(`id(`ok),  `opt(`default), OKButtonLabel() ),
+                                                  // popup edit existing partition: Cancel
+                                                  `PushButton(`id(`cancel), CancelButtonLabel()   )
+                                                  )
+                                            )
+                                      );
+                          any ret = UserInput();
+
+                          if (ret == `cancel)
+                          {
+                              CloseDialog();
+                              return(`none);
+                          }
+                          else
+                          {
+                              ret     = QueryWidget(`id(`choosePL), `CurrentButton);
+                              CloseDialog();
+                              return(ret);
+                          }
+                }; });
+
+
+
+    
+  
+    /*---------------------------------------------------------------------
+     * Make a output string for "you can not create a partition, because: "
+     *---------------------------------------------------------------------
+     */
+
+
+    define FormatCauseLine( symbol cause )
+    ``{
+	 if ( cause == `no_ext )   return( UI(_("No extended partition exists.") ));
+	 if ( cause == `dev_full ) return( UI(_("There are already four primary and extended partitions.") ));
+	 if ( cause == `no_extsp ) return( UI(_("No space is left in the extended partition.") ));
+	 if ( cause == `to_many )  return( UI(_("Too many logical drives already exist.") ));
+	 if ( cause == `no_space ) return( UI(_("No space remaining.") ));
+	 if ( cause == `already )  return( UI(_("An extended partition already exists.")));
+	 return( "---" );
+    };
+
+
+    /*---------------------------------------------------------------------
+     * Make a output string for "you can not create a partition, because: "
+     *---------------------------------------------------------------------
+     */
+
+    define FormatYouCannotCause( boolean primary_is_possible,
+				 boolean extended_is_possible,
+				 boolean logical_is_possible,
+				 symbol  no_primary_cause,
+				 symbol  no_extended_cause,
+				 symbol  no_logical_cause      )
+    ``{
+	   string pri_line = "";
+	   string ext_line = "";
+	   string log_line = "";
+
+
+	   if ( primary_is_possible )	  pri_line = UI(_("Primary partition creation is possible\n"));
+	                                  // example "No primary partition: No space left"
+	   else	                          pri_line = UI(_("No primary partition:  ")) +   FormatCauseLine( no_primary_cause ) + "\n";
+
+	   if ( logical_is_possible )     log_line = UI(_("Logical partition creation is possible\n"));
+                                          // example "No logical partition: No space left
+	   else               	          log_line = UI(_("No logical partition:  ")) +   FormatCauseLine( no_logical_cause ) +"\n" ;
+
+	   if ( extended_is_possible )	  ext_line = UI(_("Extendend partition creation is possible\n"));
+                                  	   // example "No extended partition: No space left
+	   else               	          ext_line = UI(_("No extended partition: ")) +   FormatCauseLine( no_extended_cause ) +"\n";
+
+	   return ( pri_line + ext_line + log_line );
+    };
+
+
+
+    
+
+
+    
+    
+    /////////////////////////////////////////////////////////////////////////////////////////////////////
+    // MAIN:
+    /////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+   
+    any     ret             = nil;
+
+    
+    Storage::SetLvmUse( true );
+    
+    y2debug( "Custom partitioner started" );
+
+    SCR::Write( Storage::SaveDumpPath("targetMap_s"), Storage::GetTargetMap()  );
+
+    Storage::SetTargetMap( Storage::InitTargets( Storage::GetTargetMap() ));
+
+    list table_list = [];
+    table_list = FillPartitionList();
+
+    if( size(Storage::GetTargetBackup("custom_part"))==0 )
+	{
+	Storage::CreateTargetBackup("custom_part");
+	}
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    ///                                                     MAIN DIALOG
+
+    term header = `header();
+
+               	     // Column header
+    if ( showT_dev )    header = add( header, _("Device"));
+                     // Column header
+    if ( showT_id )     header = add( header, _("Id"));
+                     // Column header: centered / minimum = 11 characters /  fill with space if needed
+    if ( showT_size )   header = add( header, `Right(_("     Size   ")));
+    		     // Column header: centered / minimum = 3 characters /  fill with space if needed
+    if ( showT_format ) header = add( header, `Right(_(" F ")));
+    		     // Column header
+    if ( showT_fs )     header = add( header,  _("Type"));
+    		     // Column header: centered / minimum = 7 characters /  fill with space if needed
+    if ( showT_mount )  header = add( header, _(" Mount "));
+                     // Column header: minimum = 5 characters   fill with space if needed
+    if ( showT_cyl )    header = add( header, `Right(_("Start")));
+    		     // Column header: minimum = 4 characters   fill with space if needed
+    if ( showT_cyl )    header = add( header, `Right(_("End ")));
+                    // Column header: minimum = 6 characters   fill with space if needed
+    if ( showT_RAID )   header = add( header, `Right(_("RAID  ")));
+                     // Column header: minimum = 11 characters   fill with space if needed
+    if ( showT_LVM  )   header = add( header, `Right(_("LVM Group  ")));
+
+    ////////////////////////////////////////////////////////////////////////////////////
+    //    MAIN LAYOUT
+    // ---------------------------
+
+    term buttonline_a = `HBox();
+
+    // main dialog: Button Create partition
+    if ( button_create ) buttonline_a = add( buttonline_a, `PushButton(`id(`create), _("&Create")) );
+                                                           
+    // main dialog: Button Edit partition
+    if ( button_edit   ) buttonline_a = add( buttonline_a, `PushButton(`id(`edit),   _("&Edit"))   );
+
+    // main dialog: Button Delete partition
+    if ( button_delete ) buttonline_a = add( buttonline_a, `PushButton(`id(`delete), _("&Delete")) );
+
+    // main dialog: Button Reize partition
+    if ( button_resize ) buttonline_a = add( buttonline_a, `PushButton(`id(`resize), _("Re&size FAT")) );
+
+
+    
+    list expert_item_list =[];
+    if ( button_reread   ) 	   expert_item_list = add( expert_item_list , `item (`id (`reread),  _("&Reread partition table")));
+    if ( button_adapt_mp ) 	   expert_item_list = add( expert_item_list,  `item (`id (`adapt_mp), 	_("&Import mount points from existing /etc/fstab")));
+    if ( button_delete_parttable ) expert_item_list = add( expert_item_list,  `item (`id (`delete_parttable),_("Delete partition &table and disk label")));
+
+    
+    list raid_item_list = [];
+    if( button_raid )
+    {
+	raid_item_list = [
+			  `item (`id (`raid_wizard),    _("&Create RAID ..")),
+			  `item (`id (`raid_settings),  _("&Edit RAID"))
+	];
+    }
+
+
+    term buttonline_b = `HBox();
+    
+    // main dialog: Button LVM
+    if ( button_lvm )   buttonline_b = add( buttonline_b, `PushButton(`id(`lvm),    _("&LVM...")) );
+
+    // main dialog: Button RAID
+    if ( button_raid )  buttonline_b = add( buttonline_b, `MenuButton( _("&RAID...") , raid_item_list  ));
+
+    // main dialog: Menu-Button for Expert options 
+    if ( button_expert) buttonline_b = add( buttonline_b, `MenuButton ( _("E&xpert.."), expert_item_list ));
+
+
+   
+
+
+    term contents = `VBox(`VSpacing(0.5), `Table(`id(`table), `opt(`notify ), header, table_list ), buttonline_a, buttonline_b ) ;
+
+    string help_text = getMainHelptext(false);
+
+    // Main dialog: Header
+
+    Wizard::SetContentsButtons(_("Expert Partitioner"), contents, help_text, BackButtonLabel(), NextButtonLabel());
+    Wizard::ReplaceHelp(`VBox( `HSpacing(25),`RichText(`id(`help), help_text)));
+
+
+   ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+   ////  Loop for User Input ....
+   ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+   repeat
+   {
+        table_list = FillPartitionList();
+        UI::ChangeWidget(`id(`table), `Items,  table_list);
+
+	///////////////////////////////////////////////////////
+	// Now set the focus
+	// (only for "show_disk" cause I use the disk line)
+
+	if ( show_disk )
+	{
+	   UI::SetFocus(    `id(`table));
+	   if( focusline != nil )
+	   {
+	       UI::ChangeWidget(`id(`table), `CurrentItem, focusline);
+	   }
+	}
+
+        ret= Wizard::UserInput();
+
+	y2debug( "USERINPUT: %1", ret);
+
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////
+        ////  CREATE
+        ////////////////////////////////////////////////////////////////////////////////////////////////////////
+        if (ret == `create)
+        {
+	    
+            string maindev = UI::ChooseDisk(Storage::GetTargetMap() , _("On which disk would you like to create the partition?"), `create  );
+
+	    if( maindev == nilstring )
+	    {
+		continue;
+	    }
+
+	    symbol  create_type = `none;
+	    map     curr_disk   = Storage::GetMainDev( maindev );
+	    boolean pdisk_disk  = false;
+
+	    ///////////////////////////////////////////////////////
+	    // At the moment with a pdisk-formated disk you cannot
+	    // create partitions: check it ...
+
+           
+	    pdisk_disk = check_pdisk( curr_disk, `warn_create );
+	    
+
+
+	    ///////////////////////////////////////////////////////
+	    // If we have a no pdisk-disk and we have a current disk
+	    // lets start ....
+
+	    if (  !pdisk_disk )
+            {
+                list possibilities = CheckCreatePossibilities( maindev, curr_disk );
+
+                boolean primary_is_possible  = select( possibilities, 0, false );
+                boolean extended_is_possible = select( possibilities, 1, false );
+                boolean logical_is_possible  = select( possibilities, 2, false );
+
+		symbol  no_primary_cause     = select( possibilities, 3, `no_space );
+		symbol  no_extended_cause    = select( possibilities, 4, `no_space );
+		symbol  no_logical_cause     = select( possibilities, 5, `no_space );
+
+                list log_slot = [];
+                list p_e_slot = [];
+
+                //////////////////////////////////////////////////////////
+                // Test if there is space left on the device
+		log_slot = GetLogicalSlot(maindev, curr_disk);
+		p_e_slot = GetSlot(maindev, curr_disk);
+
+                if ((log_slot == nil) && logical_is_possible ) no_logical_cause     = `no_space;
+                if ((p_e_slot == nil) && primary_is_possible ) no_primary_cause     = `no_space;
+                if ((p_e_slot == nil) && extended_is_possible) no_extended_cause    = `no_space;
+
+                if (log_slot == nil) logical_is_possible  = false;
+                if (p_e_slot == nil) primary_is_possible  = false;
+                if (p_e_slot == nil) extended_is_possible = false;
+
+
+
+                /*----------------------------------------------------------------------
+		*   Intel/Fdisk  PPC/Fdisk
+		*
+                *   At the same time is not possible, that both "logial_part_is_possible"
+                *   and "extended_part_is_possible" are true
+                *   so we have 6 possible situations
+                *
+                *   to show this we use
+                *   "P" for primary_part_is_possible
+                *   "E" for extended_part_is_possible
+                *   "L" for logial_part_is_possible
+                *
+                *   "p" for primary_part_is_possible  == false
+                *   "e" for extended_part_is_possible == false
+                *   "l" for logial_part_is_possible  == false
+                *
+                *
+                *   PE  : I can create a primary or exended part.
+                *   PL  : Extended part. exist. I can create a primary or a logical
+                *   Pel : only a priary is possible, when the extended part. has no space left
+                *
+                *   pE  : Not possible, if "E" is possible always "P" is possible too.
+                *   pL  : only a logical is possible, if together 4 primary and extended
+                *          partitions are already created
+                *   pel : no partitions are possible
+		*
+		*   --------------------------------------------------------------------
+		*
+		*   BSD-Labeling:
+                *   "Pel" for primary_part_is_possible
+                *   "pel" for primary_part_is_possible  == false
+		*
+                *--------------------------------------------------------------------------*/
+
+                if ( !primary_is_possible  && !extended_is_possible && !logical_is_possible )
+                {
+                    // ------pel--------
+		    string text = "";
+
+		    if (  bsd_label )
+		    {
+			text = sformat( UI(_("It is not possible to create a partition on %1 ")), maindev);
+		    }
+		    else
+		    {
+			text = sformat( UI(_("It is not possible to create a partition on %1
+
+%2
+")), maindev,
+					   FormatYouCannotCause( primary_is_possible,  extended_is_possible,   logical_is_possible,
+								 no_primary_cause,     no_extended_cause,      no_logical_cause  ));
+		    }
+                    UI::WarningPopup(text);
+                }
+                else if ( !primary_is_possible  && logical_is_possible )
+                {
+                    //------pL----------
+                    create_type = `logical;
+                }
+                else if ( !primary_is_possible  && extended_is_possible )
+                {
+                    //------pE----------
+                    create_type = `extended;
+
+                }
+                else if ( primary_is_possible  && !extended_is_possible && !logical_is_possible )
+                {
+                    //------Pel----------
+                    create_type = `primary;
+                }
+                else if ( primary_is_possible  && extended_is_possible )
+                {
+                    //------PE----------
+                    create_type = UI::ChoosePart("PE");   // maindev
+                }
+                else if ( primary_is_possible  && logical_is_possible )
+                {
+                    //------PL----------
+                    create_type = UI::ChoosePart("PL");     // popup
+                }
+                else
+                {
+                    y2error("Error during partition check" );
+                    create_type = UI::ChoosePart("PEL");   // popup
+                }
+
+                if ( create_type != `none )
+                {
+                    list    partitions = lookup( curr_disk, "partitions", []);
+                    integer curr_nr    = 0;
+                    list    base       = [];
+		    list    slot       = [];
+
+                    // search for the first possible dev nr
+                    if ( create_type == `primary || create_type == `extended || create_type == `logical )
+                    {
+                        if ( create_type == `primary || create_type == `extended)
+                        {
+			    if ( !bsd_label )
+			    {
+				base = [1,2,3,4];
+			    }
+			    else
+			    {
+				base = [1,2,4,5,6,7,8];
+			    }
+			    slot = p_e_slot;
+                        }
+                        else  // logical
+                        {
+                            base = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,
+                                    40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64];
+			    slot = log_slot;
+                        }
+
+                        //----------------------------------------------------------
+                        // dev_nb List of numbers of  extende an primary partitions
+                        // result: list of all free primaty|extended partition numbers
+
+
+                        list dev_nb = maplist( `part, filter( `pa, partitions, ``(lookup( pa, "delete", false) == false)), ``(lookup( part, "nr", 0) ));
+                        list result = filter( `base_nr, base, ``( find(`nr, dev_nb, ``(nr == base_nr)) == nil));
+
+                        curr_nr = select( sort( result ), 0, 0 );
+                    }
+
+
+                    //---------------------------------------------------------------------------------------
+                    // Present the Create-Popups ...
+                    //---------------------------------------------------------------------------------------
+
+                    string titleC = "";
+		    // %1 and %3 are not neccecary anymore, dur to the translation, i have not changed it.
+                    // Popup Create Partition: Description of partition %1 and %3 are free space,  %2 is for example "/dev/hda3"
+                    if ( create_type == `primary )  titleC =  sformat( UI(_("%1 Create a primary partition on %2 %3")),   "", maindev, "" );
+                    // Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
+                    if ( create_type == `extended ) titleC =  sformat( UI(_("%1 Create an extended partition on %2 %3")), "", maindev, "" );
+                    // Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
+                    if ( create_type == `logical )  titleC =  sformat( UI(_("%1 Create a logical partition on %2 %3")),   "", maindev, "" );
+
+		    map new_val = $[
+				    "create"	: true,
+				
+				    "region" 	: [
+						   select( slot, 0, 0),
+						   select( slot, 1, 0) -  select( slot, 0, 0) +1 ],
+				    "type"	: create_type,
+				    "crypt_fs"	: false,
+				    "crypt_key" : "",
+				    "nr"	: curr_nr
+		    ];
+
+
+                    if ( create_type == `extended )
+                    {
+			new_val = union( new_val , $[
+						     "fsid"	: Partitions::fsid_extended_win,
+						     //"mount"	: nil,
+						     "used_fs"	: `unknown,
+						     "fstype"   : "Extended"
+						     ]);
+
+                        new_val = UI::CreateEditExtendedPartDlg(new_val,
+								titleC,
+								maindev,
+								curr_disk,
+								lookup( curr_disk, "cyl_size", 1000000),
+								false,
+								bsd_label );
+                    }
+                    else
+                    {
+			string mount_point_proposal = GetMountPointProposal( Storage::GetTargetMap() , [] );
+			symbol used_fs = `reiser;
+			if (mount_point_proposal == "/boot")
+			{
+			    used_fs = `ext2;
+			}
+			new_val = union( new_val , $[
+						     "format" 	: true,
+						     "fsid"	: Partitions::fsid_native,
+						     "mount"	: mount_point_proposal,
+						     "used_fs"	: used_fs,
+						     ] );
+
+
+			new_val = UI::EditOrCreatePartDlg(new_val,
+							  FileSystems::GetAllFileSystems(true, true ),
+							  titleC,
+							  maindev,
+							  curr_disk,
+							  Storage::GetTargetMap(),
+							  bsd_label,
+							  edit_formatflag,
+							  edit_cylinder,
+							  pdisk_disk,
+							  lookup( curr_disk, "cyl_size", 1000000),
+							  Storage::GetTargetMap(),
+							  Mode::installation
+							  );
+                    }
+
+                    if (new_val != nil)
+                    {
+			// set focus to new partition
+			focusline = Storage::GetSubDevKey( maindev , curr_nr );
+			Storage::AddSubDev(focusline,  new_val );
+
+			/*
+			partitions = add( partitions, new_val );
+                        curr_disk  = add( curr_disk, "partitions", partitions );
+                        targetMap  = add( targetMap, curr_diskdev, curr_disk );
+			*/
+
+			
+                    }
+                }
+            }
+        }
+
+      ////////////////////////////////////////////////////////////////////////////////////////////////////////
+      ////  EDIT
+      ////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        if (ret == `edit || ret == `table )
+        {
+          any w_id = UI::QueryWidget(`id(`table), `CurrentItem);
+
+          // notify a line is selected
+          if ( w_id != nil )
+          {
+            string id      = UI::QueryWidget(`id(`table), `CurrentItem);
+	    focusline	   = id;
+	    y2milestone("Choosen: %1", id);
+
+            
+	    if ( Storage::IsMainDevMd( id ) )
+	    {
+		ret = `raid_settings;
+	    }
+	    else if ( Storage::IsKeyMainDevKey( id ) )
+            {
+		if( Storage::GetMainDevParam( id , "is_lvm_vg"))
+		{
+		    ret = `lvm;
+		}
+		else
+		{
+		    TargetAllocationDlg(lookup(Storage::GetTargetMap() , id , $[] ) ,id );
+		}
+            }
+            else if( Storage::IsMainDevVg( id ) )
+	    {
+		ret = `lvmlv;
+	    }
+	    else
+            {
+		map new_val 	   = $[];
+		
+                string maindevkey  = Storage::GetMainDevKey(id); 
+		string subdevindex = Storage::GetSubDevIndex(id);
+		integer number     = tointeger( subdevindex );
+		string devStr      = Storage::GetDeviceName(maindevkey, number );
+		
+		map curr_disk      = Storage::GetMainDev( maindevkey );
+
+	
+		//////////////////////////////////////////////////////////////////////////////
+		// check if it is a pdisk disk, then editing is restricted
+		boolean pdisk_disk = check_pdisk( curr_disk, `warn_not );
+
+		map  curr_part      = Storage::GetSubDev( id );
+
+		
+
+		
+		//////////////////////////////////////////////////////////////////////////////
+                // check if the partition can be deleted
+		
+		if(  check_partition_edit( maindevkey,  curr_part, bsd_label) != `edit )
+		{
+		    continue;
+		}
+		
+
+		if( test_mode )
+		{
+		    y2debug("List: %1 %2", lookup( curr_disk, "partitions", []), number);
+		    SCR::Write(.dumpto.tmp.part, lookup( curr_disk, "partitions", []));
+		}
+
+
+		list partitions_without_current = filter( `c_part, lookup( curr_disk, "partitions", []), ``(!(lookup(c_part, "nr", 0)==number
+													   && (lookup(c_part, "delete", false) == false) )));
+		map disk_without_current   = add( curr_disk, "partitions", partitions_without_current);
+		map target_without_current = add( Storage::GetTargetMap() , maindevkey, disk_without_current );
+
+		   
+		//////////////////////////////////////
+		// There are three different Editors:
+		// - "normal"
+		// - extended
+		// - already existing
+		
+		y2debug( "current partition %1", curr_part );
+
+		if ( Storage::IsSubDevExtended( id )  )
+		{
+		    if ( lookup(curr_part, "create", false) == true )
+		    {
+			////////////////////////////////////////////////////////////////
+			// header of the Dialog Create a partition
+			string title = UI(_("Edit an extended partition "))+ devStr;
+			new_val = UI::CreateEditExtendedPartDlg( curr_part,
+								 title,
+								 devStr,
+								 disk_without_current,
+								 lookup( curr_disk, "cyl_size", 1000000),
+								 true,
+								 bsd_label
+								 );
+		    }
+		    else
+		    {
+			UI::ErrorPopup( _("An already-existing extended partition cannot be changed.
+Delete this partition then create a new one using 
+the new parameters.
+WARNING: All data on this partition will be lost.
+"));
+			new_val = nil;
+		    }
+		}
+		else
+		{
+		    if( Storage::IsSubDevRaid( id ))
+		    {
+		        new_val	 =  RaidExpertDlg(`settings,
+						  "/dev/md" + subdevindex,
+						  curr_part,
+						  Mode::installation,
+						  FileSystems::GetAllFileSystems( false, true ),
+						  false,
+						  Storage::GetTargetMap()
+						  );
+		    }
+		    else
+		    {
+			string title = "";
+			if ( !lookup(curr_part, "create", false) )
+			{
+			    title = UI(_("Edit existing partition "))+ devStr;
+			}
+			else
+			{
+			    ///////////////////////////////////////////////////////////////////////////////////////
+			    // header of the Dialog Create a partition
+			    title = UI(_("Edit partition "))+ devStr;
+			}
+
+			new_val = UI::EditOrCreatePartDlg(
+						      curr_part,
+						      FileSystems::GetAllFileSystems(true, true) ,
+						      title,
+						      devStr,
+						      disk_without_current,
+						      target_without_current,
+						      bsd_label,
+						      edit_formatflag,
+						      edit_cylinder,
+						      pdisk_disk ,
+						      lookup( curr_disk, "cyl_size", 1000000),
+						      Storage::GetTargetMap(),
+						      Mode::installation
+						      );
+		    }
+		}
+		
+		if ( new_val != nil )   // not canceld    
+		{ 
+		    Storage::SetSubDev(id , new_val );
+		}	
+	    }
+          }
+          else
+          {
+              // No line is selcted:
+              UI::MessagePopup(_("To edit a partition, please select one in the main dialog.") );
+          }
+        }
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        // DELETE
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        if (ret == `delete)
+        {
+	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
+	    string maindevkey 	= Storage::GetMainDevKey( id);
+	    
+	    if( ! Storage::IsKeyKey(id)) continue;
+	 
+	    if ( Storage::IsKeyMainDevKey(id))
+	    {
+		if ( Storage::IsMainDevMd(maindevkey))
+		{	
+		    continue;
+		}
+		else if( Storage::IsMainDevVg(maindevkey ))
+		{
+		    // FIXME -> remove the  volume group 
+		    ret = `lvm;
+		}
+		else if( UI::YesNoPopup ( sformat(UI(_("Do you really want to delete all partitions on %1?")), id )))
+		{
+		     map new_targetMap  = deleteAllDevPartitions( Storage::GetTargetMap() ,
+								  id,
+								  Mode::installation ,
+								  bsd_label );
+		     if( new_targetMap != nil )
+		     {
+			 Storage::SetTargetMap( new_targetMap );
+			 focusline = id;
+		     }
+		 }
+	     }
+	     else if( Storage::IsSubDevLv(id))
+	     {
+		 // FIXME -> remove the logical volume
+		 ret = `lvmlv;
+	     } 
+            else
+            {
+                //////////////////////////////////////////////////////////////////////////////
+                // delete algorithm:
+                // if you find newly created (but until now not realy written) partition
+                //    (sign: "create = true"): delete it
+                // else there must be already existing partition: mark it with "delete = true"
+		
+		focusline          	= maindevkey;
+		string  subdevindex	= Storage::GetSubDevIndex(id);
+		map curr_disk  		= Storage::GetMainDev( maindevkey );
+		map curr_part 		= Storage::GetSubDev( id );
+
+
+
+		//////////////////////////////////////////////////////////////////////////////
+		// check if the partition can be deleted
+		
+		symbol ret_delete = check_partition_delete( maindevkey, curr_disk , curr_part, bsd_label,
+							    true,  // pdisk_check
+							    true,  // bsd_check
+							    true,  // lvm_check
+							    true ,
+							    Mode::installation ); // raid_check
+
+
+		if( ret_delete == `immediate_prepdisk )
+		{
+		    immediate_prepdisk = true;
+		}
+
+		else if ( ret_delete == `no_delete )
+		{
+		    focusline = id;
+		    continue;
+		}
+
+		if( Storage::IsSubDevExtended( id ) )
+		{
+		    if( ! check_extended_delete( maindevkey,  curr_disk, Mode::installation ) )
+		    {
+			focusline = id;
+			continue;
+		    }
+		}
+
+		//////////////////////////////////////////////////////////////////////////////
+		// now delete partition!!
+		
+		if ( UI::YesNoPopup ( sformat(_("Do you really want to delete partition %1?"), Storage::GetDeviceName( maindevkey, lookup( curr_part, "nr", 0)) )))
+		{
+		    Storage::DelSubDev( id );
+		}
+		
+	    }
+            ////////////////////////////////////////////////////////////////////////////////////////////////////
+        }
+
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        // RESIZE
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        if (ret == `resize)
+        {
+	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
+	    string maindevkey 	= Storage::GetMainDevKey( id);
+	    map curr_part 	= Storage::GetSubDev( id );
+	    map curr_disk  	= Storage::GetMainDev( maindevkey );
+
+	    y2milestone( "RESIZE id=%1 maindev=%2 part=%3", 
+	                 id, maindevkey, curr_part );
+	    if( !Partitions::IsDosPartition( curr_part["fsid"]:0 ) )
+		{
+		UI::MessagePopup(_("You can only resize DOS/Windows FAT partitions.
+Select such a partition and press the \"Resize\" button again.
+"));
+                }
+	    else
+		{
+		map new_val = curr_part;
+		new_val = UI::ResizePartDlg( curr_part,
+					     Storage::GetDeviceName( maindevkey, WFM::tointeger(new_val["nr"]:0) ),
+					     curr_disk["cyl_size"]:1000000 );
+		if( new_val != nil )
+		    {
+		    Storage::SetSubDev( id, new_val );
+		    }
+		}
+        }
+
+	boolean ask_reread = true;
+	
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+        // Delete partition table and disk label
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+        if (ret == `delete_parttable)
+	{
+	    string maindev    = UI::ChooseDisk( Storage::GetTargetMap(), _("Delete partition table:"), `delete );
+
+	    // not cancel
+	    if ( maindev != nilstring )
+	    {
+		if( DDZeroPartitionTable(maindev))
+		{		    
+		    // now reread partion table -> ret == `reread 
+		    ask_reread = false;
+		    ret = `reread;
+		}
+	    }
+	}
+
+	
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        // REREAD
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        if (ret == `reread)
+        {
+	    boolean ret2 = true;
+
+	    if ( ask_reread ) 
+		ret2 = UI::YesNoPopup(_("Do you really want to reread the partition table?\nAll current changes made in this dialog will be lost!")); 
+
+	    if ( ret2 )
+            {
+		if( ! Mode::installation )
+		{
+		    Storage::StorageReadInSystem();
+		}
+		else {
+		    Storage::ReReadTargetMap();
+		}
+	    }
+        }
+
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+        // Raid
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+        if (ret == `raid_wizard )
+        {
+	    if( ! check_raid_possible( Storage::GetTargetMap()  ) )
+		continue;
+        }
+
+	
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+        // LVM
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+	
+        if (ret == `lvm)
+        {
+	    if( ! check_lvm_possible( Storage::GetTargetMap() ) )
+		continue;
+        }
+	
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+        // Adapt mount points from existing /etc/fstab
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        if (ret == `adapt_mp && Mode::installation )
+	{
+	    list fstab   = scanAndReadExistingFstab( Storage::GetTargetMap() ,  FileSystems::GetAllFileSystems(true, true));
+	    
+	    list  ret_l  = Storage::AddFstabToWhat( Storage::GetTargetMap() ,  fstab , `targetMap_table );
+
+	    if( ret_l != nil && size( ret_l ) == 2 )
+	    {
+	    
+		map new_targetMap = select( ret_l, 0, $[] );
+		list table_input  = select( ret_l, 1, [] );
+
+		if( FstabAddDialog( table_input  ))
+		{
+		    Storage::SetTargetMap ( new_targetMap );
+		}
+	    }
+	}
+
+
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        // End of Actions, Now check the returncode
+        ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+        if (ret == `next || ret == `back || ret == `raid || ret == `lvm || ret == `raid_settings || ret == `raid_wizard )
+        {
+    	    symbol doagain = `next;
+
+	    if( ret == `back )
+		{
+		boolean changed = Storage::GetTargetBackup("custom_part") !=
+		                  Storage::GetTargetMap();
+		y2milestone( "CheckBack ret=%1 changed=%2", ret, changed );
+		if( changed )
+		    {
+		    if( !UI::ContinueCancelPopup( _("You have changed the partitioning.
+These changes will be lost if you exit the dialog with \"Back\".
+Continue?
+")) )
+			{ 
+			doagain = `again;
+			}
+		    }
+		}
+	    if ( ret == `next && !immediate_prepdisk )
+            {
+		list retval = check_created_partiton_table( Storage::GetTargetMap() , true, Mode::installation );
+		Storage::SetTargetMap( select( retval, 0, $[] ) );
+	        doagain     = select( retval, 1, `next );
+	    }
+
+	    // write partition information
+	    Installation::immediate_prepdisk = immediate_prepdisk;
+
+	    if( (ret==`back || ret==`next) && doagain!=`again )
+		{
+		Storage::DisposeTargetBackup("custom_part");
+		}
+
+	    if ( doagain == `again ) return `again;
+
+            if ( ret != `back )
+            {
+                if (ret == `apply) return `again;
+            }
+        }
+
+  } until (ret == `next || ret == `back || ret == `cancel || ret == `raid_wizard || ret == `raid_settings || ret == `lvm || ret == `lvmlv || ret == `abort );
+
+
+  Wizard::RestoreHelp( help_text );
+  SCR::Write(Storage::SaveDumpPath("targetMap_e"), Storage::GetTargetMap() );
+
+
+  //next by installation
+  if( Mode::installation && ret == `next )
+      ret = `instnext;
+
+  //next in existing system
+  if( ! Mode::installation && ret == `next )
+      ret = `sysnext;
+
+  if( ret == `back )
+      ret = `backtoi;
+
+  if( ret == `raid_settings || ret == `raid_wizard )
+      Storage::Record();
+
+  return ret;
+
+
+}

@@ -1,0 +1,679 @@
+/**
+ * File:
+ *   lvm_ui_lib.ycp
+ *
+ * Module: 
+ *    configuration of lvm: lib for the user interface
+ *
+ * Summary:
+ *
+ * Authors:
+ *   mike <mike@suse.de>
+ *
+ *
+ * $Id$
+ *
+ */
+
+
+{
+
+ textdomain "partitioning";
+
+   /////////////////////////////////////////////////////////////////////////////////////
+   /////////////////////////////////////////////////////////////////////////////////////
+   //                                  Helptext  defines                                //
+   /////////////////////////////////////////////////////////////////////////////////////
+   /////////////////////////////////////////////////////////////////////////////////////
+
+
+  //////////////////////////////////////////////////////////////////////
+  // helptext for dialog createEditLogicaVolume
+  //////////////////////////////////////////////////////////////////////
+ 
+  global define getCreateEditLogicaVolumeHelptext()
+  ``{
+
+      string help_text = "cstein";
+      return( help_text );
+      
+   };
+
+
+   //////////////////////////////////////////////////////////////////////
+   // helptext for logical volume
+   //////////////////////////////////////////////////////////////////////
+
+   global define getLvHelptext()
+   ``{
+       string help_text = "";
+
+       // helptext LVM partitioning. 
+       help_text =  UI(_("<p>Here, create the logical 
+volumes used to store your data.</p>
+"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<p>
+Logical volumes are
+usable almost everywhere normal <b>disk partitions</b> can be used.
+You can create file systems on logical volumes and use them, for example, as swap 
+or as raw partitions for databases.</p>
+"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<p>
+If there is still unallocated
+physical storage in a volume group and you use <b>reiserfs</b> as your file system,
+extend a logical volume and the underlying file system while it
+is <b>mounted</b> and in <b>use</b>.</p>
+"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<p>
+The logical volumes need to be large enough
+to hold all the files to install now, but you do not necessarily have to
+allocate all your physical storage now. The file systems can be increased 
+later while your SuSE Linux system is in use.
+</p>
+"));
+    
+       return( help_text );
+   };
+
+
+
+   //////////////////////////////////////////////////////////////////////
+   // helptext for physical volume
+   //////////////////////////////////////////////////////////////////////
+
+   global define getPvHelptext()
+   ``{
+       string help_text = "";
+
+    // helptext LVM partitioning. 
+       help_text =  UI(_("<p><b>Add partitions</b> (called physical volumes) to your volume group.</p>"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<p>
+The volume group forms the <b>storage pool</b> from which your logical volumes,
+like virtual partitions, are allocated.</p>
+"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<p>
+Under normal circumstances, there is no need to have more than one volume 
+group. If you need more than one volume group for special reasons,
+create them here. Each volume group must have at least one partition 
+that belongs to that volume group.</p>
+"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<p>
+Each physical volume belongs <b>to exactly one</b> volume group. Assign all
+partitions to use with Linux LVM to volume groups.</p>
+"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<p>
+Additionally, it is possible to remove volume groups 
+when they do not contain any logical volumes.</p>
+"));
+
+       return( help_text );
+   };
+    
+
+
+   //////////////////////////////////////////////////////////////////////
+   // helptext for lvm module in the installed system
+   //////////////////////////////////////////////////////////////////////
+
+   global define getLvmHelptext()
+   ``{
+       string help_text = "";
+
+    // helptext LVM partitioning. 
+       help_text =  UI(_("<p>With this tool, manage or create logical volumes.
+ </p>
+"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<ol><li>
+First, create a volume group, if you have not done this already.
+</li>
+"));
+
+       // helptext LVM partitioning. 
+       help_text = help_text + UI(_("<li>
+In the next step, add <b>physical volumes</b> (see paragraph below).
+</li>
+"));
+
+       help_text = help_text + UI(_("<li>
+In the last step, create <b>logical volumes</b> (see paragraph below).
+</li></ol><br>
+"));
+
+       help_text = help_text + UI(_("<p>
+<b>Physical Volumes:</b></p>"));
+       help_text = help_text + getPvHelptext();
+       help_text = help_text + UI(_("<p>
+<b>Logical Volumes:</b></p>"));
+       help_text = help_text + getLvHelptext();
+
+       return( help_text );
+   };
+
+    
+
+    /////////////////////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////////////////////
+    //                                  DIALOG  defines                                //
+    /////////////////////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    
+    //////////////////////////////////////////////////////////////////////
+    // give main page for configuration - X11 version 
+    //////////////////////////////////////////////////////////////////////
+
+    global define get_config_content( list pv_table_list,
+			       list lv_table_list,
+			       list vg_list,
+			       string phys_vg_size,
+			       string avail_vg_size,
+			       boolean view_all_mnts	)
+    ``{
+	   return(  `HBox(
+			  `HSpacing(0.5),
+			  `VBox(
+				`VSpacing(0.5),
+				`VSquash(`HBox( 
+					       `Left(`ReplacePoint( `id(`rvg ),
+								    `ComboBox(`id(`vg),
+									      `opt(`notify),
+									      // Comboy label
+									      _("V&olume Group Name"),
+									      vg_list ))),
+					       `HSpacing(2),
+					       `Left(`Bottom(`PushButton( `id(`vg_add_vg), _("A&dd group")))),
+					       `HSpacing(0.5),
+					       `Left(`Bottom(`PushButton( `id(`vg_remove_vg), _("Remove &group")))),
+					       `HWeight(1,`HStretch())
+					       )),
+				`VSpacing(1),
+				`Frame(_("Edit the current volume group:"),
+				       `HBox(
+					     `VBox(
+						   `VSpacing(0.7),
+						   `Heading(_("Physical volumes")),
+						   `VSpacing(0.7),
+						   `HBox(
+							 `Label(_("Physical volume size:")),
+							 `Label( `id(`pv_size), `opt( `outputField), phys_vg_size )
+							 ),
+						   `VSpacing(0.5),
+						   get_pv_table_content( pv_table_list )
+						   ),
+					     `VBox(
+						   `VSpacing(0.5),
+						   `Heading(_("Logical volumes")),
+						   `VSpacing(0.5),
+						   get_bargraph_or_compatible( avail_vg_size ),
+						   `VSpacing(0.2),
+						   get_lv_table_content( lv_table_list, view_all_mnts )
+						   )
+					     )
+					)
+				),
+			  `HSpacing(0.5)
+			  )
+		    );
+    };
+
+
+    
+    //////////////////////////////////////////////////////////////////////
+    // give main page for step 2: create volume group, add phys. volumes (pv)
+    //////////////////////////////////////////////////////////////////////
+
+    global define get_pv_content( list table_list, list vg_list, string vg_size_str )
+    ``{
+	   return(  `HBox(`HSpacing(2.5),
+			  `VBox(`VSpacing(0.1),
+				`VWeight(20, `HBox( 
+					       `Left(`ReplacePoint( `id(`rvg ),
+								    `ComboBox(`id(`vg),
+									      `opt(`notify),
+									      // Combobox Label
+									      _("Volume &Group:"),
+									      vg_list ))),
+					       `HSpacing(0.5),
+					       `Left(`Label(_("Size:"))),
+					       `Left(`Label( `id(`pv_size),
+								     `opt( `hstretch, `outputField), vg_size_str )),
+					       `HWeight(1,`HStretch()),
+					       `Bottom(`Right(`VBox(
+					                           `Top(`PushButton( `id(`vg_remove_vg), `opt(`hstretch), _("Remove &group"))),
+								   `Bottom(`PushButton( `id(`vg_add_vg), `opt(`hstretch), _("A&dd group"))))))
+					       )),
+				`VSpacing(0.2),
+				`VWeight(50, get_pv_table_content( table_list ))
+				),
+			  `HSpacing(2)
+			  )
+		    );
+    };
+
+    //----------------------------------------------------
+    // give bar widget if possible
+    
+    global define get_bargraph_or_compatible( string avail_vg_size )
+    ``{
+	
+	if ( UI::HasSpecialWidget( `BarGraph ))
+	{
+	    return( `HBox(
+		  `Label(_("Available size:")),
+		  `HSpacing(0.5),
+		  `Left(`BarGraph( `id(`vg_size), `opt(`hstretch),
+				   [ 0, 10 ], [ "", ""]))
+	      // `Label( `opt( `outputField), avail_vg_size )
+		  ));
+	}
+	else
+	{
+	    return( `HBox(
+			  `Bottom(`Left(`Label(_("Available Size:")))),
+			  `Bottom(`Left(`Label( `id(`vg_size),
+						`opt( `hstretch, `outputField), avail_vg_size ))),
+			  `HWeight(1,`HStretch())
+	      // `Label( `opt( `outputField), avail_vg_size )
+		  ));
+	}
+    };
+		
+    					       
+
+
+
+    //----------------------------------------------------
+    // give table for step 2: create volume group, add phys. volumes (pv)
+    
+    global define get_pv_table_content( list table_list )
+    ``{
+	   return( `VBox(
+			 `Table(`id(`pv_table), `opt(`notify),
+				`header(_("  Device  "), `Right(_("  Size  ")), `Center(_("  Type  ")), `Center(_(" Volume Group "))),
+				table_list
+				),
+			 `HBox( `PushButton(`id(`pv_add), _("&Add Volume")),
+				`PushButton(`id(`pv_delete), _("&Remove Volume"))
+				),
+			 `VSpacing(0.5)
+			 )
+		  );
+    };
+
+	   
+    
+    //////////////////////////////////////////////////////////////////////
+    // give main page for step 3: add/delete logical volumes (lv)
+    //////////////////////////////////////////////////////////////////////
+    
+    global define get_lv_content( list table_list, list vg_list, string avail_size, boolean view_all_mnts)
+    ``{
+	if ( UI::HasSpecialWidget( `BarGraph ))
+	{
+	    return( `HBox(`HSpacing(2.5),
+			  `VBox(`VSpacing(0.5),
+				`VSquash(`HBox(
+					       `ReplacePoint( `id(`rvg ),
+							      `ComboBox(`id(`vg),
+									`opt(`notify),
+									// Label of Combobox    
+								       _("V&olume Group Name"),
+								       vg_list )),
+
+					       `HSpacing(0.5),
+					       `Left(`BarGraph( `id(`vg_size), `opt(`hstretch),
+								[ 0, 10 ], [ "", ""]))
+					       )),
+				`VSpacing(0.5),
+				get_lv_table_content( table_list, view_all_mnts )
+				),
+			  `HSpacing(2)
+			  )
+		    );
+	}
+	else
+	{
+	    	    return( `HBox(`HSpacing(2.5),
+			  `VBox(`VSpacing(0.5),
+				`VSquash(`HBox(
+					       `Left(`ReplacePoint( `id(`rvg ),
+							      `ComboBox(`id(`vg),
+									`opt(`notify),
+									// Label of Combobox    
+								       _("V&olume Group Name"),
+								       vg_list ))),
+
+					       `HSpacing(0.5),
+					       `Bottom(`Left(`Label(_("Available Size:")))),
+					       `Bottom(`Left(`Label( `id(`vg_size),
+								     `opt( `hstretch, `outputField), avail_size ))),
+					       `HWeight(1,`HStretch())
+					       
+					       )),
+				`VSpacing(0.5),
+				get_lv_table_content( table_list, view_all_mnts )
+				),
+			  `HSpacing(2)
+			  )
+		    );
+	}
+
+    };
+
+
+    //----------------------------------------------------
+    // give table for step 3: add/delete logical volumes (lv)
+   
+    global define get_lv_table_content( list table_list, boolean view_all_mnts )
+    ``{
+	    return( `VBox(
+			  `Table(`id(`lv_table), `opt(`notify),
+				 // table coulum headings  Vol.Grp = Volume Group
+				 `header(`Left(_("Device  ")), `Center(_(" Mount   ")),
+					 `Center(_(" Vol. Grp.")),
+					 `Right(_("Size")), `Center(_(" Type ")) ),
+				 table_list
+				 ),
+			  `Left(`CheckBox( `id(`viewmnt),
+					   `opt(`notify),
+					   _("&View all mount points, not just the current volume group"),
+					   view_all_mnts )),
+			  `VSpacing(0.2),
+			  `HBox( `PushButton(`id(`lv_add),   _("A&dd")),
+				 `PushButton(`id(`lv_edit),  _("&Edit")),
+				 `PushButton(`id(`lv_delete), _("&Remove"))
+				 ),
+			  `VSpacing(0.5)
+			  )
+		    );
+    };
+
+
+		    
+    /////////////////////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////////////////////
+    //                                     Help defines                                //
+    /////////////////////////////////////////////////////////////////////////////////////
+    /////////////////////////////////////////////////////////////////////////////////////
+
+    
+    
+    //////////////////////////////////////////////////////////////////////
+    // checks if vgname is a valid device name : todo: do it better
+    
+    global define icheck_vgname( string vgname )
+    ``{
+	return( icheck_devname( vgname ));
+    }
+
+    
+    //////////////////////////////////////////////////////////////////////
+    // checks if pesize is valid   8K to 521M in power of 2
+    //
+    // 8 is 8k
+    // 16K == 16k == 16KB == 16kb
+
+    // --------------------------------------------------------------------
+    // Check if the string is a number 
+    // Returns true or false
+    // ---------------------------------------------------------------------
+    //
+
+     global define icheck_pesize( string input )
+     ``{
+	 if ( pesize_str_to_byte( input ) == nil )
+	 {
+	     return( false );
+	 }
+	 {
+	     return( true );
+	 }
+     };
+
+
+     //////////////////////////////////////////////////////////////////////
+     // pesize to byte
+     // in: <number>[kKmM][bB]
+     // 
+     // return "0" if input is invalid
+     // 
+     // pesize is valid   8K to 521M in power of 2
+     // 8 is 8k
+     // 16K == 16k == 16KB == 16kb
+     
+     global define pesize_str_to_byte( string input )
+     ``{
+   	   integer number = 0;
+	 
+           if ( findfirstnotof( input, "0123456789") != nil  )
+           {
+               // check whether the last char is in "kKmM" or "bB"
+               string last_char = substring( input, size(input)-1, 1);
+
+	       if ( last_char == "b" || last_char == "B" )
+               {
+                   input = substring( input, 0, size(input)-1);
+		   // check whether the last char is in "kKmM" 
+		   last_char = substring( input, size(input)-1, 1);
+               }
+
+	       string number_str = substring(input, 0, size(input)-1);
+
+	       if ( findfirstnotof( number_str, "0123456789") == nil )
+	       {
+   	          if ( last_char == "k" || last_char == "K" )
+		  {
+		      number = tointeger( number_str ); 
+		  }
+		  else if ( last_char == "m" || last_char == "M" )
+		  {
+		      number = tointeger( number_str ) * 1024; 
+		  }
+		  else
+		  {
+		      number = 0;
+		  }
+	       }
+	       else
+	       {
+		   number = 0;
+	       }
+           }
+           else
+           {
+               number = tointeger( input );
+           }
+
+	   if ( number    ==      8
+		|| number ==   	 16
+		|| number ==   	 32
+		|| number ==   	 64
+		|| number ==    128
+		|| number ==    256
+		|| number ==    512
+		|| number ==   1024
+		|| number ==   2048 
+		|| number ==   4096
+		|| number ==   8192
+		|| number ==  16384
+		|| number ==  32768
+		|| number ==  65536
+		|| number == 131072
+		|| number == 262144
+		|| number == 524288
+		)
+	   {
+	       return( number * 1024 );
+	   }
+	   else
+	   {
+	       return( nil );
+	   }
+     };
+
+
+     //////////////////////////////////////////////////////////////////////
+    // checks if lv_size is valid   8K to 521M in power of 2
+    //
+    // 8 is 8k
+    // 16K == 16k == 16KB == 16kb
+
+    // --------------------------------------------------------------------
+    // Check if the string is a number 
+    // Returns true or false
+    // ---------------------------------------------------------------------
+     
+     global define icheck_lv_size( string input, integer max_size )
+     ``{
+	 integer byte_size =  kmgt_str_to_byte( input );
+	 y2milestone( "icheck_lv_size input=%1 max_size=%2", input, max_size );
+	 y2milestone( "icheck_lv_size byte_size=%1", byte_size );
+	 
+	 if ( byte_size == 0 )
+	 {
+	     UI::ErrorPopup(sformat(_("The size entered is invalid.
+Enter a size from 1M to %1. For example, 40M or 1G.
+"), ByteToHumanStringWithZero(max_size)) );
+	     return( false );
+	 }
+
+	 if ( byte_size > max_size )
+	 {
+	     UI::ErrorPopup(sformat(_("The size entered is too large.
+Enter a size from 1M to %1.
+"), ByteToHumanStringWithZero(max_size)) );
+	     
+	     return( false );
+	 }
+
+	 return( true );
+     };
+
+       
+     //////////////////////////////////////////////////////////////////////
+    // checks if vgname is a valid device name : todo: do it better
+     global define icheck_volume_name( string vgname )
+	 ``{
+	 return( icheck_devname( vgname ));
+     }
+
+ 
+     //////////////////////////////////////////////////////////////////////
+     // checks if vgname is a valid device name : todo: do it better 
+
+     global define icheck_devname( string name )
+	 ``{
+	 if ( size( name ) == 0 ) return( false );
+	
+	 return( ( findfirstof( name, " ;/`'´!,\"%#" ) == nil ) );
+     }
+
+     
+UI(``{
+
+    //////////////////////////////////////////////////////////////////////
+    // show a new list of volume groups
+    //////////////////////////////////////////////////////////////////////
+
+    global define new_vg_list( list vg_list )
+    ``{
+	   ReplaceWidget(`id(`rvg), `ComboBox(`id(`vg),
+					      `opt(`notify),
+					      // Label of Combobox
+					      _("V&olume Group"),
+					      vg_list ) );
+    };
+
+  
+   
+     
+   
+
+     
+     //////////////////////////////////////////////////////////////////////
+     // stripe size to byte
+     // in: <number>[kK][bB]
+     // 
+     // return "0" if input is invalid
+     // 
+     // pesize is valid   1K to 128k in power of 2
+     // 8 is 8k
+     // 16K == 16k == 16KB == 16kb
+     
+     global define stripe_str_to_byte( string input )
+     ``{
+	   y2debug("FFFFF ++++++++ %1", input);
+   	   integer number = 0;
+	 
+           if ( findfirstnotof( input, "0123456789") != nil  )
+           {
+               // check whether the last char is in "kK" or "bB"
+               string last_char = substring( input, size(input)-1, 1);
+
+	       if ( last_char == "b" || last_char == "B" )
+               {
+                   input = substring( input, 0, size(input)-1);
+		   // check whether the last char is in "kK" 
+		   last_char = substring( input, size(input)-1, 1);
+               }
+
+	       string number_str = substring(input, 0, size(input)-1);
+
+	       if ( findfirstnotof( number_str, "0123456789") == nil )
+	       {
+   	          if ( last_char == "k" || last_char == "K" )
+		  {
+		      number = tointeger( number_str ); 
+		  }
+		  else
+		  {
+		      number = 0;
+		  }
+	       }
+	       else
+	       {
+		   number = 0;
+	       }
+           }
+           else
+           {
+               number = tointeger( input );
+           }
+
+	   if ( number    ==      1
+		|| number ==   	  2
+		|| number ==   	  4
+		|| number ==   	  8
+		|| number ==   	 16
+		|| number ==   	 32
+		|| number ==   	 64
+		|| number ==    128
+		)
+	   {
+	       return( number * 1024 );
+	   }
+	   else
+	   {
+	       return( nil );
+	   }
+     };
+
+
+});
+}

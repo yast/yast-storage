@@ -1,0 +1,154 @@
+Partitioner Implementation Spec.
+--------------------------------
+
+This should be moved to the functional specification directory
+and *not* remain below yast2/source/modules.
+
+
+1. Partitions in general
+---------------------------------------------------------------------
+
+Partitions are used to divide a large harddisk into separate parts,
+which can be used independant of one another.
+
+Partitions are specified with a start block and a size (i.e. number of
+blocks). The term 'block' can be a relative physical sector,
+a 'cylinder', or any other measurement to exactly specify
+a disk address.
+
+When speaking of a 'disk address', the smallest addressable piece of
+data (i.e. sector) as seen by the linux kernel is meant.
+
+How partitions are handled depends on the system where the disk is used.
+Sometimes partitions can overlap, sometimes 'holes' are allowed between
+partitions.
+
+
+Wintel partitions
+-----------------
+
+Disks on Wintel systems have one partition table in the MBR (master boot
+record, usually the first sector on the disk). This table can hold up to
+four (4) partitions. If more than for partitions are needed, one partition
+can be marked as 'extended'. The extended partition then holds a second
+partitions table with space for another 8 (?) 'logical' partitions
+
+Partitions are specified as CHS (cylinder, head, sector) values
+
+Partitions might *not* overlap
+
+Partitions have a 8bit ID which specifies the usage (i.e. DOS, Windows, Linux)
+
+Partitions are numbered for 1 on. 1-4 are the primary partitions, 5 and above are
+the logical partitions.
+
+Partitions can be marked as 'active'. Such partitions hold boot information
+for booting a system.
+
+Almost all Wintel-BIOS treat the cylinder value as a 10bit integer. So cylinder
+values above 1023 can't be addressed by the BIOS for booting.
+
+Booting from SCSI disks is also problematic. It either isn't supported at all
+or only from one of the first four disks.
+
+
+Alpha partitions
+----------------
+
+Alpha partition tables are based on BSD Unix or Wintel.
+
+This can be decided by looking at the 'serial number' from /proc/cpuinfo
+If it starts with 'MILO', Wintel partitions are used, else BSD.
+
+
+BSD partitions
+--------------
+
+Up to eight (8) partitions can be defined.
+
+Partitions are specified as relative sector values (start, size)
+
+Partitions can overlap
+
+Partitions are numbered from 1 on.
+
+Partition 2 usually holds swap
+
+Partition 3 usually covers the whole disk (overlapping all other partitions)
+
+
+
+2. Automatic partitioning
+----------------------------------------------------------------------------
+
+Automatic partitioning should decide on how to partition a disk to get
+
+
+the standard partitioning
+------------------------
+
+- a boot partition	(Wintel systems only, min. 12 MB or 1 cylinder)
+- a swap partition	(physical RAM size * 2)
+- a root partition	(remaining space)
+
+This is easy if the whole disk can be used or a single extended
+partition is available. It gets tricky if the disk
+is shared with other operating systems (namely Windows).
+
+Alpha always uses the whole disk. There is no sharing with
+other OSs. Either a Wintel or a BSD partition table is created.
+
+The boot partition should be of type Linux (82) on PC/Wintel systems.
+The boot partition should be of type DOS-FAT (6?) on Alpha/Wintel systems.
+
+
+Pseudo code
+-----------
+
+Only for Wintel-PCs
+
+
+if (disk is empty)
+
+	use standard partitioning for whole disk
+
+else if (unpartitioned area on disk)
+
+	if (single empty partion slot available)
+
+		if (no extended partition available)
+			create extended partition for unpartitioned area
+			use standard partitioning for extended partition
+		else
+			if (unpartitioned area is bootable by bios (1024 cyl))
+				use single partition for /boot and /
+				create swap file
+			else
+				FAIL
+
+	else if (multiple empty partion slots available)
+
+		if (no extended partition available)
+			create extended partition for unpartitioned area
+			use standard partitioning for extended partition
+		else
+			if (unpartitioned area is bootable by bios (1024 cyl))
+				use (single) partition for /boot and /
+				create swap partition
+			else
+				FAIL
+
+else (no unpartitioned area available)
+
+	if (no extended partition available)
+		ask user to select a primary partition
+		convert this to an extended partition
+		apply standard partitioning to extended partition
+	else
+		ask user if extended partition can be erased
+		if (yes)
+			apply standard partitioning to extended partition
+		else
+			FAIL
+
+-------------------------------------------------------------------

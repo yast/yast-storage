@@ -1,0 +1,1261 @@
+/**
+ * File:
+ *   partition_defines.ycp
+ *
+ * Module:
+ *   partitioning
+ *
+ * Summary:
+ *   main lib for partitioning defines
+ *
+ * Authors:
+ *   mike <mike@suse.de>
+ *
+ *
+ * $Id$
+ *
+ */
+
+{
+  import "Arch";
+  import "Installation";
+  import "Wizard";
+  import "Storage";
+  import "Mode";
+  import "HTML";
+  import "Partitions";
+
+  include "ui/common_popups.ycp";
+  include "partitioning/custom_part_testdata.ycp";
+
+  textdomain "partitioning";
+
+    UI(``{
+  /**
+   * Check lvm mount points
+   * @param mount mount point
+   * @return boolean
+   */
+   global define check_lvm_mount_points( string mount ) ``{
+
+       list not_allowed_lvm_mount_points  = [ "/boot", "/" , "swap" ];
+       y2milestone( " check lvm mount");
+       if( contains(  not_allowed_lvm_mount_points , mount ))
+       {
+	   ErrorPopup(_("You cannot use the mount points \"/boot\", \"/\", and \"swap\" for LVM.\n"));
+
+	    return false;
+	}
+	return true;
+   };
+
+
+  /**
+   * Check raid mount points
+   * @param mount mount point
+   * @return boolean
+   **/
+    global define check_raid_mount_points( string mount )
+    ``{
+	list not_allowed_raid_mount_points  = [ "/boot", "swap" ];
+	y2milestone( " check raid mount");
+	if( contains(  not_allowed_raid_mount_points , mount ))
+	{
+	    ErrorPopup(_("You cannot use the mount points /boot and swap for RAID.
+"));
+
+	    return false;
+	}
+	return true;
+    };
+
+
+
+  /**
+   * Check crypted mount points and return true if the mount point is ok.
+   * @param mount mount point
+   * @param crypt_fs boolean
+   * @return boolean
+   **/
+    global define check_crypt_fs_mount_points( 	string mount , boolean crypt_fs )
+    ``{
+	list not_allowed_cryptfs_mount_points = [ "/" , "/boot" ,  "/usr" ,  "swap" ];
+
+	//y2milestone( "cryptfs %1, mount: %2", crypt_fs, mount );
+
+	if ( crypt_fs && contains( not_allowed_cryptfs_mount_points , mount ))
+	{
+	     ErrorPopup(_("You have assigned an encrypted file system to a
+partition with one of the following
+mount points: \"/\", \"/usr\", \"/boot\", \"swap\". This is
+not possible. Change the mount point or deselect
+the encryption option.
+"));
+	    return false;
+	}
+	return true;
+    };
+
+
+    /**
+     * Check all mount points and return true if the mount point is ok.
+     * @param targetMap the TargetMap
+     * @param mount mount point
+     * @return boolean
+     **/
+    global define check_mount_point( map targetMap, string mount, symbol used_fs )
+    ``{
+
+	boolean allowed = true;
+	list not_allowed_system_mount_points  = [ "/proc", "/dev", "/mnt", "var/adm/mnt", "/lost+found", "/lib", "/bin", "/etc", "/sbin" ];
+
+	if ( mount != ""  && mount != "swap"  )
+	{
+	    // check if the mount point is already in use
+	    foreach( `disk, `diskinfo, targetMap, ``{
+		foreach( `part, lookup( diskinfo, "partitions", [] ), ``{
+		    if ( lookup( part, "delete", false) == false )
+		    {
+			// all valid partitions
+			if ( lookup( part, "mount", "") == mount )   allowed = false;
+		    }
+		});
+	    });
+
+	    if ( allowed == false )
+	    {
+		MessagePopup(_("This mount point is already in use. Select a different one."));
+	    }
+	    // check if a dos filesystem is used for system purposes
+	    else if( (used_fs == `fat16 || used_fs == `fat32) &&
+		     (mount == "/" || mount == "/usr" || mount == "/opt" ||
+		      mount == "/var" || mount == "/home"))
+		{
+		allowed = false;
+		MessagePopup(_("FAT filesystem used for system mount point (/, /usr, /opt, /var, /home).\nThis is not possible."));
+		}
+
+	    // check if the mount countains chars making trouble
+	    else if( findfirstof( mount, " `'´!\"%#" ) >= 0 )
+		{
+		allowed = false;
+		MessagePopup(_("Invalid character in mount point. Dont use \"`'´!\"%#\" in a mount point."));
+		}
+
+	    // check if the mount point is a system mount point
+	    else if ( contains( not_allowed_system_mount_points , mount) )
+	    {
+		allowed = false;
+		MessagePopup(_("You cannot use any of the following mount points:
+/proc, /dev, /lib, /bin, /etc, /sbin, /mnt, /var/adm/mnt, /lost+found
+"));
+	    }
+	    else if ( substring( mount, 0, 1 ) != "/"  )
+	    {
+		allowed = false;
+		MessagePopup(_("Your mount point must start with a \"/\" "));
+	    }
+	}
+	else
+	{
+	    allowed = true;
+	}
+	return( allowed );
+    };
+
+    });
+
+
+    //////////////////////////////////////////////////////////////////////
+    // fills up a string to a minimum length
+
+    global define ToLen( integer wide, string str )
+    ``{
+	while ( size(str) < wide ) str = " " + str;
+	return( str );
+    };
+
+    //////////////////////////////////////////////////////////////////////
+    // converts int to string
+    // fills up the  string to a minimum length
+
+    global define ToStringLen( integer wide, integer number )
+    ``{
+	return( ToLen( wide, sformat("%1", number )));
+    };
+
+    //////////////////////////////////////////////////////////////////////
+    // size str to byte
+    // in: <number>[kKmM][bB]
+    //
+    // return "0" if input is invalid
+    //
+    // 8 is 8k
+    // 16K == 16k == 16KB == 16kb
+     global define kmgt_str_to_byte( string input )
+     ``{
+   	   integer number = 0;
+
+	   if ( size(filterchars(input, "0123456789kKmMgGtTbBoO ."))
+		!= size(input))
+	   {
+	       return(0);
+	   }
+
+	   input = filterchars(input, "0123456789kKmMgGtTbBoO.");
+
+	   y2debug( "EEE -%1- **** ", input);
+
+           if ( findfirstnotof( input, "0123456789.") != nil  )
+           {
+               // check whether the last char is in "kKmM" or "bB"
+               string last_char = substring( input, size(input)-1, 1);
+
+	       if ( last_char == "b" || last_char == "B" ||
+	            last_char == "o" || last_char == "O" )
+               {
+                   input = substring( input, 0, size(input)-1);
+		   // check whether the last char is in "kKmM"
+		   last_char = substring( input, size(input)-1, 1);
+               }
+
+	       string number_str = substring(input, 0, size(input)-1);
+
+	       if ( findfirstnotof( number_str, "0123456789.") == nil )
+	       {
+   	          if ( last_char == "k" || last_char == "K" )
+		  {
+		      number = tointeger(tofloat( number_str ) * 1024.0) ;
+		  }
+		  else if ( last_char == "m" || last_char == "M" )
+		  {
+		      number = tointeger(tofloat( number_str ) * 1024.0 * 1024.0);
+		  }
+		  else if ( last_char == "g" || last_char == "G" )
+		  {
+		      number = tointeger(tofloat( number_str ) * 1024.0 * 1024.0 * 1024.0);
+		  }
+		  else if ( last_char == "t" || last_char == "T" )
+		  {
+		      number = tointeger(tofloat( number_str ) * 1024.0 * 1024.0 * 1024.0 * 1024.0);
+		  }
+		  else
+		  {
+		      number = 0;
+		  }
+	       }
+	       else
+	       {
+		   number = 0;
+	       }
+           }
+           else
+           {
+               number = tointeger( input );
+           }
+
+	   return( number );
+     };
+
+
+
+    /*---------------------------------------------------------------------
+     * TargetChangesToRichText()
+     *------------------------------------
+     * scan targetmap for changes: visualize them for a RichText-Widget
+     *---------------------------------------------------------------------
+     */
+
+    global define TargetChangesToRichText( map targetMap)
+    ``{
+	if ( targetMap == nil )
+	{
+	    y2error( "TargetChangesToRichText(nil)");
+	    return("");
+	}
+
+
+
+	string description = "";
+
+	list delete_lst = [];
+	list resize_lst = [];
+	list reuse_lst  = [];
+	list create_lst = [];
+
+
+	foreach( `disk, `diskinfo, targetMap, ``{
+	    list    partitions = lookup( diskinfo, "partitions", [] );
+	    integer cyl_size  = lookup( diskinfo, "cyl_size", 1 );
+
+	    foreach( `part, partitions, ``{
+
+		string  device   = Storage::GetDeviceName( disk, lookup( part, "nr", 0) );
+		string  used_fs  = substring(sformat("%1", lookup( part, "used_fs", " ")) ,1);
+		string  mount    =  lookup( part, "mount",  "");
+		symbol  type     =  lookup( part, "type", `unknown);
+		string  fstype   =  lookup( part, "fstype", "");
+		string  winstr   =  "";
+		boolean is_fat   =  is_fat_partition( part );
+		string  psize    = ByteToHumanString (select(lookup( part, "region", [0,0]), 1,0) * cyl_size);
+		string  old_size = "";
+		string  debugstr = "";
+
+		if ( type != `pdisk )
+		{
+		    psize    = ByteToHumanString (select(lookup( part, "region", [0,0]), 1,0) * cyl_size);
+		}
+		else
+		{
+		    psize    = ByteToHumanString (select(lookup( part, "region", [0,0]), 1,0) * 512);
+		}
+
+		if ( Mode::test && !Mode::screen_shot )
+		{
+		    integer startcyl =  select(lookup( part, "region", [0,0]), 0,0);
+		    integer lencyl   =  select(lookup( part, "region", [0,0]), 1,1);
+		    debugstr = sformat(" cyl: %1 to %2  ", ToStringLen(5, startcyl), ToStringLen(5,startcyl + lencyl -1) );
+		}
+
+		if ( is_fat )
+		{
+		   // try to find windows letter like C: D:
+		   // look for /windows/ or /dos/
+		    if ( size(mount) > 5  &&  substring( mount, 0, 5) == "/dos/" )      winstr = substring( mount, 5, 1 ) + ":";
+		    if ( size(mount) > 9  &&  substring( mount, 0, 9) == "/windows/" )  winstr = substring( mount, 9, 1 ) + ":";
+
+		    old_size = ByteToHumanString (lookup( part, "ori_length", 0 ) * cyl_size);
+		}
+
+		y2debug( "WWW %1", part);
+
+		if ( lookup( part, "delete", false) )
+		{
+		    if ( is_fat )
+		    {
+			// to translators: * Delete Windows partition C: (hda3) 600 MB
+			delete_lst = add( delete_lst, debugstr + sformat(_("<font color=red>Delete Windows partition</font> %1 (%2) %3"), winstr, device, psize ));
+		    }
+		    else
+		    {
+		        // to translators: * Delete partition hda3 600 MB (Linux LVM)
+		        delete_lst = add( delete_lst, debugstr + sformat(_("<font color=red>Delete partition</font> %1 %2 (%3)"), device, psize, fstype ));
+		    }
+		}
+
+		else if ( lookup( part, "create", false) )
+		{
+		    boolean new_mp = false;
+
+		    string instr = mount;
+
+		    // for Create %1 partition to Create boot partition
+		    if ( mount == "/boot")      instr = _("boot");
+		    // for Create %1 partition to Create root partition
+		    else if ( mount == "/")     instr = _("root");
+		    // for Create %1 partition to Create swap partitions
+		    else if ( mount == "swap" ) instr = _("swap");
+                    // or a non default mp
+		    else new_mp = true;
+
+
+		    if ( !new_mp && mount == "swap")
+		    {
+			// to translators: * Create swap partition 1.2 GB on hda1
+			create_lst = add( create_lst, debugstr + sformat(_("Create %1 partition %2 on %3"), instr, psize, device ));
+		    }
+		    else if ( !new_mp )
+		    {
+			// to translators: * Create root partition 1.2 GB (hda1 with ext2)
+			create_lst = add( create_lst, debugstr + sformat(_("Create %1 partition %2 (%3 with %4)"), instr, psize, device, used_fs ));
+		    }
+		    else if ( type == `extended )
+		    {
+			// to translators: * Create extended partition 1.2 GB (hda1)
+			create_lst = add( create_lst, debugstr + sformat(_("Create extended partition %2 (%3)"), instr, psize, device));
+		    }
+		    else
+		    {
+			if( diskinfo["is_lvm_vg"]:false == false )
+			    {
+			    if( mount != "" )
+				{
+				// to translators: * Create partition hda3 700 MB (for /var with ext2)
+				create_lst = add( create_lst, debugstr + sformat(_("Create partition %1 %2 (for %3 with %4)"), device, psize, mount, used_fs ));
+				}
+			    else
+				{
+				// to translators: * Create partition hda3 700 MB
+				create_lst = add( create_lst, debugstr + sformat(_("Create partition %1 %2"), device, psize ));
+				}
+			    }
+			else
+			    {
+			    // to translators: * Create LV var in VG system 700 MB (for /var with ext2)
+			    create_lst = add( create_lst, debugstr + sformat(_("Create LV %1 in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
+			    }
+		    }
+		}
+
+		else if ( lookup( part, "resize", false) )
+		{
+		    if ( is_fat )
+		    {
+			// to translators: * Resize Windows partition C: (hda1) from 3.2GB to 1.8GB.
+			// or without C:   * Resize Windows partition (hda1) from 3.2GB to 1.8GB.
+			resize_lst = add( resize_lst, debugstr + sformat(_("Resize Windows partition %1 (%2) from %3 to %4"),
+							      winstr, device, old_size, psize  ));
+		    }
+		    else
+		    {
+			// for future use (7.3 08/2001)
+			// to translators: * Resize partition hda1 to 1.8GB.
+			resize_lst = add( resize_lst, debugstr + sformat(_("Resize partition %1 to %2"),  device, psize  ));
+		    }
+		}
+
+		else if ( lookup( part, "format", false ))
+		{
+		    if( mount == "swap")
+			{
+			// to translators: * Format partition hda3 700 MB (for swap)
+			reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (for %3)"), device, psize, mount ));
+			}
+		    else
+			{
+			if( diskinfo["is_lvm_vg"]:false == false )
+			    {
+			    // to translators: * Format partition hda3 700 MB (for /var with ext2)
+			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format partition</font> %1 %2 (for %3 with %4)"), device, psize, mount, used_fs ));
+			    }
+			else
+			    {
+			    // to translators: * format LV var in VG system 700 MB (for /var with ext2)
+			    reuse_lst = add( reuse_lst, debugstr + sformat(_("<font color=red>Format LV %1 in VG %2 %3 (for %4 with %5)"), part["nr"]:"", substring(disk,5), psize, mount, used_fs ));
+			    }
+			}
+		}
+
+
+
+	    });
+	});
+
+
+        foreach( `line, delete_lst, ``{
+            y2debug( "OUT: DELETE: %1", line);
+        });
+        foreach( `line, reuse_lst, ``{
+            y2debug( "OUT: REUSE : %1", line);
+        });
+        foreach( `line, resize_lst, ``{
+            y2debug( "OUT: RESIZE: %1", line);
+        });
+        foreach( `line, create_lst, ``{
+            y2debug( "OUT: CREATE: %1", line);
+        });
+
+	return HTML::List( flatten( [ delete_lst, reuse_lst, resize_lst, create_lst ] ) );
+    };
+
+
+
+  
+    /*---------------------------------------------------------------------
+     * get a list of not used mountpoints
+     *------------------------------------
+     * in:  targetMap
+     * out: list of mountpoints for a combobox  ["/usr","/opt", ...]
+     *---------------------------------------------------------------------
+     */
+
+     global define notUsedMountpoints( map targetMap , list all_mountpoints )
+     ``{
+	 if( all_mountpoints == [] || all_mountpoints == nil  )
+	 {
+	     all_mountpoints =  FileSystems::system_m_points;
+	 }
+
+
+	list mountpoints = maplist( `dev, `devmap, targetMap,
+			   ``{
+			       list not_del_part = filter(  `part, lookup( devmap, "partitions", []),
+							    ``( lookup( part, "delete", false) == false));
+
+			       return( maplist( `part, not_del_part, ``( lookup( part, "mount", "")) ));
+			   });
+
+
+	mountpoints = flatten(mountpoints);
+	mountpoints = union(mountpoints, []); // remove double entrys "" and swap
+
+	list not_used_mountpoints = filter( `mnt, all_mountpoints,
+					    ``( !contains( mountpoints, mnt) ));
+
+	 return( not_used_mountpoints );
+     };
+
+
+    /*---------------------------------------------------------------------
+     * At the moment with a pdisk-formated disk you cannot
+     * create partitions
+     *------------------------------------
+     * in: current disk, `warn_not | `warn_delete | `warn_create
+     * out true | false
+     *---------------------------------------------------------------------
+     */
+
+      global define check_pdisk( map curr_disk, symbol warn )
+	``{
+	      if (filter (`pentry, lookup( curr_disk, "partitions", []),
+			  ``(lookup (pentry, "type", `empty) == `pdisk))
+		  != [] )
+	      {
+		  // This disk has an non-fdisk partition scheme
+		  // only mount-point
+		  if ( warn == `warn_delete )
+		  {
+		      UI::WarningPopup (_("This disk has pdisk partitions.
+
+There is nothing wrong with that, but, at the moment, YaST2 cannot
+delete these partitions. It can only mount them.
+"));
+		  }
+		  else  if ( warn == `warn_create )
+		  {
+		      UI::WarningPopup (_("This disk has pdisk partitions.
+
+There is nothing wrong with that, but, at the moment, YaST2 cannot
+create these partitions. It can only mount them.
+
+A way around this is to use an empty disk without any partitions.
+Then YaST2 can also create and delete partitions.
+"));
+		  }
+		  else  if ( warn == `warn_create )
+		  {
+		      // dont warn
+		  }
+
+		  return true;
+	      }
+	      else
+	      {
+		  return false;
+	      }
+	  };
+
+
+    /*---------------------------------------------------------------------
+     * Convert <number-of-bytes> to XXX.X MB or XXX.X GB or XXX.X TB
+     *
+     * see also ByteToHumanString !
+     * Return value: string  "0" if input == 0
+     *----------------------------------------------------------------------
+     */
+    global define ByteToHumanStringWithZero ( integer number )
+    ``{
+	// string or locale
+	any ret = ByteToHumanString( number );
+
+	if ( ret == _("unknown") )
+	{
+	    return( "0 " + _("MB") );
+	}
+	else
+	{
+	    return( ret );
+	}
+    };
+
+
+    /*---------------------------------------------------------------------
+     * Convert <number-of-bytes> to XXX.X MB or XXX.X GB or XXX.X TB
+     *
+     * see also ByteToHumanStringWithZero !
+     * Return value: string  "unknown" if input == 0
+     *----------------------------------------------------------------------
+     */
+    global define ByteToHumanString ( integer number )
+    ``{
+          // column description, if disk space is not known
+          if ( number == 0 ) return( _("unknown") );
+
+          if ( number < 1073741824 )
+          {
+              // < 1 GB
+              integer MB    = number / 1048576;
+              integer hunKB = (number - (MB * 1048576)) / 102400;
+              if ( hunKB >= 10 )
+              {
+                hunKB = 9;
+              }
+              return( sto8string(sformat( "%1.%2 MB", MB,hunKB )));
+          }
+
+          else if ( number < 1099511627776 )
+          {
+              // < 1 TB
+              integer GB    = number / 1073741824;
+              integer hunMB = (number - (GB * 1073741824)) /  104857600;
+              if ( hunMB >= 10 )
+              {
+                hunMB = 9;
+              }
+              return( sto8string(sformat( "%1.%2 GB", GB,hunMB )));
+          }
+          else
+          {
+              // >= 1 TB
+              integer TB    = number / 1099511627776;
+              integer hunGB = (number - (TB * 1099511627776)) / 107374182400;
+              if ( hunGB >= 10 )
+              {
+                hunGB = 9;
+              }
+              return( sto8string(sformat( "%1.%2 TB", TB,hunGB )));
+          }
+    };
+
+
+
+    /*---------------------------------------------------------------------
+     * returns for a string a string with a minimum of 9 characters:
+     * "1"      -> "       1"
+     * "22"     -> "      22"
+     * "145"    -> "     145"
+     * "2134"   -> "    2134"
+     *----------------------------------------------------------------------
+     */
+    global define sto8string( string str )
+    ``{
+	integer nb = size( str );
+	if ( nb > 8  )   return( sformat( "%1", str ));
+	if ( nb > 7  )   return( sformat( " %1", str ));
+	if ( nb > 6  )   return( sformat( "  %1", str ));
+	if ( nb > 5  )   return( sformat( "   %1", str ));
+	if ( nb > 4  )   return( sformat( "    %1", str ));
+	if ( nb > 3  )   return( sformat( "     %1", str ));
+	if ( nb > 2  )   return( sformat( "      %1", str ));
+	if ( nb > 1  )   return( sformat( "       %1", str ));
+	return( sformat( "         %1", str ));
+    };
+
+
+
+
+  UI(``{
+    global define FsIdToString( integer fs_id ) ``{
+
+	if ( fs_id == 0xa7) return( " NeXTSTEP      ");
+	if ( fs_id == 0xb7) return( " BSDI fs       ");
+	if ( fs_id == 0xb8) return( " BSDI swap     ");
+	if ( fs_id == 0xc1) return( " DRDOS/sec     ");
+	if ( fs_id == 0xc4) return( " DRDOS/sec     ");
+	if ( fs_id == 0xc6) return( " DRDOS/sec     ");
+	if ( fs_id == 0xc7) return( " Syrinx        ");
+	if ( fs_id == 0xda) return( " Non-Fs data   ");
+	if ( fs_id == 0xdb) return( " CP/M / CTOS   ");
+	if ( fs_id == 0xde) return(" Dell Utility   ");
+	if ( fs_id == 0xe1) return( " DOS access    ");
+	if ( fs_id == 0xe3) return( " DOS R/O       ");
+	if ( fs_id == 0xe4) return( " SpeedStor     ");
+	if ( fs_id == 0xeb) return( " BeOS fs       ");
+	if ( fs_id == 0xee) return( " EFI GPT       ");
+	if ( fs_id == 0xef) return( " EFI (FAT-12/16");
+	if ( fs_id == 0xf1) return( " SpeedStor     ");
+	if ( fs_id == 0xf4) return( " SpeedStor     ");
+	if ( fs_id == 0xf2) return( " DOS secondary ");
+	if ( fs_id == 0xfd) return( " Linux raid    ");
+	if ( fs_id == 0xfe) return( " LANstep       ");
+	if ( fs_id == 0xff) return( " BBT        	   ");
+	if ( fs_id == 0x0) return( " empty          ");
+	if ( fs_id == 0x1) return( " FAT12         ");
+	if ( fs_id == 0x2) return( " XENIX root    ");
+	if ( fs_id == 0x3) return( " XENIX usr     ");
+	if ( fs_id == 0x4) return( " FAT16 <32M    ");
+	// description for the partition type in the patition table
+	if ( fs_id == 0x5) return( "Extended       ");
+	if ( fs_id == 0x6) return( " FAT16         ");
+	if ( fs_id == 0x7) return( " HPFS/NTFS     ");
+	if ( fs_id == 0x8) return( " AIX           ");
+	if ( fs_id == 0x9) return( " AIX boot      ");
+	if ( fs_id == 0xa) return( " OS/2 boot manager");
+	if ( fs_id == 0xb) return( " Win95 FAT32   ");
+	if ( fs_id == 0xc) return( " Win95 FAT32   ");
+	if ( fs_id == 0xe) return( " Win95 FAT16   ");
+	if ( fs_id == 0xf) return( " Win95 Erw. LBA");
+	if ( fs_id == 0x10) return( " OPUS          ");
+	if ( fs_id == 0x11) return( " Verst. FAT12  ");
+	if ( fs_id == 0x12) return( " Compaq diag");
+	if ( fs_id == 0x14) return( " Verst. FAT16  ");
+	if ( fs_id == 0x16) return( " Verst. FAT16  ");
+	if ( fs_id == 0x17) return( " Verst. HPFS/NTFS");
+	if ( fs_id == 0x18) return( " AST Windows   ");
+	if ( fs_id == 0x1b) return( " Verst. Win95  ");
+	if ( fs_id == 0x1c) return( " Verst. Win95  ");
+	if ( fs_id == 0x1e) return( " Verst. Win95  ");
+	if ( fs_id == 0x24) return( " NEC DOS       ");
+	if ( fs_id == 0x39) return( " Plan 9        ");
+	if ( fs_id == 0x3c) return( " PartitionMagic");
+	if ( fs_id == 0x40) return( " Venix 80286   ");
+	if ( fs_id == 0x41) return( " PPC PReP Boot ");
+	if ( fs_id == 0x42) return( " SFS           ");
+	if ( fs_id == 0x4d) return( " QNX4.x        ");
+	if ( fs_id == 0x4e) return( " QNX4.x 2nd par");
+	if ( fs_id == 0x4f) return( " QNX4.x 3rd par");
+	if ( fs_id == 0x50) return( " OnTrack DM    ");
+	if ( fs_id == 0x51) return( " OnTrack DM6 Au");
+	if ( fs_id == 0x52) return( " CP/M          ");
+	if ( fs_id == 0x53) return( " OnTrack DM6 Au");
+	if ( fs_id == 0x54) return( " OnTrackDM6    ");
+	if ( fs_id == 0x55) return( " EZ-Drive      ");
+	if ( fs_id == 0x56) return( " Golden Bow    ");
+	if ( fs_id == 0x5c) return( " Priam Edisk   ");
+	if ( fs_id == 0x61) return( " SpeedStor     ");
+	if ( fs_id == 0x63) return( " GNU HURD / Sys");
+	if ( fs_id == 0x64) return( " Novell Netware");
+	if ( fs_id == 0x65) return( " Novell Netware");
+	if ( fs_id == 0x70) return( " DiskSecure    ");
+	if ( fs_id == 0x75) return( " PC/IX         ");
+	if ( fs_id == 0x80) return( " Old Minix     ");
+	if ( fs_id == 0x81) return( " Minix         ");
+	if ( fs_id == 0x82) return( " Linux Swap    ");
+	if ( fs_id == 0x83) return( " Linux ");
+	if ( fs_id == 0x84) return( " OS/2 verst.   ");
+	if ( fs_id == 0x85) return( " Linux ext.");
+	if ( fs_id == 0x86) return( " NTFS volume se");
+	if ( fs_id == 0x87) return( " NTFS volume se");
+	if ( fs_id == 0x8e) return( " Linux LVM     ");
+	if ( fs_id == 0x93) return( " Amoeba        ");
+	if ( fs_id == 0x94) return( " Amoeba BBT    ");
+	if ( fs_id == 0x9f) return( " BSD/OS        ");
+	if ( fs_id == 0xa0) return( " Hibernation   ");
+	if ( fs_id == 0xa5) return( " BSD/386       ");
+	return( "unknown" );
+    };
+  });
+
+  
+  global define get_device_name( string disk, any partition ) ``{
+      return( Storage::GetDeviceName( disk, partition ));
+  };
+
+
+
+
+
+ 
+
+
+  /*---------------------------------------------------------------------
+   * changeExtendedIdTo15
+   *---------------------------------------------------------------------
+   * change the fsid of every extended partiton in  the map targets
+   * in user_settings from 5 to 15
+   *---------------------------------------------------------------------
+   */
+
+    global define void changeExtendedIdTo15()
+    ``{
+        include "partitioning/lvm_lib.ycp";
+
+	map modify_targets = Storage::GetModifyTargets();
+	map targets        = Storage::GetTargetMap();
+
+	foreach ( `dev, `disk, targets,
+	``{
+	    list partitions = lookup ( disk, "partitions", [] );
+
+	    foreach ( `partition, partitions,
+	    ``{
+		if ( (lookup( partition , "fsid", 0 ) == 5) &&
+		     (lookup(partition, "create", false)  ) &&
+		     ( !lookup(partition, "define", false))    )
+		{
+		    modify_targets = addTargetModification( modify_targets, $[
+									      "disk" : dev,
+									      "id" : 15,
+									      "nr" : lookup( partition, "nr", 0 ),
+									      "type" : "change_id",
+									      "use_module" : "fdisk_ll" ]);
+		}
+	    });
+	});
+
+
+	//SCR::Write(.dumpto.tmp.my_modify,    modify_targets );
+	Storage::SetModifyTargets( modify_targets);
+    };
+
+
+
+  /*---------------------------------------------------------------------
+   * checkForMdRootFs
+   *---------------------------------------------------------------------
+   * check if the root filesystem is a md device
+   *---------------------------------------------------------------------
+   */
+    global define checkForMdRootFs( map ust )
+    ``{
+      boolean ret = false;
+      if( lookup( ust, "instmode", `install ) == `update )
+	{
+	string root = lookup( ust, "selectedRootPartition", "" );
+	y2debug( "checkForMdRootFs root=%1", root );
+	if( size(root)>0 )
+	    {
+	    ret = find( root, "/dev/md" )==0;
+	    }
+	}
+      else
+        {
+	list root = lookup( lookup( ust, "mountpoints", $[] ), "/", $[] );
+	y2debug( "checkForMdRootFs root=%1", root );
+	ret = select( root, 2, "" ) == "/dev/md";
+        }
+      y2milestone( "checkForMdRootFs ret=%1", ret );
+      return ret;
+    };
+
+
+
+
+
+    //////////////////////////////////////////////////////////////////////
+    // add a new entry into the execution stack "modify_targets"
+
+    global define addTargetModification( map modify_targets, map add_el )
+    ``{
+        boolean done = false;
+	y2milestone( "addTargetModification %1", add_el );
+        if( add_el["type"]:"" == "remove_pv" )
+	    {
+	    map rem = filter( `k, `m, modify_targets,
+	                      ``(m["type"]:""=="create_pv" &&
+				 m["device"]:""==add_el["device"]:"") );
+	    if( size(rem)>0 )
+		{
+		integer num = select( maplist( `k, `m, rem, ``(k) ), size(rem)-1, -1 );
+		modify_targets = removeTargetModification( modify_targets, num );
+		y2milestone( "addTargetModification remove pv %1", modify_targets );
+		done = true;
+		}
+	    }
+	else if( add_el["type"]:"" == "remove_lv" )
+	    {
+	    map rem = filter( `k, `m, modify_targets,
+	                      ``(m["type"]:""=="create_lv" &&
+			         m["vgname"]:""==add_el["vgname"]:"" &&
+				 m["name"]:""==add_el["name"]:"") );
+	    if( size(rem)>0 )
+		{
+		integer num = select( maplist( `k, `m, rem, ``(k) ), size(rem)-1, -1 );
+		modify_targets = removeTargetModification( modify_targets, num );
+		y2milestone( "addTargetModification remove lv %1", modify_targets );
+		done = true;
+		}
+	    }
+	if( !done )
+	    {
+	    integer max = size( modify_targets );
+	    return( add( modify_targets, max+1, add_el ));
+	    }
+	else
+	    {
+	    return( modify_targets );
+	    }
+    };
+
+    //////////////////////////////////////////////////////////////////////
+    // remove an entry from the execution stack "modify_targets"
+    // renumber the rest of the entries
+
+    global define removeTargetModification( map modify_targets, integer num )
+    ``{
+	// delete entry
+	modify_targets = filter( `k, `v, modify_targets, ``(k != num ) );
+	// renumber 1 2 4 5 -> 1 2 3 4
+	modify_targets = mapmap( `k, `v, modify_targets, ``{
+	    if ( k > num )
+	       {
+	       return([k-1, v]);
+	       }
+	    else
+	       {
+	       return([k, v]);
+	       }
+	    });
+	return( modify_targets );
+      }
+
+
+    ////////////////////////////////////////////////////////////////////////
+    // input:
+    // win_size_f: new size of wimdows partion in bytes as float
+    // cyl_size  : cylinder size
+    //
+    // output: lentgh of win-region in cylinder
+
+    global define PartedSizeToCly( float win_size_f, integer cyl_size )
+    ``{
+	float   new_length_f = (win_size_f) / tofloat( cyl_size );
+	integer new_length_i = tointeger( new_length_f );
+
+	y2debug("new_length_f: <%1> - new_length_i: <%2>", new_length_f, new_length_i );
+
+	if ( tofloat( new_length_f ) != tofloat( new_length_i ) )
+	{
+	    new_length_i = new_length_i + 1;	// add 1 cylinder if there is a residual
+	}
+
+	return( new_length_i );
+    };
+
+
+    global define convertFsOptionMapInList(map  partition ) ``{
+
+	map fs_options 	  = lookup( partition, "fs_options" , $[]);
+	list all_options  = [];
+
+	// do nothing
+	if( ! lookup( partition, "format", false) || fs_options == nil || fs_options == $[] )
+	{
+	    return [];
+	    //partition = add( partition, "fs_options" , [] );
+	    //return partition;
+	}
+
+	list ignore = [ "auto", "default", "none", "" ];
+
+	foreach( `option_key, `option, fs_options , ``{
+
+	    string option_str   = lookup( option, "option_str", "");
+	    any    option_value = lookup( option, "option_value", "");
+	    boolean option_blank = option["option_blank"]:false;
+
+	    if( is( option_value, string) && option_value != nil )
+	    {
+		if( ! contains( ignore, option_value ))
+		{
+		    if( option_blank )
+			{
+			all_options = add( all_options, option_str);
+			all_options = add( all_options, option_value);
+			}
+		    else
+			all_options = add( all_options , option_str + option_value);
+		}
+	    }
+	    else if ( is( option_value, boolean) && option_value != nil )
+	    {
+		if( option_value )
+		    all_options = add( all_options ,  option_str );
+	    }
+	    else if ( is( option_value, integer) && option_value != nil )
+	    {
+		if( option_blank )
+		    {
+		    all_options = add( all_options, option_str);
+		    all_options = add( all_options, sformat("%1", option_value));
+		    }
+		else
+		    all_options = add( all_options , option_str + sformat("%1", option_value));
+	    }
+	});
+
+	//partition = add( partition, "fs_options" , all_options);
+	//return partition;
+	return all_options;
+    };
+
+
+
+    /**
+     * Make a proposal for a Mountpoint
+     * @parm targetMap all targets
+     * @return string next mountpoint
+     **/
+    global define GetMountPointProposal( map targetMap , list not_supported_mount_points )
+    ``{
+	list base = [ "/", "/usr", "/boot", "/var", "/opt", "/home" ];
+	base      = filter(`mount_point , base, ``( ! contains( not_supported_mount_points , mount_point )));
+
+	list free_list = filter( `point, base,
+	``{
+	    boolean found = false;
+
+	    foreach( `dev, `disk, targetMap, ``{
+		map parti = find( `part, lookup( disk, "partitions", []), ``( lookup( part, "mount", "") == point &&
+										      lookup( part, "delete", false) == false ));
+		if (parti != nil)
+		{
+		    found = true;
+		}
+	    });
+
+	    if (found)  return( false );
+	    return( true );
+	});
+
+
+	if ( size( free_list ) == 0 )
+	{
+	    return( "/work" );
+	}
+	else
+	{
+	    return( select( free_list, 0, "" ));
+	}
+
+    };
+
+
+
+
+    /**
+     * Find next free loop device.
+     * @return string loop_dev ( e.g.: /dev/loop1 ) or nil
+     */
+    global define get_loop_dev()
+    ``{
+	if( Mode::test )
+	    return "/dev/loop2";
+
+	integer max_loop_dev= 7;
+	integer loop_dev_nb = 0;
+	boolean found_free  = false;
+	string  loop_dev    = "";
+
+	while( ! found_free  && loop_dev_nb <= max_loop_dev )
+	{
+	    loop_dev = sformat("/dev/loop%1", loop_dev_nb );
+	    loop_dev_nb = loop_dev_nb + 1;
+
+	    // Test loop dev
+	    if (SCR::Execute(.target.bash , "/sbin/losetup " + loop_dev ) != 0 )
+		found_free = true;
+
+	}
+
+
+	if ( loop_dev_nb >= 8 )
+	{
+	    // internal error popup
+	    UI::ErrorPopup( _("Too many loop devices (cryptofs ...)") );
+	    y2error( "Too many loop devices");
+	    return( nil );
+	}
+
+	y2milestone("free loop device: %1",loop_dev);
+
+	if( found_free )
+	{
+	    return( loop_dev );
+	}
+
+	return ( nil );
+    };
+
+
+
+    /**
+     *	Return a list with all mounted partition
+     *  @return list
+     */
+    global define CurrentMounted() ``{
+
+	list mounts = SCR::Read(.proc.mounts);
+	list swaps  = SCR::Read(.proc.swaps );
+
+	foreach( `swap, swaps, ``{
+	    map swap_entry = $[
+			       "file" : "swap",
+			       "spec" :  lookup( swap, "file", "" )
+	    ];
+
+	    mounts = add( mounts , swap_entry );
+
+	});
+
+	SCR::Execute(.target.bash, "/bin/mount | grep \" / \" >/tmp/YaST2_mounts");
+
+	string root_str  = SCR::Read(.target.string, "/tmp/YaST2_mounts");
+	SCR::Execute(.target.bash, "/bin/rm /tmp/YaST2_mounts");
+
+	list   root_list = splitstring( root_str, " ");
+
+	y2debug( " root device : %1", select( root_list , 0, "" ));
+
+	map   root_map  = find(   `mount , mounts, ``( lookup( mount ,"spec", "") == "/dev/root"));
+	root_map        = add(     root_map , "spec",  select( root_list , 0, "" ) );
+	mounts          = filter( `mount , mounts, ``( lookup( mount ,"spec", "") != "/dev/root"));
+	mounts          = add(     mounts, root_map );
+	ret = [];
+	foreach( `p, mounts, ``{ 
+	    if( find( p["spec"]:"", "/dev/loop" )>=0 )
+		{
+		string cmd = sformat( "/sbin/losetup %1", p["spec"]:"" );
+		map bash_call = SCR::Execute (.target.bash_output, cmd, $[] );
+		if( bash_call["exit"]:1 == 0)
+		    {
+		    string text = bash_call["stdout"]:"";
+		    if( find( text, ")" )>0 )
+			{
+			text = substring( text, 0, find( text, ")" ) );
+			if( find( text, "(" )>0 )
+			    {
+			    text = substring( text, find( text, "(" )+1 );
+			    p["loop_on"] = text;
+			    }
+			}
+		    }
+		}
+	    ret = add( ret, p );
+	    });
+
+	y2debug( " all mounts %1", ret);
+
+	return ret;
+    };
+
+
+   
+
+    
+    // check for ppc-PReP/CHRP system, they need a special boot partition
+
+    global define prepare_ppc_boot_part( map targets )    
+    ``{
+	// Chancing patition-type of /boot to 0x41.
+	y2milestone( "Checking partitions for ppc prep chrp " );
+
+	list ppc_partitions = [];
+	foreach (`targetdevice,`target, targets, ``{
+	    // every disk
+	    any partitions = lookup ( target, "partitions", [] );
+	    any boot_pentry = nil;
+	    ppc_partitions = [];
+
+	    y2debug("Target: %1", targetdevice );
+
+	    foreach (`pentry, partitions, ``{
+		string device = Storage::GetDeviceName( targetdevice, lookup (pentry, "nr", 0));
+		string mountpoint = lookup (pentry, "mount", "");
+		symbol type       = lookup (pentry, "type", `dummy);
+		boolean do_format = lookup (pentry, "format", false);
+		if (!lookup (pentry, "delete", false)) {		// only those which aren't deleted
+		    y2debug("Partition: %1", pentry);
+		    if ( mountpoint == "/boot" && type != `pdisk )
+		    {
+			boot_pentry = pentry;
+			change ( boot_pentry, "fsid", Partitions::fsid_prep_chrp_boot );
+			change ( boot_pentry, "fstype", "PPC PReP Boot" );
+			change ( boot_pentry, "mount",  "" );
+			ppc_partitions = add ( ppc_partitions, boot_pentry );
+			y2debug( "Set partition-type of /boot to 0x41" );
+		    }
+		    else
+			ppc_partitions = add ( ppc_partitions, pentry );
+		}
+		else
+		{
+		    ppc_partitions = add ( ppc_partitions, pentry );
+		}
+
+	    });
+
+	    change ( target, "partitions", ppc_partitions );
+	    change ( targets, targetdevice, target );
+	});
+	
+	Storage::SetTargetMap(  targets);
+
+	return( targets );
+    };
+
+
+    
+    global define get_s390_device_map( map targetMap )``{
+    integer num = 0;
+    string alph = "abcdefghijklmnopqrstuvwxyz";
+    string newdev = "";
+    string param = "";
+    map ret =  $[];
+    map dasd = SCR::Read(.proc.dasddev);
+
+    foreach( `key, `value, targetMap, ``{
+        list part = lookup( value, "partitions", [] );
+	if( find( `p, part, ``( lookup( p, "crypt_fs", false ) ||
+				lookup( p, "lvm_group", "") != "" ||
+				lookup( p, "raid_name", "") != "" ||
+				lookup( p, "mount", "") != "" )) != nil )
+	    {
+	    newdev = "/dev/dasd";
+	    if( num < 26 )
+		{
+		newdev = newdev + substring( alph, num, 1 );
+		}
+	    else
+		{
+		newdev = newdev + substring( alph, (num/26)-1, 1 ) +
+		         substring( alph, num%26, 1 );
+		}
+	    ret = add( ret, key, newdev );
+	    map ddev = find( `p, dasd, ``( lookup( p, "name", "" ) == 
+	                                   substring( key, 5 )));
+	    if( ddev != nil )
+		{
+		param = param + lookup( ddev, "address", "" );
+		param = param + ",";
+		}
+	    num = num + 1;
+	    }
+	if( size(param)>0 && substring(param, size(param)-1, 1)=="," )
+	    {
+	    param = substring( param, 0, size(param)-1 );
+	    }
+	ret = add( ret, "param", param );
+	});
+
+    return(ret);
+    };
+
+
+    global define rename_s390_dasd_device( map targetMap, map device_map )``{
+
+    map newTarget = $[];
+
+    foreach( `key, `value, targetMap, ``{
+        if( find( key, "/dev/dasd" ) == 0 && lookup( key, device_map, "" )!="" )
+	    {
+	    newTarget = add( newTarget, lookup( key, device_map, "" ), value );
+	    }
+	else
+	    {
+	    newTarget = add( newTarget, key, value );
+	    }
+	});
+
+    return(newTarget);
+    };
+
+
+    
+    global define map_s390_device( string device, map device_map )``{
+
+    string ret = device;
+
+    if( find( device, "/dev/dasd" ) == 0 )
+	{
+	map dev = Storage::GetDiskPartition( device );
+	string disk = lookup( dev, "disk", "" );
+	if( disk != "" && lookup( disk, device_map, "" )!="" )
+	    {
+	    ret = Storage::GetDeviceName( lookup( disk, device_map, "" ),
+					  lookup( dev, "nr", 0 ) );
+	    }
+	}
+    return( ret );
+    };
+}

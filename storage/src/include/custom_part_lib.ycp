@@ -1,0 +1,230 @@
+/*
+ *************************************************************
+ *
+ *     YaST2      SuSE Labs                        -o)
+ *     --------------------                        /\\
+ *                                                _\_v
+ *           www.suse.de / www.suse.com
+ * ----------------------------------------------------------
+ *
+ * Author:        Johannes Buchhold <jbuch@suse.de>
+ *
+ * Description:   lib
+ *
+ *
+ *************************************************************
+ *
+ $Id$
+ *
+*/
+
+{
+  textdomain "partitioning";
+  import "Mode";
+  import "Partitions";
+
+
+  /**
+   * Find and read fstab by installation. Scan existing partitions.
+   * @parm targetMap all targets
+   * @parm file_systems filesystems definition map
+   * @parm search_point mount point where partitions can be mounted
+   * @return list list with fstab if only one existing fstab is found
+   */
+  global define findExistingFstab( map targetMap  , map file_systems , string search_point )``{
+
+	/////////////////////////////////////////////////////////////////////////////////////////
+	// foreach partition on each target
+	integer count_fstab_found = 0;
+	list    fstab = [];
+
+	foreach ( `dev, `disk, targetMap, ``{
+	    foreach ( `partition, lookup ( disk, "partitions", []) , ``{
+
+		if( count_fstab_found==0 &&
+		    lookup ( partition, "fsid", 0 ) == Partitions::fsid_native )
+		{
+		    /////////////////////////////////////////////////////////////////////////////////////////
+		    // try to mount
+
+		    string mount_option = lookup( lookup( file_systems, lookup ( partition, "used_fs", `ext2 ), $[]) , `mount_option, "");
+
+		    SCR::Execute(.target.bash, "/bin/mount " + mount_option + "  " +  get_device_name(dev,partition["nr"]:0) + " " + search_point );
+
+		    if(  SCR::Execute(.target.bash, sformat("/usr/bin/test -e %1/etc/fstab", search_point)) == 0 )
+		    {
+		        if (SCR::Execute(.target.bash, "/bin/cp " + Installation::destdir + "/etc/fstab /etc") == 0)
+			    {
+			    fstab = SCR::Read( .etc.fstab );
+			    count_fstab_found = count_fstab_found + 1;
+			    if( Mode::test )
+				SCR::Write(.dumpto.tmp.fstabmap,   fstab );
+			    }
+
+		    }
+
+		    /////////////////////////////////////////////////////////////////////////////////////////
+		    // unmount
+
+		    SCR::Execute(.target.bash, "/bin/umount " + search_point );
+		}
+	    });
+	});
+	y2milestone( "count_fstab_found %1", count_fstab_found );
+
+	if( count_fstab_found >= 1 )
+	    return  fstab;
+
+	return [];
+  };
+
+
+    /**
+    * Scan and Read and return fstab.
+    * @parm targetMap all targets
+    * @parm file_systems filesystem map
+    * @return list list with fstab
+    */
+    global define scanAndReadExistingFstab( map targetMap ,map file_systems )``{
+	string  search_point      = "/mnt";
+	list fstab = [];
+
+	/////////////////////////////////////////////////////////////////////////////////////////
+	// make search dir
+
+	if( SCR::Execute(.target.bash, ("/usr/bin/test -d " + search_point) ) != 0)
+	{
+	    SCR::Execute(.target.mkdir, search_point );
+	}
+
+	fstab = findExistingFstab( targetMap, file_systems, search_point );
+
+	return fstab;
+    };
+
+
+
+
+    global define mountedPartitionsOnDevice( string dev_str, list mounts_read )``{
+
+	list mounts      = filter(`mount, mounts_read,``( issubstring(lookup( mount, "spec", "") , dev_str )));
+
+	/*/dev/root -> /dev/hda.. in CurrentMounts -> partition_defines
+	// no root device in mounts -> lookup( mount, "spec", "") == /dev/root
+	// add root device
+	SCR::Execute(.target.bash, "/bin/mount | grep \" / \" >/tmp/YaST2_mounts");
+
+	if(issubstring( SCR::Read(.target.string, "/tmp/YaST2_mounts"), dev_str ))
+	    mounts = union( mounts, filter(`mount, mounts_read,``(  lookup( mount, "spec", "") == "/dev/root")));
+	SCR::Execute(.target.bash, "/bin/rm /tmp/YaST2_mounts");
+	*/
+	
+	if( Mode::test )
+	    SCR::Write(.dumpto.tmp.mounts1, mounts );
+
+	// reset
+	if( mounts == nil ) mounts = [];
+
+	return mounts;
+    }
+
+
+    global define containsDeviceMountedPartitions( string dev_str , list mounts_read )``{
+	if( size( mountedPartitionsOnDevice(  dev_str , mounts_read )) > 0 )
+	    return true;
+	return false;
+    };
+
+
+
+    global define PartitionMountedOn( string partition_str, list mounts_read )``{
+
+	list mounts    = filter(`mount, mounts_read,``(  lookup( mount, "spec", "") == partition_str ));
+
+	/* /dev/root -> /dev/hda.. in CurrentMounts -> partition_defines
+	// no root device in mounts -> lookup( mount, "spec", "") == /dev/root
+	// add root device
+	SCR::Execute(.target.bash, "/bin/mount | grep \" / \" >/tmp/YaST2_mounts");
+
+	if(issubstring( SCR::Read(.target.string, "/tmp/YaST2_mounts"), partition_str ))
+	    mounts = union( mounts, filter(`mount, mounts_read,``(  lookup( mount, "spec", "") == "/dev/root")));
+	SCR::Execute(.target.bash, "/bin/rm /tmp/YaST2_mounts");
+	*/
+	
+	if( Mode::test )
+	    SCR::Write(.dumpto.tmp.mount_part, mounts );
+
+
+	if( size( mounts) > 0 )
+	    return lookup( select( mounts , 0, $[]), "file", "");
+	return "";
+
+    };
+    
+    
+    global define PartitionsMountedOnDevice(string dev ,list mounts_read )
+    ``{
+	return filter(`mount, mounts_read,``(  issubstring( lookup( mount, "spec", "") ,dev) ));
+    }
+    
+
+    /**
+     * Only for check in installed system.
+     * Please do not use this define by installation.
+     * @parm part1 partition 1
+     * @parm part2 partition 2
+     * @return boolean
+     */
+    global define arePartitionsEqual( map part1 , map part2 )``{
+
+	if( lookup( part1, "create", false) )
+	    return true;
+	
+	/*	 min readed keys
+		 $[
+	 *	 "fsid":131,
+		 "fstype":"Linux native",
+		 "mount":"/suseinst_images",
+		 "nr":1,
+		 "ori_nr":1,
+		 "region":[0, 89355],
+		 "type":`primary]
+	*/
+
+	/* LVM return 
+	   "create"	  : create,
+	   "format"	  : format,
+	   "fs_options"  : fs_options,
+	   "stripes"     : stripes_k,
+	   "lv_size"     : kmgt_str_to_byte(lv_size),
+	   "mountpoint"  : mountpoint,
+	   "changed_size": lv_size!=curr_size,
+	   "volume_name" : volume_name,
+	   "filesystem"  : filesystem,
+	   "crypt_fs"    : new_crypt,
+	   "crypt_key"   : crypt_key
+	*/
+	
+	y2milestone("part1 : %1", part1);
+	y2milestone("---------------------------------------------");
+	y2milestone("part2 : %1", part2);
+	
+	// -> not all keys
+	if( (lookup( part1 , "nr"     , 0  ) 	== 	lookup( part2, "nr",      1  )) &&
+	    (lookup( part1 , "fsid"   , 0  ) 	== 	lookup( part2, "fsid",    1  )) &&
+	    (lookup( part1 , "region" , [] ) 	== 	lookup( part2, "region",  [11] )) &&
+	    (lookup( part1 , "create" , false)  ==      lookup( part2, "create" , false)) &&
+	    (lookup( part1 , "format" , false)  == 	lookup( part2, "format" , false)) &&
+	    (lookup( part1 , "used_fs", false)  ==      lookup( part2, "used_fs", false)) &&
+	    (lookup( part1 , "mount",   false)  ==      lookup( part2, "mount",   false)) &&
+	    (lookup( part1 , "mountpoint", false) == 	lookup( part2, "mountpoint", false))
+	    )
+	{
+	    return true;
+	}
+	return false;
+    }
+
+    
+ 
+}

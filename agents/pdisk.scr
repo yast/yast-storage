@@ -1,0 +1,84 @@
+/**
+ * File:
+ *   run_pdisk.scr TODO
+ * Summary:
+ *   SCR Agent for reading the result from /sbin/pdisk -l /dev/???
+ * Access:
+ *   read-only
+ * Authors:
+ *   Unknown <yast2-hacker@suse.de>
+ * See:
+ *   anyagent
+ *   libscr
+ *   man pdisk
+ * Example:
+ *   Read(.pdisk, ["/dev/xyz"])
+ * 
+ * $Id$
+ *
+ * Returns a <b>list of maps</b>. Each maps (list-entry) corresponds to 
+ * a partition or the whole device.
+ * The maps on partitions use "nr", "type", "flag", "name", "length", "base",
+ * the map for the device uses "bytes_per_unit", "disk_size".
+ */
+.pdisk
+
+`ag_anyagent(
+  Description (
+  ``(Run("/sbin/pdisk -l ", `arg(0))),
+  "\n", true,
+  ``(List (
+      Choice (
+	[Sequence ("Partition", String("^\n")), Skip ()],
+	[Sequence (" #:", String("^\n")), Skip ()],
+	[" ", Tuple (`nr(Number()), ":", Optional(Whitespace()),
+			`type(String("^ *")),
+			Optional(`flag("*")),
+			Optional(Whitespace()),
+			"'", Optional(`name(String("^'"))), "'",
+			Optional(Whitespace()),
+			`length(Number()),
+			" @ ",
+			`base(Number()),
+			Optional(String("^\n"))
+		      )
+		],
+	["1", Tuple (`ten_nr(Number()), ":", Optional(Whitespace()),
+			`type(String("^ *")),
+			Optional(`flag("*")),
+			Optional(Whitespace()),
+			"'", Optional(`name(String("^'"))), "'",
+			Optional(Whitespace()),
+			`length(Number()),
+			" @ ",
+			`base(Number()),
+			Optional(String("^\n"))
+		      )
+		],
+	["2", Tuple (`twen_nr(Number()), ":", Optional(Whitespace()),
+			`type(String("^ *")),
+			Optional(`flag("*")),
+			Optional(Whitespace()),
+			"'", Optional(`name(String("^'"))), "'",
+			Optional(Whitespace()),
+			`length(Number()),
+			" @ ",
+			`base(Number()),
+			Optional(String("^\n"))
+		      )
+		],
+	["Device block size=", Tuple (
+			  `bytes_per_unit(Number ()),
+			  ", Number of Blocks=",
+			  `disk_size (Number ()),
+			  String ("^\n")
+			)],
+	[Sequence ("DeviceType=", String("^\n")), Skip ()],
+	[Sequence ("Drivers", String("^\n")), Skip ()],
+	[Sequence ("1:", String("^\n")), Skip ()],
+	[Sequence ("2:", String("^\n")), Skip ()]
+      ),
+      "\n"
+  ))
+)
+)

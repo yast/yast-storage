@@ -1,0 +1,112 @@
+//////////////////////////////////////////////////////////////////////
+Slots:
+//////////////////////////////////////////////////////////////////////
+
+I can every fdisk-label disk see like this:
+
+
+example hda has 260 cylinder
+
+cyl
+start end         fsid
+10    60   hda1   131
+110   160  hda2   extended 
+210   260  hda3   130 
+
+
+120   125  hda5   131
+130   140  hda6   131
+
+
+//////////////////////////////////////////////////////////////////////
+
+free-slot     ::= fs
+linux-slot    ::= ls
+extended-slot ::= es
+
+                  fs     ls      fs        es       fs        ls           
+primary slot:   [1-9] [1-60] [61-109] [110-160] [161-209] [210-230]
+
+
+                   fs         ls        fs        ls        fs
+extended slots  [110-119] [120-125] [126-129] [130-140] [141-160]
+
+
+//////////////////////////////////////////////////////////////////////
+
+min-size::= minimal size in MB which is needed to install a suse-linux
+
+
+Basically I am seraching for free-slots.
+Every slot which is bigger than min-size is tested, to be the base of an installation,
+the base-slot:
+Typically there are three procedures A), b1), b2) to get the inst.-config:
+A) I make my slot to an root partition and all is ok or
+B) I need an additional boot partition, so
+   b1) I split the base-slot into boot and root partition or
+   b2) I look for an additional boot-slot and create the second partition from this slot
+       and the root-partition from the base-slot
+  
+boot-slot ::= slot that has about 16MB and an end_cyl < 1024
+
+
+First I have to decide if I need one or two partitions:
+(first always root, second evtl. boot, (swap can be done with a file))
+
+I need boot if 
+-----------------------------------------------------------------
+** No LBA bios support AND root partition has end_cyl >= 1024) **
+-----------------------------------------------------------------
+(LILO must access files in /boot per bios, this can be done if
+ bios has LBA support or if it only can handle CHS, /boot must be in 
+ first 1024 cyl)
+
+
+need second (boot) part:
+{
+   ** is the base-slot in an extended partition
+      b1: yes if  start_cyl +3 < 1024   // then I create two partitions in slot
+      b2: yes if  have a free so called boot-slot   start_cyl +3 < 1024 and I can create a partition
+              a) boot-slot is in extended partition
+              b) boot-slot is  a "primary" boot slot and I have less than 4 primary including the extended
+               so I can create a new primary
+
+   ** base-slot is a primary-slot
+      I have no extended:
+        if I have no  primary free -> no way cause I can not create a partition
+        if I have one primary free
+           b1:  yes, if, start_cyl +3 < 1024   // then I create two extd partitions in slot
+           b2:  no! if I have a free boot-slot its primary-slot! but I NEED TO MAKE ANOTHER PARTITION 
+
+        if I have two or more primary free
+           b1: yes, if, start_cyl +3 < 1024   // then I create two extd partitions in slot
+           b2: yes  if I have a free boot-slot // it is always a primary-slot! 
+
+      I have an extended
+        if I have no  primary free -> no way I cannot create the roor partition
+        if I have one primary free
+          b1: no way, cause I need second partition and the split requires a second possible primary partition
+          b2: yes if there is a free boot-slot in the extended partition
+              -> I need a boot partition, so it must be in the extended partition
+        if I have two or more free primary
+          b1: yes, if, start_cyl +3 < 1024
+          b2: yes, if I have a free boot-slot // primary or not is not important
+
+}
+else // no boot needed
+{
+   ** is the base-slot in an extended partition
+      yes: I always can create the root partition
+
+   ** it is a primary base-slot
+      if I have no  primary free -> no way I cannot create the roor partition
+         no! I can not create the root partition
+      if I have one or more free primary
+         yes: I always can create the root partition
+}
+
+
+------------------------------------------------------------
+
+The algo above was for free slots. For win_free slots, that mean
+slots of a resizable windows partition, its nealy the same.

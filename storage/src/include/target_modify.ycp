@@ -1,0 +1,203 @@
+/**
+ * Module: 		target_modify.ycp
+ *
+ * Authors:		Thomas Fehr (fehr@suse.de) 
+ *			Michael Hager (mike@suse.de)
+ *
+ * Purpose:
+ * Start of new disk preparation
+ *			
+ *			
+ *
+ * $Id$
+ */
+
+{
+    textdomain "partitioning";
+
+    import "Storage";
+
+    include "ui/common_messages.ycp";
+    include "ui/common_functions.ycp";
+    include "partitioning/write_fstab.ycp";
+
+    global define target_modify( map modify_targets , boolean installation )
+	``{
+
+	y2debug( "BEGINNING of modify_targets" );
+  
+
+	/////////////////////////////////////////////////
+	// handle all inserted modification requests
+	//
+	// Example data:
+	//
+	// 	  $[ 1 : $[
+	// 		"use_module" : "lvm_ll"
+	// 		"type"       : "create_lv", 
+	// 		"name"       : "usr"
+	// 		"size"     : 12121
+	// 		"vgname"   : "system"
+	// 		"stripes"  : 1 ]
+	// 
+	// 	     2:  $[  "use_module" : "lvm_ll"
+	// 		  "type"       : "remove_lv", 
+	// 		  "name" : "usr"
+	// 		  "vgname" : "system"
+	// 		  "target_map_entry" : $[...]
+	// 	         ]
+	// 	 ...
+	//   fdisk_ll change_id is supported only for
+	//   compatability and should not be used any more!
+	//
+	//   use targetMap "change_fsid" : true instead (see README.target_partition)
+
+	integer number_of_modifications = size( modify_targets );
+	integer curr_modification       = 0;
+	boolean ok                      = true;
+
+    
+	while ( ok && (curr_modification < number_of_modifications) )
+	{
+	    curr_modification = curr_modification +1;
+	    string curr_module = "";
+	    map curr_map = lookup( modify_targets, curr_modification, $[] );
+
+	    // Choose the module, which can handle this request:
+
+	    curr_module = lookup( curr_map, "use_module", "error" );
+
+	    y2debug( "cur=%1 cnr=%2 module=%3", curr_modification,
+		     number_of_modifications, curr_module );
+	    y2debug( "map=%1", curr_map );
+	    if ( curr_module == "lvm_ll" )
+	    {
+		if( ! installation &&
+		    lookup( curr_map, "type", "" )=="remove_lv" )
+		{
+		    string umnt = "umount /dev/" + lookup( curr_map, "vgname", "" );
+		    umnt = umnt + "/" + lookup( curr_map, "name", "" );
+		    y2debug( "umnt=%1", umnt );
+		    SCR::Execute (.target.bash, umnt );
+		}
+		map ret = SCR::Write(.lvm.command, curr_map);
+
+
+		ok = lookup( ret, "ok", false );
+
+		y2debug( "ret=%1", ret );
+		if ( ok == false )
+		{
+		    string error_text = lookup( ret, "errtxt", "" );
+		    string lvm_cmd = lookup( ret, "cmdline", "" );
+		    if( size(lvm_cmd)>0 )
+		    {
+			lvm_cmd = "<b>" + lvm_cmd;
+			lvm_cmd = lvm_cmd + "</b><p>";
+		    }
+		    term content = `RichText( lvm_cmd + error_text );
+		    UI::LongTextPopup( _("LVM error"), content, 50, 20 );
+		}
+		else if( ! installation )
+		{
+		    string cmd = lookup( curr_map, "type", "" );
+		    if( cmd=="remove_lv" || cmd=="create_lv" )
+		    {
+			list fstab = SCR::Read( .etc.fstab );
+			y2debug( "fstab=%1", fstab );
+			map target = Storage::GetTargetMap();
+			string device = "/dev/" + lookup( curr_map, "vgname", "" );
+			string name = lookup( curr_map, "name", "" );
+			boolean write_fstab = false;
+			y2debug( "device=%1 name=%2", device, name );
+			if( cmd=="remove_lv" )
+			{
+			    device = device + "/" + name;
+			    integer old = size(fstab);
+			    fstab = filter( `e, fstab, 
+					    ``(lookup(e,"spec","")!=device ));
+			    y2debug( "size=%1 old=%2", size(fstab), old );
+			    write_fstab = old != size(fstab);
+			}
+			else if( cmd=="create_lv" )
+			{
+			    list parts = lookup( lookup( target, device, $[] ), 
+			                     "partitions", [] );
+			    map entry = select( filter( `e, parts, 
+			                            ``(lookup(e,"nr","")==name )), 0, $[] );
+			    y2debug( "entry=%1", entry );
+			    if( lookup( entry, "mount", "" )!="" )
+			    {
+				fstab = add( fstab, 
+					     onepartition2fstab( device, entry ));
+				write_fstab = true;
+			    }
+			}
+			y2debug( "write_fstab=%1", write_fstab );
+			if( write_fstab )
+			{
+			    y2debug( "new_fstab=%1", fstab );
+			    SCR::Write(.etc.fstab, fstab);
+			}
+		    }
+		}
+	    }
+	    else if( curr_module == "fdisk_ll" )
+	    {
+		ok = fdisk_call( curr_map );
+	    }
+	}
+
+	y2debug("END target_modify");
+
+	return ( ok );
+    };
+
+
+    global define fdisk_call( map curr_map )
+	``{
+	boolean ok  = false;
+	integer pos = 0;
+	string disk = lookup( curr_map, "disk", "" );
+	string pt   = "";
+      
+	disk = substring( disk, 5 );
+	pos = findfirstof( disk, "/" );
+	while( pos > 0 )
+	{
+	    pt = pt + "." + substring( disk, 0, pos );
+	    disk = substring( disk, pos+1 );
+	    pos = findfirstof( disk, "/" );
+	}
+
+	pt = pt + "." + disk;
+	if( size(pt)>0 )
+	{
+	    pt = ".disk" + pt + ".command";
+	    y2debug( "pt=%1", pt );
+	    ok = SCR::Write(topath(pt), curr_map);
+	}
+
+	return( ok );
+    }
+      
+
+    ////////////////////////////////////////////////////////////////////
+    // change the id of a partition:
+    //  "disk" : "/dev/sdb",
+    //  "id"   : 142,          // new id
+    //   "nr"  : 8,            // for sdb8
+  
+    global define fdisk_change_id( string disk, integer nr, integer id  )
+	``{
+	map curr_change_id = $[
+			       "disk" : disk,
+			       "id"   :  id,
+			       "nr"   :  nr,
+			       "type" : "change_id" ];
+      
+	return( fdisk_call( curr_change_id ));       
+    };
+  
+  
+}

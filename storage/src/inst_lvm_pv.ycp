@@ -1,0 +1,324 @@
+/**
+ * File:
+ *   lvm_pv.ycp
+ *
+ * Module:
+ *   lvm_pvs
+ *
+ * Summary:
+ *   lvm_pv: creates a volume group (i.e. "system")
+ *   and adds the physical volumes 
+ *
+ * Authors:
+ *   mike <mike@suse.de>
+ *
+ *
+ *
+ * $Id$
+ *
+ *
+ *----------------------------------------------------
+ * IMPORTANT: when you read this code notice:
+ *
+ * vg  = volume group
+ * vgs = volume groups
+ *
+ * pv  = physical volume
+ * pvs = physical volumes
+ *
+ * lv  = logical volume
+ * lvs = logical volumes
+ *----------------------------------------------------
+ *
+ */
+
+{
+
+    textdomain "partitioning"; 
+
+    import "Installation";
+    import "Mode";
+    import "Storage";
+    import "Wizard";
+    
+    include "partitioning/lvm_ui_lib.ycp";
+    include "partitioning/lvm_ui_dialogs.ycp";
+    include "partitioning/lvm_lib.ycp";
+    include "partitioning/lvm_pv_lib.ycp";
+    include "partitioning/lvm_lv_lib.ycp";
+    include "partitioning/partition_defines.ycp";
+
+
+    string  current_vg     = "none";    
+    boolean test_mode      = Mode::test;
+    map     targetMap      = Storage::GetTargetMap();
+    map     modify_targets = Storage::GetModifyTargets();
+    
+    list    lvm_vgs      = get_vgs(  targetMap );
+    list    parts 	 = get_possible_pvs(    targetMap );
+    list    table 	 = get_pv_widget_table( parts );
+
+
+    Wizard::SetContents( _("Logical Volume Manager -- Physical Volume Setup"),
+			     get_pv_content( table, lvm_vgs, "_________"), 
+			     "", true, true);
+    Wizard::ReplaceHelp(`RichText(`id(`help), getPvHelptext() ));
+
+
+    
+    //////////////////////////////////////////////////////////////////////
+    // First we typically have to create a volumegroup
+    // check if there is already a lvm group
+    //////////////////////////////////////////////////////////////////////
+    
+    any vg = nil;
+    
+    if ( size( lvm_vgs ) == 0 )
+    {
+	any addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
+	
+	// has the user cancelled the dialog? 
+	if ( ! lookup(addVG, "cancelled", false) )
+	{
+	    targetMap       = lookup( addVG, "targets", $[] );
+	    lvm_vgs         = lookup( addVG, "lvm_vgs", [] );
+	    current_vg      = lookup( addVG, "current_vg", "none" );
+	    modify_targets  = lookup( addVG, "modify_targets", $[] );
+	}
+	else
+	{
+	    return( `back );
+	}
+    }
+    else
+    {
+	// there are already vgs ... select the first one
+	current_vg = select( lvm_vgs, 0, "none" ); 
+    }
+
+    
+    // Display current vg:
+    UI::new_vg_list( lvm_vgs );
+    UI::ChangeWidget( `id(`vg), `Value, current_vg);
+    
+    
+
+    //////////////////////////////////////////////////////////////////////
+    // mainloop
+    //////////////////////////////////////////////////////////////////////
+
+    string id  =  "";
+    symbol ret = `next;
+
+    repeat
+    {
+	/////////////////////////////////////////////////////////////////
+	// Show the current state:
+	parts 	 = get_possible_pvs(    targetMap );
+	table 	 = get_pv_widget_table( parts );
+	UI::ChangeWidget( `id(`pv_table), `Items, table);
+
+	if( current_vg != nil )
+	{
+	    string vg_size_str = get_vg_size( parts, current_vg , `string );
+	    y2debug( "**** %1", vg_size_str );
+	    UI::ChangeWidget( `id(`pv_size), `Value, vg_size_str );
+	}
+	
+
+        UI::SetFocus( `id(`pv_table));
+
+	if ( id != "" )
+	{
+	    UI::ChangeWidget( `id(`pv_table), `CurrentItem, id);
+	}
+
+        /////////////////////////////////////////////////////////////////
+        // Wait for User input
+
+
+	
+	ret= Wizard::UserInput();
+	y2milestone("#################### EE %1", ret);
+
+
+	////////////////////////////////////////
+	// toggle between pv_add and pv_delete 
+	////////////////////////////////////////
+
+	if ( ret ==  `pv_table )
+	{
+	    id = UI::QueryWidget(`id(`pv_table), `CurrentItem);
+
+	    if ( isItemPv(id) )
+	    {
+		ret = `pv_delete;
+	    }
+	    else
+	    {
+		ret = `pv_add;
+	    }
+	}
+	
+
+	////////////////////////////////////////
+	// user has changed the current volume group
+	////////////////////////////////////////
+	
+	if ( ret == `vg )
+	{
+	    current_vg = UI::QueryWidget( `id(`vg), `Value);
+	    y2milestone("TTT %1", current_vg );
+	}
+
+        ////////////////////////////////////////
+        // Add a new volume group:
+        ////////////////////////////////////////
+
+        if ( ret == `vg_add_vg  )
+        {
+            any addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
+
+            // has the user cancelled the dialog?
+            if ( ! lookup(addVG, "cancelled", false) )
+            {
+                targetMap       = lookup( addVG, "targets", $[] );
+                modify_targets  = lookup( addVG, "modify_targets", $[] );
+                lvm_vgs         = lookup( addVG, "lvm_vgs", [] );
+                current_vg      = lookup( addVG, "current_vg", "none" );
+            }
+        }
+
+
+	////////////////////////////////////////
+	// Remove volume group:
+	////////////////////////////////////////
+	
+	if ( ret == `vg_remove_vg && current_vg != nil )
+	{
+	integer count = size(get_lv_names(targetMap, current_vg));
+	if( count > 0 )
+	    {
+	    // Message popup
+	    UI::MessagePopup(sformat(UI(_("The volume group \"%1\" contains %2 
+logical volumes. It cannot be removed. Remove all logical volumes and 
+remove the volume group afterwards.")), current_vg, count));
+
+	    }
+	else
+	    {
+	    if( UI::ContinueCancelPopup ( _("Do you really want to remove the current volume group?")))
+		{
+		    y2milestone( " remove " );
+		    map ret = removeVolumeGroup( current_vg, targetMap, lvm_vgs, modify_targets );
+		    y2milestone( " remove 1");
+		    targetMap       = lookup( ret, "targets", $[] );
+		    modify_targets  = lookup( ret, "modify_targets", $[] );
+		    lvm_vgs  	    = lookup( ret, "lvm_vgs", [] );
+		    current_vg      = lookup( ret, "current_vg", "none" );
+		    y2milestone( " current_vg 11 %1 " , current_vg );
+		}
+	    }
+	}
+
+
+	////////////////////////////////////////
+	// Add a new physical volume:
+	////////////////////////////////////////
+	
+	
+	if ( ret == `pv_add && current_vg != nil )
+	{
+	    id = UI::QueryWidget(`id(`pv_table), `CurrentItem);
+	    y2debug( "WWW ID ADD GROUP %1", id);
+	    
+	    if ( id!=nil && CheckItemIsNotPv(id) )
+	    {
+		any addPV = addPhysicalVolume( modify_targets, targetMap, id,  current_vg );
+            
+		// has an error occured
+		if ( ! lookup(addPV, "error", false) )
+		{
+		    targetMap      = lookup( addPV, "targets", $[] );
+		    modify_targets  = lookup( addPV, "modify_targets", $[] );
+		}
+	    }
+	}
+
+	////////////////////////////////////////
+	// Delete a new physical volume:
+	////////////////////////////////////////
+	
+	if ( ret == `pv_delete  &&  current_vg != nil)
+	{
+	    id = UI::QueryWidget(`id(`pv_table), `CurrentItem);
+
+	    if( id!=nil )
+		{
+		string vg = lookup( Storage::IdFromTarget( targetMap, id ),
+				    "lvm_group", "" );
+		y2debug( "vg=%1", vg );
+
+		symbol ret_check_pv_delete = check_pv_delete( targetMap, id,  vg );
+		if( ret_check_pv_delete == `nodelete )
+		{
+		    continue;
+		}
+		else if( ret_check_pv_delete == `immediate_prepdisk )
+		{
+		    Installation::immediate_prepdisk = true;
+		    y2milestone("immediate_prepdisk = true");
+		}
+	    
+		if ( CheckItemIsPv(id) )
+		{
+		    any deletePV = removePhysicalVolume( modify_targets, targetMap, id, vg );
+		
+		    // has an error occured
+		    if ( ! lookup(deletePV, "error", false) )
+		    {
+			targetMap      = lookup( deletePV, "targets", $[] );
+			modify_targets  = lookup( deletePV, "modify_targets", $[] );
+		    }
+		}
+	    }
+	}
+
+	
+	////////////////////////////////////////
+	// Finish this step
+	////////////////////////////////////////
+	
+	if (ret == `next || ret == `back )
+	    {
+	    if( ret == `next && get_vgs( targetMap ) ==  [] )
+		{
+		UI::MessagePopup(_("Please create a Volume Group first."));
+		continue;
+		}
+	    
+	    // due to lvm tools, we need a already created pv before
+	    // creating a vg so we patch the execution stack
+
+	    if( ret == `back )
+		{
+		UI::ChangeWidget(`id(`next), `Label,   NextButtonLabel()  );
+		}
+
+	    if( checkModifyTargets( modify_targets, targetMap ) != `next )
+		{
+		ret = `again;
+		}
+	    else
+		{
+		Storage::SetModifyTargets( modify_targets );
+		Storage::SetTargetMap( targetMap );
+		}
+	    }
+
+    } until (ret == `next || ret == `back || ret == `cancel || ret == `abort );
+    
+    return ret;
+}
+
+// end

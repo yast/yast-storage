@@ -1,0 +1,247 @@
+/*
+ *************************************************************
+ *
+ *     YaST2      SuSE Labs                        -o)
+ *     --------------------                        /\\
+ *                                                _\_v
+ *           www.suse.de / www.suse.com
+ * ----------------------------------------------------------
+ *
+ * Author:        Michael Hager <mike@suse.de>
+ *
+ * Description:   Create a proposal for partitioning
+ *
+ *
+ *
+ *
+ *
+ *************************************************************
+
+ $Id$
+
+*/
+
+{
+  textdomain "partitioning";
+  import "Arch";
+  import "Wizard";
+  import "Mode";
+  import "Storage";
+
+  include "partitioning/custom_part_check_generated.ycp";
+  include "partitioning/do_proposal.ycp";
+
+  boolean test_mode               = Mode::test;
+  boolean demo_mode               = Mode::demo;
+  string  part_proposal_mode      = Storage::GetPartProposalMode();
+				  
+  map     targetMap               = Storage::GetTargetMap();
+  boolean run_in_testsuite        = Storage::GetTestsuite();
+				  
+  boolean proposal_firsttime      = Storage::GetPartProposalFirst();
+  boolean orig_proposal_firsttime = proposal_firsttime;
+  boolean no_suggestion_possible = true;
+
+  if ( test_mode && (size(targetMap) == 0) )
+  {
+      if ( demo_mode ) {
+	  y2warning("***** Demo mode active - using fake demo values *****");
+	  targetMap = SCR::Read(.target.yast2, "test/demo_target_map.ycp");
+      }
+      else {// ! demo_mode
+	  y2warning("***** Test mode active - using fake values *****");
+	  targetMap = SCR::Read(.target.yast2, "test/test_target_map.ycp");
+      }
+      Storage::SetTargetMap( targetMap );
+  }  
+
+
+  //////////////////////////////////////////////////////
+  // This module is only for i386 fdsik-lable
+  
+  if ( !Arch::i386 )
+  {
+      return `auto;
+  }	
+
+
+
+
+  // ///////////// DELETE THIS LINE FOR PRODUCTIOIN VERSION
+  //
+  // proposal_firsttime  = true;
+  // orig_proposal_firsttime  = true;
+
+
+
+
+
+
+  string title        = "";
+  string accept_str   = "";
+  string modify_str   = "";
+  string detailed_str = "";
+
+  // Title for dialogue
+  title = _("Suggested Partitioning");
+  // Radiobutton for partition dialog
+  accept_str   = _("&Accept proposal as-is");
+  // Radiobutton for partition dialog
+  modify_str   = _("&Base partition setup on this proposal");
+  // Radiobutton for partition dialog
+  detailed_str = _("&Create custom partition setup");
+
+  term contents =
+     `VBox (
+	`VSpacing (0.5),
+	`HBox (
+	    `HSpacing (2),
+	    `Top (`RadioButtonGroup (`id ("part_option"),
+		     `VBox (
+			  `HBox (`RichText (`id ("richtext"), _("One moment please ..."))
+					   ),
+			  `VSpacing (1),
+			  // Frame description in suggested partition for mode accept modify ..
+			  `HCenter(`Frame (_("Choose"), `HVSquash (
+			     `VBox (
+				    `VSpacing (0.2),
+				    // Radio Button Label in Suggested Partitioning
+				    `Left (`RadioButton (`id ("accept"), accept_str, part_proposal_mode == "accept")),
+				    `VSpacing (0.2),
+				    // Radio Button Label in Suggested Partitioning
+				    `Left (`RadioButton (`id ("modify"), modify_str, part_proposal_mode == "modify")),
+				    `VSpacing (0.2),
+				    // Radio Button Label in Suggested Partitioning
+				    // difficult option: there follows a dialog where the user can choose either the partition
+				    // assistant or the expert partitioner.
+				    `Left (`RadioButton (`id ("detailed"), detailed_str, part_proposal_mode == "detailed")),
+				    `VSpacing (0.2)
+				    )
+			     )
+			   ))
+			  ))
+		  ),
+	    `HSpacing (2)
+	    ),
+	`VSpacing(2) );
+
+
+  // help on suggested partitioning
+  string help_text =  UI(_("<p>
+YaST has checked your hard disks and proposes the displayed partition setup 
+for your hard drive.</p>"));
+  help_text =  help_text + UI(_("<p>
+You can continue with this proposal based on YaST's ideas,
+activate the second radiobutton in this case.</p>"));
+
+  help_text =  help_text + UI(_("<p>
+If YaST's suggestion does not fit your intentions you can create
+your own partition setup starting with the partitions as they are
+currently present on our disks. Activate the third radiobutton 
+in this case. This is also the option to choose if you want to use
+advanced options like RAID and LVM.</p>"));
+
+
+  y2debug( "analyse target: %1 ", targetMap);
+
+
+  if ( proposal_firsttime )
+  { 
+      map prop = do_proposal();
+      proposal_firsttime = false;
+      no_suggestion_possible = !prop["ok"]:false;
+      if( !no_suggestion_possible )
+	  {
+	  targetMap = prop["target"]:$[];
+	  }
+  }
+
+
+
+  any ret = nil;
+
+  if ( !run_in_testsuite )
+  {
+
+      /////////////////////////////////////////////////////////////////////
+      // next step to visualize the hit the new target map from hit
+
+      if ( no_suggestion_possible && orig_proposal_firsttime )
+      {
+	  y2milestone( "Could not create a proposal %1 %2 ",
+		       no_suggestion_possible,
+		       orig_proposal_firsttime );
+	  
+	  return( `auto );
+      }
+      else
+      {
+	  string changes = TargetChangesToRichText(targetMap);
+	  y2milestone( "current proposal: %1", changes );
+
+	  if ( changes == "<ul></ul>" )
+	  {
+	      changes = "<p></p>" +
+		       _("<p>You have rejected the proposal. Use <b>Modify</b> or <b>Discard</b></p>");
+	  }
+	  Wizard::SetContents(title, contents, help_text, Args(0), Args(1));
+	  UI::ChangeWidget( `id("richtext"), `Value, changes);
+      }
+
+      repeat
+	  
+          {
+              UI::SetFocus(`id(`next));
+              ret = Wizard::UserInput();
+     
+              string part_proposal_mode = UI::QueryWidget(`id("part_option"),  `CurrentButton);
+         
+              if ( ret == `abort && CallFunction(`inst_confirm_abort(`painless) ) )
+                  return `abort;
+     
+         
+              if (ret != `back) 
+              {
+		  Storage::SetPartProposalFirst( false );
+
+                  string target_is = "";
+             
+                  Storage::SetPartProposalMode( part_proposal_mode );
+     
+                  if ( part_proposal_mode == "accept")
+		  {
+		      symbol doagain = `next;
+		      
+		      target_is = "SUGGESTION";
+		      list retval = check_created_partiton_table( targetMap , true, true );
+		      targetMap   = select( retval, 0, $[] );
+		      doagain     = select( retval, 1, `next );
+
+		      if ( doagain == `again ) return `again;
+		  }
+		  else if( part_proposal_mode == "modify" )
+		      {
+		      target_is = "PROP_MODIFY";
+		      }
+		  else if( part_proposal_mode == "detailed" )
+		      {
+		      if( Storage::GetPartMode()!="CUSTOM" )
+			{
+			target_is = "NORMAL";
+			}
+		      else
+			{
+			target_is = "CUSTOM";
+			}
+		      Storage::SetPartDisk( "" );
+		      }
+		  
+                  Storage::SetPartMode( target_is );
+		  Storage::SetTargetMap( targetMap );
+	      }
+
+	  } until ( ret == `next || ret == `back || ret == `cancel );
+  }
+
+  return ret;
+}

@@ -1,0 +1,634 @@
+/**
+ * Module: 		inst_do_resize.ycp
+ *
+ * Authors: 		Thomas Roelz <tom@suse.de>
+ *
+ * Purpose: 		Runs the parted client module and receives and displays
+ *			output and messages from there.
+ *
+ *
+ *
+ * $Id$
+ */
+{
+  textdomain "partitioning";
+
+  import "Arch";
+  import "Wizard";
+  import "Storage";
+  import "Mode";
+  import "Partitions";
+
+  include "partitioning/partition_defines.ycp";
+  
+  boolean test_mode	= Mode::test;
+  boolean demo_mode	= Mode::demo;
+  boolean beta_mode	= false;
+  map	  targets	= Storage::GetTargetMap();
+  string  do_resize     = Storage::GetDoResize(); // minor number (e.g. "1" for /dev/sda1 or "NO")
+
+  any ret = `auto;
+
+  // test_mode and demo_mode are the same here
+  //
+  if ( test_mode ) demo_mode = true;
+
+  // Automatically return if resizing is not requested (skip this for test and demo)
+  //
+  if ( ! test_mode && ! demo_mode )
+  {
+      boolean no_resize_command = true;
+
+      foreach( `disk, `diskinfo, targets,
+      ``{
+	   foreach( `part, lookup( diskinfo, "partitions", [] ),
+	   ``{
+	       if ( lookup( part, "resize", false) == true )
+	       {
+		   no_resize_command = false;
+	      }
+	  });
+      });
+
+      if ( no_resize_command
+	   &&  ( do_resize == "NO" || do_resize == "no" || do_resize == "") )
+      {
+	  return `auto;
+      }
+  }
+
+  include "partitioning/auto_part_functions.ycp";
+
+
+  /////////////////////////////////////////////////////////////////////////
+  // START: Fake for development
+  /////////////////////////////////////////////////////////////////////////
+
+  // !!! ATTENTION !!! !!! ATTENTION !!! !!! ATTENTION !!! !!! ATTENTION !!!
+  // #######################################################################
+  // This is for _ISOLATED_ development of the do_resize module without
+  // being dependant on preliminary modules like the splitter module.
+  // If possible in any way do use this combination for development on
+  // a machine that has a real windows partition to be resized. Only if
+  // this is not convenient use the following fake.
+  // ==>
+  // For development it is necessary to actually resize a partition.
+  // To accomplish this we override the target map 
+  // with the following map. This map has been derived from a test machine
+  // (kingman) and resembles the situation on this machine at the time of
+  // development. It is very likely that these contents are wrong if used at
+  // a later time. For maintenance and further development of this module it
+  // is necessary to replace this map with a current one.
+  // #######################################################################
+  // !!! ATTENTION !!! !!! ATTENTION !!! !!! ATTENTION !!! !!! ATTENTION !!! 
+  
+  boolean development_mode = false;	// please leave _these_ YYYYY for grepping
+
+  if ( development_mode )
+  {
+      do_resize = true;	// do it!
+
+      // the following map is taken from kingman and will be taken for real
+  
+      targets =
+	  $[
+	    "/dev/sda" : $[
+			   "bus" : "SCSI",
+			   "cyl_count" : 1115,
+			   "cyl_size" : 8224768,
+			   "model" : "DNES-309170W",
+			   "name" : "1. SCSI, 8.54 GB, /dev/sda, IBM-DNES-309170W",
+			   "partitions" : [
+					   $[
+					     "resize"     : true,	// do resize this partition
+					     "new_size"   : 1000,	// new size is 1000 MB
+					     "ori_length" : 254,	// ori_length of partition before resize was 254 cyl
+					     "fsid" : 6,
+					     "fstype" : "DOS",
+					     "nr" : 1,
+					     "region" : [
+							 0,
+							 242
+					     ],
+					     "type" : `primary
+					   ],
+					     $[
+					       "f	sid" : 5,
+					       "fstype" : "Extended",
+					       "nr" : 2,
+					       "region" : [
+							   255,
+							   860
+					       ],
+					       "type" : `extended
+					     ],
+					     $[
+					       "fsid" : Partitions::fsid_native,
+					       "fstype" : "Linux native",
+					       "nr" : 5,
+					       "region" : [
+							   255,
+							   3
+					       ],
+					       "type" : `logical
+					     ],
+					     $[	
+					       "fsid" : Partitions::fsid_swap,
+					       "fstype" : "Linux swap",
+					       "nr" : 6,
+					       "region" : [
+							   258,
+							   17
+					       ],
+					       "type" : `logical
+					     ],
+					     $[
+					       "fsid" : Partitions::fsid_native,
+					       "fstype" : "Linux native",
+					       "nr" : 7,
+					       "region" : [
+							   275,
+							   840
+					       ],
+					       "type" : `logical
+					     ]
+			   ]	,
+			   "scrpath" : .sda,
+			   "vendor" : "IBM"
+	    ]
+	  ];
+      
+  }	// End development mode
+      
+  /////////////////////////////////////////////////////////////////////////
+  // END: Fake for development
+  /////////////////////////////////////////////////////////////////////////
+
+  /////////////////////////////////////////////////////////////////////////
+  // START: GUI
+  /////////////////////////////////////////////////////////////////////////
+  
+
+  y2milestone("Building dialog contents" );
+
+  term contents =
+      `VBox(
+	    `VSpacing(0.3),
+	    `ProgressBar(`id(`bar),
+			 // Label above progress bar that indicates
+			 // windows partition resizing progress.
+			 // This text will be replaced with the current values
+			 // for each partition to be resized (device and new size).
+			 sformat( _("Resizing...")),
+			 100, 0
+			 ),
+	    `VSpacing(0.5),
+	    `LogView(`id(`dirs), `opt(`vstretch),
+		     // Caption above scrolled window that contains
+		     // directories currently processed
+		     _("Directories:"),
+		     3, 0
+		     ),
+	    `VSpacing(0.3),
+	    `VSquash(
+		     `LogView(`id(`diagnostics),
+			      // Caption above scrolled window for errors/warnings
+			      _("Diagnostic output:"),
+			      3, 0
+			      )
+		     ),
+	    `VSpacing(0.4)
+	    );
+
+  // ...
+  //
+  // help text
+  string helptext = _("<p>
+Stand by while your Windows partition is resized.
+</p>
+");
+  
+  // help text, continued
+  helptext = helptext + _("
+<p>
+Depending on the size of your partition and your processor speed, this	action
+might take some time. Often, the progress meter doesn't show a linear progress;
+even if it stops sometimes, please be patient: The resizing tool has to perform
+various actions. When the directory tree on your partition is reorganized you
+can follow this process in the directory window.
+</p>");
+  
+  // help text, continued
+  helptext = helptext + _("
+<p>
+If the resizing tool delivers any diagnostic messages, these are displayed 
+in
+the diagnostics window.
+</p>
+");
+
+
+  // Define the UI update macro for the progress bar.
+  // This will be downloaded into the parted module.
+  //
+  UI(``{
+      global define ShowProgressParted( integer percent )
+	  ``{ 
+	  ChangeWidget(`id(`bar), `Value, percent );
+	  return nil;
+      };
+  });
+
+
+  // Define the UI update macro for the directory messages.
+  // This will be downloaded into the parted module.
+  //
+  UI(``{
+      global define ShowDirectoryParted( string message_directory )
+	  ``{ 
+	  ChangeWidget(`id(`dirs), `LastLine, message_directory );
+	  return nil;
+      };
+  });
+
+
+  // Define the UI update macro for the diagnostic messages.
+  // This will be downloaded into the parted module.
+  //
+  UI(``{
+      global define ShowDiagnosticParted( string message_diagnostic )
+	  ``{ 
+	  ChangeWidget(`id(`diagnostics), `LastLine,  message_diagnostic );
+	  return nil;
+      };
+  });
+
+
+  // Display the dialog
+  //
+  Wizard::SetContents(
+			// Set the dialog header
+			_("Resizing the Windows partition"),
+			contents, helptext, Args(0), Args(1)
+     );
+
+  UI::ChangeWidget(`id(`diagnostics), `Value,
+		   // set initial message in diagnostic window to indicate
+		   // that everything is alright up to now.
+		   _("Everything OK so far.\n") 
+		   );
+
+  /////////////////////////////////////////////////////////////////////////
+  // END: GUI
+  /////////////////////////////////////////////////////////////////////////
+  
+  /////////////////////////////////////////////////////////////////////////
+  // START: Functions
+  /////////////////////////////////////////////////////////////////////////
+
+  // get the start of a partition as seen by parted.
+  // returns the value as string or "-1" in case of error.
+  // Input:  device (without raid separator)
+  //         minor number of device
+  // Return: start of partition im MB on disk (string)
+  //
+  define get_partition_start( string device, string minor ) ``{
+      map parted_output = SCR::Read( .parted.print, [device] );
+      y2milestone( "parted_output %1", parted_output );
+      map partition = lookup( parted_output, minor, $[] );
+
+      return( lookup( partition, "start", "-1" ) );
+  };
+
+  // Displays a popup with the message (can be dismissed with OK).
+  // After that only `abort is allowed
+  // Every other user action ==> redisplay message
+  // Parameter: message to be displayed
+  // Return   : nothing
+  //
+  define allow_abort_only( string message ) ``{
+      any ret = `auto;
+
+      // Enable back and next buttons independent of the settings
+      // in installation.ycp so the user has a chance to see the
+      // popup more than only once.
+      //
+      UI::ChangeWidget( `id(`next), `Enabled, true );
+      UI::ChangeWidget( `id(`back), `Enabled, true );
+      
+      repeat {
+	  UI::MessagePopup( message );	// Display the message
+
+	  ret= UI::UserInput();		// get user input
+
+	  if ( ret == `abort )
+	  {
+	      if ( ! CallFunction(`inst_confirm_abort(`painless) ) )
+	      {
+		  // user didn't want to abort ==> stay in loop
+		  ret = `dummy;
+	      }
+	  }
+      } until ( ret == `abort );
+  };
+
+  /////////////////////////////////////////////////////////////////////////
+  // END: Functions
+  /////////////////////////////////////////////////////////////////////////
+
+  /////////////////////////////////////////////////////////////////////////
+  // START: Demo-Mode
+  /////////////////////////////////////////////////////////////////////////
+  
+  if ( demo_mode )
+  {
+      UI::ChangeWidget(`id(`dirs),
+		       `LastLine,
+		       "MATH\n"		+
+		       "OPTIONAL\n"	+
+		       "ACTIVEX\n"	+
+		       "HELP\n"		+
+		       "ENU\n"		+
+		       "RESOURCE\n"	+
+		       "FONT\n"		+
+		       "PFM\n"		+
+		       "CMAP\n"		+
+		       "EIGENE~1\n"	+
+		       "TEMP"
+		       );
+      
+      UI::ChangeWidget(`id(`bar), `Value, 70 );
+
+      // fake the string saying which partition is resized to which size
+      UI::ChangeWidget(`id(`bar), `Label, _("Resizing /dev/sda1 to 2000 MB"));
+
+      // enable a control widget to allow for making screenshots
+      UI::ChangeWidget(`id(`abort), `Enabled, true);
+      UI::SetFocus(`id(`abort));
+
+      ret = Wizard::UserInput();
+      
+      return( `auto );	// proceed in given direction
+  }
+
+  /////////////////////////////////////////////////////////////////////////
+  // END: Demo-Mode
+  /////////////////////////////////////////////////////////////////////////
+
+  /////////////////////////////////////////////////////////////////////////
+  // START: Action
+  /////////////////////////////////////////////////////////////////////////
+  
+  // Dialog is on screen now --> analyze target map and work every partition
+  // that is marked to be resized.
+  //
+  foreach (`targetdevice,`target, targets, ``{
+      // we are looping over all devices in the target map
+      list partitions = lookup ( target, "partitions", [] );
+
+      foreach (`pentry, partitions, ``{
+	  // Now we are looping over all partitions for the current device
+	  // check resize flag for every partition
+	  boolean resize = lookup (pentry, "resize", false);
+
+	  if ( resize )
+	  {
+	      // get some special values from the partition entry.
+	      
+	      // the minor number of the partition.
+	      string minor = sformat("%1", lookup( pentry, "nr", 0 ) );
+	      
+	      // the new size from the partition entry.
+	      string new_size = sformat("%1", lookup( pentry, "new_size", 0 ) );
+	      
+	      // build devicename.
+	      // %1%2 will be replaced with the partition device (/dev/hda1 etc.),
+	      string device_name = Storage::GetDeviceName( targetdevice, lookup( pentry, "nr", 0 ) );
+
+	      // get start of the partition as seen by parted
+	      string start_mb = get_partition_start( targetdevice, minor );
+
+	      // the current partition is marked to be resized. ==> apply some plausi checks.
+	      boolean checks_passed = true;
+
+	      if ( minor == "0" )
+	      {
+		  y2error("Device <%1> has invalid minor number. Skipped!", device_name);
+		  checks_passed = false;
+	      }
+	      else y2debug( "Minor number <%1> OK for device <%2>.", minor, device_name );
+
+	      if ( new_size == "0" )
+	      {
+		  y2error("Device <%1> has invalid new size. Skipped!", device_name);
+		  checks_passed = false;
+	      }
+	      else y2debug( "New size <%1> OK for device <%2>.", new_size, device_name );
+
+	      if ( ! is_fat_partition( pentry ) )
+	      {
+		  // currently we do resize FAT16 and FAT32 partitions only
+		  y2error("Device <%1> is not of type FAT. Skipped!", device_name);
+		  checks_passed = false;
+	      }
+	      else y2debug( "Device <%1> has correct file system type.", device_name );
+
+	      if ( start_mb == "-1" )
+	      {
+		  y2error("Start of device <%1> could not be detected. Skipped!", device_name);
+		  checks_passed = false;
+	      }
+	      else y2debug( "Start <%1> OK for device <%2>.", start_mb, device_name );
+
+	      if ( ! checks_passed )
+	      {
+		  UI::ChangeWidget(`id(`diagnostics), `LastLine, _("An internal error has occurred!"));
+		  
+                  // An internal error has occured. Tell the user that he should terminate the installation
+		  // now with a hard disk not yet altered.
+		  string explanation =  _("An internal error has occurred.
+
+You cannot shrink your Windows partition during
+installation. Your hard disk has not been altered.
+
+Abort the installation now and shrink your
+Windows partition by other means.
+");
+					      
+		  allow_abort_only( explanation );
+
+		  ret = `abort;
+		  return( `abort );	// abort installation
+	      }
+	      else
+	      {
+		  // Everything is OK --> actually do it.
+
+		  // Change Header of progress bar to indicate the current situation.
+		  // %1 will be replaced with the current device_name.
+		  // %2 with the new size in MB.
+		  UI::ChangeWidget(`id(`bar), `Label, sformat( UI(_("Resizing %1 to %2 MB")),
+							       device_name,		// %1
+							       new_size ));		// %2
+		  
+		  // Now call parted module with arguments as:
+		  // <progress_macro>		- macro to adjust progress bar
+		  // <directory_macro>		- macro to display directory information
+		  // <diagnostic_macro>		- macro to display diagnostic information
+		  // "/dev/sda1"		- partition to be resized
+		  // "0.0"			- new start of partition in MB on disk
+		  // "200.3"			- length of partition im MB on disk
+		  //
+		  any res = CallModule("parted", ["ShowProgressParted",
+						 "ShowDirectoryParted",
+						 "ShowDiagnosticParted",
+						 device_name,
+						 start_mb,	// leave it where it is
+						 new_size]);
+		  
+		  if ( res == `ok )
+		  {
+		      // report success in the diagnostics window
+		      UI::ChangeWidget(`id(`diagnostics), `Value,
+				       // inform the user that resizing was successful
+				       _("Your Windows partition has been resized successfully.") 
+				       );
+		  }
+		  else
+		  {
+		      UI::ChangeWidget(`id(`diagnostics), `LastLine, _("A resizing error has occurred!"));
+		  
+		      // An error during resizing has occured. Tell the user that he should abort the
+		      // installation and check his windows partition after booting windows.
+		      string explanation =  _("A resizing error has occurred!
+
+Shrinking your Windows partition was not successful.
+The partition has probably not been altered yet.
+
+Please abort the installation now to reboot Windows.
+Check your Windows partition and possibly shrink it
+by other means.
+");
+					      
+		      allow_abort_only( explanation );
+
+		      ret = `abort;
+		      return( `abort );	// abort installation
+		  }
+
+		  if ( development_mode )
+		  {
+		      // enable all control widgets
+		      UI::ChangeWidget(`id(`next), `Enabled, true);
+		      UI::ChangeWidget(`id(`back), `Enabled, true);
+		      UI::SetFocus(`id(`next));
+		      
+		      // wait for user input to be able to study the results
+		      ret = Wizard::UserInput();
+		  }
+
+		  // Now that the partition table on disk really has been altered by the resizer
+		  // check if the result is actually what we've calculated beforehand.
+		  //
+		  // reread the partition table
+		  //
+		  boolean correct = true;
+		  
+		  path targetpath      = topath ("." + substring (targetdevice, 5));
+		  list partitions_disk = Storage::Check4partitions (target, targetpath);
+
+		  // filter out the current partition
+		  //
+		  partitions_disk = filter(`p_entry, partitions_disk, ``( lookup(p_entry, "nr", 0) == tointeger(minor) ));
+
+		  // There should be only one
+		  //
+		  if ( size(partitions_disk) != 1 )
+		  {
+		      y2error("There was not exactly one target partition in the partition list derived from disk! Canceled");
+		      correct = false;
+		  }
+		  else y2debug( "Partition list derived from disk contains exactly _one_ target partition. OK" );
+
+		  if ( correct )
+		  {
+		      map  partition_disk = select( partitions_disk, 0, $[] );
+		      
+		      list region_calc    = lookup(pentry, "region", [`calculated, 0]);
+		      list region_disk    = lookup(partition_disk, "region", [`from_disk, 0]);
+
+		      // check if regions are identical
+		      //
+		      if ( region_calc != region_disk )
+		      {
+			  // Regions differ.
+			  // Due to calculation differences between parted and YaST2 the "real" region
+			  // may be less in length compared to the calculated region.
+			  // If this is the case it's OK otherwise (overlap) it is an error.
+			  //
+			  if ( select(region_calc, 1, 0) > select(region_disk, 1, 0) )
+			  {
+			      y2warning( "Calculated region <%1> is bigger than region from disk <%2>! This is acceptable.",
+					 region_calc,
+					 region_disk );
+
+			      if ( beta_mode )	// This is only executed in beta mode
+			      {
+				  string message = _("*** Hello Beta-Tester! ***
+
+The partition situation on this computer is relevant.
+
+Please write the  partition table to a file (dd) and
+pipe the output from fdisk -l to a file.
+
+Then send both files to kkaempf@suse.de.
+");
+
+				  UI::MessagePopup( message );
+			      }	// End of beta_mode
+			  }
+			  else
+			  {
+			      // Calculated region is too small --> Error
+			      //
+			      y2error( "Calculated region <%1> is less in length than region from disk <%2>! This is an error.",
+				       region_calc,
+				       region_disk );
+			      
+			      correct = false;
+			  }
+		      }
+		      else y2debug( "Calculated region <%1> is same as region from disk <%2>! OK",
+				    region_calc,
+				    region_disk );
+		  }
+
+		  if ( ! correct )
+		  {
+		      string explanation =  _("A resizing error has occurred.
+
+Shrinking your Windows partition was probably
+successful, but an internal error has occurred.
+
+Abort the installation now to reboot Windows.
+Check your Windows partition and reinstall SuSE Linux.
+
+There should be no need to shrink Windows next time.
+");
+					      
+		      allow_abort_only( explanation );
+
+		      ret = `abort;
+		      return( `abort );	// abort installation
+		  }
+	      }	
+	  }
+      });
+  });
+
+  return ret;
+}
+
+  /////////////////////////////////////////////////////////////////////////
+  // END: Action
+  /////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,260 @@
+/**
+ * File:
+ *   inst_disk.ycp
+ *
+ * Module:
+ *   Configuration of disk
+ *   - schedular for partitioning lvm and raid modules
+ *
+ * Summary:
+ *   Main file
+ *
+ * Authors:
+ *   Michael Hager <mike@suse.de>
+ *
+ * $Id$
+ *
+ * Main file for disk configuration. Uses all other files.
+ *
+ */
+
+{
+
+
+/***
+ * <h3>Configuration of the disk</h3>
+ */
+   y2milestone( "start disk");
+
+   import "Arch";
+   import "Wizard";
+   import "Mode";
+   import "Storage";
+ 
+   textdomain "partitioning";
+
+   include "partitioning/partition_defines.ycp";
+   include "wizard/sequencer.ycp";
+   include "ui/common_functions.ycp";
+   include "partitioning/custom_part_helptexts.ycp";
+   include "partitioning/custom_part_dialogs.ycp";
+   include "partitioning/custom_part_check_generated.ycp";
+   include "partitioning/custom_part_lib.ycp";
+   include "partitioning/raid_lib.ycp";
+   include "partitioning/raid_ui.ycp";
+   include "partitioning/lvm_pv_lib.ycp";
+
+    y2milestone( "PartMode %1 ProposalActive %2 ", Storage::GetPartMode(),
+                 Storage::GetPartProposalActive() );
+
+
+    if ( Storage::GetPartMode() != "CUSTOM" &&
+         Storage::GetPartMode() != "PROP_MODIFY" )
+      return `auto;
+
+    Storage::CreateTargetBackup("disk");
+   
+    if( Storage::GetPartProposalActive() && Storage::GetPartMode()=="CUSTOM" )
+	{
+	Storage::ResetOndiskTarget();
+	}
+
+    /******************************************************************/
+    // All raid-modules communicate via the following global variables
+    // and as usual via user_settings:
+    /******************************************************************/
+   
+   
+
+    /*
+      TODO Replace installation in the hole custompart with Storage::Installation 
+     */
+    boolean installation = Mode::installation;
+    
+    y2milestone ( " running in instsys %1", installation );
+
+   
+
+    /*
+    boolean reiserfs_support        = true;	// allow user to create reiser filesystems
+    boolean xfs_support             = false;	// allow user to create xfs filesystems
+    boolean jfs_support 	    = true;	// allow user to create jfs filesystems
+    boolean ext3_support            = true;	// allow user to create ext3 filesystems
+    
+
+    if ( Arch::ppc )
+    {
+	xfs_support       = false;
+    }
+
+    if ( Arch::s390 )
+    {
+	reiserfs_support  = false;
+    }
+
+   if ( Arch::alpha )
+   {
+       reiserfs_support  = false;
+   }
+
+   if ( Arch::sparc32 )
+   {
+       reiserfs_support  = false;
+       xfs_support = false;
+       jfs_support = false;
+       ext3_support = false;
+   }
+
+   if ( Arch::sparc64 )
+   {
+       jfs_support = false;
+   }
+
+   // global filesystem definitions
+   map file_systems = FileSystemsDefinitions( true, reiserfs_support, xfs_support , jfs_support, ext3_support );
+   map file_systems_no_swap  = FileSystemsDefinitions(false, reiserfs_support, xfs_support,  jfs_support,  ext3_support);
+    */
+
+   global define InitSettings( boolean installation ) ``{
+
+       if ( !installation )
+       {
+           Storage::StorageReadInSystem();
+       }
+       return `next;
+   }
+
+
+    map aliases = $[
+                    "RaidTypeWizard"  	   :   ``(ChooseRaidType(`wizard  )),
+		    "RaidTypeSettings"	   :   ``(ChooseRaidType(`settings)),
+		    "RaidDeviceWizard"	   :   ``(RaidDevices(`wizard  )),
+                    "RaidDeviceSettings"   :   ``(RaidDevices(`settings)),
+		    "RaidExpertWizard"     :   ``(RaidExpertWizard()),
+		    "ReallyInstPrepdisk"   :   ``(ReallyInstPrepdisk()),
+
+		    
+		    "LvmPv"		   :   ``(CallFunction(`inst_lvm_pv(true, true ))),
+		    "LvmLv"		   :   ``(CallFunction(`inst_lvm_lv(true, true ))),
+                    "Custom"               :   ``(CallFunction(`inst_custom_part(true,  true))),
+                    "PrepDiskEnd"          :   ``(CallFunction(`inst_prepdisk(true,  true))),
+                    "PrepDiskApply"        :   ``(CallFunction(`inst_prepdisk(true,  true))),
+		    "ReInitSettings"       :   ``(InitSettings(installation)),
+		    "TabsEnd"	 	   :   ``(TabsWrite()),
+		    "TabsApply"		   :   ``(TabsWrite()),
+                    "abort"                :   ``(AbortDialog())
+    ];
+
+
+    map sequence = $[
+                     "ws_start"             :       "Custom",
+
+                     "RaidTypeWizard"	    :   $[  `abort : "abort",
+						    `cancel: `cancel,
+                                                    `next  : "RaidDeviceWizard"],
+						     
+                     "RaidDeviceWizard"     :   $[  `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `next  : "RaidExpertWizard" ],
+
+		     "RaidExpertWizard"  :    $[  `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `next  : "Custom" ],
+		     
+		     "RaidDeviceSettings"    :   $[  `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `next  : "Custom"],
+		     
+		     "ReallyInstPrepdisk"    :   $[ `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `finish  : "PrepDiskEnd",
+						    `apply   : "PrepDiskApply" ],
+				            		     
+                     "Custom"               :   $[  `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `raid_wizard   : "RaidTypeWizard",
+						    `raid_settings : "RaidDeviceSettings",	
+						    `backtoi  : `back,
+						    `sysnext  : "ReallyInstPrepdisk",
+						    `lvm   : "LvmPv",
+						    `lvmlv : "LvmLv",
+                                            	    `again : "Custom",
+                                            	    `apply : "PrepDiskApply",
+                                            	    `instnext  : `next ],
+
+		     "LvmPv"		    :   $[  `abort : "abort",
+						    `cancel: `cancel,
+						    `next  : "LvmLv" ],
+		     
+		     "LvmLv"		    :   $[  `abort : "abort",
+						    `cancel: `cancel,
+						    `next  :  "Custom" ], 
+		     
+/*
+		     "TabsApply"	    :   $[  `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `next  : "ReInitSettings"   ],
+		     
+		     "TabsEnd"		    :   $[ `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `next  : `next    ],
+*/
+		     
+		     "PrepDiskApply"        :   $[  `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `back  : "ReInitSettings",
+                                            	    `next  : "ReInitSettings" ],
+	
+		     "PrepDiskEnd"          :   $[  `abort : "abort",
+						    `cancel: `cancel,
+                                            	    `back  : "ReInitSettings",
+                                            	    `next  : `next ],
+
+		     "ReInitSettings"	    :   $[  `abort : "abort",
+						    `cancel: `cancel,
+						    `next  : "Custom" ],
+		     
+                     "abort"                :   $[  `yes   : `abort,
+						    `cancel: `cancel]
+    ];
+
+
+    if ( ! Mode::installation )  Wizard::CreateDialog();
+
+    /*************************************************/
+    /*   Let s do the work ...                       */
+    /*************************************************/
+    symbol ret = WizardSequencer(aliases, sequence);
+    /*************************************************/
+
+
+
+
+    if ( ! Mode::installation )
+    {
+        if ( ret == `next )
+        {
+            /* info text shown at the end of module */
+            string message = UI(_("Please wait while updating configuration files."));
+            UI::OpenDialog(`opt(`decorated), `Label(message));
+	    
+        }
+	UI::CloseDialog();
+    }
+    else
+	{
+	y2milestone( "ret=%1", ret );
+	if( ret == `back )
+	    {
+	    Storage::RestoreTargetBackup("disk");
+	    }
+	else if( ret == `next )
+	    {
+	    Storage::DisposeTargetBackup("disk");
+	    Storage::SetPartProposalActive(false);
+	    }
+	}
+
+    y2milestone("Disk module finished");
+    return( ret );
+}

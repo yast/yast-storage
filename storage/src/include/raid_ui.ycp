@@ -1,0 +1,1018 @@
+/**
+ * File:
+ *   raid_ui.ycp
+ *
+ * Module:
+ *   Configuration of raid
+ *
+ * Summary:
+ *   User interface functions.
+ *
+ * Authors:
+ *   Michael Hager <mike@suse.de>
+ *
+ * $Id$
+ *
+ * All user interface functions for RAID.
+ *
+ */
+
+{
+
+  textdomain "partitioning";
+
+ 
+  import "Wizard";
+  import "Storage";
+  import "FileSystems";
+  import "Partitions";
+  
+  include "partitioning/raid_lib.ycp";
+
+/**
+ *  AbortDialog
+ **/
+global define symbol AbortDialog()
+``{
+
+    if( installation )
+    {
+	if ( CallFunction(`inst_confirm_abort(`painless)))
+	    return `yes;
+    }
+    else
+    {
+	if( UI::ReallyAbortPopup(true))
+	    return `yes;
+    }
+    return `back;
+}
+
+
+
+/**
+ * Initialize RAID creation.
+ * @return boolean
+ */
+global define void InitMainDevRaid()``{
+
+    if ( ! Storage::ExistsMainDevKeyEntry( "/dev/md" ))
+    {
+	
+	// We have to create an "md" entry
+	map maindev   = $[ "name"       : "Linux Software RAID",
+			   "cyl_count" : 1,                          // not used
+			   "cyl_size"  : 1024*1024,            	     // size in MB
+			   "partitions": [ ]
+	];
+
+	Storage::AddMainDev("/dev/md", maindev );
+	Storage::DebugStorage();
+    }
+};
+
+
+/**
+ * Help for RaidTypeDialog
+ * @return string
+ */
+global define string ChooseRaidTypeHelp()``{
+
+    // help text
+     string help    = _("<p><b>RAID 0:</b> This level increases your disk performace.
+There is <b>NO</b> redundancy in this mode. If one of the drives crashes, data recovery will not be possible.</p>
+");
+
+    // help text
+     help = help +  _("<p><b>RAID 1:</b> <br>This mode has the best redundancy. It can be
+used with two or more disks. This mode maintains an exact copy of all data on all
+disks. As long as at least one disk is still working, no data is lost. The partitions
+used for this type of RAID should have approximately the same size.</p>
+");
+
+    // help text
+     help = help +  _("<p><b>RAID 5:</b> <br>This mode combines management of a larger number
+of disks and still maintains some redundancy. This mode can be used on three disks or more.
+If one disk fails, all data is still intact. If two disks fail simultaneously, all data is lost</p>
+");
+
+     return help;
+
+};
+
+
+/**
+ * Contents for dialog ChooseRaidType
+ * @return term
+ **/
+global define term get_choose_raid_type_contents(string raid , symbol what )``{
+
+    integer space = 0;
+    if( what == `settings )
+	space = 5;
+
+    return
+	 `VBox (
+		`VSpacing( space),
+		`Heading (_("What type of RAID would you like to create?")),
+		`VSpacing(1),
+		`RadioButtonGroup (`id ("raid_type"),
+				    // Translators, 'Striping' is a technical term here. Translate only if you are sure!! If in doubt, leave it in English.
+				   
+				   `HSquash(`VBox (`Left(`RadioButton (`id ("raid0"), _("RAID &0  (Striping)"), raid=="raid0")),
+						`VSpacing (1),
+						// Translators, 'Mirroring' is a technical term here. Translate only if you are sure!! If in doubt, leave it in English.
+						`Left(`RadioButton (`id ("raid1"), _("RAID &1  (Mirroring)"), raid=="raid1" )),
+						`VSpacing (1),
+						// Translators, 'Redundant Striping' is a technical term here. Translate only if you are sure!! If in doubt, leave it in English.
+						`Left(`RadioButton (`id ("raid5"), _("RAID &5  (Redundant Striping)"),raid=="raid5")),
+						`VSpacing (1)
+						))
+				   ),
+		`VSpacing(space)
+		);
+
+};
+
+
+
+/**
+ * ChooseRaidType Dialog
+ * @parm what -> `settings or `wizard
+ * @return symbol
+ */
+global define symbol ChooseRaidType(symbol  what)
+``{
+  
+    string  subdevindex   = "0";
+   
+    if ( Storage::ExistsMainDevKeyEntry("/dev/md") )
+    {
+	subdevindex = get_free_raid_nr( Storage::GetTargetMap() );
+	if( what == `settings )
+	    Storage::SetWizardKey(Storage::GetSubDevKey("/dev/md", subdevindex) );
+    }
+    else
+    {
+	InitMainDevRaid();
+    }
+    
+
+    if( Storage::GetWizardKey() == "" )
+	Storage::SetWizardKey(Storage::GetSubDevKey("/dev/md", subdevindex) );
+  
+    map subdevraid    =  Storage::GetSubDev( Storage::GetWizardKey() );
+
+	
+    y2milestone( "Choose the raid type; subdevindex=%1 ", subdevindex );
+
+    
+    ////////////////////////////////////////////////////////////////////////////
+    // Choose Raid Type ...
+    ////////////////////////////////////////////////////////////////////////////
+
+    string caption   = _("RAID Wizard: Step 1.");
+    term   contents  =  get_choose_raid_type_contents(lookup( subdevraid, "raid_type" , "raid1"), what );
+
+     
+    if( what == `wizard )
+    {
+	Wizard::SetContentsButtons(caption,
+				    contents,
+				    ChooseRaidTypeHelp(),
+				    BackButtonLabel(),
+				    NextButtonLabel());
+     }
+    else if ( what == `settings )
+    {
+	 contents = add( contents ,
+			 `HBox(
+			       // popup create partition:
+			       `PushButton(`id(`ok), `opt(`default), OKButtonLabel() ),
+			       // popup create partition:
+			       `PushButton(`id(`cancel), CancelButtonLabel() )
+			       ));
+
+	 UI::OpenDialog( `opt(`decorated ),
+			 `HBox(
+			       `HWeight(50, `RichText( ChooseRaidTypeHelp() )),
+			       `HStretch(),
+			       `HSpacing(1),
+			       `HWeight(70, contents ),
+			       `HSpacing(1),
+			       `HStretch()
+			       ));
+    }
+    else
+    {
+	y2error( " Error what in ChooseRaidType must be symbol `wizard or `settings");
+    }
+
+    
+     any ret = UI::UserInput();
+
+     if ( ret == `next  || ret == `ok )
+     {
+	 //////////////////////////////////////////////////////////////////////////////
+	 //   Create initial raid datastructure, which comes to /dev/md[partitions]
+
+	 string subdevtype = UI::QueryWidget( `id("raid_type"), `CurrentButton);
+
+	 string chunk_size = "4";
+
+	 if ( subdevtype == "raid5" ) chunk_size = "128";
+	 if ( subdevtype == "raid0" ) chunk_size = "32";
+
+
+	 if( subdevraid == $[]  || what == `settings )
+	 {
+	     subdevraid = $[ "nr" 	            : tointeger(subdevindex),
+			   "raid_type"              : subdevtype,
+			   "raid_nb"                : subdevindex,
+			   "type"                   : `sw_raid,
+			   "status"                 : "create",
+			   "fsid"                   : Partitions::fsid_native,
+			   "region"	            : [0, 1],               // dummy
+			   "fstype"                 : "Linux RAID",
+			   "chunk_size"             : chunk_size,
+			   "persistent_superblock"  : true,
+			   "create"		    : true,
+			   "format"		    : true,
+			   "used_fs"		    : Partitions::default_fs	
+	     ];
+	 }
+	 else
+	 {
+	     subdevraid = add( subdevraid ,  "raid_type" , subdevtype );
+	     subdevraid = add( subdevraid ,  "chunk_size",  chunk_size );
+	 }
+
+
+	 if ( subdevtype == "raid5" ) subdevraid = add( subdevraid, "parity_algorithm", "left-symmetric" );
+
+	 Storage::SetSubDev( Storage::GetWizardKey() , subdevraid );
+	 Storage::DebugStorage();
+     }
+
+     if( what == `settings)
+     {
+	 UI::CloseDialog();
+     }
+
+     if( ret == `back )
+     {
+	 // Go back to last save settings in Storage  
+	 Storage::Rollback();
+     }
+     
+     return ret;
+}
+
+
+
+
+
+
+/**
+ * Help for RaidDevices Dialog
+ * @return string
+ */
+global define string RaidDevicesHelp()``{
+    string helptext           = _("<p><b>Add partitions to your RAID.</b> According to
+the RAID type, the usable disk size is the sum of these partitions (RAID0), the size
+of the smallest partition (RAID 1), or (N-1)*smallest partition (RAID 5).</p>
+");
+
+    helptext = helptext + _("<p>Generally, the partitions should be on different drives,
+to get the redundancy and performance you want.</p>
+");
+
+    helptext = helptext + _("<p><b>Expert options:</b><br>Here, set
+things like chunk size to get the best performance
+out of your system. These settings are used for all partitions of this RAID.</p>
+");
+
+    return helptext;
+
+}
+
+
+
+/**
+ * partition add partition widget table.
+ * @return term
+ */
+global define term get_raid_devives_content( symbol what , string current_raid_text  , list all_raids, string size_md  )
+    ``{
+    term top =   `HBox (
+			`Left (`Label (current_raid_text)),
+			// Label in raid -wf
+			`Label (_("Size:")),
+			`Label (`id(`raid_size), `opt( `outputField), "---------")
+			);
+
+    if( what == `settings )
+    {
+	top = `HBox(
+		    `Left(`VBox(
+				`ReplacePoint(`id(`raids_rp) , `ComboBox(`id(`raids), `opt(`notify), _("RA&ID:"),all_raids )),
+				`PushButton( `id(`md_raid_edit  ), `opt(`hstretch), _("O&ptions"))
+				)),
+
+		    `HSpacing(0.5),
+		    `Left(`Label(_("Size:"))),
+		    `Left(`Label( `id(`raid_size),
+				  `opt( `hstretch, `outputField), "-------" )),
+		    `HWeight(1,`HStretch()),
+		    `Right(`VBox(
+				 `PushButton( `id(`md_raid_remove), `opt(`hstretch), _("Remo&ve RAID")),
+				 `PushButton( `id(`md_raid_add), `opt(`hstretch), _("Add RAI&D"))))
+		    );
+    }
+
+    return( `HBox(
+		  `HSpacing(1),
+		  `VBox(
+		  `VSpacing (0.5),
+		  top,
+		  `VSpacing (0.2),
+		  `Table(`id(`raid_table), `opt(`notify),
+			 // table header in RAID-WF. Have a look at the spaces!
+			 `header(_("    Device    "),
+				 `Right(_("    Size    ")),
+				 `Center(_("        Type        ")),
+				 `Center(_("      RAID      "))),
+			 []
+			 ),
+		  `HBox (
+			 // Button in RAID-WF 
+			 `PushButton (`id (`raid_add), _("A&dd")),
+			 // Button in RAID-WF 
+			 `PushButton (`id (`raid_remove), _("&Remove"))
+			 // Button in RAID-WF 
+				// `Right (`PushButton (`id (`raid_expert), _("Expert Options ...")))),
+			 ),
+		  `VSpacing (0.5)
+		  ),
+		  `HSpacing(1)
+
+	    )
+	    );
+
+    };
+
+
+
+/**
+ * AddRaidDevices dialog
+ *
+ * Choose free partitions and add them to the raid.
+ * additionally you can edit the raid options like chunk size
+ * in -
+ *  out:
+ */
+global define symbol RaidDevices(symbol what )
+``{
+    /* get the current raid e.g.: 1//dev/md */
+    string  subdevraidkey     = Storage::GetWizardKey();
+    map     subdevraid        = Storage::GetSubDev( subdevraidkey );
+
+    /* e.g.: subdevraidindex = 1; */
+    string  subdevraidindex   = lookup( subdevraid , "raid_nb", "" );
+    string  caption       = _("RAID Wizard Step 2:");
+
+    /* key for subdev that can assigned to a raid */
+    string subdevpartkey =  "";
+
+
+    if( what == `settings )
+    {
+	caption   = _("RAID settings");
+    }
+
+    list    parts 	   =  []; 
+    list    table 	   =  [];
+
+
+    Wizard::SetContentsButtons( caption,
+				get_raid_devives_content(what,
+							 sformat(_("Current RAID: /dev/md%1"), subdevraidindex),
+							 get_raid_devices("0" ),
+							 ""
+							 ),
+				RaidDevicesHelp(),
+				BackButtonLabel(), NextButtonLabel() );
+
+    UI::SetFocus( `id(`raid_table));
+
+    //////////////////////////////////////////////////////////////////////
+    // mainloop
+    //////////////////////////////////////////////////////////////////////
+
+  
+    symbol ret 	= `start;
+
+    repeat
+    {
+
+	//////////////////////////////////////////////////////////
+	// Raid ComboBox 
+	if( (what == `settings/* && ret == `raids */)  ||( ret == `start && what == `settings ) )
+	{
+	    subdevraidkey  		= UI::QueryWidget(`id(`raids), `Value );
+	    y2milestone( "Selected Raid in ComboBox; subdevraidkey=%1 ", subdevraidkey );
+
+	    if( Storage::IsKeyKey( subdevraidkey) )
+	    {
+		subdevraidindex 	= Storage::GetSubDevIndex( subdevraidkey );
+		subdevraid  		= Storage::GetSubDev( subdevraidkey );
+	    }
+	}
+	y2milestone( "Current raid; subdevraidkey=%1 " ,subdevraidkey );
+
+	
+	///////////////////////////////////////////////////////////
+	// Update raid widget table
+	if( ret != `raids || ret == `start )
+	{
+	    parts 	 = get_possible_rds( Storage::GetTargetMap() );
+	    y2milestone( " parts %1", parts );
+	    
+	    parts        = filter( `part, parts, ``( ( lookup( part,  "lvm_group" ,"") == "" )));
+
+
+	    if( what == `wizard )
+		parts    = filter( `part, parts, ``( ( lookup( part, "raid_name" ,"") == "/dev/md" + subdevraidindex ) ||
+						     ( lookup( part, "raid_name" ,"") == ""  )));
+
+
+	    /////////////////////////////////////////////////////////////////
+	    // Show the current state:
+	    table 	 = get_raid_widget_table( parts );
+
+	    UI::ChangeWidget( `id(`raid_table), `Items, table);
+	}
+
+
+	/////////////////////////////////////////////////////////////////
+	// update size 
+	string type = lookup( subdevraid, "raid_type", "");
+	if( what == `settings )
+	{
+	    type = lookup( subdevraid ,"raid_type", "" );
+	}
+	
+	UI::ChangeWidget( `id(`raid_size), `Value, 
+	                  ByteToHumanStringWithZero( get_raid_size_byte( parts, subdevraidindex, type )));
+
+	if ( subdevpartkey != "" &&( ret == `raid_add || ret == `raid_remove ) )
+	{
+	    UI::ChangeWidget( `id(`raid_table), `CurrentItem, subdevpartkey);
+	}
+
+
+	
+
+	/////////////////////////////////////////////////////////////////
+	// Wait for User input
+	ret =  UI::UserInput();
+
+	/////////////////////////////////////////////////////////////////
+	// Edit raid (1//dev/md) settings - not in wizard
+	if ( ret == `md_raid_edit && Storage::IsKeyKey( subdevraidkey )  )
+	{
+	    subdevraid =    RaidExpertDlg(`settings,
+				      "/dev/md" + subdevraidindex,
+				      subdevraid,
+				      installation,
+				      FileSystems::GetAllFileSystems(false,true),
+				      false,
+				      Storage::GetTargetMap());
+	    
+	    Storage::SetSubDev(  "/dev/md" + subdevraidindex,  subdevraid );
+	}
+
+
+	/////////////////////////////////////////////////////////////////
+	// Add a new raid (2//dev/md ) - not in wizard  
+	if( ret == `md_raid_add  )
+	{
+	    if( ! check_raid_possible( Storage::GetTargetMap() ))
+		continue;
+
+	    ChooseRaidType( `settings );    
+	}
+
+	/////////////////////////////////////////////////////////////////
+	// Remove a new raid (2//dev/md ) - not in wizard  
+	if( ret == `md_raid_remove  && Storage::IsKeyKey( subdevraidkey ))
+	{
+	    if ( IsRaidCreated( subdevraidindex, what )) // Popup!
+	    {
+		if ( UI::YesNoPopup ( sformat(_("Do you really want to delete partition %1?"), get_device_name( "/dev/md"+subdevraidindex ) )))
+		{
+		    Storage::DelSubDev( subdevraidkey );
+		}
+		
+	    }
+	}
+
+
+	/////////////////////////////////////////////////////////////////
+	// Update Raid ComboBox - not in wizard
+	if( ret == `md_raid_add || ret == `md_raid_remove )
+	{
+	    new_raid_list( get_raid_devices( lookup( subdevraid, "raid_nb", "0") ));
+	    subdevraidkey  	= UI::QueryWidget(`id(`raids), `Value );
+	    subdevraidindex = Storage::GetSubDevIndex( subdevraidkey );
+	}
+	
+	
+	if( ret == `raid_table )
+	{
+	    subdevpartkey = UI::QueryWidget(`id(`raid_table), `CurrentItem);
+
+	    if ( isItemRd( subdevpartkey )  && Storage::IsKeyKey( subdevraidkey ) )
+	    {
+		ret = `raid_remove;
+	    }
+	    else
+	    {
+		ret = `raid_add;
+	    }
+	}
+
+
+	//////////////////////////////////////////////////////////////////////////
+	// Add a new physical volume to a raid e.g. assign 1//dev/hda to 1//dev/md
+	if ( ret == `raid_add )
+	{
+	    subdevpartkey = UI::QueryWidget(`id(`raid_table), `CurrentItem);
+
+	    
+	    if ( CheckItemIsNotRaid( subdevpartkey ) && Storage::IsKeyKey( subdevraidkey ) )
+	    {
+		if ( IsRaidCreated( subdevraidindex, what )) // Popup!
+		{
+		    addRaid( subdevpartkey,  subdevraidindex );
+		}
+	    }
+	}
+
+
+
+	////////////////////////////////////////////////////////////////////////////////
+	// Delete a new physical volume e.g. remove 1//dev/hda from 1//dev/md
+	if ( ret == `raid_remove )
+	{
+	    subdevpartkey = UI::QueryWidget(`id(`raid_table), `CurrentItem);
+
+	    if ( CheckItemIsRaid( subdevpartkey) && subdevraidindex != "" && subdevraidindex != nil )
+	    {
+		removeRaid( subdevpartkey, subdevraidindex, what );
+	    }
+	}
+
+	
+	if (ret == `next)
+	{
+	    ///////////////////////////////////////////////////////
+	    // check if enough disks are attached to the raid
+	    list parts = Storage::GetMainDevParam(  "/dev/md",  "partitions" );
+	    
+	    foreach( `part,  parts , ``{
+
+		if( ! lookup( part, "delete" ,false)  && lookup( part, "create" , false) )
+		{
+		    string  raid_type    = lookup( part , "raid_type" , "raid1" );
+		    integer nr_of_parts  = getNrOfParts( Storage::GetTargetMap(), sformat("%1", lookup(part, "nr", 0)));
+		    string  raid         = "/dev/md" + sformat("%1", lookup(part, "nr", 0));
+
+		    if ( raid_type == "raid0" && (nr_of_parts < 1))
+		    {
+			// Error popup
+			UI::ErrorPopup(sformat(_("For RAID 0, add at least one partition to %1."),  raid ));
+			ret = `again;
+		    }
+
+		    if ( raid_type == "raid1" && (nr_of_parts < 2))
+		    {
+			// Error popup
+			UI::ErrorPopup(sformat(_("For RAID 1, add at least two partitions to %1."), raid ));
+			ret = `again;
+		    }
+
+		    if ( raid_type == "raid5" && (nr_of_parts < 3))
+		    {
+			// Error popup
+			UI::ErrorPopup(sformat(_("For RAID 5, add at least three partitions to %1."), raid));
+			ret = `again;
+		    }
+		}
+	    });
+	}
+
+    } until (ret == `next || ret == `back || ret == `cancel || ret == `abort );
+
+
+    if( (ret == `next || ret == `back ) && what == `settings )
+    {
+	
+	// fix the raid size in all raid devices
+	map  target = Storage::GetMainDev( "/dev/md" );
+	
+	foreach( `part, lookup( target, "partitions", [] ),
+		     ``( change( part, "region", [0 , raid_size_byte( Storage::GetTargetMap(), part) / (1024 * 1024)] )));
+
+	/*************** change ???????????????????????  */
+	Storage::SetMainDev("/dev/md", target );
+	Storage::Commit();
+    }
+
+    return ret;
+}
+
+
+/**
+ * RaidExpertDlgHelp
+ * @return string
+ */
+global define string RaidExpertDlgHelp()``{
+    string helptext_edit_raid = _("<p><b>chunk size:</b><br>It is the smallest \"atomic\" mass
+of data that can be written to the devices. A reasonable chunk size for RAID 5 is 128KB. For RAID 0,
+32 KB is a good starting point. For RAID 1, the chunk size does not affect the array very much.</p>
+");
+
+    helptext_edit_raid = helptext_edit_raid + _("<p><b>parity algorithm:</b><br>The parity algorithm to use with RAID5.
+Left-symmetric is the one that offers maximum performance on typical disks with rotating platters.</p>
+");
+
+    helptext_edit_raid = helptext_edit_raid + _("<p><b>Persistent superblock:</b><br>
+The persistent superblock is mandatory if you want autodetection of your
+RAID devices at system boot. It also adds rescue options. 
+The only known reason to disable it is for
+compatibility with older RAID software</p>
+");
+
+    return helptext_edit_raid;
+
+};
+
+
+
+
+
+
+/**
+ * RaidExpertWizard 
+ * 
+ */
+global define symbol RaidExpertWizard()``{
+    
+    string  subdevkey     = Storage::GetWizardKey();
+    map     subdev        = Storage::GetSubDev(subdevkey );
+    string  subdevindex   = lookup( subdev , "raid_nb", "" );
+ 
+    subdev  =    RaidExpertDlg(`wizard,
+				"/dev/md" + subdevindex,
+				subdev,
+				installation,
+				FileSystems::GetAllFileSystems(true, true),
+				false,
+			        Storage::GetTargetMap()
+				);
+
+    symbol ret = lookup ( subdev , "symbol", `next );
+    // remove symbol key from new_raid
+    subdev   = filter( `key, `value, subdev, ``( key != "symbol" ));
+
+
+    if (ret == `next || ret == `back )
+    {
+	/////////////////////////////////////////////////
+	// fill in the new size of the raid:
+	subdev = add( subdev , "region", [0 , raid_size_byte( Storage::GetTargetMap(),subdev ) / (1024 * 1024)] );
+
+	Storage::SetSubDev( subdevkey, subdev);
+	Storage::Commit();
+    }
+
+    return  ret;
+}
+
+
+/**
+ *  raidExpertDlg dialog
+ *  edit expert options
+ */
+global define map RaidExpertDlg(symbol what,
+			    string current_raid,
+			    map new_raid,
+			    boolean installation,
+			    map file_systems,
+			    boolean edit_raid_type,
+			    map targetMap
+			    )
+``{
+
+    string  raid_type		= lookup( new_raid, "raid_type", "");
+    string caption 		= sformat(_("Raid settings %1"), current_raid );
+    list not_used_mountpoints   = notUsedMountpoints( targetMap, lookup( lookup( file_systems, lookup( new_raid, "used_fs", `ext2) , $[]), `mountpoints, []));
+    symbol last_option_fs	= lookup ( new_raid , "used_fs", `unknown);
+    map fs_options		= lookup ( new_raid , "fs_options" , $[]);
+    string old_mountpint 	= lookup( new_raid, "mount", "");
+
+    if( last_option_fs == `unknown )
+	{
+	last_option_fs = Storage::DetectFs( dev );
+	}
+
+    y2milestone( " used fs %1" , last_option_fs );
+    
+    term contents =  `HBox(
+			   UI::FormatDlg( new_raid, file_systems ),
+			   `HSpacing(2),
+			   `VBox(
+				 `Top(    UI::RaidOptionsDlg( new_raid, true )),
+				 `Bottom( UI::MountDlg( new_raid, not_used_mountpoints ))
+				 )
+			   );
+
+
+    if( what == `settings )
+    {
+	contents = `VBox(
+			 `Heading(caption),
+			 `VSpacing(1),
+			 `VStretch(),
+			 contents,
+			 `VSpacing(1),
+			 `VStretch(),
+			 `HBox(
+			       // popup create partition:
+			       `PushButton(`id(`ok), `opt(`default), OKButtonLabel()  ),
+			       // popup create partition:
+			       `PushButton(`id(`cancel), CancelButtonLabel() )
+			       ));
+
+
+
+	///////////////////////////////////////////////////////////////////////////////////////////
+	// Open main dialog for Raid
+	////////////////////////////////////////////////////////////////////////////////////////////
+	if( ! UI::OpenDialog( `opt(`decorated ),
+			      `HBox(
+				    `HWeight(30, `RichText( RaidExpertDlgHelp() )),
+				    `HStretch(),
+				    `HSpacing(1),
+				    `HWeight(70, contents ),
+				    `HSpacing(1),
+				    `HStretch()
+				    )))
+	    return new_raid;
+    }
+    else
+    {
+	// what == `wizard!!
+	Wizard::SetContentsButtons(_("RAID Wizard Step 3:"),
+				     `HBox(
+					   `HSpacing(),
+					   `VBox(
+						 `VSpacing(),
+						 `HVCenter(`HVSquash(contents)),
+						 `VSpacing(),
+						 `VSpacing(1)
+						 ),
+					   `HSpacing()
+					   ),
+			      RaidExpertDlgHelp(),
+			      BackButtonLabel(), FinishButtonLabel());
+
+    }
+
+
+     ////////////////////////////////////////////////////////////////////////////////////////
+     // configure main dialog for the first call
+
+     if( ! lookup(new_raid , "format", false)  ) {
+	 if( lookup( new_raid, "create", false) ) UI::ChangeWidget( `id(`mount_point),`Enabled, false );
+	 UI::ChangeExistingSymbolsState( [  `crypt_fs, `fs_options, `fs ] , false);
+     }
+     UI::ChangeExistingSymbolsState( [`fsid_point, `raid_combo ] , false);
+
+     if ( raid_type != "raid5" )
+     {
+	 UI::ChangeWidget(`id(`partity),  `Enabled, false );
+     }
+
+
+     ////////////////////////////////////////////////////////////////////////////////////////
+     // warning if partition is mounted
+     if( ! installation )
+     {
+	 y2debug(" check mount point");
+	 string mounts = PartitionMountedOn( "/dev/md" + current_raid  , CurrentMounted() );
+	 if( mounts != "" )
+	 {
+	     UI::ModifyPartitionInSystemWarningPopup( "/dev/md" + current_raid , mounts );
+	 }
+     }
+
+
+
+     any ret          = `ok;
+     map return_value = new_raid;
+
+     repeat
+     {
+	 ret	      = UI::UserInput();
+	 return_value = new_raid;
+	 y2debug( "DlgRaid %1", ret);
+
+
+
+	 ////////////////////////////////////////////////////////////////////////////////////////
+	 // modify widgets format -> not format
+	 if( UI::QueryWidget(`id(`format),  `CurrentButton) == `format_true )
+	 {
+
+	     return_value = add( return_value, "format", true);
+	     UI::ChangeExistingSymbolsState( [  `crypt_fs, `fs_options, `fs] , true);
+
+
+	     symbol used_fs    =  UI::QueryWidget(`id(`fs), `Value);
+	     map selected_fs =  lookup( file_systems, used_fs , $[] );
+
+	     string mount      =  UI::QueryWidget( `id(`mount_point), `Value);
+	     return_value      =  add( return_value , "mount" , mount);
+	     return_value      =  add( return_value , "used_fs", used_fs );
+
+	      UI::ChangeWidget(`id(`mount_point) , `Enabled, true );
+
+	     ////////////////////////////////////////////////////////////////////////////////////////
+	     // filesystem options
+	     if( used_fs != last_option_fs )
+		 fs_options = $[];
+	     last_option_fs = used_fs;
+
+	     if( ret == `fs_options )
+	     {
+		 fs_options =  UI::FileSystemOptions( fs_options, selected_fs );
+	     }
+	 }
+	 else
+	 {
+	     return_value = add( return_value, "format", false);
+	     return_value["used_fs"] = last_option_fs;
+	     UI::ChangeExistingSymbolsState( [  `crypt_fs, `fs_options, `fs] , false);
+
+	     UI::ChangeWidget(`id(`crypt_fs), `Value, false);
+	     if( lookup( new_raid, "create", false))
+	     {
+		 string mountpoint = "";
+		 UI::ChangeWidget(`id(`mount_point) , `Value,   mountpoint );
+		 UI::ChangeWidget(`id(`mount_point) , `Enabled, false );
+		 return_value      =  add( return_value , "mount" , "");
+	     }
+
+
+	     return_value = add( return_value, "crypt_fs", false);
+	     return_value = add( return_value, "crypt_key", "");
+	     if( lookup( return_value ,"create" ,false) )
+	     {
+		 return_value = add( return_value, "used_fs", `unknown);
+	     }
+	 }
+
+
+	 if ( edit_raid_type )
+	     return_value = add( return_value , "raid_type" , UI::QueryWidget(`id(`raid_combo), `Value));
+
+	 return_value = add( return_value, "chunk_size" , 	   UI::QueryWidget(`id(`chunk_size), `Value));
+	 return_value = add( return_value, "persistent_superblock",UI::QueryWidget(`id(`persist),    `Value));
+	 return_value = add( return_value, "parity_algorithm",     UI::QueryWidget(`id(`partity),    `Value));
+
+	 if ( ret == `raid_combo )
+	 {
+	     if ( raid_type == "raid5" )
+	     {
+		 UI::ChangeWidget(`id(`partity),  `Enabled, true );
+	     }
+	     else
+	     {
+		 UI::ChangeWidget(`id(`partity),  `Enabled, false );
+	     }
+	 }
+
+	 if( ret == `ok || ret == `next )
+	 {
+	     //////////////////////////////////////////////////////////////
+	     // Check if the user input for mount point are valid
+	     if(lookup(return_value, "mount", "") != old_mountpint && 
+	        !UI::check_mount_point( targetMap,  return_value["mount"]:"", 
+		                        return_value["used_fs"]:`unknown))
+	     {
+		 UI::SetFocus(`id(`mount_point));
+		 continue;
+	     }
+
+	     if( !UI::check_crypt_fs_mount_points(lookup(return_value, "mount", ""),
+						  UI::QueryWidget(`id(`crypt_fs), `Value ) ))
+	     {
+		 UI::SetFocus(`id(`mount_point));
+		 continue;
+	     }
+
+	      //////////////////////////////////////////////////////////////
+	     // if Raid device
+	     y2milestone( "  raid check" );
+	     if( lookup( return_value, "type" ,`ext2 ) == `sw_raid )
+	     {
+		 y2milestone( " is raid" );
+		 if( ! UI::check_raid_mount_points(lookup(return_value, "mount", "")))
+		 {
+		     UI::SetFocus(`id(`mount_point));
+		     continue;
+		 }
+	     }
+
+
+
+
+	     ////////////////////////////////////////////////////////////////////////////////////////
+	     // crypto settings
+	     boolean crypt_fs = UI::QueryWidget(`id(`crypt_fs), `Value );
+	     return_value = add( return_value, "crypt_fs",   crypt_fs );
+
+	     if ( crypt_fs )
+	     {
+		 string fs_passwd = UI::DlgCreateCryptFs();
+
+		 ////////////////////////////////////////////////////////////////////////////////////////
+		 // Ask the user for a password for cryptofs, else set crypto to nil??
+		 if ( fs_passwd != nil )
+		 {
+		     string crypt_key = Storage::AddCryptToClassified( fs_passwd );
+
+		     return_value = add( return_value, "crypt_key", crypt_key );
+		 }
+		 else
+		 {
+		     ret = `retry;
+		     UI::ChangeWidget(`id(`crypt_fs), `Value, false);
+		 }
+	     }
+
+
+	     ////////////////////////////////////////////////////////////////////////////////////////
+	     // modified partition and partition is mounted
+	     // to do -> adapt arePartitionsEqual raid!!!!!!!!!!
+	     if( ! installation &&  ! arePartitionsEqual(new_raid , return_value )  && ! create )
+	     {
+		 string mounts = PartitionMountedOn( "/dev/md" + current_raid  , CurrentMounted() );
+		 if(  mounts != "" )
+		 {
+		     if( ! UI::UseChangedPartitionContinueCancelPopup())
+		     {
+			 ret = `cancel;
+		     }
+		 }
+	     }
+
+
+	 }
+
+
+
+     } until ( ret == `ok || ret == `cancel || ret == `next || ret == `back || ret == `abort );
+
+
+     // filesystem options
+     if( lookup( return_value, "used_fs" , "") != last_option_fs  )
+	 fs_options = $[];
+			 
+     if( fs_options != $[] && lookup( return_value, "format" ,false))
+	 return_value = add( return_value, "fs_options", fs_options);
+     else return_value = filter(`key, `value, return_value, ``( key != "fs_options"));
+
+     y2milestone( "%1", return_value );
+     
+     if( ret == `back || ret == `next )
+     {
+	 return_value = add( return_value, "symbol", ret );
+     }
+     else
+     {
+	 UI::CloseDialog();
+     }
+
+
+     if ( ret == `ok  || ret == `next  || ret == `back )
+     {
+	 return return_value;
+     }
+
+     return new_raid;
+}
+
+}

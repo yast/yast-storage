@@ -1,0 +1,448 @@
+/**
+ * Module: 		auto_part_functions.ycp
+ *
+ * Authors: 		Andreas Schwab (schwab@suse.de)
+ *			Klaus Kämpf (kkaempf@suse.de)
+ *
+ * Purpose: 		This module define functions of general use
+ *			to the automatic partitioner
+ *
+ * $Id$
+ *
+ * needs global variables:
+ *
+ * integer bytes_per_unit
+ * symbol partition_type
+ * integer first_logical_nr
+ * integer max_partitions
+ *
+ * defined functions:
+    global define size_of_region (list region) ``{
+    global define size_to_units (integer bytes) ``{
+    global define start_of_region (list region) ``{
+    global define end_of_region (list region) ``{
+    global define num_primary (list partitions) ``{
+    global define contiguous_selection (list selection) ``{
+    global define contains_extended (list partitions) ``{
+    global define extended_region (list partitions) ``{
+    global define calculate_selected_region (list selection, any extended_region) ``{
+    global define can_create_logical (list partitions) ``{
+    global define bootable (list region) ``{
+    global define can_resize( list partitions ) ``{
+    global define renumber_logical_partitions (list partitions) ``{
+    global define unused_extended_region (list partitions) ``{
+    global define unused_logical_region (list partitions) ``{
+    global define compute_max_partitions (map target, symbol partition_type) ``{
+    global define compute_max_primary (symbol partition_type)
+    global define compute_partition_type (string boot_mode)
+ *
+ */
+{
+    import "Arch";
+    import "Boot";
+
+    textdomain "partitioning";
+
+    include "partitioning/partition_defines.ycp";
+
+    // --------------------------------------------------------------
+    // helper functions
+
+    // Return the size of a disk region in bytes
+
+    global define size_of_region (list region) ``{
+	return select (region, 1,0) * bytes_per_unit;
+    };
+
+    // Return the number of units that holds at least BYTES
+
+    global define size_to_units (integer bytes) ``{
+	return (bytes + bytes_per_unit - 1) / bytes_per_unit;
+    };
+
+    // Return the start of the region.
+
+    global define start_of_region (list region) ``{
+	return select (region, 0,0);
+    };
+
+    // Return the end of the region, ie. start of the next region
+
+    global define end_of_region (list region) ``{
+	return select (region, 0,0) + select (region, 1,0);
+    };
+
+    // Return the number of primary partitions
+
+    global define num_primary (list partitions) ``{
+	integer n = 0;
+
+	foreach (`pentry, partitions, ``{
+	    if (lookup (pentry, "type", `unknown) == `primary)
+		n = n + 1;
+	});
+
+	return n;
+    };
+
+    // The maximum partition number the kernel can handle for the target
+    // disk, count from 0 on, return the maximal allowed value for
+    // a partition number
+
+    global define compute_max_partitions (map target, symbol partition_type) ``{
+	// BSD label always allows only 8 partitions
+
+	if (partition_type == `ABSD || partition_type == `SBSD)
+	    return 7;
+
+	// mylex raid with /dev/rd/ only supports 8 (0-7) partitions
+
+	if (substring (lookup (target, "device", ""), 0, 8) == "/dev/rd/")
+	    return 7;
+
+	return lookup ($[ "SCSI":15, "IDE":63, "RAID":15 ],
+				     lookup (target, "bus", "SCSI"),
+				     15);
+    };
+
+    // return the maximal number of primary partitions
+
+    global define compute_max_primary (symbol partition_type) ``{
+	if (partition_type == `ABSD || partition_type == `SBSD)
+	    return 8;
+	return 4;
+    };
+
+    // return the usual type of partitions for the architecture
+
+    global define compute_partition_type (string boot_mode) ``{
+	if (Arch::alpha && (boot_mode == "aboot"))
+	    return `ABSD;
+
+	if (Arch::sparc)
+	    return `SBSD;
+
+	return `FAT;
+    };
+
+    // Return whether the list of selected partitions is contiguous.
+
+    global define contiguous_selection (list selection) ``{
+	boolean ret = true;
+	symbol  last_type = nil;
+	list    last_region = nil;
+
+	foreach (`pentry, selection, ``{
+	    if (!lookup (pentry, "create", false)) {
+		list region = lookup (pentry, "region", []);
+		symbol type = lookup (pentry, "type", `unknown);
+		if ((last_region != nil)
+		    && (end_of_region (last_region) != start_of_region (region)))
+		{
+		    ret = false;
+		}
+		last_region = region;
+		last_type = type;
+	    }
+	});
+	return ret;
+    }; // contiguous_selection
+
+
+    // Return true if an extended partition exists
+
+    global define contains_extended (list partitions) ``{
+	if (partition_type != `FAT) return false;
+	boolean ret = false;
+	foreach (`pentry, partitions, ``{
+	if (lookup (pentry, "type", `unknown) == `extended
+	    && !lookup (pentry, "delete", false))
+	  ret = true;
+	});
+	return ret;
+    };
+
+    // Return the region of the extended partition
+
+    global define extended_region (list partitions) ``{
+	list ret = [ 0, 0 ];
+	foreach (`pentry, partitions, ``{
+	if (lookup (pentry, "type", `unknown) == `extended)
+	    ret = lookup (pentry, "region", []);
+	});
+	return ret;
+    };
+
+
+    // Return the region for the selected partitions.  If EXTENDED_REGION
+    // is not nil it is used to clip the region so that it is contained
+    // entirely within it.
+
+    global define calculate_selected_region (list selection, list extended_region) ``{
+	integer start = -1;
+	integer end = 0;
+	if (size (selection) > 0) {
+	    start = start_of_region (lookup (select (selection, 0,$[]), "region", []));
+	    end = end_of_region (lookup (select (selection, size (selection) - 1,$[]), "region", []));
+	}
+	if (start != -1) {
+	    if (size (extended_region) > 0) {
+		// Use only the part that is contained in the extended
+		// partition
+		if (start >= end_of_region (extended_region))
+		    return [ 0, 0 ];
+		if (start < start_of_region (extended_region))
+		    start = start_of_region (extended_region);
+		if (end > end_of_region (extended_region))
+		    end = end_of_region (extended_region);
+	    }
+	    return [ start, end - start ];
+	}
+	return [ 0, 0 ];
+    }; // selected_region
+
+
+    // Check whether three logical partitions can be created without
+    // running past the kernel limit for the number of partitions
+
+    global define can_create_logical (list partitions) ``{
+	list logicals = filter (`pentry, partitions,
+			      ``(lookup (pentry, "type", `unknown) == `logical));
+	integer num_logical = size (logicals);
+	return ((first_logical_nr + num_logical + 3) <= (max_partitions + 1));
+    };
+
+    // Check whether the boot partition is located entrely below the 1024
+    // cylinder limit
+
+    global define bootable (list region) ``{
+//	we're using a new LILO, it can boot from all cylinders
+	if (Boot::LbaSupport())
+	    return true;
+	return (start_of_region (region) + size_to_units (size_of_boot)) < 1024;
+    };
+
+
+    // Check if the given partition is a FAT partition
+    // Input:  partition map to be checked (from targets)
+    // Return: true if partition is FAT, false otherwise
+    //
+    global define is_fat_partition( map partition ) ``{
+	return ( lookup( partition, "fsid", -1 ) == 0x06 ||	// FAT16
+		 lookup( partition, "fsid", -1 ) == 0x0b ||	// Win95 FAT32 CHS
+		 lookup( partition, "fsid", -1 ) == 0x0c ||	// Win95 FAT32 LBA
+		 lookup( partition, "fsid", -1 ) == 0x0e );	// Win95 FAT16 LBA	
+    }
+
+
+    // Check if the given partition is a NTFS partition
+    // Input:  partition map to be checked (from targets)
+    // Return: true if partition is NTFS, false otherwise
+    //
+    global define is_ntfs_partition( map partition ) ``{
+	return ( lookup( partition, "fsid", -1 ) == 0x07 || 	// HPFS/NTFS
+		 lookup( partition, "fsid", -1 ) == 0x86 || 	// NTFS-Datenträger
+		 lookup( partition, "fsid", -1 ) == 0x87 );	// NTFS-Datenträger
+    }
+
+    
+    // Get the partition map with the highest minor number out of the given partition list
+    // Input:  List of partition maps.
+    // Return: Partition map if found or $[] if not.
+    //
+    global define get_last_used_partition( list partitions ) ``{
+	map last_partition = $[];
+	integer minor = -1;
+
+	foreach( `partition, partitions, ``{
+	    if ( tointeger(lookup(partition, "nr", "-1")) > minor )
+	    {
+		minor = tointeger(lookup(partition, "nr", "-1"));
+		last_partition = partition;
+	    }
+	});
+
+	return last_partition;
+    }
+
+    
+    // Check whether the partition list has a resizable partition as the highest partition.
+    // Input:  List of partition maps
+    // Return: resizeable partition map or $[] if none found
+    //
+    global define can_resize( list partitions ) ``{
+	map last_used_partition = $[];
+	
+	if ( !Arch::i386 )
+	{
+	    y2warning( "Wrong architecture - can't resize partitions" );
+	    return $[];	// for now
+	}
+
+	// Filter out empty space that might exist behind valid partitions.
+	// This space would be there as a pseudo partition of type `free.
+	//
+	list partitions_local =
+	    filter (`pentry, partitions, ``( lookup(pentry, "type", `dummy) != `free ));
+
+	last_used_partition = get_last_used_partition( partitions_local );
+	
+	if ( last_used_partition == $[] ) return $[];	// no last resizeable partition found
+	    
+	// Check for supported filesystem types.
+        //	
+	if ( is_fat_partition( last_used_partition ) )
+	    return last_used_partition;
+	else
+	    return $[];
+    }
+
+    
+    // Check if the given file does exist.
+    // Input:  File to be checked incl. path as string, e.g. "/usr/lib/YaST2/clients/installation.ycp"
+    //         This may also point to a directory.
+    // Return: true if found, false if not.
+    //
+    global define file_exist( string file_path ) ``{
+	  string fileCommand = "/usr/bin/test -f " + file_path;
+	  boolean file_found = (SCR::Execute (.target.bash, fileCommand) == 0);
+	  return file_found;
+    }
+
+    
+    // Check whether the partition list has a resizable partition as the highest partition.
+    // Input:  map of data containing the target map
+    // Return: true if there is NT on the system, otherwise false
+    //
+    global define check_win_nt_system( map targets ) ``{
+	boolean is_nt = false;
+	boolean go_on = true;
+	integer local_ret = 0;
+	boolean local_err = false;
+	list partitions = [];
+	list partitions_local = [];
+	string fat_partition = "";
+	
+	foreach (`targetdevice,`target, targets, ``{
+	    // we are looping over all devices in the target map
+	    //
+	    if ( ! is_nt && ! local_err && go_on )
+	    {
+		partitions = lookup ( target, "partitions", [] );
+	
+		// First check if there are any NTFS partitions on the system
+		//
+		partitions_local = filter(`pentry, partitions, ``( is_ntfs_partition( pentry ) ) );
+
+		if ( size( partitions_local ) != 0 ) is_nt = true;	// is NT system
+	    }
+
+	    if ( ! is_nt && ! local_err && go_on )
+	    {
+		// Then look for specific files on all FAT partitions
+		//
+		partitions_local = filter(`pentry, partitions, ``( is_fat_partition( pentry ) ) );
+		
+		if ( size( partitions_local ) == 0 ) go_on = false;	// not an NT system
+	    }
+
+	    // If there are FAT partitions mount them and check specific files
+	    //
+	    if ( ! is_nt && ! local_err && go_on )
+	    {
+		foreach (`pentry, partitions_local, ``{
+		    // Now we are looping over all partitions for the current device.
+		    // get some special values from the partition entry.
+
+		    if ( ! is_nt && ! local_err && go_on )
+		    {
+			// build devicename.
+			fat_partition = get_device_name( targetdevice, lookup( pentry, "nr", 0 ) );
+
+			// mount the partition
+			local_ret = SCR::Execute(.target.bash, "/bin/mount " + fat_partition + " /mnt");
+
+			if ( local_ret != 0 )
+			{
+			    y2error( "FAT partition <%1> could not be mounted. Canceled", fat_partition );
+			    local_err = true;
+			}
+		    }
+
+		    if ( ! is_nt && ! local_err && go_on )
+		    {
+			if ( file_exist( "/mnt/winnt/system32/ntoskrnl.exe" ) ||
+			     file_exist( "/mnt/winnt/system32/dllcache" ) )
+			{
+			    y2error( "Current Windows device <%1> is NT or 2000. Canceled", fat_partition );
+			    is_nt = true;
+			}
+			
+			
+		    }
+
+		    // unmount the partition if was mounted
+		    if ( ! local_err ) SCR::Execute(.target.bash, "/bin/umount " + fat_partition );
+		});   // loop over all partitions
+	    }
+	});   // loop over all devices
+
+	if ( local_err ) return 2;
+	if ( is_nt ) 	 return 1;
+	else 		 return 0;
+    }   // End of check_win_nt_system()
+
+
+    // --------------------------------------------------------------
+    // Renumber the logical partitions if some of them are deleted
+    // The returned list is sorted by partition number instead of region
+
+    global define renumber_logical_partitions (list partitions) ``{
+	partitions = sort (`a, `b, partitions, ``(lookup (a, "nr", 0) <= lookup (b, "nr", 0)));
+	integer logicals_deleted = 0;
+	return maplist (`pentry, partitions, ``{
+	    if (lookup (pentry, "type", `unknown) == `logical) {
+		if (lookup (pentry, "delete", false))
+		    logicals_deleted = logicals_deleted + 1;
+		else
+		    pentry = add (pentry, "nr",
+			    lookup (pentry, "nr", 0) - logicals_deleted);
+	    }
+	    return pentry;
+	});
+    };
+
+    // Find unused space at the end of the extended partition
+    global define unused_extended_region (list partitions) ``{
+	list extended = extended_region (partitions);
+	list logicals = filter (`pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
+	integer end_of_logicals = 0;
+
+	if (size (logicals) > 0)
+	    end_of_logicals = end_of_region (lookup (select (logicals, size (logicals) - 1,$[]), "region", []));
+	else
+	    end_of_logicals = start_of_region (extended);
+
+	if (end_of_logicals < end_of_region (extended))
+	    return [ end_of_logicals, end_of_region (extended) - end_of_logicals ];
+	return [0, 0];
+    };
+
+
+    // Find unused space at the start of the extended partition
+    global define unused_logical_region (list partitions) ``{
+	list extended = extended_region (partitions);
+	list logicals = filter (`pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
+	integer start_of_logicals = 0;
+
+	if (size (logicals) > 0)
+	    start_of_logicals = start_of_region (lookup (select (logicals, 0, $[]), "region", []));
+	else
+	    start_of_logicals = start_of_region (extended);
+
+	if (start_of_logicals > start_of_region (extended))
+	    return [ start_of_region(extended), start_of_region (extended) - start_of_logicals ];
+	return [0, 0];
+    };
+
+}
