@@ -42,12 +42,12 @@ define any c_and_p_ModifyTargets( map modify_targets, map targetMap,
 
     do
 	{
-	map  new_vgs_mods = filter(  `key, map mod, modify_targets,
+	map  new_vgs_mods = filter(  any key, map mod, modify_targets,
 				     ``( mod["type"]:"" == "create_vg" &&
 					 size(mod["devices"]:[]) == 0 ));
     
 	// now we have the list of "create_vg"s where devices were misssing
-	new_vgs = maplist( `key, `mod, new_vgs_mods, ``( key )); 
+	new_vgs = maplist( any key, any mod, new_vgs_mods, ``( key )); 
 
 	y2milestone( "checkModify new_vg_mods %1", new_vgs_mods);
 
@@ -63,7 +63,7 @@ define any c_and_p_ModifyTargets( map modify_targets, map targetMap,
 	    string vg = modify_targets[vg_nr,"vgname"]:"";
 	
 	    // look into execution stack
-	    map pvs_to_create =  filter( `key, map mod, modify_targets,
+	    map pvs_to_create =  filter( any key, map mod, modify_targets,
 					 ``( mod["type"]:"" == "create_pv" &&
 					     mod["vgname"]:"" == vg ));
 
@@ -101,13 +101,13 @@ create at least one physical volume.
 		    // into a pv without vgname and a vg with devices="pv"
 
 		    // we take the first entry and read its key
-		    integer pv_nr = (integer)select( maplist(`k,`v,pvs_to_create, ``(k)), 0, 0 );
+		    integer pv_nr = (integer)select( maplist(any k,any v,pvs_to_create, ``(k)), 0, 0 );
 
 		    map pv_val = modify_targets[pv_nr]:$[];
 		    map vg_val = modify_targets[vg_nr]:$[];
 
 		    // delete vgname
-		    pv_val = filter( `k,`v, pv_val, ``(k!="vgname"));
+		    pv_val = filter( any k, any v, pv_val, ``(k!="vgname"));
 
 		    // add pv to device of vg
 		    vg_val["devices"] = [ pv_val["device"]:"ll-error" ];
@@ -369,14 +369,14 @@ define map removeVolumeGroup( string current_vg, map targetMap,
     ``{
     string old_vg = "/dev/" + current_vg;
     map new = $[];
-    foreach( `k, map v, targetMap, 
+    foreach( any k, map v, targetMap, 
 	``{
 	list npart = [];
 	foreach( map p, lookup( v, "partitions", [] ), 
 	    ``{
 	    if( lookup( p, "lvm_group", "" )==current_vg )
 		{
-		p = filter( string k1, `v1, p, ``(k1 != "lvm_group") );
+		p = filter( string k1, any v1, p, ``(k1 != "lvm_group") );
 		}
 	    npart = add( npart, p );
 	    });
@@ -386,7 +386,7 @@ define map removeVolumeGroup( string current_vg, map targetMap,
 
     new[old_vg,"delete"] = true;
 	
-    map tmp = filter( `k, map v, modify_targets, 
+    map tmp = filter( any k, map v, modify_targets, 
                       ``( v["use_module"]:"" == "lvm_ll" &&
 			  v["type"]:"" == "create_vg" &&
 			  v["vgname"]:"" == current_vg ));
@@ -400,10 +400,10 @@ define map removeVolumeGroup( string current_vg, map targetMap,
 			      v["vgname"]:"" == current_vg ));
 	while( size(tmp)>0 )
 	    {
-	    num = (integer)select( maplist( `k, `v, tmp, ``(k) ), 0, 0 );
+	    num = (integer)select( maplist( any k, any v, tmp, ``(k) ), 0, 0 );
 	    modify_targets = removeTargetModification( modify_targets, num );
 
-	    map tmp = filter( `k, map v, modify_targets, 
+	    map tmp = filter( any k, map v, modify_targets, 
 	                      ``( v["use_module"]:"" == "lvm_ll" &&
 				  v["type"]:"" == "create_pv" &&
 				  v["vgname"]:"" == current_vg ));
