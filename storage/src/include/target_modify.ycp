@@ -1,25 +1,25 @@
 /**
- * Module: 		target_modify.ycp
+ * Module:		target_modify.ycp
  *
- * Authors:		Thomas Fehr (fehr@suse.de) 
+ * Authors:		Thomas Fehr (fehr@suse.de)
  *			Michael Hager (mike@suse.de)
  *
  * Purpose:
  * Start of new disk preparation
- *			
- *			
+ *
+ *
  *
  * $Id$
  */
 
 {
-    textdomain "storage";
 
-    import "Misc";
-    import "Storage";
-    import "Partitions";
+textdomain "storage";
 
-    import "Label";
+import "Directory";
+import "Label";
+import "Partitions";
+import "Storage";
 
 global define boolean fdisk_call( map curr_map )
     ``{
@@ -27,7 +27,7 @@ global define boolean fdisk_call( map curr_map )
     integer pos = 0;
     string disk = curr_map["disk"]:"";
     string pt   = "";
-  
+
     disk = substring( disk, 5 );
     pos = findfirstof( disk, "/" );
     while( pos > 0 )
@@ -52,7 +52,7 @@ global define boolean fdisk_call( map curr_map )
 	}
     return( ok );
     }
-      
+
 global define boolean target_modify( map modify_targets, boolean installation )
     ``{
 
@@ -66,14 +66,14 @@ global define boolean target_modify( map modify_targets, boolean installation )
     //
     // 	  $[ 1 : $[
     // 		"use_module" : "lvm_ll"
-    // 		"type"       : "create_lv", 
+    // 		"type"       : "create_lv",
     // 		"name"       : "usr"
     // 		"size"     : 12121
     // 		"vgname"   : "system"
     // 		"stripes"  : 1 ]
-    // 
+    //
     // 	     2:  $[  "use_module" : "lvm_ll"
-    // 		  "type"       : "remove_lv", 
+    // 		  "type"       : "remove_lv",
     // 		  "name" : "usr"
     // 		  "vgname" : "system"
     // 		  "target_map_entry" : $[...]
@@ -176,7 +176,7 @@ global define boolean target_modify( map modify_targets, boolean installation )
 //  "disk" : "/dev/sdb",
 //  "id"   : 142,          // new id
 //   "nr"  : 8,            // for sdb8
-  
+
 global define boolean fdisk_change_id( string disk, integer nr, integer id  )
     ``{
     map curr_change_id = $[
@@ -184,8 +184,8 @@ global define boolean fdisk_change_id( string disk, integer nr, integer id  )
 			   "id"   :  id,
 			   "nr"   :  nr,
 			   "type" : "change_id" ];
-  
-    return( fdisk_call( curr_change_id ));       
+
+    return( fdisk_call( curr_change_id ));
     };
 
 
@@ -195,7 +195,7 @@ global define boolean fdisk_change_id( string disk, integer nr, integer id  )
     //  "disk"          : "/dev/sdb",
     //   "nr"           : 8,            // for sdb8
     //   "new_cyl_num"  : 1500          // resize to 1500 cylinders
-  
+
 global define boolean fdisk_resize( string disk, integer nr, integer new_cyl  )
     ``{
     map curr_change = $[
@@ -203,12 +203,12 @@ global define boolean fdisk_resize( string disk, integer nr, integer new_cyl  )
 			   "new_cyl_cnt" : new_cyl,
 			   "nr"           :  nr,
 			   "type"         : "resize" ];
-      
-    return( fdisk_call( curr_change ));       
+
+    return( fdisk_call( curr_change ));
     };
 
 
-global define boolean HandleFilesystem( string device, symbol fs, 
+global define boolean HandleFilesystem( string device, symbol fs,
                                         integer new_size,
                                         boolean decrease,
 					string mp )
@@ -225,7 +225,7 @@ global define boolean HandleFilesystem( string device, symbol fs,
 	    }
 	else
 	    {
-	    cmd = sformat("echo y | resize_reiserfs -q -s %1M -f %2", new_size, 
+	    cmd = sformat("echo y | resize_reiserfs -q -s %1M -f %2", new_size,
 			device );
 	    }
 	y2milestone( "execute cmd:%1", cmd );
@@ -235,14 +235,14 @@ global define boolean HandleFilesystem( string device, symbol fs,
 	}
     else if( fs == `ntfs )
 	{
-	string cmd = sformat( "echo y | ntfsresize -s %1k %2", 
+	string cmd = sformat( "echo y | ntfsresize -s %1k %2",
 	                      new_size*1024*1024/1000, device );
 	y2milestone( "cmd %1", cmd );
 	ret = SCR::Execute(.target.bash, cmd ) == 0;
 	}
     else if( fs == `xfs && !decrease )
 	{
-	string mdir = Misc::tmpdir + "/m1";
+	string mdir = Directory::tmpdir + "/m1";
 	if( size(mp)==0 )
 	    {
 	    cmd = sformat("mkdir %1", mdir );
@@ -296,9 +296,9 @@ global define boolean HandleResize( string disk_dev, map part,
     list swap = Storage::SwappingPartitions();
     do
 	{
-	UI::ChangeWidget(`id(`progress), `Label, 
+	UI::ChangeWidget(`id(`progress), `Label,
 	                 // label text Example: Resizing device /dev/hda1 with file system ext2 from 5 GB to 2 GB
-			 sformat(_("Resizing device %1 with file system %2 from %3 %4 to %5 %4"), 
+			 sformat(_("Resizing device %1 with file system %2 from %3 %4 to %5 %4"),
 				 device, fs_name, old_size, unit, new_size ));
 	retry = false;
 	boolean result = true;
@@ -329,10 +329,10 @@ global define boolean HandleResize( string disk_dev, map part,
 	    result = SCR::Execute(.target.bash, cmd ) == 0;
 	    if( !result )
 		{
-		// popup text 
+		// popup text
 		Popup::Message( _("
 Resizing the given file system is only possible while the file system
-is not mounted. Unmounting failed for some reason. 
+is not mounted. Unmounting failed for some reason.
 Resizing is therefore not possible.
 You could umount the file system manually and retry resizing.
 "));
@@ -386,7 +386,7 @@ You could umount the file system manually and retry resizing.
 	  symbol ans=`yes;
 	  // heading text
 	  ans = Popup::AnyQuestion3(_("Resize failed."),
-		  // popup text 
+		  // popup text
 		  sformat (_("Resizing device %1 failed."), device),
 		  Label::ContinueButton(), Label::AbortButton(), Label::RetryButton(), `focus_no);
 
@@ -410,15 +410,15 @@ You could umount the file system manually and retry resizing.
     y2milestone( "ret %1", ret );
     return( ret );
     }
-				     
- 
+
+
 global define boolean HandleResizePartitions( string disk_dev, map disk,
 					      boolean decrease )
     ``{
     boolean ret = true;
     integer cyl_size = disk["cyl_size"]:0;
 
-    list part = filter( map p, disk["partitions"]:[], 
+    list part = filter( map p, disk["partitions"]:[],
 			``(p["resize"]:false && !p["delete"]:false));
     if( decrease )
 	{
@@ -430,7 +430,7 @@ global define boolean HandleResizePartitions( string disk_dev, map disk,
 	}
     if( Mode::initial )
 	{
-	part = filter( map p, part, 
+	part = filter( map p, part,
 		       ``(!Partitions::IsDosWinNtPartition( p["fsid"]:0 ) ||
 		          p["detected_fs"]:`none==`ntfs));
 	}
@@ -495,5 +495,5 @@ global define boolean HandleResizeLvm( map target, map mod, boolean decrease )
     return( ret );
     }
 
-  
+
 }

@@ -1,51 +1,51 @@
 /**
  * Module: 		Storage.ycp
- * 
+ *
  * Authors:		Johannes Buchhold (jbuch@suse.de)
  *
- * Purpose: 		These module contains all settings/information which 
- * are needed to partitioning the harddisk. Futhermore it contains a interface 
- * to * access and modify the partitioning settings.  
+ * Purpose: 		These module contains all settings/information which
+ * are needed to partitioning the harddisk. Futhermore it contains a interface
+ * to * access and modify the partitioning settings.
  *
  * Todo: Translate
- * Diese Modul enthält alle Informationen die für die Partitionierung der 
- * Festplatten erforderlich sind. Diese Informationen bestehen aus der 
+ * Diese Modul enthält alle Informationen die für die Partitionierung der
+ * Festplatten erforderlich sind. Diese Informationen bestehen aus der
  * Beschreibung, der vor der Partitionierung vorhandenen Platteneinstellungen,
- * und der Art und Weise wie diese verändert werden soll. 
- * Alle nötigen Zugriffsfunktionen auf diese Datenstruktur sind ebenfalls in 
- * diesem Modul enthalten. Der Zugriff auf die Speicherung der 
+ * und der Art und Weise wie diese verändert werden soll.
+ * Alle nötigen Zugriffsfunktionen auf diese Datenstruktur sind ebenfalls in
+ * diesem Modul enthalten. Der Zugriff auf die Speicherung der
  * Partitionseinstellungen läuft * also nur über dieses Modul.
- * Der Zufriff und die Rückgabe von Teilen der Partitionsdatenstruktur 
- * wurde versucht * "intelligent" zu gestallten und ist im einzelen bei den 
+ * Der Zufriff und die Rückgabe von Teilen der Partitionsdatenstruktur
+ * wurde versucht * "intelligent" zu gestallten und ist im einzelen bei den
  * entspechenden Funktionen * näher erklärt.
  *
  * $Id$
  */
 {
-   
+
   module "Storage";
-  import "Mode";
+  textdomain "storage";
+
   import "Arch";
-  import "Misc";
-  import "Partitions";
-  import "StorageDevices";
-  import "FileSystems";
   import "AsciiFile";
   import "Console";
-  import "Label";
-
-  import "Popup";
+  import "Directory";
+  import "FileSystems";
   import "Installation";
+  import "Label";
+  import "Mode";
+  import "Partitions";
+  import "Popup";
+  import "StorageDevices";
 
-  textdomain "storage";
- 
+
  /*
   include "storage/routines.ycp";
  */
   /**
-   *	
+   *
    */
-global define string GetDeviceName( string disk, any partition ) 
+global define string GetDeviceName( string disk, any partition )
     ``{
       string ret = disk;
 
@@ -115,7 +115,7 @@ global define string GetDeviceName( string disk, any partition )
 
     string storage_map_key		= "storage_map";
     string storage_type_key     	= "storage_type";
-    string storage_doc_key		= "storage_doc";	
+    string storage_doc_key		= "storage_doc";
     symbol record_key			= `record;
     symbol custom_key			= `custom;
     boolean lvm_initialized             = false;
@@ -126,7 +126,7 @@ global define string GetDeviceName( string disk, any partition )
   /**
    *
      */
-global define map GetDiskPartition( string device ) 
+global define map GetDiskPartition( string device )
     ``{
     map ret = $[];
     integer dlen = 0;
@@ -247,7 +247,7 @@ global define map SetPartition( map tg, map part )
 
 /**
  * Find next free loop device.
- * @return string loop_dev ( e.g.: /dev/loop1 ) 
+ * @return string loop_dev ( e.g.: /dev/loop1 )
  */
 global define string GetLoopDev( integer start )
     ``{
@@ -305,7 +305,7 @@ global define map InitialLoopEntry()
  /**
  *
  */
-global define map GetLvmMdSystemInfo( map targetMap ) 
+global define map GetLvmMdSystemInfo( map targetMap )
     ``{
     map md = (map) SCR::Read (.md.config);
     y2debug( "md %1", md );
@@ -349,12 +349,12 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	entry["partitions"] = partitions;
 	targetMap[key] = entry;
 	}
-    foreach (string k, map v, md, 
+    foreach (string k, map v, md,
 	``{
 	integer dcnt = 0;
 	list devices = v["devices"]:[];
 	integer spare = size(devices) - v["used_disks"]:size(devices);
-	foreach(string e, devices, 
+	foreach(string e, devices,
 	    ``{
 	    map p = Storage::GetPartition( targetMap, e );
 	    p["raid_name"] = k;
@@ -366,7 +366,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	});
     map lvm_vg = (map) SCR::Read (.lvm.vg);
     y2debug( "lvm vg %1", lvm_vg );
-    foreach (string k, map v, lvm_vg, 
+    foreach (string k, map v, lvm_vg,
 	``{
 	string key = "/dev/" + k;
 	map entry = $[];
@@ -378,7 +378,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	entry["cyl_count"] = v["blocks"]:0 / pesize;
 	entry["lvm2"] = v["lvm2"]:false;
 	y2debug ("key=%1 pesize=%2 map=%3", key, pesize, entry);
-	foreach (string pk, map pv, v["lv"]:$[], 
+	foreach (string pk, map pv, v["lv"]:$[],
 	    ``{
 	    map part = $[];
 	    part["fsid"] = Partitions::fsid_lvm;
@@ -396,7 +396,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	entry["partitions"] = partitions;
 	targetMap[key] = entry;
 	});
-    map lvm_pv = filter(any k, map v, (map) SCR::Read(.lvm.pv), 
+    map lvm_pv = filter(any k, map v, (map) SCR::Read(.lvm.pv),
                          ``(size(v["vgname"]:"") > 0));
     y2debug( "lvm pv %1", lvm_pv );
     foreach(string k, map v, lvm_pv,
@@ -438,10 +438,10 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    v["used_fs"] = e["vfstype"]:"";
 	    list<string> opts = splitstring( e["mntops"]:"", "," );
 	    boolean noauto = size(filter(string s, opts, ``(s=="noauto"))) > 0;
-	    string lopt = select( filter(string s, opts, ``(find(s,"loop")==0) ), 
+	    string lopt = select( filter(string s, opts, ``(find(s,"loop")==0) ),
 				  0, "" );
-	    string algo = select( filter(string s, opts, 
-	                                  ``(find(s,"encryption")==0) ), 
+	    string algo = select( filter(string s, opts,
+	                                  ``(find(s,"encryption")==0) ),
 				  0, "" );
 	    y2milestone( "noauto:%1 lopt:%2 algo:%3", noauto, lopt, algo );
 	    if( size(lopt)>0 )
@@ -450,7 +450,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 		v["loop"] = tm[1]:"";
 		if( size(v["loop"]:"")==0 )
 		    {
-		    map t = select( filter(map w, mounts, 
+		    map t = select( filter(map w, mounts,
 		                            ``(w["file"]:""==v["mount"]:"")),
 				    0, $[] );
 		    v["loop"] = t["spec"]:"";
@@ -541,7 +541,7 @@ global define void SetMdOn( boolean on )
     }
 
 /**
- * Reads LVM (vgscan ...) and MD data (/proc) 
+ * Reads LVM (vgscan ...) and MD data (/proc)
  */
 global define map ReadLvmMd( map targetMap )
     ``{
@@ -559,7 +559,7 @@ global define map ReadLvmMd( map targetMap )
      *
      */
 global define map GetFsysType( map target)
-    ``{	
+    ``{
     foreach ( string device, map disk, target,
 	``{
 	list partitions = disk["partitions"]:[];
@@ -573,7 +573,7 @@ global define map GetFsysType( map target)
 		    partition["used_fs"]:`unknown == `fat32 )
 		    {
 		    partition["fsid"] = Partitions::fsid_fat32;
-		    partition["fstype"] = 
+		    partition["fstype"] =
 			Partitions::FsIdToString( Partitions::fsid_fat32 );
 		    }
 		}
@@ -583,8 +583,8 @@ global define map GetFsysType( map target)
 	});
     return target;
     }
-    
-    
+
+
 global define list SwappingPartitions()``{
     list ret = [];
     list<map> swaps = filter(map e, (list<map>) SCR::Read( .proc.swaps ),
@@ -603,9 +603,9 @@ global define map AddSwapMp( map target )
     y2milestone( "swaps %1", swaps );
     foreach(string diskdev, map disk, target,
 	``{
-	 disk["partitions"] = maplist(map part, disk["partitions"]:[], 
+	 disk["partitions"] = maplist(map part, disk["partitions"]:[],
 				 ``{
-				 if( (Mode::initial && 
+				 if( (Mode::initial &&
 				      !Partitions::IsDosWinNtPartition(part["fsid"]:0) &&
 				      part["detected_fs"]:`unknown==`swap) ||
 				     (!Mode::initial &&
@@ -625,7 +625,7 @@ global define map AddWinInfo( map targets )
     y2milestone( "AddWinInfo called" );
     foreach(string disk, map data, targets,
 	``{
-	data["partitions"] = 
+	data["partitions"] =
 	    maplist(map p, data["partitions"]:[],
 		``{
 		if( Partitions::IsDosWinNtPartition(p["fsid"]:0) &&
@@ -646,7 +646,7 @@ global define map AddWinInfo( map targets )
     };
 
 global define string SaveDumpPath( string name )``{
-    string ret = Misc::tmpdir + "/" + name;
+    string ret = Directory::tmpdir + "/" + name;
     y2debug( "name=%1 path=%2", name, ret );
     return ret;
     }
@@ -666,7 +666,7 @@ global define string SaneConsoleEncoding()
     }
 
 /**
- * Search in the list partitions for windows partitions and add the key 
+ * Search in the list partitions for windows partitions and add the key
  * "mount" to the found windows partitions.
  * @parm partitions the partitions list
  * @parm primary handle primary or logical partitions
@@ -682,7 +682,7 @@ global define list AddMountPointsForWinParts( list<map> partitions, boolean prim
 
     list<map> new_partitions = [];
 
-    foreach(map partition, partitions, 
+    foreach(map partition, partitions,
 	``{
 	map new_partition = partition;
 	integer fsid      = partition["fsid"]:Partitions::fsid_native;
@@ -692,8 +692,8 @@ global define list AddMountPointsForWinParts( list<map> partitions, boolean prim
 	    partnum = partition["nr"]:0;
 	    }
 
-	if( !haskey( partition, "mount") && !partition["delete"]:false && 
-	    ((partnum<5)==primary) && 
+	if( !haskey( partition, "mount") && !partition["delete"]:false &&
+	    ((partnum<5)==primary) &&
 	    Partitions::IsDosWinNtPartition(fsid) &&
 	    contains( [`fat32, `fat16, `ntfs], partition["used_fs"]:`none ))
 	    {
@@ -734,13 +734,13 @@ global define list AddMountPointsForWinParts( list<map> partitions, boolean prim
 	    new_partition["fstopt"] = mntops;
 	    if( contains( Partitions::fsid_dostypes, fsid ))
 		{
-		new_partition["mount"] = 
+		new_partition["mount"] =
 		    "/dos/" + substring (foreign_ids, foreign_nr, 1);
 		foreign_nr = foreign_nr + 1;
 		}
 	    else
 		{
-		new_partition["mount"] = 
+		new_partition["mount"] =
 		    "/windows/" + substring (foreign_ids, foreign_nr, 1);
 		foreign_nr = foreign_nr + 1;
 		}
@@ -758,12 +758,12 @@ global define map AddMountPointsForWin( map targets )
 
     foreach(string disk, map data, targets,
 	``{
-	data["partitions"] = 
+	data["partitions"] =
 	    AddMountPointsForWinParts( data["partitions"]:[], true );
 	});
     foreach(string disk, map data, targets,
 	``{
-	data["partitions"] = 
+	data["partitions"] =
 	    AddMountPointsForWinParts( data["partitions"]:[], false );
 	});
     return( targets );
@@ -777,7 +777,7 @@ global define map AddMountPointInfo( map target )
 	``{
 	// variable renamed due to some interpreter problems
 	list<map> tmp2 = disk["partitions"]:[];
-	tmp2 = maplist(map part, tmp2, 
+	tmp2 = maplist(map part, tmp2,
 	    ``{
 	    map mt = find(map mp, mounts, ``(mp["spec"]:" "==part["device"]:"" ||
 					   mp["loop_on"]:" "==part["device"]:""));
@@ -988,7 +988,7 @@ global define map FindFstabEntry( map fstab, string mount, string device,
     map ret = $[];
     list lines = [];
     lines = FindFstabLines( fstab, mount, device, uuid, label );
-    y2milestone( "mount=%1 device=%2 uuid=%3 label=%4", mount, device, uuid, 
+    y2milestone( "mount=%1 device=%2 uuid=%3 label=%4", mount, device, uuid,
                  label );
     if( size(lines)>0 )
 			{
@@ -1145,9 +1145,9 @@ global define void SetTargetMap( map targets )
 	return filter(map c_part, partitions ,
 			      ``( c_part["delete"]:false != true));
     }
-    
-    
-       
+
+
+
     /* GetMountPoints()
      * collect mountpoint:device as map to get a sorted list
      * @returns: map of lists, the map key is the mount point,
@@ -1168,7 +1168,7 @@ global define map GetMountPoints()
 	list partitions = FilterDelete( target["partitions"]:[] );
 	foreach (map partition, partitions,
 	    ``{
-	    string partitionName = 
+	    string partitionName =
 		GetDeviceName( targetdevice, partition["nr"]:0);
 	    string mountPoint = partition["mount"]:"";
 	    integer fsid = partition["fsid"]:0;
@@ -1182,12 +1182,12 @@ global define map GetMountPoints()
 		// partition has a mount point
 		if (mountPoint == "swap")
 		    {
-		    swapPoints = add( swapPoints, 
+		    swapPoints = add( swapPoints,
 				      [partitionName, fsid, targetdevice, raid_type]);
 		    }
 		else
 		    {
-		    mountPoints = add( mountPoints, mountPoint, 
+		    mountPoints = add( mountPoints, mountPoint,
 		                       [partitionName, fsid, targetdevice, raid_type]);
 		    }
 		}
@@ -1197,7 +1197,7 @@ global define map GetMountPoints()
 	mountPoints = add (mountPoints, "swap", swapPoints);
     if( !Mode::initial )
 	{
-	list<map> cm = filter(map e, Partitions::CurMounted(), 
+	list<map> cm = filter(map e, Partitions::CurMounted(),
 	                  ``(find(e["spec"]:"","/dev/")==0));
 	foreach(map e, cm,
 	    ``{
@@ -1212,8 +1212,8 @@ global define map GetMountPoints()
 			raid_type = p["raid_type"]:"";
 			}
 		    map d = GetDiskPartition( e["spec"]:"" );
-		    mountPoints[e["file"]:""] = 
-			[ p["device"]:"", p["fsid"]:0, d["disk"]:"", 
+		    mountPoints[e["file"]:""] =
+			[ p["device"]:"", p["fsid"]:0, d["disk"]:"",
 			  raid_type ];
 		    }
 		}
@@ -1222,9 +1222,9 @@ global define map GetMountPoints()
     y2milestone( "ret %1", mountPoints );
     return mountPoints;
     }
-    
-    
-    
+
+
+
     global define map GetClassifiedUserSettings()``{
 	return StorageMap[classified_user_settings_key]:$[];
     }
@@ -1301,11 +1301,11 @@ global define map GetMountPoints()
   global define void SetWinDevice( boolean value ) ``{
       StorageMap = add( StorageMap, win_device_key, value );
     }
-    
+
     /**
      * Return a map that contains the maindev for maindevkey.
-     * @param maindevkey 
-     * @return map 
+     * @param maindevkey
+     * @return map
      */
     global define map GetMainDev(string maindevkey )``{
 	map maindev = lookup( GetTargetMap(), maindevkey, $[] );
@@ -1317,10 +1317,10 @@ global define map GetMountPoints()
 	    }
 
 	return maindev;
-	
+
 	}
 
-  
+
     map default_main_dev_param = $[
 				   "partitions" : [],
 				   "bus"	: "",
@@ -1335,16 +1335,16 @@ global define map GetMountPoints()
 				   "is_lvm_vg"	: false  // or nil ?
     ];
 
-    
+
   /**
-   *	
+   *
      *
    */
     global define any GetMainDevParam(string maindevkey, string paramkey )``{
 
 	any param =  lookup( GetMainDev( maindevkey ), paramkey , nil );
 
-	/* return default maindev parameter */ 
+	/* return default maindev parameter */
 	if( param == nil )
   	      {
 	    y2milestone(" GetMainDevParam try to return default maindev parameter.");
@@ -1373,7 +1373,7 @@ global define map GetMountPoints()
 	    partitions 	= (list) GetMainDevParam( maindevkey , "partitions" );
       }
 	y2milestone("GetSubDevFilterList partitions %1", partitions );
-	
+
 	list filterPartitions 	= [];
 
 	if ( what == "all" )
@@ -1382,7 +1382,7 @@ global define map GetMountPoints()
       }
 	else if( what == "assigned_raid" )
       {
-	    
+
       }
 	else if( what == "assigned_vg" )
       {
@@ -1394,7 +1394,7 @@ global define map GetMountPoints()
 	}
 	else if( what == "delete" )
 	  {
-	    
+
 	  }
 	else if ( what == "no_delete" )
 	{
@@ -1406,7 +1406,7 @@ global define map GetMountPoints()
 	}
 	else if( what == "delete_possible" )
 	  {
-	    
+
 	  }
 	else if ( what == "display_possible" )
 	{
@@ -1439,27 +1439,27 @@ global define map GetMountPoints()
       }
 	else if ( how == "key_list" )
       {
-	    
+
       }
-	else if ( how == "index_list" )	
+	else if ( how == "index_list" )
       {
-	    
+
       }
     else
       {
 	    return nil;
 	}
-	
-	
+
+
 	/* TODO TODO */
 
-	
+
     }
 
 
     global define map GetEntryForMountpoint( string mp ) ``{
 	list all_partitions = GetSubDevFilterList("all", "no_delete", "all" );
-        map partition = (map) find(map part, all_partitions, 
+        map partition = (map) find(map part, all_partitions,
 	                     ``( part["mount"]:"" == mp ));
         if( partition==nil || partition["mount"]:"" != mp )
 	  {
@@ -1491,7 +1491,7 @@ global define map GetMountPoints()
     };
 
 
-  
+
   /*---------------------------------------------------------------------
    * checkForMdRootFs
    *---------------------------------------------------------------------
@@ -1515,13 +1515,13 @@ global define map GetMountPoints()
 
 
 
-    
 
-    
+
+
     /* StorageMaps =  [
        1: $[  storage_map_key		: 	$[ Storage_01],
-              storage_type_key		:	`record, 
-	      ],       
+              storage_type_key		:	`record,
+	      ],
        2, $[ storage_map_key		: 	$[ Storage_02],
              storage_type_key		: 	`custom,
              storage_doc_key 		:	"create partition /dev/hda2"
@@ -1536,19 +1536,19 @@ global define map GetMountPoints()
 	];
     */
 
-   
-    
+
+
     /* Record - Rollback - Commit */
     /* update focus and Storage - StorageStack */
 
     /* Find the next free position in the map StorageMaps
-     * @return integer 
+     * @return integer
      */
     define integer NextStorageMapsPos() ``{
 	return (size( StorageMaps) + 1);
     }
 
-    
+
     define integer FindLastRecordEntry() ``{
 	map all_record_entries = filter (integer key, map entry , StorageMaps, ``( entry[storage_type_key]:custom_key == record_key ));
 	list<integer> all_record_keys   = (list<integer>) maplist(integer key, any entry , all_record_entries,  ``(  key ));
@@ -1558,28 +1558,28 @@ global define map GetMountPoints()
 	else return 0;
     }
 
-    
+
     define void Rollback2Pos(integer pos ) ``{
 	StorageMap = lookup( lookup( StorageMaps, pos, $[] ), storage_map_key , $[] );
 	StorageMaps = filter(integer key, map entry, StorageMaps, ``( key < pos ));
     }
 
-    
+
     define void AddEntry2StorageMaps(symbol type_key, string doc )``{
 	map storage_maps_entry = $[];
-	
+
 	storage_maps_entry = add(storage_maps_entry, storage_map_key  , StorageMap    );
 	storage_maps_entry = add(storage_maps_entry, storage_type_key , type_key   );
 
 	if( doc != "" )
-	    storage_maps_entry = add(storage_maps_entry, storage_type_key , doc    );	
+	    storage_maps_entry = add(storage_maps_entry, storage_type_key , doc    );
 
 	StorageMaps = add( StorageMaps, NextStorageMapsPos(), storage_maps_entry );
     }
 
 
     /**
-     * 
+     *
      * @return boolean
      */
     global define void Record()``{
@@ -1611,7 +1611,7 @@ global define map GetMountPoints()
 	integer last_record_entry = FindLastRecordEntry();
 	if( last_record_entry != 0 )
 	{
-	    StorageMaps = filter( integer key, map entry, StorageMaps, 
+	    StorageMaps = filter( integer key, map entry, StorageMaps,
 	                          ``( key < last_record_entry ));
 	    return true;
 	}
@@ -1619,13 +1619,13 @@ global define map GetMountPoints()
 	{
 	    return false;
 	}
-	
+
     }
 
-    
+
     /**
      *
-     * @return boolean 
+     * @return boolean
      */
     global define void Save( string doc )``{
 	AddEntry2StorageMaps( custom_key, doc );
@@ -1633,13 +1633,13 @@ global define map GetMountPoints()
 
     /*
      *
-     * @return boolean 
+     * @return boolean
      */
     global define void Undo( integer key )``{
 	Rollback2Pos( key );
     }
-   
-   
+
+
 
     /* Konstuktor */
     /* partition_defines ->  ReReadTargetMap */
@@ -1661,57 +1661,57 @@ global define map GetMountPoints()
 	lvm_initialized = false;
     };
 
-    /* Dev definitions 
+    /* Dev definitions
 
        dev     = maindev  | subdev
-       maindev = "disk"   | "vg"	| "md" (raiddev) 
-       subdev  = "part"   | "lv" 	| "raid"           
-       
+       maindev = "disk"   | "vg"	| "md" (raiddev)
+       subdev  = "part"   | "lv" 	| "raid"
+
        e.g.: 	"disk" = "/dev/hda"	| "dev/sda"	| "/dev/hdd"  | ...
                 "vg"   = "/dev/system" 	| "dev/group"   | ...
-		"md"   = "/dev/md"  (only)  
+		"md"   = "/dev/md"  (only)
 		"part" = "1//dev/hda"	| "2//dev/sda"	| ..
 		"lv"   = "usr//dev/system" | "home//dev/system"
     */
-    
-		
-    /* Key definitions 
-    
-       key = maindevkey | subdevkey + maindevkey 
 
-       maindevkey	= key( disk | vg | md   )  
+
+    /* Key definitions
+
+       key = maindevkey | subdevkey + maindevkey
+
+       maindevkey	= key( disk | vg | md   )
        subdevkey	= key( part | lv | raid )
-       subdevkey        = maindevkey + subdevindex | "all" 
+       subdevkey        = maindevkey + subdevindex | "all"
 
        subdevindex 	= 1 | 2 | "home" | "usr" | ..
 
-       e.g.: 
-       maindevkey	= "/dev/hda"	| "/dev/md"	| "/dev/system"		| "all" 
+       e.g.:
+       maindevkey	= "/dev/hda"	| "/dev/md"	| "/dev/system"		| "all"
        subdevkey	= "1//dev/hda"	| "1//dev/md"	| "home//dev/system" 	| "all"
-     
-    
+
+
    */
 
 
-    
-    /* 
+
+    /*
      * @param key maindevkey or subdevkey e.g.:  "/dev/hda" or  "1//dev/hda"
-     * @return boolean 
+     * @return boolean
      */
     global define boolean IsKeyMainDevKey(string key )``{
 	if(  substring( key, 0, 1) == "/" )
 	    return true;
 	return false;
 
-	/* TODO regexpmatch dont't work at the moment */ 
+	/* TODO regexpmatch dont't work at the moment */
 	//return regexpmatch( key, "/dev/.*" );
     }
 
     /* key - maindevkey - subdevkey defines */
-        
+
     /*
      * Build a subdevkey with a maindevkey and a subdevindex.
-     * subdevkey = subdevkey + "/" + maindevkey 
+     * subdevkey = subdevkey + "/" + maindevkey
      * @param maindevkey e.g.: /dev/hda
      * @param subdevkey e.g.: 1, "usr" ..
      * @return string "1//dev/hda" or "usr//dev/system" or "" by error
@@ -1721,11 +1721,11 @@ global define map GetMountPoints()
 	{
 	    return "";
 	}
-	
+
 	return sformat("%1/%2",subdevindex, maindevkey);
     }
 
-    
+
     /*
      * Find a subdevkey in a key and return the subdevkey is one found else return nil.
      * @param key e.g.: "1//dev/hda" or "usr//dev/system" ..
@@ -1745,7 +1745,7 @@ global define map GetMountPoints()
 	}
     }
 
-    
+
     /*
      * @param key maindevkey or subdevkey e.g.:  "/dev/hda" or  "1//dev/hda"
      * @return string maindev e.g.: "/dev/hda" or "/dev/system"
@@ -1767,13 +1767,13 @@ global define map GetMountPoints()
 	}
     }
 
-    
 
-    
 
-    /* 
+
+
+    /*
      * @param key maindevkey or subdevkey e.g.:  "/dev/hda" or  "1//dev/hda"
-     * @return boolean 
+     * @return boolean
      */
     global define boolean IsKeySubDevKey(string key)``{
 
@@ -1788,7 +1788,7 @@ global define map GetMountPoints()
 
     /*
      * @param key maindevkey or subdevkey e.g.:  "/dev/hda" or  "1//dev/hda"
-     * @return boolean 
+     * @return boolean
      */
     global define boolean IsKeyKey(string key )``{
 	if( key == nil || key == "" )
@@ -1802,18 +1802,18 @@ global define map GetMountPoints()
     }
 
 
-    
-/* partition_defines -> getIdMap 
+
+/* partition_defines -> getIdMap
    if no subdev with the key subdevkey exists return $[]
  */
 global define map GetSubDev( string subdevkey )
     ``{
-	    
+
     list<map> partitions = (list) GetMainDevParam( GetMainDevKey(subdevkey), "partitions");
-    
-    map part = find(map c_part, partitions, 
-		     ``(sformat("%1",c_part["nr"]:0) == 
-			    GetSubDevIndex( subdevkey ) && 
+
+    map part = find(map c_part, partitions,
+		     ``(sformat("%1",c_part["nr"]:0) ==
+			    GetSubDevIndex( subdevkey ) &&
 			!c_part["delete"]:false ));
 
     if ( part == nil )
@@ -1826,7 +1826,7 @@ global define map GetSubDev( string subdevkey )
 
     /*
      * @param subdevkey  e.g.:  "1//dev/hda" or "usr//dev/hda"
-     * @return boolean 
+     * @return boolean
      */
     global define boolean IsSubDev(string subdevkey )``{
 	if ( GetSubDev( subdevkey ) != $[] )
@@ -1841,7 +1841,7 @@ global define map GetSubDev( string subdevkey )
 
     /*
      * @param maindevkey  e.g.:  "/dev/hda" or "/dev/systen"
-     * @return boolean 
+     * @return boolean
      */
     global define boolean IsMainDev(string maindevkey )``{
 	if( GetMainDev( maindevkey ) != $[] )
@@ -1855,8 +1855,8 @@ global define map GetSubDev( string subdevkey )
 
     /*
      * @param key maindevkey or subdevkey e.g.:  "/dev/hda" or  "1//dev/hda"
-     * @return boolean 
-     */ 
+     * @return boolean
+     */
    global define boolean IsDev(string key )``{
 	if( IsMainDev( key ) )
 	    return true;
@@ -1864,8 +1864,8 @@ global define map GetSubDev( string subdevkey )
 	    return true;
 	return false;
     }
-       
-   
+
+
 
     /* MainDev defines ------------------------------------------------------------------
     /* partition_defines -> isDisk */
@@ -1874,14 +1874,14 @@ global define map GetSubDev( string subdevkey )
     symbol sw_raid_type_key = `sw_raid;
     symbol lvm_type_key	    = `lvm;
     symbol extended_type_key= `extended;
-  
-    
-   
+
+
+
     /**
      * Return true if Storage contains a maindev with the key "maindevkey".
      * @return boolean
      * @param maindevkey
-     * 
+     *
      */
     global define boolean ExistsMainDevKeyEntry( string maindevkey )``{
 
@@ -1889,14 +1889,14 @@ global define map GetSubDev( string subdevkey )
 	    return true;
 	return false;
     }
- 
+
 
 
 
      /**
      * Return true if Storage contains a /dev/md entry with the key "key".
      * @param maindevkey
-     * @return boolean 
+     * @return boolean
      */
     global define boolean IsMainDevMd(string maindevkey )``{
 	if( issubstring( maindevkey, "/dev/md" ) && ExistsMainDevKeyEntry( maindevkey ) )
@@ -1907,7 +1907,7 @@ global define map GetSubDev( string subdevkey )
 
     /**
      * Return true if Storage contains a volume group with the key "key".
-     * @return boolean 
+     * @return boolean
      * @param maindevkey
      *
      */
@@ -1919,33 +1919,33 @@ global define map GetSubDev( string subdevkey )
 
 
     /**
-     * 
+     *
      *
      */
     global define boolean IsMainDevDisk(string maindevkey )``{
 	if ( IsMainDev( maindevkey) )
 	{
-	    
+
 	    if( ( ! IsMainDevMd( maindevkey )) && ( ! IsMainDevVg( maindevkey )) )
 		return true;
 	}
 	return false;
     }
 
-    
-    
+
+
     global define boolean DelMainDev(string maindevkey )``{
 
 	if ( ExistsMainDevKeyEntry( maindevkey) )
 	{
 	    /* TODO TODO TODO */
-	    /* .. */ 
+	    /* .. */
 	}
 	else
 	{
 	    return false;
 	}
-	 
+
     }
 
 
@@ -1989,14 +1989,14 @@ global define map GetSubDev( string subdevkey )
     }
 
 
-    
+
     /**
-     *	
+     *
      * @param  what "all" |  "only_md" | "only_vg" | "only_disk" |  "add_subdev_possible"
      * @param  how  "all" |  "key_list"
      * @return map | list
     */
-	     
+
     global define any GetMainDevFilter(string what , string how )``{
 
 	map filterTargetMap	 = $[];
@@ -2010,7 +2010,7 @@ global define map GetSubDev( string subdevkey )
 	    filterTargetMap = filter(string key, any value, GetTargetMap(), ``( IsMainDevMd( key ) ) );
 	}
 	else if ( what == "only_vg" )
-	{	
+	{
 	    filterTargetMap = filter(string key, any value, GetTargetMap(), ``( IsMainDevVg( key ) ) );
 	}
 	else if ( what == "only_disk" )
@@ -2023,7 +2023,7 @@ global define map GetSubDev( string subdevkey )
 	}
 
 
-	
+
 	if ( how == "all" )
 	{
 	    return filterTargetMap;
@@ -2036,32 +2036,32 @@ global define map GetSubDev( string subdevkey )
 	{
 	    return nil;
 	}
-	
+
     }
 
-    
+
     global define boolean DelMainDevParam(string maindevkey, string paramkey )``{
 	map maindev = GetMainDev( maindevkey );
 
 	if( maindev == $[] )
 	    return false;
-	
+
 	maindev     = filter( string key, any value, maindev, ``( key != paramkey ));
 	return SetMainDev( maindevkey, maindev );
     }
 
-    
+
     global define boolean AddMainDevParam(string maindevkey, string paramkey, any newparam )``{
 	map maindev = GetMainDev( maindevkey );
 
 	if( maindev == $[] )
 	    return false;
-	
+
 	maindev     = add( maindev, paramkey, newparam );
 	return SetMainDev( maindevkey, maindev );
     }
 
-    
+
     global define boolean SetMainDevParam(string maindevkey, string paramkey, any newparam )``{
 	map maindev = GetMainDev( maindevkey);
 
@@ -2072,20 +2072,20 @@ global define map GetSubDev( string subdevkey )
 	return SetMainDev( maindevkey, maindev );
     }
 
-    
-    
-    
 
-    
+
+
+
+
 global define map RemoveAllPartEntry( map tg, string skey, string value )
     ``{
     map new_tg = tg;
 
-    foreach(string dev, map disk, tg, 
+    foreach(string dev, map disk, tg,
 	``{
 	boolean changed = false;
 	list new_partitions = [];
-	foreach (map partition, disk["partitions"]:[], 
+	foreach (map partition, disk["partitions"]:[],
 	    ``{
 	    if( partition[skey]:"" == value )
 		{
@@ -2104,7 +2104,7 @@ global define map RemoveAllPartEntry( map tg, string skey, string value )
     return( new_tg );
     };
 
-    
+
     /* partition_defines -> deletePartitionInTargetMap */
     /* intelligent defines - check dependency
                            - check logical
@@ -2117,15 +2117,15 @@ global define map RemoveAllPartEntry( map tg, string skey, string value )
 global define boolean DelSubDev( string subdevkey )
     ``{
     if ( ! IsKeySubDevKey( subdevkey ) ) return false;
-	
+
     string  maindevkey    	= GetMainDevKey( subdevkey  );
     string  subdevindex 	= GetSubDevIndex( subdevkey );
     integer number     	= tointeger( subdevindex );
-    
+
     list curr_partitions 	= (list) GetMainDevParam( maindevkey, "partitions");
     map curr_part 		= GetSubDev(subdevkey);
     map curr_disk		= GetMainDev( maindevkey );
-	
+
     // if it is an extended partition -> delete all logical!
     // -----------
     // remove all partition with a "nr" >= 5  i.e. all logical
@@ -2140,21 +2140,21 @@ global define boolean DelSubDev( string subdevkey )
 	tg = RemoveAllPartEntry( tg, "raid_name", maindevkey+subdevindex );
 	SetTargetMap(tg);
 	}
-	
+
     if ( curr_part["type"]:`unknown == `extended )
 	{
 	curr_partitions = filter(map parti, curr_partitions, ``(parti["nr"]:0<5));
 	}
 
-    map part_created = (map) find(map parti, curr_partitions, 
-                             ``( parti["nr"]:0 == number && 
+    map part_created = (map) find(map parti, curr_partitions,
+                             ``( parti["nr"]:0 == number &&
                                  parti["create"]:false ));
 
     if (part_created == nil)
 	{
 	// No newly created found...
 	// Mark already existant with "delete"
-	curr_partitions =  maplist(map parti, curr_partitions, 
+	curr_partitions =  maplist(map parti, curr_partitions,
 	    ``({
 	    if( parti["nr"]:0 == number )
 		{
@@ -2170,10 +2170,10 @@ global define boolean DelSubDev( string subdevkey )
     else
 	{
 	// delete newly created partition
-	curr_partitions = 
+	curr_partitions =
 	    filter(map parti, curr_partitions,
 		    ``( !(parti["nr"]:0 == number && parti["create"]:false )));
-	list<map> create_next = (list<map>) 
+	list<map> create_next = (list<map>)
 	    filter(map p, curr_partitions,
 		    ``( p["nr"]:0 > number && p["create"]:false ));
 	create_next = sort(map a, map b, create_next, ``( a["nr"]:0 <= b["nr"]:0 ));
@@ -2188,15 +2188,15 @@ global define boolean DelSubDev( string subdevkey )
 	    part["device"] = GetDeviceName( maindevkey, del_num );
 	    del_num = old;
 	    curr_partitions = filter(map t, curr_partitions,
-				      ``( !(t["nr"]:0 == old && 
+				      ``( !(t["nr"]:0 == old &&
 				            t["create"]:false )));
 	    curr_partitions = add( curr_partitions, part );
 	    });
 	y2milestone("curr_partitions %1", curr_partitions );
-	}	
+	}
 
     ///////////////////////////////////////////////
-    // If you delete a logical partition you must decrease the number of 
+    // If you delete a logical partition you must decrease the number of
     // every logical partition, that has a higher number than the deleted
     // start: sda1 sda2 sda5 sda6 sda7 sda8 sda9 sda10
     // delete sda7
@@ -2205,7 +2205,7 @@ global define boolean DelSubDev( string subdevkey )
 
     if( curr_part["type"]:`unknown == `logical )
 	{
-	curr_partitions = maplist(map parti, curr_partitions, 
+	curr_partitions = maplist(map parti, curr_partitions,
 	    ``({
 	    // only the valid ones
 	    if( !parti["delete"]:false && parti["nr"]:0 > number )
@@ -2227,15 +2227,15 @@ global define boolean DelSubDev( string subdevkey )
     return true;
     }
 
-    
-    
+
+
     global define void AddSubDev( string subdevkey, map newsubdev )``{
 
 	string maindevkey = GetMainDevKey( subdevkey );
 	list partitions   = (list) GetMainDevParam( maindevkey , "partitions" );
-	
+
 	partitions        = add( partitions, newsubdev );
-	 
+
 	SetMainDevParam( maindevkey, "partitions", partitions);
     }
 
@@ -2299,39 +2299,39 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
 	filter(map c_part, partitions ,
 		``(sformat("%1", c_part["nr"]:0) != GetSubDevIndex( subdevkey) ||
 		   c_part["delete"]:false));
-	    
+
     // netxt step: insert changed partition
     r_part    = add( r_part,   newsubdev );
-	    
-    
+
+
     return SetMainDevParam( maindevkey, "partitions", r_part );
 	}
-	
-	
 
-	
+
+
+
     /* maindevkey = all | maindevkey
-       what = "all"		| 
+       what = "all"		|
               "assigned_raid"	| "assigned_vg"  | "not_assigned" | "assigned"
 	      "delete" | "no_delete"
 	      "edit_possible"	| "delete_possible" |
 	      "display_possible" |
 	      "assign_raid_possible" | "assign_vg_possible"
 	      "no_virtal" 	| "virtual"
-      how = "all"	| "key_list"  | "index_list" (   raid_lib -> get_possible_rds  )	      
+      how = "all"	| "key_list"  | "index_list" (   raid_lib -> get_possible_rds  )
     */
 
 
     map default_sub_dev_param = $[
 				   "delete"	:	false,
 				   "fsid"	:	Partitions::fsid_native,
-				   "fstype"	:	"Linux native",         
-				   "nr"		:	1,                 
-				   "region"	: 	[0,1],             
+				   "fstype"	:	"Linux native",
+				   "nr"		:	1,
+				   "region"	: 	[0,1],
 				   "type"	:	`primary,
 				   "used_fs"	:	`ext2
 				 ];
-				   
+
 
     global define any GetSubDevParam(string subdevkey, string paramkey )``{
 
@@ -2347,23 +2347,23 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
 	{
 	    y2error(" GetSubDevParam return nil - parameter not found.");
 	}
-	
+
 	return param;
     }
-    
-    
+
+
     global define boolean DelSubDevParam(string subdevkey, string paramkey )``{
 	map subdev = GetSubDev( subdevkey );
 
 	if( subdev == $[] )
 	    return false;
-	
+
 	subdev     = filter(string key, any value, subdev, ``( key != paramkey ));
-	
+
 	return SetSubDev( subdevkey, subdev );
     };
 
-    
+
     global define boolean AddSubDevParam(string subdevkey, string paramkey, any newparam )``{
 	map subdev = GetSubDev( subdevkey );
 
@@ -2374,45 +2374,45 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
 	return SetSubDev( subdevkey, subdev );
     };
 
-    
+
     global define boolean SetSubDevParam(string subdevkey, string paramkey, any newparam )``{
 	return AddSubDevParam( subdevkey,  paramkey, newparam );
     };
 
-    
+
 
 
     /* For IsSubDev... defines use GetSubDevList( .. , .. , .. )``{}; */
-    
+
     global define boolean IsSubDevVirtual(string subdevkey )``{
 	return lookup( GetSubDev( subdevkey ) , "create", false );
     };
 
-     
+
     /* raid_lib->isItemRd ?? */
     /* raid_lib -> isCurrentRaid */
     global define boolean IsSubDevRaid(string subdevkey )``{
 	if( GetSubDevParam( subdevkey, "type" ) == sw_raid_type_key )
 	    return true;
 	else return false;
-	
+
     };
     global define boolean IsSubDevLv(string subdevkey )``{
 	if( GetSubDevParam( subdevkey, "type" ) == lvm_type_key )
 	    return true;
 	else return false;
-	
+
     };
     global define boolean IsSubDevPart(string subdevkey )``{
 	/* ?? */
 	if( ! IsSubDevLv( subdevkey ) && ! IsSubDevRaid( subdevkey ) )
 	    return true;
 	else return false;
-	
+
     };
 
-    
-    
+
+
     /**
      * I386:
      * Check if the patition-id is an extended -id
@@ -2427,20 +2427,20 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
 	if( GetSubDevParam( subdevkey, "type" ) == extended_type_key )
 	    return true;
 
-	// old code 
+	// old code
 	// Standrd-Erw         Linux-Erweiterte    Win95-Erweitert
 	if ( (number == 5) || (number == 133) || (number == 15) )
 	{
 	    y2debug( "IS__EXTENDE YES");
 	    return(true);
-	}	
+	}
 	else
 	{
 	    y2debug( "IS__EXTENDE NO");
 	    return(false);
 	}
     };
-    
+
 
 /**
   * Insert Raid size info to Storage
@@ -2448,7 +2448,7 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
 global define void AddRaidSizeInfo()
     ``{
     map targetMap = GetTargetMap();
-    
+
     targetMap = mapmap(string dev, map devmap, targetMap,
 	``{
 	integer cyl_size = devmap["cyl_size"]:1000000;
@@ -2475,7 +2475,7 @@ global define list GetRootInitrdModules()
     map partition = GetEntryForMountpoint( "/" );
     y2milestone("root partition in GetInitrdModules %1", partition );
 
-    list initrdmodules = 
+    list initrdmodules =
 	FileSystems::GetNeededModules( partition["used_fs"]:`ext2 );
 
     if (partition["raid_type"]:"" == "raid0" )
@@ -2488,14 +2488,14 @@ global define list GetRootInitrdModules()
     if (partition["raid_type"]:"" == "raid1" )
 	{
 	if (!contains (initrdmodules, "raid1"))
-	    { 
+	    {
 	    initrdmodules = add (initrdmodules, "raid1");
 	    }
 	}
     if (partition["raid_type"]:"" == "multipath" )
 	{
 	if (!contains (initrdmodules, "multipath"))
-	    { 
+	    {
 	    initrdmodules = add (initrdmodules, "multipath");
 	    }
 	}
@@ -2530,8 +2530,8 @@ global define list GetRootInitrdModules()
     y2milestone ("initrdmodules %1", initrdmodules);
     return initrdmodules;
     };
-			
-   
+
+
 
 
 /* Contain the current key ( subdevkey ) for all wizards */
@@ -2552,8 +2552,6 @@ global define void SetWizardKey( string key )
 	}
     };
 
-    
-    
 
 
 
@@ -2568,16 +2566,18 @@ global define void SetWizardKey( string key )
 
 
 
-    
+
+
+
   /*
    * partition_defines -> addTargetModification
    * Add a new entry into the execution stack "modify_targets" in Storage.
-   *	
+   *
    */
   global define void AddModify(map new_create_pv )``{
       map modify_targets = GetModifyTargets();
       integer max = size( modify_targets );
-      
+
       SetModifyTargets( add( modify_targets, max+1, new_create_pv ));
   };
 
@@ -2604,7 +2604,7 @@ global define void SetWizardKey( string key )
 	      return($[k: v]);
 	  }
       });
-      
+
       return SetModifyTargets( modify_targets );
   };
 
@@ -2614,7 +2614,7 @@ global define void SetWizardKey( string key )
 
     integer crypt_nb  = classified["crypt_nb"]:0;
     string  crypt_key = sformat( "loop_crypt_pw%1", crypt_nb );
-      
+
     classified["crypt_nb"] = crypt_nb+1;
     classified[crypt_key] = fs_passwd;
 
@@ -2633,10 +2633,10 @@ global define void SetWizardKey( string key )
     map part = $[];
     if( id != nil )
 	{
-	string maindev = GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1    
+	string maindev = GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
 	string subdev  = GetSubDevIndex(id); // i.e. 1        for /dev/hda1
 
-	part = (map) select( filter(map part, tg[maindev,"partitions"]:[],         
+	part = (map) select( filter(map part, tg[maindev,"partitions"]:[],
 		       ``( sformat("%1", part["nr"]:"") == subdev &&
 			   part["delete"]:false == false) ), 0, $[]);
 	}
@@ -2663,16 +2663,16 @@ global define void SetWizardKey( string key )
 
 
 
-    
+
     /**
      * Delete the partition table and disk label of device
      * @param string the device to be deleted
      * @return integer
      */
-    
+
 global define integer ZeroDevice(string del_device)
     ``{
-    string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1 2>&1", 
+    string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1 2>&1",
                          del_device );
     map bo = $[];
     bo = (map) SCR::Execute(.target.bash_output, zero_string );
@@ -2681,7 +2681,7 @@ global define integer ZeroDevice(string del_device)
     map tg = GetTargetMap();
     if( tg[del_device,"label"]:"msdos" == "gpt" )
 	{
-	bo = (map) SCR::Execute(.target.bash_output, 
+	bo = (map) SCR::Execute(.target.bash_output,
 			  "/sbin/blockdev --getsize " + del_device );
 	y2milestone( "bo %1", bo );
 	integer siz = 0;
@@ -2697,17 +2697,17 @@ global define integer ZeroDevice(string del_device)
 	    ret_zero = bo["exit"]:1 == 0 ? 1 : 0;
 	    }
 	}
-    integer ret_reread = (integer) SCR::Execute(.target.bash, 
-                                      sformat("/sbin/blockdev --rereadpt %1", 
+    integer ret_reread = (integer) SCR::Execute(.target.bash,
+                                      sformat("/sbin/blockdev --rereadpt %1",
 				              del_device ));
-    y2milestone( "Partitiontable of device %1 deleted (%2-%3)", del_device, 
+    y2milestone( "Partitiontable of device %1 deleted (%2-%3)", del_device,
                  ret_zero, ret_reread);
     if( ret_reread != 0 )
 	{
 	// popup text
 	Popup::Message( _("Reread of the partition table failed.
 
-Reboot your system to make the changes visible 
+Reboot your system to make the changes visible
 to the Linux kernel."));
 	}
     return (ret_zero + ret_reread);
@@ -2730,7 +2730,7 @@ to the Linux kernel."));
         if( !ret )
 	    {
 	    foreach( map e, disk["partitions"]:[], ``{
-		ret = ret || 
+		ret = ret ||
 		      Partitions::IsLinuxPartition( e["fsid"]:Partitions::fsid_native );
 		});
 	    }
@@ -2741,7 +2741,7 @@ to the Linux kernel."));
 
 global define boolean IsRealDisk( string disk, map entry )
     ``{
-    return( disk != "/dev/md" && disk != "/dev/loop" && 
+    return( disk != "/dev/md" && disk != "/dev/loop" &&
             !entry["is_lvm_vg"]:false );
     }
 
@@ -2750,7 +2750,7 @@ global define list GetPartitionList()``{
     foreach ( string dev, map disk, GetTargetMap(), ``{
         if( IsRealDisk( dev, disk ) )
 	    {
-	    list l = filter( map p, disk["partitions"]:[], 
+	    list l = filter( map p, disk["partitions"]:[],
 	                     ``(p["delete"]:false==false) );
 	    ret = union( ret, maplist( map p, l,
 				       ``(GetDeviceName(dev,p["nr"]:0))));
@@ -2766,13 +2766,13 @@ global define list GetOtherLinuxPartitions()``{
     foreach ( string dev, map disk, GetTargetMap(), ``{
         if( IsRealDisk( dev, disk ) )
 	    {
-	    list<map> l = (list<map>) filter( map p, disk["partitions"]:[], 
-	                     ``(!p["delete"]:false && 
-	                        !p["format"]:false && 
+	    list<map> l = (list<map>) filter( map p, disk["partitions"]:[],
+	                     ``(!p["delete"]:false &&
+	                        !p["format"]:false &&
 			        Partitions::IsLinuxPartition(p["fsid"]:0)) );
 	    l = filter(map p, l, ``(contains( [`xfs, `ext2, `ext3, `jfs, `reiser],
 	                                    p["used_fs"]:`unknown)));
-	    l = filter(map p, l, 
+	    l = filter(map p, l,
 			``(!FileSystems::IsSystemMp( p["mount"]:"", false )));
 	    if( size(l)>0 )
 		{
@@ -2808,7 +2808,7 @@ global define string CheckSwapConflicts()``{
 	foreach ( string dev, map disk, GetTargetMap(), ``{
 	    if( IsRealDisk( dev, disk ) )
 		{
-		list l = filter(map p, disk["partitions"]:[], 
+		list l = filter(map p, disk["partitions"]:[],
 				``(p["delete"]:false==false) );
 		l = filter(map p, l, ``(p["mount"]:"" != "" ||
 				      p["raid_name"]:"" != "" ||
@@ -2848,12 +2848,12 @@ global define list GetWinPrimPartitions( map targets )
 
     foreach(string disk, map data, targets,
 	``{
-	foreach(map part, data["partitions"]:[], 
+	foreach(map part, data["partitions"]:[],
 	    ``{
 	    string device = GetDeviceName( disk, part["nr"]:0 );
 	    if( part["type"]:`unknown == `primary &&
 		part["delete"]:false==false &&
-	        SCR::Execute (.target.bash, 
+	        SCR::Execute (.target.bash,
 		              "/usr/lib/YaST2/bin/check.boot "+device) == 0)
 		{
 		text = "";
@@ -2964,7 +2964,7 @@ global define list GetForeignPrimary()
 global define map IsResizable( map part )
     ``{
     map ret = FileSystems::IsResizable(`unknown);
-    if( !Arch::s390 && 
+    if( !Arch::s390 &&
         (part["type"]:`none==`lvm || Partitions::IsResizable( part["fsid"]:0 )))
 	{
 	if( part["fsid"]:0==Partitions::fsid_swap )
@@ -2995,8 +2995,8 @@ global define integer FreeCylAfter( map disk, map partition )
         }
     if( partition["type"]:`primary == `logical )
 	{
-	map ext = (map) select( filter(map part, disk["partitions"]:[], 
-				       ``( part["type"]:`primary==`extended )), 
+	map ext = (map) select( filter(map part, disk["partitions"]:[],
+				       ``( part["type"]:`primary==`extended )),
 					   0, $[] );
 	next_used_cyl = ext["region",0]:0+ext["region",1]:0;
 	}
@@ -3038,10 +3038,10 @@ global define void AdaptResize( string maindev, list region, integer schange )
     list partitions = (list) GetMainDevParam( maindev, "partitions" );
     integer cylinder = region[0]:0 + region[1]:0;
     boolean found = false;
-    integer index = -1; 
-    integer e_idx = -1; 
+    integer index = -1;
+    integer e_idx = -1;
     list idx_list = [];
-    map part = (map) find(map p, partitions, 
+    map part = (map) find(map p, partitions,
                           ``(p["delete"]:false==false &&
 			     p["region",0]:0 == cylinder &&
 			     p["create"]:false) );
@@ -3049,7 +3049,7 @@ global define void AdaptResize( string maindev, list region, integer schange )
 	{
 	found = false;
 	index = 0;
-	foreach(map p, partitions, 
+	foreach(map p, partitions,
 	    ``{
 	    if( !p["delete"]:false && p["region",0]:0 == cylinder &&
 		p["create"]:false )
@@ -3066,7 +3066,7 @@ global define void AdaptResize( string maindev, list region, integer schange )
 	    e_idx = index;
 	    found = false;
 	    index = 0;
-	    foreach(map p, partitions, 
+	    foreach(map p, partitions,
 		``{
 		if( !p["delete"]:false && p["region",0]:0 == cylinder &&
 		    p["create"]:false && p["type"]:`primary != `extended )
@@ -3089,7 +3089,7 @@ global define void AdaptResize( string maindev, list region, integer schange )
 					    p["create"]:false ));
 	y2milestone( "AdaptResize pnew:%1", pnew );
 	while( pnew != nil &&
-	       (part["mount"]:"" == "/boot" || 
+	       (part["mount"]:"" == "/boot" ||
 	        part["fsid"]:0==Partitions::fsid_swap ||
 	        part["region",1]:0 < (schange<0?(-1*schange):schange)) )
 	    {
@@ -3100,7 +3100,7 @@ global define void AdaptResize( string maindev, list region, integer schange )
 	    index = 0;
 	    foreach(map p, partitions, ``{
 	        y2milestone( "found:%1 index:%2 p=%3", found, index, p );
-		if( p["delete"]:false == false && 
+		if( p["delete"]:false == false &&
 		    p["nr"]:0 == pnew["nr"]:0 )
 		    {
 		    found = true;
@@ -3160,10 +3160,10 @@ global define void ChangeLineFstab( map entry )
 	    SCR::Execute( .target.remove, tabpath );
 	}
     map fstab = Partitions::GetFstab( tabpath );
-    list lines = Storage::FindFstabLines( fstab, entry["mount"]:"", 
+    list lines = Storage::FindFstabLines( fstab, entry["mount"]:"",
                                           entry["spec"]:"", "x", "x" );
-    list fstlist = [ entry["spec"]:"", entry["mount"]:"", 
-		     entry["vfstype"]:"", entry["mntops"]:"", 
+    list fstlist = [ entry["spec"]:"", entry["mount"]:"",
+		     entry["vfstype"]:"", entry["mntops"]:"",
 		     sformat("%1",entry["freq"]:0),
 		     sformat("%1",entry["passno"]:0) ];
     y2milestone( "lines %1", lines );
@@ -3176,7 +3176,7 @@ global define void ChangeLineFstab( map entry )
 	integer field = 0;
 	while( field<4 )
 	    {
-	    AsciiFile::ChangeLineField( fstab, lines[0]:-1, field, 
+	    AsciiFile::ChangeLineField( fstab, lines[0]:-1, field,
 					fstlist[field]:"" );
 	    field = field+1;
 	    }
@@ -3205,7 +3205,7 @@ global define map MakeCdromFstabEntry( map cd )
         Storage::SaneConsoleEncoding() != "iso8859-15" &&
 	Storage::SaneConsoleEncoding() != "" )
 	{
-	entry["mntops"] = entry["mntops"]:"" + ",iocharset=" + 
+	entry["mntops"] = entry["mntops"]:"" + ",iocharset=" +
 			  Storage::SaneConsoleEncoding();
 	}
     y2milestone( "ret %1", entry );
@@ -3252,7 +3252,7 @@ global define map GetS390DeviceMap( map targetMap )
 		         substring( alph, num%26, 1 );
 		}
 	    ret[key] = newdev;
-	    map ddev = find( map p, dasd, 
+	    map ddev = find( map p, dasd,
 	                     ``( p["name"]:"" == substring( key, 5 )));
 	    if( ddev != nil )
 		{
@@ -3326,7 +3326,7 @@ global define map SpecialBootHandling( map tg )
 		integer id = Partitions::fsid_gpt_boot;
 		part["fsid"] = id;
 		part["fstype"] = Partitions::FsIdToString( id );
-		if( !part["create"]:false && 
+		if( !part["create"]:false &&
 		    contains( [`fat32, `fat16, `vfat], part["detected_fs"]:`none ))
 		    {
 		    part["format"] = false;
@@ -3339,7 +3339,7 @@ global define map SpecialBootHandling( map tg )
 	});
     return( tg );
     }
-	
+
 global define list AutodetectMultipathRaid( map tg )
     ``{
     list ret = [];
@@ -3394,7 +3394,7 @@ global define list AutodetectMultipathRaid( map tg )
 
 global define boolean SetCryptLoop( map part )
     ``{
-    string crypt_passwd = lookup( GetClassifiedUserSettings(), 
+    string crypt_passwd = lookup( GetClassifiedUserSettings(),
                                   part["crypt_key"]:"", "");
     string loop_dev = part["loop_dev"]:"";
     if( size(loop_dev)==0 )
@@ -3407,7 +3407,7 @@ global define boolean SetCryptLoop( map part )
     y2milestone( "crypt %1 %2", crypt_ok, loop_dev );
 
     map loaded_modules = (map) SCR::Read(.proc.modules);
-    if( part["loop_fs"]:false && part["crypt"]:""=="twofish" && 
+    if( part["loop_fs"]:false && part["crypt"]:""=="twofish" &&
         !haskey( loaded_modules, "loop_fish2" ) )
 	{
 	crypt_ok = (boolean) SCR::Execute( .target.modprobe, "loop_fish2", "");
@@ -3422,7 +3422,7 @@ global define boolean SetCryptLoop( map part )
 	    {
 	    part["loop_dev"] = loop_dev;
 
-	    map setloop = 
+	    map setloop =
 		$[ "encryption"    : part["crypt"]:"twofish",
 		   "passwd"        : crypt_passwd,
 		   "loop_dev"      : loop_dev,
@@ -3440,9 +3440,9 @@ global define boolean SetCryptLoop( map part )
 	    symbol ret=`yes;
 	    ret = Popup::AnyQuestion3( Popup::NoHeadline(),
 		    // popup text %1 is replaced by partition name e.g. /dev/hda1
-		    sformat(_("Error crypting the file system %1."), 
+		    sformat(_("Error crypting the file system %1."),
 			    part["device"]:""),
-		    Label::ContinueButton(), Label::AbortButton(), 
+		    Label::ContinueButton(), Label::AbortButton(),
 		    Label::RetryButton(), `focus_yes);
 	    if (ret == `retry)
 		{
@@ -3495,7 +3495,7 @@ global define boolean DiskmapNeeded()
 	integer idx = 0;
 	foreach( string k, disks,
 	    ``{
-	    y2milestone( "dev %1 abc %2", substring(k, 7, 1), 
+	    y2milestone( "dev %1 abc %2", substring(k, 7, 1),
 	                 substring(abc, idx, 1));
 	    if( substring(k, 7, 1) != substring(abc, idx, 1) )
 		{
@@ -3535,16 +3535,16 @@ global define void DestroyLvmOnAllDisks()
 	    ``{
 	    if( p["fsid"]:0==Partitions::fsid_lvm && !data["is_lvm_vg"]:false )
 		{
-		string cmd = sformat( "echo y | pvcreate -ff %1", 
+		string cmd = sformat( "echo y | pvcreate -ff %1",
 		                      p["device"]:"" );
 		y2milestone( "cmd %1", cmd );
 		SCR::Execute(.target.bash, cmd );
 		}
 	    });
-	data["partitions"] = 
+	data["partitions"] =
 	    maplist( map p, data["partitions"]:[],
 		``{
-		p = filter( string k, any e, p, 
+		p = filter( string k, any e, p,
 		            ``(k!="lvm_group" && k!="lvm_mp_pv" &&
 			       k!="lvm_size_bytes"));
 		return( p );
@@ -3572,7 +3572,7 @@ global define void DestroyMdOnAllDisks()
 		    raid_names = add( raid_names, p["device"]:"" );
 		    }
 		});
-	    data["partitions"] = 
+	    data["partitions"] =
 		maplist( map p, data["partitions"]:[],
 		    ``{
 		    p = filter( string k, any e, p, ``(k!="raid_name"));
@@ -3595,7 +3595,7 @@ global define void DestroyMdOnAllDisks()
 global define list<string> GetDirPatterns( string dir, list patterns )
     ``{
     list<string> ret = [];
-    string cmd = sformat( "cd %1 && (ls %2 2>/dev/null)", dir, 
+    string cmd = sformat( "cd %1 && (ls %2 2>/dev/null)", dir,
                           mergestring( patterns, " "));
     map out = (map) SCR::Execute( .target.bash_output, cmd );
     ret = splitstring( out["stdout"]:"", "\n" );
@@ -3610,7 +3610,7 @@ global define map GetBootPartition( string disk )
     ``{
     map ret = $[];
     map tg = GetTargetMap();
-    ret = select( (list<map>) filter( map p, tg[disk,"partitions"]:[], ``(p["boot"]:false) ), 
+    ret = select( (list<map>) filter( map p, tg[disk,"partitions"]:[], ``(p["boot"]:false) ),
 		  0, $[]);
     y2milestone( "disk:%1 ret:%2", disk, ret );
     return( ret );
