@@ -343,12 +343,12 @@ global define map fakeProbe ()
  * check partitions for given disk (as path, i.e. '.sda')
  * returns list as specified in README.target_partition
  */
-global define list<map> Check4partitions (string diskdev, map disk, path diskpath)
+global define map Check4partitions( string diskdev, map disk, path diskpath )
     ``{
     list partitions = [];
 
-    partitions = (list) SCR::Read(.disk+diskpath+.partitions,
-			   Partitions::UseParted() );
+    partitions = (list) SCR::Read( .disk+diskpath+.partitions,
+				   Partitions::UseParted() );
     if( is(partitions[0]:"", string ) )
 	{
 	if( size(partitions[0]:"")>0 )
@@ -365,7 +365,10 @@ global define list<map> Check4partitions (string diskdev, map disk, path diskpat
 	disk["label"] = Partitions::DefaultPartLabel();
 	}
     disk["max_primary"] = Partitions::MaxPrimary( disk["label"]:"" );
-    y2milestone( "disk %1 label %2", diskdev, disk["label"]:"" );
+    disk["max_logical"] = Partitions::MaxLogical( diskdev );
+    y2milestone( "disk %1 label %2 max_primary:%3 max_logical:%4", 
+                 diskdev, disk["label"]:"", disk["max_primary"]:0,
+		 disk["max_logical"]:0 );
     partitions = remove( partitions, 0 );
     partitions = maplist(map part, partitions,
 	``{
@@ -380,7 +383,8 @@ global define list<map> Check4partitions (string diskdev, map disk, path diskpat
 	p["device"] = GetDeviceName( diskdev, p["nr"]:0 );
 	return( p );
 	});
-    return partitions;
+    disk["partitions"] = partitions;
+    return disk;
     };
 
 global define map CheckPartedValid( string ddevice, map disk, 
@@ -677,7 +681,6 @@ define map localProbe ()
 
 	integer cyl_count = 0;
 	integer cyl_size = 0;
-	integer max_primary = 4;
 
 	if( !Arch::s390 )
 	    {
@@ -686,19 +689,13 @@ define map localProbe ()
 		{
 		cyl_count = (integer) SCR::Read(fullpath+.disk_size);
 		cyl_size= (integer) SCR::Read(fullpath+.bytes_per_unit);
-		max_primary= (integer) SCR::Read(fullpath+.max_primary);
-		if( Arch::board_mac )
-		    {
-		    max_primary = 16;
-		    }
 		}
 
 	    target["cyl_count"] = cyl_count;
 	    target["cyl_size"] = cyl_size;
-	    target["max_primary"] = max_primary;
 
-	    y2milestone( "diskinfo: cyl_count %1 cyl_size %2 max_primary %3",
-			 cyl_count, cyl_size, max_primary);
+	    y2milestone( "diskinfo: cyl_count %1 cyl_size %2", cyl_count, 
+	                 cyl_size );
 	    }
 	else
 	    {
@@ -749,7 +746,8 @@ define map localProbe ()
 	    {
 	    if( find( ddevice, "/dev/dasd" )!=0 )
 		{
-		partitions = Check4partitions (ddevice, target, diskpath);
+		target = Check4partitions (ddevice, target, diskpath);
+		partitions = target["partitions"]:[];
 		y2milestone( "old p %1", partitions );
 		map r = CheckPartedValid( ddevice, target, partitions, ppart );
 		if( !r["ret"]:true )
@@ -769,11 +767,6 @@ define map localProbe ()
 		}
 	    }
 
-	if( target["label"]:"" == "mac" || target["label"]:"" == "gpt" )
-	    {
-	    target["max_primary"] = 16;
-	    }
-
 	target["scrpath"] = diskpath;
 	target["partitions"] = partitions;
 
@@ -786,9 +779,7 @@ define map localProbe ()
 	    else
 		targets[ddevice] = target;
 	    }
-
 	y2milestone( "disk %1 tg: %2", ddevice, targets[ddevice]:$[] );
-
 	}); // foreach (`disk)
 
     SCR::UnmountAgent(.disk);
