@@ -28,6 +28,7 @@
     global integer fsid_fat16    = 6;
     global integer fsid_fat32    = 12;
     global integer fsid_prep_chrp_boot = 0x41;
+    global integer fsid_mac_hfs = 0x102;
     global integer fsid_root = fsid_native;
     global integer fsid_boot = fsid_native;
     global integer boot_cyl = 1024;
@@ -68,10 +69,16 @@ global define Partitions()
 	{
 	minimal_needed_bootsize = 48*1024*1024;
 	}
-    if( PrepBoot() )
+    else if( PrepBoot() )
 	{
 	fsid_boot = fsid_prep_chrp_boot;
 	minimal_needed_bootsize = 2*1024*1024;
+	}
+    else if( Arch::board_mac )
+	{
+	fsid_boot = fsid_mac_hfs;
+	minimal_needed_bootsize = 32*1024*1024;
+	default_boot_fs = `hfs;
 	}
     if( !Arch::i386 || Boot::LbaSupport() )
 	{
@@ -341,8 +348,18 @@ global define map GetCrypto( string pathname )
 global define string ToHexString( integer num ) 
     ``{
     string to_hex = "0123456789ABCDEF";
-    string ret = sformat("0x%1%2", substring( to_hex, num/16, 1 ),
-                         substring( to_hex, num%16, 1 ) );
+    string ret = "";
+    if( to_hex>256 )
+	{
+	ret = sformat("0x%1%2%3", substring( to_hex, num/256, 1 ),
+	              substring( to_hex, (num%256)/16, 1 ),
+                      substring( to_hex, num%16, 1 ) );
+	}
+    else
+	{
+	ret = sformat("0x%1%2", substring( to_hex, num/16, 1 ),
+                      substring( to_hex, num%16, 1 ) );
+	}
     return( ret );
     }
 
@@ -432,6 +449,7 @@ global define string FsIdToString( integer fs_id )
     if ( fs_id == 0x9f) return( "BSD/OS");
     if ( fs_id == 0xa0) return( "Hibernation");
     if ( fs_id == 0xa5) return( "BSD/386");
+    if ( fs_id == 0x102) return( "Apple_HFS");
     return( "unknown" );
     };
 

@@ -463,6 +463,20 @@ writeback - Data ordering is not preserved.</p>"),
 				    `makefstype		: "ext2", // format ext3 as ext2 !!!!!!!!!!!!!!!
 				    `fst_options  	: ext3_fst_options,
 				    `options      	: ext2and3_options
+		      ],
+		      `hfs 	: $[
+				    `name 		: "MacHFS",
+				    `fsid 		: Partitions::fsid_mac_hfs,
+				    `supports_format 	: true,
+				    `fsid_item 		: "0x102 Apple_HFS " ,
+				    `fstype 		: "Apple_HFS " ,
+				    `crypt		: false,
+				    `mountpoints 	: [],
+				    `mount_string	: "hfs",
+				    `needed_modules	: [ "hfs" ],
+				    `makefstype		: "hfs", 
+				    `fst_options  	: [],
+				    `options      	: []
 		      ]
   ];
 
@@ -519,25 +533,30 @@ global define void FileSystems()
 	{
         support[`jfs] = false;
 	}
-    if ( Arch::ppc )
+    if( Arch::ppc )
 	{
 	support[`xfs] = false;
 	}
-    if ( Arch::s390 )
+    if( Arch::s390 )
 	{
 	support[`xfs] = false;
 	}
-    if ( Arch::alpha )
+    if( Arch::alpha )
 	{
 	support[`reiser] = false;
 	}	
-    if ( Arch::sparc32 )
+    if( Arch::sparc32 )
 	{
 	support[`reiser] = false;
 	support[`xfs] = false;
 	support[`jfs] = false;
 	support[`ext3] = false;       
 	}
+    if( Arch::board_mac )
+	{
+	support[`hfs] = true;
+	}
+    y2milestone( "support %1", support );
     }
   
 
@@ -545,20 +564,21 @@ global define void FileSystems()
    * Filesystem Definitions
    * @return map map with all supported filesystems
    */
-  global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo  )``{
+global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
+    ``{
+    map ret = filter( `fs_key, `fs_map, GetNormalFilesystems(), 
+                      ``( support[fs_key]:false ));
 
-      map ret = filter( `fs_key, `fs_map, GetNormalFilesystems(), ``( support[fs_key]:false == true ));
-
-      if( add_swap )
-      {
-	  ret = union( ret, SwapFileSystems);
-      }
-      if( add_pseudo )
-      {
-	  ret = union( ret, PseudoFileSystems);
-      }
-      return ret;
-  } 
+    if( add_swap )
+	{
+	ret = union( ret, SwapFileSystems );
+	}
+    if( add_pseudo )
+	{
+	ret = union( ret, PseudoFileSystems );
+	}
+    return ret;
+    } 
 
 
   global define boolean IsSupported( symbol used_fs)``{
