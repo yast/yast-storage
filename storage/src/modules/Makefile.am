@@ -2,7 +2,7 @@
 # Files being accessed using "import" should be installed to
 #
 
-YCPCFLAGS = -I .
+YCPCFLAGS = -I . -I include
 
 yncludedir = @yncludedir@/storage
 
