@@ -1,5 +1,5 @@
 #
-# Makefile.am for y2c_disk/src
+# Makefile.am for storage/controller/src
 #
 # $Id$
 #
@@ -7,10 +7,8 @@
 yncludedir = @yncludedir@/partitioning
 
 client_DATA =		\
-	controller.ycp	
-
-config_DATA = controller.y2cc
+	controller.ycp
 
 desktop_DATA = controller.desktop
 
-EXTRA_DIST = $(client_DATA) $(config_DATA) $(desktop_DATA)
+EXTRA_DIST = $(client_DATA) $(desktop_DATA)

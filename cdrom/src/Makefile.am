@@ -1,5 +1,5 @@
 #
-# Makefile.am for y2c_disk/src
+# Makefile.am for storage/disk/src
 #
 # $Id$
 #
@@ -7,10 +7,8 @@
 yncludedir = @yncludedir@/partitioning
 
 client_DATA =		\
-	cdrom.ycp	
-
-config_DATA = cdrom.y2cc
+	cdrom.ycp
 
 desktop_DATA = cdrom.desktop
 
-EXTRA_DIST = $(client_DATA) $(config_DATA) $(desktop_DATA)
+EXTRA_DIST = $(client_DATA) $(desktop_DATA)
