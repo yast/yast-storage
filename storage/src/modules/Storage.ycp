@@ -166,61 +166,70 @@ global define map AddFstabInfo( map target, boolean lineno )
 		{
 		mp = part["ori_mount"]:"";
 		}
-	    if( size(mp)>0 )
+	    list lines = [];
+	    if( size(mp)>0 && mp != "swap" )
 		{
-		list lines = AsciiFile::FindLineField( fstab, 1, mp );
-		if( size(lines)>0 )
+		lines = AsciiFile::FindLineField( fstab, 1, mp );
+		}
+	    if( size(lines)==0 )
+		{
+		lines = AsciiFile::FindLineField( fstab, 0, part["device"]:"" );
+		}
+	    if( size(lines)>0 )
+		{
+		if( size(lines)>1 )
 		    {
-		    if( size(lines)>1 )
+		    string uuid = "UUID=" + part["uuid"]:"";
+		    string label = "LABEL=" + part["label"]:"";
+		    string device = part["device"]:"";
+		    map tlines = AsciiFile::GetLines( fstab, lines );
+		    map nlist = filter( `num, `line, tlines,
+					``( line["fields",0]:"" == device ||
+					    line["fields",0]:"" == uuid ||
+					    line["fields",0]:"" == label ));
+		    if( size(nlist)>0 )
 			{
-			string uuid = "UUID=" + part["uuid"]:"";
-			string label = "LABEL=" + part["label"]:"";
-			string device = part["device"]:"";
-			map tlines = AsciiFile::GetLines( fstab, lines );
-			map nlist = filter( `num, `line, tlines,
-					    ``( line["fields",0]:"" == device ||
-						line["fields",0]:"" == uuid ||
-						line["fields",0]:"" == label ));
-			if( size(nlist)>0 )
-			    {
-			    lines = maplist( `num, `line, nlist, ``(num));
-			    }
-			}
-		    if( lineno )
-			{
-			part["fstabline"] = lines[0]:-1;
-			}
-		    else
-			{
-			map entry = AsciiFile::GetLine( fstab, lines[0]:-1 );
-			if( entry["fields",3]:"defaults" != "defaults" )
-			    {
-			    part["fstopt"] = entry["fields",3]:"";
-			    }
-			if( find(entry["fields",0]:"", "UUID=") > -1 )
-			    {
-			    part["mountby"] = `uuid;
-			    }
-			else if( find(entry["fields",0]:"", "LABEL=") > -1 )
-			    {
-			    part["mountby"] = `label;
-			    }
+			lines = maplist( `num, `line, nlist, ``(num));
 			}
 		    }
-		lines = AsciiFile::FindLineField( crtab, 2, mp );
-		if( size(lines)>0 )
+		if( lineno )
 		    {
-		    if( lineno )
+		    part["fstabline"] = lines[0]:-1;
+		    }
+		else
+		    {
+		    map entry = AsciiFile::GetLine( fstab, lines[0]:-1 );
+		    if( entry["fields",3]:"defaults" != "defaults" )
 			{
-			part["crtabline"] = lines[0]:-1;
+			part["fstopt"] = entry["fields",3]:"";
 			}
-		    else
+		    if( find(entry["fields",0]:"", "UUID=") > -1 )
 			{
-			map entry = AsciiFile::GetLine( crtab, lines[0]:-1 );
-			if( entry["fields",5]:"defaults" != "defaults" )
-			    {
-			    part["fstopt"] = entry["fields",5]:"";
-			    }
+			part["mountby"] = `uuid;
+			}
+		    else if( find(entry["fields",0]:"", "LABEL=") > -1 )
+			{
+			part["mountby"] = `label;
+			}
+		    }
+		}
+	    lines = AsciiFile::FindLineField( crtab, 2, mp );
+	    if( size(lines)==0 )
+		{
+		lines = AsciiFile::FindLineField( crtab, 1, part["device"]:"" );
+		}
+	    if( size(lines)>0 )
+		{
+		if( lineno )
+		    {
+		    part["crtabline"] = lines[0]:-1;
+		    }
+		else
+		    {
+		    map entry = AsciiFile::GetLine( crtab, lines[0]:-1 );
+		    if( entry["fields",5]:"defaults" != "defaults" )
+			{
+			part["fstopt"] = entry["fields",5]:"";
 			}
 		    }
 		}
