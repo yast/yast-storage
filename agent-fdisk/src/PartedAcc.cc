@@ -127,7 +127,7 @@ PartedAccess::NewPartition(const PartitionType Part_e,
 
   Buf_Ci << std::setprecision(3) 
          << std::setiosflags(std::ios_base::fixed) 
-	 << (double)Num_ui*CylinderToKb(1)/1024 
+	 << (double)(Num_ui-0.8)*CylinderToKb(1)/1024 
          << " ";
   Data_Ci.clear();
   Data_Ci.str( Bis_Cv );
