@@ -1,5 +1,5 @@
 // -*- c++ -*-
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #ifndef FdiskAgent_h
 #define FdiskAgent_h
@@ -7,7 +7,6 @@
 #include <scr/SCRAgent.h>
 #include <scr/SCRInterpreter.h>
 #include <Y2.h>
-#include <FdiskAcc.h>
 
 /**
  * @short SCR Agent for access to fdisk

@@ -1,10 +1,13 @@
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #include <sstream>
 #include <set>
 #include <ycp/YCPParser.h>
-#include "FdiskAgent.h"
 #include <ycp/y2log.h>
+
+#include "FdiskAgent.h"
+#include "FdiskAcc.h"
+#include "PartedAcc.h"
 
 using namespace std;
 
@@ -42,6 +45,14 @@ FdiskAgent::~FdiskAgent()
 YCPValue
 FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
 {
+  YCPValue ret = YCPVoid();
+  bool use_parted = false;
+  if( !arg.isNull() && arg->isBoolean() && arg->asBoolean()->value() )
+      use_parted = true;
+
+  y2milestone("FdiskAgent::Read(%s, %s) parted:%d", path->toString().c_str(),
+	      arg.isNull()?"nil":arg->toString().c_str(), use_parted );
+
   if (path->length() < 2) {
       y2error("Path '%s' has incorrect length", path->toString().c_str());
       return YCPVoid();
@@ -56,16 +67,27 @@ FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
   }
 
   string conf_name = path->component_str(i);
+  string device = string("/dev") + device_name;
 
-  y2milestone("device '%s', cmd '%s'", device_name.c_str(), conf_name.c_str());
+  y2milestone("device '%s', cmd '%s'", device.c_str(), conf_name.c_str());
 
-  FdiskAccess fdisk_cmd (string("/dev") + device_name, true);
+  DiskAccess *fdisk_cmd = NULL;
+
+  if (conf_name == "partitions")
+      {
+      if( use_parted )
+	fdisk_cmd = new PartedAccess( device, true );
+      else
+	fdisk_cmd = new FdiskAccess( device, true );
+      }
+  else
+      fdisk_cmd = new DiskAccess( device );
 
   if (conf_name == "partitions")
     {
       // Return the partition table
       YCPList partitions;
-      vector<PartInfo> &part_info = fdisk_cmd.Partitions();
+      vector<PartInfo> &part_info = fdisk_cmd->Partitions();
       for (vector<PartInfo>::iterator entry = part_info.begin();
 	   entry != part_info.end(); entry++)
 	{
@@ -88,28 +110,27 @@ FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
 	  part_entry->add (YCPString ("region"), region);
 	  partitions->add (part_entry);
 	}
-      return partitions;
+      ret = partitions;
     }
   else if (conf_name == "bytes_per_unit")
     {
       y2debug("bytes_per_unit");
-      return YCPInteger (fdisk_cmd.CylinderToKb (1) * 1024LL);
+      ret = YCPInteger (fdisk_cmd->CylinderToKb (1) * 1024LL);
     }
   else if (conf_name == "disk_size")
     {
-      return YCPInteger (fdisk_cmd.NumCylinder());
+      ret = YCPInteger (fdisk_cmd->NumCylinder());
     }
   else if (conf_name == "max_primary")
     {
-      return YCPInteger (fdisk_cmd.PrimaryMax());
+      ret = YCPInteger (fdisk_cmd->PrimaryMax());
     }
-  else if (conf_name == "has_extended")
-    return YCPBoolean (fdisk_cmd.ExtendedPossible());
   else
     {
       y2error("unknown command in path '%s'", path->toString().c_str());
-      return YCPVoid();
     }
+  delete fdisk_cmd;
+  return( ret );
 }
 
 struct Created_partition
@@ -150,8 +171,13 @@ typedef set<Created_partition, std::less<Created_partition> > CPart_set;
 YCPValue
 FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& arg)
 {
-  y2debug("FdiskAgent::Write(%s, %s)", path->toString().c_str(),
-          value.isNull()?"nil":value->toString().c_str());
+  y2milestone("FdiskAgent::Write(%s, %s, %s)", path->toString().c_str(),
+	      value.isNull()?"nil":value->toString().c_str(),
+	      arg.isNull()?"nil":arg->toString().c_str());
+
+  bool use_parted = false;
+  if( !arg.isNull() && arg->isBoolean() && arg->asBoolean()->value() )
+      use_parted = true;
 
   if (path->length() < 2)
     {
@@ -261,14 +287,20 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
       if( to_delete.begin() != to_delete.end() ||
           to_create.begin() != to_create.end() )
 	  {
-	  FdiskAccess fdisk_cmd (string("/dev") + device_name,false);
+	  DiskAccess *fdisk_cmd = NULL;
+	  string device = string("/dev") + device_name;
+
+	  if( use_parted )
+	    fdisk_cmd = new PartedAccess( device, false );
+	  else
+	    fdisk_cmd = new FdiskAccess( device, false );
 
 	  // Now actually delete the parttitions, starting from the last
 	  for (set<int>::reverse_iterator part_nr = to_delete.rbegin ();
 	       part_nr != to_delete.rend (); ++part_nr)
 	    {
 	      y2milestone("deleting partition %d", *part_nr);
-	      fdisk_cmd.Delete (*part_nr);
+	      fdisk_cmd->Delete (*part_nr);
 	    }
 
 	  // Now create the new partitions, with increasing partition number.
@@ -285,23 +317,22 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
 	      y2milestone( "creating partition: type %d, nr %d, start %s, end %s",
 			   cpart->type, cpart->nr, start_string.c_str(),
 			   end_string.c_str());
-	      if (!fdisk_cmd.NewPartition (cpart->type, cpart->nr, start_string,
-					   end_string))
+	      y2milestone( "setting type of partition to %x", cpart->fsid);
+	      if (!fdisk_cmd->NewPartition (cpart->type, cpart->nr, start_string,
+					   end_string, cpart->fsid ))
 		{
 		  y2error("fdisk failed for %s", cpart->entry->toString().c_str());
 		  return YCPBoolean(false);
 		}
 
-	      y2milestone( "setting type of partition %d to %x",
-			   cpart->nr, cpart->fsid);
-	      fdisk_cmd.SetType (cpart->nr, cpart->fsid);
 	    }
-	  if (fdisk_cmd.Changed())
+	  if (fdisk_cmd->Changed())
 	    {
 	    bool Ret_bi;
-	    Ret_bi = !fdisk_cmd.WritePartitionTable();
+	    Ret_bi = !fdisk_cmd->WritePartitionTable();
 	    return(YCPBoolean(Ret_bi));
 	    }
+	  delete( fdisk_cmd );
 	  }
 
       return YCPBoolean (true);
@@ -345,16 +376,47 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
 	    y2debug("part:%d id:%x", part_nr, id );
 	    if( part_nr>0 && id>=0 )
 		{
-		FdiskAccess fdisk_cmd (string("/dev") + device_name,false);
-		fdisk_cmd.SetType( part_nr, id );
-		if (fdisk_cmd.Changed())
-		    fdisk_cmd.WritePartitionTable();
+		string device = string("/dev") + device_name;
+		DiskAccess *fdisk_cmd = NULL;
+
+	        if( use_parted )
+		    fdisk_cmd = new PartedAccess( device, false );
+		else
+		    fdisk_cmd = new FdiskAccess( device, false );
+
+		fdisk_cmd->SetType( part_nr, id );
+		if (fdisk_cmd->Changed())
+		    fdisk_cmd->WritePartitionTable();
 		ret = true;
+		delete fdisk_cmd;
+		}
+	    }
+	else if( type_string == "resize" )
+	    {
+	    int new_cyl_cnt = -1;
+	    int part_nr = -1;
+	    YCPValue content = cmd->value(YCPString("new_cyl_cnt"));
+	    if( !content.isNull() && content->isInteger())
+		{
+		new_cyl_cnt = content->asInteger()->value();
+		}
+	    content = cmd->value(YCPString("nr"));
+	    if( !content.isNull() && content->isInteger())
+		{
+		part_nr = content->asInteger()->value();
+		}
+	    y2debug("part:%d last_cyl:%d", part_nr, new_cyl_cnt );
+	    if( part_nr>0 && new_cyl_cnt>=0 )
+		{
+		string device = string("/dev") + device_name;
+		PartedAccess fdisk_cmd( device, false );
+
+		ret = fdisk_cmd.Resize( part_nr, new_cyl_cnt );
 		}
 	    }
 	else
 	    {
-	    y2error( "lvm invalid cmd" );
+	    y2error( "fdisk invalid cmd" );
 	    ret = false;
 	    }
 	}

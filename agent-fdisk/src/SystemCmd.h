@@ -1,5 +1,5 @@
 // -*- C++ -*-
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #ifndef _SystemCmd_h
 #define _SystemCmd_h

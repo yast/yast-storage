@@ -29,6 +29,15 @@ string dec_string(long number)
   return decimal;
 }
 
+string hex_string(long number)
+{
+  std::ostringstream num_str;
+  num_str << std::hex << number << std::ends;
+  string hexadecimal = num_str.str();
+  return hexadecimal;
+}
+
+
 bool
 SearchFile(AsciiFile& File_Cr, string Pat_Cv, string& Line_Cr)
 {

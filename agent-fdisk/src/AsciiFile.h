@@ -1,5 +1,5 @@
 // -*- C++ -*-
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #ifndef _AsciiFile_h
 #define _AsciiFile_h

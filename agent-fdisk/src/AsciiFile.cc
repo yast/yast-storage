@@ -1,4 +1,4 @@
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #include <assert.h>
 #include <sys/stat.h>

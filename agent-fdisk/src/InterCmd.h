@@ -1,5 +1,5 @@
 // -*- C++ -*-
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #ifndef _InterCmd_h
 #define _InterCmd_h

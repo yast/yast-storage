@@ -7,7 +7,9 @@ noinst_LTLIBRARIES = liby2ag_fdisk.la liby2ag_lvm.la liby2ag_md.la
 
 liby2ag_fdisk_la_SOURCES =			\
 	FdiskAgent.cc	FdiskAgent.h		\
+	DiskAcc.cc	DiskAcc.h		\
 	FdiskAcc.cc	FdiskAcc.h		\
+	PartedAcc.cc	PartedAcc.h		\
 	AppUtil.cc	AppUtil.h		\
 	AsciiFile.cc	AsciiFile.h		\
 	InterCmd.cc	InterCmd.h		\
@@ -25,7 +27,9 @@ liby2ag_lvm_la_SOURCES =			\
 	LvmAccess.cc	LvmAccess.h		\
 	MdAccess.cc	MdAccess.h		\
 	LvmAgent.cc	LvmAgent.h		\
+	DiskAcc.cc	DiskAcc.h		\
 	FdiskAcc.cc	FdiskAcc.h		\
+	PartedAcc.cc	PartedAcc.h		\
 	AppUtil.cc	AppUtil.h		\
 	AsciiFile.cc	AsciiFile.h		\
 	SystemCmd.cc	SystemCmd.h		\
@@ -41,7 +45,9 @@ libpy2ag_lvm_la_LDFLAGS = -version-info 2:0
 liby2ag_md_la_SOURCES =			\
 	MdAccess.cc	MdAccess.h	\
 	MdAgent.cc	MdAgent.h       \
+	DiskAcc.cc	DiskAcc.h		\
 	FdiskAcc.cc	FdiskAcc.h		\
+	PartedAcc.cc	PartedAcc.h		\
 	AppUtil.cc	AppUtil.h		\
 	AsciiFile.cc	AsciiFile.h		\
 	SystemCmd.cc	SystemCmd.h		\

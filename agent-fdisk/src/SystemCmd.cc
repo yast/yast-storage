@@ -1,4 +1,4 @@
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -322,6 +322,7 @@ SystemCmd::OpenFiles()
 	    Delay( 10000 );
 	    Rest_ii -= 10000;
 	    }
+	File_aC[IDX_STDOUT].clear();
 	File_aC[IDX_STDOUT].open( FileName_aC[IDX_STDOUT].c_str() );
 	if( !File_aC[IDX_STDOUT].good() )
 	    {
@@ -336,6 +337,7 @@ SystemCmd::OpenFiles()
 	    Delay( 10000 );
 	    Rest_ii -= 10000;
 	    }
+	File_aC[IDX_STDERR].clear();
 	File_aC[IDX_STDERR].open( FileName_aC[IDX_STDERR].c_str() );
 	if( !File_aC[IDX_STDERR].good() )
 	    {

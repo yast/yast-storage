@@ -1,5 +1,5 @@
 // -*- c++ -*-
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #ifndef LvmAgent_h
 #define LvmAgent_h

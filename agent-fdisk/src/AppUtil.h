@@ -1,5 +1,5 @@
 // -*- C++ -*-
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #ifndef _AppUtil_h
 #define _AppUtil_h
@@ -39,5 +39,6 @@ bool RunningFromSystem();
 void Delay(int Microsec_iv);
 
 string dec_string(long number);
+string hex_string(long number);
 
 #endif

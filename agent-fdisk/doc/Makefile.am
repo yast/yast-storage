@@ -8,5 +8,5 @@ SUBDIRS = autodocs
 
 htmldir = $(docdir)
 
-html_DATA = fdisk.txt
+html_DATA = fdisk.txt parted-fdisk.txt
 EXTRA_DIST = $(html_DATA)

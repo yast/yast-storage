@@ -1,5 +1,5 @@
 // -*- c++ -*-
-// Maintainer: schwab@suse.de
+// Maintainer: fehr@suse.de
 
 #ifndef MdAgent_h
 #define MdAgent_h

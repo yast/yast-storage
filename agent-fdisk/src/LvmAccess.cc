@@ -15,7 +15,7 @@
 
 #include "AppUtil.h"
 #include "AsciiFile.h"
-#include "FdiskAcc.h"
+#include "DiskAcc.h"
 #include "LvmAccess.h"
 
 LvmAccess::LvmAccess( bool Expensive_bv ) :
@@ -354,17 +354,17 @@ void LvmAccess::UpdateDisk( list<PartInfo>& Part_Cv, const string& Disk_Cv )
 	    if( Search_Ci!=PvList_C.end() )
 		{
 		Search_Ci->PartitionId_i = Pix_Ci->Id_i;
-		if( Search_Ci->Blocks_l!=Pix_Ci->Blocks_i )
+		if( Search_Ci->Blocks_l!=Pix_Ci->Blocks_l )
 		    {
-		    Search_Ci->Blocks_l = Pix_Ci->Blocks_i;
-		    Search_Ci->Free_l = Pix_Ci->Blocks_i;
+		    Search_Ci->Blocks_l = Pix_Ci->Blocks_l;
+		    Search_Ci->Free_l = Pix_Ci->Blocks_l;
 		    }
 		}
 	    else
 		{
 		PvElem_Ci.Name_C = Pix_Ci->Device_C;
 		PvElem_Ci.PartitionId_i = Pix_Ci->Id_i;
-		PvElem_Ci.Blocks_l = Pix_Ci->Blocks_i;
+		PvElem_Ci.Blocks_l = Pix_Ci->Blocks_l;
 		PvElem_Ci.Free_l = PvElem_Ci.Blocks_l;
 		PvElem_Ci.RealDevList_C.clear();
 		PvElem_Ci.RealDevList_C.push_back( PvElem_Ci.Name_C );
@@ -402,7 +402,7 @@ void LvmAccess::UpdateDisk( list<PartInfo>& Part_Cv, const string& Disk_Cv )
 	}
     if( Part_Cv.size()==0 )
 	{
-	FdiskAccess Fdisk_Ci( Disk_Cv, true );
+	DiskAccess Fdisk_Ci( Disk_Cv );
 	PvElem_Ci.Name_C = Disk_Cv;
 	PvElem_Ci.PartitionId_i = 0;
 	PvElem_Ci.Blocks_l = PvElem_Ci.Free_l = Fdisk_Ci.CapacityInKb();
@@ -430,7 +430,7 @@ LvmAccess::ScanForDisks()
 	y2debug( "Line:\"%s\" i:%d cnr:%d", Line_Ci.c_str(), I_ii, Cnt_ii );
 	Tmp_Ci = ExtractNthWord( 2, Line_Ci );
 	Add_bi = false;
-	if( FdiskAccess::IsKnownDevice( Tmp_Ci ) )
+	if( DiskAccess::IsKnownDevice( Tmp_Ci ) )
 	    {
 	    Add_bi = Line_Ci.find( "extended partition" )==string::npos;
 	    }
@@ -519,7 +519,7 @@ LvmAccess::ProcessMd()
 	    {
 	    Tmp_Ci = Pix_Ci->Name_C;
 	    if( Tmp_Ci.find( "/dev/md" )==0 || 
-	        Tmp_Ci==FdiskAccess::GetDiskName(Tmp_Ci) )
+	        Tmp_Ci==DiskAccess::GetDiskName(Tmp_Ci) )
 		{
 		Pix_Ci->PartitionId_i = 0;
 		y2debug( "Zero Id of %s", Pix_Ci->Name_C.c_str() );
@@ -683,7 +683,7 @@ bool LvmAccess::CreatePv( const string& PvName_Cv )
 	y2error( "Device %s not found", PvName_Cv.c_str() );
 	}
     if( Pix_Ci!=PvList_C.end() && 
-        FdiskAccess::GetDiskName( Pix_Ci->Name_C ) == Pix_Ci->Name_C )
+        DiskAccess::GetDiskName( Pix_Ci->Name_C ) == Pix_Ci->Name_C )
 	{
 	char Buf_ti[1024];
 	memset( Buf_ti, 0, sizeof(Buf_ti) );
@@ -1271,15 +1271,15 @@ list<PvInfo>::iterator LvmAccess::SortIntoPvList( const PvInfo& PvElem_rv )
 	}
     else
 	{
-	string Disk_Ci = FdiskAccess::GetDiskName( PvElem_rv.Name_C );
-	int Num_ii = FdiskAccess::GetPartNumber( PvElem_rv.Name_C );
+	string Disk_Ci = DiskAccess::GetDiskName( PvElem_rv.Name_C );
+	int Num_ii = DiskAccess::GetPartNumber( PvElem_rv.Name_C );
 	Pix_Ci = PvList_C.begin();
 	while( Pix_Ci!=PvList_C.end() && Pix_Ci->Name_C<Disk_Ci )
 	    {
 	    Pix_Ci++;
 	    }
 	while( Pix_Ci!=PvList_C.end() && Pix_Ci->Name_C.find(Disk_Ci)==0 &&
-	       FdiskAccess::GetPartNumber( Pix_Ci->Name_C )<Num_ii )
+	       DiskAccess::GetPartNumber( Pix_Ci->Name_C )<Num_ii )
 	    {
 	    Pix_Ci++;
 	    }
