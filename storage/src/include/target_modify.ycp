@@ -743,4 +743,37 @@ define boolean HandleEvmsChanges( map<string,map> target, boolean before_part,
     return( ret );
     }
 
+define void RemoveUsedNonEvmsDm( map<string,map> target )
+    ``{
+    boolean ret = true;
+    map<string,map> tg = filter( string k, map e, target, 
+                                 ``(find(k,"/dev/evms")!=0));
+    y2milestone( "RemoveUsedNonEvmsDm tg %1", tg );
+    list<map> dlist = [];
+    foreach( string k, map e, tg,
+	``{
+	foreach( map p, e["partitions"]:[],
+	    ``{
+	    if( !p["delete"]:false && 
+	        (size(p["mount"]:"")>0 ||
+	         size(p["raid_name"]:"")>0 ||
+	         size(p["lvm_group"]:"")>0))
+		{
+		dlist = add( dlist, p );
+		}
+	    });
+	});
+    y2milestone( "RemoveUsedNonEvmsDm dlist %1", dlist );
+    foreach( map p, dlist,
+	``{
+	string dmmap = substring( p["device"]:"", 5 );
+	string cmd = sformat( "dmsetup remove %1", dmmap );
+	y2milestone( "RemoveUsedNonEvmsDm dmmap %1 cmd %2", dmmap, cmd );
+	y2milestone( "RemoveUsedNonEvmsDm executed %1", 
+	             SCR::Execute( .target.bash_output, cmd ));
+	});
+    y2milestone( "RemoveUsedNonEvmsDm %1",
+		 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
+    }
+
 }
