@@ -209,6 +209,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
     boolean axp_start_Ex_failure = false;
     boolean all_whole_disk       = true;
     boolean fat_system_mount     = false;
+    string raid_type             = "";
 
     foreach( string disk, map diskinfo, targetMap,
         ``{
@@ -310,6 +311,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		    root_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
 
 		    if ( id_sw_raid_dev ) root_raid = true;
+		    if( !boot_raid ) raid_type = part["raid_type"]:"unknown";
 		    if ( part["type"]:`unknown==`lvm ) root_lvm = true;
 		}
 		else if ( mountpoint == Partitions::BootMount() )
@@ -328,6 +330,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		    boot_cyl_for_gb = 1073741824 / boot_cyl_size;
 		    boot_size       = boot_cyl_size * boot_cyl_nb;
 		    if ( id_sw_raid_dev ) boot_raid = true;
+		    raid_type = part["raid_type"]:"unknown";
 		}
 		else if ( mountpoint == "" )
 		{
@@ -415,6 +418,9 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 	targetMap = add( targetMap, disk, diskinfo );
 
     } );
+
+    y2milestone( "root_found:%1 boot_found %2 root_raid %3 boot_raid %4 raid_type:%5", 
+	         root_found, boot_found, root_raid, boot_raid, raid_type );
 
 
       Storage::SetWholeDisk( all_whole_disk );
@@ -611,10 +617,13 @@ Change this?
 
 	    if (ret == true) retval = `again;
 	}
+    }
 
 	// iSeries has no problems with this configuration
 	// an initrd will be created and you can boot from a kernel slot
-	if ( ((root_raid && !boot_found) || boot_raid || show_all_popups)  && AutoinstStorage::BootRaidWarning)
+    if ( installation && !Arch::board_iseries &&
+         ((((root_raid && !boot_found) || boot_raid) && raid_type!="raid1") || show_all_popups) && 
+	 AutoinstStorage::BootRaidWarning)
 	{
 	    // popup text
 	    boolean ret = Popup::YesNo(sformat(
@@ -631,7 +640,9 @@ Change this?
 
 	// iSeries has no problems with this configuration
 	// an initrd will be created and you can boot from a kernel slot
-	if (( (root_lvm && !boot_found && !Arch::board_iseries) || show_all_popups ) && AutoinstStorage::BootLVMWarning)
+    if ( installation && !Arch::board_iseries &&
+	 ((root_lvm && !boot_found) || show_all_popups ) &&
+	 AutoinstStorage::BootLVMWarning )
 	{
 	    // popup text
 	    boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %1 installation
@@ -649,8 +660,6 @@ Change this?
 	    if (ret == true) retval = `again;
 	}
 
-
-    }
 
     if( (Arch::ia64 && installation &&
          (!boot_found || (boot_fs != `fat16 && boot_fs != `fat32))) ||
