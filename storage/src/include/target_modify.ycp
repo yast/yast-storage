@@ -242,7 +242,8 @@ global define boolean HandleResizePartitions( string disk_dev, map disk,
     if( Mode::initial )
 	{
 	part = filter( `p, part, 
-		       ``(!Partitions::IsDosWinNtPartition( p["fsid"]:0 )));
+		       ``(!Partitions::IsDosWinNtPartition( p["fsid"]:0 ) ||
+		          p["detected_fs"]:`none==`ntfs));
 	}
 
     foreach( `p, part, ``{
@@ -463,6 +464,13 @@ You could umount the file system manually and retry resizing.
 			device );
 	    }
 	y2milestone( "execute cmd:%1", cmd );
+	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	}
+    else if( fs == `ntfs )
+	{
+	string cmd = sformat( "echo y | ntfsresize -s %1k %2", 
+	                      new_size*1024*1024/1000, device );
+	y2milestone( "cmd %1", cmd );
 	ret = SCR::Execute(.target.bash, cmd ) == 0;
 	}
     else if( fs == `xfs && !decrease )

@@ -78,6 +78,9 @@
 		   `fat32  	: $[ "shrink":true,
 				     "parted" : true,
 				   ],
+		   `ntfs  	: $[ "extend":true,
+		                     "shrink":true
+				   ],
 		   `swap  	: $[ "extend":true,
 		                     "shrink":true,
 				   ],
@@ -708,9 +711,10 @@ global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
       return allfs[ used_fs]:$[];
   }
 
-  global define string GetName( symbol used_fs , string default )``{
+  global define string GetName( symbol used_fs, string default )``{
       map fsmap 	= GetFsMap( used_fs);
       string ret        = fsmap[`name]:"";
+      if ( ret == "" && used_fs == `ntfs ) ret = "NTFS";
       if ( ret == "" ) ret = default;
       return ret;
   }
@@ -1255,7 +1259,9 @@ global define map GetFreeSpace( string device, integer testsize,
 	y2error( "Current device <%1> could not be mounted. Canceled", device );
 	return( $[] );	// abort installation
 	}
-    else y2milestone( "Current device <%1> mounted on <%2>", device, mount_point );
+    else 
+	y2milestone( "Current device <%1> mounted on <%2>", device, 
+	             mount_point );
 
     // get usage information for the partition via df
     //
@@ -1267,7 +1273,8 @@ global define map GetFreeSpace( string device, integer testsize,
 	integer num = 0;
 	while( !win_disk && num<size(chkf) )
 	    {
-	    win_disk = SCR::Read( .target.size, mount_point + "/" + chkf[num]:"XX" ) >= 0;
+	    win_disk = SCR::Read( .target.size, 
+	                          mount_point + "/" + chkf[num]:"XX" ) >= 0;
 	    num = num+1;
 	    }
 	}
@@ -1277,71 +1284,115 @@ global define map GetFreeSpace( string device, integer testsize,
     y2debug( ".run.df: %1", df_result );
 
     // filter out headline and other invalid entries
-    df_result = filter( `part, df_result,
-                        ``( substring( part["spec"]:"", 0, 1 ) == "/" ) );
+    df_result = filter( `part, df_result, ``( part["spec"]:""==device ) );
+    y2milestone( "df_result %1", df_result );
 
-    boolean ok = false;
+    // get the usage values
+    //
+    used = tointeger( df_result[0,"used"]:"-1" );
+    free = tointeger( df_result[0,"free"]:"-1" );
 
-    foreach( `part, df_result,
-	``{
-	if( part["spec"]:"" == device )	// find right entry
+    if( used != -1 && free != -1 )
+	{
+	used = used * 1024;	// Byte
+	free = free * 1024;	// Byte
+	y2milestone( ".run.df: used: <%1> free:<%2>", used, free );
+	}
+    else
+	{
+	free = 0;
+	}
+
+    integer df_free = free;
+    if( used_fs == `ntfs )
+	{
+	string cmd = sformat("ntfsresize -i %1", device );
+	y2milestone( "Excuting cmd:%1", cmd );
+	map bcall = SCR::Execute( .target.bash_output, cmd, 
+	                          $[ "LC_MESSAGES" :"POSIX"] );
+	free = 0;
+	if( bcall["exit"]:1 == 0 )
 	    {
-	    // get the usage values
-	    //
-	    used = tointeger( part["used"]:"-1" );
-	    free = tointeger( part["free"]:"-1" );
-
-	    if ( used != -1 && free != -1 )
+	    string line = find( `l, splitstring( bcall["stdout"]:"", "\n" ),
+	                        ``( find(l, " could resize at ")>0 ));
+	    y2milestone( "line %1", line );
+	    if( line != nil )
 		{
-		used = used * 1024;	// Byte
-		free = free * 1024;	// Byte
-
-		ok = true;
-		y2milestone( ".run.df: used: <%1> free:<%2>", used, free );
+		line = substring( line, find(line, " at ")+4 );
+		line = substring( line, 0, findfirstnotof( line, "0123456789" ));
+		free = used + df_free - tointeger( line );
+		y2milestone( "line \"%1\" free %2", line, free );
 		}
 	    }
-	});
+	}
 
     integer linux_size = 0;
     integer min_linux_size = 0;
+    integer add_free = df_free - free;
 
-    if( free > 300000000  && free < 600000000 )
+    if( free < 300000000 )
 	{
-	linux_size = free - 75000000;
+	linux_size = 0;
+	min_linux_size = 0;
+	}
+    else if( free < 600000000 )
+	{
+	linux_size = free;
+	if( add_free < 75000000 )
+	    {
+	    linux_size = linux_size - 75000000 + add_free;
+	    }
 	min_linux_size = linux_size;
 	}
     else if ( free < 1000000000 )
 	{
-	linux_size = free - 200000000;
+	linux_size = free;
+	if( add_free < 200000000 )
+	    {
+	    linux_size = linux_size - 200000000 + add_free;
+	    }
 	min_linux_size = 300000000;
 	}
     else if ( free < 2000000000 )
 	{
-	linux_size = free - 300000000;
+	linux_size = free;
+	if( add_free < 300000000 )
+	    {
+	    linux_size = linux_size - 300000000 + add_free;
+	    }
 	min_linux_size = 500000000;
 	}
     else if ( free < 3000000000 )
 	{
-	linux_size = free - 800000000;
+	linux_size = free;
+	if( add_free < 800000000 )
+	    {
+	    linux_size = linux_size - 800000000 + add_free;
+	    }
 	min_linux_size = 500000000;
 	}
     else
 	{
-	linux_size = free - ( free / 3 );
+	linux_size = free;
+	if( add_free < free/3 )
+	    {
+	    linux_size = linux_size - free/3 + add_free;
+	    }
 	min_linux_size = 500000000;
 	}
 
-    integer new_size = used + free - linux_size;
+    integer new_size = used + add_free + free - linux_size;
 
     map ret = $[];
 
-    if (ok)
+    if( free>0 )
 	{
 	ret = $[ "free":free,
+	         "df_free" : df_free,
 	         "used":used,
 		 "win_disk":win_disk,
 		 "linux_size":linux_size,
-		 "max_win_size":used + free - min_linux_size,
+		 "max_win_size":used + free + add_free - min_linux_size,
 		 "ntfs" : (used_fs == `ntfs),
 		 "new_size":new_size ];
 	}
