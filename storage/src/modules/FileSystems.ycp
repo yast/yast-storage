@@ -142,6 +142,58 @@ The file system may be mounted by an ordinary user. Default is false.</p>
     return( options );
     };
 
+global define list GetJournalFstabOptions()
+    ``{
+    list options =
+	[ $[
+	     `widget : `VBox( `ComboBox(`id("opt_journal"), `opt(`hstretch), 
+					_("Data &joutnalling mode"),
+					["journal", "ordered", "writeback"]),
+			      `VSpacing(0.5)),
+	     `default   : "ordered",
+	     `query_key : "opt_journal",
+	     `type : `text,
+	     `help_text : _("<p><b>Data journalling mode:</b>
+Specifies  the  journalling  mode  for  file  data.
+journal -- All data is committed into the  journal  prior  to  being
+written into the main file system.
+ordered -- All data is forced directly out to the main file system
+prior to its  metadata  being committed to the journal.
+writeback -- Data ordering is not preserved.</p>
+"),
+	     `str_opt : "data=%1",
+	     `str_scan : "data=\(.*\)"
+	   ]
+	];
+    return( options );
+    };
+
+global define list GetAclFstabOptions()
+    ``{
+    list options =
+	[ $[
+	     `widget : `Left(`CheckBox(`id("opt_acl"), _("&Access Control List"), false)),
+	     `query_key : "opt_acl",
+	     `help_text : _("<p><b>Access Control List:</b>
+Enable Access control lists on the filesystem.</p>
+"),
+             `type : `boolean,
+	     `str_opt : $[ 1 : "acl", "default" : "" ],
+	     `str_scan : [[ "acl", 1 ], ["noacl", 0 ]],
+	   ],
+	  $[
+	     `widget : `Left(`CheckBox(`id("opt_eua"), _("&Extended User Attributes"), false)),
+	     `query_key : "opt_eua",
+	     `help_text : _("<p><b>Extended User Attributes:</b>
+Allow Extended User Attributes on the filesystem.</p>"),
+             `type : `boolean,
+	     `str_opt  : $[ 1 : "user_xattr", "default" : "" ],
+	     `str_scan : [[ "user_xattr", 1 ], ["no_user_xattr", 0 ]],
+	   ],
+	];
+    return( options );
+    };
+
 global define map GetArbitraryOptionField()
     ``{
     map opt = $[
@@ -154,6 +206,23 @@ Mutiple options are separated by commas.</p>
              `type : `text
 	   ];
     return( opt );
+    };
+
+global define map GetFstabOptWidgets( symbol fsys )
+    ``{
+    map fs = GetAllFileSystems( true, false );
+    list ret = fs[fsys,`fst_options]:$[];
+    if( contains( [`ext3, `reiser], fsys ) )
+	{
+	ret = union( ret, GetJournalFstabOptions() );
+	}
+    if( contains( [`ext2, `ext3, `reiser], fsys ) )
+	{
+	ret = union( ret, GetAclFstabOptions() );
+	}
+    y2milestone( "fsys %1", fsys );
+    y2milestone( "ret %1", ret );
+    return( ret );
     };
 
 define map GetNormalFilesystems()``{
@@ -238,26 +307,6 @@ This option defines the reiserfs format revision to use. '3.5' is for backwards 
 			       ]
   ];
 
-  list reiser_fst_options =
-      [
-	$[
-	   `widget : `ComboBox(`id("opt_journal"), `opt(`hstretch), _("Data &journalling mode"),
-	                       ["journal", "ordered", "writeback"]),
-	   `default   : "ordered",
-	   `query_key : "opt_journal",
-	   `type : `text,
-	   `help_text : _("<p><b>Data journalling mode:</b>
-Specifies  the  journalling  mode  for  file  data.
-<p>journal -- All data is committed into the  journal  prior  to  being
-written into the main file system.
-<p>ordered -- All data is forced directly out to the main file system
-prior to its  metadata  being committed to the journal.
-<p>writeback -- Data ordering is not preserved.</p>
-"),
-	   `str_opt : "data=%1",
-	   `str_scan : "data=\(.*\)"
-	 ]
-      ];
 
   list xfs_options	=  [
 			      $[
@@ -359,26 +408,9 @@ number of inodes on a file system after its creation, so be sure to enter a reas
       ];
 
 
-  list ext3_fst_options =
-      [
-	$[
-	   `widget : `ComboBox(`id("opt_journal"), `opt(`hstretch), _("Data journalling mode"),
-	                       ["journal", "ordered", "writeback"]),
-	   `default   : "ordered",
-	   `query_key : "opt_journal",
-	   `type : `text,
-	   `help_text : _("<p><b>Data journalling mode:</b>
-Specifies  the  journalling  mode  for  file  data.
-journal -- All data is committed into the  journal  prior  to  being
-written into the main file system.
-ordered -- All data is forced directly out to the main file system
-prior to its  metadata  being committed to the journal.
-writeback -- Data ordering is not preserved.</p>
-"),
-	   `str_opt : "data=%1",
-	   `str_scan : "data=\(.*\)"
-	 ]
-      ];
+  list ext3_fst_options = [ ];
+  list ext2_fst_options = [ ];
+  list reiser_fst_options = [ ];
 
 
   map RealFileSystems  = $[
@@ -393,6 +425,7 @@ writeback -- Data ordering is not preserved.</p>
 				    `mount_option	: "-t ext2",
 				    `mount_string	: "ext2",
 				    `makefstype		: "ext2",
+				    `fst_options  	: ext2_fst_options,
 				    `options  		: ext2and3_options,
 		      ],
 		      `fat32	: $[

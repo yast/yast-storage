@@ -238,6 +238,20 @@ global define boolean check_unique_label( map targetMap, map part )
     return( unique );
     };
 
+global define boolean CheckFstabOptions( map part )
+    ``{
+    boolean ret = true;
+    y2milestone( "ret %1 part %2", ret, part );
+    if( part["mount"]:"" == "/" && part["used_fs"]:`none == `ext3 &&
+	find(part["fstopt"]:"","data=")>=0 )
+	{
+	UI::ErrorPopup(_("Data journaling mode for ext3 on root filesystem
+must not be specified."));
+	ret = false;
+	}
+    return( ret );
+    }
+
     /**
      * Check all mount points and return true if the mount point is ok.
      * @param targetMap the TargetMap
@@ -299,9 +313,25 @@ global define check_mount_point( map targetMap, string dev, map part )
 	    UI::ErrorPopup(_("Your mount point must start with a \"/\" "));
 	    }
 	}
+    else if( !part["format"]:false && part["detected_fs"]:`none != `swap )
+	{
+string message = _("
+WARNING:
+
+You choose a swap partition but did not direct YaST2 to format it.
+This swap partition will probably not be useable.
+
+Do you want to change the setup?");
+
+	allowed = !UI::YesNoPopup(message);
+	}
     else
 	{
 	allowed = true;
+	}
+    if( allowed )
+	{
+	allowed = CheckFstabOptions( part );
 	}
     return( allowed );
     };
@@ -457,6 +487,7 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
     if( !init )
 	{
 	new["fs_options"] = $[];
+	new["fstopt"] = "";
 	integer max_len = FileSystems::LabelLength( used_fs );
 	if( size(new["label"]:"") > max_len )
 	    {
@@ -556,14 +587,14 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 		}
 	    if( Arch::s390 && format )
 		{
-		    if (new["used_fs"]:`unknown != `jfs)
+		if (new["used_fs"]:`unknown != `jfs)
 		    {
-			new["fs_options"] = $["opt_blocksize":$["option_str":"-b",
-								"option_value":"4096"]];
+		    new["fs_options"] = $["opt_blocksize":$["option_str":"-b",
+							    "option_value":"4096"]];
 		    }
-		    else
+		else
 		    {
-			new["fs_options"] = $[];
+		    new["fs_options"] = $[];
 		    }
 		}
 	    if( !format )
@@ -596,15 +627,15 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 		    }
 		if( Arch::s390 && new["format"]:false )
 		    {
-			if (new["used_fs"]:`unknown != `jfs)
+		    if (new["used_fs"]:`unknown != `jfs)
 			{
-			    new["fs_options"] =
-				$["opt_blocksize":$["option_str":"-b",
-						    "option_value":"4096"]];
+			new["fs_options"] =
+			    $["opt_blocksize":$["option_str":"-b",
+						"option_value":"4096"]];
 			}
 			else
 			{
-			    new["fs_options"] = $[];
+			new["fs_options"] = $[];
 			}
 		    }
 		}
@@ -674,7 +705,8 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	}
     if( ret == `fstab_options )
 	{
-	FstabOptions( old, new, selected_fs );
+	new["mount"] = UI::QueryWidget( `id(`mount_point), `Value );
+	FstabOptions( old, new );
 	}
     if( ret == `fs_options )
 	{
