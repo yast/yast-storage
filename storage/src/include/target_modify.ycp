@@ -796,4 +796,27 @@ define void RemoveUsedNonEvmsDm( map<string,map> target )
 		 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));
     }
 
+define map<integer,map> HandleDeletedVgs( map<string,map> tg, 
+					  map<integer,map> modify_targets )
+    ``{
+    y2milestone( "HandleDeletedVgs mod %1", modify_targets );
+    tg = filter( string dev, map disk, tg,
+		 ``(disk["is_lvm_vg"]:false&&disk["delete"]:false));
+    y2milestone( "HandleDeletedVgs tg %1", tg );
+    foreach( string device, map disk, tg,
+	``{
+	if( size( filter( integer n, map p, modify_targets,
+	                  ``(p["type"]:""=="remove_vg" &&
+			     p["vgname"]:""==substring(device,5))))==0 )
+	    {
+	    modify_targets[size(modify_targets)+1] = 
+		$[ "use_module" : "lvm_ll",
+		   "type"       : "remove_vg",
+		   "vgname"     : substring(device,5) ];
+	    }
+	});
+    y2milestone( "HandleDeletedVgs ret %1", modify_targets );
+    return( modify_targets );
+    }
+
 }

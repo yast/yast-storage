@@ -1112,7 +1112,8 @@ define void DoUmountAndReset( list mounts )
     boolean retry = false;
     map<string,map> tg = Storage::GetTargetMap();
     integer num_lvm_vg = size (filter (string dev, map disk, tg,
-                                       ``(disk["is_lvm_vg"]:false)));
+                                       ``(disk["is_lvm_vg"]:false&&
+				          !disk["delete"]:false)));
     boolean md_active = size(tg["/dev/md","partitions"]:[])>0;
     integer num_evms = 0;
 
@@ -1126,7 +1127,9 @@ define void DoUmountAndReset( list mounts )
 	});
     y2milestone( "num_evms %1 num_lvm_vg %2 md_active %3", num_evms, num_lvm_vg,
                  md_active );
-    
+
+    modify_targets = HandleDeletedVgs( tg, modify_targets );
+
   // 0b. Do any necessary lvm preparation
 
     if( size(modify_targets) > 0 )
@@ -1196,7 +1199,8 @@ damage to your file systems, it is safer to cancel and reboot.
 	      }
 	    }
 	  } while(retry);
-	SCR::Write( .lvm.deactivate, "" );
+        // deactivate lvm
+	Storage::SetMdOn( false );
         }
 
     HandleEvmsChanges( tg, true, true );
@@ -1519,7 +1523,7 @@ Please repeat the installation with another swap partition selected
     if ( num_lvm_vg > 0 )
 	{
 	SCR::Write( .lvm.init, "" );
-	SCR::Write( .lvm.activate, "" );
+	Storage::SetMdOn( true );
 	}
     y2milestone( "dmsetup %1", 
 		 SCR::Execute( .target.bash_output, "/sbin/dmsetup ls" ));

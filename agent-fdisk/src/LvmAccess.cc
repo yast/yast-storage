@@ -902,11 +902,10 @@ bool LvmAccess::ShrinkVg( const string& VgName_Cv, const string& PvName_Cv )
 
 bool LvmAccess::DeleteVg( const string& VgName_C )
     {
+    y2milestone( "LvmAccess::DeleteVg Name:%s", VgName_C.c_str() );
     list<VgIntern>::iterator Vg_Ci = VgList_C.begin();
-    int Idx_iv = 0;
     while( Vg_Ci!=VgList_C.end() && Vg_Ci->Name_C!=VgName_C )
 	{
-	Idx_iv++;
 	Vg_Ci++;
 	}
     bool Ret_bi=false;
@@ -915,9 +914,18 @@ bool LvmAccess::DeleteVg( const string& VgName_C )
 	{
 	y2error( "Volume group %s not found", VgName_C.c_str() );
 	}
-    if( Vg_Ci!=VgList_C.end() && !Vg_Ci->Active_b || 
-        ChangeActive( Vg_Ci->Name_C, false ) )
+    if( Vg_Ci!=VgList_C.end() )
 	{
+	list<string> names;
+	for( list<LvInfo*>::iterator lv = Vg_Ci->Lv_C.begin(); 
+	     lv != Vg_Ci->Lv_C.end(); lv++ )
+	     {
+	     names.push_back( (*lv)->Name_C );
+	     }
+	for( list<string>::iterator lv = names.begin(); lv != names.end(); lv++ )
+	     {
+	     DeleteLv( *lv );
+	     }
 	Ret_bi = ExecuteLvmCmd( "/sbin/vgremove " + Vg_Ci->Name_C );
 	}
     if( Ret_bi && Vg_Ci!=VgList_C.end() )
@@ -932,6 +940,7 @@ bool LvmAccess::DeleteVg( const string& VgName_C )
 	    }
 	VgList_C.erase( Vg_Ci );
 	}
+    y2milestone( "LvmAccess::DeleteVg Ret:%d", Ret_bi );
     return( Ret_bi );
     }
 
@@ -1025,6 +1034,7 @@ bool LvmAccess::DeleteLv( const string& LvName_Cv )
 	    }
 	ScanLvmStatus();
 	}
+    y2milestone( "LvmAccess::DeleteLv Ret:%d", Ret_bi );
     return( Ret_bi );
     }
 
