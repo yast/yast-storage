@@ -96,7 +96,7 @@ global define map GetTargetMap()
     if( !probe_done && !Mode::config)
 	{
 	y2milestone ("probing StorageDevices" );
-	tmp = StorageDevices::Probe (true);
+	tmp = StorageDevices::Probe(false);
 	y2milestone ("probing done" );
 	tmp = ReadLvmMd( tmp );
 	y2milestone ("lvm init done" );
@@ -560,6 +560,12 @@ global define map GetFsysType( map target)
 	    if( partition["used_fs"]:`none == `none )
 		{
 		partition = FileSystems::GetFsysInfos( device, partition );
+		if( partition["used_fs"]:`unknown == `fat32 )
+		    {
+		    partition["fsid"] = Partitions::fsid_fat32;
+		    partition["fstype"] = 
+			Partitions::FsIdToString( Partitions::fsid_fat32 );
+		    }
 		}
 	    p_new = add( p_new, partition );
 	    });
@@ -2790,6 +2796,8 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    ``{
 	    map p = Storage::GetPartition( targetMap, e );
 	    p["raid_name"] = k;
+	    p["fsid"] = Partitions::fsid_raid;
+	    p["fstype"] = Partitions::FsIdToString( p["fsid"]:0 );
 	    targetMap = Storage::SetPartition( targetMap, p );
 	    y2debug ("changed partition=%1", p);
 	    });
@@ -2834,6 +2842,8 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	p["lvm_group"] = v["vgname"]:"";
 	p["lvm_mp_pv"] = v["multipath"]:false;
 	p["lvm_size_bytes"] = (v["blocks"]:0) * 1024;
+	p["fsid"] = Partitions::fsid_lvm;
+	p["fstype"] = Partitions::FsIdToString( p["fsid"]:0 );
 	targetMap = Storage::SetPartition( targetMap, p );
 	});
     if( Mode::normal )

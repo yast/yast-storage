@@ -298,10 +298,8 @@ define map localProbe ()
 	{
 	return fakeProbe();
 	}
-    if( Arch::s390 )
-	{
-	ppart = SCR::Read(.proc.partitions);
-	}
+    ppart = SCR::Read(.proc.partitions);
+    y2milestone( "ppart %1", ppart );
 
     // do the probing
     list all_disks = SCR::Read(.probe.disk);
@@ -499,6 +497,18 @@ define map localProbe ()
 	    if( find( ddevice, "/dev/dasd" )!=0 )
 		{
 		partitions = Check4partitions (ddevice, target, diskpath);
+		y2milestone( "old p %1", partitions );
+		map r = CheckPartedValid( ddevice, target, partitions, ppart );
+		if( !r["ret"]:true )
+		    {
+		    partitions = r["partitions"]:[];
+		    y2milestone( "new p %1", partitions );
+		    target["readonly"] = true;
+		    if( Mode::initial )
+			{
+			UI::ErrorPopup( Partitions::RdonlyText(ddevice,false) );
+			}
+		    }
 		}
 	    else
 		{
@@ -541,7 +551,6 @@ define map localProbe ()
 global define list GetS390Partitions( string ddev, map target, list ppart )
     ``{
     list partitions = [];
-    y2milestone( "ppart %1", ppart );
     y2milestone( "target %1", target );
     string regex = substring( ddev, 5 )+"[0-9]+";
     y2milestone( "ddev %1 regex %2", ddev, regex );
@@ -597,8 +606,9 @@ global define list GetS390Partitions( string ddev, map target, list ppart )
 */
 global define map Probe (boolean force_reset)
     ``{
-    if (force_reset)
-    targetMap = $[];
+    y2milestone( "force_reset:%1", force_reset );
+    if( force_reset )
+	targetMap = $[];
 
     if (targetMap == $[])
 	{
@@ -736,6 +746,96 @@ global define void FullProbe ()
     FloppyReady();		// probe floppy
     ProbeCDROMs();		// probe CDs
     }
+
+global define map CheckPartedValid( string ddevice, map disk, 
+				    list partitions, list ppart )
+    ``{
+    map plist1 = $[];
+    map plist2 = $[];
+    boolean ret = true;
+    y2milestone( "target %1", disk );
+    string regex = substring( ddevice, 5 )+"[0-9]+";
+    y2milestone( "ddevice %1 regex %2", ddevice, regex );
+    list ps = filter( `p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
+    y2milestone( "ps %1", ps );
+    integer cyl_blocks = disk["cyl_size"]:1000000 / 1024;
+    foreach( `p, ps,
+	``{
+	integer pnr = tointeger(substring(p["name"]:"",size(ddevice)-5));
+	plist1[pnr] = p["size"]:0/cyl_blocks;
+	});
+    foreach( `p, partitions,
+	``{
+	plist2[p["nr"]:0] = p["region",1]:0;
+	});
+    map ext = find( `p, partitions, ``(p["type"]:`unknown==`extended));
+    if( ext != nil )
+	{
+	plist1 = filter( `k, `e, plist1, ``(k!=ext["nr"]:0));
+	plist2 = filter( `k, `e, plist2, ``(k!=ext["nr"]:0));
+	}
+    y2milestone( "plist1 %1", plist1 );
+    y2milestone( "plist2 %1", plist2 );
+    ret = size(plist1) == size(plist2);
+    if( ret )
+	{
+	foreach( `k, `e, plist1, 
+	    ``{
+	    if( !haskey( plist2, k ))
+		{
+		ret = false;
+		}
+	    else
+		{
+		integer diff = e - plist2[k]:0;
+		ret = diff >= -1 && diff <= 1;
+		y2milestone( "k:%1 diff:%2", k, diff );
+		}
+	    });
+	foreach( `k, `e, plist2, 
+	    ``{
+	    if( !haskey( plist1, k ))
+		{
+		ret = false;
+		}
+	    else
+		{
+		integer diff = e - plist1[k]:0;
+		ret = diff >= -1 && diff <= 1;
+		y2milestone( "k:%1 diff:%2", k, diff );
+		}
+	    });
+	}
+    if( !ret )
+	{
+	partitions = [];
+	integer reg_start=0;
+	foreach( `p, ps,
+	    ``{
+	    map part = $[];
+	    integer pnr = tointeger(substring(p["name"]:"",size(ddevice)-5));
+	    part["nr"] = pnr;
+	    part["region"] = [ reg_start, p["size"]:0/cyl_blocks ];
+	    reg_start = reg_start + part["region",1]:0;
+	    part["device"] =  Storage::GetDeviceName( ddevice, pnr );
+	    if( part["region",1]:0==0 )
+		{
+		part["type"] = `extended;
+		part["fsid"] = Partitions::fsid_extended_win;
+		}
+	    else
+		{
+		part["type"] = pnr<5 ? `primary : `logical;
+		part["fsid"] = Partitions::fsid_native;
+		}
+	    part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
+	    partitions = add( partitions, part );
+	    });
+	y2milestone( "new p %1", partitions );
+	}
+    y2milestone( "disk %1 ret:%2", ddevice, ret );
+    return( $["ret":ret, "partitions":partitions ] );
+    };
 
 /**
 * check partitions for given disk (as path, i.e. '.sda')

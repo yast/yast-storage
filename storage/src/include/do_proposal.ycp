@@ -64,7 +64,8 @@ global define map do_proposal()
 	foreach ( string dev, map disk, target, 
 	    ``{
 	    if( dev != "/dev/md" && !disk["is_lvm_vg"]:false && 
-	        use_disk == "" && find( dev, "/dev/" )==0 )
+	        use_disk == "" && !disk["readonly"]:false && 
+		find( dev, "/dev/" )==0 )
 		{
 		use_disk = dev;
 		list keep = [];
@@ -359,8 +360,18 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	    //              win HAS TO BE the LAST MODE! we made 
 	    //              irreversible changes to slot-db
 
-	    foreach( `mode, [ "use_free", "reuse", "use_win" ],
+	    list modes = [ "use_free", "reuse", "use_win" ];
+	    if( disk["readonly"]:false )
+		{
+		modes = [ "reuse" ];
+		}
+
+	    foreach( `mode, modes,
 		``{
+		if( mode!="reuse" && disk["readonly"]:false )
+		    {
+		    continue;
+		    }
 		map boot_reuse_slot = $[];
 
 		if( size(boot_slots_only) >= 1 && mode != "use_free" ) 

@@ -2066,6 +2066,11 @@ global define string ChooseDisk( map targetMap, string heading, symbol what )
 	  ret = UI::QueryWidget(`id(`choosedisk), `CurrentButton);
 	  UI::CloseDialog();
 	  n=0;
+	  if( what==`create && targetMap[ret,"readonly"]:false )
+	      {
+	      UI::ErrorPopup( Partitions::RdonlyText( ret, true ));
+	      return( nilstring );
+	      }
 	  foreach ( `dev, `disk, targetMap, 
 	      ``{
 	      if( dev==ret )
@@ -2836,48 +2841,56 @@ WARNING: All data on this partition will be lost.
         // DELETE
         ////////////////////////////////////////////////////////////////////////////////////////////////////
         if (ret == `delete)
-        {
+	    {
 	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
 	    string maindevkey 	= Storage::GetMainDevKey( id);
 	    
 	    if( ! Storage::IsKeyKey(id)) continue;
-	 
-	    if ( Storage::IsKeyMainDevKey(id))
-	    {
-		if ( Storage::IsMainDevMd(maindevkey))
-		{	
-		    continue;
-		}
-		else if( Storage::IsMainDevVg(maindevkey ))
+
+	    map tmap = Storage::GetTargetMap();
+	    if( tmap[maindevkey,"readonly"]:false )
 		{
+		UI::ErrorPopup( Partitions::RdonlyText( maindevkey, true ));
+		continue;
+		}
+	 
+	    if( Storage::IsKeyMainDevKey(id))
+		{
+		if ( Storage::IsMainDevMd(maindevkey))
+		    {	
+		    continue;
+		    }
+		else if( Storage::IsMainDevVg(maindevkey ))
+		    {
 		    // FIXME -> remove the  volume group 
 		    ret = `lvm;
-		}
+		    }
 		else if( UI::YesNoPopup ( sformat(_("Do you really want to delete all partitions on %1?"), id )))
+		    {
+		    map new_targetMap = deleteAllDevPartitions( tmap,
+								id,
+								Mode::initial,
+								bsd_label );
+		    if( new_targetMap != nil )
+			{
+			Storage::SetTargetMap( new_targetMap );
+			focusline = id;
+			}
+		    }
+		}
+	    else if( Storage::IsSubDevLv(id))
 		{
-		     map new_targetMap  = deleteAllDevPartitions( Storage::GetTargetMap() ,
-								  id,
-								  Mode::initial ,
-								  bsd_label );
-		     if( new_targetMap != nil )
-		     {
-			 Storage::SetTargetMap( new_targetMap );
-			 focusline = id;
-		     }
-		 }
-	     }
-	     else if( Storage::IsSubDevLv(id))
-	     {
-		 // FIXME -> remove the logical volume
-		 ret = `lvmlv;
-	     } 
+		// FIXME -> remove the logical volume
+		ret = `lvmlv;
+		} 
             else
-            {
-                //////////////////////////////////////////////////////////////////////////////
+		{
+                /////////////////////////////////////////////////////
                 // delete algorithm:
-                // if you find newly created (but until now not realy written) partition
-                //    (sign: "create = true"): delete it
-                // else there must be already existing partition: mark it with "delete = true"
+                // if you find newly created (but until now not realy 
+		// written) partition (sign: "create = true"): delete it
+                // else there must be already existing partition: mark it 
+		// with "delete = true"
 		
 		focusline          	= maindevkey;
 		string  subdevindex	= Storage::GetSubDevIndex(id);
@@ -2886,59 +2899,71 @@ WARNING: All data on this partition will be lost.
 
 
 
-		//////////////////////////////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
 		// check if the partition can be deleted
 		
-		symbol ret_delete = check_partition_delete( maindevkey, curr_disk , curr_part, bsd_label,
+		symbol ret_delete = check_partition_delete( maindevkey, 
+		                                            curr_disk, 
+							    curr_part, 
+							    bsd_label,
 							    true,  // bsd_check
 							    true,  // lvm_check
 							    true ,
-							    Mode::initial ); // raid_check
+							    Mode::initial ); 
 
 
 		if( ret_delete == `immediate_prepdisk )
-		{
+		    {
 		    immediate_prepdisk = true;
-		}
+		    }
 
 		else if ( ret_delete == `no_delete )
-		{
+		    {
 		    focusline = id;
 		    continue;
-		}
+		    }
 
 		if( Storage::IsSubDevExtended( id ) )
-		{
-		    if( ! check_extended_delete( maindevkey,  curr_disk, Mode::initial ) )
 		    {
+		    if( !check_extended_delete( maindevkey, curr_disk, 
+		                                Mode::initial ) )
+			{
 			focusline = id;
 			continue;
+			}
 		    }
-		}
 
-		//////////////////////////////////////////////////////////////////////////////
+		/////////////////////////////////////////////////////
 		// now delete partition!!
 		
-		if ( UI::YesNoPopup ( sformat(_("Do you really want to delete partition %1?"), Storage::GetDeviceName( maindevkey, lookup( curr_part, "nr", 0)) )))
-		{
+		if( UI::YesNoPopup( sformat(_("Do you really want to delete partition %1?"), 
+		                            curr_part["device"]:"" )))
+		    {
 		    Storage::DelSubDev( id );
-		}
+		    }
 		
+		}
+            /////////////////////////////////////////////////////////
 	    }
-            ////////////////////////////////////////////////////////////////////////////////////////////////////
-        }
 
 
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
         // RESIZE
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
         if (ret == `resize)
-        {
+	    {
 	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
 	    string maindevkey 	= Storage::GetMainDevKey( id);
 	    map curr_part 	= Storage::GetSubDev( id );
 	    map curr_disk  	= Storage::GetMainDev( maindevkey );
 
+	    map tmap = Storage::GetTargetMap();
+	    if( tmap[maindevkey,"readonly"]:false )
+		{
+		UI::ErrorPopup( Partitions::RdonlyText( maindevkey, true ));
+		continue;
+		}
+	 
 	    y2milestone( "disk=%1", curr_disk );
 	    y2milestone( "RESIZE id=%1 maindev=%2 part=%3", 
 	                 id, maindevkey, curr_part );
@@ -2954,8 +2979,7 @@ xfs and existing Swap partitions can be resized.
 	    else
 		{
 		map new_val = eval(curr_part);
-		new_val = ResizePartDlg( new_val,
-					 Storage::GetDeviceName( maindevkey, tointeger(new_val["nr"]:0) ),
+		new_val = ResizePartDlg( new_val, new_val["device"]:"",
 					 curr_disk["cyl_size"]:1000000,
 					 possible );
 		if( new_val != nil )
@@ -2994,7 +3018,7 @@ freed disk space?
 		    Storage::SetSubDev( id, new_val );
 		    }
 		}
-        }
+	    }
 
 	boolean ask_reread = true;
 	
@@ -3002,25 +3026,25 @@ freed disk space?
         // Delete partition table and disk label
         /////////////////////////////////////////////////////////////
 	
-        if (ret == `delete_parttable)
-	{
+        if( ret == `delete_parttable )
+	    {
 	    string maindev = ChooseDisk( Storage::GetTargetMap(), 
 	                                 _("Delete partition table:"),
 					 `delete );
 
 	    // not cancel
-	    if ( maindev != nilstring )
-	    {
+	    if( maindev != nilstring )
+		{
 		if( DDZeroPartitionTable(maindev))
-		{		    
+		    {		    
 		    // now reread partion table -> ret == `reread 
 		    ask_reread = false;
 		    ret = `reread;
+		    }
 		}
 	    }
-	}
 
-	if( Arch::s390 && ret == `dasdfmt )
+	if( Arch::s390 && ret==`dasdfmt )
 	    {
 	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
 	    string maindevkey 	= Storage::GetMainDevKey(id);
@@ -3086,30 +3110,30 @@ All data on this disk will be lost.
 	    }
 
 
-	////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////
         // Raid
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
 	
-        if (ret == `raid_wizard )
-        {
+        if( ret == `raid_wizard )
+	    {
 	    if( !check_raid_possible( Storage::GetTargetMap() ))
 		continue;
-        }
+	    }
 
 	
-	////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////
         // LVM
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
 	
         if (ret == `lvm)
-        {
+	    {
 	    if( ! check_lvm_possible( Storage::GetTargetMap() ) )
 		continue;
-        }
+	    }
 	
-	////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////
         // Adapt mount points from existing /etc/fstab
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
 
         if (ret == `adapt_mp && Mode::initial )
 	    {
@@ -3214,6 +3238,5 @@ Continue?
       Storage::Record();
 
   return ret;
-
 
 }
