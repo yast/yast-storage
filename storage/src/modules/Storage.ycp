@@ -3315,6 +3315,37 @@ global define boolean UseLilo()
     return( ret );
     }
 
+global define void DestroyLvmOnAllDisks()
+    ``{
+    y2milestone( "DestroyLvmOnAllDisks called" );
+    map tg = GetTargetMap();
+    SCR::Write( .lvm.deactivate, "" );
+    foreach( `disk, `data, tg,
+	``{
+	foreach( `p, data["partitions"]:[],
+	    ``{
+	    if( p["fsid"]:0==Partitions::fsid_lvm && !data["is_lvm_vg"]:false )
+		{
+		string cmd = sformat( "echo y | pvcreate -ff %1", 
+		                      p["device"]:"" );
+		y2milestone( "cmd %1", cmd );
+		SCR::Execute(.target.bash, cmd );
+		}
+	    });
+	data["partitions"] = 
+	    maplist( `p, data["partitions"]:[],
+		``{
+		p = filter( `k, `e, p, 
+		            ``(k!="lvm_group" && k!="lvm_mp_pv" &&
+			       k!="lvm_size_bytes"));
+		return( p );
+		});
+	});
+    tg = filter( `k, `e, tg, ``( !e["is_lvm_vg"]:false ));
+    SetTargetMap( tg );
+    SCR::Write( .lvm.activate, "" );
+    };
+
 }
 
 
