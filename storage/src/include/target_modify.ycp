@@ -155,6 +155,57 @@ define boolean target_modify( map modify_targets, boolean installation )
 		    }
 		}
 	    }
+	else if( curr_module == "evms_ll" )
+	    {
+	    if( !installation && curr_map["type"]:"" =="remove_lv" )
+		{
+		string umnt = "umount /dev/" + curr_map["vgname"]:"";
+		umnt = umnt + "/" + curr_map["name"]:"";
+		y2debug( "umnt=%1", umnt );
+		SCR::Execute (.target.bash, umnt );
+		}
+	    ok = SCR::Write(.evms.command, curr_map);
+	    if( ok == false )
+		{
+		map ret = (map)SCR::Read( .evms.error, "" );
+		y2milestone( "ret=%1", ret );
+		string error_text = ret["errtxt"]:"";
+		string lvm_cmd = ret["cmd"]:"";
+		if( size(lvm_cmd)>0 )
+		    {
+		    lvm_cmd = "<b>" + lvm_cmd;
+		    lvm_cmd = lvm_cmd + "</b><p>";
+		    }
+		term content = `RichText( lvm_cmd + error_text );
+		// heading text
+		Popup::LongText( _("EVMS error"), content, 50, 20 );
+		}
+	    else if( ! installation )
+		{
+		string cmd = curr_map["type"]:"";
+		if( cmd=="remove_lv" || cmd=="create_lv" )
+		    {
+		    string device = "/dev/" + curr_map["vgname"]:"" + "/" +
+				    curr_map["name"]:"";
+		    map part = Storage::GetPartition( tg, device );
+		    y2milestone( "device %1 part %2", device,  part );
+		    if( cmd=="remove_lv" )
+			{
+			writefstab = writefstab || size(part["mount"]:"")>0;
+			}
+		    else if( cmd=="create_lv" )
+			{
+			part["create"] = true;
+			writefstab = writefstab || size(part["mount"]:"")>0;
+			}
+		    if( size(part)>1 )
+			{
+			tg = (map<string,map>)Storage::SetPartition( tg, part );
+			}
+		    y2milestone( "writefstab=%1", writefstab );
+		    }
+		}
+	    }
 	else if( curr_module == "fdisk_ll" )
 	    {
 	    ok = fdisk_call( curr_map );
@@ -287,7 +338,7 @@ define boolean HandleResize( string disk_dev, map part, integer new_size,
     symbol fs = part["used_fs"]:`unknown;
     // label text
     string fs_name = FileSystems::GetName( fs, _("unknown") );
-    boolean lvm = part["type"]:`unknown == `lvm;
+    boolean lvm = contains( [`lvm, `evms], part["type"]:`unknown );
     boolean decrease = new_size < old_size;
     boolean format = part["format"]:false;
     map possible = FileSystems::IsResizable( fs );
@@ -446,12 +497,12 @@ define boolean HandleResizePartitions( string disk_dev, map disk,
     }
 
 define boolean HandleResizeLvm( map<string,map> target, 
-                                map<any,map> mod, boolean decrease )
+                                map<integer,map> mod, boolean decrease )
     ``{
     y2milestone( "HandleResizeLvm decrease:%1 mod:%2", decrease, mod );
     boolean ret = true;
     integer num = 1;
-    map<any,map> doit = $[];
+    map<integer,map> doit = $[];
     foreach( any n, map e, mod, ``{
 	string device = "/dev/" + e["vgname"]:"" + "/" + e["name"]:"abcde";
         map p = Storage::GetPartition( target, device );
@@ -494,5 +545,167 @@ define boolean HandleResizeLvm( map<string,map> target,
     return( ret );
     }
 
+define boolean HandleEvmsChanges( map<string,map> target, boolean before_part )
+    ``{
+    boolean ret = true;
+    map<string,map> tg = filter( string k, map e, target, 
+                                 ``(find(k,"/dev/evms")==0));
+    list<map> todo = [];
+    y2milestone( "HandleEvmsChanges before_part %1", before_part );
+    y2milestone( "HandleEvmsChanges tg %1", tg );
+    map m = $[ "use_module" : "evms_ll" ];
+    if( before_part )
+	{
+	m["type"] = "remove_lv";
+	foreach( string k, map e, tg,
+	    ``{
+	    if( e["is_evms_container"]:false )
+		{
+		foreach( map p, e["partitions"]:[],
+		    ``{
+		    if( p["delete"]:false )
+			{
+			m["name"] = p["nr"]:"";
+			m["container"] = substring( k, 10 );
+			todo = add( todo, m );
+			}
+		    });
+		}
+	    });
+	m["type"] = "resize_lv";
+	foreach( string k, map e, tg,
+	    ``{
+	    if( e["is_evms_container"]:false )
+		{
+		foreach( map p, filter( map x, e["partitions"]:[], 
+		                        ``(haskey(x,"ori_length"))),
+		    ``{
+		    integer new_size = p["region",1]:0*e["cyl_size"]:0;
+		    integer old_size = p["ori_length"]:new_size;
+		    old_size = old_size / (1024*1024);
+		    new_size = new_size / (1024*1024);
+		    if( old_size > new_size ) 
+			{
+			m["name"] = p["nr"]:"";
+			m["container"] = substring( k, 10 );
+			m["size"] = new_size;
+			m["old_size"] = old_size;
+			m["part"] = p;
+			todo = add( todo, m );
+			}
+		    });
+		}
+	    });
+	m["type"] = "remove_pv";
+	foreach( string k, map e, tg,
+	    ``{
+	    if( e["is_evms_container"]:false )
+		{
+		foreach( string d, e["removed"]:[],
+		    ``{
+		    m["device"] = d;
+		    m["container"] = substring( k, 10 );
+		    todo = add( todo, m );
+		    });
+		}
+	    });
+	m["type"] = "remove_vg";
+	foreach( string k, map e, tg,
+	    ``{
+	    if( e["is_evms_container"]:false && e["delete"]:false )
+		{
+		m["container"] = substring( k, 10 );
+		todo = add( todo, m );
+		}
+	    });
+	foreach( map e, filter( map t, todo, ``(m["type"]:"" == "resize_lv")),
+	    ``{
+	    ret = HandleResize( "/dev/evms/"+e["container"]:"", e["part"]:$[],
+				e["size"]:0, e["old_size"]:0 );
+	    });
+	integer n = -1;
+	map t = listmap( map e, todo, ``{n=n+1; return( $[n:e]);});
+	y2milestone( "t = %1", t );
+	ret = target_modify( t, Mode::initial );
+	}
+    else
+	{
+	m["type"] = "create_vg";
+	foreach( string k, map e, tg,
+	    ``{
+	    if( e["is_evms_container"]:false && e["create"]:false )
+		{
+		m["container"] = substring( k, 10 );
+		m["pvs"] = e["added"]:"";
+		todo = add( todo, m );
+		}
+	    });
+	m["type"] = "add_pv";
+	foreach( string k, map e, tg,
+	    ``{
+	    if( e["is_evms_container"]:false )
+		{
+		foreach( string d, e["added"]:[],
+		    ``{
+		    m["device"] = d;
+		    m["container"] = substring( k, 10 );
+		    todo = add( todo, m );
+		    });
+		}
+	    });
+	m["type"] = "create_lv";
+	foreach( string k, map e, tg,
+	    ``{
+	    if( e["is_evms_container"]:false )
+		{
+		foreach( map p, e["partitions"]:[],
+		    ``{
+		    if( p["create"]:false )
+			{
+			m["name"] = p["nr"]:"";
+			m["size"] = p["region",1]:0*e["cyl_size"]:0;
+			m["container"] = substring( k, 10 );
+			todo = add( todo, m );
+			}
+		    });
+		}
+	    });
+	m["type"] = "resize_lv";
+	foreach( string k, map e, tg,
+	    ``{
+	    if( e["is_evms_container"]:false )
+		{
+		foreach( map p, filter( map x, e["partitions"]:[], 
+		                        ``(haskey(x,"ori_length"))),
+		    ``{
+		    integer new_size = p["region",1]:0*e["cyl_size"]:0;
+		    integer old_size = p["ori_length"]:new_size;
+		    old_size = old_size / (1024*1024);
+		    new_size = new_size / (1024*1024);
+		    if( old_size < new_size ) 
+			{
+			m["name"] = p["nr"]:"";
+			m["container"] = substring( k, 10 );
+			m["size"] = new_size;
+			m["old_size"] = old_size;
+			m["part"] = p;
+			todo = add( todo, m );
+			}
+		    });
+		}
+	    });
+	integer n = -1;
+	map t = listmap( map e, todo, ``{n=n+1; return( $[n:e]);});
+	y2milestone( "t = %1", t );
+	ret = target_modify( t, Mode::initial );
+	foreach( map e, filter( map t, todo, ``(m["type"]:"" == "resize_lv")),
+	    ``{
+	    ret = HandleResize( "/dev/evms/"+e["container"]:"", e["part"]:$[],
+				e["size"]:0, e["old_size"]:0 );
+	    });
+	}
+    y2milestone( "ret %1", ret );
+    return( ret );
+    }
 
 }
