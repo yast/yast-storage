@@ -20,4 +20,9 @@ client_DATA =			\
 
 EXTRA_DIST = $(client_DATA)
 
+partitioning:
+	ln -s include partitioning
+
+ycpchook = partitioning
+
 include $(top_srcdir)/Makefile.am.common
