@@ -572,6 +572,7 @@ define map localProbe ()
     integer ide_count = 0;
     integer scsi_count = 0;
     integer raid_count = 0;
+    string fake_raid = "";
 
     foreach (map disk, filter(map e,all_disks,``(size(e["dev_name"]:"")>0)),
 	``{
@@ -580,7 +581,18 @@ define map localProbe ()
 	boolean notready = disk["notready"]:false;
 	boolean is_zip = (notready || disk["zip"]:false);
 
-	y2milestone( "is_zip %1 notready:%2", is_zip, notready );
+	if( disk["softraiddisk"]:false )
+	    {
+	    if( size(fake_raid)>0 )
+		{
+		fake_raid = fake_raid + " ";
+		}
+	    fake_raid = fake_raid + disk["dev_name"]:"";
+	    y2milestone( "fake_raid %1", fake_raid );
+	    }
+
+	y2milestone( "is_zip %1 notready:%2 sofraid %3", is_zip, notready,
+	             disk["softraiddisk"]:false );
 
 	string bus = disk["bus"]:"?";
 	string dname = "";
@@ -779,6 +791,19 @@ define map localProbe ()
 	}); // foreach (disk)
 
     SCR::UnmountAgent(.disk);
+
+    if( size(fake_raid)>0 )
+	{
+	string txt = sformat( _("The following disks
+    %1
+were probably part of a software raid disk set controlled by 
+your BIOS and a Windows driver. Writing to any of these disks 
+under Linux will destroy all data on your software raid disk set.
+
+Do not modify these disks under Linux if you do not want to risk
+loosing the data stored on these disks!"), fake_raid );
+	Popup::Error( txt );
+	}
 
     ZipDrives = (map<string,any>)union (ZipDrives, findZIPs ());
 
