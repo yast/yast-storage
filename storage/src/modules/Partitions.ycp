@@ -30,8 +30,8 @@
     global integer fsid_prep_chrp_boot = 0x41;
     global integer fsid_mac_hfs = 0x102;
     global integer fsid_root = fsid_native;
-    global integer fsid_boot = fsid_native;
-    global integer boot_cyl = 1024;
+           integer fsid_boot = 0;
+           integer boot_cyl = 0;
 
     global boolean no_fsid_menu = false;
 
@@ -54,10 +54,10 @@
     global list fsid_skipped = [ 0, 5 ];
 
     global integer minimal_needed_disksize = 400 * 1024 * 1024;  // for installation of a minimal system
-    global integer minimal_needed_bootsize = 12  * 1024 * 1024;  // for installation
+           integer minimal_needed_bootsize = 0; 
 
     global symbol default_fs      = `reiser;
-    global symbol default_boot_fs = `ext2;
+           symbol default_boot_fs = `unknown;
 
     global list not_shown_partitions = 
 	[
@@ -74,34 +74,82 @@
 
 global define Partitions()
     ``{
-    import "Boot";
-    if( Arch::ia64 || Boot::LoaderType == "milo" )
+    }
+
+global define symbol DefaultBootFs()
+    ``{
+    if( default_boot_fs == `unknown )
 	{
-	fsid_boot = fsid_fat32;
-	default_boot_fs = `fat32;
+	import "Boot";
+	default_boot_fs = `ext2;
+	if( Arch::ia64 || Boot::LoaderType == "milo" )
+	    {
+	    default_boot_fs = `fat32;
+	    }
+	else if( Arch::board_mac )
+	    {
+	    default_boot_fs = `hfs;
+	    }
 	}
-    if( Arch::ia64 )
+    return( default_boot_fs );
+    }
+
+global define integer MinimalNeededBootsize()
+    ``{
+    if( minimal_needed_bootsize == 0 )
 	{
-	minimal_needed_bootsize = 48*1024*1024;
+	minimal_needed_bootsize = 12  * 1024 * 1024;
+	if( Arch::ia64 )
+	    {
+	    minimal_needed_bootsize = 48*1024*1024;
+	    }
+	else if( PrepBoot() )
+	    {
+	    minimal_needed_bootsize = 2*1024*1024;
+	    }
+	else if( Arch::board_mac )
+	    {
+	    minimal_needed_bootsize = 32*1024*1024;
+	    }
 	}
-    else if( PrepBoot() )
+    return( minimal_needed_bootsize );
+    }
+
+global define integer BootCyl()
+    ``{
+    if( boot_cyl == 0 )
 	{
-	fsid_boot = fsid_prep_chrp_boot;
-	minimal_needed_bootsize = 2*1024*1024;
+	import "Boot";
+	boot_cyl = 1024;
+	if( !Arch::i386 || Boot::LbaSupport() )
+	    {
+	    // Assume on non-i386 archs machine can boot from every cylinder
+	    boot_cyl = 4*1024*1024*1024;
+	    }
 	}
-    else if( Arch::board_mac )
+    return( boot_cyl );
+    }
+
+global define integer FsidBoot()
+    ``{
+    if( fsid_boot == 0 )
 	{
-	fsid_boot = fsid_mac_hfs;
-	minimal_needed_bootsize = 32*1024*1024;
-	default_boot_fs = `hfs;
+	import "Boot";
+	fsid_boot = fsid_native;
+	if( Arch::ia64 || Boot::LoaderType == "milo" )
+	    {
+	    fsid_boot = fsid_fat32;
+	    }
+	else if( PrepBoot() )
+	    {
+	    fsid_boot = fsid_prep_chrp_boot;
+	    }
+	else if( Arch::board_mac )
+	    {
+	    fsid_boot = fsid_mac_hfs;
+	    }
 	}
-    if( !Arch::i386 || Boot::LbaSupport() )
-	{
-	// Assume on non-i386 archs machine can boot from every cylinder
-	boot_cyl = 4*1024*1024*1024;
-	}
-    y2milestone( "fsid_boot:%1 boot_size:%2 boot_cyl:%3", fsid_boot, 
-                 minimal_needed_bootsize, boot_cyl );
+    return( fsid_boot );
     }
 
 global define boolean PrepBoot()

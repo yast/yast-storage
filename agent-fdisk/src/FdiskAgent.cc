@@ -120,8 +120,8 @@ FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
 	  part_entry->add (YCPString ("fsid"), YCPInteger (entry->Id_i));
 	  part_entry->add (YCPString ("fstype"), YCPString (entry->Info_C));
 	  YCPList region;
-	  region->add (YCPInteger (entry->Start_i MINUS_1));
-	  region->add (YCPInteger (entry->End_i PLUS_1 - entry->Start_i));
+	  region->add (YCPInteger (entry->Start_i-1));
+	  region->add (YCPInteger (entry->End_i + 1 - entry->Start_i));
 	  part_entry->add (YCPString ("region"), region);
 	  partitions->add (part_entry);
 	}
