@@ -40,6 +40,8 @@
 
 global boolean DoCheckEvmsNonEvms = true;
 global boolean DoCheckEvmsLvm = true;
+map DiskMapVersion = $[];
+map DiskMap = $[];
 
  /*
   include "storage/routines.ycp";
@@ -2855,6 +2857,21 @@ global define boolean IsRealDisk( string disk, map entry )
             !entry["is_lvm_vg"]:false && find( disk, "/dev/evms")!=0 );
     }
 
+global define boolean DeviceRealDisk( string device )
+    ``{
+    map dev = GetDiskPartition( device );
+    boolean ret = dev["disk"]:"" != "/dev/md" &&
+                  dev["disk"]:"" != "/dev/loop" &&
+		  find( dev["disk"]:"", "/dev/evms")!=0;
+    if( !ret )
+	{
+	map st = (map)SCR::Read( .target.stat, dev["disk"]:"" );
+	ret = !st["isdir"]:false;
+	}
+    y2milestone( "DeviceRealDisk %1 ret %2", device, ret );
+    return ret;
+    }
+
  /**
    * Determine if there is any Linux partition on this system.
    * If there is none, we don't need to ask if the user wants to update or
@@ -3942,6 +3959,18 @@ global string HdToIseries( string input )
     return( ret );
     }
 
+global string HdDiskMap( string input, map diskmap )
+    ``{
+    string ret = input;
+    map d = GetDiskPartition( input );
+    if( haskey( diskmap, d["disk"]:"" ))
+	{
+	ret = GetDeviceName( diskmap[d["disk"]:""]:"", d["nr"]:(any)0 );
+	}
+    y2milestone( "HdDiskMap input:%1 ret:%2", input, ret );
+    return( ret );
+    }
+
 global define void UpdateFstabIseriesVd()
     ``{
     y2milestone( "UpdateFstabIseriesVd updating hdx to iseries/vdx" );
@@ -3976,6 +4005,40 @@ global define void UpdateFstabIseriesVd()
     AsciiFile::RewriteFile( crtab, tabpath );
     }
 
+global define void UpdateFstabDiskmap( map diskmap )
+    ``{
+    y2milestone( "UpdateFstabdiskmap map %1", diskmap );
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    string n = "";
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	n = HdDiskMap( l["fields",0]:"", diskmap );
+	if( n != l["fields",0]:"" )
+	    {
+	    AsciiFile::ChangeLineField( fstab, line, 0, n );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( fstab, tabpath );
+    tabpath = PathToDestdir( "/etc/cryptotab" );
+    map crtab = Partitions::GetCrypto( tabpath );
+    line = 0;
+    while( line<=AsciiFile::NumLines( crtab ) )
+	{
+	map l = AsciiFile::GetLine( crtab, line );
+	n = HdDiskMap( l["fields",0]:"", diskmap );
+	if( n != l["fields",1]:"" )
+	    {
+	    AsciiFile::ChangeLineField( crtab, line, 1, n );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( crtab, tabpath );
+    }
+
 global define void UpdateFstabUsbdevfs()
     ``{
     y2milestone( "UpdateFstabUsbdevfs updating usbdevfs to usbfs" );
@@ -4000,12 +4063,69 @@ global define void UpdateFstabUsbdevfs()
 	}
     }
 
+
+define map BuildDiskmap( map oldv )
+    ``{
+    map d = (map)SCR::Read( .target.stat, 
+                            Installation::destdir + "/var/lib/hardware" );
+    if( d["isdir"]:false && oldv != DiskMapVersion )
+    if( oldv != DiskMapVersion )
+	{
+	DiskMap = $[];
+	string cmd = "cd /var/lib/hardware/unique-keys && ";
+	cmd = cmd + " ln -s " + Installation::destdir + "/var/lib/hardware/* ";
+	cmd = cmd + Installation::destdir + "/var/lib/hardware/unique-keys/* .";
+	y2milestone( "BuildDiskmap cmd %1", cmd );
+	map bo = (map)SCR::Execute (.target.bash_output, cmd );
+	y2milestone( "BuildDiskmap bo %1", bo );
+	cmd = "hwinfo --map";
+	y2milestone( "BuildDiskmap cmd %1", cmd );
+	bo = (map)SCR::Execute (.target.bash_output, cmd );
+	y2milestone( "BuildDiskmap bo %1", bo );
+	if( bo["exit"]:1==0 && size(bo["stdout"]:"")>0 )
+	    {
+	    list<string> lines = splitstring( bo["stdout"]:"", "\n" );
+	    foreach( string line, lines,
+		``{
+		list<string> disks = filter( string d, 
+		                             splitstring( line, " \t" ),
+					     ``(size(d)>0));
+		if( size(disks)>1 )
+		    {
+		    integer index = 1;
+		    while( index<size(disks) )
+			{
+			DiskMap[disks[0]:""] = disks[index]:"";
+			index = index+1;
+			}
+		    }
+		});
+	    }
+	if( bo["exit"]:1==0 )
+	    DiskMapVersion = oldv;
+	else
+	    DiskMapVersion = $[];
+	cmd = "find /var/lib/hardware -type l | xargs rm";
+	y2milestone( "BuildDiskmap cmd %1", cmd );
+	bo = (map)SCR::Execute (.target.bash_output, cmd );
+	y2milestone( "BuildDiskmap bo %1", bo );
+	y2milestone( "BuildDiskmap DiskMap %1", DiskMap );
+	y2milestone( "BuildDiskmap DiskMapVersion %1", DiskMapVersion );
+	}
+    return( DiskMap );
+    }
+
 global define void Update( map oldv, map newv )
     ``{
-    y2milestone( "UpdateFstab old:%1 new:%2", oldv, newv );
+    y2milestone( "Update old:%1 new:%2", oldv, newv );
     if( oldv["major"]:0<9 )
 	{
 	UpdateFstabUsbdevfs();
+	}
+    map dm = BuildDiskmap( oldv );
+    if( size(dm)>0 )
+	{
+	UpdateFstabDiskmap( dm );
 	}
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
 	{
@@ -4025,14 +4145,20 @@ global define void Update( map oldv, map newv )
 global define list<string> GetTranslatedDevices( map oldv, map newv, 
 						 list<string> names )
     {
-    list<string> ret = names;
     y2milestone( "GetTranslatedDevices old:%1 new:%2", oldv, newv );
+    y2milestone( "GetTranslatedDevices names %1", name );
+    list<string> ret = names;
+    map dm = BuildDiskmap( oldv );
+    if( size(dm)>0 )
+	{
+	ret = maplist( string n, names, ``(HdDiskMap( n, dm )));
+	}
     if( (oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0)) &&
         Arch::board_iseries )
 	{
 	ret = maplist( string n, names, ``(HdToIseries( n )));
-	y2milestone( "GetTranslatedDevices ret %1", ret );
 	}
+    y2milestone( "GetTranslatedDevices ret %1", ret );
     return( ret );
     }
 
