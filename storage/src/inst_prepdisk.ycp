@@ -1051,10 +1051,11 @@ Repartition disk %1.
 		foreach( `p, filter( `e, partitions, ``(e["create"]:false)),
 		    ``{
 		    string dd_sblocks =
-			sformat( "/bin/dd if=/dev/zero of=%1 bs=1024 count=200",
+			sformat( "/bin/dd if=/dev/zero of=%1 bs=1024 count=200 2>&1",
 				 p["device"]:"" );
 		    y2milestone( "ZeroPartitions %1", dd_sblocks );
-		    SCR::Execute( .target.bash, dd_sblocks );
+		    y2milestone( "%1", SCR::Execute( .target.bash_output, 
+		                                     dd_sblocks ));
 		    });
 		}
 	    if( !cancel )
@@ -1438,13 +1439,13 @@ damage to your file systems, it is safer to cancel and reboot.
 		    max_ur = size_k;
 		    }
 		string cmd = 
-		    sformat( "dd if=/dev/urandom of=%1 bs=1k count=%2", fpath,
-			     max_ur );
+		    sformat( "dd if=/dev/urandom of=%1 bs=1k count=%2 2>&1", 
+		             fpath, max_ur );
 		size_k = size_k-max_ur;
 		if( size_k>0 )
 		    {
 		    cmd = cmd + "; dd if=/dev/zero ";
-		    cmd = cmd + sformat( "of=%1 bs=1k count=%2 seek=%3",
+		    cmd = cmd + sformat( "of=%1 bs=1k count=%2 seek=%3 2>&1",
 				         fpath, size_k, max_ur );
 		    cmd = cmd + " conv=notrunc";
 		    }
@@ -1464,7 +1465,8 @@ damage to your file systems, it is safer to cancel and reboot.
 				  // label text %1 replaced by pathname 
 				  sformat( _("Creating crypt file %1"), 
 					   p["fpath"]:"" ));
-		if( SCR::Execute (.target.bash, cmd ) != 0 )
+		map bo = SCR::Execute (.target.bash_output, cmd );
+		if( bo["exit"]:1 != 0 )
 		    {
 		    // popup text %1 replaced by pathname 
 		    Report::Error(sformat(_("Could not create crypt file %1"), p["fpath"]:"" ));

@@ -2438,24 +2438,29 @@ global define void SetWizardKey( string key )
     
 global define integer ZeroDevice(string del_device)
     ``{
-    string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1", 
+    string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1 2>&1", 
                          del_device );
-    integer ret_zero = SCR::Execute(.target.bash, zero_string );
+    map bo = $[];
+    bo = SCR::Execute(.target.bash_output, zero_string );
+    y2milestone( "%1", bo );
+    integer ret_zero = bo["exit"]:1 == 0;
     map tg = GetTargetMap();
     if( tg[del_device,"label"]:"msdos" == "gpt" )
 	{
-	map bo = SCR::Execute(.target.bash_output, 
-	                      "/sbin/blockdev --getsize " + del_device );
+	bo = SCR::Execute(.target.bash_output, 
+			  "/sbin/blockdev --getsize " + del_device );
 	y2milestone( "bo %1", bo );
 	integer siz = 0;
 	siz = tointeger( bo["stdout"]:"" ) / 2;
 	y2milestone( "size %1", siz );
 	if( siz>0 )
 	    {
-	    zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=1k seek=%2",
+	    zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=1k seek=%2 2>&1",
 	                           del_device, siz-5 );
 	    y2milestone( "zero_string %1", zero_string );
-	    ret_zero = SCR::Execute(.target.bash, zero_string );
+	    bo = SCR::Execute(.target.bash_output, zero_string );
+	    y2milestone( "%1", bo );
+	    ret_zero = bo["exit"]:1 == 0;
 	    }
 	}
     integer ret_reread = SCR::Execute(.target.bash, 
@@ -3425,7 +3430,7 @@ global define string GetLoopDev( integer start )
 	loop_dev_nb = loop_dev_nb + 1;
 
 	// Test loop dev
-	if( SCR::Execute(.target.bash , "/sbin/losetup " + loop_dev ) != 0 )
+	if( SCR::Execute(.target.bash , "/sbin/losetup 2>/dev/null " + loop_dev ) != 0 )
 	    found_free = true;
 	}
 
