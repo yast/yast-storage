@@ -935,6 +935,7 @@ define list FillPartitionList()
      foreach( string disk_dev_name, map disk, targets,
 	 ``{
 	 boolean real_disk = Storage::IsRealDisk( disk_dev_name, disk );
+	 boolean evms_vol  = find( disk_dev_name, "/dev/evms" )==0;
 	 integer cyl_count     = disk["cyl_count"]:0;
 	 integer cyl_size      = disk["cyl_size"]:1000000;
 	 string  vendor        = disk["vendor"]:"";
@@ -949,13 +950,13 @@ define list FillPartitionList()
 	     vendor = vendor +       model;
 
 	 // entry in column "Type" for a unknown disk
-	 if ( vendor == "" ) 
+	 if( vendor == "" ) 
 	     {
 	     if (disk["bus"]:"" == "RAID")
 		 {
 		 vendor = "RAID "+disk_dev_name;
 		 }
-	     else if( disk["is_lvm_vg"]:false )
+	     else if( disk["is_lvm_vg"]:false && !evms_vol )
 		 {
 		 vendor = "LVM" + (disk["lvm2"]:false ? "2 " : "  ") +
 		          substring( disk_dev_name, 5 );
@@ -974,7 +975,7 @@ define list FillPartitionList()
 
 	 /////////////////////////////////////////////////////////////
 	 // if LVM device get new size
-	 if( disk["is_lvm_vg"]:false )
+	 if( disk["is_lvm_vg"]:false && !evms_vol )
 	     {	
 	     list parts = get_possible_pvs( targets );
 	     dev_size = (string)get_vg_size( parts, substring(disk_dev_name, 5), 
@@ -984,7 +985,8 @@ define list FillPartitionList()
 	     }
 	       
 	 if( show_disk && 
-	     (real_disk || (disk["is_lvm_vg"]:false&&!disk["delete"]:false)) )
+	     (real_disk || 
+		 (disk["is_lvm_vg"]:false&&!disk["delete"]:false&&!evms_vol)) )
 	     {
 	     term a = `item(`id(disk_dev_name));
 
@@ -1012,125 +1014,138 @@ define list FillPartitionList()
 	     ``{
 	     // dont show "system partitions"
 	     string fstype = partition["fstype"]:"";
-	     list hit = filter(string v, Partitions::not_shown_partitions, 
-	                       ``(issubstring(fstype, v)) );
+	     boolean hide = partition["delete"]:false;
+	     if( size(filter( string v, Partitions::not_shown_partitions,
+			      ``(issubstring(fstype, v)) ))>0 )
+		 {
+		 hide = true;
+		 }
+	     if( !hide && find( partition["device"]:"", "/dev/evms/" )==0 )
+		 {
+		 string d1 = "/dev/" + substring( partition["device"]:"", 10 );
+		 if( find( d1, "/lvm/" )>0 )
+		     {
+		     d1 = "/dev/" + substring( d1, 9 );
+		     }
+		 hide = size(partition["mount"]:"")==0 &&
+		        size(Storage::GetPartition( targets, d1 ))>0;
+		 }
+	     if( !hide || log_mode )
+		 {
+		 string id = Storage::GetSubDevKey( disk_dev_name, 
+						    partition["nr"]:(any)0);
 
-	     if ( size(hit)==0 && !partition["delete"]:false || log_mode )
-		{
-		string id = Storage::GetSubDevKey( disk_dev_name, 
-		                                   partition["nr"]:(any)0);
+		 //////////////////////////////////////////////////////////
+		 // Format Devicename:
 
-		//////////////////////////////////////////////////////////
-		// Format Devicename:
+		 string   part_dev_name   = "";
+		 string   part_id         = "";
 
-		string   part_dev_name   = "";
-		string   part_id         = "";
+		 part_dev_name = partition["device"]:"";
 
-	        part_dev_name = partition["device"]:"";
+		 ////////////////////////////////////////////////////////////
+		 // Format other Colums:
 
-		////////////////////////////////////////////////////////////
-		// Format other Colums:
+		 integer  start_cyl       = partition["region",0]:0;
+		 integer  nb_cyl          = partition["region",1]:0;
+		 symbol   type            = partition["type"]:`unknown;
+		 boolean  format          = partition["format"]:false;
+		 boolean  crypt_fs        = partition["loop_fs"]:false && partition["crypt"]:"" != "none";
+		 symbol   used_fs         = partition["used_fs"]:`unknown;
+		 string   mount_point     = partition["mount"]:"";
+		 string   filesystem_name = "";
+		 string   used_by   	 = partition["raid_name"]:"";
+		 string   label           = partition["label"]:"";
 
-		integer  start_cyl       = partition["region",0]:0;
-		integer  nb_cyl          = partition["region",1]:0;
-		symbol   type            = partition["type"]:`unknown;
-		boolean  format          = partition["format"]:false;
-		boolean  crypt_fs        = partition["loop_fs"]:false && partition["crypt"]:"" != "none";
-		symbol   used_fs         = partition["used_fs"]:`unknown;
-		string   mount_point     = partition["mount"]:"";
-		string   filesystem_name = "";
-		string   used_by   	 = partition["raid_name"]:"";
-		string   label           = partition["label"]:"";
+		 if( size( partition["lvm_group"]:"")>0 )
+		     {
+		     used_by = "LVM " + partition["lvm_group"]:"";
+		     }
 
-		if( size( partition["lvm_group"]:"")>0 )
-		    {
-		    used_by = "LVM " + partition["lvm_group"]:"";
-		    }
+		 filesystem_name = partition["fstype"]:"";
 
-		filesystem_name = partition["fstype"]:"";
+		 if( format && partition["fsid"]:0 == Partitions::fsid_native)
+		     {
+		     string fs_name =  FileSystems::GetName( used_fs, "Ext2" );
+		     filesystem_name = filesystem_name + " (" + fs_name + ") ";
+		     }
 
-		if( format && partition["fsid"]:0 == Partitions::fsid_native)
-		    {
-		    string fs_name =  FileSystems::GetName( used_fs, "Ext2" );
-		    filesystem_name = filesystem_name + " (" + fs_name + ") ";
-		    }
+		 string format_flag      = "";
+		 if ( format ) format_flag = "F";
+		 if ( crypt_fs ) format_flag = "C" + format_flag;
 
-		string format_flag      = "";
-		if ( format ) format_flag = "F";
-		if ( crypt_fs ) format_flag = "C" + format_flag;
+		 if( log_mode )
+		     {
+		     string       ori_str = "";
+		     boolean del = lookup ( partition, "delete", false );
+		     boolean cre = lookup ( partition, "create", false );
+		     integer ori = lookup ( partition, "ori_nr", 0 );
+		     if ( del == nil)    format_flag = format_flag + " dn";
+		     if ( del == true )  format_flag = format_flag + " dT";
+		     if ( del == false ) format_flag = format_flag + " dF";
+		     if ( cre == nil)    format_flag = format_flag + " cn";
+		     if ( cre == true )  format_flag = format_flag + " cT";
+		     if ( cre == false ) format_flag = format_flag + " cF";
+		     if ( ori == nil)    
+			 ori_str = " o- ";
+		     else 		   
+			 ori_str = sformat( " o%1 ", ori );
+		     format_flag = format_flag + ori_str;
+		     }
 
-		if( log_mode )
-		    {
-		    string       ori_str = "";
-		    boolean del = lookup ( partition, "delete", false );
-		    boolean cre = lookup ( partition, "create", false );
-		    integer ori = lookup ( partition, "ori_nr", 0 );
-		    if ( del == nil)    format_flag = format_flag + " dn";
-		    if ( del == true )  format_flag = format_flag + " dT";
-		    if ( del == false ) format_flag = format_flag + " dF";
-		    if ( cre == nil)    format_flag = format_flag + " cn";
-		    if ( cre == true )  format_flag = format_flag + " cT";
-		    if ( cre == false ) format_flag = format_flag + " cF";
-		    if ( ori == nil)    
-			ori_str = " o- ";
-		    else 		   
-		        ori_str = sformat( " o%1 ", ori );
-		    format_flag = format_flag + ori_str;
-		    }
+		 string bytes_of_part = "";
 
-		string bytes_of_part = "";
+		 if( id_sw_raid_dev )
+		     {
+		     bytes_of_part = raid_size_str( targets, partition);
+		     y2debug( "--RAID: %1 -- %2", id_sw_raid_dev, bytes_of_part);
+		     }
+		 else
+		     {
+		     bytes_of_part = ByteToHumanString( nb_cyl * cyl_size);
+		     }
 
-		if( id_sw_raid_dev )
-		    {
-		    bytes_of_part = raid_size_str( targets, partition);
-		    y2debug( "--RAID: %1 -- %2", id_sw_raid_dev, bytes_of_part);
-		    }
-		else
-		    {
-		    bytes_of_part = ByteToHumanString( nb_cyl * cyl_size);
-		    }
+		 /////////////////////////////////////////////////////
+		 // Insert line for this partition into selection box widget
+		 //
+		 // Start- and EndCly are shown (intel) or not (ppc) ...
 
-	        /////////////////////////////////////////////////////
-		// Insert line for this partition into selection box widget
-		//
-		// Start- and EndCly are shown (intel) or not (ppc) ...
+		 term a = `item(`id(id));
 
-		term a = `item(`id(id));
+		 if( showT_dev )    a = add(a, part_dev_name );
+		 if( showT_id )     a = add(a, part_id );
+		 if( showT_size )   a = add(a, bytes_of_part);
+		 if( showT_format ) a = add(a, format_flag);
+		 if( showT_fs )     a = add(a, filesystem_name);
+		 if( showT_mount )  
+		     {
+		     string tmp = mount_point;
+		     if( partition["noauto"]:false && 
+			 !partition["active"]:false )
+			 {
+			 tmp = tmp + " *";
+			 }
+		     a = add(a, tmp );
+		     }
+		 if( showT_cyl )
+		     {
+		     if( real_disk )
+			 {
+			 a = add(a, to4string(start_cyl));
+			 integer num = start_cyl + nb_cyl - 1;
+			 a = add(a, to4string(num)+" ");
+			 }
+		     else
+			 {
+			 a = add(a, " -- ");
+			 a = add(a, " -- ");
+			 }
+		     }
+		 if( showT_Used )   a = add(a, used_by);
+		 if( showT_Label )  a = add(a, label);
 
-		if( showT_dev )    a = add(a, part_dev_name );
-		if( showT_id )     a = add(a, part_id );
-		if( showT_size )   a = add(a, bytes_of_part);
-		if( showT_format ) a = add(a, format_flag);
-		if( showT_fs )     a = add(a, filesystem_name);
-		if( showT_mount )  
-		    {
-		    string tmp = mount_point;
-		    if( partition["noauto"]:false && 
-		        !partition["active"]:false )
-			{
-			tmp = tmp + " *";
-			}
-		    a = add(a, tmp );
-		    }
-		if( showT_cyl )
-		    {
-		    if( real_disk )
-			{
-			a = add(a, to4string(start_cyl));
-			integer num = start_cyl + nb_cyl - 1;
-			a = add(a, to4string(num)+" ");
-			}
-		    else
-			{
-			a = add(a, " -- ");
-			a = add(a, " -- ");
-			}
-		    }
-		if( showT_Used )   a = add(a, used_by);
-		if( showT_Label )  a = add(a, label);
-
-		table_input = add( table_input, a );
-		}
+		 table_input = add( table_input, a );
+		 }
 	     else
 		{
 		// as deleted marked
@@ -1139,7 +1154,8 @@ define list FillPartitionList()
 	     });
          });
 
-    map disk_order = $[ "/dev/md" : 0, "/dev/loop" : 1 ];
+    // order should be md, then loop, then LVM, then EVMS
+    map disk_order = $[ "/dev/md" : 0, "/dev/loop" : 1, "/dev/evms" : 3 ];
     integer num1 = -1;
     integer num2 = -1;
 
@@ -1164,8 +1180,18 @@ define list FillPartitionList()
 	    }
 	else
 	    {
-	    num1 = disk_order[disk1["disk"]:""]:-1;
-	    num2 = disk_order[disk1["disk"]:""]:-1;
+	    string d1 = disk1["disk"]:"";
+	    string d2 = disk2["disk"]:"";
+	    if( find( d1, "/dev/evms/" ) == 0 )
+		{
+		d1 = "/dev/evms";
+		}
+	    if( find( d2, "/dev/evms/" ) == 0 )
+		{
+		d2 = "/dev/evms";
+		}
+	    num1 = disk_order[d1]:2;
+	    num2 = disk_order[d2]:2;
 	    //y2milestone( "num1 %1 num2 %2", num1, num2 );
 	    if( num1!=num2 )
 		{
@@ -1387,7 +1413,8 @@ define map EditOrCreatePartDlg( map cur_val, map file_systems,
       map retval = (map)eval(cur_val);
       symbol ret = `ok;
 
-      HandlePartWidgetChanges( true, ret, file_systems, cur_val, retval );
+      retval = HandlePartWidgetChanges( true, ret, file_systems, cur_val, 
+                                        retval );
 
       repeat
 	 {
@@ -1398,7 +1425,8 @@ define map EditOrCreatePartDlg( map cur_val, map file_systems,
 
 	 if ( ret != `cancel )
 	    {
-	    HandlePartWidgetChanges( false, ret, file_systems, cur_val, retval );
+	    retval = HandlePartWidgetChanges( false, ret, file_systems, cur_val,
+	                                      retval );
 	    }
 
 	 ////////////////////////////////////////////////////////////
@@ -1501,6 +1529,7 @@ Use JFS on larger partitions.
 		 }
 
 	     map ret_mp = CheckOkMount( dev, cur_val, retval );
+	     retval = ret_mp["map"]:$[];
 	     if( !ret_mp["ok"]:false )
 		 {
 		 if( ret_mp["field"]:`none != `none )
