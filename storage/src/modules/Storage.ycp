@@ -214,18 +214,23 @@ global define map GetDiskPartition( string device )
 
 
 /* return partition <device> of map <tg> */
-global define map GetPartition( map tg, string device )
-				 ``{
-    map  ret = $[];
+global define map<string,any> GetPartition( map<string,map> tg, string device )
+    ``{
+    map<string,any> ret = $[];
     map tmp = GetDiskPartition( device );
     string disk = tmp["disk"]:"";
+    if( find(device, "/dev/evms")==0 && !haskey( tg, disk ) )
+	{
+	disk = "/dev/evms";
+	}
     y2debug( "device=%1", device );
-    list<map> part = (list<map>) filter(map part_inner, tg[disk,"partitions"]:[],
-			``(part_inner["device"]:""==device && !part_inner["delete"]:false));
+    list< map<string,any> > part = (list< map<string,any> >)
+	filter( map<string, any> pi, tg[disk,"partitions"]:[],
+	        ``(pi["device"]:""==device && !pi["delete"]:false));
     if( size(part)>=0 )
-				     {
+        {
 	ret = part[0]:$[];
-				     }
+	}
     y2debug( "ret=%1", ret );
     return( ret );
     }
@@ -233,10 +238,14 @@ global define map GetPartition( map tg, string device )
 
 /* set <part>, return changed map <tg> */
 global define map<string,map> SetPartition( map<string,map> tg, map part )
-	    ``{
+    ``{
     y2debug( "SetPartition part=%1", part );
     map tmp = GetDiskPartition( part["device"]:"" );
     string disk = tmp["disk"]:"";
+    if( find(part["device"]:"", "/dev/evms")==0 && !haskey( tg, disk ) )
+	{
+	disk = "/dev/evms";
+	}
     list r_part = filter(map p, tg[disk,"partitions"]:[],
 			  ``(p["device"]:"" != part["device"]:"" ||
 			     p["delete"]:false == true));
@@ -2280,7 +2289,9 @@ global define boolean DelSubDev( string subdevkey )
     }
 
 /* set <key> in partition <device> to the given <value> and return changed map <tg> */
-global define map SetPartitionData( map tg, string device, string key, any value )
+global define map<string,map> SetPartitionData( map<string,map> tg, 
+                                                string device, string key, 
+						any value )
     ``{
     y2debug( "device=%1 key=%2 value=%3", device, key, value );
     map tmp = GetDiskPartition( device );
@@ -2304,7 +2315,8 @@ global define map SetPartitionData( map tg, string device, string key, any value
     }
 
 /* remove <key> in partition <device> and return changed map <tg> */
-global define map DelPartitionData( map tg, string device, string key)
+global define map<string,map> DelPartitionData( map<string,map> tg, 
+                                                string device, string key)
     ``{
     y2debug( "device=%1, key=%2", device, key );
     map tmp = GetDiskPartition( device );

@@ -20,8 +20,6 @@
 
 textdomain "storage";
 
-#include "partitioning/signatures.ycp";
-
 import "FileSystems";
 
 //////////////////////////////////////////////////////////////////////
@@ -101,7 +99,7 @@ define boolean evms_check_name( string name )
     }
 
 
-define list add_size_info( list pvlist, integer cyl_size )
+define list<map> add_size_info( list<map> pvlist, integer cyl_size )
     ``{
     return( maplist( map p, pvlist,
 	``{
@@ -112,9 +110,9 @@ define list add_size_info( list pvlist, integer cyl_size )
 	})) ;
     }
 
-define list get_pvlist( map tg, string name )
-    {
-    list pv = [];
+define list<map> get_pvlist( map<string,map> tg, string name )
+    ``{
+    list<map> pv = [];
     y2milestone( "get_pvlist name %1", name );
     foreach( string k, map e, tg,
 	``{
@@ -122,25 +120,25 @@ define list get_pvlist( map tg, string name )
 	    {
 	    if( !e["is_evms_container"]:false )
 		{
-		list tmp = filter( map p, e["partitions"]:[],
-				   ``(p["evms_vol"]:""==name ||
-				      (size(p["evms_vol"]:"")==0 &&
-				       size(p["mount"]:"")==0)));
+		list<map> tmp = filter( map p, e["partitions"]:[],
+				        ``(p["evms_vol"]:""==name ||
+					   (size(p["evms_vol"]:"")==0 &&
+					    size(p["mount"]:"")==0)));
 		tmp = add_size_info( tmp, e["cyl_size"]:0 );
 		y2milestone( "key %1 tmp %2", k, tmp );
-		pv = merge( pv, tmp );
+		pv = (list<map>)merge( pv, tmp );
 		}
 	    }
 	else
 	    {
-	    list tmp = filter( map p, e["partitions"]:[],
-			       ``(size(name)>0&&p["evms_vol"]:""==name ));
+	    list<map> tmp = filter( map p, e["partitions"]:[],
+				    ``(size(name)>0&&p["evms_vol"]:""==name &&
+			            !p["delete"]:false ));
 	    tmp = add_size_info( tmp, e["cyl_size"]:0 );
 	    y2milestone( "key %1 tmp %2", k, tmp );
-	    pv = merge( pv, tmp );
+	    pv = (list<map>)merge( pv, tmp );
 	    }
 	});
-    pv = sort( map a, map b, pv, ``(a["device"]:""<b["device"]:""));
     pv = maplist( map p, pv, 
 	``{
 	string d = substring( p["device"]:"", 5 );
@@ -151,37 +149,99 @@ define list get_pvlist( map tg, string name )
 	p["device"] = d;
 	return( p );
 	});
+    pv = sort( map a, map b, pv, ``(a["device"]:""<b["device"]:""));
     y2milestone( "pv %1", pv );
+    string pdev = "";
+    pv = filter( map p, pv, 
+	``({
+	boolean r = false;
+	if( pdev!=p["device"]:"" )
+	    {
+	    pdev = p["device"]:"";
+	    r = true;
+	    }
+	return( r );
+	}));
+    y2milestone( "unique %1", pv );
     return( pv );
     }
 
-define list get_table_entries( list pvlist, string name )
+define list<term> get_table_entries( list<map> pvlist, string name )
     ``{
-    list ret = maplist( map p, pvlist,
+    y2milestone( "get_table_entries name %1", name );
+    integer count=-1;
+    list<term> ret = maplist( map p, pvlist,
 	``{
-	return( `item( `id(p["device"]:""), p["device"]:"", p["size_str"]:"",
-	        size(p["evms_vol"]:"")>0?name:"" ));
+	count = count+1;
+	return( `item( `id(count), p["device"]:"", p["size_str"]:"",
+	        size(p["evms_vol"]:"")>0?" "+name:"" ));
 	});
     y2milestone( "get_table_entries ret %1", ret );
     return( ret );
     }
 
+define integer evms_usable_size( integer siz, integer pesize )
+    ``{
+    integer r = siz - 128*1024;
+    r = (r/pesize)*pesize;
+    if( r < 0 ) r = 0;
+    return( r );
+    }
+
 define integer get_container_size( map co, list pvlist )
     ``{
-    integer ret = co["cyl_count"]:0 * co["cyl_size"]:0;
+    integer pesize =  co["cyl_size"]:0;
+    integer ret = co["cyl_count"]:0 * pesize;
     foreach( integer e, co["added"]:[],
 	``{
-	ret = ret + pvlist[e,"size"]:0;
+	ret = ret + evms_usable_size( pvlist[e,"size"]:0, pesize );
 	});
     foreach( integer e, co["removed"]:[],
 	``{
-	ret = ret - pvlist[e,"size"]:0;
+	ret = ret - evms_usable_size( pvlist[e,"size"]:0, pesize );
 	});
     y2milestone( "get_container_size ret %1", ret );
     return( ret );
     }
 
-define map dlg_modify_container( map tg, map co, boolean create )
+define void set_container_size( map co, integer new_size )
+    ``{
+    string s = ByteToHumanStringWithZero( new_size );
+    UI::ChangeWidget( `id(`size), `Value, s );
+    UI::RecalcLayout();
+    }
+
+define list get_index_list( list<string> l, list pvlist )
+    ``{
+    list nl = [];
+    foreach( string e, l,
+	``{
+	integer i=0;
+	while( i<size(pvlist) && pvlist[i,"device"]:""!=e )
+	    {
+	    i = i+1;
+	    }
+	if( i<size(pvlist) )
+	    {
+	    nl = add( nl, i );
+	    }
+	});
+    y2milestone( "get_index_list l %1 ret %2", l, nl );
+    return( nl );
+    }
+
+define void set_table_elements( list<term> entries, integer id )
+    ``{
+    if( id < 0 )
+	{
+	id = (integer) UI::QueryWidget( `id(`pv_table), `CurrentItem );
+	}
+    UI::ChangeWidget( `id(`pv_table), `Items, entries );
+    UI::ChangeWidget( `id(`pv_table), `CurrentItem, id );
+    }
+
+define map dlg_modify_container( map<string,map> tg, map<string,any> co, 
+                                 boolean create )
     ``{
     // popup header
     string head = _("Modify Existing EVMS Container");
@@ -253,7 +313,7 @@ the container.
 			      // button text
 			      `PushButton(`id(`pv_add), _("&Add Volume")),
 			      // button text
-			      `PushButton(`id(`pv_delete), _("&Remove Volume"))
+			      `PushButton(`id(`pv_remove), _("&Remove Volume"))
 			      )
 			  ),
 		      `HSpacing(2)
@@ -283,8 +343,10 @@ the container.
 	typename = "aix";
 	}
 
+    co["name"] = typename + "/" + name;
+
     UI::ChangeWidget( `id(`name), `Value, name );
-    if( co["created"]:false )
+    if( create )
 	{
 	UI::ChangeWidget( `id(`name), `ValidChars, 
 	                  FileSystems::nchars + "-._:" );
@@ -298,18 +360,27 @@ the container.
                       ByteToHumanStringWithZero(co["cyl_size"]:0 ));
     UI::ChangeWidget( `id(`type), `Value, typename );
 
-    list pvlist = get_pvlist( tg, co["name"]:"" );
+    list<map> pvlist = get_pvlist( tg, co["name"]:"" );
     y2milestone( "dlg_modify_container pvlist %1", pvlist );
-    UI::ChangeWidget( `id(`pv_table), `Items, 
-                      get_table_entries( pvlist, co["name"]:"" ));
-    string s = ByteToHumanStringWithZero( get_container_size( co, pvlist ) );
-    UI::ChangeWidget( `id(`size), `Value, s );
-    UI::RecalcLayout();
-    any ret = nil;
+    list nl = get_index_list( co["added"]:[], pvlist );
+    if( size(nl)>0 )
+	{
+	co["added"] = nl;
+	}
+    nl = get_index_list( co["removed"]:[], pvlist );
+    if( size(nl)>0 )
+	{
+	co["added"] = nl;
+	}
+    y2milestone( "dlg_modify_container co %1", co );
+    set_table_elements( get_table_entries( pvlist, co["name"]:"" ), 0 );
+    integer cur_size = co["cyl_size"]:0 * co["cyl_count"]:0;
+    set_container_size( co, cur_size );
+    symbol ret = nil;
 
     repeat
 	{
-	ret = UI::UserInput();
+	ret = (symbol)UI::UserInput();
 
 	y2milestone( "dlg_modify_container ret %1", ret );
 
@@ -317,27 +388,109 @@ the container.
 	    {
 	    typename  = (string)UI::QueryWidget(`id(`type), `Value );
 	    co["name"] = typename + "/" + name;
-	    UI::ChangeWidget( `id(`pv_table), `Items, 
-			      get_table_entries( pvlist, co["name"]:"" ));
+	    set_table_elements( get_table_entries( pvlist, co["name"]:"" ), 
+	                        -1 );
 	    }
-
-	if( ret == `name )
+	else if( ret == `name )
 	    {
 	    name = (string)UI::QueryWidget(`id(`name), `Value );
 	    name = deletechars( name, " \t" );
 	    co["name"] = typename + "/" + name;
-	    if( size( filter( map p, pvlist, ``(size([p["evms_vol"]:"")>0)))>0)
+	    if( size( filter( map p, pvlist, ``(size(p["evms_vol"]:"")>0)))>0)
 		{
-		UI::ChangeWidget( `id(`pv_table), `Items, 
-				  get_table_entries( pvlist, co["name"]:"" ));
+		set_table_elements( get_table_entries( pvlist, co["name"]:"" ), 
+				    -1 );
+		}
+	    foreach( integer id, co["added"]:[],
+		``{
+		pvlist[id,"evms_vol"] = co["name"]:"";
+		string tstr =  "/dev/evms/"+pvlist[id,"device"]:"";
+		tg = Storage::SetPartitionData( tg, tstr, "evms_vol",
+		                                co["name"]:"" );
+		tstr =  "/dev/"+pvlist[id,"device"]:"";
+		tg = Storage::SetPartitionData( tg, tstr, "evms_vol", 
+		                                co["name"]:"" );
+		});
+
+	    }
+	else if( contains( [`pv_add, `pv_remove, `pv_table ], ret ) )
+	    {
+	    integer id = (integer)UI::QueryWidget(`id(`pv_table), `CurrentItem);
+	    if( ret == `pv_table && id != nil )
+		{
+		ret = size(pvlist[id,"evms_vol"]:"")>0?`pv_remove:`pv_add;
+		}
+	    if( ret == `pv_add && id != nil && 
+	        size(pvlist[id,"evms_vol"]:"")==0 )
+		{
+		if( contains( co["removed"]:[], id ) )
+		    {
+		    co["removed"] = filter( integer e, co["removed"]:[],
+					    ``(e!=id) );
+		    }
+		else
+		    {
+		    co["added"] = add( co["added"]:[], id );
+		    }
+		pvlist[id,"evms_vol"] = co["name"]:"";
+		string tstr =  "/dev/evms/"+pvlist[id,"device"]:"";
+		tg = Storage::SetPartitionData( tg, tstr, "evms_vol",
+		                                co["name"]:"" );
+		tstr =  "/dev/"+pvlist[id,"device"]:"";
+		tg = Storage::SetPartitionData( tg, tstr, "evms_vol", 
+		                                co["name"]:"" );
+
+		cur_size = cur_size + evms_usable_size( pvlist[id,"size"]:0, 
+		                                        co["cyl_size"]:0 );
+		set_container_size( co, cur_size );
+		set_table_elements( get_table_entries( pvlist, co["name"]:"" ), 
+				    id );
+		}
+	    else if( ret == `pv_remove && id != nil && 
+	         size(pvlist[id,"evms_vol"]:"")>0 )
+		{
+		boolean changed = false;
+		if( contains( co["added"]:[], id ))
+		    {
+		    co["added"] = filter( integer e, co["added"]:[],
+					  ``(e!=id) );
+		    changed = true;
+		    }
+		else if( co["cyl_free"]:0*co["cyl_size"]:0 >=
+		         evms_usable_size( pvlist[id,"size"]:0, 
+			                   co["cyl_size"]:0 ))
+		    {
+		    co["removed"] = add( co["removed"]:[], id );
+		    changed = true;
+		    }
+		else
+		    {
+		    // message popup
+		    Popup::Error(
+_("If you remove the selected partition from the container,
+there will not be enough space for all volumes in this container.
+To delete the container completely, remove its volumes first."));
+		    }
+		if( changed )
+		    {
+		    pvlist[id,"evms_vol"] = "";
+		    string tstr =  "/dev/evms/"+pvlist[id,"device"]:"";
+		    tg = Storage::DelPartitionData( tg, tstr, "evms_vol" );
+		    tstr =  "/dev/"+pvlist[id,"device"]:"";
+		    tg = Storage::DelPartitionData( tg, tstr, "evms_vol" );
+
+		    cur_size = cur_size - 
+		               evms_usable_size( pvlist[id,"size"]:0, 
+						 co["cyl_size"]:0 );
+		    set_container_size( co, cur_size );
+		    set_table_elements( get_table_entries( pvlist, 
+		                                           co["name"]:"" ), 
+					id );
+		    }
 		}
 	    }
 
-	if( ret == `pv_add )
-	    {
-	    }
-
-	if( ret == `ok )
+	else if( ret == `ok )
 	    {
 	    if( typename == "aix" )
 		{
@@ -351,9 +504,9 @@ the container.
 	    co["cyl_size"] = 
 		evms_pesize_check( (string)UI::QueryWidget( `id(`pesize), 
 		                                            `Value),
-				   type );
+				   typename );
 
-	    y2milestone( "dlg_modify_container co %1 type %2", co, type );
+	    y2milestone( "dlg_modify_container co %1 type %2", co, typename );
 
 	    if( co["cyl_size"]:0 == 0 )
 	        {
@@ -370,7 +523,7 @@ Do not use ;/`, in this name.
 		ret = `again;
 		}
 	  
-	    if( ret==`ok && 
+	    if( ret==`ok && create &&
 	        (haskey( tg, "/dev/evms/" + co["name"]:"" ) ||
 	         haskey( tg, "/dev/" + name )) )
 		{
@@ -385,49 +538,109 @@ or cancel this dialog.
 	} until( ret == `ok || ret == `cancel );
 
     UI::CloseDialog();
+
+    map r = $["ok":false];
 	     
     if (ret == `ok )
 	{
-	return( co );
-	}
-    else
-	{
-	return( $[] );
-	}
-    };
-
-define map add_evms_container( map tg, boolean first )
-    ``{
-    map co = $[ "manager" : "LvmRegMgr",
-		"cyl_count" : 0,
-                "cyl_size" : 4 * 1024 * 1024,
-		"create" : true,
-		"is_evms" : true,
-		"is_evms_container" : true,
-		"name" : first?"lvm/system":"",
-		"partitions" : []
-	      ];
-
-    co = dlg_modify_container( tg, co, true );
-
-    string co_name = "";
-    // has the user cancelled the dialog? 
-    if( size(co)>0 )
-	{
-	co_name = co["name"]:"";
+	r["ok"] = true;
+	r["name"] = co["name"]:"";
 
 	co = filter( string k, any e, co, ``(k!="name") );
 	y2milestone( "co %1", co );
 
-	tg[ "/dev/evms/"+co_name ] = co;
-	}
+	co["cyl_free"] = co["cyl_free"]:0 + cur_size/co["cyl_size"]:0 -
+			 co["cyl_count"]:0;
+	co["cyl_count"] =  cur_size/co["cyl_size"]:0;
+	co["added"] = maplist( integer e, co["added"]:[], 
+	                       ``(pvlist[e,"device"]:""));
+	co["removed"] = maplist( integer e, co["removed"]:[], 
+				 ``(pvlist[e,"device"]:""));
 
-    return( $[
-		"ok"      : size(co)>0,
-		"targets" : tg,
-		"name"    : co_name
-	     ]);
+	tg[ "/dev/evms/"+r["name"]:"" ] = co;
+
+	r["targets"] = tg;
+	y2milestone( "dlg_modify_container ret co %1", co );
+	}
+    y2milestone( "dlg_modify_container ret ok %1", r["ok"]:false );
+    return( r );
     };
+
+define map add_evms_container( map<string,map> tg, boolean first )
+    ``{
+    map<string,any> co = 
+	$[ "manager" : "LvmRegMgr",
+	   "cyl_count" : 0,
+	   "cyl_size" : 4 * 1024 * 1024,
+	   "create" : true,
+	   "is_evms" : true,
+	   "is_evms_container" : true,
+	   "name" : first?"lvm/system":"",
+	   "partitions" : []
+	];
+
+    map ret = dlg_modify_container( tg, co, true );
+    return( ret );
+    };
+
+define map edit_evms_container( map<string,map> tg, string key )
+    ``{
+    y2milestone( "edit_evms_container key %1", key );
+    map<string,any> co = (map<string,any>)tg["/dev/evms/"+key]:$[];
+    co["name"] = key;
+    map ret = dlg_modify_container( tg, co, false );
+    return( ret );
+    };
+
+define map remove_evms_container( map<string,map> tg, string key )
+    ``{
+    y2milestone( "remove_evms_container key %1", key );
+    string mkey = "/dev/evms/"+key;
+    map ret = $["ok":false];
+    map co = tg[mkey]:$[];
+    if( size(filter(map p, co["partitions"]:[], ``(!p["delete"]:false)))>0 )
+	{
+	// Message popup
+	Popup::Message(sformat(
+_("The container \"%1\" contains at least one volume.
+It cannot be removed. Remove all volumes of this container
+before removing the container"), key ));
+	}
+    else
+	{
+	// popup text
+	if( Popup::ContinueCancel( sformat( _("Really remove container \"%1\"?"), key)))
+	    {
+	    tg[mkey,"delete"] = true;
+	    foreach( string k, map e, tg,
+		``{
+		tg[k,"partitions"] = maplist( map p, e["partitions"]:[],
+		    ``({
+		    if( p["evms_vol"]:"" == key )
+			{
+			p["evms_vol"] = "";
+			}
+		    return( p );
+		    }));
+		});
+	    if( tg[mkey,"create"]:false )
+		{
+		tg = remove( tg, mkey );
+		}
+	    else
+		{
+		tg[mkey,"added"] = [];
+		tg[mkey,"removed"] = [];
+		}
+	    ret["ok"] = true;
+	    }
+	}
+    if( ret["ok"]:false )
+	{
+	ret["targets"] = tg;
+	}
+    return( ret );
+    }
 
 
 //////////////////////////////////////////////////////////////////////
@@ -487,7 +700,7 @@ define map get_co_map( string current, map tg )
     return( tg["/dev/evms/"+current]:$[] );
     }
 
-define list get_containers( map tg )
+define list get_containers( map<string,map> tg, string none )
     ``{
     list ret = [];
     foreach( string k, map e, tg, 
@@ -497,13 +710,17 @@ define list get_containers( map tg )
 	    ret = add( ret, substring( k, 10 ));
 	    }
 	});
+    if( size(ret)==0 )
+	{
+	ret = [ none ];
+	}
     y2milestone( "get_containers ret %1", ret );
     return( ret );
     }
 
-define list get_evms_volumes( map tg )
+define list get_evms_volumes( map<string,map> tg )
     ``{
-    list tmp = [];
+    list<string> tmp = [];
     foreach( string k, map e, tg,
 	``{
 	if( find( k, "/dev/evms" )==0 && !e["is_evms_container"]:false )
@@ -511,7 +728,7 @@ define list get_evms_volumes( map tg )
 	    tmp = add( tmp, k );
 	    }
 	});
-    list keys = sort( tmp );
+    list<string> keys = sort( tmp );
     tmp = [];
     foreach( string k, map e, tg,
 	``{
@@ -520,20 +737,24 @@ define list get_evms_volumes( map tg )
 	    tmp = add( tmp, k );
 	    }
 	});
-    keys = merge( keys, sort(tmp) );
-    list parts = [];
+    keys = (list<string>)merge( keys, sort(tmp) );
+    list<map> parts = [];
     y2milestone( "get_evms_volumes keys %1", keys );
     foreach( string k, keys,
 	``{
-	list pa = filter( map p, tg[k,"partitions"]:[], ``(!p["delete"]:false));
+	list<map> pa = 
+	    filter( map p, tg[k,"partitions"]:[], 
+		    ``(!p["delete"]:false&&size(p["evms_vol"]:"")==0));
 	pa = maplist( map p, pa,
 	    ``{
 	    p["size"] = 
 		ByteToHumanStringWithZero( p["region",1]:0*tg[k,"cyl_size"]:0 );
 	    return( p );
 	    });
-	parts = merge( parts, sort( map x, map y, pa,
-	                            ``(x["nr"]:(any)""<y["nr"]:(any)"")));
+	parts = 
+	    (list<map>)merge( parts, 
+	                      sort( map x, map y, pa,
+				    ``(x["nr"]:(any)""<y["nr"]:(any)"")));
 	});
     y2milestone( "get_evms_volumes parts %1", parts );
     list ret = maplist( map p, parts, 
@@ -547,5 +768,390 @@ define list get_evms_volumes( map tg )
     y2milestone( "get_evms_volumes ret %1", ret );
     return( ret );
     }
+
+define void volume_handle_max( integer stripe, string max_text )
+    ``{
+    y2milestone( "volume_handle_max stripe %1", stripe );
+    UI::ChangeWidget( `id(`max_size), `Enabled, stripe==1 );
+    UI::ChangeWidget( `id(`max_text), `Value, stripe==1?max_text:"" );
+    }
+
+define map<string,any> dlg_logical_volume( map<string,any> co, 
+                                           map<string,any> part, 
+					   boolean create, boolean is_cont )
+    ``{
+    y2milestone( "dlg_logical_volume create:%1 p=%2 containter:%3", 
+                 create, part, is_cont );
+    y2milestone( "dlg_logical_volume co:%1", 
+                 filter(string k, any e, co, ``(k!="partitions")) );
+
+    integer new_size = part["region",1]:0 * co["cyl_size"]:0;
+    integer old_size = part["ori_length"]:new_size;
+    integer max_size = new_size + co["cyl_free"]:0 * co["cyl_size"]:0 - 1025;
+    string  curr_size = ByteToHumanStringWithZero(new_size);
+    string  vol_name  = part["nr"]:"";
+    string  mkey = "/dev/evms/" + co["name"]:"";
+    integer stripes   = part["stripes"]:1;
+    integer stripesize = part["stripesize"]:64;
+    integer pesize = co["cyl_size"]:1;
+
+    list stripes_poss = [
+			  `item(`id(1), "1",  stripes == 1 ),
+			  `item(`id(2), "2",  stripes == 2 ),
+			  `item(`id(3), "3",  stripes == 3 ),
+			  `item(`id(4), "4",  stripes == 4 ),
+			  `item(`id(5), "5",  stripes == 5 ),
+			  `item(`id(6), "6",  stripes == 6 ),
+			  `item(`id(7), "7",  stripes == 7 ),
+			  `item(`id(8), "8",  stripes == 8 )
+			];
+
+    list stripe_size = [
+			  `item(`id(4),   "4",    stripesize == 4 ),
+			  `item(`id(8),   "8",    stripesize == 8 ),
+			  `item(`id(16),  "16",   stripesize == 16 ),
+			  `item(`id(32),  "32",   stripesize == 32 ),
+			  `item(`id(64),  "64",   stripesize == 64 ),
+			  `item(`id(128), "128",  stripesize == 128 ),
+			  `item(`id(256), "256",  stripesize == 256 ),
+			  `item(`id(512), "512",  stripesize == 512 ),
+                       ];
+    
+    string  heading = "";
+    boolean is_create_mode = false;
+    boolean is_resize_mode = false;
+    term    ui_vol_name = `Empty();
+     
+    // header for input field size of volume 
+    string size_txt = sformat(_("&Size: (e.g., %1 %2)"), 
+			      ByteToHumanStringWithZero(4196*1024*1024),
+			      ByteToHumanStringWithZero(210*1024*1024));
+    // header for input field maximum allowd size
+    string max_text = sformat(_("max = %1 "), 
+			      ByteToHumanStringWithZero(max_size));
+
+
+    if( create && part["created"]:false )
+        {
+	// popup heading 
+	heading = _("Create Logical Volume");
+	is_create_mode = true; 
+	}
+    else if ( !create && part["created"]:false )
+        {
+	// popup heading 
+	heading = _("Edit Logical Volume");
+	is_create_mode = false;
+	}
+    else 
+	{
+	// popup heading 
+	if( is_cont )
+	    {
+	    heading = _("Resize Logical Volume");
+	    }
+	else
+	    {
+	    heading = _("Edit Logical Volume");
+	    }
+	is_create_mode = false;
+	is_resize_mode = true;
+	stripes_poss = [ `item(`id(1), "-", true) ];
+	stripe_size = [ `item(`id(1), "-", true) ];
+	}
+
+    if( is_create_mode )
+	{
+	ui_vol_name = `VBox( `TextEntry(`id(`vol_name),
+					// label text
+					_("Volume &name "), vol_name),
+			     // label text
+			     `Left(`Label(_("(e.g. var, opt)")))
+			  );
+	}
+    else
+	{
+	// display name of current volume group
+	ui_vol_name = `VBox( `Label(""),
+			     // label text
+			     `HBox(`Label( _("Volume name: ")),
+				   `Heading(`opt(`outputField), vol_name ),
+				   `HStretch()
+				 ));
+	}
+
+    y2milestone( "is_create_mode %1 is_resize_mode %2", is_create_mode,
+                 is_resize_mode );
+
+    map<symbol,map> fs = FileSystems::GetAllFileSystems(true, true);
+ 
+    UI::OpenDialog(
+	`opt(`decorated ),
+	`HBox(`HWeight(30, 
+	    `HBox(
+		`HSpacing(1),
+		`HStretch(),
+		`VBox(
+		    `Heading(heading),
+		    `VStretch(),
+		    `VSpacing(1),
+		    `HBox(
+			 FormatDlg( part, fs ),
+			 `HStretch(),
+			 `HSpacing(2),
+			 `VBox(
+			     `Top(`Left(ui_vol_name)),
+			     `Top(`VBox( 
+				 `TextEntry(`id(`size), size_txt, curr_size),
+				 `HBox(
+				     // set size to maxsize
+				     `Left(`Label( `id(`max_text), max_text )),
+				     // button text
+				     `PushButton( `id(`max_size), _("ma&x")))
+						
+				  )),
+			     `VStretch(),
+			     `Left(`ComboBox( `id(`stripes), 
+			                      `opt(`hstretch,`notify),
+					      // button text
+					      _("Stri&pes"), stripes_poss )),
+			     `VStretch(),
+			     `Left(`ComboBox( `id(`stripesize), 
+			                      `opt(`hstretch,`notify),
+					      // button text
+					      _("Stripe &Size"), stripe_size )),
+			     `VStretch(),
+			     `VSpacing(1),
+			     `ReplacePoint( `id(`mount_dlg_rp), 
+					    MountDlg(part, []))
+			     )
+			 ),
+		    `VStretch(),  
+		    `VSpacing(1),
+		    `HBox(
+			// Ok button
+			`PushButton( `id(`ok), `opt(`default), 
+			             Label::OKButton()  ),
+			// Cancel button
+			`PushButton( `id(`cancel), Label::CancelButton() )
+			)
+		    ),
+		  `HStretch(),
+		  `HSpacing(1)
+		  )
+         )));
+
+
+      // configure main dialog for the first call
+      if( is_create_mode )
+	  {
+	  UI::ChangeWidget( `id(`vol_name), `ValidChars, 
+			    FileSystems::nchars + "-._:" );
+	  }
+      UI::ChangeWidget( `id(`stripes), `Enabled, !is_resize_mode );
+      UI::ChangeWidget( `id(`stripesize), `Enabled, 
+                        !is_resize_mode && stripes>1 );
+      volume_handle_max( stripes, max_text );
+  
+      ////////////////////////////////////////////////////////////////////
+      // User mainloop for dialog
+      ////////////////////////////////////////////////////////////////////
+      
+      boolean input_is_ok = true;
+      map<string,any> retval = part;
+
+      retval = HandlePartWidgetChanges( true, `ok, fs, part, retval );
+
+      any ret = `cancel;
+
+      repeat
+	  {
+	  input_is_ok  = true;
+	    
+	  ret = UI::UserInput();
+
+	  /////////////////////////////////////////////////////////
+	  if( ret == `stripes)
+	      {
+	      stripes = (integer)UI::QueryWidget( `id(`stripes), `Value);
+	      UI::ChangeWidget( `id(`stripesize), `Enabled, 
+				!is_resize_mode && stripes>1 );
+	      volume_handle_max( stripes, max_text );
+	      continue;
+	      }
+
+	  if( ret == `max_size)
+	      {
+	      UI::ChangeWidget( `id(`size), `Value, 
+	                        ByteToHumanStringWithZero(max_size));
+	      continue;
+	      }
+
+	  if( ret != `cancel )
+	      {
+	      retval = HandlePartWidgetChanges( false, ret, fs, part, retval );
+	      }
+	    
+	  if( is_create_mode ) 
+	      {
+	      vol_name = (string)UI::QueryWidget( `id(`vol_name), `Value );
+	      vol_name = deletechars( vol_name, " \t" );
+	      }
+
+	  stripes = (integer)UI::QueryWidget(`id(`stripes), `Value);
+	  stripesize = (integer)UI::QueryWidget(`id(`stripesize), `Value);
+	   
+	  if( ret==`ok )
+	      {
+	      new_size = kmgt_str_to_byte((string)UI::QueryWidget(`id(`size),
+	                                                          `Value));
+	      
+	      if( !check_max_size(new_size, max_size) )
+		  {
+		  input_is_ok = false;
+		  continue;
+		  }
+	      y2milestone( "new_size %1 old_size %2", new_size, old_size );
+
+	      if( is_resize_mode && !retval["format"]:false && 
+		  new_size!=old_size )
+		  {
+		  if( !CheckResizePossible( true, true, new_size-old_size,
+					    retval["used_fs"]:`unknown,
+					    retval["mount"]:"" ))
+		      {
+		      UI::ChangeWidget(`id(`size), `Value, curr_size );
+		      continue;
+		      }
+		  }
+
+	      if( is_create_mode )
+		  {
+		  if( !evms_check_name(vol_name) )
+		      {
+		      input_is_ok = false;
+		      // error popup text
+		      // xgettext:no-c-format
+		      Popup::Error(_("Check your volume name. 
+Use names like \"opt\", \"var\" ...
+don't use ;/\`',!\"%#"));
+		      UI::SetFocus(`id(vol_name));
+		      continue;
+		      }
+		  else 
+		      {
+		      list names = maplist( map p, co["partitions"]:[],
+		                            ``(p["nr"]:""));
+		      if( contains( names, vol_name ) )
+			  {
+			  input_is_ok = false;
+			  // error popup text
+			  Popup::Error(sformat(_("A volume named \"%1\" already exists
+in container \"%2\". Choose another name
+or cancel this dialog.
+"), vol_name, co["name"]:"" ));
+			  UI::SetFocus(`id(vol_name));
+			  continue;
+			  }
+		      }   
+		  }
+
+	      map ret_mp = CheckOkMount( mkey+"/"+vol_name, part, retval );
+	      retval = ret_mp["map"]:$[];
+	      if( !ret_mp["ok"]:false )
+		  {
+		  if( ret_mp["field"]:`none != `none )
+		      UI::SetFocus(`id( ret_mp["field"]:`none ));
+		  input_is_ok = false;
+		  continue;
+		  }
+
+	      ret_mp = CheckCryptOk( retval );
+	      }
+
+	  /////////////////////////////////////////////////////////
+	  retval["stripes"] = stripes;
+	  if( stripes>1 )
+	      {
+	      retval["stripesize"] = stripesize;
+	      }
+	  retval["nr"] = vol_name;
+	  retval["device"] = Storage::GetDeviceName( mkey, vol_name );
+	  retval["region"] = [0, (new_size+pesize-1)/pesize ];
+	  if( is_resize_mode && new_size!=old_size && 
+	      !haskey( retval, "ori_length"))
+	      {
+	      retval["ori_length"] = old_size;
+	      }
+	  } 
+      until ( (ret==`ok&&input_is_ok) || ret == `cancel );
+
+      UI::CloseDialog();
+      
+      if( ret == `cancel || !input_is_ok )
+	  {
+	  retval = $[];
+	  }
+      y2milestone( "retval=%1", retval );
+      return( retval );
+      };
+
+define map add_evms_volume( string co_name, map<string,map> tg )
+    ``{
+    y2milestone( "add_evms_volume co_name %1", co_name );
+    map ret = $[ "ok" : false ];
+    map<string,any> part = 
+	$[ "create" : true,
+	   "used_fs" : Partitions::default_fs,
+	   "stripes" : 1,
+	   "format" : true,
+	   "type" : `evms,
+	   "fstype" : "EVMS",
+	   "mount" : GetMountPointProposal( tg, [ Partitions::BootMount() ] )
+	];
+    map<string,any> co = (map<string,any>)tg["/dev/evms/"+co_name]:$[];
+    part = dlg_logical_volume( co, part, true, true );
+    if( size(part)>0 )
+	{
+	ret["ok"] = true;
+	co["free_cyl"] = co["free_cyl"]:0 - part["region",1]:0;
+	tg["/dev/evms/"+co_name] = co;
+	tg = Storage::SetPartition( tg, part );
+	ret["tg"] = tg;
+	}
+    return( ret );
+    };
+
+define map edit_evms_volume( string device, map<string,map> tg )
+    ``{
+    y2milestone( "edit_evms_volume device %1", device );
+    map ret = $[ "ok" : false ];
+
+    map d = Storage::GetDiskPartition( device );
+    y2milestone( "edit_evms_volume d %1", d );
+
+    string key = d["disk"]:"";
+    if( !haskey( tg, key ) )
+	{
+	key = "/dev/evms";
+	}
+    y2milestone( "edit_evms_volume key %1", key );
+
+    map<string,any> part = Storage::GetPartition( tg, device );
+    y2milestone( "edit_evms_volume part %1", part );
+
+    integer last_size = part["region",1]:0;
+    part = dlg_logical_volume( (map<string,any>)tg[key]:$[], part, false, 
+			       tg[key,"is_evms_container"]:false );
+    if( size(part)>0 )
+	{
+	ret["ok"] = true;
+	tg[key,"free_cyl"] = tg[key,"free_cyl"]:0 + last_size - 
+			     part["region",1]:0;
+	tg = Storage::SetPartition( tg, part );
+	ret["tg"] = tg;
+	}
+    return( ret );
+    };
 
 }

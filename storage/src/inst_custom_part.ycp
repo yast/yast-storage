@@ -68,6 +68,7 @@ HINTS: Always use
   include "partitioning/custom_part_lib.ycp";
   include "partitioning/custom_part_dialogs.ycp";
   include "partitioning/custom_part_check_generated.ycp";
+  include "partitioning/evms_lib.ycp";
 
   
   // Which columns show the main window have
@@ -1350,13 +1351,17 @@ Should YaST2 use the maximum allowed value?
  * @return map modified partition or nil by cancel
  */
 
-define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val, map<symbol,map> file_systems, 
-			        string title, string dev, map disk, 
-				boolean bsd_label, boolean edit_size, 
-				integer cyl_size, boolean installation )
+define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val, 
+                                            map<symbol,map> file_systems, 
+					    string title, map disk, 
+					    boolean bsd_label, 
+					    boolean edit_size, 
+					    integer cyl_size, 
+					    boolean installation )
 
     ``{
     boolean create = cur_val["create"]:false;
+    string dev = cur_val["device"]:"";
 
     string helptextCR = getEditOrCreateHelptext( cur_val, true );
 
@@ -2520,6 +2525,10 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 	// main dialog: Button LVM
 	buttonline_b = add( buttonline_b, `PushButton(`id(`lvm), _("&LVM...")));
 
+    if( button_evms )   
+	// main dialog: Button EVMS
+	buttonline_b = add( buttonline_b, `PushButton(`id(`evms), _("E&VMS...")));
+
     // main dialog: Button RAID
     if( button_raid )  
 	buttonline_b = 
@@ -2879,7 +2888,6 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    new_val = EditOrCreatePartDlg( new_val,
 						   FileSystems::GetAllFileSystems(true, true ),
 						   titleC,
-						   maindev,
 						   curr_disk,
 						   bsd_label,
 						   edit_cylinder,
@@ -2957,7 +2965,6 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    
 		    string subdevindex = Storage::GetSubDevIndex(id);
 		    integer number     = tointeger( subdevindex );
-		    string devStr      = Storage::GetDeviceName(maindevkey, number );
 		    map<string,any> curr_disk      = Storage::GetMainDev( maindevkey );
 		    map<string,any> curr_part      = Storage::GetSubDev( id );
 
@@ -3001,10 +3008,10 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 			    {
 			    // header of the dialog edit a partition
 			    string title = _("Edit an Extended Partition") + 
-			                   " " + devStr;
+			                   " " + curr_part["device"]:"";
 			    new_val = CreateEditExtendedPartDlg( curr_part,
 								 title,
-								 devStr,
+								 curr_part["device"]:"",
 								 disk_without_current,
 								     curr_disk["cyl_size"]:1000000,
 								 true,
@@ -3027,18 +3034,19 @@ WARNING: All data on this partition will be lost."));
 			if( !curr_part["create"]:false )
 			    {
 			    // header of the dialog edit a partition
-			    title = _("Edit Existing Partition") + " " + devStr;
+			    title = _("Edit Existing Partition");
 			    }
 			else
 			    {
 			    // header of the Dialog edit a partition
-			    title = _("Edit partition ")+ devStr;
+			    title = _("Edit partition ");
 			    }
+			title = title + curr_part["device"]:"";
 
 			new_val = 
 			    EditOrCreatePartDlg( curr_part,
 						 FileSystems::GetAllFileSystems(true, true) ,
-						 title, devStr,
+						 title, 
 						 disk_without_current,
 						 bsd_label, edit_cylinder,
 						 curr_disk["cyl_size"]:1000000,
@@ -3181,7 +3189,7 @@ WARNING: All data on this partition will be lost."));
 			    Popup::YesNo( sformat(_("\nShould the loop file %1 also be removed?
 "), curr_part["fpath"]:"" )))
 			    {
-			    map tg =  Storage::GetTargetMap();
+			    map<string,map> tg =  Storage::GetTargetMap();
 			    tg = Storage::SetPartitionData( tg, 
 			                                    curr_part["device"]:"",
 							    "fpath_remove", 
