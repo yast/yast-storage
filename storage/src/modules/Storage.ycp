@@ -3399,25 +3399,12 @@ global define void ChangeLineFstab( map entry )
     AsciiFile::RewriteFile( fstab, tabpath );
     };
 
-global define string CdromMntops()
-    ``{
-    return( "fs=cdfss,ro,procuid,nosuid,nodev,exec" );
-    }
-
-global define string FloppyMntops()
-    ``{
-    return( "fs=floppyfss,procuid,nodev,nosuid,sync" );
-    }
-
 global define map MakeCdromFstabEntry( map cd )
     ``{
-    map entry = $[];
+    map entry = FileSystems::GetFstabDefaultMap( "cdrom" );
     string cdmount = cd["linkname"]:"";
-    string media = "/media/"+substring(cdmount,5);
-
-    entry = $[ "spec":cdmount, "mount":media, "vfstype":"subfs",
-	       "mntops": CdromMntops(),
-	       "freq":0, "passno":0];
+    entry["spec"] = cdmount;
+    entry["media"] = "/media/"+substring(cdmount,5);
     string enc = Storage::LangTypicalEncoding();
     if( !contains( [ "iso8859-1", "iso8859-15", "" ], enc ))
 	{
@@ -3913,7 +3900,7 @@ global define void UpdateFstabSubfs()
 	if( find( l["fields",1]:"", "/media/floppy" )==0 )
 	    {
 	    AsciiFile::ChangeLineField( fstab, line, 2, "subfs" );
-	    AsciiFile::ChangeLineField( fstab, line, 3, FloppyMntops() );
+	    AsciiFile::ChangeLineField( fstab, line, 3, FileSystems::GetFstabDefaultMntops("floppy") );
 	    }
 	else if( find( l["fields",1]:"", "/media/cdrom" )==0 ||
 		 find( l["fields",1]:"", "/media/dvd" )==0 ||
@@ -3931,7 +3918,7 @@ global define void UpdateFstabSubfs()
 	    opts = filter( string e, opts, 
 			   ``(!contains( ["noauto","ro","user","exec"], e )));
 	    y2milestone( "old opts %1", opts );
-	    string nopts = CdromMntops();
+	    string nopts = FileSystems::GetFstabDefaultMntops("cdrom");
 	    if( size(opts)>0 )
 		nopts = nopts + "," + mergestring( opts, "," );
 	    y2milestone( "new opts %1", opts );

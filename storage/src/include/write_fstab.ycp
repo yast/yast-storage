@@ -77,7 +77,7 @@ define map onepartition2fstab (map part, integer& other_nr)
 	vfstype = "swap";
 	if( size(mntops) == 0 )
 	    {
-	    mntops = "pri=42";
+	    mntops = FileSystems::GetFstabDefaultMntops( "swap" );
 	    }
 	passno = 0;
 	}
@@ -418,25 +418,19 @@ define void write_fstab( map<string,map> & targetMap, map zipdrives, list<map> c
 
     if( Mode::initial )
 	{
-            // proc
-            fstab["/proc"] = $["spec":"proc", "mount":"/proc", "vfstype":"proc",
-            "mntops":"defaults", "freq":0, "passno":0];
-            // sysfs
-            fstab["/sys"] = $["spec":"sysfs", "mount":"/sys", "vfstype":"sysfs",
-            "mntops":"noauto", "freq":0, "passno":0];
+	// proc
+	fstab["/proc"] = FileSystems::GetFstabDefaultMap( "proc" );
+	// sysfs
+	fstab["/sys"] = FileSystems::GetFstabDefaultMap( "sys" );
 
 	// usbfs added with noauto
 	if (Hotplug::haveUSB)
 	    {
-	    fstab["/proc/bus/usb"] = $["spec":"usbfs", "mount":"/proc/bus/usb", 
-				       "vfstype":"usbfs", "mntops":"noauto", 
-				       "freq":0, "passno":0];
+	    fstab["/proc/bus/usb"] = FileSystems::GetFstabDefaultMap( "usb" );
 	    }
 
 	// devpts
-	fstab["/dev/pts"] = $["spec":"devpts", "mount":"/dev/pts", 
-	                      "vfstype":"devpts", "mntops":"mode=0620,gid=5", 
-			      "freq":0, "passno":0];
+	fstab["/dev/pts"] = FileSystems::GetFstabDefaultMap( "pts" );
 	fstablist = (list<map>)union( fstablist, maplist(string k, map v, fstab, ``(v)));
 	fstab = $[];
 
@@ -449,9 +443,9 @@ define void write_fstab( map<string,map> & targetMap, map zipdrives, list<map> c
 		zfile = zfile + sformat("%1",zipnum);
 
 	    string media = "/media"+zfile;
-	    fstab[media] = $["spec":""+tdevice+"4", "mount":media, 
-			     "vfstype":"auto", "mntops":"noauto,user", 
-			     "freq":0, "passno":0];
+	    fstab[media] = FileSystems::GetFstabDefaultMap( "zip" );
+	    fstab[media,"spec"] = tdevice+"4";
+	    fstab[media,"mount"] = media;
 	    zipnum = zipnum + 1;
 	    });
 	fstablist = (list<map>)union( fstablist, maplist (string k, map v, fstab, ``(v)));
@@ -525,10 +519,9 @@ define void write_fstab( map<string,map> & targetMap, map zipdrives, list<map> c
 	    if (fdnum > 0)
 		fdname = fdname + fdnum;
 	    string medianame = "/media"+fdname;
-	    fstab[medianame] = $[ "spec":dev_name, "mount":medianame, 
-				  "vfstype":"subfs", 
-				  "mntops": Storage::FloppyMntops(),
-				  "freq":0, "passno":0 ];
+	    fstab[medianame] = FileSystems::GetFstabDefaultMap( "floppy" );
+	    fstab[medianame,"spec"] = dev_name;
+	    fstab[medianame,"mount"] = medianame; 
 	    fdnum = fdnum + 1;
 	    });
 	fstablist = (list<map>)union( fstablist, maplist (any k, any v, fstab, ``(v)));

@@ -31,6 +31,56 @@
 
   global string nchars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+define list FstabOptionStrings = 
+    [ "default", 
+      "auto", "noauto",
+      "atime", "noatime",
+      "ro", "rw",
+      "user", "nouser",
+      "acl", "noacl",
+      "user_xattr", "no_user_xattr",
+      "data=journal", "data=ordered", "data=writeback",
+      "dev", "nodev", 
+      "exec", "noexec", 
+      "suid", "nosuid", 
+      "async", "sync", "dirsync",
+      "procuid", 
+      "barrier=none",
+      "fs=floppyfss", "fs=cdfss"
+      ];
+
+define list FstabOptionRegex = [ "pri=[0-9]\+", "iocharset=.\+", 
+                                 "nls=.\+", "codepage=.\+", 
+				 "gid=[0-9]\+", "umask=[0-7]\+",
+				 "loop=.\+", "encryption=.\+" ];
+
+define map FstabDefaultMap =
+    $[ "pts":    $[ "spec":"devpts", "mount":"/dev/pts", "vfstype":"devpts",
+		    "mntops":"mode=0620,gid=5", "freq":0, "passno":0 ],
+       "proc":   $[ "spec":"proc", "mount":"/proc", "vfstype":"proc", 
+                    "mntops":"defaults", "freq":0, "passno":0 ],
+       "sys":    $[ "spec":"sysfs", "mount":"/sys", "vfstype":"sysfs", 
+                    "mntops":"noauto", "freq":0, "passno":0 ],
+       "swap":   $[ "spec":"", "mount":"swap", "vfstype":"swap", 
+                    "mntops":"pri=42", "freq":0, "passno":0 ],
+       "root":   $[ "spec":"", "mount":"", "vfstype":"auto", 
+                    "mntops":"defaults", "freq":1, "passno":1 ],
+       "dev":    $[ "spec":"", "mount":"", "vfstype":"auto", 
+                    "mntops":"noauto,user", "freq":0, "passno":0 ],
+       "nfs":    $[ "spec":"", "mount":"", "vfstype":"nfs", 
+                    "mntops":"defaults", "freq":0, "passno":0 ],
+       "usb":    $[ "spec":"usbfs", "mount":"/proc/bus/usb", "vfstype":"usbfs", 
+                    "mntops":"noauto", "freq":0, "passno":0 ],
+       "cdrom":  $[ "spec":"", "mount":"", "vfstype":"subfs", 
+                    "mntops":"fs=cdfss,ro,procuid,nosuid,nodev,exec", 
+		    "freq":0, "passno":0 ],
+       "floppy": $[ "spec":"", "mount":"", "vfstype":"subfs", 
+                    "mntops":"fs=floppyfss,procuid,nodev,nosuid,sync", 
+		    "freq":0, "passno":0 ],
+       "zip":    $[ "spec":"", "mount":"", "vfstype":"auto", 
+                    "mntops":"noauto,user", "freq":0, "passno":0 ]
+     ];
+
   /* All supported filesystems */
   map<symbol, boolean> support 	= $[
 		   `reiser	: true,
@@ -1548,5 +1598,64 @@ global define string DefaultFstabOptions( map part )
     y2milestone( "DefaultFstabOptions fsys %1 is %2", fsys, fst_default );
     return( fst_default );
     }
+
+global define map CheckFstabOptions( string option_list )
+    ``{
+    boolean found = false;
+    integer index = 0;
+    y2milestone( "CheckFstabOptions option_list=%1", option_list );
+    list<string> olist = splitstring( option_list, "," );
+    list<string> known = [];
+    list<string> unknown = [];
+    foreach( string o, olist,
+	``{
+	if( contains( FstabOptionStrings, o ) )
+	    {
+	    known = add( known, o );
+	    }
+	else 
+	    {
+	    found = false;
+	    index = 0;
+	    while( !found && index<size(FstabOptionRegex) )
+		{
+		found = regexpmatch( o, FstabOptionRegex[index]:"" );
+		index = index + 1;
+		}
+	    if( found )
+		{
+		known = add( known, o );
+		}
+	    else
+		{
+		unknown = add( unknown, o );
+		}
+	    }
+	});
+    map ret = $[  "all_known" : size(unknown)==0, 
+                  "known_options" : mergestring( known, "," ),
+                  "unknown_options" : mergestring( unknown, "," ) ];
+    y2milestone( "CheckFstabOptions ret=%1", ret );
+    return( ret );
+    }
+
+global define map GetFstabDefaultMap( string key )
+    ``{
+    return( FstabDefaultMap[key]:$[] );
+    }
+
+global define string GetFstabDefaultMntops( string key )
+    ``{
+    map m = GetFstabDefaultMap( key );
+    return( m["mntops"]:"" );
+    }
+
+global define list GetFstabDefaultList( string key )
+    ``{
+    map m = GetFstabDefaultMap( key );
+    return( [ m["spec"]:"", m["mount"]:"", m["vfstype"]:"", m["mntops"]:"",
+              tostring(m["freq"]:0), tostring(m["passno"]:0) ] );
+    }
+
 
 }
