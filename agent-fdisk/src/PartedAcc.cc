@@ -75,6 +75,10 @@ PartedAccess::NewPartition(const PartitionType Part_e,
 	  {
 	  Buf_Ci << "linux-swap ";
 	  }
+      else if( Type_iv == 0x06 || Type_iv == 0x0c )
+	  {
+	  Buf_Ci << "fat32 ";
+	  }
       else
 	  {
 	  Buf_Ci << "ext2 ";
@@ -85,6 +89,10 @@ PartedAccess::NewPartition(const PartitionType Part_e,
       if( Type_iv == 0x82 )
 	  {
 	  Buf_Ci << "linux-swap ";
+	  }
+      else if( Type_iv == 0x06 || Type_iv == 0x0c )
+	  {
+	  Buf_Ci << "fat32 ";
 	  }
       else
 	  {
