@@ -1696,7 +1696,7 @@ of the partition.
 			   ))));
 	}
 
-    map retval     = cur_val;
+    map retval = cur_val;
     any ret = `ok;
 
     repeat
@@ -1712,7 +1712,7 @@ of the partition.
 	    UI::ChangeWidget( `id(`linux_size), `Value,  av_space );
 	    }
 
-	if ( ret == `ok )
+	if( ret == `ok )
 	    {
 	    // Get the value the user adjusted. If s/he entered a value
 	    // too big or too small this is automatically adjusted to the
@@ -1720,12 +1720,13 @@ of the partition.
        
 	    linux_size   = UI::QueryWidget(`id(`linux_size), `Value);
 	    new_size = used + free + av_space - linux_size;
-	    if( new_size < used+free && !possible["shrink"]:false )
+	    if( !cur_val["format"]:false && new_size < used+free && 
+	        !possible["shrink"]:false )
 	       {
 	       FsysCannotShrinkPopup();
 	       ret = `again;
 	       }
-	    else if( new_size < used+free && 
+	    else if( !cur_val["format"]:false && new_size < used+free && 
 		     cur_val["used_fs"]:`unknown==`reiser )
 	       {
 	       if( !FsysShrinkReiserWarning() )
@@ -1733,35 +1734,36 @@ of the partition.
 		   ret = `again;
 		   }
 	       }
-	    y2milestone("Linux size: <%1> - New size: <%2>", linux_size, new_size);
+	    y2milestone( "Linux size: <%1> - New size: <%2>", linux_size, 
+	                 new_size);
 	    }
-       if( ret == `ok )
+        if( ret == `ok )
 	    {
 	    if( linux_size != av_space )
-	       {
-	       retval["resize"] = true;
-	       retval["new_size"] = new_size;
-	       if( !haskey( retval, "ori_length" ))
-		   {
-		   integer ori_length = retval["region",1]:0;
-		   retval["ori_length"] = ori_length;
-		   }
-	       list new_reg = [ retval["region",0]:0, 
-				PartedSizeToCly( (tofloat(new_size) * 1024.0 * 1024.0),
-						 cyl_size ) ];
-	       retval["region"] = new_reg;
-	       }
-	   else
-	       {
-	       retval["resize"] = false;
-	       if( haskey( retval, "ori_length" ))
-		   {
-		   list new_reg = [ retval["region",0]:0, 
-				    retval["ori_length"]:0 ];
-		   retval["region"] = new_reg;
-		   }
-	       }
-	   }
+		{
+		retval["resize"] = true;
+		retval["new_size"] = new_size;
+		if( !haskey( retval, "ori_length" ))
+		    {
+		    integer ori_length = retval["region",1]:0;
+		    retval["ori_length"] = ori_length;
+		    }
+		list new_reg = [ retval["region",0]:0, 
+				 PartedSizeToCly( (tofloat(new_size)*1024.0*1024.0),
+						  cyl_size ) ];
+		retval["region"] = new_reg;
+		}
+	    else
+		{
+		retval["resize"] = false;
+		if( haskey( retval, "ori_length" ))
+		    {
+		    list new_reg = [ retval["region",0]:0, 
+				     retval["ori_length"]:0 ];
+		    retval["region"] = new_reg;
+		    }
+		}
+	    }
 	y2milestone("ret = %1", retval );
 	} 
     until (  ret == `ok  || ret == `cancel );
@@ -1812,80 +1814,95 @@ of the partition.
 global define TestStartEndCyl( string str_start_cyl, string str_end_part, 
                                string dev, map disk, symbol type, 
 			       integer cyl_size, boolean bsd_label )
-   ``{
+    ``{
+    integer	max_end_cyl   = 0;
+    string    max_end_str   = "";
+    symbol    input         = `ok;
+    integer   int_start_cyl = tointeger(str_start_cyl);
+    integer   int_end_cyl   = 0;
 
-      integer	max_end_cyl   = 0;
-      string    max_end_str   = "";
-      symbol    input         = `ok;
-      integer   int_start_cyl = tointeger(str_start_cyl);
-      integer   int_end_cyl   = 0;
-
-      ////////////////////////////////// STEP A /////////////////////
-      if (!IsNumber( str_start_cyl ))
-	  {
-          input = `error;
-          UI::ErrorPopup(_("Wrong input for the start of the partition. 
+    ////////////////////////////////// STEP A /////////////////////
+    if (!IsNumber( str_start_cyl ))
+	{
+	input = `error;
+	UI::ErrorPopup(_("Wrong input for the start of the partition. 
 Enter the start cylinder (e.g., 77).
 "));
-	  }
-      else
-	  {
-          ////////////////////////////// STEP B /////////////////////
+	}
+    else
+	{
+	////////////////////////////// STEP B /////////////////////
 
-          integer      int_start_cyl = tointeger(str_start_cyl);
+	integer      int_start_cyl = tointeger(str_start_cyl);
 
-          if ( type == `logical ) 
-	      max_end_cyl = TestLogicalSlot( int_start_cyl, dev, disk );
-          else 
-	      max_end_cyl = TestSlot( int_start_cyl, dev, disk, bsd_label );  // primary && extended
-          if (max_end_cyl == nil)
-	      {
-              UI::ErrorPopup(_("You entered an invalid value. Please try again."));
-              input = `error;
-	      }
+	if ( type == `logical ) 
+	    max_end_cyl = TestLogicalSlot( int_start_cyl, dev, disk );
+	else 
+	    max_end_cyl = TestSlot( int_start_cyl, dev, disk, bsd_label );  // primary && extended
+	if (max_end_cyl == nil)
+	    {
+	    UI::ErrorPopup(_("You entered an invalid value. Please try again."));
+	    input = `error;
+	    }
 
-          if ( input == `ok )
-	      {
-              ////////////////////////// STEP C /////////////////////
-              if (!IsCylNumber(str_end_part))
-		  {
-                  input = `error;
-		  // for translators
-                  UI::ErrorPopup(_("The value for the partition end is invalid.
+	if ( input == `ok )
+	    {
+	    ////////////////////////// STEP C /////////////////////
+	    if (!IsCylNumber(str_end_part))
+		{
+		input = `error;
+		// for translators
+		UI::ErrorPopup(_("The value for the partition end is invalid.
 
 Enter the end cylinder number (e.g., 77), an offset (e.g., +122),
 or specify the size of the partition directly (e.g., +100M or 1.8GB )
 "));
-		  }
-              else
-		  {
-                  ////////////////////// STEP D /////////////////////
+		}
+	    else
+		{
+		////////////////////// STEP D /////////////////////
 
-                  int_end_cyl = int_start_cyl + 
-		                ToEndRegion( str_start_cyl, str_end_part, 
-				             cyl_size ) - 1;
+		int_end_cyl = int_start_cyl + 
+			      ToEndRegion( str_start_cyl, str_end_part, 
+					   cyl_size ) - 1;
 
-                  if ( int_end_cyl > max_end_cyl || int_end_cyl < int_start_cyl)
-		      {
-                      ////////////////// STEP E /////////////////////
+		if( int_end_cyl > max_end_cyl || int_end_cyl < int_start_cyl)
+		    {
+		    ////////////////// STEP E /////////////////////
+		    string text = sformat( _("
+The value of the end cylinder %1 was not valid. 
+Value must be betweeb %2 and %3.
 
-		      UI::WarningPopup(_("The value of the end cylinder was not valid.
-YaST2 has replaced it with the maximum possible value.
-"));
-                      max_end_str = sformat("%1", max_end_cyl);
-                      input = `max;
-		      }
-		  }
-	      }
-	  }
-      // END Check
+YaST2 can automatically use the maximum allowed value
+or you say \"No\" and type a correct value yourself.
 
-      if ( input == `ok )  return( [`ok,  int_end_cyl ]);
-      if ( input == `max ) return( [`max, max_end_str ]);
+Should YaST2 use the maximum allowed value? 
+"),
+                                          int_end_cyl, int_start_cyl, 
+					  max_end_cyl );
+		    boolean ans = UI::YesNoPopup( text );
 
-      // if  ( input == `error )
-      return( [`error, 0]);
-   };
+		    if( ans )
+		        {
+			max_end_str = sformat("%1", max_end_cyl);
+			input = `max;
+			}
+		    else
+		        {
+			input = `error;
+			}
+		    }
+		}
+	    }
+	}
+    // END Check
+
+    if ( input == `ok )  return( [`ok,  int_end_cyl ]);
+    if ( input == `max ) return( [`max, max_end_str ]);
+
+    // if  ( input == `error )
+    return( [`error, 0]);
+    };
 
 
 
@@ -1897,7 +1914,7 @@ YaST2 has replaced it with the maximum possible value.
      *
      *----------------------------------------------------------------------
      */
-global define CreateEditExtendedPartDlg( map new_val , string title, 
+global define CreateEditExtendedPartDlg( map new_val, string title, 
                                          string dev, map disk, 
 					 integer cyl_size, boolean edit, 
 					 boolean bsd_label  )  
