@@ -737,6 +737,23 @@ global define list AddFstabToData( map targetMap, list fstab )
     if( fstab == nil )
 	return [targetMap] ;
 
+    fstab = maplist( `e, fstab,
+	``{
+	string name = e["spec"]:"";
+	integer pos = findlastof( name, "=" );
+	if( find( name, "LABEL" )==0 && pos>0 )
+	    {
+	    e["label"] = substring( name, pos+1 );
+	    }
+	else if( find( name, "UUID" )==0 && pos>0 )
+	    {
+	    e["uuid"] = substring( name, pos+1 );
+	    }
+	return( e );
+	});
+
+    y2milestone( "fstab = %1", fstab );
+
     map new_targetMap = eval( targetMap );
     list table_input = [];
 
@@ -756,12 +773,32 @@ global define list AddFstabToData( map targetMap, list fstab )
 		    ``{
 		    string dev_fstab   = fstab_entry["spec"]:"";
 		    string mount_fstab = fstab_entry["file"]:"";
+		    boolean found = false;
 
-		    /////////////////////////////////////////////////
-		    //  find equal device
-		    if( dev_fstab == partition["device"]:"" )
+		    if( size(fstab_entry["label"]:"")>0 && 
+		        partition["label"]:"" == fstab_entry["label"]:"" )
+			{
+			found = true;
+			new_partition["mountby"] = `label;
+			}
+		    if( size(fstab_entry["uuid"]:"")>0 && 
+		        partition["uuid"]:"" == fstab_entry["uuid"]:"" )
+			{
+			found = true;
+			new_partition["mountby"] = `uuid;
+			}
+		    else if( dev_fstab == partition["device"]:"" )
+			{
+			found = true;
+			}
+		    if( found )
 			{
 			new_partition["mount"] = mount_fstab;
+			if( size(fstab_entry["mntops"]:"")>0 &&
+			    fstab_entry["mntops"]:"" != "default" )
+			    {
+			    new_partition["fstopt"] = fstab_entry["mntops"]:"";
+			    }
 
 			/////////////////////////////////////////////
 			// entries for table
