@@ -1,0 +1,149 @@
+/**
+ * File:
+ *   cdrom.ycp
+ *
+ * Module:
+ *   Configuration of cdrom
+ *
+ * Summary:
+ *   Main file
+ *
+ * Authors:
+ *   Thoms Fehr <fehr@suse.de>
+ *
+ * $Id$
+ *
+ */
+
+{
+textdomain "storage";
+
+import "Wizard";
+import "Misc";
+
+include "ui/common_popups.ycp";
+
+list cdrom = [];
+list cdrom_orig = [];
+
+define string HelpText()
+    ``{
+    return( _(
+"<p>This module configures the cdrom drives in your system.</p>
+<p>The list contains all detected CD/DVD drives the box to the left
+indicates if the CD/DVD is already integrated into the system.
+Integration into the system means that a entry in /etc/fstab exists,
+a subdirectory below /media is created and possibly a kernel commandline
+parameter is provided (for ide devices).</p>
+<p>Simply click into the box of the CD/DVDs you want to integrate into
+the system. It normally makes no sense to klick on the box of already
+integrated CD/DVDs.</p>"));
+    }
+
+
+    term buttons = `HBox( `PushButton(`id(`abort ), AbortButtonLabel() ),
+                          `HStretch(),
+			  `PushButton(`id(`apply), _("&Apply") ),
+                          `HStretch(),
+			  `PushButton(`id(`finish), FinishButtonLabel() ) );
+
+    Wizard::OpenDialog( Wizard::GenericDialog( buttons ) );
+
+    list dev = [];
+    SCR::Write(.dumpto.tmp.dev, SCR::Read(.probe.cdrom.manual) );
+    foreach( `entry, SCR::Read(.probe.cdrom.manual), 
+	``{
+	map conf = SCR::Read(.probe.status, entry["unique_key"]:"");
+	y2milestone( "entry:%1", entry );
+	y2milestone( "conf:%1", conf );
+	if( conf["available"]:`no != `no )
+	    {
+	    entry["conf"] = conf;
+	    dev = add( dev, entry );
+	    }
+	});
+    SCR::Write(.dumpto.tmp.found, dev );
+
+    /*
+    dev = add( dev, $[ "conf" : $[ "configured" : `new ],
+                       "drivers" : [ $[ "modprobe" : false,
+					"modules" : [ [ "loop_fish2", "" ]]]],
+		       "model" : "Loop driver" ] );
+    */
+
+    integer num = 0;
+    list clist = maplist( `entry, dev,
+	``{
+	term it = `item( `id(num), entry["model"]:"", 
+			  entry["conf","configured"]:`no == `yes );
+	num = num+1;
+	return( it );
+	});
+    y2milestone( "clist=%1", clist );
+
+    term dialog =
+	`VBox( 
+	    `VSpacing(3),
+	    `HBox( 
+		`HWeight(20, `HSpacing() ),
+		`HWeight(60, 
+		    `MultiSelectionBox( `id(`cdroms),
+					_("&Detected CD/DVD Devices"), 
+					clist )), 
+		`HWeight(20, `HSpacing() )),
+	    `VSpacing(3) 
+	    );
+
+    if( size(dev)==0 )
+	{
+	UI::MessagePopup( _("No CD/DVD device found") );
+	return;
+	}
+    Wizard::SetContents( _("CD/DVD device integration"), dialog,
+			 HelpText(), false, false );
+
+    boolean changed = false;
+    symbol ret = `none;
+    do
+	{
+	ret = UI::UserInput();
+	y2milestone( "ret = %1", ret );
+	if( ret == `apply || ret == `finish )
+	    {
+	    string text = 
+		sformat( _("CD/DVD device %1 succesfully integrated."), 
+			 device );
+	    if( find( device, "/dev/hd" )==0 )
+		{
+		text = text + sformat( _(
+"
+Be sure to add the parameter %1 to your boot loader kernel command line"), 
+                                       param );
+		}
+	    UI::MessagePopup( text );
+	    foreach( `entry, dev,
+		``{
+		if( size(entry["unique_key"]:"")>0 )
+		    SCR::Write(.probe.status.configured, entry["unique_key"]:"",
+			       `yes);
+		});
+	    changed = false;
+	    }
+	else if( ret == `abort )
+	    {
+	    if( changed )
+		{
+		if( !UI::YesNoPopup( _("You have unsaved changes.
+These changes will be lost when you abort now.
+
+Discard changes?")))
+		    {
+		    ret = `continue;
+		    }
+		}
+	    }
+	}
+    while( ret != `abort && ret != `finish );
+    UI::CloseDialog();
+
+}
