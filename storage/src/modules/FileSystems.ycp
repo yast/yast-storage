@@ -988,9 +988,10 @@ global define map GetUuidVolume( string dev, symbol fs )
 	}
     else if( fs == `reiser )
 	{
-	cmd = sformat( "/sbin/debugreiserfs %1", dev );
-	y2debug( "executing cmd %1", cmd );
+	cmd = sformat( "/sbin/debugreiserfs %1 2>&1", dev );
+	y2milestone( "executing cmd %1", cmd );
 	cmd_ret = SCR::Execute(.target.bash_output, cmd);
+	y2milestone( "output %1", cmd_ret["stdout"]:"" );
 	val = cmd_ret["stdout"]:"";
 	search = "UUID:";
 	pos = find( val, search );
@@ -1126,20 +1127,19 @@ global define symbol DetectFs( string current_dev )
     ``{
     symbol  return_value = `unknown;
     string  testcall     = "";
-    map bash_call        = $[];
+    map bc        	 = $[];
 
-    testcall  = sformat( "/bin/guessfstype %1", current_dev );
-    bash_call = SCR::Execute (.target.bash_output, testcall, $[] );
+    testcall  = sformat( "/bin/guessfstype %1 2>%1", current_dev );
+    bc = SCR::Execute (.target.bash_output, testcall, $[] );
+    y2milestone( "cmd %1", testcall, bc["exit"]:-1 );
+    y2milestone( "%1", bc );
 
-    if (bash_call["exit"]:1 == 0)
+    if (bc["exit"]:1 == 0)
 	{
-	string type = bash_call["stdout"]:"";
-	integer pos = findlastof(type, "\n");
-	if (pos != nil)
-	   {
-	   type = substring (type, 0, pos);
-	   }
-	pos = findlastof(type, " ");
+	string type = select( filter( `e, splitstring( bc["stdout"]:"", "\n" ),
+				      ``(find(e,current_dev)==0) ),
+			      0, "" );
+	integer pos = findlastof(type, " ");
 	if (pos != nil)
 	   {
 	   type = substring (type, pos+1);
@@ -1187,8 +1187,6 @@ global define symbol DetectFs( string current_dev )
 	  return_value = `swap;
 	  }
 	}
-    y2debug( "detect fs ret %1 bash %2", return_value, bash_call );
-
     y2milestone( "DetectFs %1: %2", current_dev, return_value );
     return( return_value );
     };
