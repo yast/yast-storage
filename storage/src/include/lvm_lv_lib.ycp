@@ -48,46 +48,44 @@ include "partitioning/lvm_lib.ycp";
     // 	
     //////////////////////////////////////////////////////////////////////
 
-     global define addLogicalVolume( map Lv,
-			      map    modify_targets,
-			      map    targetMap,
-			      string current_vg )
+global define map addLogicalVolume( map Lv, map modify_targets,
+				    map targetMap, string current_vg )
     ``{
-	y2debug("create Lv: %1", Lv);
-	/////////////////////////////////////////////////
-	// new entry in execution stack "modify_targets"
-	
-	map new_create_lv = $[
-			        "use_module" : "lvm_ll",      
-			        "type"       : "create_lv",  
-			        "name"       : Lv["nr"]:"",         
-			        "size"       : Lv["lv_size"]:0,               
-				"vgname"     : current_vg,     
-			        "stripes"    : Lv["stripes"]:1
+    y2debug("create Lv: %1", Lv);
+    /////////////////////////////////////////////////
+    // new entry in execution stack "modify_targets"
+    
+    map new_create_lv = $[
+			    "use_module" : "lvm_ll",      
+			    "type"       : "create_lv",  
+			    "name"       : Lv["nr"]:"",         
+			    "size"       : Lv["lv_size"]:0,               
+			    "vgname"     : current_vg,     
+			    "stripes"    : Lv["stripes"]:1
 	];           
 
-	if( haskey( Lv, "stripesize" ) )
-	    {
-	    new_create_lv["stripesize"] = Lv["stripesize"]:0;
-	    }
-	
-	modify_targets = addTargetModification( modify_targets, new_create_lv );
-	y2debug( "modify_targets: %1", modify_targets);
+    if( haskey( Lv, "stripesize" ) )
+	{
+	new_create_lv["stripesize"] = Lv["stripesize"]:0;
+	}
+    
+    modify_targets = addTargetModification( modify_targets, new_create_lv );
+    y2debug( "modify_targets: %1", modify_targets);
 
 
-	/////////////////////////////////////////////////
-	// change targetMap
+    /////////////////////////////////////////////////
+    // change targetMap
 
-	map  disk       = lookup( targetMap, "/dev/"+current_vg, $[] );
-	y2debug( "disk: %1", disk);
-	list partitions = lookup( disk, "partitions", []  );
+    map  disk       = lookup( targetMap, "/dev/"+current_vg, $[] );
+    y2debug( "disk: %1", disk);
+    list partitions = lookup( disk, "partitions", []  );
 
-	y2debug("lv_size: %1, cyl_size   %2 ", Lv["lv_size"]:0, disk["cyl_size"]:1);
-	partitions = add( partitions, Lv );
-	change( disk, "partitions", partitions );
+    y2debug("lv_size: %1, cyl_size   %2 ", Lv["lv_size"]:0, disk["cyl_size"]:1);
+    partitions = add( partitions, Lv );
+    change( disk, "partitions", partitions );
 
-	return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
-     };
+    return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
+    };
 	
 
      //////////////////////////////////////////////////////////////////////
@@ -104,48 +102,46 @@ include "partitioning/lvm_lib.ycp";
      // 	
      //////////////////////////////////////////////////////////////////////
 
-     global define resizeLogicalVolume( map    Lv,
-				 map    modify_targets,
-				 map    targetMap,
-				 string current_vg )
-     ``{
-	 string volume_name = Lv["nr"]:"";
-	 
-	 /////////////////////////////////////////////////
-	 // new entry in execution stack "modify_targets"
+global define map resizeLogicalVolume( map Lv, map modify_targets,
+				   map targetMap, string current_vg )
+    ``{
+    string volume_name = Lv["nr"]:"";
+ 
+    /////////////////////////////////////////////////
+    // new entry in execution stack "modify_targets"
 
-	 if( Lv["changed_size"]:false )
-	     {
-	     map new_create_lv = $[
-			       "use_module" : "lvm_ll",      
-			       "type"       : "resize_lv",  
-			       "name"       : volume_name,
-			       "size"       : Lv["lv_size"]:0,               
-			       "vgname"     : current_vg
-			       ];           
-	
-	     modify_targets = addTargetModification( modify_targets, new_create_lv );
-	     y2debug( "EEE s %1", modify_targets);
-	     }
+    if( Lv["changed_size"]:false )
+	{
+	map new_create_lv = $[
+			  "use_module" : "lvm_ll",      
+			  "type"       : "resize_lv",  
+			  "name"       : volume_name,
+			  "size"       : Lv["lv_size"]:0,               
+			  "vgname"     : current_vg
+			  ];           
+
+	modify_targets = addTargetModification( modify_targets, new_create_lv );
+	y2debug( "EEE s %1", modify_targets);
+	}
 
 
-	 /////////////////////////////////////////////////
-	 // change targetMap
+    /////////////////////////////////////////////////
+    // change targetMap
 
-	 map  disk       = lookup( targetMap, "/dev/"+current_vg, $[] );
-	 y2debug( "EEEV  s %1", disk);
-	 list partitions = lookup( disk, "partitions", []  );
+    map  disk       = lookup( targetMap, "/dev/"+current_vg, $[] );
+    y2debug( "EEEV  s %1", disk);
+    list partitions = lookup( disk, "partitions", []  );
 
-	 y2debug("SSSIZ %1   %2 ", Lv["lv_size"]:0, disk["cyl_size"]:1);
+    y2debug("SSSIZ %1   %2 ", Lv["lv_size"]:0, disk["cyl_size"]:1);
 
-	 list new_partitions = filter(`part, partitions,
-				      ``(lookup(part, "nr", "")!=volume_name));
-	
-	 new_partitions = add( new_partitions, Lv );
-	 change( disk, "partitions", new_partitions);
+    list new_partitions = filter(map part, partitions,
+				 ``(part["nr"]:""!=volume_name));
 
-	 return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
-     };
+    new_partitions = add( new_partitions, Lv );
+    change( disk, "partitions", new_partitions);
+
+    return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
+    };
 
 
      
@@ -166,38 +162,38 @@ include "partitioning/lvm_lib.ycp";
      // 	
      //////////////////////////////////////////////////////////////////////
 
-global define editLogicalVolume( map Lv, map modify_targets,
+global define map editLogicalVolume( map Lv, map modify_targets,
 				 map targetMap, string current_vg)
-     ``{
-     /////////////////////////////////////////////////
-     // changed entry in execution stack "modify_targets"
-    
-     map new_create_lv = $[
-			   "use_module" : "lvm_ll",      
-			   "type"       : "create_lv",  
-			   "name"       : Lv["nr"]:"",
-			   "size"       : Lv["lv_size"]:0,               
-			   "vgname"     : current_vg,     
-			   "stripes"    : Lv["stripes"]:1
-	 ];           
+    ``{
+    /////////////////////////////////////////////////
+    // changed entry in execution stack "modify_targets"
+   
+    map new_create_lv = $[
+			  "use_module" : "lvm_ll",      
+			  "type"       : "create_lv",  
+			  "name"       : Lv["nr"]:"",
+			  "size"       : Lv["lv_size"]:0,               
+			  "vgname"     : current_vg,     
+			  "stripes"    : Lv["stripes"]:1
+	];           
 
-     integer idx = GetModifyIdx( modify_targets, new_create_lv );
-     if( idx==-1 )
-	 modify_targets = addTargetModification( modify_targets, new_create_lv );
-     else
-	 modify_targets[idx] = new_create_lv;
-     y2debug( "modify_targets: %1", modify_targets);
+    integer idx = GetModifyIdx( modify_targets, new_create_lv );
+    if( idx==-1 )
+	modify_targets = addTargetModification( modify_targets, new_create_lv );
+    else
+	modify_targets[idx] = new_create_lv;
+    y2debug( "modify_targets: %1", modify_targets);
 
-     /////////////////////////////////////////////////
-     // change targetMap
+    /////////////////////////////////////////////////
+    // change targetMap
 
-     targetMap = Storage::SetPartition( targetMap, Lv );
+    targetMap = Storage::SetPartition( targetMap, Lv );
 
-     y2debug("lv_size: %1 ", Lv["lv_size"]:0 );
+    y2debug("lv_size: %1 ", Lv["lv_size"]:0 );
 
-     return( $[ "modify_targets":modify_targets, "targets":targetMap, 
-                "error":false ]);
-     };
+    return( $[ "modify_targets":modify_targets, "targets":targetMap, 
+	       "error":false ]);
+    };
 
      
 
@@ -208,53 +204,51 @@ global define editLogicalVolume( map Lv, map modify_targets,
      // 	
      //////////////////////////////////////////////////////////////////////
 
-     global define removeLogicalVolume( map Lv,
-				 map    modify_targets,
-				 map    targetMap,
-	                         string current_vg)
-     ``{
-	 string  volume_name          = Lv["nr"]:"";
-	 map new_create_lv = $[
-			       "use_module"       : "lvm_ll",      
-			       "type"             : "remove_lv",  
-			       "name"             : volume_name,
-			       "vgname"           : current_vg,
-			       "target_map_entry" : $[]
-	     ];           
+global define map removeLogicalVolume( map Lv, map modify_targets,
+				   map targetMap, string current_vg)
+    ``{
+    string  volume_name          = Lv["nr"]:"";
+    map new_create_lv = $[
+			  "use_module"       : "lvm_ll",      
+			  "type"             : "remove_lv",  
+			  "name"             : volume_name,
+			  "vgname"           : current_vg,
+			  "target_map_entry" : $[]
+	];           
+
+    integer modify_targets_index = GetModifyIdx( modify_targets, 
+						 new_create_lv );
     
-         integer modify_targets_index = GetModifyIdx( modify_targets, 
-	                                              new_create_lv );
-	 
-	 // check if there is a create already,
-	 // if there is a create, delete this "create"
-	 // otherwise insert a remove
+    // check if there is a create already,
+    // if there is a create, delete this "create"
+    // otherwise insert a remove
 
-	 if ( modify_targets_index == -1 )
-	     {
-	     /////////////////////////////////////////////////
-	     // new entry in execution stack "modify_targets"
-	
-	     modify_targets = addTargetModification( modify_targets, new_create_lv );
-	     }
-	 else
-	     {
-	     // delete create entry  i.e 3
-	     modify_targets = removeTargetModification( modify_targets, 
-	                                                modify_targets_index );
-	     }
+    if ( modify_targets_index == -1 )
+	{
+	/////////////////////////////////////////////////
+	// new entry in execution stack "modify_targets"
+   
+	modify_targets = addTargetModification( modify_targets, new_create_lv );
+	}
+    else
+	{
+	// delete create entry  i.e 3
+	modify_targets = removeTargetModification( modify_targets, 
+						   modify_targets_index );
+	}
 
-	 
-	 /////////////////////////////////////////////////
-	 // change targetMap
+    
+    /////////////////////////////////////////////////
+    // change targetMap
 
-	 targetMap = Storage::SetPartitionData( targetMap, Lv["device"]:"",
-	                                        "delete", true );
+    targetMap = Storage::SetPartitionData( targetMap, Lv["device"]:"",
+					   "delete", true );
 
-	 y2debug( "createLv: %1", Lv);
-	 y2debug( "modify_targets: %1", modify_targets);
-	 y2debug( "targetMap: %1" , targetMap);
-	 
-	 return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
+    y2debug( "createLv: %1", Lv);
+    y2debug( "modify_targets: %1", modify_targets);
+    y2debug( "targetMap: %1" , targetMap);
+    
+    return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ]);
     };
 
   
@@ -275,8 +269,8 @@ global define editLogicalVolume( map Lv, map modify_targets,
     //
     //  out: [ 10344343, 2223333 ]   [ used, avail ]
      
-global define get_lv_size_info( map targetMap, list partition_list, 
-                                string current_vg )
+global define list get_lv_size_info( map targetMap, list partition_list, 
+				     string current_vg )
     ``{
     integer sum_byte_vg = 0;
     integer sum_byte_lv = 0;
@@ -286,7 +280,7 @@ global define get_lv_size_info( map targetMap, list partition_list,
     sum_byte_vg = vg_size( parts, current_vg );
 
     // now size that is reserved  
-    foreach( `part, partition_list, 
+    foreach( map part, partition_list, 
 	     ``{ sum_byte_lv = sum_byte_lv + part["size_byte"]:0; });
 
     y2milestone( "sum_byte_vg=%1 sum_byte_lv=%2", sum_byte_vg, sum_byte_lv );
@@ -298,9 +292,9 @@ global define get_lv_size_info( map targetMap, list partition_list,
     ////////////////////////////////////////////////////////////////////////////////
     // Get all logical volumes and mounted partitions
     
-global define get_lvs_and_mounted_partitions( map targetMap, 
-                                              boolean view_all_mnts,
-					      string current_vg )
+global define list get_lvs_and_mounted_partitions( map targetMap, 
+						   boolean view_all_mnts,
+						   string current_vg )
     ``{
     list ret = [];
     integer pesize = targetMap["/dev/"+current_vg,"cyl_size"]:(4096*1024);
@@ -310,12 +304,12 @@ global define get_lvs_and_mounted_partitions( map targetMap,
     // add the devicename i.e /dev/hda1 or /dev/system/usr to partition list
     // and the device key  <subdevice>/<maindevice> i.e. 1//dev/hda
     
-    targetMap = mapmap( `dev, `devmap, targetMap,
+    targetMap = mapmap( string dev, map devmap, targetMap,
 	``{
 	boolean is_lvm_vg  = devmap["is_lvm_vg"]:false;
 	integer cyl_size   = devmap["cyl_size"]:0;
 					
-	list partitions = maplist( `part, devmap["partitions"]:[],
+	list partitions = maplist( map part, devmap["partitions"]:[],
 	    ``{
 	    integer bytes_of_part = 0;
 	    integer nb_cyl = part["region",1]:0;
@@ -347,7 +341,7 @@ global define get_lvs_and_mounted_partitions( map targetMap,
 	    });
 
 	devmap["partitions"] = partitions;
-	return( [ dev, devmap ] );
+	return( $[ dev: devmap ] );
 	});
 
     ////////////////////////////////////////////////////////////
@@ -359,35 +353,35 @@ global define get_lvs_and_mounted_partitions( map targetMap,
     if ( ! view_all_mnts )
 	{
 	// only to current vg depending vgs ...
-	foreach( `dev, `devmap, targetMap,
+	foreach( string dev, map devmap, targetMap,
 	    ``{
-	    ret = add( ret, filter( `part, devmap["partitions"]:[],
-				    ``( !part["delete"]:false &&
-				        part["is_lv"]:false &&
-				        part["lvm_name"]:"" == current_vg )));
+	    ret = union( ret, filter( map part, devmap["partitions"]:[],
+				      ``( !part["delete"]:false &&
+					  part["is_lv"]:false &&
+					  part["lvm_name"]:"" == current_vg )));
 	    });
 	}
     else
 	{
-	foreach( `dev, `devmap, targetMap,
+	foreach( string dev, map devmap, targetMap,
 	    ``{
-	    ret = add( ret, filter( `part, devmap["partitions"]:[],
-				    ``( !part["delete"]:false &&
-				        (part["mount"]:"" != "" ||
-					 part["is_lv"]:false ))));
+	    ret = merge( ret, filter( map part, devmap["partitions"]:[],
+				      ``( !part["delete"]:false &&
+				          (part["mount"]:"" != "" ||
+					   part["is_lv"]:false ))));
 	    });
 	}
-    return( flatten(ret) );
+    return( ret );
     };
 
     ////////////////////////////////////////////////////////////////////////////////
     // Get all existing lv names of a volume group
     
-global define get_lv_names( map targetMap, string current_vg )
+global define list get_lv_names( map targetMap, string current_vg )
     ``{
-    list part = filter( `e, targetMap["/dev/"+current_vg,"partitions"]:[],
+    list part = filter( map e, targetMap["/dev/"+current_vg,"partitions"]:[],
                         ``(!e["delete"]:false));
-    list ret = maplist( `e, part, ``(e["nr"]:"") );
+    list ret = maplist( map e, part, ``(e["nr"]:"") );
     return( ret );
     };
 
@@ -411,12 +405,12 @@ global define get_lv_names( map targetMap, string current_vg )
     //	  `item(`id(2//dev/hda), "/dev/hda2 ",   " /usr ",  "system", " 2G ", " Linux ")
     // 	];
 
-global define get_lv_widget_table( list possPvList )
+global define list get_lv_widget_table( list possPvList )
     ``{
     list    ret = [];
 
     possPvList = 
-	sort( `x, `y, possPvList,
+	sort( map x, map y, possPvList,
 	    ``{
 	    if( x["maindev"]:"" == y["maindev"]:"" )
 		{
@@ -429,7 +423,7 @@ global define get_lv_widget_table( list possPvList )
 	    });
     
     
-    return( maplist( `partition, possPvList,
+    return( maplist( map partition, possPvList,
 	     ``{
 	     return(`item( `id(partition["devkey"]:"--"),
 			       partition["device"]:"--",

@@ -32,18 +32,18 @@
   //  "new_size"   : 1000,	// if new size is 1000 MB
   //  "ori_length" : 722,	// if ori_length of partition before resize was 722 cyl
 
-  global define resize_partition( list partitions,
+  global define list resize_partition( list partitions,
 				  integer nr,
 				  integer win_length,  // in cyl
  				  integer win_size,    // in byte
 				  integer win_max_length ) // in cyl
   ``{
 
-      map win_part = select(filter( `c_part, partitions,
+      map win_part = (map) select(filter( map c_part, partitions,
 			``(lookup(c_part, "prop_reuse_nr", nil)==nr
 			   && (!lookup(c_part, "delete", false)))),0,$[]);
 
-      list other_parts = filter( `c_part, partitions,
+      list other_parts = filter( map c_part, partitions,
 			``( ! (lookup(c_part, "prop_reuse_nr", nil)==nr
 			       && (!lookup(c_part, "delete", false)))));
 
@@ -52,7 +52,7 @@
       // save the original length of windows partition, if it is not already saved
       if ( lookup( win_part, "ori_length", -1 ) == -1 )
       {
-          integer ori_length   = select( region, 1, 0 );
+          integer ori_length   = (integer) select( region, 1, 0 );
 	  win_part             = add( win_part, "ori_length", ori_length );
       }
 
@@ -62,7 +62,7 @@
       win_part    = add( win_part, "region", region );
       win_part    = add( win_part, "win_max_length", win_max_length );
 
-      if ( win_part == $[] || win_part == nil || nr == -1 || win_part == -1 || win_length == -1)
+      if ( win_part == $[] || win_part == nil || nr == -1 || win_length == -1)
       {
 	  // ERROR
 	  y2error("Resize %1 %2 %3 %4", nr, win_length, win_size, win_part );
@@ -93,15 +93,15 @@
   //   "region":[0, 17],
   //    ..
 
-  global define delete_partition( list    partitions,
+  global define list delete_partition( list    partitions,
 				  integer nr )
   ``{
 
-      map part = select(filter( `c_part, partitions,
+      map part = (map) select(filter( map c_part, partitions,
 			    ``(     lookup(c_part, "prop_reuse_nr", nil) == nr
 				    && (!lookup(c_part, "delete", false)))),0,$[]);
 
-      list other_parts = filter( `c_part, partitions,
+      list other_parts = filter( map c_part, partitions,
 			``( ! (lookup(c_part, "prop_reuse_nr", nil) == nr
 			       && (!lookup(c_part, "delete", false)))));
 
@@ -125,7 +125,7 @@
 
       if ( lookup( part, "type", `unknown )  == `logical )
       {
-	  partitions = maplist( `parti, partitions , ``(
+	  partitions = maplist( map parti, partitions , ``(
 	  {
 	      // only the valid ones
 	      if ( (lookup( parti,"delete",false) == false) &&  (lookup( parti, "nr", 0) > real_nr) )
@@ -170,15 +170,15 @@
   //   "type":`primary
   //   "used_fs": `ext2
 
-  global define reuse_partition( list    partitions,
+  global define list reuse_partition( list    partitions,
 				 integer nr,
 				 string  mount )
   ``{
-      map part = select(filter( `c_part, partitions,
+      map part = (map) select(filter( map c_part, partitions,
 			    ``(     lookup(c_part, "prop_reuse_nr", nil) == nr
 				    && (!lookup(c_part, "delete", false)))),0,$[]);
 
-      list other_parts = filter( `c_part, partitions,
+      list other_parts = filter( map c_part, partitions,
 			``( ! (lookup(c_part, "prop_reuse_nr", nil)==nr
 			       && (!lookup(c_part, "delete", false)))));
 
@@ -233,7 +233,7 @@
   //   "type":`primary
   //   "used_fs": `ext2
 
-global define create_partition( list    partitions, 
+global define list create_partition( list    partitions, 
                                 integer start_cyl,
 				integer end_cyl, 
 				integer nr,  // ignore if logical!
@@ -291,15 +291,15 @@ global define create_partition( list    partitions,
 			 41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,
 			 58,59,60,61,62,63,64];
 
-	    list dev_nb = maplist( `part, 
-	                           filter( `pa, partitions, 
+	    list dev_nb = maplist( map part, 
+	                           filter( map pa, partitions, 
 				           ``(!pa["delete"]:false )), 
 				   ``(part["nr"]:0 ));
-	    list result = filter( `base_nr, base, 
-	                          ``( find(`nr, dev_nb, 
+	    list result = filter( integer base_nr, base, 
+	                          ``( find( integer nr, dev_nb, 
 				           ``(nr == base_nr)) == nil));
 
-	    nr = select( sort( result ), 0, 0 );
+	    nr = (integer) select( sort( result ), 0, 0 );
 	    y2debug( "New logical nr: %1", nr );
 	    }
 
@@ -413,7 +413,7 @@ global define create_partition( list    partitions,
 
    */
 
-  global define AddHit( string  mode,
+  global define void AddHit( string  mode,
 			map     slot,
 			string  type,
 			map     boot_slot,
@@ -456,9 +456,9 @@ global define create_partition( list    partitions,
      *----------------------------------------------------------------------
      */
 
-    global define DumpPartitionList ( map targets)
+    global define void DumpPartitionList ( map targets)
     ``{
-	foreach ( `disk_dev_name, `disk, targets, ``{
+	foreach ( string disk_dev_name, map disk, targets, ``{
 	    integer cyl_count  = lookup ( disk, "cyl_count", 0  );
 	    integer cyl_size   = lookup ( disk, "cyl_size",  1000000    );
 	    string  vendor     = lookup ( disk, "vendor",    "" );
@@ -468,7 +468,7 @@ global define create_partition( list    partitions,
 
 	    if ( !disk["is_lvm_vg"]:false )
 		{
-		foreach ( `partition, disk["partitions"]:[], ``{
+		foreach ( map partition, disk["partitions"]:[], ``{
 		    string fstype = partition["fstype"]:"";
 		    if ( !partition["delete"]:false )
 			{
@@ -500,8 +500,8 @@ global define create_partition( list    partitions,
 			////////////////////////////////////////////////////////////
 			// Format other Colums:
 
-			integer  start_cyl       = select ( lookup ( partition, "region", []), 0, 0 );
-			integer  nb_cyl          = select ( lookup ( partition, "region", []), 1, 0 );
+			integer  start_cyl       = (integer) select ( lookup ( partition, "region", []), 0, 0 );
+			integer  nb_cyl          = (integer) select ( lookup ( partition, "region", []), 1, 0 );
 			symbol   type            = lookup ( partition, "type", `unknown );
 			boolean  format          = lookup ( partition, "format",   false );
 			boolean  crypt_fs        = partition["loop_fs"]:false &&

@@ -33,17 +33,17 @@ global define string pinfo_name()
 
 global define boolean has_flex_proposal()
     ``{
-    boolean ret = SCR::Read( .target.size, pinfo_name() )>0;
+    boolean ret = (integer)SCR::Read( .target.size, pinfo_name() )>0;
     return( ret );
     }
 
 global define map try_add_boot( map conf, map disk )
     ``{
-    boolean boot = size(filter( `e, conf["partitions"]:[], 
+    boolean boot = size(filter( map e, conf["partitions"]:[], 
 				``(e["mount"]:""=="/boot"))) > 0;
-    boolean root = size(filter( `e, conf["partitions"]:[], 
+    boolean root = size(filter( map e, conf["partitions"]:[], 
 				``(e["mount"]:""=="/"))) > 0;
-    map tc = eval(conf);
+    map tc = (map) eval(conf);
     if( !boot && root &&
 	(disk["cyl_count"]:0 > Partitions::BootCyl() ||
 	 Arch::ia64 || Arch::ppc || Arch::sparc) )
@@ -106,12 +106,12 @@ global define map do_proposal_flexible( map target )
     if( size(conf)>0 )
 	{
 	list ddev = maplist( `k, `e, 
-	                     filter( `l, `f, target, 
+	                     filter( string l, map f, target, 
 			             ``(Storage::IsRealDisk( l, f ))), ``(k));
 	y2milestone( "ddev %1", ddev );
 	map tc = $[];
 	map dtmp = $[];
-	foreach( `p, conf["partitions"]:[], 
+	foreach( map p, conf["partitions"]:[], 
 	    ``{
 	    integer dprio = p["disk"]:0;
 	    if( haskey( dtmp, dprio ))
@@ -141,19 +141,19 @@ global define map do_proposal_flexible( map target )
 		}
 	    y2milestone( "dlist %1", dlist );
 	    }
-	list save_dlist = eval(dlist);
+	list save_dlist = (list) eval(dlist);
 	repeat
 	    {
 	    integer count = 0;
 	    repeat
 		{
-		list td = eval(ddev);
+		list td = (list) eval(ddev);
 		integer idx = 0;
 		y2milestone( "start while count %1", count );
 		while( idx<size(dlist) && count<size(dlist) )
 		    {
 		    y2milestone( "in while idx %1", idx );
-		    tc = eval(conf);
+		    tc = (map) eval(conf);
 		    tc["partitions"] = eval( dlist[idx]:[] );
 		    map md = find_matching_disk( td, target, tc );
 		    y2milestone( "size(md) %1", size(md) );
@@ -168,7 +168,7 @@ global define map do_proposal_flexible( map target )
 			{
 			y2milestone( "no solution" );
 			idx = size(dlist);
-			td = eval(ddev);
+			td = (list) eval(ddev);
 			solutions = [];
 			count = count + 1;
 			if( size(dlist)>1 )
@@ -184,12 +184,12 @@ global define map do_proposal_flexible( map target )
 	    until( size(solutions)>0 || count>=size(dlist) );
 	    if( size(solutions)==0 && size(dlist)>1 )
 		{
-		dlist = eval(save_dlist);
+		dlist = (list) eval(save_dlist);
 		dlist[size(dlist)-2] = union( dlist[size(dlist)-2]:[],
 					      dlist[size(dlist)-1]:[] );
 		dlist = remove( dlist, size(dlist)-1 );
 		y2milestone( "new truncated dlist %1", dlist );
-		save_dlist = eval(dlist);
+		save_dlist = (list)eval(dlist);
 		}
 	    }
 	until( size(solutions)>0 || size(dlist)<=1 );
@@ -200,7 +200,7 @@ global define map do_proposal_flexible( map target )
 	     !conf["prefer_remove"]:false))
 	    {
 	    y2milestone( "desperate mode" );
-	    tc = eval(conf);
+	    tc = (map) eval(conf);
 	    cur_mode = `desparate;
 	    tc["keep_partition_fsys"] = [];
 	    tc["keep_partition_id"] = [];
@@ -214,7 +214,7 @@ global define map do_proposal_flexible( map target )
 	    }
 	if( size(solutions)>0 )
 	    {
-	    foreach( `e, solutions,
+	    foreach( map e, solutions,
 		``{
 		string disk = e["device"]:"";
 		target[disk] = process_partition_data( disk, e );
@@ -268,7 +268,7 @@ global define map find_matching_disk( list disks, map target, map conf )
 		}
 	    cur_mode = `resize;
 	    map rw = try_resize_windows( e );
-	    if( size( filter( `p, rw["partitions"]:[],
+	    if( size( filter( map p, rw["partitions"]:[],
 			      ``(haskey(p, "winfo")) ))>0 )
 		{
 		egap = get_gap_info( rw, true );
@@ -302,7 +302,7 @@ global define map find_matching_disk( list disks, map target, map conf )
     map ret = $[];
     if( size(solutions)>0 )
 	{
-	foreach( `k, `e, solutions,
+	foreach( `k, map e, solutions,
 	    ``{
 	    y2milestone( "disk %1 weight %2", k, e["weight"]:0 );
 	    });
@@ -322,12 +322,12 @@ global define map process_partition_data( string dev, map solution )
     list partitions = [];
     string value = "";
     boolean remove_boot = false;
-    if( size( filter( `e, solution["partitions"]:[], 
+    if( size( filter( map e, solution["partitions"]:[], 
               ``(e["mount"]:""=="/boot" && e["auto_added"]:false)))>0 )
 	{
-	foreach( `e, solution["solution","gap"]:[],
+	foreach( map e, solution["solution","gap"]:[],
 	    ``{
-	    foreach( `a, e["added"]:[],
+	    foreach( list a, e["added"]:[],
 		``{
 		integer pindex = a[0]:0;
 		if( solution["partitions",pindex,"mount"]:"" == "/" &&
@@ -342,10 +342,10 @@ global define map process_partition_data( string dev, map solution )
     integer index = 0;
     if( remove_boot )
 	{
-	foreach( `e, solution["solution","gap"]:[],
+	foreach( map e, solution["solution","gap"]:[],
 	    ``{
 	    list nlist = [];
-	    foreach( `a, e["added"]:[],
+	    foreach( list a, e["added"]:[],
 		``{
 		integer pindex = a[0]:0;
 		if( solution["partitions",pindex,"mount"]:"" == "/boot" )
@@ -353,14 +353,14 @@ global define map process_partition_data( string dev, map solution )
 		    integer rest = a[2]:0;
 		    y2milestone( "remove unneeded /boot %1 cyl %2", 
 		                 e["added"]:[], rest );
-		    list nlist = filter( `l, e["added"]:[], ``(l[0]:0!=pindex));
+		    list nlist = filter( list l, e["added"]:[], ``(l[0]:0!=pindex));
 		    if( size(nlist)>0 && !e["exists"]:false )
 			{
-			list weight = maplist( `l, nlist, ``(l[2]:0) );
+			list weight = maplist( list l, nlist, ``(l[2]:0) );
 			map r = $[];
 			r = distribute_space( rest, weight, nlist, 
 			                      solution["partitions"]:[] );
-			nlist = eval(r["added"]:[]);
+			nlist = (list) eval(r["added"]:[]);
 			e["cylinders"] = e["cylinders"]:0 - r["diff"]:0;
 			}
 		    solution["solution","gap",index,"added"] = eval(nlist);
@@ -372,13 +372,13 @@ global define map process_partition_data( string dev, map solution )
 	    });
 	}
     index = 0;
-    foreach( `e, solution["solution","gap"]:[],
+    foreach( map e, solution["solution","gap"]:[],
 	``{
 	if( !e["exists"]:false && e["cylinders"]:0>0 )
 	    {
 	    integer increase = 0;
 	    list weight = 
-		maplist( `l, e["added"]:[], 
+		maplist( list l, e["added"]:[], 
 			 ``(solution["partitions",l[0]:0,"increasable"]:false ? 1 : 0) );
 	    if( find( `l, weight, ``(l>0) ) != nil ) 
 		{
@@ -394,7 +394,7 @@ global define map process_partition_data( string dev, map solution )
 	    }
         index = index + 1;
 	});
-    foreach( `e, solution["solution","gap"]:[],
+    foreach( map e, solution["solution","gap"]:[],
 	``{
 	if( e["exists"]:false )
 	    {
@@ -410,7 +410,7 @@ global define map process_partition_data( string dev, map solution )
 		{
 		fsid = solution["partitions",pindex,"id"]:0;
 		}
-	    foreach( `p, disk["partitions"]:[],
+	    foreach( map p, disk["partitions"]:[],
 		``{
 		if( !p["delete"]:false && p["nr"]:0 == e["added",0,1]:0 )
 		    {
@@ -460,7 +460,7 @@ global define map process_partition_data( string dev, map solution )
 		y2milestone( "extended auto partition %1", part );
 		partitions = add( partitions, eval(part));
 		}
-	    foreach( `a, e["added"]:[],
+	    foreach( list a, e["added"]:[],
 		``{
 		part = $[];
 		integer pindex = a[0]:0;
@@ -516,7 +516,7 @@ global define map process_partition_data( string dev, map solution )
 		y2milestone( "auto partition %1", part );
 		partitions = add( partitions, eval(part));
 		});
-	    partitions = sort( `a, `b, partitions, ``(a["nr"]:0<=b["nr"]:0));
+	    partitions = sort( map a, map b, partitions, ``(a["nr"]:0<=b["nr"]:0));
 	    }
 	});
     disk["partitions"] = union( disk["partitions"]:[], partitions );
@@ -529,7 +529,7 @@ global define map add_cylinder_info( map conf, map gap )
     integer big_cyl = 4 * 1024 * 1024 * 1024;
     integer cyl_size = gap["cyl_size"]:1;
     conf["partitions"] = 
-	sort( `a, `b, conf["partitions"]:[],
+	sort( map a, map b, conf["partitions"]:[],
 	      ``({
 	      if( a["max_cyl"]:big_cyl != b["max_cyl"]:big_cyl )
 		  return( a["max_cyl"]:big_cyl <= b["max_cyl"]:big_cyl );
@@ -538,7 +538,7 @@ global define map add_cylinder_info( map conf, map gap )
 	      }));
     y2milestone( "parts %1", conf["partitions"]:[] );
     integer sum = 0;
-    conf["partitions"] = maplist( `p, conf["partitions"]:[],
+    conf["partitions"] = maplist( map p, conf["partitions"]:[],
 	``{
 	sum = sum + p["pct"]:0;
 	p["cylinders"] = (p["size"]:0+cyl_size-1)/cyl_size;
@@ -553,7 +553,7 @@ global define map add_cylinder_info( map conf, map gap )
     if( sum>100 )
 	{
 	integer rest = sum - 100;
-	conf["partitions"] = maplist( `p, conf["partitions"]:[],
+	conf["partitions"] = maplist( map p, conf["partitions"]:[],
 	    ``{
 	    if( haskey( p, "pct" ) )
 		{
@@ -566,7 +566,7 @@ global define map add_cylinder_info( map conf, map gap )
 	    return( p );
 	    });
 	}
-    conf["partitions"] = maplist( `p, conf["partitions"]:[],
+    conf["partitions"] = maplist( map p, conf["partitions"]:[],
 	``{
 	if( haskey( p, "pct" ) )
 	    {
@@ -606,24 +606,24 @@ global define map get_perfect_list( list ps, map g )
 	 (!g["extended_possible"]:false &&
 	    size(ps) <= size(g["ext_pnr"]:[])+size(g["free_pnr"]:[]))) )
 	{
-	map lg = eval(g);
-	lg["gap"] = maplist( `e, lg["gap"]:[], 
+	map lg = (map) eval(g);
+	lg["gap"] = maplist( map e, lg["gap"]:[], 
 	    ``{ 
 	    e["orig_cyl"] = e["cylinders"]:0;
 	    e["added"] = [];
 	    return( e );
 	    });
 	lg["procpart"] = 0;
-	list lp = eval(ps);
+	list lp = (list) eval(ps);
 	if( g["extended_possible"]:false && size(ps)+1>=size(g["free_pnr"]:[]))
 	    {
 	    y2milestone( "creating extended" );
 	    integer index = 0;
-	    foreach( `e, lg["gap"]:[], 
+	    foreach( map e, lg["gap"]:[], 
 		``{
 		if( !e["exists"]:false )
 		    {
-		    map gap = eval(lg);
+		    map gap = (map) eval(lg);
 		    gap["gap",index,"created"] = gap["free_pnr",0]:1;
 		    gap["free_pnr"] = remove( gap["free_pnr"]:[1], 0 );
 		    gap["gap",index,"extended"] = true;
@@ -655,13 +655,13 @@ global define void add_part_recursive( list ps, map g )
     y2milestone( "pindex %1", g["procpart"]:0 );
     y2milestone( "ps %1", ps );
     y2milestone( "gap %1", g );
-    map lg = eval(g);
+    map lg = (map) eval(g);
     integer gindex = 0;
     integer pindex = lg["procpart"]:0;
     map part = ps[pindex]:$[];
     lg["procpart"] = pindex + 1;
     y2milestone( "p %1", part );
-    foreach( `e, lg["gap"]:[], 
+    foreach( map e, lg["gap"]:[], 
 	``{
 	y2milestone( "e %1", e );
 	if( part["max_cyl"]:0 <= e["end"]:0 &&
@@ -669,7 +669,7 @@ global define void add_part_recursive( list ps, map g )
 	    (!e["extended"]:false && size(lg["free_pnr"]:[])>0 ||
 	      e["extended"]:false && size(lg["ext_pnr"]:[])>0))
 	    {
-	    map llg = eval(lg);
+	    map llg = (map) eval(lg);
 	    if( e["exists"]:false )
 		{
 		llg["gap",gindex,"cylinders"] = 0;
@@ -716,7 +716,7 @@ global define map normalize_gaps( list ps, map g )
     y2milestone( "gap %1", g );
     integer index = 0;
     integer pindex = 0;
-    foreach( `e, g["gap"]:[],
+    foreach( map e, g["gap"]:[],
 	``{
 	y2milestone( "e %1", e );
 	if( e["exists"]:false )
@@ -731,7 +731,7 @@ global define map normalize_gaps( list ps, map g )
 	    integer rest = e["cylinders"]:0;
 	    integer needed = 0;
 	    integer index = 0;
-	    foreach( `p, e["added"]:[],
+	    foreach( list p, e["added"]:[],
 		``{
 		index = p[0]:0;
 		if( ps[index,"want_cyl"]:0 > ps[index,"cylinders"]:0 )
@@ -745,7 +745,7 @@ global define map normalize_gaps( list ps, map g )
 		{
                 list tr = [];
 		list weight = 
-		    maplist( `l, e["added"]:[], 
+		    maplist( list l, e["added"]:[], 
 			     ``({
 			     integer idx = l[0]:0;
 			     integer d = ps[idx,"want_cyl"]:0 - 
@@ -771,7 +771,7 @@ global define map normalize_gaps( list ps, map g )
 		}
 
 	    pindex = 0;
-	    foreach( `p, e["added"]:[], 
+	    foreach( list p, e["added"]:[], 
 		``{
 		if( size(p)<3 )
 		    {
@@ -792,13 +792,13 @@ global define map normalize_gaps( list ps, map g )
 	    y2milestone( "added %1", e["added"]:[] );
 	    }
 	});
-    foreach( `e, g["gap"]:[],
+    foreach( map e, g["gap"]:[],
 	``{
 	if( !e["exists"]:false && e["cylinders"]:0>0 )
 	    {
-	    list weight = maplist( `l, e["added"]:[], 
+	    list weight = maplist( list l, e["added"]:[], 
 	                           ``(ps[l[0]:0,"size"]:0==0 ? 1 : 0) );
-	    if( find( `l, weight, ``(l>0) ) != nil ) 
+	    if( find( integer l, weight, ``(l>0) ) != nil ) 
 		{
 		map r = $[];
 		r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], 
@@ -810,12 +810,12 @@ global define map normalize_gaps( list ps, map g )
 		}
 	    }
 	});
-    foreach( `e, g["gap"]:[],
+    foreach( map e, g["gap"]:[],
 	``{
 	if( !e["exists"]:false && e["cylinders"]:0>0 && 
 	    e["cylinders"]:0 < gap["disk_cyl"]:0/20 )
 	    {
-	    list weight = maplist( `l, e["added"]:[], ``(l[2]:0) );
+	    list weight = maplist( list l, e["added"]:[], ``(l[2]:0) );
 	    map r = $[];
 	    r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], ps );
 	    e["added"] = eval(r["added"]:[]);
@@ -836,7 +836,7 @@ global define map distribute_space( integer rest, list weights, list added,
     integer index = 0;
     integer pindex = 0;
     y2milestone( "rest %1 weights %2 added %3", rest, weights, added, added );
-    foreach( `p, added,
+    foreach( list p, added,
 	``{
 	pindex = p[0]:0;
 	if( ps[pindex,"size_max_cyl"]:0==0 || ps[pindex,"increasable"]:false ||
@@ -848,7 +848,7 @@ global define map distribute_space( integer rest, list weights, list added,
 	});
     index = 0;
     y2milestone( "sum %1 rest %2 added %3", sum, rest, added );
-    foreach( `p, added,
+    foreach( list p, added,
 	``{
 	pindex = p[0]:0;
 	if( size(p)==3 && sum>0 &&
@@ -897,7 +897,7 @@ global define integer do_weighting( list ps, map g )
 	ret = ret - 1000000;
 	}
     y2milestone( "after mode ret %1", ret );
-    foreach( `e, g["gap"]:[],
+    foreach( map e, g["gap"]:[],
 	``{
 	y2milestone( "added %1", e["added"]:[] );
 	if( !e["exists"]:false && e["cylinders"]:0 > 0 )
@@ -909,7 +909,7 @@ global define integer do_weighting( list ps, map g )
 		}
 	    }
 	y2milestone( "after gaps %1", ret );
-	foreach( `p, e["added"]:[], 
+	foreach( list p, e["added"]:[], 
 	    ``{
 	    index = p[0]:0;
 	    if( e["exists"]:false && ps[index,"mount"]:""=="swap" && 
@@ -962,8 +962,8 @@ global define integer do_weighting( list ps, map g )
 global define map remove_possible_partitions( map disk, map conf )
     ``{
     list nodelpart = [ 0x12, 0xde, 257 ];
-    map ret = eval(disk);
-    ret["partitions"] = maplist( `p, ret["partitions"]:[],
+    map ret = (map)eval(disk);
+    ret["partitions"] = maplist( map p, ret["partitions"]:[],
 	``{
 	integer fsid = p["fsid"]:0;
 	if( (conf["remove_special_partitions"]:false ||
@@ -978,12 +978,12 @@ global define map remove_possible_partitions( map disk, map conf )
 	return( p );
 	});
     integer max_prim = Partitions::MaxPrimary(disk["label"]:"msdos");
-    if( size( filter( `p, ret["partitions"]:[], 
+    if( size( filter( map p, ret["partitions"]:[], 
 		      ``(p["type"]:`primary == `extended)))>0 &&
-	size( filter( `p, ret["partitions"]:[], 
+	size( filter( map p, ret["partitions"]:[], 
 		      ``(p["nr"]:0>max_prim && !p["delete"]:false) ))==0 )
 	{
-	ret["partitions"] = maplist( `p, ret["partitions"]:[],
+	ret["partitions"] = maplist( map p, ret["partitions"]:[],
 	    ``{
 	    if( p["type"]:`primary == `extended )
 		{
@@ -999,9 +999,9 @@ global define map try_resize_windows( map disk )
     ``{
     integer cyl_size = disk["cyl_size"]:1;
     map win = $[];
-    map ret = eval(disk);
+    map ret = (map)eval(disk);
 
-    ret["partitions"] = maplist( `p, ret["partitions"]:[],
+    ret["partitions"] = maplist( map p, ret["partitions"]:[],
 	``{
 	integer fsid = p["fsid"]:0;
 	if( Partitions::IsDosPartition( fsid ) ) 
@@ -1027,7 +1027,7 @@ global define list get_gaps( integer start, integer end, list part,
     y2milestone( "start %1 end %2 add_exist %3", start, end, add_exist_linux );
     list ret = [];
     map entry = $[];
-    foreach( `p, part, 
+    foreach( map p, part, 
 	``{
 	integer s = p["region",0]:0;
 	integer e = s + p["region",1]:1 - 1;
@@ -1068,28 +1068,28 @@ global define map get_gap_info( map disk, boolean add_exist_linux )
     ``{
     map ret = $[];
     list gap = [];
-    list plist = filter( `p, disk["partitions"]:[], ``(!p["delete"]:false) );
-    plist = sort( `a, `b, plist, ``(a["region",0]:0<=b["region",0]:0) );
-    list exist_pnr = sort( maplist( `e, plist, ``(e["nr"]:0) ));
+    list plist = filter( map p, disk["partitions"]:[], ``(!p["delete"]:false) );
+    plist = sort( map a, map b, plist, ``(a["region",0]:0<=b["region",0]:0) );
+    list exist_pnr = sort( maplist( map e, plist, ``(e["nr"]:0) ));
     integer max_prim = Partitions::MaxPrimary(disk["label"]:"msdos");
     boolean has_ext = Partitions::HasExtended( disk["label"]:"msdos" );
     if( has_ext )
 	{
-	map ext = select( filter( `p, plist,
+	map ext = (map) select( filter( map p, plist,
 		    ``(p["type"]:`primary == `extended)), 0, $[]);
 	ret["extended_possible"] = size(ext)==0;
 	if( size(ext)>0 )
 	    {
 	    gap = get_gaps( ext["region",0]:0, 
 		    ext["region",0]:0 + ext["region",1]:1-1, 
-		    filter( `p, plist, ``(p["nr"]:0>max_prim)),
+		    filter( map p, plist, ``(p["nr"]:0>max_prim)),
 		    add_exist_linux );
-	    gap = maplist( `e, gap, 
+	    gap = maplist( map e, gap, 
 		``{
 		e["extended"]=true;
 		return e;
 		});
-	    plist = filter( `p, plist, ``(p["nr"]:0<=max_prim));
+	    plist = filter( map p, plist, ``(p["nr"]:0<=max_prim));
 	    }
 	}
     else
@@ -1099,14 +1099,14 @@ global define map get_gap_info( map disk, boolean add_exist_linux )
     gap = union( gap, 
 		 get_gaps( 0, disk["cyl_count"]:1-1, plist, add_exist_linux ));
     integer av_size = 0;
-    gap = maplist( `e, gap,
+    gap = maplist( map e, gap,
 	``{
 	e["cylinders"] = e["end"]:0 - e["start"]:0 + 1;
 	e["size"] = e["cylinders"]:0 * disk["cyl_size"]:1;
 	av_size = av_size + e["size"]:0;
 	return( e );
 	});
-    gap = maplist( `e, gap,
+    gap = maplist( map e, gap,
 	``{
 	e["sizepct"] = (e["size"]:0 * 201 / 2) / av_size;
 	if( e["sizepct"]:0 == 0 )
@@ -1170,17 +1170,17 @@ global define map read_partition_config( string fpath )
     conf["keep_partition_num"] = [];
     conf["keep_partition_fsys"] = [];
 
-    string cstring = SCR::Read( .target.string, fpath );
-    list lines = filter( `e, splitstring( cstring, "\n" ), ``(size(e)>0) );
+    string cstring = (string) SCR::Read( .target.string, fpath );
+    list lines = filter( string e, splitstring( cstring, "\n" ), ``(size(e)>0) );
     rex = "[ \t]*#.*";
     y2milestone( "lines %1", lines );
-    lines = filter( `e, lines, ``(!regexpmatch( e, "[ \t]*#.*" )));
+    lines = filter( string e, lines, ``(!regexpmatch( e, "[ \t]*#.*" )));
     y2milestone( "lines %1", lines );
     list fnd = [];
-    foreach( `key, [ "PREFER_REMOVE", "REMOVE_SPECIAL_PARTITIONS" ],
+    foreach( string key, [ "PREFER_REMOVE", "REMOVE_SPECIAL_PARTITIONS" ],
 	``{
 	rex = "[ \t]*" + key + "[ \t]*=";
-	fnd = filter( `e, lines, ``(regexpmatch( e, rex )));
+	fnd = filter( string e, lines, ``(regexpmatch( e, rex )));
 	y2milestone( "rex %1 fnd %2", rex, fnd );
 	if( size(fnd)>0 )
 	    {
@@ -1192,11 +1192,11 @@ global define map read_partition_config( string fpath )
 		}
 	    }
 	});
-    foreach( `key, [ "KEEP_PARTITION_ID", "KEEP_PARTITION_NUM" ],
+    foreach( string key, [ "KEEP_PARTITION_ID", "KEEP_PARTITION_NUM" ],
 	``{
 	rex = "[ \t]*" + key + "[ \t]*=";
 	y2milestone( "rex %1", rex );
-	foreach( `l, filter( `e, lines, ``(regexpmatch( e, rex ))),
+	foreach( string l, filter( string e, lines, ``(regexpmatch( e, rex ))),
 	    ``{
 	    y2milestone( "line %1", l );
 	    line = deletechars( l, "\t " );
@@ -1212,7 +1212,7 @@ global define map read_partition_config( string fpath )
 	});
     list fsys = [];
     rex = "[ \t]*" + "KEEP_PARTITION_FSYS" + "[ \t]*=";
-    foreach( `l, filter( `e, lines, ``(regexpmatch( e, rex ))),
+    foreach( string l, filter( string e, lines, ``(regexpmatch( e, rex ))),
 	``{
 	y2milestone( "line %1", l );
 	line = deletechars( l, "\t " );
@@ -1220,7 +1220,7 @@ global define map read_partition_config( string fpath )
 	if( pos > 0 )
 	    {
 	    list nlist = splitstring( substring( line, pos+1 ), "," );
-	    foreach( `n, nlist, 
+	    foreach( string n, nlist, 
 		``{ 
 		symbol fs = FileSystems::FsToSymbol(n);
 		if( fs != `none )
@@ -1234,7 +1234,7 @@ global define map read_partition_config( string fpath )
     list partitions = [];
     map part = $[];
     rex = "[ \t]*" + "PARTITION" + "[ \t][ \t]*";
-    foreach( `l, filter( `e, lines, ``(regexpmatch( e, rex ))),
+    foreach( string l, filter( string e, lines, ``(regexpmatch( e, rex ))),
 	``{
 	y2milestone( "line %1", l );
 	string par = "";

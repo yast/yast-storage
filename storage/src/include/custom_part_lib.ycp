@@ -21,11 +21,12 @@
 {
   textdomain "storage";
   import "Mode";
+  import "Arch";
+  import "Installation";
   import "Partitions";
   import "FileSystems";
 
   #include "partitioning/partition_defines.ycp";
-  #include "partitioning/custom_part_dialogs.ycp";
 
   /**
    * Find and read fstab by installation. Scan existing partitions.
@@ -407,7 +408,7 @@ global define map CheckOkMount( string dev, map old, map new )
 	    }
 	if( UI::WidgetExists( `id(`crypt_fs) ))
 	    {
-	    crypt_fs = UI::QueryWidget(`id(`crypt_fs), `Value );
+	    crypt_fs = (boolean)UI::QueryWidget(`id(`crypt_fs), `Value );
 	    }
 	if( !check_crypt_fs_mount_points(new["mount"]:"", crypt_fs ))
 	    {
@@ -463,7 +464,7 @@ global define map CheckCryptOk( map new )
     boolean crypt_fs = false;
     if( UI::WidgetExists( `id(`crypt_fs) ))
 	{
-	crypt_fs = UI::QueryWidget(`id(`crypt_fs), `Value );
+	crypt_fs = (boolean)UI::QueryWidget(`id(`crypt_fs), `Value );
 	}
     new["loop_fs"] = crypt_fs || new["type"]:`none==`loop;
     if( crypt_fs )
@@ -489,7 +490,7 @@ global define map CheckCryptOk( map new )
     return( ret );
     };
 
-global define void HandleFsChanged( boolean init, map new, map file_Systems )
+global define void HandleFsChanged( boolean init, map new, map file_systems )
     ``{
     list not_used_mp = [];
     symbol used_fs = new["used_fs"]:`unknown;
@@ -510,7 +511,7 @@ global define void HandleFsChanged( boolean init, map new, map file_Systems )
 
     ////////////////////////////////////////////////
     // switch between swap and other mountpoints
-    string mount = UI::QueryWidget( `id(`mount_point), `Value);
+    string mount = (string)UI::QueryWidget( `id(`mount_point), `Value);
     new["mount"] = mount;
     if( used_fs == `swap )
 	{
@@ -612,7 +613,7 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	    symbol dfs = `none;
 	    if( format )
 		{
-		dfs = UI::QueryWidget(`id(`fs), `Value);
+		dfs = (symbol)UI::QueryWidget(`id(`fs), `Value);
 		}
 	    else
 		{
@@ -680,7 +681,7 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	    {
 	    new_fs = new["detected_fs"]:`none;
 	    if( ret == `fs )
-		new_fs  = UI::QueryWidget(`id(`fs), `Value);
+		new_fs  = (symbol)UI::QueryWidget(`id(`fs), `Value);
 	    }
 
 	y2milestone( "ret==fs init=%1 used_fs:%2 new_fs:%3", init, used_fs,
@@ -721,7 +722,7 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
 	{
 	////////////////////////////////////////////////
 	// modify map new
-	string fs_string = UI::QueryWidget(`id(`fsid_point ), `Value);
+	string fs_string = (string)UI::QueryWidget(`id(`fsid_point ), `Value);
 	fs_string        = substring( fs_string, 0, 5  );
 	integer fs_int   = tointeger( fs_string );
 	integer old_id   = new["fsid"]:0;
@@ -812,7 +813,7 @@ global define list AddFstabToData( map targetMap, list fstab )
     if( fstab == nil )
 	return [targetMap] ;
 
-    fstab = maplist( `e, fstab,
+    fstab = maplist( map e, fstab,
 	``{
 	string name = e["spec"]:"";
 	integer pos = findlastof( name, "=" );
@@ -829,7 +830,7 @@ global define list AddFstabToData( map targetMap, list fstab )
 
     y2milestone( "fstab = %1", fstab );
 
-    map new_targetMap = eval( targetMap );
+    map new_targetMap = (map)eval( targetMap );
     map table_input = $["tbl":[]];
 
     foreach( string dev, map disk, targetMap,
@@ -894,9 +895,9 @@ global define list AddFstabToData( map targetMap, list fstab )
 	new_targetMap[dev] = target;
 	});
 
-    if( size( table_input["tbl"]:$[] )>1 )
+    if( size( table_input["tbl"]:[] )>1 )
 	{
-	table_input["tbl"] = sort( `a, `b, table_input["tbl"]:$[],
+	table_input["tbl"] = sort( term a, term b, table_input["tbl"]:[],
 	                           ``(select(a, 2, 0)<=select(b, 2, 0)));
 	}
 
@@ -964,7 +965,7 @@ global define boolean CheckResizePossible( boolean ask, boolean lvm,
 	{
 	ret = FsysShrinkReiserWarning( lvm );
 	}
-    else if( resize>0 && !possible["extend"]:false )
+    else if( resize>0 && !poss["extend"]:false )
 	{
 	ret = FsysCannotGrowPopup( ask, lvm );
 	}

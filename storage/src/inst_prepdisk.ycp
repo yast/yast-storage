@@ -71,28 +71,28 @@
 
 
     //switch swap off
-    define doswapoff(list activatedswaps)
+define void doswapoff(list activatedswaps)
     ``{
-	foreach (`swapdev,activatedswaps,
+    foreach (string swapdev, activatedswaps,
 	``{
-	   if (0 != SCR::Execute (.target.bash, "/sbin/swapoff "+swapdev))
-	   {
-	       Report::Error(sformat(
+        if( 0 != (integer)SCR::Execute (.target.bash, "/sbin/swapoff "+swapdev))
+	    {
+	    Report::Error(sformat(
 		  // popup text, %1 is replaced by partition name e.g. /dev/hda1
 		  _("Deactivating swap device %1 failed. You may have to reboot."),
 		  swapdev));
-	   }
-	 });
-	 return;
+	    }
+	});
+	return;
     };
 
 //detach loop devices
-define losetup_d(list activatedLoopDevices)
+define void losetup_d(list activatedLoopDevices)
     ``{
-    foreach (`loopdev, activatedLoopDevices,
+    foreach( string loopdev, activatedLoopDevices,
     ``{
        y2debug("detaching loop device %1",loopdev);
-       if (0 != SCR::Execute (.target.bash, "/sbin/losetup -d "+loopdev))
+       if (0 != (integer)SCR::Execute (.target.bash, "/sbin/losetup -d "+loopdev))
        {
 	 y2warning("detaching loop device %1 failed",loopdev);
 	 Report::Warning (sformat(
@@ -105,16 +105,16 @@ define losetup_d(list activatedLoopDevices)
     };
 
     //backup target map, reread it from harddisk and restore mountpoints etc.
-define restoretargetmap()
+define void restoretargetmap()
     ``{
     //bakup information a new map
     map baktargets=$[];
-    foreach (`tdevice,`target, Storage::GetTargetMap(),
+    foreach ( string tdevice, map target, Storage::GetTargetMap(),
 	``{
 	list partitions = target["partitions"]:[];
 	//map for partitions, referenced by number
 	map bakpartitionmap=$[];
-	foreach (`pentry, partitions,
+	foreach( map pentry, partitions,
 	    ``{
 	    //no backup for partitions marked for delete
 	    if (pentry["delete"]:false)
@@ -147,19 +147,20 @@ define restoretargetmap()
 //      SCR::Write(.target.ycp, "/tmp/targetMap_reread", targets );
 
     //see if theres info available in backupmap
-    foreach (`tdevice,`target, targets,
+    foreach (string tdevice, map target, targets,
 	``{
 	map bakpartitionmap = baktargets[tdevice, "partitions"]:$[];
 	list partitions = target["partitions"]:[];
 
 	list newpartitions = [];
 	boolean usebackup=true;
-	foreach (`pentry, partitions,
+	foreach( map pentry, partitions,
 	    ``{
 	    usebackup = true;
+	    integer nr = pentry["nr"]:0;
 
 	    //do we have data for that partition?
-	    map bakpentry=lookup(bakpartitionmap,pentry["nr"]:0,$[]);
+	    map bakpentry=lookup(bakpartitionmap,nr,$[]);
 
 	    // partition is (no longer) available
 	    if( bakpentry == $[])
@@ -224,7 +225,7 @@ define restoretargetmap()
     };
 
 // Define macro that creates a dialog with progressbar
-global define MakefsDialog()
+global define void MakefsDialog()
     ``{
     // html-format
     // advise the user to wait for completion
@@ -245,6 +246,19 @@ perform various checks. <br></p>");
 			`ProgressBar(`id(`progress), " ", 100),
 			helptext, false, false);
     };
+
+define void DumpPartitionStart( string device, boolean crypt_fs )
+    ``{
+    string dd_sblocks = "";
+    string idev = crypt_fs ? "/dev/urandom" : "/dev/zero";
+    dd_sblocks = sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50 2>&1", idev, 
+                          device );
+    if( !Arch::sparc || crypt_fs )
+	{
+	y2milestone( "dd_sblocks=%1", dd_sblocks );
+	y2milestone( "%1", SCR::Execute (.target.bash_output, dd_sblocks ));
+	}
+    }
 
 define boolean HandleFormatPartition( map partition )
     ``{
@@ -332,7 +346,8 @@ define boolean HandleFormatPartition( map partition )
 		if( size(partition["format_opt"]:"")>0 )
 		    {
 		    list t = splitstring( partition["format_opt"]:"", " " );
-		    options = merge( options, filter( `e, t, ``(size(e)>0)));
+		    options = merge( options, 
+		                     filter( string e, t, ``(size(e)>0)));
 		    }
 		if( partition["format"]:false && 
 		    partition["fs_options"]:$[] != $[] )
@@ -457,18 +472,6 @@ your file systems, it is safer to cancel and reboot."),
     return( !cancel );
     };
 
-define void DumpPartitionStart( string device, boolean crypt_fs )
-    ``{
-    string dd_sblocks = "";
-    string idev = crypt_fs ? "/dev/urandom" : "/dev/zero";
-    dd_sblocks = sformat( "/bin/dd if=%1 of=%2 bs=1024 count=50 2>&1", idev, 
-                          device );
-    if( !Arch::sparc || crypt_fs )
-	{
-	y2milestone( "dd_sblocks=%1", dd_sblocks );
-	y2milestone( "%1", SCR::Execute (.target.bash_output, dd_sblocks ));
-	}
-    }
 
 define map DetermineMountPoints(string disk, map target, map mp )
     ``{

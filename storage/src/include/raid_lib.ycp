@@ -34,9 +34,9 @@
 global define list get_raid_devices( integer raid_nr )
     ``{
     list all_raid_devices = [];
-    list partitions = Storage::GetMainDevParam( "/dev/md", "partitions" );
+    list partitions = (list)Storage::GetMainDevParam( "/dev/md", "partitions" );
 
-    foreach( `part, partitions, 
+    foreach( map part, partitions, 
 	``{
 	if( !part["delete"]:false )
 	    {
@@ -61,10 +61,10 @@ global define boolean IsRaidCreated( string device, symbol what )
     boolean created = false;
     if( what != `wizard )
 	{
-	list partitions = Storage::GetMainDevParam( "/dev/md", "partitions" );
+	list partitions = (list)Storage::GetMainDevParam( "/dev/md", "partitions" );
 	y2milestone( "parts %1", partitions );
 
-	foreach( `part, partitions, 
+	foreach( map part, partitions, 
 	    ``{
 	    if( !part["delete"]:false && part["device"]:""==device && 
 	        part["create"]:false )
@@ -119,7 +119,7 @@ global define integer get_raid_size_byte( list partition_list,
     integer sdefault = 0;
     string dev = Storage::GetDeviceName( "/dev/md", tointeger(subdevraidindex));
     y2milestone( "dev:%1 type:%2", dev, current_raid_type );
-    partition_list = filter( `part, partition_list,
+    partition_list = filter( map part, partition_list,
 			     ``( part["raid_name"]:""==dev ));
 
     y2milestone( "partition_list:%1", partition_list );
@@ -128,7 +128,7 @@ global define integer get_raid_size_byte( list partition_list,
 	if( current_raid_type == "raid0" || current_raid_type == "linear" )
 	    {
 	    integer sum_byte = 0;
-	    foreach( `part, partition_list, 
+	    foreach( map part, partition_list, 
 	             ``{ sum_byte = sum_byte + part["size_byte"]:0;});
 
 	    return( sum_byte );
@@ -136,7 +136,7 @@ global define integer get_raid_size_byte( list partition_list,
 	else if ( current_raid_type == "raid1" )
 	    {
 	    integer smallest_disk = 
-		select( sort( maplist(`part, partition_list, 
+		select( sort( maplist(map part, partition_list, 
 		                      ``( part["size_byte"]:0))),0,sdefault);
 
 	    return( smallest_disk);
@@ -144,7 +144,7 @@ global define integer get_raid_size_byte( list partition_list,
 	else if ( current_raid_type == "raid5" )
 	    {
 	    integer smallest_disk = 
-		select( sort( maplist(`part, partition_list, 
+		select( sort( maplist(map part, partition_list, 
 		                      ``( part["size_byte"]:0))), 0,sdefault);
 
 	    if (size(partition_list) > 1 )
@@ -159,7 +159,7 @@ global define integer get_raid_size_byte( list partition_list,
 	else if( current_raid_type == "multipath" )
 	    {
 	    integer first_disk = 
-		select( maplist(`part, partition_list, 
+		select( maplist(map part, partition_list, 
 		                ``( part["size_byte"]:0)),0,sdefault);
 
 	    return(first_disk);
@@ -170,6 +170,80 @@ global define integer get_raid_size_byte( list partition_list,
 	return( 0 );
 	}
     };
+
+/*
+ * Get all partitions, we can probably use as raid devices
+ * Add needed information: devkey, is_raid, is_lv, disksize
+ */
+global define list get_possible_rds( map targetMap )
+    ``{
+    list ret = [];
+
+    //////////////////////////////////////////////////////////////////////
+    // add the devicename i.e /dev/hda1 or /dev/system/usr to partition list
+    // and the device key  <subdevice>/<maindevice> i.e. 1//dev/hda
+
+    targetMap = mapmap( string dev, map devmap, targetMap,
+	``{
+	boolean is_lvm_vg  = devmap["is_lvm_vg"]:false;
+	boolean is_raid    = (dev == "/dev/md");
+	integer cyl_size   = devmap["cyl_size"]:1000000;
+
+	list partitions = maplist( map part, devmap["partitions"]:[],
+				   ``{
+			           integer bytes_of_part = 0;
+			           integer nb_cyl = part["region",1]:0;
+
+			           bytes_of_part =  nb_cyl * cyl_size;
+			           part["size_byte"] = bytes_of_part;
+			           part["size_str"] = 
+				       ByteToHumanStringWithZero(bytes_of_part);
+
+				   if( is_lvm_vg )
+				       {
+				       part["is_lv"] = true;
+				       }
+				   if( is_raid )
+				       {
+				       part["is_raid"] = true;
+				       }
+				   string devkey = sformat( "%2/%1", dev, 
+				                            part["nr"]:"");
+				   part["maindev"] = dev;
+				   part["devkey"] = devkey;
+				   return( part );
+				   });
+
+	return( $[ dev: add( devmap, "partitions", partitions)] );
+	});
+
+    ////////////////////////////////////////////////////////////
+    // Look for all partitions:
+    // not LVM ( here I mean /dev/<lvm_volumegroup>/<lv> entrys!
+    //           there are only the lv's in the targetMap under 
+    //           /dev/<lvm_volumegroup>/<lv> !)
+    // no mountpoint
+    // id 0x83 or 0x8e or 0xfd
+    // no RAID devices (this is for experts only, by hand)
+
+    foreach( `dev, map devmap, targetMap,
+	``{
+	ret = filter( map partition, devmap["partitions"]:[],
+		      ``((partition["mount"]:"" == "" ||
+			  substring(partition["mount"]:"", 0, 5) == "/data") &&
+			 !partition["is_lv"]:false &&
+			 !partition["is_raid"]:false && 
+			 partition["lvm_group"]:"" == "" &&
+			 !partition["delete"]:false &&
+			 (partition["fsid"]:0 == Partitions::fsid_lvm ||
+			  partition["fsid"]:0 == Partitions::fsid_raid ||
+			  partition["fsid"]:0 == Partitions::fsid_native )));
+	});
+
+    return( ret );
+    };
+
+
 
 
 /*
@@ -210,7 +284,7 @@ global define integer getNrOfParts( map targetMap, string current_raid )
     list partition_list = get_possible_rds( targetMap );
     string dev = Storage::GetDeviceName( "/dev/md", tointeger(current_raid));
 
-    partition_list = filter( `part, partition_list, 
+    partition_list = filter( map part, partition_list, 
 			     ``( part["raid_name"]:""==dev ) );
     return( size( partition_list ) );
     };
@@ -264,7 +338,7 @@ global define void removeRaid( string id, string current_raid, symbol what )
     string dev = Storage::GetDeviceName( "/dev/md", tointeger(current_raid));
 
 
-    if ( (what == `wizard  && dev==partition["raid_name"]:-1 ) ||
+    if ( (what == `wizard  && dev==partition["raid_name"]:"" ) ||
 	 IsRaidCreated( partition["raid_name"]:"", `settings ))
 	{
 	if( partition["change_fsid"]:false )
@@ -285,9 +359,29 @@ global define void removeRaid( string id, string current_raid, symbol what )
 
 /**
  * belongs the the partition "id" already to a raid
+ **/
+global define boolean isItemRd( string id )
+    ``{
+    if ( size(id) == 0 ) return( false );
+
+    map partition = Storage::GetSubDev( id );
+
+    if( partition["raid_name"]:"" == "" )
+	{
+	return( false );
+	}
+    else
+	{
+	return( true );
+	}
+    };
+
+
+/**
+ * belongs the the partition "id" already to a raid
  * if YES: popup a proper Message and return(false)
  */
-global define boolean CheckItemIsNotRaid( any id )
+global define boolean CheckItemIsNotRaid( string id )
     ``{
     y2debug("Check Item is not Raid ");
 
@@ -318,7 +412,7 @@ You cannot add it again.
  *  belongs the the partition "id" already to a raid?
  * if NO: popup a proper Message and return(false)
  **/
-global define boolean CheckItemIsRaid( any id )
+global define boolean CheckItemIsRaid( string id )
     ``{
     if( isItemRd(id) )
 	{
@@ -326,7 +420,7 @@ global define boolean CheckItemIsRaid( any id )
 	}
 
     // error case:
-    if( id != nil )
+    if( size(id) > 0 )
 	{
 	// Message popup
 	Popup::Message (sformat(_("Item %1%2 cannot be removed.
@@ -343,104 +437,7 @@ It does not belong to a RAID.
     };
 
 
-/**
- * belongs the the partition "id" already to a raid
- **/
-global define boolean isItemRd( any id )
-    ``{
-    if ( id == nil ) return( false );
-
-    map partition = Storage::GetSubDev( id );
-
-    if( partition["raid_name"]:"" == "" )
-	{
-	return( false );
-	}
-    else
-	{
-	return( true );
-	}
-    };
-
-
   
-/*
- * Get all partitions, we can probably use as raid devices
- * Add needed information: devkey, is_raid, is_lv, disksize
- */
-global define list get_possible_rds( map targetMap )
-    ``{
-
-    list ret = [];
-
-    //////////////////////////////////////////////////////////////////////
-    // add the devicename i.e /dev/hda1 or /dev/system/usr to partition list
-    // and the device key  <subdevice>/<maindevice> i.e. 1//dev/hda
-
-    targetMap = mapmap( `dev, `devmap, targetMap,
-	``{
-	boolean is_lvm_vg  = devmap["is_lvm_vg"]:false;
-	boolean is_raid    = (dev == "/dev/md");
-	integer cyl_size   = devmap["cyl_size"]:1000000;
-
-	list partitions = maplist( `part, devmap["partitions"]:[],
-				   ``{
-			           integer bytes_of_part = 0;
-			           integer nb_cyl = part["region",1]:0;
-
-			           bytes_of_part =  nb_cyl * cyl_size;
-			           part["size_byte"] = bytes_of_part;
-			           part["size_str"] = 
-				       ByteToHumanStringWithZero(bytes_of_part);
-
-				   if( is_lvm_vg )
-				       {
-				       part["is_lv"] = true;
-				       }
-				   if( is_raid )
-				       {
-				       part["is_raid"] = true;
-				       }
-				   string devkey = sformat( "%2/%1", dev, 
-				                            part["nr"]:"");
-				   part["maindev"] = dev;
-				   part["devkey"] = devkey;
-				   return( part );
-				   });
-
-	return( [ dev, add( devmap, "partitions", partitions)] );
-	});
-
-    ////////////////////////////////////////////////////////////
-    // Look for all partitions:
-    // not LVM ( here I mean /dev/<lvm_volumegroup>/<lv> entrys!
-    //           there are only the lv's in the targetMap under 
-    //           /dev/<lvm_volumegroup>/<lv> !)
-    // no mountpoint
-    // id 0x83 or 0x8e or 0xfd
-    // no RAID devices (this is for experts only, by hand)
-
-    foreach( `dev, `devmap, targetMap,
-	``{
-	ret = add( ret, 
-	    filter( `partition, devmap["partitions"]:[],
-		    ``(
-		       (partition["mount"]:"" == "" ||
-			substring(partition["mount"]:"", 0, 5) == "/data") &&
-		       !partition["is_lv"]:false &&
-		       !partition["is_raid"]:false && 
-		       partition["lvm_group"]:"" == "" &&
-		       !partition["delete"]:false &&
-		       (partition["fsid"]:0 == Partitions::fsid_lvm ||
-			partition["fsid"]:0 == Partitions::fsid_raid ||
-			partition["fsid"]:0 == Partitions::fsid_native ))));
-	});
-
-    return( flatten(ret) );
-    };
-
-
-
 /**
   *  partition list to widget table
   * in:
@@ -466,7 +463,7 @@ global define list get_raid_widget_table( list possRdList )
 
     list    ret = [];
 
-    possRdList = sort( `x, `y, possRdList,
+    possRdList = sort( map x, map y, possRdList,
 		     ``{
 		     if( x["maindev"]:"" == y["maindev"]:"" )
 			 {
@@ -478,7 +475,7 @@ global define list get_raid_widget_table( list possRdList )
 			 }
 		     });
 
-    return( maplist( `partition, possRdList,
+    return( maplist( map partition, possRdList,
 	    ``{
 	    return(`item( `id(partition["devkey"]:"--"),
 			  partition["device"]:"--",
@@ -500,8 +497,8 @@ global define string get_free_raid_nr( map targetMap, integer min )
     if( curr_md != $[] )
 	{
 	list partitions = curr_md["partitions"]:[];
-	partitions = filter( `part, partitions, ``( ! part["delete"]:false ));
-	list raid_nrs = maplist( `mdX, partitions , ``(mdX["nr"]:256)) ;
+	partitions = filter( map part, partitions, ``( !part["delete"]:false ));
+	list raid_nrs = maplist( map mdX, partitions , ``(mdX["nr"]:256)) ;
 
 	y2debug( "get_free: %1", raid_nrs );
 	while( contains(raid_nrs, i) && i < 255)
@@ -525,135 +522,44 @@ global define string get_free_raid_nr( map targetMap, integer min )
 	}
     };
 
-
-
-/*
- * prepare /etc/raidtab
- * return true if it was created, else false
- * !! the return value only reflects the existance of /etc/raidtab
- * !! not the success of the raid creation
+/**
+ * Add the main device ( "/dev/hda") to the partition map.
+ * partition = $[
+ *                "nr"	: 1,
+ *		      "main_dev": "/dev/hda",
+ *              ......
+ *              ];
+ * Use change !!!!!!!!!
+ * @param targetMap all targets
+ * @return nil
  */
-global define boolean prepare_raid( map targets, boolean installation )
+global define void add_main_dev_to_partition_map( map targetMap )
     ``{
-    string  raidtab = "";
-    // if change_raidtab was called instead of create_raidtab
-    boolean justchange = false;
-
-    if( ! installation )
-	{
-	// create /etc/raidtab if its not already existing,
-	// otherwise change it
-	y2milestone( "size %1", SCR::Read(.target.size, "/etc/raidtab") );
-	if( SCR::Read(.target.size, "/etc/raidtab") == -1 )
-	    {
-	    raidtab = create_raidtab( targets );
-	    }
-	else
-	    {
-	    raidtab = change_raidtab( targets );
-	    justchange = true;
-	    }
-	}
-    else
-	{
-	raidtab = create_raidtab( targets );
-	}
-
-    y2milestone( "RAID_: %1", raidtab );
-
-    // raidtab is empty if no changes were made
-    if( justchange == true && raidtab == "" )
-	return true;
-    else if ( raidtab == "" )
-	return false;
-
-    if( Mode::test )
-	return true;
-
-    boolean bresult = SCR::Write(.target.string, "/etc/raidtab", raidtab );
-
-    if( bresult )
-	{
-	list raids = targets["/dev/md","partitions"]:[];
-	raids = filter( `mdX, raids, ``( mdX["create"]:false ));
-	list raid_nrs = maplist( `mdX, raids, ``( mdX["nr"]:256));
-	boolean cancel = false;
-
-	y2milestone( "created raids: %1", raid_nrs );
-
-	foreach( `raid_nr, raid_nrs, 
+    foreach( string targetdevice, map target, targetMap, 
+	``{
+	foreach( map partition, target["partitions"]:[], 
 	    ``{
-	    if (cancel==true) return;
-
-	    /////////////////////////////////////////////////////////
-	    // load raid module if not loaded!!
-	    map raid = find( `raid , raids, ``( raid["nr"]:0 == raid_nr ));
-	    string modulename  = raid["raid_type"]:"raid1";
-	    map loaded_modules = SCR::Read(.proc.modules);
-	    boolean load_success = true;
-
-	    if( size(loaded_modules[modulename]:$[]) == 0)
+	    if( partition["raid_name"]:"" != "")
 		{
-		if (modulename == "raid5" )
-		    load_success = SCR::Execute(.target.insmod, "xor", "" );
-
-		if( load_success )
-		    {
-		    load_success = SCR::Execute(.target.insmod, modulename, "" );
-		    y2milestone( "load module %1", modulename );
-		    }
-		}
-
-	    if( load_success )
-		{
-		string command = sformat ("/sbin/raidstop /dev/md%1", raid_nr );
-		SCR::Execute( .target.bash, command );
-
-		// force !! create raid even  if  they appear to have data on them already.
-		command = sformat ("/sbin/mkraid -c /etc/raidtab --really-force /dev/md%1", raid_nr);
-
-		if( SCR::Execute (.target.bash, command) == 0 )
-		    {
-		    y2milestone( "success for: %1", command  );
-		    }
-		else
-		    {
-		    y2error("Command <%1> failed", command );
-		    // popup text
-		    string message = sformat(_("Could not create the RAID /dev/md%1"), raid_nr);
-		    Popup::Error(message);
-		    cancel=true;
-		    }
-		}
-	    else
-		{
-		// popup text
-		Popup::Error(sformat(_("Could not load module %1."), modulename ));
-		cancel=true;
+		change( partition, "main_dev", targetdevice );
 		}
 	    });
-
-	//failure in foreach
-	if(cancel==true)
-	    {
-	    return false;
-	    }
-
-	}
-    else
-	{
-	// popup text
-	Popup::Error(_("Could not create the RAID"));
-	return false;
-	}
-
-    if ( Mode::test )
-	y2milestone( "raidtab  \n%1", raidtab );
-
-    return true;
+	});
+    y2debug("targets %1", targetMap );
     };
 
-
+/**
+ * @return list a list with all partition that have a key raid_name != "".
+ * @param targetMap all targets
+ */
+global define list all_raid_partitions( map targetMap ) 
+    ``{
+    list<list> ret = 
+      (list<list>) maplist( string targetdevice, map target, targetMap,
+			    ``( filter( map part, target["partitions"]:[],
+					``(part["raid_name"]:"" != ""))));
+    return( flatten(ret) );
+    };
 
 
 /**
@@ -683,11 +589,11 @@ global define string onepartition2raidtab( map raid, list r_partitions )
 
     y2debug( "raid partitions %1", r_partitions );
 
-    list curr_raid_parts = filter( `p, r_partitions,
+    list curr_raid_parts = filter( map p, r_partitions,
 				   ``( p["raid_name"]:""==device &&
 				       p["raid_type"]:"raid" == "raid" ));
 
-    list curr_spare_parts = filter( `p, r_partitions,
+    list curr_spare_parts = filter( map p, r_partitions,
 				    ``( p["raid_name"]:"" == device &&
 					p["raid_type"]:"raid" == "spare" ));
 /*
@@ -750,7 +656,7 @@ global define string onepartition2raidtab( map raid, list r_partitions )
 	}
 
     integer i = 0;
-    foreach(`raid_part, curr_raid_parts, 
+    foreach( map raid_part, curr_raid_parts, 
 	``{
 	raidtab = raidtab + "\n   device   "  + raid_part["device"]:"";
 	raidtab = raidtab + "\n   raid-disk " + sformat( "%1", i);
@@ -758,56 +664,13 @@ global define string onepartition2raidtab( map raid, list r_partitions )
 	});
 
     i = 0;
-    foreach(`raid_part, curr_spare_parts, 
+    foreach( map raid_part, curr_spare_parts, 
 	``{
 	raidtab = raidtab + "\n   device   " + raid_part["device"]:"";
 	raidtab = raidtab + "\n   spare-disk " + sformat( "%1",	 i);
 	i = i+1;
 	});
     return raidtab;
-    };
-
-
-
-
-
-/**
- * Add the main device ( "/dev/hda") to the partition map.
- * partition = $[
- *                "nr"	: 1,
- *		      "main_dev": "/dev/hda",
- *              ......
- *              ];
- * Use change !!!!!!!!!
- * @param targetMap all targets
- * @return nil
- */
-global define void add_main_dev_to_partition_map( map targetMap )
-    ``{
-    foreach( `targetdevice,`target, targetMap, 
-	``{
-	foreach( `partition, target["partitions"]:[], 
-	    ``{
-	    if( partition["raid_name"]:"" != "")
-		{
-		change( partition, "main_dev", targetdevice );
-		}
-	    });
-	});
-    y2debug("targets %1", targetMap );
-    };
-
-
-
-/**
- * @return list a list with all partition that have a key raid_name != "".
- * @param targetMap all targets
- */
-global define list all_raid_partitions( map targetMap ) 
-    ``{
-    return flatten( maplist( `targetdevice, `target, targetMap,
-			     ``( filter( `part, target["partitions"]:[],
-					 ``(part["raid_name"]:"" != "")))));
     };
 
 
@@ -831,7 +694,7 @@ global define string create_raidtab( map targets )
 
     boolean any_raid_created = false;
 
-    foreach(`raid, raids, 
+    foreach( map raid, raids, 
 	``{
 	string raidentry = onepartition2raidtab( raid, r_partitions );
 	if( raidentry != "")
@@ -852,7 +715,6 @@ global define string create_raidtab( map targets )
     };
 
 
-
 /**
  * Change an existing /etc/raidtab ( in running system )
  * -> add new entries for new raids
@@ -865,25 +727,25 @@ global define string change_raidtab( map targetMap )
     // by change !!!
     add_main_dev_to_partition_map( targetMap );
 
-    string raidtab = SCR::Read(.target.string , "/etc/raidtab" );
+    string raidtab = (string)SCR::Read(.target.string , "/etc/raidtab" );
 
-    if( raidtab == nil )
+    if( size(raidtab) == 0 )
 	return "";
 
     list raidtab_list = splitstring( raidtab , "\n" );
     list raiddev_list = 
-	filter( `line, raidtab_list , ``( issubstring( line, "raiddev")));
+	filter( string line, raidtab_list , ``( issubstring( line, "raiddev")));
 
     list r_partitions = all_raid_partitions( targetMap );
     list raids = targetMap["/dev/md","partitions"]:[];
-    list raids_del = filter(`raid, raids, ``( raid["delete"]:false ));
+    list raids_del = filter( map raid, raids, ``( raid["delete"]:false ));
 
     boolean any_raid_changed = false;
 
-    foreach(`raid, raids_del, 
+    foreach( map raid, raids_del, 
 	``{
 	list raiddev_lines = 
-	    filter( `devs, raiddev_list, 
+	    filter( string devs, raiddev_list, 
 		    ``( issubstring( devs, raid["device"]:"" )));
 
 	y2debug( " raiddev_lines : %1", raiddev_lines );
@@ -892,17 +754,18 @@ global define string change_raidtab( map targetMap )
 	if( size( raiddev_lines ) != 0 )
 	    {
 	    y2debug( " delete one raid entry " );
-	    string raiddev_line = raiddev_lines[0]:nilstring;
+	    string raiddev_line = raiddev_lines[0]:"";
 	    integer start_pos = find( raidtab , raiddev_line );
 	    integer end_pos = 0;
 
 	    list bigger_raiddevs = 
-		filter( `raiddev, raiddev_list, 
+		filter( string raiddev, raiddev_list, 
 			``( find( raidtab, raiddev) > start_pos ));
 
 	    if( size( bigger_raiddevs ) > 0 )
-		end_pos = find( raidtab, bigger_raiddevs[0]:nilinteger);
-	    else end_pos = size( raidtab ) ;
+		end_pos = find( raidtab, bigger_raiddevs[0]:"" );
+	    else 
+		end_pos = size( raidtab ) ;
 
 	    string new_raidtab = substring( raidtab, 0, start_pos );
 	    new_raidtab = new_raidtab + substring( raidtab, end_pos );
@@ -913,13 +776,13 @@ global define string change_raidtab( map targetMap )
 	});
 
     raidtab_list = splitstring( raidtab , "\n" );
-    raiddev_list = filter( `line, raidtab_list , 
+    raiddev_list = filter( string line, raidtab_list , 
 			   ``( issubstring( line, "raiddev")));
 
-    foreach( `raid, raids, 
+    foreach( map raid, raids, 
 	``{
 	list raiddev_lines = 
-	    filter( `devs, raiddev_list, 
+	    filter( string devs, raiddev_list, 
 		    ``( issubstring( devs, raid["device"]:"" )));
 
 	y2debug( " raiddev_lines : %1", raiddev_lines );
@@ -962,5 +825,137 @@ and retry creation of your raid in YaST2.
 
     return( raidtab );
     };
+/*
+ * prepare /etc/raidtab
+ * return true if it was created, else false
+ * !! the return value only reflects the existance of /etc/raidtab
+ * !! not the success of the raid creation
+ */
+global define boolean prepare_raid( map targets, boolean installation )
+    ``{
+    string  raidtab = "";
+    // if change_raidtab was called instead of create_raidtab
+    boolean justchange = false;
+
+    if( ! installation )
+	{
+	// create /etc/raidtab if its not already existing,
+	// otherwise change it
+	y2milestone( "size %1", SCR::Read(.target.size, "/etc/raidtab") );
+	if( (integer)SCR::Read(.target.size, "/etc/raidtab") == -1 )
+	    {
+	    raidtab = create_raidtab( targets );
+	    }
+	else
+	    {
+	    raidtab = change_raidtab( targets );
+	    justchange = true;
+	    }
+	}
+    else
+	{
+	raidtab = create_raidtab( targets );
+	}
+
+    y2milestone( "RAID_: %1", raidtab );
+
+    // raidtab is empty if no changes were made
+    if( justchange == true && raidtab == "" )
+	return true;
+    else if ( raidtab == "" )
+	return false;
+
+    if( Mode::test )
+	return true;
+
+    boolean bresult = SCR::Write(.target.string, "/etc/raidtab", raidtab );
+
+    if( bresult )
+	{
+	list raids = targets["/dev/md","partitions"]:[];
+	raids = filter( map mdX, raids, ``( mdX["create"]:false ));
+	list raid_nrs = maplist( map mdX, raids, ``( mdX["nr"]:256));
+	boolean cancel = false;
+
+	y2milestone( "created raids: %1", raid_nrs );
+
+	foreach( integer raid_nr, raid_nrs, 
+	    ``{
+	    if (cancel==true) return;
+
+	    /////////////////////////////////////////////////////////
+	    // load raid module if not loaded!!
+	    map raid = (map)find( map r, raids, ``( r["nr"]:0 == raid_nr ));
+	    string modulename  = raid["raid_type"]:"raid1";
+	    map loaded_modules = (map)SCR::Read(.proc.modules);
+	    boolean load_success = true;
+
+	    if( size(loaded_modules[modulename]:$[]) == 0)
+		{
+		if (modulename == "raid5" )
+		    load_success = (boolean)SCR::Execute(.target.insmod, "xor", "" );
+
+		if( load_success )
+		    {
+		    load_success = (boolean)SCR::Execute(.target.insmod, modulename, "" );
+		    y2milestone( "load module %1", modulename );
+		    }
+		}
+
+	    if( load_success )
+		{
+		string command = sformat ("/sbin/raidstop /dev/md%1", raid_nr );
+		SCR::Execute( .target.bash, command );
+
+		// force !! create raid even  if  they appear to have data on them already.
+		command = sformat ("/sbin/mkraid -c /etc/raidtab --really-force /dev/md%1", raid_nr);
+
+		if( SCR::Execute (.target.bash, command) == 0 )
+		    {
+		    y2milestone( "success for: %1", command  );
+		    }
+		else
+		    {
+		    y2error("Command <%1> failed", command );
+		    // popup text
+		    string message = sformat(_("Could not create the RAID /dev/md%1"), raid_nr);
+		    Popup::Error(message);
+		    cancel=true;
+		    }
+		}
+	    else
+		{
+		// popup text
+		Popup::Error(sformat(_("Could not load module %1."), modulename ));
+		cancel=true;
+		}
+	    });
+
+	//failure in foreach
+	if(cancel==true)
+	    {
+	    return false;
+	    }
+
+	}
+    else
+	{
+	// popup text
+	Popup::Error(_("Could not create the RAID"));
+	return false;
+	}
+
+    if ( Mode::test )
+	y2milestone( "raidtab  \n%1", raidtab );
+
+    return true;
+    };
+
+
+
+
+
+
+
 }
 

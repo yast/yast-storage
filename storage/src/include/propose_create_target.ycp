@@ -28,14 +28,14 @@ import "Partitions";
   // returns the end_cyl for a swap
   // returns -1 if an error occurs or no swap is possible
   
-global define GetSwapSize( integer start_cyl, integer end_cyl, integer cyl_size)
+global define integer GetSwapSize( integer start_cyl, integer end_cyl, integer cyl_size)
     ``{
     integer swap_mb = 
 	Partitions::SwapSizeMb( (end_cyl-start_cyl+1) * cyl_size / (1024*1024));
     return( start_cyl + (swap_mb*1024*1024)/cyl_size );
     };
 
-global define HitToTargetMap( map targetMap, map hit )
+global define map HitToTargetMap( map targetMap, map hit )
     ``{
 
     ////////////////////////////////////
@@ -108,7 +108,7 @@ global define HitToTargetMap( map targetMap, map hit )
     // changed partitioning:
     // therefore the base is always the targetMap with its definition.
     
-    partitions = maplist( `part, partitions, 
+    partitions = maplist( map part, partitions, 
                           ``( add( part, "prop_reuse_nr", part["nr"]:0))); 
 
 			  
@@ -358,7 +358,7 @@ global define HitToTargetMap( map targetMap, map hit )
 	}
 
     if( hit["boot_r_slot"]:$[] != $[] && 
-        size(filter(`p, partitions, ``(p["mount"]:""=="/boot")))==0 )
+        size(filter(map p, partitions, ``(p["mount"]:""=="/boot")))==0 )
 	{
 	map slot = hit["boot_r_slot"]:$[];
 	partitions = reuse_partition( partitions, slot["nr"]:0, "/boot" );
@@ -367,9 +367,9 @@ global define HitToTargetMap( map targetMap, map hit )
     y2debug( "NEW: add_slot_nr:%1", add_slot_nr );
 
     if( add_slot_nr != -1 && 
-	size(filter(`p, partitions, ``(p["mount"]:""=="swap")))==0 )
+	size(filter(map p, partitions, ``(p["mount"]:""=="swap")))==0 )
 	{
-	list pt = filter(`p, partitions, 
+	list pt = filter(map p, partitions, 
 			 ``(p["mount"]:""=="/" && !p["delete"]:false));
 	if( size(pt)>0 )
 	    {
@@ -395,7 +395,7 @@ global define HitToTargetMap( map targetMap, map hit )
 		    }
 		else
 		    {
-		    partitions = filter( `p, partitions,
+		    partitions = filter( map p, partitions,
 					 ``(!(p["nr"]:-1 == old_num &&
 					      p["delete"]:false==false)));
 		    partitions = create_partition( partitions, start, swap_end, 
@@ -414,7 +414,7 @@ global define HitToTargetMap( map targetMap, map hit )
     
     y2milestone( "NEW: partitions:%1", partitions );
     // change( disk, "partitions", partitions );
-    foreach( `part, partitions,
+    foreach( map part, partitions,
 	``{
 	part["device"] = Storage::GetDeviceName( slot_dev, part["nr"]:0 );
 	});
@@ -428,7 +428,7 @@ global define HitToTargetMap( map targetMap, map hit )
 	y2debug( "hit slot      :  %1", slot); 
 	y2debug( "hit boot_slot :  %1", boot_slot); 
 	y2debug( "hit was       :  %1", 
-	          filter( `key, `value, hit, 
+	          filter( string key, `value, hit, 
 			  ``( key != "slot" && key != "boot_slot")));  
 	return( nil );
 	}
@@ -467,13 +467,13 @@ global define HitToTargetMap( map targetMap, map hit )
   //  >2        use swap
   //
   
-global define GetTheBestHit( list hitlist )
+global define map GetTheBestHit( list hitlist )
     ``{
     ////////////////////////////////////
     // build a score
     // first rough implemtaion
     // todo: implement the rules above 
-    hitlist = maplist( `hit, hitlist, ``{
+    hitlist = maplist( map hit, hitlist, ``{
 	integer score = 0;
 	boolean root_split  = hit["root_split"]:false;
 	boolean boot_split  = hit["boot_split"]:false;
@@ -482,7 +482,7 @@ global define GetTheBestHit( list hitlist )
 	map     boot_slot   = hit["boot_slot"]:$[];
 	map     swap_slot   = hit["swap_slot"]:$[];
 	integer ssize       = slot["size"]:0;
-	string  type        = slot["type"]:0;
+	string  type        = slot["type"]:"";
 	string  boot_type   = "split";
 	integer swap_slot_nr = hit["swap_slot_nr"]:-1;
 	integer free_primary = hit["free_primary"]:0;
@@ -536,7 +536,7 @@ global define GetTheBestHit( list hitlist )
 	});
 		       
 
-    hitlist = sort(`slot_x, `slot_y, hitlist, 
+    hitlist = sort(map slot_x, map slot_y, hitlist, 
                    ``(slot_x["score"]:0 >= slot_y["score"]:0));
 
     if( size( hitlist ) > 0 )

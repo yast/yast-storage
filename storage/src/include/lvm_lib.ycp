@@ -18,62 +18,42 @@
   {
     
 
-    include "partitioning/partition_defines.ycp";
-    textdomain "storage";
+include "partitioning/partition_defines.ycp";
+include "partitioning/signatures.ycp";
+
+textdomain "storage";
  
+//////////////////////////////////////////////////////////////////////
+// with check_mode = true its a checkModifyTargets
+// with check_mode = false its a processModifyTargets
+//
+// check_mode = false requires a run of this procedure
+// with check_mode = true, that return a `next, so that
+// all can be done properly!!!!!!!
+//////////////////////////////////////////////////////////////////////
 
-    //////////////////////////////////////////////////////////////////////
-    // check if for every create_vg is at least one create_pv or an existing pv
-    //////////////////////////////////////////////////////////////////////
-
-    global define checkModifyTargets( map modify_targets, map targetMap )
-    ``{
-	  return( c_and_p_ModifyTargets( modify_targets, targetMap, true ));
-    };
-
-    //////////////////////////////////////////////////////////////////////
-    // look for create_vg
-    // for every create_vg, there have to be a create_pv
-    // or the create_vg contains already a device list
-    //////////////////////////////////////////////////////////////////////
-
-    global define processModifyTargets( map modify_targets, map targetMap )
-    ``{
-	  return( c_and_p_ModifyTargets( modify_targets, targetMap, false ));
-	    
-    };
-
-
-    //////////////////////////////////////////////////////////////////////
-    // with check_mode = true its a checkModifyTargets
-    // with check_mode = false its a processModifyTargets
-    //
-    // check_mode = false requires a run of this procedure
-    // with check_mode = true, that return a `next, so that
-    // all can be done properly!!!!!!!
-    //////////////////////////////////////////////////////////////////////
-
-global define c_and_p_ModifyTargets( map modify_targets, map targetMap, 
-                                     boolean check_mode )
+global define any c_and_p_ModifyTargets( map modify_targets, map targetMap, 
+					 boolean check_mode )
     ``{
     y2milestone(" CHECK do the work mod %1", check_mode);
 
     symbol ret = `next;
+    list new_vgs = [];
 
     do
 	{
-	map  new_vgs_mods = filter(  `key, `mod, modify_targets,
+	map  new_vgs_mods = filter(  `key, map mod, modify_targets,
 				     ``( mod["type"]:"" == "create_vg" &&
 					 size(mod["devices"]:[]) == 0 ));
     
 	// now we have the list of "create_vg"s where devices were misssing
-	list new_vgs      = maplist( `key, `mod, new_vgs_mods, ``( key )); 
+	new_vgs = maplist( `key, `mod, new_vgs_mods, ``( key )); 
 
 	y2milestone( "checkModify new_vg_mods %1", new_vgs_mods);
 
 	if ( size(new_vgs) > 0 )
 	    {
-	    integer vg_nr = select( new_vgs, 0, 0);
+	    integer vg_nr = (integer)select( new_vgs, 0, 0);
     
 	    // for every vg we look if there is a create_pv or an existing pv
     
@@ -83,12 +63,13 @@ global define c_and_p_ModifyTargets( map modify_targets, map targetMap,
 	    string vg = modify_targets[vg_nr,"vgname"]:"";
 	
 	    // look into execution stack
-	    map pvs_to_create =  filter( `key, `mod, modify_targets,
+	    map pvs_to_create =  filter( `key, map mod, modify_targets,
 					 ``( mod["type"]:"" == "create_pv" &&
 					     mod["vgname"]:"" == vg ));
 
 	    // look into partition table
-	    list existing_pvs  = filter( `part, get_possible_pvs( targetMap ),
+	    list tp = get_possible_pvs( targetMap );
+	    list existing_pvs = filter( map part, tp,
 					 ``( part["lvm_group"]:"" == vg ));
 
 	    if ( check_mode )
@@ -120,7 +101,7 @@ create at least one physical volume.
 		    // into a pv without vgname and a vg with devices="pv"
 
 		    // we take the first entry and read its key
-		    integer pv_nr = select( maplist(`k,`v,pvs_to_create, ``(k)), 0, 0 );
+		    integer pv_nr = (integer)select( maplist(`k,`v,pvs_to_create, ``(k)), 0, 0 );
 
 		    map pv_val = modify_targets[pv_nr]:$[];
 		    map vg_val = modify_targets[vg_nr]:$[];
@@ -160,12 +141,12 @@ create at least one physical volume.
 		    }
 		}
 	    }
-	} while ( !check_mode && size(new_vgs) > 1 );
+	} 
+    while ( !check_mode && size(new_vgs) > 1 );
     
-
     y2milestone( "mod: %1", modify_targets);
 
-    if ( check_mode )
+    if( check_mode )
 	{
 	return( ret);
 	}
@@ -175,16 +156,35 @@ create at least one physical volume.
 	}
     };
 
+//////////////////////////////////////////////////////////////////////
+// check if for every create_vg is at least one create_pv or an existing pv
+//////////////////////////////////////////////////////////////////////
+
+global define symbol checkModifyTargets( map modify_targets, map targetMap )
+    ``{
+    return( (symbol)c_and_p_ModifyTargets( modify_targets, targetMap, true ));
+    };
+
+//////////////////////////////////////////////////////////////////////
+// look for create_vg
+// for every create_vg, there have to be a create_pv
+// or the create_vg contains already a device list
+//////////////////////////////////////////////////////////////////////
+
+global define map processModifyTargets( map modify_targets, map targetMap )
+    ``{
+    return( (map)c_and_p_ModifyTargets( modify_targets, targetMap, false ));
+    };
 
     
-    //////////////////////////////////////////////////////////////////////
-    // get a list of all volume groups in the targetMap
+//////////////////////////////////////////////////////////////////////
+// get a list of all volume groups in the targetMap
     
 global define list get_vgs( map targetMap )
     ``{
     list lvm_vg = [];
 	
-    foreach( `dev, `devmap, targetMap,
+    foreach( string dev, map devmap, targetMap,
 	``{
 	if ( devmap["is_lvm_vg"]:false && !devmap["delete"]:false )
 	    {
@@ -198,10 +198,10 @@ global define list get_vgs( map targetMap )
 global define integer vg_size( list partitions, string current_vg )
     ``{
     integer sum_byte_vg = 0;
-    list parts = filter( `part, partitions,
+    list parts = filter( map part, partitions,
 			 ``( part["lvm_group"]:"" == current_vg &&
                              !part["lvm_mp_pv"]:false ));
-    foreach( `part, parts, 
+    foreach( map part, parts, 
 	``{
 	integer sum = part["lvm_size_bytes"]:0;
 	if( sum>0 )
@@ -215,26 +215,104 @@ global define integer vg_size( list partitions, string current_vg )
     };
 
 
+//////////////////////////////////////////////////////////////////////
+// pesize to byte
+// in: <number>[kKmM][bB]
+// 
+// return "0" if input is invalid
+// 
+// pesize is valid   8K to 521M in power of 2
+// 8 is 8k
+// 16K == 16k == 16KB == 16kb
+     
+global define integer pesize_str_to_byte( string input )
+    ``{
+    integer num = kmgt_str_to_byte( input );
+    if( findfirstnotof( input, "0123456789 " ) == nil )
+	num = num*1024;
 
-    //////////////////////////////////////////////////////////////////////
-    // Let the User create a new Volume group: open dialog ...
-    // return: the changed targetMap and lvm_vgs  and cancelled 
+    integer ret = num;
 
-global define addVolumeGroup( map targetMap, list lvm_vgs, map modify_targets )
+    if( ret % 1024 != 0 )
+	ret = 0;
+    else
+	{
+	while( num>1 )
+	    {
+	    if( num%2 != 0 )
+		ret = 0;
+	    else
+		num = num/2;
+            }
+        }
+    if( num < 8*1024 || num > 524288*1024 )
+        {
+        ret = 0;
+        }
+    return( ret );
+    };
+
+
+//////////////////////////////////////////////////////////////////////
+// stripe size to byte 
+// in: <number>[kK][bB]
+//
+// return 0 if input is invalid
+//
+// stripe granularity is valid  1K to 128k in power of 2
+// 8 is 8k
+// 16K == 16k == 16KB == 16kb 
+
+global define integer stripe_str_to_byte( string input )
+    ``{
+    y2debug("FFFFF ++++++++ %1", input);
+    integer num = kmgt_str_to_byte( input );
+
+    if( findfirstnotof( input, "0123456789 " ) == nil )
+        num = num*1024;
+
+    integer ret = num;
+
+    if( ret % 1024 != 0 )
+        ret = 0;
+    else
+        {
+        while( num>1 )
+            {
+            if( num%2 != 0 )
+                ret = 0;
+            else
+                num = num/2;
+            }
+        }
+    if( num < 1*1024 || num > 128*1024 )
+        {
+        ret = 0;
+        }
+    return ret;
+    };
+
+
+//////////////////////////////////////////////////////////////////////
+// Let the User create a new Volume group: open dialog ...
+// return: the changed targetMap and lvm_vgs  and cancelled 
+
+global define map addVolumeGroup( map targetMap, list lvm_vgs, 
+                                  map modify_targets )
     ``{
     boolean cancelled   = true;
     string  current_vg  = "";
     integer pesize      = 0;
       
-    any vg = DlgCreateVolumeGroup( lvm_vgs );
+    map vg = DlgCreateVolumeGroup( lvm_vgs );
 
     // has the user cancelled the dialog? 
-    if( vg != nil )
+    if( size(vg)>0 )
 	{
 	// Now the user has created a new vg: make it the current vg
 	current_vg = vg["vgname"]:"error";
 	lvm_vgs    = add( lvm_vgs, current_vg);
-	pesize     = pesize_str_to_byte( vg["pesize"]:0 );
+	pesize     = vg["pesize"]:0 * 1024;
       
 	// Display current vg:
 	new_vg_list( lvm_vgs );
@@ -287,19 +365,19 @@ global define addVolumeGroup( map targetMap, list lvm_vgs, map modify_targets )
 // Remove the specified volume group  
 // return: the changed targetMap and modify_targets 
 
-global define removeVolumeGroup( string current_vg, map targetMap, 
-                                 map modify_targets )
+global define map removeVolumeGroup( string current_vg, map targetMap, 
+				     map modify_targets )
     ``{
     string old_vg = "/dev/" + current_vg;
     map new = $[];
-    foreach( `k, `v, targetMap, 
+    foreach( `k, map v, targetMap, 
 	``{
 	list npart = [];
-	foreach( `p, lookup( v, "partitions", [] ), 
+	foreach( map p, lookup( v, "partitions", [] ), 
 	    ``{
 	    if( lookup( p, "lvm_group", "" )==current_vg )
 		{
-		p = filter( `k1, `v1, p, ``(k1 != "lvm_group") );
+		p = filter( string k1, `v1, p, ``(k1 != "lvm_group") );
 		}
 	    npart = add( npart, p );
 	    });
@@ -309,24 +387,24 @@ global define removeVolumeGroup( string current_vg, map targetMap,
 
     new[old_vg,"delete"] = true;
 	
-    map tmp = filter( `k, `v, modify_targets, 
+    map tmp = filter( `k, map v, modify_targets, 
                       ``( v["use_module"]:"" == "lvm_ll" &&
 			  v["type"]:"" == "create_vg" &&
 			  v["vgname"]:"" == current_vg ));
     if( size(tmp)>0 )
 	{
-	integer num = select( maplist( `k, `v, tmp, ``(k) ), 0, 0 );
+	integer num = (integer)select( maplist( `k, `v, tmp, ``(k) ), 0, 0 );
 	modify_targets = removeTargetModification( modify_targets, num );
-	map tmp = filter( `k, `v, modify_targets, 
+	map tmp = filter( `k, map v, modify_targets, 
 			  ``( v["use_module"]:"" == "lvm_ll" &&
 			      v["type"]:"" == "create_pv" &&
 			      v["vgname"]:"" == current_vg ));
 	while( size(tmp)>0 )
 	    {
-	    num = select( maplist( `k, `v, tmp, ``(k) ), 0, 0 );
+	    num = (integer)select( maplist( `k, `v, tmp, ``(k) ), 0, 0 );
 	    modify_targets = removeTargetModification( modify_targets, num );
 
-	    map tmp = filter( `k, `v, modify_targets, 
+	    map tmp = filter( `k, map v, modify_targets, 
 	                      ``( v["use_module"]:"" == "lvm_ll" &&
 				  v["type"]:"" == "create_pv" &&
 				  v["vgname"]:"" == current_vg ));

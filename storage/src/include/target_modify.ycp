@@ -15,12 +15,45 @@
 {
     textdomain "storage";
 
+    import "Misc";
     import "Storage";
     import "Partitions";
 
     import "Label";
 
-global define target_modify( map modify_targets, boolean installation )
+global define boolean fdisk_call( map curr_map )
+    ``{
+    boolean ok  = false;
+    integer pos = 0;
+    string disk = curr_map["disk"]:"";
+    string pt   = "";
+  
+    disk = substring( disk, 5 );
+    pos = findfirstof( disk, "/" );
+    while( pos > 0 )
+	{
+	pt = pt + "." + substring( disk, 0, pos );
+	disk = substring( disk, pos+1 );
+	pos = findfirstof( disk, "/" );
+	}
+
+    boolean parted = Partitions::UseParted();
+    if( curr_map["type"]:"" == "resize" )
+	{
+	parted = true;
+	}
+
+    pt = pt + "." + disk;
+    if( size(pt)>0 )
+	{
+	pt = ".disk" + pt + ".command";
+	y2debug( "pt=%1", pt );
+	ok = SCR::Write(topath(pt), curr_map, parted );
+	}
+    return( ok );
+    }
+      
+global define boolean target_modify( map modify_targets, boolean installation )
     ``{
 
     y2debug( "BEGINNING of modify_targets" );
@@ -80,7 +113,7 @@ global define target_modify( map modify_targets, boolean installation )
 		y2debug( "umnt=%1", umnt );
 		SCR::Execute (.target.bash, umnt );
 		}
-	    map ret = SCR::Write(.lvm.command, curr_map);
+	    map ret = (map)SCR::Write(.lvm.command, curr_map);
 
 	    ok = ret["ok"]:false;
 
@@ -139,38 +172,6 @@ global define target_modify( map modify_targets, boolean installation )
     return ( ok );
     };
 
-global define fdisk_call( map curr_map )
-    ``{
-    boolean ok  = false;
-    integer pos = 0;
-    string disk = curr_map["disk"]:"";
-    string pt   = "";
-  
-    disk = substring( disk, 5 );
-    pos = findfirstof( disk, "/" );
-    while( pos > 0 )
-	{
-	pt = pt + "." + substring( disk, 0, pos );
-	disk = substring( disk, pos+1 );
-	pos = findfirstof( disk, "/" );
-	}
-
-    boolean parted = Partitions::UseParted();
-    if( curr_map["type"]:"" == "resize" )
-	{
-	parted = true;
-	}
-
-    pt = pt + "." + disk;
-    if( size(pt)>0 )
-	{
-	pt = ".disk" + pt + ".command";
-	y2debug( "pt=%1", pt );
-	ok = SCR::Write(topath(pt), curr_map, parted );
-	}
-    return( ok );
-    }
-      
 
 ////////////////////////////////////////////////////////////////////
 // change the id of a partition:
@@ -197,106 +198,88 @@ global define boolean fdisk_change_id( string disk, integer nr, integer id  )
     //   "nr"           : 8,            // for sdb8
     //   "new_cyl_num"  : 1500          // resize to 1500 cylinders
   
-    global define boolean fdisk_resize( string disk, integer nr, integer new_cyl  )
-	``{
-	map curr_change = $[
-			       "disk"         : disk,
-			       "new_cyl_cnt" : new_cyl,
-			       "nr"           :  nr,
-			       "type"         : "resize" ];
+global define boolean fdisk_resize( string disk, integer nr, integer new_cyl  )
+    ``{
+    map curr_change = $[
+			   "disk"         : disk,
+			   "new_cyl_cnt" : new_cyl,
+			   "nr"           :  nr,
+			   "type"         : "resize" ];
       
-	return( fdisk_call( curr_change ));       
+    return( fdisk_call( curr_change ));       
     };
 
 
-
- 
-global define boolean HandleResizePartitions( string disk_dev, map disk,
-					      boolean decrease )
+global define boolean HandleFilesystem( string device, symbol fs, 
+                                        integer new_size,
+                                        boolean decrease,
+					string mp )
     ``{
     boolean ret = true;
-    integer cyl_size = disk["cyl_size"]:0;
-
-    list part = filter( `p, disk["partitions"]:[], 
-			``(p["resize"]:false && !p["delete"]:false));
-    if( decrease )
+    string cmd = "";
+    y2milestone( "HandleFilesystem device:%1 fs:%2 new:%3 decrease:%4 mp:%5",
+                 device, fs, new_size, decrease, mp );
+    if( fs == `reiser )
 	{
-	part = filter( `p, part, ``(p["region",1]:0 < p["ori_length"]:0));
-	}
-    else
-	{
-	part = filter( `p, part, ``(p["region",1]:0 > p["ori_length"]:0));
-	}
-    if( Mode::initial )
-	{
-	part = filter( `p, part, 
-		       ``(!Partitions::IsDosWinNtPartition( p["fsid"]:0 ) ||
-		          p["detected_fs"]:`none==`ntfs));
-	}
-
-    foreach( `p, part, ``{
-        if( ret )
+	if( !decrease && size(mp)>0 )
 	    {
-	    integer new_size = p["region",1]:0*cyl_size/(1024*1024);
-	    integer old_size = p["ori_length"]:0*cyl_size/(1024*1024);
-	    ret = HandleResize( disk_dev, p, new_size, old_size );
+	    cmd = sformat("mount -oremount,resize=%1 %2", new_size*256, mp );
 	    }
-	});
-    y2milestone( "ret %1", ret );
-    return( ret );
-    }
-
-global define boolean HandleResizeLvm( map target, map mod, boolean decrease )
-    ``{
-    y2milestone( "HandleResizeLvm decrease:%1 mod:%2", decrease, mod );
-    boolean ret = true;
-    integer num = 1;
-    map doit = $[];
-    foreach( `n, `e, mod, ``{
-	string device = "/dev/" + e["vgname"]:"" + "/" + e["name"]:"abcde";
-        map p = Storage::GetPartition( target, device );
-	y2debug( "p:%1", p );
-        integer new_size = e["size"]:0;
-        integer old_size = p["ori_length"]:new_size;
-	old_size = old_size / (1024*1024);
-	new_size = new_size / (1024*1024);
-	if( (decrease && old_size > new_size) ||
-	    (!decrease && old_size < new_size) )
+	else
 	    {
-	    e["part"] = eval(p);
-	    doit[num] = e;
-	    num = num + 1;
+	    cmd = sformat("echo y | resize_reiserfs -q -s %1M -f %2", new_size, 
+			device );
 	    }
-	});
-    y2debug( "doit:%1", doit );
-    if( size(doit)>0 )
+	y2milestone( "execute cmd:%1", cmd );
+	map bm = (map)SCR::Execute(.target.bash_output, cmd );
+	y2milestone( "bm %1", bm );
+	ret = bm["exit"]:1 == 0;
+	}
+    else if( fs == `ntfs )
 	{
-	if( !decrease )
+	string cmd = sformat( "echo y | ntfsresize -s %1k %2", 
+	                      new_size*1024*1024/1000, device );
+	y2milestone( "cmd %1", cmd );
+	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	}
+    else if( fs == `xfs && !decrease )
+	{
+	string mdir = Misc::tmpdir + "/m1";
+	if( size(mp)==0 )
 	    {
-	    ret = target_modify( doit, Mode::initial );
+	    cmd = sformat("mkdir %1", mdir );
+	    SCR::Execute(.target.bash, cmd );
+	    cmd = sformat("mount %1 %2", device, mdir );
+	    y2milestone( "execute cmd:%1", cmd );
+	    ret = SCR::Execute(.target.bash, cmd ) == 0;
 	    }
-	foreach( `n, `e, doit, ``{
-	    if( ret )
-		{
-		y2debug( "n:%1 e:%2", n, e );
-		integer new_size = e["size"]:0 / (1024*1024);
-		integer old_size = e["part","ori_length"]:0 / (1024*1024);
-		ret = HandleResize( "/dev/"+e["vgname"]:"", e["part"]:$[],
-		                    new_size, old_size );
-		}
-	    });
-	if( decrease )
+	else
 	    {
-	    ret = target_modify( doit, Mode::initial );
+	    mdir = mp;
+	    }
+	if( ret )
+	    {
+	    cmd = sformat("xfs_growfs %1", mdir );
+	    y2milestone( "execute cmd:%1", cmd );
+	    ret = SCR::Execute(.target.bash, cmd ) == 0;
+	    }
+	if( size(mp)==0 )
+	    {
+	    cmd = sformat("umount %1", device );
+	    y2milestone( "execute cmd:%1", cmd );
+	    SCR::Execute(.target.bash, cmd );
+	    cmd = sformat("rmdir %1", mdir );
+	    SCR::Execute(.target.bash, cmd );
 	    }
 	}
-    y2milestone( "ret %1", ret );
+    y2milestone( "ret:%1", ret );
     return( ret );
     }
 
 global define boolean HandleResize( string disk_dev, map part,
                                     integer new_size, integer old_size )
     ``{
+    boolean ret = true;
     y2milestone( "HandleResize disk:%1 new:%2 old:%3", disk_dev, new_size,
                  old_size );
     y2milestone( "HandleResize part:%1", part );
@@ -430,71 +413,89 @@ You could umount the file system manually and retry resizing.
     return( ret );
     }
 				     
-
- global define boolean HandleFilesystem( string device, symbol fs, 
-                                         integer new_size,
-                                         boolean decrease,
-					 string mp )
+ 
+global define boolean HandleResizePartitions( string disk_dev, map disk,
+					      boolean decrease )
     ``{
     boolean ret = true;
-    string cmd = "";
-    y2milestone( "HandleFilesystem device:%1 fs:%2 new:%3 decrease:%4 mp:%5",
-                 device, fs, new_size, decrease, mp );
-    if( fs == `reiser )
+    integer cyl_size = disk["cyl_size"]:0;
+
+    list part = filter( map p, disk["partitions"]:[], 
+			``(p["resize"]:false && !p["delete"]:false));
+    if( decrease )
 	{
-	if( !decrease && size(mp)>0 )
-	    {
-	    cmd = sformat("mount -oremount,resize=%1 %2", new_size*256, mp );
-	    }
-	else
-	    {
-	    cmd = sformat("echo y | resize_reiserfs -q -s %1M -f %2", new_size, 
-			device );
-	    }
-	y2milestone( "execute cmd:%1", cmd );
-	map bm = SCR::Execute(.target.bash_output, cmd );
-	y2milestone( "bm %1", bm );
-	ret = bm["exit"]:1 == 0;
+	part = filter( map p, part, ``(p["region",1]:0 < p["ori_length"]:0));
 	}
-    else if( fs == `ntfs )
+    else
 	{
-	string cmd = sformat( "echo y | ntfsresize -s %1k %2", 
-	                      new_size*1024*1024/1000, device );
-	y2milestone( "cmd %1", cmd );
-	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	part = filter( map p, part, ``(p["region",1]:0 > p["ori_length"]:0));
 	}
-    else if( fs == `xfs && !decrease )
+    if( Mode::initial )
 	{
-	string mdir = Misc::tmpdir + "/m1";
-	if( size(mp)==0 )
-	    {
-	    cmd = sformat("mkdir %1", mdir );
-	    SCR::Execute(.target.bash, cmd );
-	    cmd = sformat("mount %1 %2", device, mdir );
-	    y2milestone( "execute cmd:%1", cmd );
-	    ret = SCR::Execute(.target.bash, cmd ) == 0;
-	    }
-	else
-	    {
-	    mdir = mp;
-	    }
-	if( ret )
-	    {
-	    cmd = sformat("xfs_growfs %1", mdir );
-	    y2milestone( "execute cmd:%1", cmd );
-	    ret = SCR::Execute(.target.bash, cmd ) == 0;
-	    }
-	if( size(mp)==0 )
-	    {
-	    cmd = sformat("umount %1", device );
-	    y2milestone( "execute cmd:%1", cmd );
-	    SCR::Execute(.target.bash, cmd );
-	    cmd = sformat("rmdir %1", mdir );
-	    SCR::Execute(.target.bash, cmd );
-	    }
+	part = filter( map p, part, 
+		       ``(!Partitions::IsDosWinNtPartition( p["fsid"]:0 ) ||
+		          p["detected_fs"]:`none==`ntfs));
 	}
-    y2milestone( "ret:%1", ret );
+
+    foreach( map p, part, ``{
+        if( ret )
+	    {
+	    integer new_size = p["region",1]:0*cyl_size/(1024*1024);
+	    integer old_size = p["ori_length"]:0*cyl_size/(1024*1024);
+	    ret = HandleResize( disk_dev, p, new_size, old_size );
+	    }
+	});
+    y2milestone( "ret %1", ret );
     return( ret );
     }
+
+global define boolean HandleResizeLvm( map target, map mod, boolean decrease )
+    ``{
+    y2milestone( "HandleResizeLvm decrease:%1 mod:%2", decrease, mod );
+    boolean ret = true;
+    integer num = 1;
+    map doit = $[];
+    foreach( `n, map e, mod, ``{
+	string device = "/dev/" + e["vgname"]:"" + "/" + e["name"]:"abcde";
+        map p = Storage::GetPartition( target, device );
+	y2debug( "p:%1", p );
+        integer new_size = e["size"]:0;
+        integer old_size = p["ori_length"]:new_size;
+	old_size = old_size / (1024*1024);
+	new_size = new_size / (1024*1024);
+	if( (decrease && old_size > new_size) ||
+	    (!decrease && old_size < new_size) )
+	    {
+	    e["part"] = eval(p);
+	    doit[num] = e;
+	    num = num + 1;
+	    }
+	});
+    y2debug( "doit:%1", doit );
+    if( size(doit)>0 )
+	{
+	if( !decrease )
+	    {
+	    ret = target_modify( doit, Mode::initial );
+	    }
+	foreach( `n, map e, doit, ``{
+	    if( ret )
+		{
+		y2debug( "n:%1 e:%2", n, e );
+		integer new_size = e["size"]:0 / (1024*1024);
+		integer old_size = e["part","ori_length"]:0 / (1024*1024);
+		ret = HandleResize( "/dev/"+e["vgname"]:"", e["part"]:$[],
+		                    new_size, old_size );
+		}
+	    });
+	if( decrease )
+	    {
+	    ret = target_modify( doit, Mode::initial );
+	    }
+	}
+    y2milestone( "ret %1", ret );
+    return( ret );
+    }
+
   
 }

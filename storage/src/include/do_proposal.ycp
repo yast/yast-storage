@@ -27,8 +27,8 @@ import "Mode";
 import "Storage";
 import "Partitions";
 
-include "partitioning/propose_create_target.ycp";
 include "partitioning/propose_part_util.ycp";
+include "partitioning/propose_create_target.ycp";
 include "partitioning/propose_slot_util.ycp";
 include "partitioning/do_proposal_flexible.ycp";
 
@@ -46,7 +46,7 @@ global define map do_proposal()
                  Partitions::MinimalNeededBootsize(), 
 		 Partitions::DefaultBootFs() );
 
-    map target = eval(Storage::GetTargetMap());
+    map target = (map) eval(Storage::GetTargetMap());
     //target = SCR::Read(.target.yast2, "test_target_map_ol.ycp");
     map ret = $[];
     if( Arch::s390 )
@@ -74,7 +74,7 @@ global define map do_proposal()
 		    {
 		    use_disk = dev;
 		    list keep = [];
-		    del_part = maplist( `p, disk["partitions"]:[], 
+		    del_part = maplist( map p, disk["partitions"]:[], 
 					``{
 					if( !contains( nodelpart, p["fsid"]:0 ))
 					    {
@@ -152,7 +152,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
     // Now we generate a proposal
     /////////////////////////////////////////////////////////////////
 
-    foreach( `dev, `disk, filter( `k, `e, targetMap, ``(ignore_disk(k,e))),
+    foreach( `dev, map disk, filter( string k, map e, targetMap, ``(ignore_disk(k,e))),
 	``{
 	y2milestone( "checking disk %1", dev );
 
@@ -192,15 +192,15 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	y2milestone( "minimal_needed_cyl nb: %1", min_nb_boot_cyl );
 
 	list primary_list = 
-	    filter( `part, disk["partitions"]:[],
+	    filter( map part, disk["partitions"]:[],
 		    ``( part["type"]:`unknown == `primary  && 
 			!part["delete"]:false ));
 	list extended_list = 
-	    filter( `part, disk["partitions"]:[],
+	    filter( map part, disk["partitions"]:[],
 		    ``( part["type"]:`unknown == `extended && 
 			!part["delete"]:false ));
 	list logical_list = 
-	    filter( `part, disk["partitions"]:[],
+	    filter( map part, disk["partitions"]:[],
 		    ``( part["type"]:`unknown == `logical && 
 			!part["delete"]:false ));
 
@@ -209,9 +209,9 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	y2milestone( "i_have_extended %1, extended_list %2", i_have_extended, 
 		     extended_list );
 
-	pri_extd_list = sort(`p_x, `p_y, pri_extd_list, 
+	pri_extd_list = sort(map p_x, map p_y, pri_extd_list, 
 			     ``(p_x["region",0]:0 <= p_y["region",0]:0));
-	logical_list  = sort(`p_x, `p_y, logical_list, 
+	logical_list  = sort(map p_x, map p_y, logical_list, 
 			     ``(p_x["region",0]:0 <= p_y["region",0]:0));
 
 	y2milestone( "pri+extd parts %1", pri_extd_list );
@@ -219,7 +219,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 
 	// which primary partitions can I create?
 
-	list pri_extd_nr_list = maplist(`p, pri_extd_list, ``(p["nr"]:0));
+	list pri_extd_nr_list = maplist(map p, pri_extd_list, ``(p["nr"]:0));
 	list free_pri_extd_nr_list = 
 	    filter( `nr, primary_possible, 
 		    ``( !contains( pri_extd_nr_list, nr )));
@@ -292,22 +292,22 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 				      cyl_size, disk["readonly"]:false );
 	    }
 
-	logical_slots = maplist( `slot, logical_slots, 
+	logical_slots = maplist( map slot, logical_slots, 
 				 ``(add(slot, "p_or_l", "logical")));
-	primary_slots = maplist( `slot, primary_slots, 
+	primary_slots = maplist( map slot, primary_slots, 
 				 ``(add(slot, "p_or_l", "primary")));
 	/* hack added to prevent partition 0x41 (Prep Boot) being inside
 	   an extended partition, it is a bit radical but anyway it reaches
 	   its goal */
 	if( Partitions::PrepBoot() && size(logical_slots)>0 )
 	    {
-	    logical_slots = maplist( `slot, logical_slots,
+	    logical_slots = maplist( map slot, logical_slots,
 		``({
 		if( slot["type"]:"" != "free" )
 		    slot["type"] = "other";
 		return( slot );
 		}));
-	    primary_slots = maplist( `slot, primary_slots,
+	    primary_slots = maplist( map slot, primary_slots,
 		``({
 		if( slot["type"]:"" != "free" )
 		    slot["type"] = "other";
@@ -318,7 +318,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	list base_slots = primary_slots + logical_slots;
 
 	integer i   = 0;
-	base_slots = maplist( `slot, base_slots, 
+	base_slots = maplist( map slot, base_slots, 
 			      ``{ i = i+1; 
 				  return(add(slot, "slotnb", i)); 
 				});
@@ -338,7 +338,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	DumpPartitionList ( targetMap);
 
 	y2debug( "OUT: //////////////   slots   /////////////////");
-	foreach( `slot, base_slots,
+	foreach( map slot, base_slots,
 	    ``{
 	    string end_cyl = ToLen(6, sformat("%1", slot["end_cyl"]:0 ));
 	    string start_cyl = ToLen(6, sformat("%1", slot["start_cyl"]:-1));
@@ -354,9 +354,9 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	/////////////////////////////////////////////////////////
 	// is there a reusable swap slot?
 	  
-	list swap_slots_only = filter( `slot, base_slots, 
+	list swap_slots_only = filter( map slot, base_slots, 
 				       ``( slot["type"]:"" == "swap" ));
-	swap_slots_only = sort(`p_x, `p_y, swap_slots_only, 
+	swap_slots_only = sort(map p_x, map p_y, swap_slots_only, 
 			       ``(p_x["size"]:0 >= p_y["size"]:0 ));
 
 	map swap_slot = $[];
@@ -368,11 +368,11 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	// is there a reusable boot slot?
 	  
 	list boot_slots_only = 
-	    filter( `slot, base_slots, 
+	    filter( map slot, base_slots, 
 		    ``( slot["type"]:""=="linux" && 
 			slot["size"]:0>=8*1024*1024 && 
 			slot["size"]:0<=100*1024*1024));
-	boot_slots_only = sort(`p_x, `p_y, boot_slots_only, 
+	boot_slots_only = sort(map p_x, map p_y, boot_slots_only, 
 			       ``(p_x["size"]:0 >= p_y["size"]:0));
 
 	/////////////////////////////////////////////////////////
@@ -394,7 +394,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	    modes = [ "reuse" ];
 	    }
 
-	foreach( `mode, modes,
+	foreach( string mode, modes,
 	    ``{
 	    map boot_reuse_slot = $[];
 
@@ -426,7 +426,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 		boolean first_slot       = true;
 		boolean melted_last_slot = false;
 
-		foreach( `slot, base_slots,
+		foreach( map slot, base_slots,
 		    ``{
 		    if( old_slot["type"]:"" == "win_resize" &&
 			slot["type"]:"" == "free" &&
@@ -509,7 +509,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	    //
 	    /////////////////////////////////////////////////////
 
-	    foreach( `slot, base_slots,
+	    foreach( map slot, base_slots,
 		``{
 		integer end_cyl    = slot["end_cyl"]:-1;
 		integer start_cyl  = slot["start_cyl"]:-1;
@@ -906,7 +906,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	if ( Mode::test )
 	    {
 	    // OLNLY FOR DEBUG
-	    foreach( `hit, hitlist, ``{
+	    foreach( map hit, hitlist, ``{
 		y2debug( "OUT: ---------------- new hit-----------------");
 		map tmp_targetMap = filter( `key, `val, targetMap, ``(true));
 		TargetChangesToRichText( HitToTargetMap( tmp_targetMap, hit ), 
