@@ -761,7 +761,7 @@ global define map<string,map> AddSwapMp( map<string,map> target )
     list swaps = [];
     if( !Stage::initial () )
 	swaps = SwappingPartitions();
-    y2milestone( "swaps %1", swaps );
+    y2milestone( "AddSwapMp swaps %1", swaps );
     foreach(string diskdev, map disk, target,
 	``{
 	 disk["partitions"] = maplist(map part, disk["partitions"]:[],
@@ -776,6 +776,7 @@ global define map<string,map> AddSwapMp( map<string,map> target )
 				      contains( swaps, part["device"]:"" )))
 				     {
 				     part["mount"] = "swap";
+				     y2milestone( "AddSwapMp %1", part );
 				     }
 				 return( part );
 				 });
@@ -812,6 +813,13 @@ global define map<string,map> DeleteDestroyedLvmVgs( map<string,map> target )
 	``{
 	if( haskey( target, dev ))
 	    target[dev,"delete"] = true;
+	target[dev,"partitions"] = maplist( map p, target[dev,"partitions"]:[],
+					    ``{ 
+					    if( haskey( p, "mount" ))
+						p = remove( p, "mount" ); 
+					    return( p );
+					    });
+	y2milestone( "DeleteDestroyedLvmVgs %1: %2", dev, target[dev]:$[] );
 	});
     return( target );
     }
@@ -4282,11 +4290,13 @@ global define void Update( map oldv, map newv )
     if( size(dm)>0 )
 	{
 	UpdateFstabDiskmap( dm );
-	UpdateCdromLinks( dm );
+	}
+    if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0<=2))
+	{
+	StorageDevices::MakeCDLinks();
 	}
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
 	{
-	StorageDevices::MakeCDLinks();
 	UpdateFstabSubfs();
 	if( Arch::board_iseries () )
 	    {

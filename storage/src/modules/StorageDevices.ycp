@@ -29,6 +29,7 @@
     import "Partitions";
     import "Installation";
     import "Kernel";
+    import "AsciiFile";
 
     import "Arch";
     import "Report";
@@ -90,6 +91,23 @@
 list idecdrws = [];		// list of IDE CD-RW drivers for ide-scsi
 list scsicds = [];		// list of SCSI CDs
 
+global define integer TypeNameIndex( string cdtype )
+    ``{
+    integer idx = 0;
+    integer n = 0;
+    foreach( string t, StorageDevices::TypeNames,
+	``{
+	if( substring( cdtype, 0, size(t)) == t )
+	    {
+	    idx = n;
+	    }
+	n = n + 1;
+	});
+    return( idx );
+    }
+
+
+
 
   /**
    *	
@@ -118,6 +136,96 @@ global define string GetDeviceName( string disk, any partition )
       return( ret );
   };
 
+global define list<map> AddNormalLinknames( list<map> cddrives )
+    ``{
+    map linknum = $[ "cdrom"       : 0, 
+                     "cdrecorder"  : 0, 
+		     "dvd"         : 0, 
+		     "dvdrecorder" : 0,
+		     "dvdram"      : 0 ];
+
+    cddrives = maplist( map e, cddrives,
+	``{
+	// first, determine the drive type and make a linkname guess
+	string cddevice = e["dev_name"]:"";
+
+	string linkname = "cdrom";
+	if( e["dvdram"]:false )
+	    {
+	    linkname = "dvdram";
+	    }
+	else if( e["dvdr"]:false )
+	    {
+	    linkname = "dvdrecorder";
+	    }
+	else if( e["cdr"]:false || e["cdrw"]:false )
+	    {
+	    linkname = "cdrecorder";
+	    }
+	else if( e["dvd"]:false )
+	    {
+	    linkname = "dvd";
+	    }
+
+	// now check the number (for /dev/cdrom, /dev/cdrom2, ...)
+	integer number = linknum[linkname]:0;
+	linknum[linkname] = number + 1;
+
+	string devname = "/dev/" + linkname;
+
+	if( number > 0)
+	    devname = sformat( "%1%2", devname, number+1 );
+
+	e["linkname"] = devname;
+	return( e );
+	});
+    y2milestone( "AddNormalLinknames linknum %1", linknum );
+    return( cddrives );
+    }
+
+global define list<map> AddAlternateLinks( list<map> cddrives )
+    ``{
+    list<string> llist = [];
+    foreach( map cd, cddrives, 
+	``{
+	llist = (list<string>)union( llist, cd["udev_links"]:[] );
+	});
+    y2milestone( "AddAlternateLinks llist %1", llist );
+
+    if( !contains( llist, "cdrom" ))
+	{
+	cddrives[0,"udev_links"] = add( cddrives[0,"udev_links"]:[], "cdrom" );
+	y2milestone( "AddAlternateLinks cdrom %1", cddrives[0]:$[] );
+	}
+    integer i = 0;
+    if( !contains( llist, "dvd" ))
+	{
+	while( i<size(cddrives) && !cddrives[i,"dvd"]:false )
+	    {
+	    i = i + 1;
+	    }
+	if( i<size(cddrives) )
+	    {
+	    cddrives[i,"udev_links"] = add( cddrives[i,"udev_links"]:[], "dvd" );
+	    y2milestone( "AddAlternateLinks dvd %1", cddrives[i]:$[] );
+	    }
+	}
+    if( !contains( llist, "cdrecorder" ))
+	{
+	i = 0;
+	while( i<size(cddrives) && !cddrives[i,"cdrw"]:false )
+	    {
+	    i = i + 1;
+	    }
+	if( i<size(cddrives) )
+	    {
+	    cddrives[i,"udev_links"] = add( cddrives[i,"udev_links"]:[], "cdrecorder" );
+	    y2milestone( "AddAlternateLinks cdrecorder %1", cddrives[i]:$[] );
+	    }
+	}
+    y2milestone( "AddAlternateLinks ret %1", cddrives );
+    return( cddrives );
+    }
 
 /**
   * ProbeCDROMs()
@@ -127,11 +235,6 @@ global define string GetDeviceName( string disk, any partition )
   */
 global define boolean ProbeCDROMs()
     ``{
-    map linknum = $[ "cdrom"       : 0, 
-                     "cdrecorder"  : 0, 
-		     "dvd"         : 0, 
-		     "dvdrecorder" : 0,
-		     "dvdram"      : 0 ];
     if (size (cddrives) == 0)
 	{
 	if (Stage::initial () || Stage::cont ())
@@ -149,6 +252,8 @@ global define boolean ProbeCDROMs()
 	    foreach(map e, (list<map>) SCR::Read (.probe.cdrom.manual),
 		``{
 		map conf = (map) SCR::Read(.probe.status, e["unique_key"]:"");
+		y2milestone( "ProbeCDROMs conf:%1", conf );
+		y2milestone( "ProbeCDROMs cd:%1", e );
 		if( conf["available"]:`no != `no )
 		    {
 		    cddrives = add( cddrives, e );
@@ -175,44 +280,34 @@ global define boolean ProbeCDROMs()
 		}
 	    });
 
-	cddrives = maplist( map e, cddrives,
-	    ``{
-	    if( e["dev_name"]:"" != "/dev/cdrom" )
+	string boot_device = (string) SCR::Read (.etc.install_inf.Cdrom);
+	if (boot_device == nil) boot_device = "";
+
+	if( boot_device != "" )
+	    {
+	    y2milestone( "ProbeCDROMs cddrives:%1", cddrives );
+	    y2milestone( "ProbeCDROMs boot_device:%1", boot_device );
+
+	    if( find( boot_device, "/dev/" ) != 0 )
+		boot_device = "/dev/" + boot_device;
+	    list tmp = filter( map e, cddrives, ``(e["dev_name"]:""==boot_device));
+	    if( size(tmp)>0 )
 		{
-		// first, determine the drive type and make a linkname guess
-		string cddevice = e["dev_name"]:"";
-
-		string linkname = "cdrom";
-		if( e["dvdram"]:false )
-		    {
-		    linkname = "dvdram";
-		    }
-		else if( e["dvdr"]:false )
-		    {
-		    linkname = "dvdrecorder";
-		    }
-		else if( e["cdr"]:false || e["cdrw"]:false )
-		    {
-		    linkname = "cdrecorder";
-		    }
-		else if( e["dvd"]:false )
-		    {
-		    linkname = "dvd";
-		    }
-
-		// now check the number (for /dev/cdrom, /dev/cdrom2, ...)
-		integer number = linknum[linkname]:0;
-		linknum[linkname] = number + 1;
-
-		string devname = "/dev/" + linkname;
-
-		if( number > 0)
-		    devname = devname + number+1;
-
-		e["linkname"] = devname;
+		cddrives = filter( map e, cddrives, ``(e["dev_name"]:""!=boot_device));
+		cddrives = (list<map>)merge( tmp, cddrives );
 		}
-	    return( e );
+
+	    y2milestone( "ProbeCDROMs cddrives:%1", cddrives );
+	    }
+
+	y2milestone( "ProbeCDROMs cddrives:%1", cddrives );
+	cddrives = AddNormalLinknames( cddrives );
+	cddrives = maplist( map drive, cddrives,
+	    ``{
+	    drive["udev_links"] = [ substring(drive["linkname"]:"",5) ];
+	    return( drive );
 	    });
+	cddrives = AddAlternateLinks( cddrives );
 	}
     y2milestone ("ProbeCDROMs (%1)", cddrives);
     return (size (cddrives) > 0);
@@ -923,6 +1018,60 @@ define void symlink_cdrom( map cdinfo )
     return;
     }
 
+define string UdevBusEntry( string bus )
+    ``{
+    return( sformat( "BUS=\"%1\",", bus ));
+    }
+
+define string UdevPlaceEntry( string place )
+    ``{
+    return( sformat( "PLACE=\"%1\",", place ));
+    }
+
+global define string UdevSylinkEntry( list<string> links )
+    ``{
+    return( sformat( "SYMLINK=\"%1\"", mergestring( links, " ") ));
+    }
+
+global define string UdevCdromPath()
+    ``{
+    string pathname = "/etc/udev/rules.d/20-cdrom.rules";
+    if( Installation::scr_destdir != "/" )
+	{
+	pathname = Installation::scr_destdir + pathname;
+	}
+    return( pathname );
+    }
+
+global define map<integer,map> GetSysfsCdrom()
+    ``{
+    map<integer,map> file = $[];
+    AsciiFile::SetComment( file, "^[ \t]*#" );
+    AsciiFile::SetDelimiter( file, " " );
+    AsciiFile::ReadFile( file, UdevCdromPath() );
+    return( file );
+    }
+
+global define string MakeUdevRulesLine( map drive )
+    ``{
+    y2milestone( "MakeUdevRulesLine %1", drive );
+    string line = sformat( "%1 %2 PROGRAM=\"/bin/sed -n 's/[[:blank:]]*%%k//p' /proc/sys/dev/cdrom/info\", RESULT=\"drive name:\", %3",
+                           UdevBusEntry(drive["bus_hwcfg"]:""), 
+			   UdevPlaceEntry(drive["sysfs_bus_id"]:""),
+			   UdevSylinkEntry(drive["udev_links"]:[]) );
+    y2milestone( "MakeUdevRulesLine ret %1", line );
+    return( line );
+    }
+
+global define list<integer> FindUdevRulesLine( map sysfs, string bus, string id )
+    ``{
+    list<integer> a = AsciiFile::FindLineField( sysfs, 0, UdevBusEntry(bus) );
+    list<integer> b = AsciiFile::FindLineField( sysfs, 1, UdevPlaceEntry(id) );
+    a = filter( integer i, a, ``(contains( b, i )));
+    y2milestone( "FindUdevRulesLine bus %1 place %2 idx %3", bus, id, a );
+    return( a );
+    }
+
 /*
  * Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
  * create type dependant links (i.e. /dev/dvd for a DVD drive
@@ -933,72 +1082,20 @@ global define void MakeCDLinks ()
     ``{
     if( ProbeCDROMs() )
 	{
-	string boot_device = (string) SCR::Read (.etc.install_inf.Cdrom);
-	if (boot_device == nil) boot_device = "";
-
-	if (boot_device != "")
-	    boot_device = "/dev/" + boot_device;
-
-	// our boot device might be re-mapped due to ide-scsi
-	map idecdwr = find(map e, cddrives, ``(e["dev_orig"]:""==boot_device));
-	if( idecdwr != nil )
+	map udev_file = GetSysfsCdrom();
+	if( AsciiFile::NumLines( udev_file )==0 )
 	    {
-	    boot_device = idecdwr["dev_name"]:"";
-	    }
+	    AsciiFile::AppendLine( udev_file, [ "# cdrom links generated by YaST2" ] );
+	    AsciiFile::AppendLine( udev_file, [ "# " ] );
 
-	if( Installation::scr_destdir != "/" )
-            {
-            string dir = Installation::scr_destdir + "/dev";
-            if( SCR::Read( .target.size, dir )<=0 )
-                {
-                SCR::Execute( .target.mkdir, dir );
-                }
-            }
-
-	foreach (map drive, cddrives, ``{ symlink_cdrom (drive); });
-
-	// if we didn't made a /dev/cdrom link, we dont have a
-	// plain cdrom drive (only cdrecorders, dvds, etc.)
-	// force such a link here.
-
-	if( find(map e, cddrives, ``(e["linkname"]:""=="/dev/cdrom")) == nil )
-	    {
-	    // if we didnt boot from cd, just link to the first drive
-	    if( boot_device=="" )
-		{
-		boot_device = cddrives[0,"dev_name"]:"";
-		}
-	    if (boot_device != "")
-		{
-		symlink_cdrom ($["dev_name":boot_device, 
-                                 "linkname":"/dev/cdrom"]);
-		}
-	    }
-
-	// if we didn't made a /dev/dvd link so far try to 
-	// force such a link here.
-	map te = find(map e, cddrives, ``(e["linkname"]:""=="/dev/dvd"));
-	if( te == nil )
-	    {
-	    te = find(map e, cddrives, ``(e["dvd"]:false));
-	    if( te != nil )
-		{
-		symlink_cdrom ($["dev_name":te["dev_name"]:"", 
-                                 "linkname":"/dev/dvd"]);
-		}
-	    }
-
-	// if we didn't made a /dev/cdrecorder link so far try to 
-	// force such a link here.
-	te = find(map e, cddrives, ``(e["linkname"]:""=="/dev/cdrecorder"));
-	if( te == nil )
-	    {
-	    te = find(map e, cddrives, ``(e["cdrw"]:false));
-	    if( te != nil )
-		{
-		symlink_cdrom ($["dev_name":te["dev_name"]:"", 
-                                 "linkname":"/dev/cdrecorder"]);
-		}
+	    foreach( map drive, cddrives, 
+		``{ AsciiFile::AppendLine( udev_file, [ MakeUdevRulesLine(drive) ]); });
+	    y2milestone( "MakeCDLinks %1", cddrives );
+	    string dir = substring( UdevCdromPath(), 0, findlastof( UdevCdromPath(), "/" ) );
+	    y2milestone( "MakeCDLinks dir %1", dir );
+	    if( SCR::Read( .target.size, dir )<=0 ) 
+		SCR::Execute( .target.mkdir, dir );
+	    AsciiFile::RewriteFile( udev_file, UdevCdromPath() );
 	    }
 	}
     return;
