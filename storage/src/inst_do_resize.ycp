@@ -28,7 +28,7 @@
   boolean beta_mode	= false;
   map	  targets	= Storage::GetTargetMap();
 
-  any ret = `auto;
+  symbol ret = `auto;
 
   // test_mode and demo_mode are the same here
   //
@@ -40,9 +40,9 @@
   {
       boolean no_resize_command = true;
 
-      foreach( `disk, `diskinfo, targets,
+      foreach( string disk, map diskinfo, targets,
       ``{
-	   foreach( `part, lookup( diskinfo, "partitions", [] ),
+	   foreach( map part, lookup( diskinfo, "partitions", [] ),
 	   ``{
 	       if( part["resize"]:false &&
 	           part["detected_fs"]:`none != `ntfs &&
@@ -228,48 +228,44 @@ the diagnostics window.
 ");
 
 
-UI::{
   // Define the UI update macro for the progress bar.
   // This will be downloaded into the parted module.
   //
-  global define ShowProgressParted( integer percent )
+  global define any ShowProgressParted( integer percent )
       ``{ 
-      ChangeWidget(`id(`bar), `Value, percent );
+      UI::ChangeWidget(`id(`bar), `Value, percent );
       return nil;
       };
 
   // Define the UI update macro for the directory messages.
   // This will be downloaded into the parted module.
   //
-  global define ShowDirectoryParted( string message_directory )
+  global define any ShowDirectoryParted( string message_directory )
       ``{ 
-      ChangeWidget(`id(`dirs), `LastLine, message_directory );
+      UI::ChangeWidget(`id(`dirs), `LastLine, message_directory );
       return nil;
       };
 
   // Define the UI update macro for the diagnostic messages.
   // This will be downloaded into the parted module.
   //
-  global define ShowDiagnosticParted( string message_diagnostic )
+  global define any ShowDiagnosticParted( string message_diagnostic )
       ``{ 
-      ChangeWidget(`id(`diagnostics), `LastLine,  message_diagnostic );
+      UI::ChangeWidget(`id(`diagnostics), `LastLine,  message_diagnostic );
       return nil;
       };
-  };
 
   // Display the dialog
   //
-  Wizard::SetContents(
-			// Set the dialog header
-			_("Resizing the Windows partition"),
-			contents, helptext, WFM::Args(0), WFM::Args(1)
-     );
+  Wizard::SetContents( // Set the dialog header
+		       _("Resizing the Windows partition"),
+		       contents, helptext, (boolean)WFM::Args(0), 
+		       (boolean)WFM::Args(1) );
 
-  UI::ChangeWidget(`id(`diagnostics), `Value,
-		   // set initial message in diagnostic window to indicate
-		   // that everything is alright up to now.
-		   _("Everything OK so far.\n") 
-		   );
+  UI::ChangeWidget( `id(`diagnostics), `Value,
+		    // set initial message in diagnostic window to indicate
+		    // that everything is alright up to now.
+		    _("Everything OK so far.\n") );
 
   /////////////////////////////////////////////////////////////////////////
   // END: GUI
@@ -285,13 +281,14 @@ UI::{
   //         minor number of device
   // Return: start of partition im MB on disk (string)
   //
-  define get_partition_start( string device, string minor ) ``{
-      map parted_output = SCR::Read( .parted.print, [device] );
+  define string get_partition_start( string device, string minor ) 
+      ``{
+      map parted_output = (map)SCR::Read( .parted.print, [device] );
       y2milestone( "parted_output %1", parted_output );
       map partition = lookup( parted_output, minor, $[] );
 
-      return( lookup( partition, "start", "-1" ) );
-  };
+      return( partition["start"]:"-1" );
+      };
 
   // Displays a popup with the message (can be dismissed with OK).
   // After that only `abort is allowed
@@ -299,7 +296,7 @@ UI::{
   // Parameter: message to be displayed
   // Return   : nothing
   //
-  define allow_abort_only( string message ) ``{
+  define void allow_abort_only( string message ) ``{
       any ret = `auto;
 
       // Enable back and next buttons independent of the settings
@@ -359,7 +356,7 @@ UI::{
       UI::ChangeWidget(`id(`abort), `Enabled, true);
       UI::SetFocus(`id(`abort));
 
-      ret = Wizard::UserInput();
+      ret = (symbol)Wizard::UserInput();
       
       return( `auto );	// proceed in given direction
   }
@@ -375,11 +372,12 @@ UI::{
   // Dialog is on screen now --> analyze target map and work every partition
   // that is marked to be resized.
   //
-  foreach (`tdevice,`target, targets, ``{
+  foreach( string tdevice, map target, targets, 
+      ``{
       // we are looping over all devices in the target map
-      list partitions = lookup ( target, "partitions", [] );
+      list partitions = target["partitions"]:[];
 
-      foreach (`pentry, partitions, ``{
+      foreach( map pentry, partitions, ``{
 	  // Now we are looping over all partitions for the current device
 	  // check resize flag for every partition
 	  boolean resize = pentry["resize"]:false &&
@@ -419,23 +417,24 @@ UI::{
 	      }
 	      else y2debug( "New size <%1> OK for device <%2>.", new_size, device_name );
 
-	      if ( ! Partitions::IsDosPartition( pentry["fsid"]:0 ) )
-	      {
+	      if( ! Partitions::IsDosPartition( pentry["fsid"]:0 ) )
+		  {
 		  // currently we do resize FAT16 and FAT32 partitions only
 		  y2error("Device <%1> is not of type FAT. Skipped!", device_name);
 		  checks_passed = false;
-	      }
-	      else y2debug( "Device <%1> has correct file system type.", device_name );
+		  }
+	      else 
+		  y2debug( "Device <%1> has correct file system type.", device_name );
 
-	      if ( start_mb == "-1" )
-	      {
+	      if( start_mb == "-1" )
+		  {
 		  y2error("Start of device <%1> could not be detected. Skipped!", device_name);
 		  checks_passed = false;
-	      }
+		  }
 	      else y2debug( "Start <%1> OK for device <%2>.", start_mb, device_name );
 
-	      if ( ! checks_passed )
-	      {
+	      if( ! checks_passed )
+		  {
 	          // popup text
 		  UI::ChangeWidget(`id(`diagnostics), `LastLine, _("An internal error has occurred!"));
 		  
@@ -454,9 +453,9 @@ Windows partition by other means.
 
 		  ret = `abort;
 		  return( `abort );	// abort installation
-	      }
+		  }
 	      else
-	      {
+		  {
 		  // Everything is OK --> actually do it.
 
 		  // Change Header of progress bar to indicate the current situation.
@@ -474,7 +473,7 @@ Windows partition by other means.
 		  // "0.0"			- new start of partition in MB on disk
 		  // "200.3"			- length of partition im MB on disk
 		  //
-		  any res = WFM::CallModule("parted", ["ShowProgressParted",
+		  any res = WFM::CallFunction( "parted", ["ShowProgressParted",
 						 "ShowDirectoryParted",
 						 "ShowDiagnosticParted",
 						 device_name,
@@ -482,15 +481,15 @@ Windows partition by other means.
 						 new_size]);
 		  
 		  if ( res == `ok )
-		  {
+		      {
 		      // report success in the diagnostics window
 		      UI::ChangeWidget(`id(`diagnostics), `Value,
 				       // inform the user that resizing was successful
 				       _("Your Windows partition has been resized successfully.") 
 				       );
-		  }
+		      }
 		  else
-		  {
+		      {
 		      // popup text
 		      UI::ChangeWidget(`id(`diagnostics), `LastLine, _("A resizing error has occurred!"));
 		  
@@ -510,18 +509,18 @@ by other means.
 
 		      ret = `abort;
 		      return( `abort );	// abort installation
-		  }
+		      }
 
-		  if ( development_mode )
-		  {
+		  if( development_mode )
+		      {
 		      // enable all control widgets
 		      UI::ChangeWidget(`id(`next), `Enabled, true);
 		      UI::ChangeWidget(`id(`back), `Enabled, true);
 		      UI::SetFocus(`id(`next));
 		      
 		      // wait for user input to be able to study the results
-		      ret = Wizard::UserInput();
-		  }
+		      ret = (symbol)Wizard::UserInput();
+		      }
 
 		  // Now that the partition table on disk really has been altered by the resizer
 		  // check if the result is actually what we've calculated beforehand.
@@ -537,41 +536,42 @@ by other means.
 
 		  // filter out the current partition
 		  //
-		  partitions_disk = filter(`p_entry, partitions_disk, ``( lookup(p_entry, "nr", 0) == tointeger(minor) ));
+		  partitions_disk = filter( map p, partitions_disk, 
+		                            ``( p["nr"]:0== tointeger(minor) ));
 
 		  // There should be only one
 		  //
-		  if ( size(partitions_disk) != 1 )
-		  {
+		  if( size(partitions_disk) != 1 )
+		      {
 		      y2error("There was not exactly one target partition in the partition list derived from disk! Canceled");
 		      correct = false;
-		  }
+		      }
 		  else y2debug( "Partition list derived from disk contains exactly _one_ target partition. OK" );
 
-		  if ( correct )
-		  {
-		      map  partition_disk = select( partitions_disk, 0, $[] );
+		  if( correct )
+		      {
+		      map  partition_disk = partitions_disk[0]:$[];
 		      
 		      list region_calc    = lookup(pentry, "region", [`calculated, 0]);
 		      list region_disk    = lookup(partition_disk, "region", [`from_disk, 0]);
 
 		      // check if regions are identical
 		      //
-		      if ( region_calc != region_disk )
-		      {
+		      if( region_calc != region_disk )
+			  {
 			  // Regions differ.
 			  // Due to calculation differences between parted and YaST2 the "real" region
 			  // may be less in length compared to the calculated region.
 			  // If this is the case it's OK otherwise (overlap) it is an error.
 			  //
-			  if ( select(region_calc, 1, 0) > select(region_disk, 1, 0) )
-			  {
+			  if( select(region_calc, 1, 0) > select(region_disk, 1, 0) )
+			      {
 			      y2warning( "Calculated region <%1> is bigger than region from disk <%2>! This is acceptable.",
 					 region_calc,
 					 region_disk );
 
-			      if ( beta_mode )	// This is only executed in beta mode
-			      {
+			      if( beta_mode )	// This is only executed in beta mode
+				  {
 				  // popup text
 				  string message = _("*** Hello Beta-Tester! ***
 
@@ -584,10 +584,10 @@ Then send both files to kkaempf@suse.de.
 ");
 
 				  Popup::Message( message );
-			      }	// End of beta_mode
-			  }
+				  }	// End of beta_mode
+			      }
 			  else
-			  {
+			      {
 			      // Calculated region is too small --> Error
 			      //
 			      y2error( "Calculated region <%1> is less in length than region from disk <%2>! This is an error.",
@@ -595,15 +595,15 @@ Then send both files to kkaempf@suse.de.
 				       region_disk );
 			      
 			      correct = false;
+			      }
 			  }
-		      }
 		      else y2debug( "Calculated region <%1> is same as region from disk <%2>! OK",
 				    region_calc,
 				    region_disk );
-		  }
+		      }
 
 		  if ( ! correct )
-		  {
+		      {
 		      // popup text
 		      string explanation =  _("A resizing error has occurred.
 
@@ -620,11 +620,11 @@ There should be no need to shrink Windows next time.
 
 		      ret = `abort;
 		      return( `abort );	// abort installation
-		  }
-	      }	
-	  }
+		      }
+		  }	
+	      }
+	  });
       });
-  });
 
   return ret;
 }

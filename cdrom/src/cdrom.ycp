@@ -20,11 +20,14 @@ textdomain "storage";
 
 import "Wizard";
 import "Misc";
-import "Bootloader";
+/*import "Bootloader";*/
+import "AsciiFile";
+import "Partitions";
 
 import "Label";
 import "Popup";
-include "partitioning/write_fstab.ycp";
+import "Storage";
+import "StorageDevices";
 
 map cdrom = $[];
 
@@ -34,10 +37,10 @@ define map GetCdromLinks()
     map links = $[];
     foreach( `l, Storage::GetDirPatterns( "/dev", pat ),
 	``{
-	map st = SCR::Read( .target.lstat, l );
+	map st = (map)SCR::Read( .target.lstat, l );
 	if( st["islink"]:false )
 	    {
-	    string content = SCR::Read( .target.symlink, l );
+	    string content = (string)SCR::Read( .target.symlink, l );
 	    integer pos = find( content, "/dev/" );
 	    y2milestone( "pos %1, cont %2", pos, content );
 	    if( pos >=0 )
@@ -53,7 +56,7 @@ define map GetCdromLinks()
 
 define list CreateTableList( map cdrom )
     ``{
-    list clist = maplist( `k, `entry, cdrom,
+    list clist = maplist( `k, map entry, cdrom,
 	``{
 	term it = `item( `id(k) );
 	it = add( it, entry["model"]:"" );
@@ -104,7 +107,7 @@ define map IntegrateCd( map entry, map fstab )
 	}
     else
 	{
-	map new = MakeCdromFstabEntry( entry );
+	map new = Storage::MakeCdromFstabEntry( entry );
 	list fstlist = [ link, entry["mount"]:"",
 			 new["vfstype"]:"", new["mntops"]:"", 
 			 sformat("%1",new["freq"]:0),
@@ -132,11 +135,6 @@ of integration of an entry in the list.</p>
 "));
     }
 
-define integer TermToId( term t )
-    ``{
-    return( select(select(t,0,0),0,0) );
-    }
-
     term buttons = 
 	`HBox( `PushButton(`id(`abort ), Label::AbortButton() ),
 	       `HStretch(),
@@ -151,12 +149,12 @@ define integer TermToId( term t )
 
     map fstab = Partitions::GetFstab( "/etc/fstab" );
 
-    list tmp = maplist( `entry, SCR::Read(.probe.cdrom),
+    list tmp = maplist( map entry, (list)SCR::Read(.probe.cdrom),
 	``{
 	map cd = StorageDevices::GetCdromEntry( entry["dev_name"]:"" );
         cd = union( cd, entry );
 	y2milestone( "entry %1 is %2", entry["dev_name"]:"", cd );
-	map config = SCR::Read(.probe.status, entry["unique_key"]:"");
+	map config = (map)SCR::Read(.probe.status, entry["unique_key"]:"");
 	cd["configured"] = config["configured"]:`no == `yes;
 	cd["changed"] = false;
 	string device = cd["dev_name"]:(entry["dev_name"]:"");
@@ -164,12 +162,12 @@ define integer TermToId( term t )
 	map l = filter( `k, `e, links, ``(e==substring(device,5)));
 	y2milestone( "l %1", l );
 	list link = [];
-	link = maplist( `k, `e, l, ``(substring(k,5)));
+	link = maplist( string k, `e, l, ``(substring(k,5)));
 	link = sort( `a, `b, link, ``(a!="cdrom") );
 	cd["link"] = link;
 	cd["configured"] = cd["configured"]:false && size(link)>0;
 	list lines = [];
-	foreach( `l, link,
+	foreach( string l, link,
 	    ``{
 	    lines = union( lines, Storage::FindFstabLines( fstab, "", "/dev/"+l,
 							   "", "" ));
@@ -182,7 +180,7 @@ define integer TermToId( term t )
 	return( cd );
 	});
 
-    tmp = sort( `a, `b, tmp,
+    tmp = sort( map a, map b, tmp,
 	``{
 	boolean ret = true;
 	ret = a["configured"]:false || !b["configured"]:false;
@@ -192,7 +190,7 @@ define integer TermToId( term t )
 	});
 
     integer num=0;
-    cdrom = listmap( `e, tmp, 
+    cdrom = listmap( map e, tmp, 
 		     ``{num=num+1; e["index"]=num-1; return [num-1,e];});
 
     y2milestone( "cdrom=%1", cdrom );
@@ -236,11 +234,11 @@ define integer TermToId( term t )
     symbol ret = `none;
     do
 	{
-	ret = UI::UserInput();
+	ret = (symbol)UI::UserInput();
 	y2milestone( "ret = %1", ret );
 	if( ret == `add || ret == `remove )
 	    {
-	    num = UI::QueryWidget( `id(`cdroms), `CurrentItem );
+	    num = (integer)UI::QueryWidget( `id(`cdroms), `CurrentItem );
 	    cdrom[num,"changed"] = true;
 	    cdrom[num,"configured"] = ret == `add;
 	    if( ret == `add )
@@ -249,25 +247,25 @@ define integer TermToId( term t )
 		type = deletechars( type, "0123456789" );
 		y2milestone( "type %1", type );
 		tmp = maplist( `k, `e, 
-                               filter( `l, `f, cdrom, 
+                               filter( `l, map f, cdrom, 
 				       ``(l!=num && f["configured"]:false)),
 			       ``(e) );
 		y2milestone( "tmp %1", tmp );
-		tmp = filter( `e, tmp, 
+		tmp = filter( map e, tmp, 
 		                  ``(find(e["linkname"]:"", "/dev/"+type)==0));
 		y2milestone( "tmp %1", tmp );
 		list lnames = [];
-		foreach( `e, tmp, 
+		foreach( map e, tmp, 
 		    ``{
 		    if( size(e["link"]:[])>0 )
 			lnames = add(lnames, e["link",0]:"");
 		    });
 		y2milestone( "lnames %1", lnames );
-		lnames = filter( `e, lnames, ``(find(e, type)==0));
+		lnames = filter( string e, lnames, ``(find(e, type)==0));
 		y2milestone( "lnames %1", lnames );
-		lnames = maplist( `e, lnames, ``(substring(e, size(type))));
+		lnames = maplist( string e, lnames, ``(substring(e, size(type))));
 		y2milestone( "lnames %1", lnames );
-		lnames = maplist( `e, lnames, 
+		lnames = maplist( string e, lnames, 
 				  ``{
 				  integer ret = 1;
 				  if( e=="1" )
@@ -296,12 +294,12 @@ define integer TermToId( term t )
 	    }
 	if( ret == `cdroms )
 	    {
-	    num = UI::QueryWidget( `id(`cdroms), `CurrentItem );
+	    num = (integer)UI::QueryWidget( `id(`cdroms), `CurrentItem );
 	    EnableButtons( cdrom[num]:$[] );
 	    }
 	else if( ret == `abort || ret == `cancel )
 	    {
-	    if( size(filter( `k, `e, cdrom, ``(e["changed"]:false)))>0 )
+	    if( size(filter( `k, map e, cdrom, ``(e["changed"]:false)))>0 )
 		{
 		// popup text
 		if( !Popup::YesNo( _("You have unsaved changes.
@@ -318,15 +316,15 @@ Discard changes?
 	    {
 	    boolean ide_reboot = false;
 	    list ch = maplist( `l, `v, 
-	                       filter( `k, `e, cdrom, ``(e["changed"]:false)),
+	                       filter( `k, map e, cdrom, ``(e["changed"]:false)),
 			       ``(v));
 	    y2milestone( "changed %1", ch );
 	    if( size(ch)>0 && size(links)>0 )
 		{
 		string cmd = "rm -f ";
                 list keep = [];
-		foreach( `e, maplist( `l, `m,
-		                      filter( `k, `v, cdrom, 
+		foreach( map e, maplist( `l, `m,
+		                      filter( `k, map v, cdrom, 
 				              ``(v["configured"]:false)),
 				      ``(m)),
 		    ``{
@@ -335,7 +333,7 @@ Discard changes?
 			keep = add( keep, e["link",0]:"" );
 			}
 		    });
-		keep = maplist( `e, keep, ``("/dev/"+e));
+		keep = maplist( string e, keep, ``("/dev/"+e));
 		list rem = filter( `e, maplist(`k,`e,links,``(k)),
 		                   ``(!contains(keep,e)));
 		y2milestone( "keep=%1 rem:%2", keep, rem );
@@ -346,10 +344,10 @@ Discard changes?
 	    list remfstab = [];
 	    list remdirs = [];
 	    list idescsi = [];
-	    foreach( `e, filter( `v, ch, ``(!v["configured"]:false)),
+	    foreach( map e, filter( map v, ch, ``(!v["configured"]:false)),
 		``{
 		list lines = [];
-		foreach( `l, e["link"]:[], 
+		foreach( string l, e["link"]:[], 
 		    ``{
 		    lines = union( lines,
 				   Storage::FindFstabLines( fstab, "", "/dev/"+l,
@@ -359,7 +357,7 @@ Discard changes?
 		remdirs = union( remdirs, e["link"]:[] );
 		cdrom[e["index"]:-1,"link"] = [];
 		});
-	    foreach( `e, filter( `v, ch, ``(v["configured"]:false)),
+	    foreach( map e, filter( map v, ch, ``(v["configured"]:false)),
 		``{
 		string device = e["dev_orig"]:(e["dev_name"]:"");
 		device = substring(device,5);
@@ -406,7 +404,7 @@ Discard changes?
 		    }
 		if( !found && idx>=0 )
 		    {
-		    map entry = eval(cdrom[idx]:$[]);
+		    map entry = (map)eval(cdrom[idx]:$[]);
 		    entry["link"] = [ "cdrom" ];
 		    entry["mount"] = "/media/cdrom";
 		    map ret = IntegrateCd( entry, fstab );
@@ -426,7 +424,7 @@ Discard changes?
 	    if( size(ch)>0 && size(idescsi)>0 )
 		{
 		boolean loader_rewrite = false;
-		Bootloader::Read();
+		/* FIXME Bootloader::Read();
 		foreach( `d, idescsi, 
 		    ``{
 		    if( Bootloader::getKernelParam( "DEFAULT", d )!="ide-scsi")
@@ -440,19 +438,20 @@ Discard changes?
 			loader_rewrite = true;
 			}
 		    });
+		*/
 		string initmd = 
 		    Misc::SysconfigRead( .sysconfig.kernel.MODULES_LOADED_ON_BOOT, "" );
 		if( find( initmd, "ide-scsi" )<0 )
 		    {
 		    if( find( initmd, "cdrom" )<0 )
 			{
-			initmd = initmd + size(initmd)>0?" ":"" + "cdrom";
+			initmd = initmd + (size(initmd)>0?" ":"") + "cdrom";
 			}
 		    if( find( initmd, "ide-cd" )<0 )
 			{
-			initmd = initmd + size(initmd)>0?" ":"" + "ide-cd";
+			initmd = initmd + (size(initmd)>0?" ":"") + "ide-cd";
 			}
-		    initmd = initmd + size(initmd)>0?" ":"" + "ide-scsi";
+		    initmd = initmd + (size(initmd)>0?" ":"") + "ide-scsi";
 		    SCR::Write( .sysconfig.kernel.MODULES_LOADED_ON_BOOT, 
 		                initmd );
 		    ide_reboot = true;
@@ -460,13 +459,13 @@ Discard changes?
 		y2milestone( "loader_rewrite %1", loader_rewrite );
 		if( loader_rewrite )
 		    {
-		    Bootloader::Write();
+		    /* Bootloader::Write(); */
 		    ide_reboot = true;
 		    }
 		}
-	    foreach( `e, ch, ``{ cdrom[e["index"]:-1,"changed"] = false; });
+	    foreach( map e, ch, ``{ cdrom[e["index"]:-1,"changed"] = false; });
 	    y2milestone( "ide_reboot %1", ide_reboot );
-	    foreach( `k, `entry, cdrom,
+	    foreach( `k, map entry, cdrom,
 		``{
 		if( size(entry["unique_key"]:"")>0 )
 		    {

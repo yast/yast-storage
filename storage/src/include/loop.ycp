@@ -68,72 +68,6 @@ careful about the size and path name you provide.</p>
 
 
 /**
- * LoopSetup dialog
- *
- * Provide dialog for settings of loop device related parameters
- */
-global define symbol LoopSetup( boolean edit )
-    ``{
-    string id = Storage::GetWizardKey();
-    string key = "/dev/loop";
-    y2milestone( "edit %1 id %2", edit, id );
-    map part = Storage::InitialLoopEntry();
-    map tg = Storage::GetTargetMap();
-    if( edit )
-	{
-	part = Storage::GetSubDev( id );
-	}
-    else
-	{
-	integer n = 0;
-	list nlist = maplist( `p, tg[key,"partitions"]:[], ``(p["nr"]:0));
-	while( n<size(nlist) && contains( nlist, n) )
-	    {
-	    n = n+1;
-	    }
-	if( Mode::normal )
-	    {
-	    part["device"] = Storage::GetLoopDev(n);
-	    map d = Storage::GetDiskPartition( part["device"]:"" );
-	    part["nr"] = d["nr"]:0;
-	    }
-	else
-	    {
-	    part["nr"] = n;
-	    part["device"] = Storage::GetDeviceName( key, part["nr"]:0 );
-	    }
-	part["format"] = true;
-	part["create"] = true;
-	part["region",1] = 50;
-	part["used_fs"] = `ext3;
-	}
-    y2milestone( "part %1", part );
-
-    y2milestone( "fs %1", FileSystems::GetAllFileSystems(false, false) );
-    part = LoopExpertDlg( edit, part, 
-                          filter( `k, `e, 
-			          FileSystems::GetAllFileSystems(false, false),
-				  ``(e[`crypt]:false)));
-
-    symbol ret = part["symbol"]:`next;
-    // remove symbol key from data
-    part = filter( `key, `value, part, ``( key != "symbol" ));
-
-    if( ret == `ok )
-	{
-	if( size(tg[key]:$[]) == 0 )
-	    {
-	    tg[key] = Storage::InitialLoopMaindev();
-	    }
-	tg = Storage::SetPartition( tg, part );
-	Storage::SetTargetMap( tg );
-	}
-    y2milestone( "ret = %1", ret );
-    return  ret;
-    }
-
-
-/**
  *  LoopExpertDlg dialog
  *  edit loop options
  */
@@ -204,14 +138,14 @@ global define map LoopExpertDlg( boolean edit, map part, map file_systems )
     UI::ChangeWidget( `id(`loop_size), `Enabled, part["create"]:false );
     UI::ChangeWidget( `id(`crypt_fs), `Enabled, true );
 
-    map retval = eval(part);
-    any ret = `ok;
+    map retval = (map)eval(part);
+    symbol ret = `ok;
 
     HandlePartWidgetChanges( true, ret, file_systems, part, retval );
 
     repeat
 	{
-	ret = UI::UserInput();
+	ret = (symbol)UI::UserInput();
 	y2milestone( "DlgLoop %1", ret);
 
 	////////////////////////////////////////////////////////////
@@ -237,7 +171,7 @@ global define map LoopExpertDlg( boolean edit, map part, map file_systems )
 	    retval["fpath"] = UI::QueryWidget(`id(`loop_path), `Value);
 	    retval["create"] = UI::QueryWidget(`id(`loop_create), `Value);
 
-	    lsize = UI::QueryWidget(`id(`loop_size), `Value);
+	    lsize = (string)UI::QueryWidget(`id(`loop_size), `Value);
 	    integer nsize = kmgt_str_to_byte( lsize );
 	    retval["region",1] = nsize/(1024*1024);
 	    y2milestone( "size:%1 num:%2", lsize, nsize );
@@ -294,7 +228,7 @@ Also check the format option.
 		}
 
 	    ret_mp = CheckCryptOk( retval );
-	    boolean crypt = false;
+	    boolean cryp = false;
 	    y2milestone( "ret_mp %1", ret_mp );
 	    if( UI::WidgetExists( `id(`crypt_fs)) )
 	        {
@@ -304,10 +238,10 @@ Also check the format option.
 		    }
 		else
 		    {
-		    crypt = UI::QueryWidget(`id(`crypt_fs), `Value );
+		    cryp = (boolean)UI::QueryWidget(`id(`crypt_fs), `Value );
 		    }
 	        }
-	    retval["crypt"] = crypt ? "twofish" : "none";
+	    retval["crypt"] = cryp ? "twofish" : "none";
 	    }
         } until( ret == `ok || ret == `cancel || ret == `next ||
 		 ret == `back || ret == `abort );
@@ -317,5 +251,73 @@ Also check the format option.
     UI::CloseDialog();
     return retval;
     }
+
+
+/**
+ * LoopSetup dialog
+ *
+ * Provide dialog for settings of loop device related parameters
+ */
+global define symbol LoopSetup( boolean edit )
+    ``{
+    string id = Storage::GetWizardKey();
+    string key = "/dev/loop";
+    y2milestone( "edit %1 id %2", edit, id );
+    map part = Storage::InitialLoopEntry();
+    map tg = Storage::GetTargetMap();
+    if( edit )
+	{
+	part = Storage::GetSubDev( id );
+	}
+    else
+	{
+	integer n = 0;
+	list nlist = maplist( map p, tg[key,"partitions"]:[], ``(p["nr"]:0));
+	while( n<size(nlist) && contains( nlist, n) )
+	    {
+	    n = n+1;
+	    }
+	if( Mode::normal )
+	    {
+	    part["device"] = Storage::GetLoopDev(n);
+	    map d = Storage::GetDiskPartition( part["device"]:"" );
+	    part["nr"] = d["nr"]:0;
+	    }
+	else
+	    {
+	    part["nr"] = n;
+	    part["device"] = Storage::GetDeviceName( key, part["nr"]:0 );
+	    }
+	part["format"] = true;
+	part["create"] = true;
+	part["region",1] = 50;
+	part["used_fs"] = `ext3;
+	}
+    y2milestone( "part %1", part );
+
+    y2milestone( "fs %1", FileSystems::GetAllFileSystems(false, false) );
+    part = LoopExpertDlg( edit, part, 
+                          filter( `k, map e, 
+			          FileSystems::GetAllFileSystems(false, false),
+				  ``(e[`crypt]:false)));
+
+    symbol ret = part["symbol"]:`next;
+    // remove symbol key from data
+    part = filter( string key, `value, part, ``( key != "symbol" ));
+
+    if( ret == `ok )
+	{
+	if( size(tg[key]:$[]) == 0 )
+	    {
+	    tg[key] = Storage::InitialLoopMaindev();
+	    }
+	tg = Storage::SetPartition( tg, part );
+	Storage::SetTargetMap( tg );
+	}
+    y2milestone( "ret = %1", ret );
+    return  ret;
+    }
+
+
 
 }

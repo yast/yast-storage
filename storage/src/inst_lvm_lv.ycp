@@ -39,7 +39,6 @@
     import "Wizard";
     import "FileSystems";
 
-    include "partitioning/lvm_ui_lib.ycp";
     include "partitioning/lvm_lib.ycp";
     include "partitioning/lvm_lv_lib.ycp";
     include "partitioning/lvm_ui_dialogs.ycp";
@@ -85,7 +84,7 @@
     //////////////////////////////////////////////////////////////////////
 
     // Display current vg:
-    current_vg = select( lvm_vgs, 0, "" );
+    current_vg = lvm_vgs[0]:"";
     vg_key = "/dev/" + current_vg;
     pesize = targetMap[vg_key,"cyl_size"]:(4*1024*1024);
     new_vg_list( lvm_vgs );
@@ -99,7 +98,7 @@
     // mainloop
     //////////////////////////////////////////////////////////////////////
 
-    any     id          =  "";
+    string  id          =  "";
     symbol  ret         = `next;
     integer max_size    = 0;
     integer used_size   = 0;
@@ -122,8 +121,8 @@
 	parts = get_lvs_and_mounted_partitions( targetMap, false, current_vg );
 	y2debug( "parts=%1 current_vg=%2", parts, current_vg );
 	size_list = get_lv_size_info( targetMap, parts, current_vg );
-	max_size  = select( size_list, 1, 0 );
-	used_size = select( size_list, 0, 0 );
+	max_size  = size_list[1]:0;
+	used_size = size_list[0]:0;
 	y2debug( "list=%3, max_size=%1 used_size=%2", max_size, used_size, size_list );
 	vg_size_str = ByteToHumanStringWithZero( max_size );
 
@@ -150,7 +149,7 @@
 
         /////////////////////////////////////////////////////////////////
         // Wait for User input
-	ret= Wizard::UserInput();
+	ret = (symbol)Wizard::UserInput();
 	y2milestone(" ret %1", ret );
 
 
@@ -160,7 +159,7 @@
 
 	if ( ret == `vg )
 	    {
-	    current_vg = UI::QueryWidget( `id(`vg), `Value);
+	    current_vg = (string)UI::QueryWidget( `id(`vg), `Value);
 	    vg_key = "/dev/" + current_vg;
 	    pesize = targetMap[vg_key,"cyl_size"]:(4*1024*1024);
 	    }
@@ -172,10 +171,10 @@
 	////////////////////////////////////////
 
 
-	if ( ret == `viewmnt )
-	{
-	    view_all_mnts = UI::QueryWidget(`id(`viewmnt), `Value);
-	}
+	if( ret == `viewmnt )
+	    {
+	    view_all_mnts = (boolean)UI::QueryWidget(`id(`viewmnt), `Value);
+	    }
 
 
 	////////////////////////////////////////
@@ -215,7 +214,7 @@
 							  current_vg,
 							  get_lv_names(targetMap,current_vg),
 							  FileSystems::GetAllFileSystems(true,true),
-							  installation,
+							  Mode::initial,
 							  "", pesize
 							  );
 
@@ -238,7 +237,7 @@
 
 	if( ret == `lv_edit || ret == `lv_table )
 	    {
-	    id = UI::QueryWidget(`id(`lv_table), `CurrentItem);
+	    id = (string)UI::QueryWidget(`id(`lv_table), `CurrentItem);
 	    y2milestone("id %1", id);
 
 	    if( id == nil )
@@ -262,7 +261,7 @@ Select the device to edit.
 
 	if( ret == `lv_delete )
 	    {
-	    id = UI::QueryWidget(`id(`lv_table), `CurrentItem);
+	    id = (string)UI::QueryWidget(`id(`lv_table), `CurrentItem);
 
 	    if( id == nil )
 		{

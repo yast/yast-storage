@@ -26,6 +26,23 @@ import "FileSystems";
 
 include "partitioning/partition_defines.ycp";
 
+map read_partition_config( string fpath );
+map get_gap_info( map disk, boolean add_exist_linux );
+map add_cylinder_info( map conf, map gap );
+map get_perfect_list( list ps, map g );
+map process_partition_data( string dev, map solution );
+map find_matching_disk( list disks, map target, map conf );
+map try_resize_windows( map disk );
+map remove_possible_partitions( map disk, map conf );
+map distribute_space( integer rest, list weights, list added, list ps );
+void add_part_recursive( list ps, map g );
+map normalize_gaps( list ps, map g );
+integer do_weighting( list ps, map g );
+
+symbol cur_mode = `free;
+integer cur_weight = -10000;
+map cur_gap = $[];
+
 global define string pinfo_name()
     ``{
     return( "/part.info" );
@@ -439,7 +456,7 @@ global define map process_partition_data( string dev, map solution )
 			disk["partitions",index,"ori_fsid"] = p["fsid"]:0;
 			disk["partitions",index,"fsid"] = fsid;
 			}
-		    y2milestone( "reuse auto partition %1", part );
+		    y2milestone( "reuse auto partition %1", p );
 		    }
 		index = index + 1;
 		});
@@ -597,8 +614,6 @@ global define map get_perfect_list( list ps, map g )
     ``{
     y2milestone( "ps %1", ps );
     y2milestone( "gap %1", g );
-    cur_weight = -10000;
-    cur_gap = $[];
     if( size(g["gap"]:[])>0 &&
         ((g["extended_possible"]:false && 
 	    size(g["free_pnr"]:[])>0 &&
@@ -703,7 +718,7 @@ global define void add_part_recursive( list ps, map g )
 		if( val > cur_weight || size(cur_gap)==0 )
 		    {
 		    cur_weight = val;
-		    cur_gap = eval(ng);
+		    cur_gap = (map)eval(ng);
 		    }
 		}
 	    }
@@ -813,7 +828,7 @@ global define map normalize_gaps( list ps, map g )
     foreach( map e, g["gap"]:[],
 	``{
 	if( !e["exists"]:false && e["cylinders"]:0>0 && 
-	    e["cylinders"]:0 < gap["disk_cyl"]:0/20 )
+	    e["cylinders"]:0 < g["disk_cyl"]:0/20 )
 	    {
 	    list weight = maplist( list l, e["added"]:[], ``(l[2]:0) );
 	    map r = $[];

@@ -14,7 +14,6 @@
 
     import "Arch";
     import "Mode";
-    import "Bootloader";
     import "Mode";
     import "Storage";
     import "Popup";
@@ -52,7 +51,7 @@
   list    region        = [];
 
 
-  any     ret           = `next;
+  symbol  ret           = `next;
   any     local_ret     = nil;
 
   integer win_used	= -1;
@@ -76,9 +75,27 @@
   // END: Initialize
   /////////////////////////////////////////////////////////////////////////
 
+  // ############################################################
+  // Quick hack for now: define global variables that are 
+  // used by create_partitions() from module auto_part_create.
+  //
+
+  integer disk_size 	= 0;
+  list	  full_region 	= [];
+  integer size_of_boot 	= 0;
+  integer size_of_swap 	= 0;
+  integer first_logical_nr = 5;
+
+  integer max_primary	= 0;
+  integer max_partitions= 0;
+
   include "partitioning/auto_part_functions.ycp";
   include "partitioning/auto_part_create.ycp";
   
+  //
+  // End quick hack
+  // ############################################################
+
   /////////////////////////////////////////////////////////////////////////
   // START: Functions
   /////////////////////////////////////////////////////////////////////////
@@ -89,8 +106,9 @@
   // Parameter: message to be displayed
   // Return   : `back or `abort
   //
-  define allow_back_abort_only( string message ) ``{
-      any ret = `next;
+  define symbol allow_back_abort_only( string message ) 
+      ``{
+      symbol  ret = `next;
       
       // Enable back and next buttons independent of the settings
       // in installation.ycp so the user has a chance to see the
@@ -112,13 +130,13 @@
 			    "",		// no header in this case
 			    contents,
 			    "",		// no help text in this case
-			    WFM::Args(0), WFM::Args(1)
+			    (boolean)WFM::Args(0), (boolean)WFM::Args(1)
 	 );
       
       repeat {
 	  Popup::Message( message );	// Display the message
 
-	  ret= UI::UserInput();		// get user input
+	  ret= (symbol)UI::UserInput();		// get user input
 
 	  if ( ret == `abort )
 	  {
@@ -136,7 +154,7 @@
       } until ( ret == `abort || ret == `back );
 
       return( ret );
-  };
+      };
 
   // Displays a popup with the message (can be dismissed with OK).
   // After that only `abort is allowed
@@ -144,8 +162,9 @@
   // Parameter: message to be displayed
   // Return   : nothing
   //
-  define allow_abort_only( string message ) ``{
-      any ret = `next;
+  define void allow_abort_only( string message ) 
+      ``{
+      symbol  ret = `next;
 
       // Enable back and next buttons independent of the settings
       // in installation.ycp so the user has a chance to see the
@@ -167,13 +186,13 @@
 			    "",		// no header in this case
 			    contents,
 			    "",		// no help text in this case
-			    WFM::Args(0), WFM::Args(1)
+			    (boolean)WFM::Args(0), (boolean)WFM::Args(1)
 	 );
 
       repeat {
 	  Popup::Message( message );	// Display the message
 
-	  ret= UI::UserInput();		// get user input
+	  ret= (symbol)UI::UserInput();		// get user input
 
 	  if ( ret == `abort )
 	  {
@@ -190,7 +209,7 @@
   // Parameter : nothing
   // Return    : nothing
   //
-  define internal_error() ``{
+  define void internal_error() ``{
       // An internal error has occured. Tell the user that the installation should
       // be  terminated now and that his hard disk has not been altered yet.
       string explanation =  _("An internal error has occurred.
@@ -213,20 +232,21 @@ Windows partition by other means.
   //                       the given start cylinder (including it).
   //		 Error -   -1
   //
-  define get_extended_free( list partitions, integer start_cylinder ) ``{
+  define integer get_extended_free( list partitions, integer start_cylinder ) 
+      ``{
 
       // First get all extended partitions from the list.
       //
-      list mother_part = filter( `pentry, partitions,
-				 ``( lookup(pentry, "type", `dummy) == `extended ));
+      list mother_part = filter( map pentry, partitions,
+				 ``( pentry["type"]:`dummy == `extended ));
 
       // Next from this subset get the partition where the region includes
       // the given start cylinder.
       //
-      mother_part = filter( `pentry, partitions,
+      mother_part = filter( map pentry, partitions,
 			    ``{
-				integer p_start  = select(lookup(pentry, "region", [0,0]), 0, 0);
-				integer p_length = select(lookup(pentry, "region", [0,0]), 1, 0);
+				integer p_start  = pentry["region",0]:0;
+				integer p_length = pentry["region",1]:1;
 
 				if ( p_start                < start_cylinder &&
 				     p_start + p_length - 1 > start_cylinder    ) return true;
@@ -235,7 +255,7 @@ Windows partition by other means.
 
       if ( size(mother_part) != 1 ) return -1;	// should be exactly one
 
-      map ext_part = select(mother_part, 0, $[]);	// the extended partition
+      map ext_part = mother_part[0]:$[];	// the extended partition
       integer p_start  = select(lookup(ext_part, "region", [0,0]), 0, 0);
       integer p_length = select(lookup(ext_part, "region", [0,0]), 1, 0);
 
@@ -299,7 +319,7 @@ Windows partition by other means.
       // This is actually obsolete since the invention of the targets-restore-mechanism
       // but left in for safeness reasons.
       //
-      partitions = filter (`pentry, partitions, ``( ! lookup (pentry, "create", false) &&
+      partitions = filter (map pentry, partitions, ``( ! lookup (pentry, "create", false) &&
 						    ! lookup (pentry, "resize", false)    ));
 
       // reset all "delete" partitions, they will be re-created
@@ -307,21 +327,21 @@ Windows partition by other means.
       // This is actually obsolete since the invention of the targets-restore-mechanism
       // but left in for safeness reasons.
       //
-      partitions = maplist (`pentry, partitions, ``(add (pentry, "delete", false)));
+      partitions = maplist (map pentry, partitions, ``(add (pentry, "delete", false)));
 
       y2milestone( "Old partition list after cleaning: <%1>", partitions );
 
       // Filter out the windows partition. It will be reinserted after being modified.
       // This is the start of the new partitions list.
       //
-      partitions_new = filter( `pentry, partitions,
+      partitions_new = filter( map pentry, partitions,
 			    ``(lookup(pentry, "nr", -1) != tointeger(do_resize)));
 
       y2milestone( "New partition list without windows partition: <%1>", partitions_new );
 
       // get the windows partition from the old list 
       //
-      list p_list = filter( `pentry, partitions,
+      list p_list = filter( map pentry, partitions,
 			    ``(lookup(pentry, "nr", -1) == tointeger(do_resize)));
 
       if ( size( p_list ) != 1 )	// there should be only one
@@ -335,7 +355,7 @@ Windows partition by other means.
 
       // assign the windows partition map
       //
-      win_partition = select( p_list, 0, $[] );
+      win_partition = p_list[0]:$[];
 
       // check if this partition is the right one
       //
@@ -374,7 +394,10 @@ Windows partition by other means.
       // mount the partition to execute some checks
       //
 
-      boolean mount_result = SCR::Execute(.target.mount, [ win_device, Installation::destdir, Installation::mountlog ]);
+      boolean mount_result = 
+	  (boolean)SCR::Execute( .target.mount, 
+	                         [ win_device, Installation::destdir, 
+				   Installation::mountlog ]);
       if ( !mount_result )
       {
 	  y2error( "Current Windows device <%1> could not be mounted. Canceled", win_device );
@@ -390,16 +413,16 @@ Windows partition by other means.
 
       // get usage information for the partition via df
       //
-      list df_result = SCR::Read(.run.df);
+      list df_result = (list)SCR::Read(.run.df);
 
       SCR::Execute(.target.umount, win_device);
 
       y2debug( ".run.df: %1", df_result );
 
       // filter out headline and other invalid entries
-      df_result = filter( `part, df_result, ``( substring ( lookup( part, "spec", "" ), 0, 1 ) == "/" ) );
+      df_result = filter( map part, df_result, ``( substring ( lookup( part, "spec", "" ), 0, 1 ) == "/" ) );
 
-      foreach( `part, df_result,
+      foreach( map part, df_result,
       ``{
 	  if ( lookup( part, "spec", "" ) == win_device )	// find right entry
 	  {
@@ -487,9 +510,7 @@ Windows device, including Windows workspace and
 space for SuSE Linux.
 "), linux_min + min_win_free + 10 );	// 10 MB safety overhead
 					      
-	      ret = allow_back_abort_only( explanation );
-	      
-	      return( ret );
+	      return( allow_back_abort_only( explanation ) );
 	  }
 	  else
 	  {
@@ -536,9 +557,7 @@ If the problem occurs again next time, please shrink your
 Windows partition by other means.
 ");
 					      
-	      ret = allow_back_abort_only( explanation );
-
-	      return( ret );	// abort installation
+	      return( allow_back_abort_only( explanation ) );
 	  }
 	  else	// OK
 	  {
@@ -714,11 +733,10 @@ installation) on the partition.
   }
 
 
-  Wizard::SetContents(
-			// Set the dialog header
-			_("Resizing the Windows partition"),
-			contents, helptext, WFM::Args(0), WFM::Args(1)
-     );
+  Wizard::SetContents( // Set the dialog header
+		       _("Resizing the Windows partition"),
+		       contents, helptext, (boolean)WFM::Args(0), 
+		       (boolean)WFM::Args(1) );
 
 
   /////////////////////////////////////////////////////////////////////////
@@ -730,30 +748,31 @@ installation) on the partition.
   /////////////////////////////////////////////////////////////////////////
 
   repeat {
-      ret= Wizard::UserInput();
+      ret = (symbol)Wizard::UserInput();
 
-      if ( ret == `abort && Popup::ConfirmAbort(`painless) )
+      if( ret == `abort && Popup::ConfirmAbort(`painless) )
 	  return `abort;
 
-      if ( ret == `next )
-      {
+      if( ret == `next )
+	  {
 	  // Get the value the user adjusted. If s/he entered a value
 	  // too big or too small this is automatically adjusted to the
 	  // biggest/smallest value possible (by Qt).
 	  //
-	  linux_size   = UI::QueryWidget(`id(`linux_size), `Value);
+	  linux_size   = (integer)UI::QueryWidget(`id(`linux_size), `Value);
 	  new_win_size = win_used + win_free - linux_size;
 	  
-	  y2milestone("Linux size: <%1> - New Win size: <%2>", linux_size, new_win_size);
-      }
+	  y2milestone( "Linux size: <%1> - New Win size: <%2>", 
+	               linux_size, new_win_size);
+	  }
 
-      if ( ret == `back )
-      {
+      if( ret == `back )
+	  {
 	  // reset resize flag
 	  Storage::SetDoResize( "NO" );
 	  return `back;
-      }
-  } until ( ret == `next || ret == `back || ret == `cancel );
+	  }
+      } until ( ret == `next || ret == `back || ret == `cancel );
   Storage::SaveExitKey( ret );
 
   /////////////////////////////////////////////////////////////////////////
@@ -766,8 +785,8 @@ installation) on the partition.
 
   // Now update the target map to the new situation
   //
-  if ( ! test_mode )
-  {
+  if( !test_mode )
+      {
       // adjust the partition entry in the target map to reflect the new size
 
       // add flag and new size to the windows partition
@@ -777,14 +796,14 @@ installation) on the partition.
 
       // save the original length of windows partition, if it is not already saved
       if ( lookup( win_partition, "ori_length", -1 ) == -1 )
-      {
-          integer ori_length   = select( region, 1, 0 );
+	  {
+          integer ori_length   = region[1]:0;
 	  win_partition        = add( win_partition, "ori_length", ori_length );
-      }
+	  }
 
       // adjust the region list in the windows partition to reflect the new size
       //
-      integer win_start    = select( region, 0, 0 );		// same as before resize
+      integer win_start    = region[0]:0;		// same as before resize
       integer new_length_i = PartedSizeToCly( (tofloat(new_win_size) * 1024.0 * 1024.0), cyl_size );
 
       region = [win_start, new_length_i];
@@ -864,29 +883,18 @@ installation) on the partition.
       // now let the automatic partitioner do its work
       //
 
-      // ############################################################
-      // Quick hack for now: define global variables that are (still)
-      // used by create_partitions() from module auto_part_create.
-      //
+      disk_size 	= lookup (target, "cyl_count", 1);
+      full_region 	= [ 0, disk_size ];
+      size_of_boot 	= Partitions::MinimalNeededBootsize();
+      size_of_swap 	= 1024*1024*Partitions::SwapSizeMb(0);
 
-      integer	disk_size 	= lookup (target, "cyl_count", 1);
-      list	full_region 	= [ 0, disk_size ];
-      integer 	size_of_boot 	= Partitions::MinimalNeededBootsize();
-      integer 	size_of_swap 	= 1024*1024*Partitions::SwapSizeMb(0);
-      integer 	first_logical_nr= 5;
-      integer 	bytes_per_unit  = cyl_size;
-
-      symbol   partition_type  = compute_partition_type (Bootloader::getLoaderType ());
-      integer   max_primary	= target["max_primary"]:0;
-
-      //
-      // End quick hack
-      // ############################################################
+      max_primary	= target["max_primary"]:0;
+      max_partitions    = compute_max_partitions (target);
 
       if( has_flex_proposal() )
 	{
-	map tt = eval(target);
-	tt["partitions"] = filter( `p, partitions_new,
+	map tt = (map)eval(target);
+	tt["partitions"] = filter( map p, partitions_new,
 				   ``(p["type"]:`none!=`free));
 	map flex = do_flexible_disk( target_is, tt );
 	if(flex["ok"]:false)

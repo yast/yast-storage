@@ -49,16 +49,16 @@
   
    
     
-global define CheckItemIsNotMounted( any id )
+global define boolean CheckItemIsNotMounted( string id )
     ``{
     boolean ret = true;
-    if( id != nil )
+    if( size(id)>0 )
 	{
 	string device = Storage::GetDeviceName( Storage::GetMainDevKey(id), 
 	                                        Storage::GetSubDevIndex(id));
 	string cmd = "mount | grep \"^" + device + " \"";
 	y2milestone( "mounts cmd=%1", cmd );
-	string line = lookup (SCR(`Execute(.target.bash_output, cmd)), "stdout", "");
+	string line = (string)lookup((map)SCR::Execute(.target.bash_output, cmd), "stdout", "");
 	y2milestone( "mounts line=%1", line );
 	ret = size(line)<size(device);
 	if( !ret )
@@ -111,7 +111,7 @@ A mounted file system cannot be added to a volume group."),
     
     if( size( lvm_vgs ) == 0 )
 	{
-	any addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
+	map addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
 	
 	// has the user cancelled the dialog? 
 	if( !addVG["cancelled"]:false )
@@ -129,7 +129,7 @@ A mounted file system cannot be added to a volume group."),
     else
 	{
 	// there are already vgs ... select the first one
-	current_vg = select( lvm_vgs, 0, "" ); 
+	current_vg = (string)select( lvm_vgs, 0, "" ); 
 	}
 
     vg_key = "/dev/" + current_vg;
@@ -145,8 +145,7 @@ A mounted file system cannot be added to a volume group."),
     // mainloop
     //////////////////////////////////////////////////////////////////////
 
-    any vg = nil;
-    any     id          =  "";
+    string  id          =  "";
     symbol  ret         = `next;
     integer max_size    = 0;
     integer used_size   = 0;
@@ -161,21 +160,20 @@ A mounted file system cannot be added to a volume group."),
 	// Show the current state:
 	parts_pv 	 = get_possible_pvs( targetMap );
 	table_pv 	 = get_pv_widget_table( parts_pv );
-	string ti = UI::QueryWidget(`id(`pv_table), `CurrentItem );
+	string ti = (string)UI::QueryWidget(`id(`pv_table), `CurrentItem );
 	UI::ChangeWidget( `id(`pv_table), `Items, table_pv );
 	if( ti != nil )
 	    UI::ChangeWidget( `id(`pv_table), `CurrentItem, ti );
 
-        parts_lv 	 = get_lvs_and_mounted_partitions( targetMap, 
-	                                                   view_all_mnts, 
-							   current_vg );
-	table_lv 	 = get_lv_widget_table( parts_lv );
-	ti = UI::QueryWidget(`id(`lv_table), `CurrentItem );
+        parts_lv = get_lvs_and_mounted_partitions( targetMap, view_all_mnts, 
+						   current_vg );
+	table_lv = get_lv_widget_table( parts_lv );
+	ti = (string)UI::QueryWidget(`id(`lv_table), `CurrentItem );
 	UI::ChangeWidget( `id(`lv_table), `Items, table_lv );
 	if( ti != nil )
 	    UI::ChangeWidget( `id(`lv_table), `CurrentItem, ti );
 
-	string vg_size_str = get_vg_size( parts_pv, current_vg, `string );
+	string vg_size_str = (string)get_vg_size( parts_pv, current_vg, `string );
 	y2debug( "**** %1", vg_size_str );
 	UI::ChangeWidget( `id(`pv_size), `Value, vg_size_str);
 
@@ -216,7 +214,7 @@ A mounted file system cannot be added to a volume group."),
         /////////////////////////////////////////////////////////////////
         // Wait for User input
 
-	ret= UI::UserInput();
+	ret= (symbol)UI::UserInput();
 
 	y2milestone( "USERINPUT %1", ret );
 
@@ -227,7 +225,7 @@ A mounted file system cannot be added to a volume group."),
 	
 	if( ret == `viewmnt )
 	    {
-	    view_all_mnts = UI::QueryWidget(`id(`viewmnt), `Value );
+	    view_all_mnts = (boolean)UI::QueryWidget(`id(`viewmnt), `Value );
 	    }
 
 
@@ -237,7 +235,7 @@ A mounted file system cannot be added to a volume group."),
 	
 	if( ret == `vg )
 	    {
-	    current_vg = UI::QueryWidget( `id(`vg), `Value);
+	    current_vg = (string)UI::QueryWidget( `id(`vg), `Value);
 	    vg_key = "/dev/" + current_vg;
 	    pesize = targetMap[vg_key,"cyl_size"]:(4*1024*1024);
 	    y2debug("TTT %1", current_vg );
@@ -250,7 +248,7 @@ A mounted file system cannot be added to a volume group."),
 
         if( ret == `vg_add_vg )
 	    {
-            any addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
+            map addVG = addVolumeGroup( targetMap, lvm_vgs, modify_targets );
 
             // has the user cancelled the dialog?
             if( !addVG["cancelled"]:false )
@@ -283,8 +281,8 @@ remove the volume group afterwards."), current_vg, count));
 		// popup text
 		if( Popup::ContinueCancel( _("Do you really want to remove the current volume group?") ))
 		    {
-		    map ret = removeVolumeGroup( current_vg, targetMap, 
-		                                 lvm_vgs, modify_targets );
+		    map ret = removeVolumeGroup( current_vg, targetMap,
+		                                 modify_targets );
 		    targetMap       = ret["targets"]:$[];
 		    modify_targets  = ret["modify_targets"]:$[];
 		    lvm_vgs         = ret["lvm_vgs"]:[];
@@ -301,12 +299,12 @@ remove the volume group afterwards."), current_vg, count));
 	
 	if( ret == `pv_add && current_vg != nil )
 	    {
-	    id = UI::QueryWidget(`id(`pv_table), `CurrentItem );
+	    id = (string)UI::QueryWidget(`id(`pv_table), `CurrentItem );
 	    y2debug( "WWW ID ADD GROUP %1", id);
 	    
-	    if( id!=nil && CheckItemIsNotPv(id) && CheckItemIsNotMounted(id) )
+	    if( CheckItemIsNotPv(id) && CheckItemIsNotMounted(id) )
 		{
-		any addPV = addPhysicalVolume( modify_targets, targetMap, 
+		map addPV = addPhysicalVolume( modify_targets, targetMap, 
 		                               id,  current_vg );
             
 		// has an error occured
@@ -324,9 +322,9 @@ remove the volume group afterwards."), current_vg, count));
 	
 	if( ret == `pv_delete && current_vg != nil )
 	    {
-	    id = UI::QueryWidget(`id(`pv_table), `CurrentItem );
+	    id = (string)UI::QueryWidget(`id(`pv_table), `CurrentItem );
 	    
-	    if ( id!=nil && CheckItemIsPv(id) )
+	    if( CheckItemIsPv(id) )
 		{
 	        string vg = lookup( Storage::IdFromTarget( targetMap, id ),
 				    "lvm_group", "" );
@@ -336,7 +334,7 @@ remove the volume group afterwards."), current_vg, count));
 		    continue;
 		    }
 
-		any deletePV = removePhysicalVolume( modify_targets, targetMap,
+		map deletePV = removePhysicalVolume( modify_targets, targetMap,
 		                                     id, vg );
             
 		// has an error occured
@@ -409,7 +407,7 @@ remove the volume group afterwards."), current_vg, count));
 	
 	if( ret == `lv_edit )
 	    {
-	    id = UI::QueryWidget(`id(`lv_table), `CurrentItem );
+	    id = (string)UI::QueryWidget(`id(`lv_table), `CurrentItem );
 	    y2milestone("id %1", id);
 
 	    if ( id == nil )
@@ -478,7 +476,7 @@ Select the device to edit.
 
 	if( ret == `lv_delete )
 	    {
-	    id = UI::QueryWidget(`id(`lv_table), `CurrentItem );
+	    id = (string)UI::QueryWidget(`id(`lv_table), `CurrentItem );
 	    if( id == nil )
 		{
 		// Popup text
@@ -514,7 +512,7 @@ the logical volume %1
 		    y2debug( "NBNBNBNB  %1  ", modify_targets );
 		    y2debug( "NBNBNBNB  %1  ", targetMap);
 		    y2debug( "NBNBNBNB  %1  ", Lv["vgname"]:"" );
-		    any deleteLV = removeLogicalVolume( Lv, modify_targets,
+		    map deleteLV = removeLogicalVolume( Lv, modify_targets,
 							targetMap, tmp_vg );
 		    // has an error occured
 		    if( !deleteLV["error"]:false )

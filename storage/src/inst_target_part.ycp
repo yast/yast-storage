@@ -15,11 +15,11 @@
     textdomain "storage";
 
     import "Arch";
-    import "Bootloader";
     import "Mode";
     import "Popup";
     import "Storage";
     import "Partitions";
+    import "FileSystems";
 
     // flag for deleting a windows partition
     integer win_partition_to_delete = -1;
@@ -33,6 +33,29 @@
 
     // Get test_mode flag from module Mode
     boolean test_mode = Mode::test;
+
+    //-------------------------------------------------------------------------
+    // The action
+    //-------------------------------------------------------------------------
+
+    integer max_partitions = 0;
+
+    // The partition number of the first logical partition
+    integer first_logical_nr = 5;
+
+    list full_region = [];
+    integer disk_size = 0;
+    integer size_of_swap = 0;
+    integer size_of_boot = 0;
+    integer max_primary = 0;
+    // this will tell if automatic partitioning if feasible
+    boolean can_do_auto = false;
+
+    // this will get the minimal size for a default system
+    //   (boot + swap + default root)
+    integer minimal_size = 0;
+
+    list unused_region = [ 0, 0 ];
 
     include "partitioning/auto_part_functions.ycp";
     include "partitioning/auto_part_prepare.ycp";
@@ -50,8 +73,8 @@
     // Parameter: message to be displayed
     // Return   : `back or `abort
     //
-    define allow_back_abort_only( string message ) ``{
-	any ret = `next;
+    define symbol allow_back_abort_only( string message ) ``{
+	symbol ret = `next;
 
 	// Enable back and next buttons independent of the settings
 	// in installation.ycp so the user has a chance to see the
@@ -63,7 +86,7 @@
 	repeat {
 	    Popup::Message( message );	// Display the message
 
-	    ret= UI::UserInput();		// get user input
+	    ret= (symbol)UI::UserInput();		// get user input
 
 	    if ( ret == `abort )
 	    {
@@ -104,36 +127,21 @@
     // The action
     //-------------------------------------------------------------------------
 
-    integer max_partitions = compute_max_partitions (target);
 
-    // The partition number of the first logical partition
-    integer first_logical_nr = 5;
-
-    list full_region = [];
-    integer bytes_per_unit = 0;
-    integer disk_size = 0;
     // --------------------------------------------------------------
     // general settings for automatically created partitions
 
+    max_partitions = compute_max_partitions (target);
+
     // How much to allocate for swap
-    integer size_of_swap = 1024*1024*Partitions::SwapSizeMb(0);
+    size_of_swap = 1024*1024*Partitions::SwapSizeMb(0);
 
     // --------------------------------------------------------------
     // set size of /boot partition
-
-    integer size_of_boot = Partitions::MinimalNeededBootsize();
+    size_of_boot = Partitions::MinimalNeededBootsize();
 
     // The number of possible primary partitions
-    integer max_primary = target["max_primary"]:4;
-
-    // this will tell if automatic partitioning if feasible
-    boolean can_do_auto = false;
-
-    // this will get the minimal size for a default system
-    //   (boot + swap + default root)
-    integer minimal_size = 0;
-
-    list unused_region = [ 0, 0 ];
+    max_primary = target["max_primary"]:4;
 
     /*==================================================================
      *
@@ -187,7 +195,6 @@
 		                                    unused_region );
 		    }
 		rewrite_settings (partitions, target, targetMap);
-		auto_undefine ();
 
 		return Storage::GetExitKey();
 	    }
@@ -206,7 +213,7 @@
 	    //
 	    already_partitioned = true;
 	    highest_id = -1;
-	    vbox = create_resize_dialog (partitions);
+	    vbox = create_resize_dialog (partitions, target["cyl_size"]:1 );
 	    y2milestone ("can resize !");
 	}
 	else
@@ -214,7 +221,11 @@
 	    // this is the normal case
 	    // ATTENTION: also sets highest_id
 	    //
-	    vbox = construct_partition_dialog (partitions, target["label"]:"");
+	    map tmp = construct_partition_dialog( partitions, 
+	                                          target["label"]:"",
+						  target["cyl_size"]:1 );
+	    vbox = tmp["term"]:`Empty();
+	    highest_id = tmp["high_id"]:0;
 	}
     }
 
@@ -233,8 +244,7 @@
 
     // Event handling
 
-    any ret = nil;
-    any option = nil;
+    symbol ret = nil;
     //  TODO:   UI::ControlWidget(dlg, `id(`full), `SetFocus());
 
     if( target["label"]:""=="mac" && UI::WidgetExists( `id(`full) ))
@@ -244,7 +254,7 @@
 
     while (true)
 	{
-	ret = Wizard::UserInput();
+	ret = (symbol)Wizard::UserInput();
 	
 	if( ret == `abort && Popup::ConfirmAbort(`painless))
 	    {
@@ -253,7 +263,7 @@
 	else if (ret == `full)
 	    {
 	    // Set all checkboxes
-	    foreach (`pentry, partitions, 
+	    foreach (map pentry, partitions, 
 		``{
 		symbol ptype = lookup (pentry, "type", `unknown);
 		integer ui_id = 0;
@@ -294,8 +304,6 @@
 			// The user decided to shrink his windows.
 			// Check if this is Windows NT or Windows 2000 (curently not supported)
 			//
-			any ret = `next;
-
 			integer local_ret = check_win_nt_system( target );
 
 			if( test_mode )
@@ -422,7 +430,7 @@ Are you sure you want to delete your Windows partition?
 	    // for deletion in the foreach() loop
 	    boolean windows_part_marked_for_deletion = false;
 
-	    foreach (`pentry, partitions, 
+	    foreach( map pentry, partitions, 
 		``{
 		symbol ptype = lookup (pentry, "type", `unknown);
 		integer ui_id = 0;
@@ -505,8 +513,8 @@ Are you sure you want to delete your Windows partition?
 
 	    if( flex_proposal )
 		{
-		map tt = eval(target);
-		tt["partitions"] = filter( `p, all_partitions,  
+		map tt = (map)eval(target);
+		tt["partitions"] = filter( map p, all_partitions,  
 					   ``(p["type"]:`none!=`free));
 		flex = do_flexible_disk( target_is, tt );
 		ok = flex["ok"]:false;
@@ -535,7 +543,8 @@ Are you sure you want to delete your Windows partition?
 			// this condition is described within the reason
 			reason = _("Too few partitions are marked for removal. To install Linux, select more partitions to remove.");
 			}
-		    else if( size_of_region(selected) < minimal_size)
+		    else if( size_of_region(selected,target["cyl_size"]:1) < 
+		             minimal_size)
 			{
 			y2debug("selected: %1", selected);
 			// consistency check: a condition for the installation 
@@ -546,7 +555,7 @@ Are you sure you want to delete your Windows partition?
 		    else
 			{
 			ok = true;
-			if (!bootable (selected))
+			if (!bootable (selected,target["cyl_size"]:1))
 			    warn_not_bootable ();
 			}
 		    }
@@ -562,7 +571,8 @@ Are you sure you want to delete your Windows partition?
 		else
 		    {
 		    selected = calculate_selected_region(selected_partitions, nil);
-		    if( size_of_region(selected) < minimal_size)
+		    if( size_of_region(selected,target["cyl_size"]:1) < 
+			minimal_size )
 			{
 			y2debug ("selected: %1", selected);
 			// consistency check: a condition for the installation is not fullfilled
@@ -572,7 +582,7 @@ Are you sure you want to delete your Windows partition?
 		    else
 			{
 			ok = true;
-			if (!bootable (selected))
+			if (!bootable (selected, target["cyl_size"]:1))
 			    warn_not_bootable ();
 			}
 		    }
@@ -608,10 +618,6 @@ Are you sure you want to delete your Windows partition?
 	Storage::RestoreTargetBackup("disk");
 	}
     Storage::SaveExitKey( ret );
-
-    // remove all defines from global env.
-
-    auto_undefine ();
 
     return ret;
 }

@@ -27,104 +27,15 @@ import "Mode";
 import "Storage";
 import "Partitions";
 
+list    hitlist = [];
+boolean hiterror = false;
+integer min_nb_boot_cyl = 0;
+
 include "partitioning/propose_part_util.ycp";
 include "partitioning/propose_create_target.ycp";
 include "partitioning/propose_slot_util.ycp";
 include "partitioning/do_proposal_flexible.ycp";
 
-global define map do_proposal()
-    ``{
-    boolean done = false;
-    if ( !Mode::test )
-	{
-	// popup text
-	string message = _("Analyzing Partitioning. One moment please ...");
-	UI::OpenDialog(`opt(`decorated), `Label(message));
-	}
-    y2milestone( "FsidBoot %1 BootCyl %2 MinimalNeededBootsize %3 DefaultBootFs %4",
-                 Partitions::FsidBoot(), Partitions::BootCyl(),
-                 Partitions::MinimalNeededBootsize(), 
-		 Partitions::DefaultBootFs() );
-
-    map target = (map) eval(Storage::GetTargetMap());
-    //target = SCR::Read(.target.yast2, "test_target_map_ol.ycp");
-    map ret = $[];
-    if( Arch::s390 )
-	{
-	ret = proposal_s390( target );
-	}
-    else if( has_flex_proposal() )
-	{
-	ret = do_proposal_flexible( target );
-	y2milestone( "suggestion flex possible: %1", ret["ok"]:false);
-	}
-    else
-	{
-	ret = do_proposal_real( Partitions::NeedBoot(), target );
-	y2milestone( "suggestion possible: %1", ret["ok"]:false);
-	if( !ret["ok"]:false )
-	    {
-	    string use_disk = "";
-	    list del_part = [];
-	    list nodelpart = Partitions::do_not_delete;
-	    foreach ( string dev, map disk, target, 
-		``{
-		if( Storage::IsRealDisk( dev, disk ) && use_disk == "" && 
-		    !disk["readonly"]:false && find( dev, "/dev/" )==0 )
-		    {
-		    use_disk = dev;
-		    list keep = [];
-		    del_part = maplist( map p, disk["partitions"]:[], 
-					``{
-					if( !contains( nodelpart, p["fsid"]:0 ))
-					    {
-					    p["delete"] = true;
-					    }
-					else
-					    {
-					    keep = add( keep, p );
-					    }
-					return( p );
-					});
-		    disk["partitions"] = keep;
-		    }
-		});
-	    y2milestone( "use_disk %1 del_part %2", use_disk, del_part );
-	  
-	    if( use_disk != "" )
-		{
-		ret = do_proposal_real( Partitions::NeedBoot(), target );
-		}
-	    if( ret["ok"]:false )
-		{
-		del_part = del_part + ret["target",use_disk,"partitions"]:[];
-		ret["target",use_disk,"partitions"] = del_part;
-		}
-	    }
-	}
-    y2milestone( "suggestion possible: %1", ret );
-    if ( !Mode::test ) UI::CloseDialog();
-    return( ret );
-    }
-
-global define map proposal_s390( map targetMap )
-    ``{
-    boolean found = false;
-//    foreach( `dev, `disk, targetMap, 
-//	``{
-//	if( !found && find( dev, "/dev/dasd" )==0 && 
-//	    size(disk["partitions"]:[])>0 )
-//	    {
-//	    found = true;
-//	    targetMap[dev,"partitions",0,"format"] = true;
-//	    targetMap[dev,"partitions",0,"mount"] = "/";
-//	    targetMap[dev,"partitions",0,"used_fs"] = `reiser;
-//	    targetMap[dev,"partitions",0,"fs_options"] = 
-//		$["opt_blocksize":$["option_str":"-b", "option_value":"4096"]];
-//	    }
-//	});
-    return( $[ "ok" : found, "target" : targetMap ] );
-    };
 
 global define boolean ignore_disk( string dev, map entry )
     ``{
@@ -143,7 +54,6 @@ global define boolean ignore_disk( string dev, map entry )
 global define map do_proposal_real( boolean need_boot, map targetMap )
     ``{
     map tmptargetMap = $[];
-    list     hitlist = [];
 
     y2milestone( "test with need_boot == %1", need_boot);
     
@@ -152,7 +62,8 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
     // Now we generate a proposal
     /////////////////////////////////////////////////////////////////
 
-    foreach( `dev, map disk, filter( string k, map e, targetMap, ``(ignore_disk(k,e))),
+    foreach( string dev, map disk, 
+	     filter( string k, map e, targetMap, ``(ignore_disk(k,e))),
 	``{
 	y2milestone( "checking disk %1", dev );
 
@@ -186,8 +97,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	integer cyl_count = disk["cyl_count"]:1;
 	integer cyl_size  = disk["cyl_size"]:1;
 
-	integer min_nb_boot_cyl = (Partitions::MinimalNeededBootsize() / 
-				   cyl_size) + 1;
+	min_nb_boot_cyl = (Partitions::MinimalNeededBootsize() / cyl_size) + 1;
 
 	y2milestone( "minimal_needed_cyl nb: %1", min_nb_boot_cyl );
 
@@ -277,7 +187,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 	//  ]
 
 	list primary_slots = GetSlots( pri_extd_list, 0, cyl_count-1, cyl_size,
-				       disk["readonly"]:false );
+				       disk["readonly"]:false, dev );
 	list logical_slots = [];
 
 	if( size(extended_list) >= 1 && extended_allowed )
@@ -289,7 +199,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 
 	    y2debug( "The extended: %1", extended );
 	    logical_slots = GetSlots( logical_list, begin_extd, end_extd, 
-				      cyl_size, disk["readonly"]:false );
+				      cyl_size, disk["readonly"]:false, dev );
 	    }
 
 	logical_slots = maplist( map slot, logical_slots, 
@@ -931,5 +841,99 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
     return( $[ "ok" : size(tmptargetMap)>0, "target" : tmptargetMap ] );
     }
   
+global define map proposal_s390( map targetMap )
+    ``{
+    boolean found = false;
+//    foreach( `dev, `disk, targetMap, 
+//	``{
+//	if( !found && find( dev, "/dev/dasd" )==0 && 
+//	    size(disk["partitions"]:[])>0 )
+//	    {
+//	    found = true;
+//	    targetMap[dev,"partitions",0,"format"] = true;
+//	    targetMap[dev,"partitions",0,"mount"] = "/";
+//	    targetMap[dev,"partitions",0,"used_fs"] = `reiser;
+//	    targetMap[dev,"partitions",0,"fs_options"] = 
+//		$["opt_blocksize":$["option_str":"-b", "option_value":"4096"]];
+//	    }
+//	});
+    return( $[ "ok" : found, "target" : targetMap ] );
+    };
+
+global define map do_proposal()
+    ``{
+    boolean done = false;
+    if ( !Mode::test )
+	{
+	// popup text
+	string message = _("Analyzing Partitioning. One moment please ...");
+	UI::OpenDialog(`opt(`decorated), `Label(message));
+	}
+    y2milestone( "FsidBoot %1 BootCyl %2 MinimalNeededBootsize %3 DefaultBootFs %4",
+                 Partitions::FsidBoot(), Partitions::BootCyl(),
+                 Partitions::MinimalNeededBootsize(), 
+		 Partitions::DefaultBootFs() );
+
+    map target = (map) eval(Storage::GetTargetMap());
+    //target = SCR::Read(.target.yast2, "test_target_map_ol.ycp");
+    map ret = $[];
+    if( Arch::s390 )
+	{
+	ret = proposal_s390( target );
+	}
+    else if( has_flex_proposal() )
+	{
+	ret = do_proposal_flexible( target );
+	y2milestone( "suggestion flex possible: %1", ret["ok"]:false);
+	}
+    else
+	{
+	ret = do_proposal_real( Partitions::NeedBoot(), target );
+	y2milestone( "suggestion possible: %1", ret["ok"]:false);
+	if( !ret["ok"]:false )
+	    {
+	    string use_disk = "";
+	    list del_part = [];
+	    list nodelpart = Partitions::do_not_delete;
+	    foreach ( string dev, map disk, target, 
+		``{
+		if( Storage::IsRealDisk( dev, disk ) && use_disk == "" && 
+		    !disk["readonly"]:false && find( dev, "/dev/" )==0 )
+		    {
+		    use_disk = dev;
+		    list keep = [];
+		    del_part = maplist( map p, disk["partitions"]:[], 
+					``{
+					if( !contains( nodelpart, p["fsid"]:0 ))
+					    {
+					    p["delete"] = true;
+					    }
+					else
+					    {
+					    keep = add( keep, p );
+					    }
+					return( p );
+					});
+		    disk["partitions"] = keep;
+		    }
+		});
+	    y2milestone( "use_disk %1 del_part %2", use_disk, del_part );
+	  
+	    if( use_disk != "" )
+		{
+		ret = do_proposal_real( Partitions::NeedBoot(), target );
+		}
+	    if( ret["ok"]:false )
+		{
+		del_part = del_part + ret["target",use_disk,"partitions"]:[];
+		ret["target",use_disk,"partitions"] = del_part;
+		}
+	    }
+	}
+    y2milestone( "suggestion possible: %1", ret );
+    if ( !Mode::test ) UI::CloseDialog();
+    return( ret );
+    }
+
 }
   

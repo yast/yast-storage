@@ -47,11 +47,11 @@
   {
       if ( demo_mode ) {
 	  y2warning("***** Demo mode active - using fake demo values *****");
-	  targetMap = SCR::Read(.target.yast2, "demo_target_map.ycp");
+	  targetMap = (map)SCR::Read(.target.yast2, "demo_target_map.ycp");
       }
       else {// ! demo_mode
 	  y2warning("***** Test mode active - using fake values *****");
-	  targetMap = SCR::Read(.target.yast2, "test_target_map.ycp");
+	  targetMap = (map)SCR::Read(.target.yast2, "test_target_map.ycp");
       }
       Storage::SetTargetMap( targetMap );
   }  
@@ -164,7 +164,7 @@ advanced options like RAID and LVM.</p>
 
 
 
-  any ret = nil;
+  symbol ret = nil;
 
   if( !run_in_testsuite )
       {
@@ -183,23 +183,24 @@ advanced options like RAID and LVM.</p>
 	  string changes = TargetChangesToRichText(targetMap,$[]);
 	  y2milestone( "current proposal: %1", changes );
 
-	  if( size(changes) == "" )
+	  if( size(changes) == 0 )
 	      {
 	      changes = "<p></p>" +
 		        // popup text, richtext format
 		       _("<p>You have rejected the proposal. Use <b>Modify</b> or <b>Discard</b></p>");
 	      }
-	  Wizard::SetContents(title, contents, help_text, WFM::Args(0), WFM::Args(1));
+	  Wizard::SetContents( title, contents, help_text, 
+	                       (boolean)WFM::Args(0), (boolean)WFM::Args(1) );
 	  UI::ChangeWidget( `id("richtext"), `Value, changes);
 	  }
 
       repeat
           {
           UI::SetFocus(`id(`next));
-          ret = Wizard::UserInput();
+          ret = (symbol)Wizard::UserInput();
      
           string part_proposal_mode = 
-	      UI::QueryWidget(`id("part_option"), `CurrentButton);
+	      (string) UI::QueryWidget(`id("part_option"), `CurrentButton);
          
 	  if( ret == `abort && Popup::ConfirmAbort(`painless) )
 	      return `abort;
@@ -219,8 +220,8 @@ advanced options like RAID and LVM.</p>
 		      
 		  target_is = "SUGGESTION";
 		  list retval = check_created_partiton_table( targetMap , true, true );
-		  targetMap   = select( retval, 0, $[] );
-		  doagain     = select( retval, 1, `next );
+		  targetMap   = retval[0]:$[];
+		  doagain     = retval[1]:`next;
 
 		  if ( doagain == `again ) return `again;
 		  }

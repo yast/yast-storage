@@ -41,7 +41,7 @@ HINTS: Always use
   textdomain "storage";
 
   import "Arch";
-  import "Bootloader";
+  /* FIXME import "Bootloader";*/
   import "Installation";
   import "Mode";
   import "Wizard";
@@ -49,16 +49,25 @@ HINTS: Always use
   import "FileSystems";
   import "Partitions";
   
-
-  // include "partitioning/custom_part_testdata.ycp";
-  include "partitioning/custom_part_lib.ycp";
-  include "partitioning/custom_part_dialogs.ycp";
   import "Label";
   import "Popup";
   import "String";
+  import "Storage";
+  import "StorageDevices";
+
+  list    hitlist = [];
+  boolean hiterror = false;
+
+  include "partitioning/partition_defines.ycp";
   include "partitioning/propose_part_util.ycp";
   include "partitioning/loop.ycp";
   include "partitioning/lvm_ui_dialogs.ycp";
+  include "partitioning/lvm_pv_lib.ycp";
+  include "partitioning/raid_lib.ycp";
+  include "partitioning/raid_ui.ycp";
+  include "partitioning/custom_part_lib.ycp";
+  include "partitioning/custom_part_dialogs.ycp";
+  include "partitioning/custom_part_check_generated.ycp";
 
   
   // Which columns show the main window have
@@ -92,7 +101,8 @@ HINTS: Always use
                                              // existing /etc/fstab" -Button be shown in Expert menu
   
    boolean test_mode          = Mode::test;
-   string  boot_mode	      =	Bootloader::getLoaderType ();
+   string  boot_mode	      =	"fritz";
+   /* FIXME string  boot_mode	      =	Bootloader::getLoaderType ();*/
    boolean immediate_prepdisk = Storage::immediate_prepdisk;
    string  focusline          = "";
 
@@ -166,7 +176,7 @@ HINTS: Always use
      *----------------------------------------------------------------------
      */
 
-global define IsNumber( string input )
+global define boolean IsNumber( string input )
     ``{
     integer n = 0;
     while (n < size(input))
@@ -188,7 +198,7 @@ global define IsNumber( string input )
      * Returns true or false
      *----------------------------------------------------------------------
      */
-global define IsCylNumber( string input )
+global define boolean IsCylNumber( string input )
     ``{
     if( substring( input, 0, 1) == "+")
         {
@@ -241,10 +251,11 @@ global define IsCylNumber( string input )
      *----------------------------------------------------------------------
      */
 
-global define ToEndRegion(string start_cyl, string end_part, integer cyl_size )
+global define integer ToEndRegion( string start_cyl, string end_part, 
+                                integer cyl_size )
     ``{
     boolean is_add = false;
-    string input   = end_part;
+    string input = end_part;
 
     if( substring( input, 0, 1) == "+")
 	{
@@ -368,7 +379,7 @@ global define ToEndRegion(string start_cyl, string end_part, integer cyl_size )
      *----------------------------------------------------------------------
      */
 
-define CheckCreatePossibilities( string dev, map disk )
+define list CheckCreatePossibilities( string dev, map disk )
     ``{
     string type = substring(dev, 5, 2);
 
@@ -383,15 +394,15 @@ define CheckCreatePossibilities( string dev, map disk )
     boolean     logical_is_possible  = false;
 
     list primary_list = 
-	filter( `part, disk["partitions"]:[],
+	filter( map part, disk["partitions"]:[],
 		``( (part["type"]:`unknown == `primary) && 
 		    (!part["delete"]:false )));
     list extended_list = 
-	filter( `part, disk["partitions"]:[],
+	filter( map part, disk["partitions"]:[],
 		``( (part["type"]:`unknown == `extended) && 
 		    (!part["delete"]:false )));
     list logical_list = 
-	filter( `part, disk["partitions"]:[],
+	filter( map part, disk["partitions"]:[],
 		``( (part["type"]:`unknown == `logical) && 
 		    (!part["delete"]:false )));
 
@@ -428,8 +439,8 @@ define CheckCreatePossibilities( string dev, map disk )
 
 	// Start-End of the extended partition
 
-	integer start_ext_cyl = select( lookup( select( extended_list, 0, 0 ), "region", [0,0] ), 0,0);
-	integer end_ext_cyl   = select( lookup( select( extended_list, 0, 0 ), "region", [0,0] ), 1,1) + start_ext_cyl -1;
+	integer start_ext_cyl = extended_list[0,"region",0]:0;
+	integer end_ext_cyl   = extended_list[0,"region",1]:1 + start_ext_cyl-1;
 
 
 	// logical_cyl_list = [ <start_cyl.firstLogPart> , <end_cyl.firstLogPart> , <start.nextLogPart> ,....., <end.lastLogPart>]
@@ -437,8 +448,10 @@ define CheckCreatePossibilities( string dev, map disk )
 	// example:  input: hda5:region [255,100] hda6:region[355,100] hda7[455,100]
 	//           is al list generatated: logical_cyl_list = [255,354,355,454,455,555]
 	//
-	list logical_cyl_list = sort(flatten(maplist( `part, logical_list, ``([select(lookup(part, "region", [0,0]), 0,0),
-					     select(lookup(part, "region", [0,0]), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+	list logical_cyl_list = 
+	    sort(flatten(maplist( map part, logical_list, 
+				  ``([part["region",0]:0,
+				      part["region",0]:0 + part["region",1]:1-1 ]))));
 
 	// Look for a slot in the list of cylinders
 	integer  n          = 0;
@@ -508,22 +521,23 @@ define CheckCreatePossibilities( string dev, map disk )
      *---------------------------------------------------------------------
      */
 
-define GetSlot( string dev, map disk )
+define list GetSlot( string dev, map disk )
     ``{
     string type = substring(dev, 5, 2);
-    list global_list = filter( `part, disk["partitions"]:[], 
+    list global_list = filter( map part, disk["partitions"]:[], 
                                ``( part["type"]:`unknown != `logical && 
 			           !part["delete"]:false ));
 
     if ( bsd_label )
 	{
-	global_list  = filter( `part, global_list, ``( part["nr"]:0 != 3 ));
+	global_list  = filter( map part, global_list, ``( part["nr"]:0 != 3 ));
 	}
 
 
-    list global_cyl_list = sort(flatten(maplist( `part, global_list, 
-                                                 ``([select(lookup(part, "region", []), 0,0),
-						     select(lookup(part, "region", []), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+    list global_cyl_list = 
+	sort(flatten(maplist( map part, global_list, 
+			      ``([part["region",0]:0,
+				  part["region",0]:0 + part["region",1]:1-1 ]))));
 
     // Look for a slot in the list of cylinders
     integer  n          = 0;
@@ -552,19 +566,19 @@ define GetSlot( string dev, map disk )
 		{
 		// first
 		curr_start  =  start_cyl-1;
-		curr_end    =  select( global_cyl_list, 0, 0 );
+		curr_end    =  global_cyl_list[0]:0;
 		}
 	    else if ( n == (size(global_cyl_list)/2))
 		{
 		// last
-		curr_start = select( global_cyl_list, size(global_cyl_list)-1, 0);
+		curr_start = global_cyl_list[size(global_cyl_list)-1]:0;
 		curr_end   = end_cyl+1;
 		}
 	    else
 		{
 		//check if between global partition n-1 and n is a slot
-		curr_start = select( global_cyl_list, 2*n-1, 0 );
-		curr_end   = select( global_cyl_list, 2*n, 0 );
+		curr_start = global_cyl_list[2*n-1]:0;
+		curr_end   = global_cyl_list[2*n]:0;
 		}
 
 	    y2milestone( "n curr_start %1 curr_end %2", curr_start, curr_end );
@@ -574,7 +588,7 @@ define GetSlot( string dev, map disk )
 
 		y2debug( "A Slot at: %1 %2",  curr_start, curr_end );
 
-		if( (curr_end - curr_start -2) >= (sl_end - sl_start) )
+		if( (curr_end-curr_start-2) >= (sl_end - sl_start) )
 		    {
 		    sl_start = curr_start+1;
 		    sl_end   = curr_end-1;
@@ -605,21 +619,23 @@ define GetSlot( string dev, map disk )
      *---------------------------------------------------------------------
      */
 
-global define TestSlot( integer slot_start_cyl, string dev, map disk, 
-                        boolean bsd_label )
+global define integer TestSlot( integer slot_start_cyl, string dev, map disk, 
+				boolean bsd_label )
     ``{
     string type = substring(dev, 5, 2);
-    list global_list  = filter( `part, disk["partitions"]:[], 
+    list global_list  = filter( map part, disk["partitions"]:[], 
                                 ``( part["type"]:`unknown != `logical && 
 				    !part["delete"]:false ));
 
     if( bsd_label )
 	{
-	global_list  = filter( `part, global_list, ``( part["nr"]:0 != 3 ) );
+	global_list  = filter( map part, global_list, ``( part["nr"]:0 != 3 ) );
 	}
 
-    list global_cyl_list = sort(flatten(maplist( `part, global_list, ``([select(lookup(part, "region", []), 0,0),
-                                            select(lookup(part, "region", []), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+    list global_cyl_list = 
+	sort(flatten(maplist( map part, global_list, 
+			      ``([part["region",0]:0,
+				  part["region",0]:0 + part["region",1]:1-1 ]))));
 
     // Look for a slot in the list of cylinders
     integer  n          = 0;
@@ -637,7 +653,8 @@ global define TestSlot( integer slot_start_cyl, string dev, map disk,
     if( size(global_cyl_list) == 0 )
 	{
 	y2debug( "Testing Slot : disk empty");
-	if ( start_cyl <= slot_start_cyl  && slot_start_cyl <= end_cyl )   return( end_cyl );
+	if( start_cyl <= slot_start_cyl && slot_start_cyl <= end_cyl )  
+	    return( end_cyl );
 	}
     else
 	{
@@ -647,19 +664,19 @@ global define TestSlot( integer slot_start_cyl, string dev, map disk,
 		{
 		// first
 		curr_start  =  start_cyl-1;
-		curr_end    =  select( global_cyl_list, 0, 0 );
+		curr_end    =  global_cyl_list[0]:0;
 		}
 	    else if ( n == (size(global_cyl_list)/2))
 		{
 		// last
-		curr_start = select( global_cyl_list, size(global_cyl_list)-1,0);
+		curr_start = global_cyl_list[size(global_cyl_list)-1]:0;
 		curr_end   = end_cyl+1;
 		}
 	    else
 		{
 		//check if between global partition n-1 and n is a slot
-		curr_start = select( global_cyl_list, 2*n-1, 0 );
-		curr_end   = select( global_cyl_list, 2*n, 0 );
+		curr_start = global_cyl_list[2*n-1]:0;
+		curr_end   = global_cyl_list[2*n]:0;
 		}
 
 	    y2debug( "Testing Slot %1 < x < %2", curr_start, curr_end );
@@ -687,16 +704,16 @@ global define TestSlot( integer slot_start_cyl, string dev, map disk,
     /*---------------------------------------------------------------------
      */
 
-define GetLogicalSlot( string dev, map disk )
+define list GetLogicalSlot( string dev, map disk )
     ``{
     string type = substring(dev, 5, 2);
 
-    list global_list  = filter( `part, disk["partitions"]:[], 
+    list global_list  = filter( map part, disk["partitions"]:[], 
                                 ``( part["type"]:`unknown == `logical && 
 				    !part["delete"]:false ));
-    map	extended = find( `part, disk["partitions"]:[], 
-                         ``( part["type"]:`unknown == `extended  && 
-			     !part["delete"]:false ));
+    map	extended = (map)find( map part, disk["partitions"]:[], 
+			      ``( part["type"]:`unknown == `extended  && 
+				  !part["delete"]:false ));
 
     //////////////////////////////////
     if (extended == nil)
@@ -705,13 +722,15 @@ define GetLogicalSlot( string dev, map disk )
 	}
     //////////////////////////////////
 
-    list global_cyl_list = sort(flatten(maplist( `part, global_list, ``([select(lookup(part, "region", []), 0, 0),
-				    select(lookup(part, "region", []), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+    list global_cyl_list = 
+	sort(flatten(maplist( map part, global_list, 
+	                      ``([part["region",0]:0,
+				  part["region",0]:0 + part["region",1]:1-1 ]))));
 
     // Look for a slot in the list of cylinders
     integer  n          = 0;
-    integer start_cyl   = tointeger( select(lookup( extended, "region", []),0,0) );
-    integer end_cyl     = start_cyl + tointeger(select(lookup( extended, "region", []),1,1)) -1;
+    integer start_cyl   = tointeger( extended["region",0]:0 );
+    integer end_cyl     = start_cyl + tointeger(extended["region",1]:1)-1;
 
     integer sl_start   = 0;
     integer sl_end     = 0;
@@ -730,42 +749,42 @@ define GetLogicalSlot( string dev, map disk )
         {
         repeat
 	    {
-	      if ( n == 0 )
-	      {
-		  // first
-		  curr_start  =  start_cyl-1;
-		  curr_end    =  select( global_cyl_list, 0, 0 );
-	      }
-	      else if ( n == (size(global_cyl_list)/2))
-	      {
-		  // last
-		  curr_start = select( global_cyl_list, size(global_cyl_list)-1, 0);
-		  curr_end   = end_cyl+1;
-	      }
-	      else
-	      {
-		  //check if between global partition n-1 and n is a slot
-		  curr_start = select( global_cyl_list, 2*n-1, 0 );
-		  curr_end   = select( global_cyl_list, 2*n, 0 );
-	      }
+	    if( n == 0 )
+		{
+		// first
+		curr_start  =  start_cyl-1;
+		curr_end    =  global_cyl_list[0]:0;
+		}
+	    else if ( n == (size(global_cyl_list)/2))
+		{
+		// last
+		curr_start = global_cyl_list[size(global_cyl_list)-1]:0;
+		curr_end   = end_cyl+1;
+		}
+	    else
+		{
+		//check if between global partition n-1 and n is a slot
+		curr_start = global_cyl_list[2*n-1]:0;
+		curr_end   = global_cyl_list[2*n]:0;
+		}
 
-	      if ( curr_start+1 < curr_end )
-	      {
-		  slot_exist = true;
+	    if( curr_start+1 < curr_end )
+		{
+		slot_exist = true;
 
-		  y2debug( "A Slot at: %1 %2  ",  curr_start, curr_end );
+		y2debug( "A Slot at: %1 %2  ",  curr_start, curr_end );
 
-		  if (  (curr_end - curr_start -2) >= (sl_end - sl_start) )
-		  {
-		      sl_start = curr_start+1;
-		      sl_end   = curr_end-1;
-		  }
-	      }
-	      y2debug("SLOT- %1 %2 %3 %4  ", slot_exist, curr_start, curr_end, n );
+		if( (curr_end - curr_start -2) >= (sl_end - sl_start) )
+		    {
+		    sl_start = curr_start+1;
+		    sl_end   = curr_end-1;
+		    }
+		}
+	    y2debug("SLOT- %1 %2 %3 %4  ", slot_exist, curr_start, curr_end, n );
 
-	      n = n+1;
-	  } until ( n == ( (size(global_cyl_list)/2 +1)));
-      }
+	    n = n+1;
+	    } until ( n == ( (size(global_cyl_list)/2 +1)));
+	}
 
     if (slot_exist)
         {
@@ -788,24 +807,26 @@ define GetLogicalSlot( string dev, map disk )
      *---------------------------------------------------------------------
      */
 
-global define TestLogicalSlot( integer slot_start_cyl, string dev, map disk)
+global define integer TestLogicalSlot( integer slot_start_cyl, string dev, map disk)
     ``{
     string type = substring(dev, 5, 2);
 
-    list global_list = filter( `part, disk["partitions"]:[], 
+    list global_list = filter( map part, disk["partitions"]:[], 
                                ``( part["type"]:`unknown == `logical && 
 			           !part["delete"]:false ));
-    map extended      = find( `part, disk["partitions"]:[], 
+    map extended = (map)find( map part, disk["partitions"]:[], 
                               ``( part["type"]:`unknown == `extended && 
 			          !part["delete"]:false ));
 
-    list global_cyl_list = sort(flatten(maplist( `part, global_list, ``([select(lookup(part, "region", []), 0,0),
-				    select(lookup(part, "region", []), 0,0) + select(lookup(part, "region", []), 1,1) -1 ]))));
+    list global_cyl_list = 
+	sort(flatten(maplist( map part, global_list, 
+	                      ``([part["region",0]:0,
+				  part["region",0]:0 + part["region",1]:1-1 ]))));
 
     // Look for the slot in the list of cylinders
     integer  n          = 0;
-    integer start_cyl   = tointeger( select(lookup( extended, "region", []),0,0) );
-    integer end_cyl     = start_cyl + tointeger(select(lookup( extended, "region", []), 1,1)) -1 ;
+    integer start_cyl   = tointeger( extended["region",0]:0 );
+    integer end_cyl     = start_cyl + tointeger( extended["region",1]:1-1 );
 
     integer sl_start   = 0;
     integer sl_end     = 0;
@@ -817,48 +838,47 @@ global define TestLogicalSlot( integer slot_start_cyl, string dev, map disk)
 
     if (size(global_cyl_list) == 0 )
         {
-        if ( start_cyl <= slot_start_cyl  && slot_start_cyl <= end_cyl )   return( end_cyl );
+        if( start_cyl <= slot_start_cyl  && slot_start_cyl <= end_cyl )  
+	  return( end_cyl );
         }
     else
         {
         repeat
-	      {
-		  if ( n == 0 )
-		  {
-		      // first
-		      curr_start  =  start_cyl-1;
-		      curr_end    =  select( global_cyl_list, 0, 0 );
-		  }
-		  else if ( n == (size(global_cyl_list)/2))
-		  {
-		      // last
-		      curr_start = select( global_cyl_list, size(global_cyl_list)-1, 0);
-		      curr_end   = end_cyl+1;
-		  }
-		  else
-		  {
-		      //check if between global partition n-1 and n is a slot
-		      curr_start = select( global_cyl_list, 2*n-1, 0 );
-		      curr_end   = select( global_cyl_list, 2*n, 0 );
-		  }
+	    {
+	    if( n == 0 )
+		{
+		// first
+		curr_start  =  start_cyl-1;
+		curr_end    =  global_cyl_list[0]:0;
+		}
+	    else if ( n == (size(global_cyl_list)/2))
+		{
+		// last
+		curr_start = global_cyl_list[size(global_cyl_list)-1]:0;
+		curr_end   = end_cyl+1;
+		}
+	    else
+		{
+		//check if between global partition n-1 and n is a slot
+		curr_start = global_cyl_list[2*n-1]:0;
+		curr_end   = global_cyl_list[2*n]:0;
+		}
 
-		  y2debug( "Testing Slot %1  < x < %2  ", curr_start, curr_end );
+	    y2debug( "Testing Slot %1  < x < %2  ", curr_start, curr_end );
 
-		  if ( curr_start < slot_start_cyl && slot_start_cyl < curr_end )
-		  {
+	    if( curr_start < slot_start_cyl && slot_start_cyl < curr_end )
+		{
+		// If the slot was found ...
+		y2debug( "X Slot at:  %1 %2 ",  curr_start, curr_end );
+		//////////////////
+		return( curr_end -1);
+		//////////////////
+		}
+	    y2debug("SLOT- %1 %2 %3 %4", slot_exist, curr_start, curr_end, n );
 
-		      // If the slot was found ...
-		      y2debug( "X Slot at:  %1 %2 ",  curr_start, curr_end );
-		      //////////////////
-		      return( curr_end -1);
-		      //////////////////
-		  }
-		  y2debug("SLOT- %1 %2 %3 %4", slot_exist, curr_start, curr_end, n );
-
-		  n = n+1;
-	      } until ( n == ( (size(global_cyl_list)/2 +1)));
+	    n = n+1;
+	    } until ( n == ( (size(global_cyl_list)/2 +1)));
         }
-
     return(nil);
     };
 
@@ -872,7 +892,7 @@ global define TestLogicalSlot( integer slot_start_cyl, string dev, map disk)
      * 34111 -> "34111"
      *----------------------------------------------------------------------
      */
-define to4string( integer nb )
+define string to4string( integer nb )
     ``{
     if ( nb < 10 )   return( sformat( "   %1", nb ));
     if ( nb < 100 )  return( sformat( "  %1",  nb ));
@@ -903,7 +923,7 @@ define to4string( integer nb )
      *----------------------------------------------------------------------
      */
 
-define FillPartitionList ()
+define list FillPartitionList()
     ``{
      // fill in size_bytes for raid
      Storage::AddRaidSizeInfo();
@@ -912,7 +932,7 @@ define FillPartitionList ()
      boolean log_mode 	= false;
 
      SCR::Write(.target.ycp,Storage::SaveDumpPath("targetMap_c"), targets );
-     foreach( `disk_dev_name, `disk, targets,
+     foreach( string disk_dev_name, map disk, targets,
 	 ``{
 	 boolean real_disk = Storage::IsRealDisk( disk_dev_name, disk );
 	 integer cyl_count     = disk["cyl_count"]:0;
@@ -957,8 +977,8 @@ define FillPartitionList ()
 	 if( disk["is_lvm_vg"]:false )
 	     {	
 	     list parts = get_possible_pvs( targets );
-	     dev_size = get_vg_size( parts, substring(disk_dev_name, 5), 
-	                             `string );
+	     dev_size = (string)get_vg_size( parts, substring(disk_dev_name, 5), 
+					     `string );
 	     dev_nb_cyl    = " -- ";
 	     dev_start_cyl = " -- ";
 	     }
@@ -988,11 +1008,11 @@ define FillPartitionList ()
 
 	 list partitions = disk["partitions"]:[];
 
-	 foreach( `partition, partitions,
+	 foreach( map partition, partitions,
 	     ``{
 	     // dont show "system partitions"
 	     string fstype = partition["fstype"]:"";
-	     list hit = filter(`v, Partitions::not_shown_partitions, 
+	     list hit = filter(string v, Partitions::not_shown_partitions, 
 	                       ``(issubstring(fstype, v)) );
 
 	     if ( size(hit)==0 && !partition["delete"]:false || log_mode )
@@ -1123,11 +1143,11 @@ define FillPartitionList ()
     integer num1 = -1;
     integer num2 = -1;
 
-    return sort( `lineA, `lineB, table_input, ``(
+    return sort( term lineA, term lineB, table_input, ``(
 	{
 	boolean ret = false;
-	map disk1 = Storage::GetDiskPartition( select(lineA, 1, 0) );
-	map disk2 = Storage::GetDiskPartition( select(lineB, 1, 0) );
+	map disk1 = Storage::GetDiskPartition( lineA[1]:"" );
+	map disk2 = Storage::GetDiskPartition( lineB[1]:"" );
 
 	//y2milestone( "disk1 %1 disk2 %2", disk1, disk2 );
 
@@ -1160,33 +1180,154 @@ define FillPartitionList ()
 	}));
     };
 
+/*-------------------------------------------------------------------
+ *
+ *    Now check start an end cylinder
+ *    caution: there is no differenc in edit and create cause the partition, which is to edited,
+ *    is not in the disk map!
+ *
+ *    Check:
+ *    A. Is start_cyl ist a number?  no-> try again
+ *    B. is start_cyl valid ( can the partition start there?) no -> try again
+ *          (when this is tested, the maximal possible end cylinder is computed, too)
+ *    C.    Now we check the syntax of the endCylinder
+ *    D.    If the syntax is valid, the requested end cylinder is checked
+ *    E.  If it is not valid, the user gets a popup and the maximal possible end cylinder is set
+ *
+ *    returns  [<symbol>, <value>]
+ *
+ *             [`ok,  <effektive end cyl>]
+ *             [`max, <max-value as str> ]   // case E
+ *             [`error, 0]
+ *-------------------------------------------------------------------
+ */
 
-    /*---------------------------------------------------------------------
-     * Checks if the mountpoint is valid
-     * - /proc /mnt /lost+found contain Installation::sourcedir are not allowd
-     * - double entries are not allowed ( mountpoints with no / and "" are always allowed )
-     *
-     *----------------------------------------------------------------------
+global define list TestStartEndCyl( string str_start_cyl, string str_end_part, 
+				    string dev, map disk, symbol type, 
+				    integer cyl_size, boolean bsd_label )
+    ``{
+    integer	max_end_cyl   = 0;
+    string    max_end_str   = "";
+    symbol    input         = `ok;
+    integer   int_start_cyl = tointeger(str_start_cyl);
+    integer   int_end_cyl   = 0;
 
-     /**
-      * Dialog: "Create a partition Dialog"
-      * @parm new_val map that contains a partition
-      * @parm file_systems filesystem definitions
-      * @parm tilte	title string
-      * @parm dev device string for the new/edit partition
-      * @parm disk a map with the disk data  CAUTION: in Edit-Mode, the edited partition, must not be in this map!!
-      * @parm bsd_label
-      * @parm edit_size flag
-      * @parm cyl_size
-      * @return map modified partition or nil by cancel
-      */
-global define EditOrCreatePartDlg( map cur_val, map file_systems, string title,
-                                   string dev, map disk, boolean bsd_label, 
-				   boolean edit_size, integer cyl_size, 
-				   boolean installation  )
+    ////////////////////////////////// STEP A /////////////////////
+    if (!IsNumber( str_start_cyl ))
+	{
+	input = `error;
+	// error popup text
+	Popup::Error(_("Wrong input for the start of the partition. 
+Enter the start cylinder (e.g., 77).
+"));
+	}
+    else
+	{
+	////////////////////////////// STEP B /////////////////////
+
+	integer      int_start_cyl = tointeger(str_start_cyl);
+
+	if ( type == `logical ) 
+	    max_end_cyl = TestLogicalSlot( int_start_cyl, dev, disk );
+	else 
+	    max_end_cyl = TestSlot( int_start_cyl, dev, disk, bsd_label );  // primary && extended
+	if (max_end_cyl == nil)
+	    {
+	    // error popup text
+	    Popup::Error(_("You entered an invalid value. Please try again."));
+	    input = `error;
+	    }
+
+	if ( input == `ok )
+	    {
+	    ////////////////////////// STEP C /////////////////////
+	    if (!IsCylNumber(str_end_part))
+		{
+		input = `error;
+		// error popup text
+		Popup::Error(_("The value for the partition end is invalid.
+
+Enter the end cylinder number (e.g., 77), an offset (e.g., +122),
+or specify the size of the partition directly (e.g., +100M or 1.8GB )
+"));
+		}
+	    else
+		{
+		////////////////////// STEP D /////////////////////
+
+		int_end_cyl = int_start_cyl + 
+			      ToEndRegion( str_start_cyl, str_end_part, 
+					   cyl_size ) - 1;
+
+		if( int_end_cyl > max_end_cyl || int_end_cyl < int_start_cyl)
+		    {
+		    ////////////////// STEP E /////////////////////
+
+		    // error popup text, %1, %2, %3 is replaced by numeric value
+		    string text = sformat( _("
+The value of the end cylinder %1 was not valid. 
+Value must be between %2 and %3.
+
+YaST2 can automatically use the maximum allowed value
+or select \"No\" and enter a correct value yourself.
+
+Should YaST2 use the maximum allowed value? 
+"),
+                                          int_end_cyl, int_start_cyl, 
+					  max_end_cyl );
+		    boolean ans = Popup::YesNo( text );
+
+		    if( ans )
+		        {
+			max_end_str = sformat("%1", max_end_cyl);
+			input = `max;
+			}
+		    else
+		        {
+			input = `error;
+			}
+		    }
+		}
+	    }
+	}
+    // END Check
+
+    if ( input == `ok )  return( [`ok,  int_end_cyl ]);
+    if ( input == `max ) return( [`max, max_end_str ]);
+
+    // if  ( input == `error )
+    return( [`error, 0]);
+    };
+
+
+
+/*---------------------------------------------------------------------
+ * Checks if the mountpoint is valid
+ * - /proc /mnt /lost+found contain Installation::sourcedir are not allowd
+ * - double entries are not allowed ( mountpoints with no / and "" are always allowed )
+ *
+ *----------------------------------------------------------------------
+
+/**
+ * Dialog: "Create a partition Dialog"
+ * @parm new_val map that contains a partition
+ * @parm file_systems filesystem definitions
+ * @parm tilte	title string
+ * @parm dev device string for the new/edit partition
+ * @parm disk a map with the disk data  CAUTION: in Edit-Mode, the edited partition, must not be in this map!!
+ * @parm bsd_label
+ * @parm edit_size flag
+ * @parm cyl_size
+ * @return map modified partition or nil by cancel
+ */
+
+global define map EditOrCreatePartDlg( map cur_val, map file_systems, 
+                                       string title, string dev, map disk, 
+				       boolean bsd_label, boolean edit_size, 
+				       integer cyl_size, boolean installation )
 
     ``{
-    boolean create      	= cur_val["create"]:false;
+    boolean create = cur_val["create"]:false;
 
     string helptextCR = getEditOrCreateHelptext( cur_val, true );
 
@@ -1242,8 +1383,8 @@ global define EditOrCreatePartDlg( map cur_val, map file_systems, string title,
 		);
 
 
-      map retval = eval(cur_val);
-      any ret = `ok;
+      map retval = (map)eval(cur_val);
+      symbol ret = `ok;
 
       HandlePartWidgetChanges( true, ret, file_systems, cur_val, retval );
 
@@ -1251,7 +1392,7 @@ global define EditOrCreatePartDlg( map cur_val, map file_systems, string title,
 	 {
 	 ////////////////////////////////////////////////////////////
 	 // Check the User input
-	 ret = UI::UserInput();
+	 ret = (symbol)UI::UserInput();
 	 y2milestone( "UserInput ret:%1", ret );
 
 	 if ( ret != `cancel )
@@ -1265,18 +1406,18 @@ global define EditOrCreatePartDlg( map cur_val, map file_systems, string title,
 	    {
 	    /////////////////////////////////////////////////////////
 	    // save mountpoint
-	   retval["mount"] = String::CutBlanks( UI::QueryWidget(`id(`mount_point),
-								`Value));
+	   retval["mount"] = String::CutBlanks( (string)UI::QueryWidget(`id(`mount_point),
+									`Value));
 
 	    /////////////////////////////////////////////////////////
 	    // add fstype to retval
 
-	    integer fs_id =  retval["fsid"]:0;
+	    integer fs_id = retval["fsid"]:0;
 
 	    if( fs_id<256 )
 		{
 		retval["fstype"] = "";
-		foreach( `file_system_name, `file_system_map, file_systems, ``{
+		foreach( string file_system_name, map file_system_map, file_systems, ``{
 		     if( file_system_map[`fsid]:Partitions::fsid_native == 
 		         fs_id )
 			 retval["fstype"] = file_system_map[`fstype]:"";
@@ -1292,8 +1433,8 @@ global define EditOrCreatePartDlg( map cur_val, map file_systems, string title,
 		 // Get start and end cyl and check if the user input 
 		 // for start und end cyl are valid
 		 list ret = [];
-		 string start_cyl = UI::QueryWidget(`id(`start_cyl), `Value);
-		 string end_part  = UI::QueryWidget(`id(`end_part), `Value);
+		 string start_cyl = (string)UI::QueryWidget(`id(`start_cyl), `Value);
+		 string end_part  = (string)UI::QueryWidget(`id(`end_part), `Value);
 
 		 ret = TestStartEndCyl( start_cyl, end_part, dev, disk, 
 		                        retval["type"]:`primary, cyl_size,
@@ -1325,7 +1466,7 @@ global define EditOrCreatePartDlg( map cur_val, map file_systems, string title,
 		 {
 		 integer part_size =  retval["region",1]:0 * cyl_size;
 
-		 if ( part_size < 60000000 )
+		 if( part_size < 60000000 )
 		     {
 		     // popup text
 		     Popup::Warning(_("Your partition is too small to use ReiserFS.
@@ -1453,16 +1594,17 @@ Do you really want to change the FSID?
       * @parm cyl_size size of a cylinder on the disk
       * @return map modified partition or nil by cancel
       */
-global define ResizePartDlg( map cur_val, string device, integer cyl_size,
-                             map possible )
+global define map ResizePartDlg( map cur_val, string device, map disk,
+				 map possible )
     ``{
+    integer cyl_size = disk["cyl_size"]:0;
     boolean test_simple_ui = false;
-    boolean win = Partitions::IsDosWinNtPartition( curr_part["fsid"]:0 );
+    boolean win = Partitions::IsDosWinNtPartition( cur_val["fsid"]:0 );
     boolean swap = !win && cur_val["fsid"]:0==Partitions::fsid_swap;
     integer cyl_after = 0;
     if( possible["extend"]:false )
 	{
-	cyl_after = Storage::FreeCylAfter( curr_disk, cur_val );
+	cyl_after = Storage::FreeCylAfter( disk, cur_val );
 	}
     integer av_space = cyl_after*cyl_size / (1024*1024);
 
@@ -1806,7 +1948,7 @@ of the partition.
 	    // Get the value the user adjusted. If s/he entered a value
 	    // too big or too small this is automatically adjusted to the
 	    // biggest/smallest value possible (by Qt).
-	    linux_size   = UI::QueryWidget(`id(`linux_size), `Value);
+	    linux_size = (integer)UI::QueryWidget(`id(`linux_size), `Value);
 
 	    new_size = used + free + av_space - linux_size;
 	    if( !cur_val["format"]:false && 
@@ -1864,131 +2006,6 @@ of the partition.
 
 
 
-
-
-
-     /*--------------------------------------------------------------------------------------------
-      *
-      *    Now check start an end cylinder
-      *    caution: there is no differenc in edit and create cause the partition, which is to edited,
-      *    is not in the disk map!
-      *
-      *    Check:
-     *    A. Is start_cyl ist a number?  no-> try again
-     *    B. is start_cyl valid ( can the partition start there?) no -> try again
-     *          (when this is tested, the maximal possible end cylinder is computed, too)
-     *    C.    Now we check the syntax of the endCylinder
-     *    D.    If the syntax is valid, the requested end cylinder is checked
-     *    E.  If it is not valid, the user gets a popup and the maximal possible end cylinder is set
-     *
-     *    returns  [<symbol>, <value>]
-     *
-     *             [`ok,  <effektive end cyl>]
-     *             [`max, <max-value as str> ]   // case E
-     *             [`error, 0]
-     *---------------------------------------------------------------------------------------------
-     */
-
-
-global define TestStartEndCyl( string str_start_cyl, string str_end_part, 
-                               string dev, map disk, symbol type, 
-			       integer cyl_size, boolean bsd_label )
-    ``{
-    integer	max_end_cyl   = 0;
-    string    max_end_str   = "";
-    symbol    input         = `ok;
-    integer   int_start_cyl = tointeger(str_start_cyl);
-    integer   int_end_cyl   = 0;
-
-    ////////////////////////////////// STEP A /////////////////////
-    if (!IsNumber( str_start_cyl ))
-	{
-	input = `error;
-	// error popup text
-	Popup::Error(_("Wrong input for the start of the partition. 
-Enter the start cylinder (e.g., 77).
-"));
-	}
-    else
-	{
-	////////////////////////////// STEP B /////////////////////
-
-	integer      int_start_cyl = tointeger(str_start_cyl);
-
-	if ( type == `logical ) 
-	    max_end_cyl = TestLogicalSlot( int_start_cyl, dev, disk );
-	else 
-	    max_end_cyl = TestSlot( int_start_cyl, dev, disk, bsd_label );  // primary && extended
-	if (max_end_cyl == nil)
-	    {
-	    // error popup text
-	    Popup::Error(_("You entered an invalid value. Please try again."));
-	    input = `error;
-	    }
-
-	if ( input == `ok )
-	    {
-	    ////////////////////////// STEP C /////////////////////
-	    if (!IsCylNumber(str_end_part))
-		{
-		input = `error;
-		// error popup text
-		Popup::Error(_("The value for the partition end is invalid.
-
-Enter the end cylinder number (e.g., 77), an offset (e.g., +122),
-or specify the size of the partition directly (e.g., +100M or 1.8GB )
-"));
-		}
-	    else
-		{
-		////////////////////// STEP D /////////////////////
-
-		int_end_cyl = int_start_cyl + 
-			      ToEndRegion( str_start_cyl, str_end_part, 
-					   cyl_size ) - 1;
-
-		if( int_end_cyl > max_end_cyl || int_end_cyl < int_start_cyl)
-		    {
-		    ////////////////// STEP E /////////////////////
-
-		    // error popup text, %1, %2, %3 is replaced by numeric value
-		    string text = sformat( _("
-The value of the end cylinder %1 was not valid. 
-Value must be between %2 and %3.
-
-YaST2 can automatically use the maximum allowed value
-or select \"No\" and enter a correct value yourself.
-
-Should YaST2 use the maximum allowed value? 
-"),
-                                          int_end_cyl, int_start_cyl, 
-					  max_end_cyl );
-		    boolean ans = Popup::YesNo( text );
-
-		    if( ans )
-		        {
-			max_end_str = sformat("%1", max_end_cyl);
-			input = `max;
-			}
-		    else
-		        {
-			input = `error;
-			}
-		    }
-		}
-	    }
-	}
-    // END Check
-
-    if ( input == `ok )  return( [`ok,  int_end_cyl ]);
-    if ( input == `max ) return( [`max, max_end_str ]);
-
-    // if  ( input == `error )
-    return( [`error, 0]);
-    };
-
-
-
     /*---------------------------------------------------------------------
      * Display "Create a extended partition Dialog"
      *
@@ -1997,12 +2014,11 @@ Should YaST2 use the maximum allowed value?
      *
      *----------------------------------------------------------------------
      */
-global define CreateEditExtendedPartDlg( map new_val, string title, 
-                                         string dev, map disk, 
-					 integer cyl_size, boolean edit, 
-					 boolean bsd_label  )  
+global define map CreateEditExtendedPartDlg( map new_val, string title, 
+					     string dev, map disk, 
+					     integer cyl_size, boolean edit, 
+					     boolean bsd_label )  
     ``{
-
     string helptextCR = getCreateEditExtendedHelptext();
 
     /////////////////////////////////////////////////////////////////////////////////////////
@@ -2036,39 +2052,39 @@ global define CreateEditExtendedPartDlg( map new_val, string title,
     map     return_value    = $[];
     symbol  doit            = `cancel;
     repeat
-       {
-	   //-------------------------------
-	   // Check the User input
-	   //-------------------------------
-	   doit = UI::UserInput();
+        {
+	//-------------------------------
+	// Check the User input
+	//-------------------------------
+	doit = (symbol)UI::UserInput();
 
-	   if ( doit != `cancel )
-	       {
-	       return_value = new_val;
+	if( doit != `cancel )
+	    {
+	    return_value = new_val;
 
-	       list ret = [];
-	       string start_cyl =  UI::QueryWidget(`id(`start_cyl), `Value);
-	       string end_part  =  UI::QueryWidget(`id(`end_part), `Value);
+	    list ret = [];
+	    string start_cyl =  (string)UI::QueryWidget( `id(`start_cyl), `Value);
+	    string end_part  =  (string)UI::QueryWidget( `id(`end_part), `Value);
 
-	       ret = TestStartEndCyl( start_cyl, end_part, dev, disk, 
-	                              return_value["type"]:`primary, 
-				      cyl_size, bsd_label );
+	    ret = TestStartEndCyl( start_cyl, end_part, dev, disk, 
+				   return_value["type"]:`primary, 
+				   cyl_size, bsd_label );
 
-	       if (ret[0]:`error == `error )  continue;
-	       if (ret[0]:`error == `max )
-		   {
-		   end_part =  ret[1]:"";
-		   }
+	    if (ret[0]:`error == `error )  continue;
+	    if (ret[0]:`error == `max )
+		{
+		end_part =  ret[1]:"";
+		}
 
-	       //////////////////////////////////////////////////////////////
-	       // add start_cyl and end_part to region and add region to return_value
-	       list region = [ tointeger( start_cyl ), 
-	                       ToEndRegion( start_cyl, end_part, cyl_size )];
+	    //////////////////////////////////////////////////////////////
+	    // add start_cyl and end_part to region and add region to return_value
+	    list region = [ tointeger( start_cyl ), 
+			    ToEndRegion( start_cyl, end_part, cyl_size )];
 
-	       return_value["region"] = region;
-	       }
+	    return_value["region"] = region;
+	    }
 
-       } until (  doit == `cancel || doit == `ok );
+        } until( doit == `cancel || doit == `ok );
 
 
     //------------------------------------------------------------------------------------
@@ -2113,7 +2129,7 @@ global define string ChooseDisk( map targetMap, string heading, symbol what )
     integer       n = 0;
     string txt = "";
 
-    foreach ( `dev, `disk, targetMap, 
+    foreach( string dev, map disk, targetMap, 
 	``{
         if( Storage::IsRealDisk( dev, disk ) )
 	  {
@@ -2125,9 +2141,9 @@ global define string ChooseDisk( map targetMap, string heading, symbol what )
 	  }
 	});
 
-    if (size(disks) != 1 )
-      {
-      UI::OpenDialog( `opt(`decorated),  `VBox(`Heading( heading ),
+    if( size(disks) != 1 )
+	{
+	UI::OpenDialog( `opt(`decorated), `VBox(`Heading( heading ),
 			`VSpacing(0.5),
 			`RadioButtonGroup( `id(`choosedisk), diskgroup ),
 			`VSpacing(0.5),
@@ -2138,40 +2154,40 @@ global define string ChooseDisk( map targetMap, string heading, symbol what )
 			      `PushButton(`id(`cancel), Label::CancelButton() )
 			      )
 			)
-		  );
-      any ret = UI::UserInput();
+		      );
+	symbol ret = (symbol)UI::UserInput();
 
-      if (ret == `cancel)
-	  {
-	  UI::CloseDialog();
-	  return( nilstring );
-	  }
-      else
-	  {
-	  ret = UI::QueryWidget(`id(`choosedisk), `CurrentButton);
-	  UI::CloseDialog();
-	  n=0;
-	  if( what==`create && targetMap[ret,"readonly"]:false )
-	      {
-	      Popup::Error( Partitions::RdonlyText( ret, true ));
-	      return( nilstring );
-	      }
-	  foreach ( `dev, `disk, targetMap, 
-	      ``{
-	      if( dev==ret )
-		  {
-		  last_sel_disk = n;
-		  }
-	      n = n+1;
-	      });
-	  return(ret);
-	  }
-      }
+	if( ret == `cancel)
+	    {
+	    UI::CloseDialog();
+	    return( nil );
+	    }
+	else
+	    {
+	    string r = (string)UI::QueryWidget(`id(`choosedisk), `CurrentButton);
+	    UI::CloseDialog();
+	    n=0;
+	    if( what==`create && targetMap[r,"readonly"]:false )
+		{
+		Popup::Error( Partitions::RdonlyText( r, true ));
+		return( nil );
+		}
+	    foreach( string dev, map disk, targetMap, 
+		``{
+		if( dev==r )
+		    {
+		    last_sel_disk = n;
+		    }
+		n = n+1;
+		});
+	    return(r);
+	    }
+	}
     else
-      {
-      // if there is only one disk: no
-      return( disks[0]:nilstring );
-      }
+	{
+	// if there is only one disk: no
+	return( disks[0]:nil );
+	}
     };
 
 define term RaidButton( integer num )
@@ -2211,7 +2227,7 @@ define term LoopButton( integer num )
      *---------------------------------------------------------------------
      */
 
-global define ChoosePart( string usage )
+global define symbol ChoosePart( string usage )
       ``{
       term PL = `VBox(
 		  // button text
@@ -2252,7 +2268,7 @@ global define ChoosePart( string usage )
 				  )
 			    )
 		    );
-      any ret = UI::UserInput();
+      symbol ret = (symbol)UI::UserInput();
 
       if (ret == `cancel)
 	  {
@@ -2261,7 +2277,7 @@ global define ChoosePart( string usage )
 	  }
       else
 	  {
-	  ret = UI::QueryWidget(`id(`choosePL), `CurrentButton);
+	  ret = (symbol)UI::QueryWidget(`id(`choosePL), `CurrentButton);
 	  UI::CloseDialog();
 	  return(ret);
 	  }
@@ -2274,27 +2290,27 @@ global define ChoosePart( string usage )
      */
 
 
-    define FormatCauseLine( symbol cause )
+define string FormatCauseLine( symbol cause )
     ``{
-	 if ( cause == `no_ext )   
-	     // popup text
-	     return( _("No extended partition exists."));
-	 if ( cause == `dev_full ) 
-	     // popup text
-	     return( _("There are already four primary and extended partitions."));
-	 if ( cause == `no_extsp ) 
-	     // popup text
-	     return( _("No space is left in the extended partition."));
-	 if ( cause == `to_many )  
-	     // popup text
-	     return( _("Too many logical drives already exist."));
-	 if ( cause == `no_space ) 
-	     // popup text
-	     return( _("No space remaining."));
-	 if ( cause == `already )  
-	     // popup text
-	     return( _("An extended partition already exists."));
-	 return( "---" );
+    if( cause == `no_ext )   
+	// popup text
+	return( _("No extended partition exists."));
+    if( cause == `dev_full ) 
+	// popup text
+	return( _("There are already four primary and extended partitions."));
+    if( cause == `no_extsp ) 
+	// popup text
+	return( _("No space is left in the extended partition."));
+    if( cause == `to_many )  
+	// popup text
+	return( _("Too many logical drives already exist."));
+    if ( cause == `no_space ) 
+	// popup text
+	return( _("No space remaining."));
+    if ( cause == `already )  
+	// popup text
+	return( _("An extended partition already exists."));
+    return( "---" );
     };
 
 
@@ -2303,12 +2319,12 @@ global define ChoosePart( string usage )
      *---------------------------------------------------------------------
      */
 
-    define FormatYouCannotCause( boolean primary_is_possible,
-				 boolean extended_is_possible,
-				 boolean logical_is_possible,
-				 symbol  no_primary_cause,
-				 symbol  no_extended_cause,
-				 symbol  no_logical_cause      )
+define string FormatYouCannotCause( boolean primary_is_possible,
+				    boolean extended_is_possible,
+				    boolean logical_is_possible,
+				    symbol  no_primary_cause,
+				    symbol  no_extended_cause,
+				    symbol  no_logical_cause )
     ``{
     string pri_line = "";
     string ext_line = "";
@@ -2355,9 +2371,8 @@ global define ChoosePart( string usage )
     // MAIN:
     /////////////////////////////////////////////////////////////////
 
-    any     ret             = nil;
+    symbol ret = nil;
 
-    
     Storage::SetLvmUse( true );
     
     y2milestone( "Custom partitioner started" );
@@ -2367,9 +2382,9 @@ global define ChoosePart( string usage )
 
     // delete pseudo partitions with `free from target_partitioner
     map tg = Storage::GetTargetMap();
-    foreach( `diskdev, `disk, tg,
+    foreach( string diskdev, map disk, tg,
 	``{
-	list partitions = filter( `part, disk["partitions"]:[], 
+	list partitions = filter( map part, disk["partitions"]:[], 
 	                          ``(part["type"]:`unknown != `free) );
 	disk["partitions"] = partitions;
 	tg[diskdev] = disk;
@@ -2550,7 +2565,7 @@ global define ChoosePart( string usage )
 	        }
 	    }
 
-        ret= Wizard::UserInput();
+        ret = (symbol)Wizard::UserInput();
 
 	y2milestone( "USERINPUT: %1", ret);
 
@@ -2558,7 +2573,7 @@ global define ChoosePart( string usage )
         /////////////////////////////////////////////////////////////
         ////  CREATE
         /////////////////////////////////////////////////////////////
-        if (ret == `create)
+        if( ret == `create)
 	    {
             string maindev = 
 	       ChooseDisk(Storage::GetTargetMap(), 
@@ -2566,7 +2581,7 @@ global define ChoosePart( string usage )
 	                  _("On which disk would you like to create the partition?"),
 			  `create  );
 
-	    if( maindev == nilstring )
+	    if( maindev == nil )
 		{
 		continue;
 		}
@@ -2577,13 +2592,13 @@ global define ChoosePart( string usage )
 	    list possibilities = CheckCreatePossibilities( maindev, curr_disk );
 	    y2milestone( "possibilities %1", possibilities );
 
-	    boolean primary_is_possible  = select( possibilities, 0, false );
-	    boolean extended_is_possible = select( possibilities, 1, false );
-	    boolean logical_is_possible  = select( possibilities, 2, false );
+	    boolean primary_is_possible  = possibilities[0]:false;
+	    boolean extended_is_possible = possibilities[1]:false;
+	    boolean logical_is_possible  = possibilities[2]:false;
 
-	    symbol  no_primary_cause     = select( possibilities, 3, `no_space );
-	    symbol  no_extended_cause    = select( possibilities, 4, `no_space );
-	    symbol  no_logical_cause     = select( possibilities, 5, `no_space );
+	    symbol  no_primary_cause     = possibilities[3]:`no_space;
+	    symbol  no_extended_cause    = possibilities[4]:`no_space;
+	    symbol  no_logical_cause     = possibilities[5]:`no_space;
 
 	    list log_slot = [];
 	    list p_e_slot = [];
@@ -2595,13 +2610,19 @@ global define ChoosePart( string usage )
 	    p_e_slot = GetSlot(maindev, curr_disk);
 	    y2milestone( "p_e_slot %1", p_e_slot );
 
-	    if ((log_slot == nil) && logical_is_possible ) no_logical_cause     = `no_space;
-	    if ((p_e_slot == nil) && primary_is_possible ) no_primary_cause     = `no_space;
-	    if ((p_e_slot == nil) && extended_is_possible) no_extended_cause    = `no_space;
+	    if ((log_slot == nil) && logical_is_possible ) 
+		no_logical_cause  = `no_space;
+	    if ((p_e_slot == nil) && primary_is_possible ) 
+		no_primary_cause  = `no_space;
+	    if ((p_e_slot == nil) && extended_is_possible) 
+		no_extended_cause = `no_space;
 
-	    if (log_slot == nil) logical_is_possible  = false;
-	    if (p_e_slot == nil) primary_is_possible  = false;
-	    if (p_e_slot == nil) extended_is_possible = false;
+	    if (log_slot == nil) 
+		logical_is_possible  = false;
+	    if (p_e_slot == nil) 
+	        primary_is_possible  = false;
+	    if (p_e_slot == nil) 
+	        extended_is_possible = false;
 
 
 
@@ -2743,11 +2764,11 @@ global define ChoosePart( string usage )
 		    // result: list of all free primaty|extended partition numbers
 
 		    list dev_nb = 
-			maplist( `part, filter( `pa, partitions, 
+			maplist( map part, filter( map pa, partitions, 
 			                        ``(!pa["delete"]:false)), 
 				 ``(part["nr"]:0) );
-		    list result = filter( `base_nr, base, 
-		                          ``( find(`nr, dev_nb, ``(nr == base_nr)) == nil));
+		    list result = filter( integer base_nr, base, 
+		                          ``( find( integer nr, dev_nb, ``(nr == base_nr)) == nil));
 		    result = sort( result );
 
 		    curr_nr = result[0]:0;
@@ -2770,16 +2791,15 @@ global define ChoosePart( string usage )
 		map new_val = $[
 				"create"	: true,
 			    
-				"region" 	: [
-					       select(slot, 0, 0),
-					       select(slot, 1, 0) - select(slot, 0, 0)+1 ],
+				"region" 	: [ slot[0]:0,
+						    slot[1]:0 - slot[0]:0+1 ],
 				"type"	: create_type,
 				"nr"	: curr_nr,
-				"device"	: Storage::GetDeviceName( maindev, curr_nr )
+				"device": Storage::GetDeviceName( maindev, curr_nr )
 		];
 
 
-		if ( create_type == `extended )
+		if( create_type == `extended )
 		    {
 		    new_val = union( new_val , $[
 						 "fsid"	: Partitions::fsid_extended_win,
@@ -2848,8 +2868,8 @@ global define ChoosePart( string usage )
 	    // notify a line is selected
             if( w_id != nil )
 		{
-		string id = w_id;
-		focusline = w_id;
+		string id = (string)w_id;
+		focusline = (string)w_id;
 		string maindevkey = Storage::GetMainDevKey(id); 
 		string subdevkey = Storage::GetSubDevIndex(id); 
 		y2milestone( "Chosen: %1 maindev: %2 subdev:\"%3\"", id, 
@@ -2857,7 +2877,7 @@ global define ChoosePart( string usage )
             
 		if( maindevkey == id )
 		    {
-		    if( Storage::GetMainDevParam( id, "is_lvm_vg") )
+		    if( (boolean)Storage::GetMainDevParam( id, "is_lvm_vg") )
 			{
 			ret = `lvm;
 			}
@@ -2905,8 +2925,7 @@ global define ChoosePart( string usage )
 		    /////////////////////////////////////////////////////
 		    // check if the partition can be deleted
 		    
-		    if( check_partition_edit( maindevkey, curr_part, bsd_label) != 
-			    `edit )
+		    if( check_partition_edit( curr_part, bsd_label) != `edit )
 			{
 			continue;
 			}
@@ -2918,7 +2937,7 @@ global define ChoosePart( string usage )
 			}
 
 		    list partitions_without_current = 
-			filter( `p, curr_disk["partitions"]:[], 
+			filter( map p, curr_disk["partitions"]:[], 
 				``(p["nr"]:0!=number && !p["delete"]:false ));
 		    map disk_without_current = add( curr_disk, "partitions", 
 						    partitions_without_current);
@@ -3001,8 +3020,8 @@ WARNING: All data on this partition will be lost."));
         /////////////////////////////////////////////////////////////
         if (ret == `delete)
 	    {
-	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
-	    string maindevkey 	= Storage::GetMainDevKey( id);
+	    string id = (string)UI::QueryWidget( `id(`table), `CurrentItem);
+	    string maindevkey = Storage::GetMainDevKey(id);
 	    string subdevkey = Storage::GetSubDevIndex(id); 
 	    
 	    if( ! Storage::IsKeyKey(id)) continue;
@@ -3069,8 +3088,7 @@ WARNING: All data on this partition will be lost."));
 		/////////////////////////////////////////////////////
 		// check if the partition can be deleted
 		
-		symbol ret_delete = check_partition_delete( maindevkey, 
-		                                            curr_disk, 
+		symbol ret_delete = check_partition_delete( curr_disk, 
 							    curr_part, 
 							    bsd_label,
 							    true,  // bsd_check
@@ -3144,7 +3162,7 @@ WARNING: All data on this partition will be lost."));
         /////////////////////////////////////////////////////////////
         if (ret == `resize)
 	    {
-	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
+	    string id = (string)UI::QueryWidget(`id(`table), `CurrentItem);
 	    string maindevkey 	= Storage::GetMainDevKey( id);
 	    map curr_part 	= Storage::GetSubDev( id );
 	    map curr_disk  	= Storage::GetMainDev( maindevkey );
@@ -3202,10 +3220,9 @@ of \"Resize\".
 		}
 	    else
 		{
-		map new_val = eval(curr_part);
+		map new_val = (map)eval(curr_part);
 		new_val = ResizePartDlg( new_val, new_val["device"]:"",
-					 curr_disk["cyl_size"]:1000000,
-					 possible );
+					 curr_disk, possible );
 		if( new_val != nil )
 		    {
 		    integer size_change = curr_part["region",1]:0 -
@@ -3261,7 +3278,7 @@ freed disk space?
 					 `delete );
 
 	    // not cancel
-	    if( maindev != nilstring )
+	    if( maindev != nil )
 		{
 		if( DDZeroPartitionTable(maindev))
 		    {		    
@@ -3276,7 +3293,7 @@ freed disk space?
 
 	if( Arch::s390 && ret==`dasdfmt )
 	    {
-	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
+	    string id = (string)UI::QueryWidget(`id(`table), `CurrentItem);
 	    string maindevkey 	= Storage::GetMainDevKey(id);
 
 	    y2milestone( "dasdfmt disk:%1", maindevkey );
@@ -3305,7 +3322,7 @@ All data on this disk will be lost.
 		    {
 		    if( curr_disk["dasdfmt"]:false )
 			{
-			list ppart = SCR::Read(.proc.partitions);
+			list ppart = (list)SCR::Read(.proc.partitions);
 			curr_disk["partitions"] = 
 			    StorageDevices::GetS390Partitions( maindevkey,
 			                                       curr_disk,
@@ -3355,7 +3372,7 @@ All data on this disk will be lost.
 
 	if( ret == `loop_edit || ret == `loop_create )
 	    {
-	    string id = UI::QueryWidget( `id(`table), `CurrentItem );
+	    string id = (string)UI::QueryWidget( `id(`table), `CurrentItem );
 	    Storage::SetWizardKey( id );
 	    if( ret == `loop_edit )
 		{
@@ -3393,8 +3410,8 @@ All data on this disk will be lost.
 	    {
 	    map od = Storage::GetOndiskTarget();
 	    list fstab = scanAndReadExistingFstab( od );
-	    list ti = maplist( `e, fstab, 
-	                       ``(select(AddFstabToData( od, e),1,$[])));
+	    list ti = maplist( list e, fstab, 
+	                       ``(select(AddFstabToData( od, e),1,[])));
 	    y2milestone( "ti %1", ti );
 
 	    integer idx = FstabAddDialog( ti );
@@ -3454,8 +3471,8 @@ Continue?
 	    if ( ret == `next && !immediate_prepdisk )
 		{
 		list retval = check_created_partiton_table( Storage::GetTargetMap() , true, Mode::initial );
-		Storage::SetTargetMap( select( retval, 0, $[] ) );
-	        doagain     = select( retval, 1, `next );
+		Storage::SetTargetMap( retval[0]:$[] );
+	        doagain = retval[1]:`next;
 		}
 
 	    // write partition information
@@ -3466,9 +3483,9 @@ Continue?
 		Storage::DisposeTargetBackup("custom_part");
 		}
 
-	    if ( doagain == `again ) return `again;
+	    if( doagain == `again ) return `again;
 
-            if ( ret != `back )
+            if( ret != `back )
 		{
                 if (ret == `apply) return `again;
 		}

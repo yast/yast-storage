@@ -10,15 +10,6 @@
  *
  * $Id$
  *
- * global vars
- *
- * integer size_of_boot
- * integer size_of_swap
- * boolean test_mode
- * list full_region
- * integer bytes_per_unit
- * integer disk_size
- * integer max_primary
  */
 {
 textdomain "storage";
@@ -26,15 +17,15 @@ import "Storage";
 import "Partitions";
 import "Mode";
 
-global define prepare_partitions (map target, list partitions) 
+global define list prepare_partitions( map target, list partitions )
     ``{
     // --------------------------------------------------------------
     // The size of a unit (eg. one cylinder)
-    bytes_per_unit = target["cyl_size"]:1;
+    integer  bytes_per_unit = target["cyl_size"]:1;
     y2debug("bytes_per_unit: %1", bytes_per_unit);
 
     // The size of the disk in units
-    disk_size = target["cyl_count"]:1;
+    integer disk_size = target["cyl_count"]:1;
     y2debug("disk_size: %1", disk_size);
     
     size_of_boot = Partitions::MinimalNeededBootsize();
@@ -57,12 +48,12 @@ global define prepare_partitions (map target, list partitions)
     // filter out all "create" paritions, they will be re-created at exit
     //   (this ensures a 'clean' partition list if this dialogue is re-entered
 
-    partitions = filter (`pentry, partitions, ``(!pentry["create"]:false));
+    partitions = filter (map pentry, partitions, ``(!pentry["create"]:false));
 
     // reset all "delete" paritions, they will be re-created at exit
     //   (this ensures a 'clean' partition list if this dialogue is re-entered
 
-    partitions = maplist (`pentry, partitions, ``(add (pentry, "delete", false)));
+    partitions = maplist (map pentry, partitions, ``(add (pentry, "delete", false)));
 
     if ( Mode::test ) {
 	SCR::Write(.target.ycp, "/tmp/cleaned_partitions", partitions);
@@ -76,13 +67,15 @@ global define prepare_partitions (map target, list partitions)
     //-------------------------------------------------------------------------
 
     // First sort the partitions on the starting cylinder
-    partitions = sort( `p1, `p2, partitions,
+    partitions = sort( map p1, map p2, partitions,
 		       ``(start_of_region (p1["region"]:[])
 			  <= start_of_region(p2["region"]:[])));
 
     // now check if automatic partitioning if feasible
 
     // unpartitioned disk -> yes
+
+    can_do_auto = false;
 
     if( size(partitions)==0 ) 
 	{
@@ -100,7 +93,7 @@ global define prepare_partitions (map target, list partitions)
 	unused_region = unused_extended_region (partitions);
 
 	// check if this is enough
-	if( (size_of_region (unused_region) > required_size) && 
+	if( (size_of_region(unused_region,bytes_per_unit) > required_size) && 
 	    can_create_logical (partitions))
 	    can_do_auto = true;
 	}
@@ -109,7 +102,7 @@ global define prepare_partitions (map target, list partitions)
     //   if there is enough space after the last defined primary -> yes
 
     if( !can_do_auto && !contains_extended (partitions) && 
-	    num_primary(partitions) != max_primary ) 
+	num_primary(partitions) != max_primary ) 
 	{
 	map last_partition = partitions[size(partitions)-1]:$[];
 	if( ignored_partition( target, last_partition ))
@@ -120,7 +113,7 @@ global define prepare_partitions (map target, list partitions)
 	if (last_used < disk_size) 
 	    {
 	    unused_region = [ last_used, disk_size-last_used ];
-	    if (size_of_region (unused_region) > required_size)
+	    if (size_of_region (unused_region,bytes_per_unit) > required_size)
 		can_do_auto = true;
 	    }
 	}
@@ -134,7 +127,7 @@ global define prepare_partitions (map target, list partitions)
 
     // first the mid-disk holes
 
-    partitions = flatten( maplist( `pentry, partitions, 
+    partitions = flatten( maplist( map pentry, partitions, 
 	``{
 	list ret = [];
 	list region = pentry["region"]:[];
@@ -167,7 +160,7 @@ global define prepare_partitions (map target, list partitions)
 	free_nr = free_nr + 1;
 	partitions = add (partitions,
 			  $[ "type":`free,
-			   "region": [ last_end, disk_size - last_end ]]);
+			     "region": [ last_end, disk_size - last_end ]]);
 	}
 
     // now the partitions list spans the whole disk
@@ -180,7 +173,7 @@ global define prepare_partitions (map target, list partitions)
     // give each partition a unique id
 
     integer ui_id = 0;
-    partitions = maplist (`pentry, partitions, 
+    partitions = maplist (map pentry, partitions, 
 	``{
 	ui_id = ui_id + 1;
 	return add (pentry, "ui_id", ui_id);

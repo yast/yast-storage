@@ -20,7 +20,7 @@ textdomain "storage";
 
 import "Wizard";
 import "Misc";
-import "Bootloader";
+/*import "Bootloader";*/
 
 import "Label";
 import "Popup";
@@ -72,7 +72,7 @@ define term InitCheckBox( boolean val )
 define void SetModule( map cont )
     ``{
     integer num = 0;
-    list mod = maplist( `entry, cont["drivers"]:[],
+    list mod = maplist( map entry, cont["drivers"]:[],
 	``{
 	term it = `item( `id(num), mergestring(entry["modules",0]:[]," "), 
 	                 cont["modnum"]:0==num );
@@ -89,7 +89,7 @@ define void SetModule( map cont )
 
 define void SetLoaded( string mod )
     ``{
-    map lmod = SCR::Read(.proc.modules);
+    map lmod = (map)SCR::Read(.proc.modules);
     // label text
     string val = haskey(lmod, mod) ? _("Yes") : _("No");
     UI::ChangeWidget( `id(`loaded), `Value, val );
@@ -116,13 +116,13 @@ define void SetParams( string mod, string default )
 	}
     else
 	{
-	list opts = SCR::Read( .modules.options );
+	list opts = (list)SCR::Read( .modules.options );
 	y2milestone( "ppts=%1", opts ); 
 	if( contains( opts, mod ))
 	    {
-	    map options = SCR::Read( .modules.options, mod );
+	    map options = (map)SCR::Read( .modules.options, mod );
 	    y2milestone( "options %1 = %2", mod, options ); 
-	    foreach( `k, `v, options,
+	    foreach( string k, string v, options,
 		``{
 		if( size(param)>0 )
 		    {
@@ -165,13 +165,13 @@ define string ModNameChanged( map cont, integer num, integer old )
 
 define integer TermToId( term t )
     ``{
-    return( select(select(t,0,0),0,0) );
+    return( (integer)(t[0,0]:0) );
     }
 
 define integer GetArrayPos( list l, integer num )
     ``{
     integer i = 0;
-    while( i < size(l) && TermToId(l[i]:`empty)!=num )
+    while( i < size(l) && TermToId(l[i]:`Empty())!=num )
 	{
 	i = i+1;
 	}
@@ -184,7 +184,7 @@ define string SetAllData( map cont, list clist, integer cur )
     if( size(cont)>0 )
 	{
 	SetModule( cont );
-	integer num = UI::QueryWidget( `id(`module), `Value );
+	integer num = (integer)UI::QueryWidget( `id(`module), `Value );
 	ret = ModNameChanged( cont, num, num );
 	UI::ChangeWidget( `id(`moveup), `Enabled, GetArrayPos(clist,cur)>0 );
 	UI::ChangeWidget( `id(`movedown), `Enabled, 
@@ -197,9 +197,9 @@ define boolean TestLoad( map cont )
     ``{
     y2milestone( "num %1 drivers %2", cont["modnum"]:0, cont["drivers"]:[] );
     string cmd = "";
-    foreach( `e, cont["drivers"]:[],
+    foreach( map e, cont["drivers"]:[],
 	``{
-	foreach( `m, e["modules"]:[],
+	foreach( list m, e["modules"]:[],
 	    ``{
 	    if( size(m[0]:"")>0 )
 		{
@@ -213,9 +213,9 @@ define boolean TestLoad( map cont )
     if( size(m)>0 && size(m["modules"]:[])>0 )
 	{
 	boolean ok = true;
-	string param = UI::QueryWidget( `id(`param), `Value );
+	string param = (string) UI::QueryWidget( `id(`param), `Value );
 	integer num = 0;
-	foreach( `d, m["modules"]:[],
+	foreach( list d, m["modules"]:[],
 	    ``{
 	    cmd = m["modprobe"]:false ? "/sbin/modprobe " : "/sbin/insmod ";
 	    y2milestone( "cmd %1", cmd );
@@ -223,7 +223,7 @@ define boolean TestLoad( map cont )
 	    y2milestone( "cmd %1", cmd );
 	    cmd = cmd + (num==0 ? param : d[1]:"");
 	    y2milestone( "cmd %1", cmd );
-	    map ret = SCR::Execute( .target.bash_output, cmd );
+	    map ret = (map)SCR::Execute( .target.bash_output, cmd );
 	    if( ret["exit"]:1 == 1)
 		{
 		// error popup text
@@ -258,15 +258,15 @@ Stderr was:
     Wizard::OpenDialog( Wizard::GenericDialog( buttons ) );
 
     list dev = [];
-    foreach( `entry, SCR::Read(.probe.storage), 
+    foreach( map entry, (list)SCR::Read(.probe.storage), 
 	``{
-	map conf = SCR::Read(.probe.status, entry["unique_key"]:"");
+	map conf = (map)SCR::Read(.probe.status, entry["unique_key"]:"");
 	y2milestone( "entry:%1", entry );
 	y2milestone( "conf:%1", conf );
 	if( conf["available"]:`no != `no && size(entry["drivers"]:[])>0 &&
-            find( `e, dev, ``(e["bus"]:""==entry["bus"]:"" && 
-                              e["slot_id"]:""==entry["slot_id"]:"" &&
-                              e["bus_id"]:""==entry["bus_id"]:""))==nil )
+            find( map e, dev, ``(e["bus"]:""==entry["bus"]:"" && 
+				 e["slot_id"]:""==entry["slot_id"]:"" &&
+				 e["bus_id"]:""==entry["bus_id"]:""))==nil )
 	    {
 	    entry["conf"] = conf;
 	    dev = add( dev, entry );
@@ -285,7 +285,7 @@ Stderr was:
     boolean first_new = true;
     integer cur_num = 0;
     integer num = 0;
-    list clist = maplist( `entry, dev,
+    list<term> clist = maplist( map entry, dev,
 	``{
 	term it = `item( `id(num) );
 	it = add( it, entry["model"]:"" );
@@ -309,17 +309,17 @@ Stderr was:
 	});
 
     string tmp = Misc::SysconfigRead( .sysconfig.kernel.INITRD_MODULES, "");
-    initrd_orig = filter( `e, splitstring( tmp, " " ), ``(size(e)>0) );
-    initrd = eval(initrd_orig);
+    initrd_orig = filter( string e, splitstring( tmp, " " ), ``(size(e)>0) );
+    initrd = (list)eval(initrd_orig);
     y2milestone( "initrd %1", tmp );
 
-    clist = sort( `a, `b, clist,
+    clist = sort( term a, term b, clist,
 	``{
 	boolean ret = true;
 	integer numa = TermToId(a);
 	integer numb = TermToId(b);
 	list pos_mod = [];
-	foreach( `e, dev[numa,"drivers"]:[],
+	foreach( map e, dev[numa,"drivers"]:[],
 	    ``{
 	    if( size(e["modules",0,0]:"")>0 )
 		pos_mod = add( pos_mod, e["modules",0,0]:"");
@@ -342,7 +342,7 @@ Stderr was:
 	    posm = posm + 1;
 	    }
 	pos_mod = [];
-	foreach( `e, dev[numb,"drivers"]:[],
+	foreach( map e, dev[numb,"drivers"]:[],
 	    ``{
 	    if( size(e["modules",0,0]:"")>0 )
 		pos_mod = add( pos_mod, e["modules",0,0]:"");
@@ -437,11 +437,11 @@ Stderr was:
     y2milestone( "cur %1", dev[cur_num]:$[] );
     do
 	{
-	ret = UI::UserInput();
+	ret = (symbol)UI::UserInput();
 	y2milestone( "ret = %1", ret );
 	if( ret == `controller )
 	    {
-	    num = UI::QueryWidget( `id(`controller), `CurrentItem );
+	    num = (integer)UI::QueryWidget( `id(`controller), `CurrentItem );
 	    y2milestone( "num %1 cur_num %2", num, cur_num );
 	    if( num != cur_num )
 		{
@@ -455,8 +455,8 @@ Stderr was:
 	    {
 	    changed = true;
 	    integer rpos = GetArrayPos( clist, cur_num );
-	    term tmp = clist[rpos]:"";
-	    clist[rpos] = clist[rpos-1]:"";
+	    term tmp = clist[rpos]:`Empty();
+	    clist[rpos] = clist[rpos-1]:`Empty();
 	    clist[rpos-1] = tmp;
 	    UI::ChangeWidget( `id(`controller), `Items, clist );
 	    UI::ChangeWidget( `id(`controller), `CurrentItem, cur_num );
@@ -470,8 +470,8 @@ Stderr was:
 	    {
 	    changed = true;
 	    integer rpos = GetArrayPos( clist, cur_num );
-	    term tmp = clist[rpos]:"";
-	    clist[rpos] = clist[rpos+1]:"";
+	    term tmp = clist[rpos]:`Empty();
+	    clist[rpos] = clist[rpos+1]:`Empty();
 	    clist[rpos+1] = tmp;
 	    UI::ChangeWidget( `id(`controller), `Items, clist );
 	    UI::ChangeWidget( `id(`controller), `CurrentItem, cur_num );
@@ -483,7 +483,7 @@ Stderr was:
 	    }
 	else if( ret == `module )
 	    {
-	    num = UI::QueryWidget( `id(`module), `Value );
+	    num = (integer)UI::QueryWidget( `id(`module), `Value );
 	    if( num != dev[cur_num,"modnum"]:0 )
 		{
 		changed = true;
@@ -516,15 +516,15 @@ Stderr was:
 	    boolean mkinitrd = false;
 	    params[modname] = UI::QueryWidget( `id(`param), `Value );
 	    list new_initrd = [];
-	    list tlist = eval(initrd);
-	    foreach( `e, clist,
+	    list tlist = (list)eval(initrd);
+	    foreach( term e, clist,
 		``{
 		integer num = TermToId( e );
 		integer modnum = dev[num,"modnum"]:0;
 		if( contains( tlist, 
 		              dev[num,"drivers",modnum,"modules",0,0]:"" ) )
 		    {
-		    foreach( `d, dev[num,"drivers",modnum,"modules"]:[],
+		    foreach( list d, dev[num,"drivers",modnum,"modules"]:[],
 			``{
 			new_initrd = add( new_initrd, d[0]:"" );
 			tlist = filter( `e, tlist, ``(e!=d[0]:""));
@@ -534,7 +534,7 @@ Stderr was:
 			});
 		    }
 		});
-	    foreach( `e, initrd,
+	    foreach( string e, initrd,
 		``{
 		if( size(e)>0 && !contains( new_initrd, e ) )
 		    new_initrd = add( new_initrd, e );
@@ -545,14 +545,14 @@ Stderr was:
 	    mkinitrd = mkinitrd || newinit != old;
 	    if( newinit != old )
 		{
-		initrd = eval( new_initrd );
-		initrd_orig = eval( new_initrd );
+		initrd = (list)eval( new_initrd );
+		initrd_orig = (list)eval( new_initrd );
 		}
 	    y2milestone( "make %3 new \"%1\" old \"%2\"", newinit, old, 
 	                 mkinitrd );
 	    y2milestone( "params %1", params );
 	    boolean writemod = false;
-	    foreach( `k, `v, params, 
+	    foreach( string k, string v, params, 
 		``{
 		y2milestone( "par orig:\"%1\" new:\"%2\"", params_orig[k]:"", 
 		             v );
@@ -560,11 +560,11 @@ Stderr was:
 		    {
 		    mkinitrd = mkinitrd || contains(new_initrd,k);
 		    params_orig[k] = v;
-		    list val = filter( `e, splitstring( v, " " ), 
+		    list val = filter( string e, splitstring( v, " " ), 
 		                       ``(size(e)>0) );
 		    y2milestone( "val %1", val );
 		    map opts = $[];
-		    foreach( `v, val,
+		    foreach( string v, val,
 			``{
 			integer pos = find( v, "=" );
 			y2milestone( "v %1 pos %2", v, pos );
@@ -595,7 +595,7 @@ Stderr was:
 		SCR::Write( .sysconfig.kernel, nil );
 		// popup text
 		UI::OpenDialog( `VBox( `Label( _("Executing mkinitrd") ) ) );
-		integer exit = SCR::Execute( .target.bash, "/sbin/mkinitrd" );
+		integer exit = (integer)SCR::Execute( .target.bash, "/sbin/mkinitrd" );
 		UI::CloseDialog();
 		y2milestone( "exit /sbin/mkinitrd %1", exit );
 		if( exit != 0 )
@@ -611,11 +611,13 @@ Try executing /sbin/mkinitrd manually and look at the error messages.
 		    boot_write["insert_initrd"] = true;
 		    boot_write["initrd_changed_externally"] = true;
 		    boot_write["forbid_save_initrd"] = true;
+		    /* FIXME 
 		    Bootloader::SetWriteMode( boot_write );
 		    Bootloader::Write();
+		    */
 		    }
 		}
-	    foreach( `entry, dev,
+	    foreach( map entry, dev,
 		``{
 		if( size(entry["unique_key"]:"")>0 )
 		    SCR::Write(.probe.status.configured, entry["unique_key"]:"",

@@ -18,7 +18,6 @@
     textdomain "storage";
 
     import "Arch";
-    import "Bootloader";
     import "Mode";
     import "Popup";
     import "Partitions";
@@ -58,7 +57,7 @@
      *
      */
     
-define CheckPartitionTableSanity( map targetMap )
+define boolean CheckPartitionTableSanity( map targetMap )
     ``{
     boolean     logical_drive_is_missing = false;
     boolean     too_many_primary         = false;
@@ -66,22 +65,22 @@ define CheckPartitionTableSanity( map targetMap )
     string      ldim_dev                 = "";
     string      err_dev                  = "";
     
-    foreach(`dev, `disk, targetMap,
+    foreach(string dev, map disk, targetMap,
 	``{
 	string type = substring(dev, 5, 2);
 	
 	boolean extended_exists      = false;
 	
 	list primary_list = 
-	    filter( `part, disk["partitions"]:[],
+	    filter( map part, disk["partitions"]:[],
 		    ``( (part["type"]:`unknown == `primary) && 
 		        !part["delete"]:false ));
 	list extended_list = 
-	    filter( `part, disk["partitions"]:[],
+	    filter( map part, disk["partitions"]:[],
 		    ``( (part["type"]:`unknown == `extended) && 
 		        !part["delete"]:false ));
 	list logical_list = 
-	    filter( `part, disk["partitions"]:[],
+	    filter( map part, disk["partitions"]:[],
 		    ``( (part["type"]:`unknown == `logical) && 
 		        !part["delete"]:false ));
 
@@ -107,7 +106,7 @@ define CheckPartitionTableSanity( map targetMap )
 	    {
 	    integer nb_logical_drives  = size( logical_list );
 	    list lst_logical_drives = 
-		maplist( `part, logical_list, ``(part["nr"]:0));
+		maplist( map part, logical_list, ``(part["nr"]:0));
 
 	    integer n = 5;
 
@@ -149,12 +148,12 @@ define CheckPartitionTableSanity( map targetMap )
 	if( demo_mode ) 
 	    {
 	    y2warning("***** Demo mode active - using fake demo values *****");
-	    targetMap = SCR::Read(.target.yast2, "demo_target_map.ycp");
+	    targetMap = (map)SCR::Read(.target.yast2, "demo_target_map.ycp");
 	    }
 	else 
 	    {// ! demo_mode
 	    y2warning("***** Test mode active - using fake values *****");
-	    targetMap = SCR::Read(.target.yast2, "test_target_map.ycp");
+	    targetMap = (map)SCR::Read(.target.yast2, "test_target_map.ycp");
 	    }
 	Storage::SetTargetMap( targetMap );
 	}
@@ -179,7 +178,7 @@ define CheckPartitionTableSanity( map targetMap )
 	term buttonbox = `VBox();
 
 	integer i = 0;
-	foreach( `tname, `tdata, targetMap, 
+	foreach( string tname, map tdata, targetMap, 
 	    ``{
 	    if( Storage::IsRealDisk( tname, tdata ))
 		{
@@ -255,8 +254,9 @@ partitions to mount points when installing SuSE Linux.
 
     // first step of hd prepare, select a single disk or "expert" partitioning
     Wizard::SetContents( _("Preparing Hard Disk -- Step 1"),
-			 contents, helptext, WFM::Args(0), WFM::Args(1));
-    any ret = nil;
+			 contents, helptext, (boolean)WFM::Args(0), 
+			 (boolean)WFM::Args(1));
+    symbol ret = nil;
 
     // Event handling
 
@@ -264,7 +264,7 @@ partitions to mount points when installing SuSE Linux.
 
     repeat
 	{
-	ret = Wizard::UserInput();
+	ret = (symbol)Wizard::UserInput();
 
 	if( ret == `abort && Popup::ConfirmAbort(`painless) )
 	    return `abort;
@@ -280,11 +280,11 @@ partitions to mount points when installing SuSE Linux.
 		Popup::Message(_("Select one of the options to continue."));
 		continue;
 		}
-	    else if (substring(option,0,5) == "/dev/" )
+	    else if (substring((string)option,0,5) == "/dev/" )
 		{
 		if( targetMap[option,"readonly"]:false )
 		    {
-		    Popup::Error( Partitions::RdonlyText( option, true ));
+		    Popup::Error( Partitions::RdonlyText( (string)option, true ));
 		    continue;
 		    }
 		Storage::SetPartMode( "USE_DISK" );
@@ -296,7 +296,7 @@ partitions to mount points when installing SuSE Linux.
 		map tg = Storage::GetTargetMap();
 		tg = Storage::AddMountPointsForWin(tg);
 		Storage::SetTargetMap( tg );
-		Storage::SetPartDisk( option );
+		Storage::SetPartDisk( (string)option );
 		Storage::SetCustomDisplay( false );
 		Storage::SetDoResize( "NO" );
 		} // if (option)

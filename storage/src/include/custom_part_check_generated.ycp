@@ -37,7 +37,7 @@ HINTS: Always use
 */
 {
   import "Arch";
-  import "Bootloader";
+   /* FIXME  import "Bootloader";*/
   import "Storage";
   import "Partitions";
   import "Label";
@@ -55,14 +55,14 @@ HINTS: Always use
  *---------------------------------------------------------------------
  */
 
-global define change_boot_region( map targetMap, list new_region )
+global define map change_boot_region( map targetMap, list new_region )
   ``{
-  foreach( `disk, `diskinfo, targetMap,
+  foreach( `disk, map diskinfo, targetMap,
       ``{
       list new_part_info = [];
       list part_info     = diskinfo["partitions"]:[];
 
-      foreach( `part, part_info,
+      foreach( map part, part_info,
 	  ``{
 	  map new_part = part;
 
@@ -92,95 +92,91 @@ global define change_boot_region( map targetMap, list new_region )
    *---------------------------------------------------------------------
    */
 
-   global define get_max_cyl_for_4mb( integer cyl_size )
+global define integer get_max_cyl_for_4mb( integer cyl_size )
    ``{
-       // tell me the maximal number of cylinders, which can be stored in a 4 MB partition
-       // if even one cylinder is to big, return "1"
+   // tell me the maximal number of cylinders, which can be stored in a 4 MB partition
+   // if even one cylinder is to big, return "1"
 
-       integer raw_cyl = tointeger( 4194304 / cyl_size);
+   integer raw_cyl = tointeger( 4194304 / cyl_size);
 
-       if (raw_cyl == 0)
+   if (raw_cyl == 0)
        {
-           return( 1 );
+       return( 1 );
        }
-       else
+   else
        {
-           return( raw_cyl );
+       return( raw_cyl );
        }
    };
 
 
+global define boolean check_raid_possible( map targetMap )
+    ``{
+    integer possible_parts_found = 0;
 
-   global define check_raid_possible( map targetMap  )``{
-       integer possible_parts_found = 0;
+    foreach( string disk, map target, targetMap, 
+	``{
+	list partitions = lookup( target, "partitions", [] );
 
-
-       foreach( `disk, `target, targetMap, ``{
-
-	   list partitions = lookup( target, "partitions", [] );
-
-
-	   possible_parts_found = possible_parts_found +
-	       size(filter( `part, partitions, ``( lookup( part,  "lvm_group" ,"") == ""    &&
-						   lookup( part, "delete", false) == false &&
-						   lookup( part, "format", false) == false &&
-						   ( lookup( part, "mount" , ""  ) == ""
-						     ||  substring(lookup( part, "mount" , ""), 0, 5) == "/data" )  &&
-						   lookup( part, "raid_name","") == ""    &&
-						   ( part["fsid"]:0 == Partitions::fsid_native ||
-						     part["fsid"]:0 == Partitions::fsid_raid))));
+	possible_parts_found = possible_parts_found +
+	       size(filter( map part, partitions, 
+			    ``( part["lvm_group"]:"" == ""    &&
+				!part["delete"]:false &&
+				!part["format"]:false &&
+				( part["mount"]:"" == "" ||
+				  substring(part["mount"]:"", 0, 5) == "/data" )  &&
+			        part["raid_name"]:"" == "" &&
+			        (part["fsid"]:0 == Partitions::fsid_native ||
+				 part["fsid"]:0 == Partitions::fsid_raid))));
        });
 
-       if(  possible_parts_found < 2 )
+   if(  possible_parts_found < 2 )
        {
-	   // Translators: the text 'do not format' must match the label in the corresponding popup!
-	   Popup::Message(_("To use RAID, at least two partitions of type 0xFD (or 0x83)
+       // Translators: the text 'do not format' must match the label in the corresponding popup!
+       Popup::Message(_("To use RAID, at least two partitions of type 0xFD (or 0x83)
 are required. Change your partition table accordingly.
 In most cases, this can be done in the following way:
 click 'Create', select 'Do not format', and set the partition ID to 0xFD.
 "));
 
-	   return false;
+       return false;
        }
-       return true;
+   return true;
    }
 
 
+global define boolean check_lvm_possible( map targetMap )
+   ``{
+   boolean possible_part_found = false;
+
+   foreach( string disk, map target, targetMap, 
+       ``{
+       list partitions = lookup( target, "partitions", [] );
 
 
-
-   global define check_lvm_possible( map targetMap  )``{
-       boolean possible_part_fond      = false;
-
-
-       foreach( `disk, `target, targetMap, ``{
-
-	   list partitions = lookup( target, "partitions", [] );
-
-
-	   if( size(filter( `part, partitions, ``(lookup( part, "raid_name","") == ""      &&
-						  lookup( part, "delete", false) == false  &&
-						  lookup( part, "format", false)  == false &&
-						  ( lookup( part, "mount" , ""  ) == ""
-						    ||  substring(lookup( part, "mount" , ""), 0, 5) == "/data" )  &&
-						   ( part["fsid"]:0 == Partitions::fsid_native ||
-						     part["fsid"]:0 == Partitions::fsid_lvm )))) > 0)
+       if( size(filter( map part, partitions, 
+                        ``(lookup( part, "raid_name","") == "" &&
+			   lookup( part, "delete", false) == false &&
+			   lookup( part, "format", false) == false &&
+			   (lookup( part, "mount" , ""  ) == "" ||
+			    substring(lookup( part, "mount" , ""), 0, 5) == "/data" )  &&
+			   ( part["fsid"]:0 == Partitions::fsid_native ||
+			     part["fsid"]:0 == Partitions::fsid_lvm )))) > 0)
 	   {
-	       possible_part_fond = true;
+	   possible_part_found = true;
 	   }
        });
 
-       if(! possible_part_fond )
+   if( !possible_part_found )
        {
-	   // Translators: the text 'do not format' must match the label in the corresponding popup!
-	   Popup::Message(_("To use LVM, at least one partition of type 0x8e (or 0x83)
+       // Translators: the text 'do not format' must match the label in the corresponding popup!
+       Popup::Message(_("To use LVM, at least one partition of type 0x8e (or 0x83)
 is required. Change your partition table accordingly.
 In most cases, this can be done in the following way:
 click 'Create', select 'Do not format', and set the partition ID to 0x8e.
 "));
        }
-       return possible_part_fond;
-
+   return possible_part_found;
    }
 
     /*---------------------------------------------------------------------
@@ -197,11 +193,13 @@ click 'Create', select 'Do not format', and set the partition ID to 0x8e.
      * - check that all reiser Filesystems are bigger than 60MB
      */
 
-global define check_created_partiton_table( map targetMap, boolean setup_lvm,
-                                            boolean installation )
-   ``{
+global define list check_created_partiton_table( map targetMap, 
+                                                 boolean setup_lvm,
+						 boolean installation )
+    ``{
     y2milestone( "now checking generated target map ...");
-    string  curr_boot_mode  = Bootloader::getLoaderType ();
+    string  curr_boot_mode  = "fritz";
+    /* FIXME string  curr_boot_mode  = Bootloader::getLoaderType ();*/
     boolean show_all_popups = false;
 
     boolean partition_mounted_but_not_formated = false;
@@ -235,14 +233,9 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
     boolean axp_start_Ex_failure = false;
     boolean all_whole_disk       = true;
     boolean fat_system_mount     = false;
-    //boolean crypt_fs_system      = false;
-    //boolean lvm_part_found       = false;
 
-    //list 	  bad_mountpoints      = [ "/lib", "/bin" , "/etc", "/sbin", "/dev" ];
-    //boolean bad_mountpoint_found = false;
-
-    foreach( `disk, `diskinfo, targetMap, ``{
-
+    foreach( string disk, map diskinfo, targetMap,
+        ``{
 	list part_info     = lookup( diskinfo, "partitions", [] );
 	boolean whole_disk = true;
 	integer cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
@@ -264,7 +257,7 @@ global define check_created_partiton_table( map targetMap, boolean setup_lvm,
 	boolean id_sw_raid_dev = (disk == "/dev/md");
 
 
-	foreach( `part, part_info, ``{
+	foreach( map part, part_info, ``{
 
 	    if ( lookup( part, "delete", false) == false )
 	    {
@@ -778,51 +771,50 @@ Do you want to change your setup?
 	}
 
     return( [targetMap, retval] );
-};
+    };
 
 
 
 
 
-    global define check_partition_edit(string dev,  map curr_part, boolean bsd_label )``{
+global define symbol check_partition_edit( map curr_part, boolean bsd_label )
+    ``{
+    ///////////////////////////////////////////////////////
+    // with a BSD-Disklabel partition 3 is always an additional entry
+    // which describes the disk and should not be edited
 
-	///////////////////////////////////////////////////////
-	// with a BSD-Disklabel partition 3 is always an additional entry
-	// which describes the disk and should not be edited
-
-	if ( bsd_label && ( lookup( curr_disk, "nr", 0 ) == 3 ) )
+    if( bsd_label && ( lookup( curr_part, "nr", 0 ) == 3 ) )
 	{
-	    // popup text
-	    Popup::Message(_("Partition 3 \"Entire Disk\" is not changeable"));
-	    return `no_edit;
+	// popup text
+	Popup::Message(_("Partition 3 \"Entire Disk\" is not changeable"));
+	return `no_edit;
 	}
 
-	if( lookup( curr_part , "raid_name" , "") != "")
+    if( lookup( curr_part , "raid_name" , "") != "")
 	{
-	    // popup text %1 is replaced by a raid name e.g. /dev/md0
-	    Popup::Message(sformat(_("The selected partition belongs to the RAID (%1).
+	// popup text %1 is replaced by a raid name e.g. /dev/md0
+	Popup::Message(sformat(_("The selected partition belongs to the RAID (%1).
 Please remove it from the RAID before you edit it."),lookup( curr_part, "raid_name", "" )));
-	    return `no_edit;
+	return `no_edit;
 	}
 
-	if( lookup( curr_part , "lvm_group" , "") != "")
+    if( lookup( curr_part , "lvm_group" , "") != "")
 	{
-	    // popup text %1 is replaced by a name
-	    Popup::Message(sformat(_("The selected partition belongs to a volume group (%1).
+	// popup text %1 is replaced by a name
+	Popup::Message(sformat(_("The selected partition belongs to a volume group (%1).
 Please remove it from the volume group before you edit it."),lookup( curr_part, "lvm_group", "" )));
-	    return `no_edit;
+	return `no_edit;
 	}
-	return `edit;
+    return `edit;
     }
 
 
 
 
 
-global define symbol check_partition_delete( string dev, map curr_disk, 
-                                             map curr_part, boolean bsd_label,
-					     boolean c_bsd, boolean c_lvm,
-					     boolean c_raid, 
+global define symbol check_partition_delete( map curr_disk, map curr_part, 
+                                             boolean bsd_label, boolean c_bsd,
+					     boolean c_lvm, boolean c_raid, 
 					     boolean installation )
     ``{
     string part_name = curr_part["device"]:"";
@@ -920,98 +912,102 @@ Remove partition anyway?
 
 
 
-    global define check_extended_delete(string del_dev,  map curr_disk, boolean installation ) ``{
+global define boolean check_extended_delete( string del_dev, map curr_disk, 
+                                             boolean installation ) 
+    ``{
 
-	/////////////////////////////////////////////////
-	// filter delete partitions
-	list partitions		 =  lookup( curr_disk, "partitions", [] );
-	partitions      	 =  filter( `part, partitions, ``( lookup( part ,"delete",false) == false));
+    /////////////////////////////////////////////////
+    // filter delete partitions
+    list partitions =  lookup( curr_disk, "partitions", [] );
+    partitions = filter( map part, partitions, ``( !part["delete"]:false ));
 
-	/////////////////////////////////////////////////
-	// get logical partitions
-	list logical_parts       = filter(`part, partitions , ``( lookup( part, "type", `primary) == `logical));
-	list logical_parts_names = [];
+    /////////////////////////////////////////////////
+    // get logical partitions
+    list logical_parts = filter( map part, partitions, 
+                                 ``( part["type"]:`primary == `logical));
+    list logical_parts_names = [];
 
-	foreach( `logical_part, logical_parts , ``{
-	    logical_parts_names =
+    foreach( map logical_part, logical_parts , 
+	``{
+	logical_parts_names =
 		add( logical_parts_names,
 		     Storage::GetDeviceName( del_dev, logical_part["nr"]:0));
 	});
 
-	if( logical_parts_names == [] )
-	    return true;
+    if( logical_parts_names == [] )
+	return true;
 
 
-	/////////////////////////////////////////////////
-	// check mounted partitions
-	if ( ! installation )
+    /////////////////////////////////////////////////
+    // check mounted partitions
+    if( !installation )
 	{
-	    list mounts = Partitions::mountedPartitionsOnDisk( del_dev,
-							       Partitions::CurMounted() );
-	    mounts      = filter( `mount, mounts, ``( contains( logical_parts_names, lookup(mount, "spec", ""))));
+	list mounts = Partitions::mountedPartitionsOnDisk( del_dev,
+							   Partitions::CurMounted() );
+	mounts      = filter( map mount, mounts, ``( contains( logical_parts_names, lookup(mount, "spec", ""))));
 
-	    if ( size( mounts ) != 0 )
+	if ( size( mounts ) != 0 )
 	    {
-		/////////////////////////////////////////////////////////////////////////////////////////
-		// mount points found
+	    /////////////////////////////////////////////////////////////////////////////////////////
+	    // mount points found
 
-		string mounted_parts  = "";
-		foreach( `mount , mounts , ``{
+	    string mounted_parts  = "";
+	    foreach( map mount, mounts , ``{
 
-		    //The selected extended partition contains partitions which are currently mounted:
-		    //           /dev/hda1 on /
-		    //           /dev/hdd1 on /usr
-		    //   ....
-		    mounted_parts = mounted_parts + sformat("%1 on %2",lookup( mount, "spec", "") , lookup( mount, "file", "")) + "\n";
-		});
+		//The selected extended partition contains partitions which are currently mounted:
+		//           /dev/hda1 on /
+		//           /dev/hdd1 on /usr
+		//   ....
+		mounted_parts = mounted_parts + sformat("%1 on %2",lookup( mount, "spec", "") , lookup( mount, "file", "")) + "\n";
+	    });
 
-	        // popup text
-		string message = sformat(_("The selected extended partition contains partitions which are currently mounted:
+	    // popup text
+	    string message = sformat(_("The selected extended partition contains partitions which are currently mounted:
 %1
 It is *strongly* recommended to unmount these partitions before you delete the extended partition.
 Please choose Cancel unless you know exactly what you are doing.
 "), mounted_parts );
 
-		if( ! Popup::ContinueCancel(message))
+	    if( ! Popup::ContinueCancel(message))
 		{
-		    return false;
+		return false;
 		}
 	    }
 	}
 
 
-	/////////////////////////////////////////////////////////////////////////////////////////
-	// check LVM partitions
+    /////////////////////////////////////////////////////////////////////////////////////////
+    // check LVM partitions
 
-	if( size(filter( `part, logical_parts , ``( lookup( part, "lvm_group", "") != "" ))) != 0)
+    if( size(filter( map part, logical_parts , ``( part["lvm_group"]:"" != "" ))) != 0)
 	{
-	    // popup text, Do not translate LVM.
-	    Popup::Message(_("
+	// popup text, Do not translate LVM.
+	Popup::Message(_("
 The selected extended partition contains at least one LVM partition
 assigned to a volume group. Remove all
 partitions from their respective volume groups
 before deleting the extended partition.
 "));
-	    return false;
+	return false;
 	}
 
 
-	/////////////////////////////////////////////////////////////////////////////////////////
-	// check RAID partitions
+    /////////////////////////////////////////////////////////////////////////////////////////
+    // check RAID partitions
 
-	if( size(filter( `part, logical_parts, ``( lookup( part, "raid_name", "") != "" ))) != 0)
+    if( size(filter( map part, logical_parts, ``( lookup( part, "raid_name", "") != "" ))) != 0)
 	{
-	    // popup text, Do not translate LVM.
-	    Popup::Message(_("
+	// popup text, Do not translate LVM.
+	Popup::Message(_("
 The selected extended partition contains at least one partition
 that is part of a RAID system. Unassign the
 partitions from their respective RAID systems before
 deleting the extended partition.
 "));
-	    return false;
+	return false;
 	}
 
-	return true;
+    return true;
     };
 }
 
