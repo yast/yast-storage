@@ -1110,55 +1110,91 @@ Continue?
   };
 
 
-  global define void FsysCannotShrinkPopup()
-  ``{
-  // popup text 
-  Popup::Message(_("
-The file system on the selected partition cannot be shrunk.
-Only fat, ext2, ext3, and reiser allow shrinking of a file system.
-"));
-  }
+global define string AddLvm( boolean lvm, string txt )
+    ``{
+    txt = sformat( txt, lvm ? _("logical volume") : _("partition") );
+    return( txt );
+    }
 
-  global define boolean FsysCannotShrinkWarning()
-  ``{
-  boolean ret = true;
-  // popup text 
-  ret = Popup::YesNo( _("
-The file system on the selected partition cannot be shrunk by YaST2.
-Only fat, ext2, ext3, and reiser allow shrinking of a file system.
-You risk losing data if you shrink this logical volume.
+global define boolean FsysCannotShrinkPopup( boolean ask, boolean lvm )
+    ``{
+    boolean ret = true;
+    // Popup text
+    // %1 is either replaced by "logical volume" or by "partition"
+    string txt =  AddLvm( lvm, _("
+The file system on the %1 cannot be shrunk by YaST2.
+Only fat, ext2, ext3, and reiser allow shrinking of a file system."));
+    if( ask )
+	{
+	txt = txt + "\n";
+	txt = txt + AddLvm( lvm, 
+			    // Popup text
+			    // %1 is either replaced by "logical volume" or by "partition"
+	                    _("You risk losing data if you shrink this %1"));
+	txt = txt + "\n\n";
+	txt = txt + _("Continue?");
+	}
+    if( ask )
+	{
+	ret = Popup::YesNo( txt );
+	}
+    else
+	{
+	Popup::Error( txt );
+	}
+    return( ret );
+    }
 
-Continue?
-"));
-  return( ret );
-  }
+global define boolean FsysCannotGrowPopup( boolean ask, boolean lvm )
+    ``{
+    boolean ret = true;
+    // Popup text
+    // %1 is either replaced by "logical volume" or by "partition"
+    string txt =  AddLvm( lvm, _("
+The file system on the selected %1 cannot be extended by YaST2.
+Only fat, ext2, ext3, xfs, and reiser allow extending a file system."));
+    if( ask )
+	{
+	txt = txt + "\n\n";
+	// Popup text
+	// %1 is either replaced by "logical volume" or by "partition"
+	txt = txt + AddLvm( lvm, _("Continue resizing the %1"));
+	}
+    if( ask )
+	{
+	ret = Popup::YesNo( txt );
+	}
+    else
+	{
+	Popup::Error( txt );
+	}
+    return( ret );
+    }
 
-  global define boolean FsysCannotGrowWarning()
-  ``{
-  boolean ret = true;
-  // popup text 
-  ret = Popup::YesNo( _("
-The file system on the selected partition cannot be extended by YaST2.
-Only fat, ext2, ext3, xfs, and reiser allow extending a file system.
-Although the partition can be resized, you have to reformat to use the larger volume.
+global define void FsysCannotResizeMountPopup( boolean lvm, string mount )
+    ``{
+    string txt = sformat( _("
+The %1 is currently mounted on %2.
+It is not possible to resize the file system while it is mounted.
 
-Continue resizing the partition?
-"));
-  return( ret );
-  }
+Please umount the file system and retry resizing."), 
+                          AddLvm( lvm, "%1"), mount );
+    Popup::Error( txt );
+    }
 
-  global define boolean FsysShrinkReiserWarning()
-  ``{
-  boolean ret = true;
-  // popup text 
-  ret = Popup::YesNo( _("
-You decreased a partition with a reiser file system on it.
+global define boolean FsysShrinkReiserWarning( boolean lvm )
+    ``{
+    boolean ret = true;
+    // Popup text
+    // %1 is either replaced by "logical volume" or by "partition"
+    ret = Popup::YesNo( AddLvm( lvm, _("
+You decreased a %1 with a reiser file system on it.
 It is possible to shrink a reiser file system, but this feature is not
 very thoroughly tested. A backup of your data is recommended.
-Shrink the file system now?
-"));
-  return( ret );
-  }
+
+Shrink the file system now?")));
+    return( ret );
+    }
 
 
   /** 

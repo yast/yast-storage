@@ -935,5 +935,42 @@ Enter a size from 1M to %1."),
     return( true );
     };
 
+global define boolean CheckResizePossible( boolean ask, boolean lvm, 
+                                           integer resize, symbol fsys,
+					   string mount )
+    ``{
+    map poss = FileSystems::IsResizable( fsys );
+    boolean ret = true;
+
+    y2milestone( "resize %1 ask %2 lvm %3 fsys %4 mount %5", resize, ask, lvm,
+                 fsys, mount );
+    if( size(mount)>0 && resize < 0 && !poss["mount_shrink"]:false &&
+        poss["shrink"]:false )
+        {
+	FsysCannotResizeMountPopup( lvm, mount );
+	ret = false;
+	}
+    else if( size(mount)>0 && resize > 0 && !poss["mount_extend"]:false &&
+	    poss["extend"]:false )
+        {
+	FsysCannotResizeMountPopup( lvm, mount );
+	ret = false;
+	}
+    else if( resize < 0 && !poss["shrink"]:false )
+	{
+	ret = FsysCannotShrinkPopup( ask, lvm );
+	}
+    else if( resize < 0 && fsys==`reiser )
+	{
+	ret = FsysShrinkReiserWarning( lvm );
+	}
+    else if( resize>0 && !possible["extend"]:false )
+	{
+	ret = FsysCannotGrowPopup( ask, lvm );
+	}
+    y2milestone( "ret %1", ret );
+    return( ret );
+    }
+
 
 }
