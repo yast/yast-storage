@@ -149,7 +149,7 @@ global define term get_choose_raid_type_contents( string raid, symbol what )
 		    `HSquash(
 			`VBox(
 			    `Left(`RadioButton(`id("raid0"), str_text,
-					       raid=="raid0")),
+					       raid=="raid0"||raid=="linear")),
 			    `VSpacing (1),
 			    `Left(`RadioButton(`id("raid1"), mir_text,
 					       raid=="raid1")),
@@ -745,7 +745,7 @@ global define symbol RaidDevices( symbol what )
 					FileSystems::GetAllFileSystems(true,true),
 					false, Storage::GetTargetMap());
 	    
-	    Storage::SetSubDev( "/dev/md" + subdevraidindex, subdevraid );
+	    Storage::SetSubDev( subdevraidkey, subdevraid );
 	    }
 
 	/////////////////////////////////////////////////////////////////
@@ -928,12 +928,12 @@ compatibility with older RAID software</p>
 global define symbol RaidExpertWizard()
     ``{
     string  subdevkey     = Storage::GetWizardKey();
-    map     subdev        = Storage::GetSubDev(subdevkey );
+    map     subdev        = Storage::GetSubDev( subdevkey );
  
-    subdev  =    RaidExpertDlg(`wizard, subdev["raid_name"]:"",
-				subdev, installation,
-				FileSystems::GetAllFileSystems(true, true),
-				false, Storage::GetTargetMap() );
+    subdev = RaidExpertDlg( `wizard, subdev["raid_name"]:"", subdev, 
+                            installation,
+			    FileSystems::GetAllFileSystems(true, true),
+			    false, Storage::GetTargetMap() );
 
     symbol ret = subdev["symbol"]:`next;
     // remove symbol key from new_raid
@@ -944,8 +944,9 @@ global define symbol RaidExpertWizard()
 	/////////////////////////////////////////////////
 	// fill in the new size of the raid:
 	subdev["region"] = [0, raid_size_byte( Storage::GetTargetMap(),subdev ) / (1024 * 1024)];
+	y2milestone( "subdevkey %1 subdev %2", subdevkey, subdev );
 
-	Storage::SetSubDev( subdevkey, subdev);
+	Storage::SetSubDev( subdevkey, subdev );
 	Storage::Commit();
 	}
     return  ret;
