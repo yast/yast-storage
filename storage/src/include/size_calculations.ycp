@@ -10,50 +10,41 @@
 
 {
 import "Mode";
-import "Arch";
 
-global define calculate_needed_boot (string architecture, string boot_mode) 
+global define calculate_needed_swap () 
     ``{
-    if( Arch::ia64 )
+    // $["resource":
+    //       $[ "mem":     [$["active":true, "length":402653184, "start":0]],
+    // 	  "phys_mem":[$["range":402653184]]
+    //	]
+    //    ]
+    integer memsize = 256 * 1024 *1024;
+    if( !Mode::test )
 	{
-	return 48 * 1024 * 1024;
-	}
-    return 16 * 1024 * 1024;
-    };
-
-global define calculate_needed_swap () ``{
-	// $["resource":
-	//       $[ "mem":     [$["active":true, "length":402653184, "start":0]],
-	// 	  "phys_mem":[$["range":402653184]]
-	//	]
-	//    ]
-	integer memsize = 256 * 1024 *1024;
-	if( !Mode::test )
-	{
-	    list probemem = SCR::Read (.probe.memory);
-	    map memresource = lookup (select (probemem, 0, 0), "resource", $[]);
-	    list physmemlist = lookup (memresource, "phys_mem", []);
-	    memsize = lookup (select (physmemlist, 0, 0), "range", 0);
+	list probemem = SCR::Read (.probe.memory);
+	map memresource = lookup (select (probemem, 0, 0), "resource", $[]);
+	list physmemlist = lookup (memresource, "phys_mem", []);
+	memsize = lookup (select (physmemlist, 0, 0), "range", 0);
 	}
 
-	if (memsize <= 0)
+    if (memsize <= 0)
 	{
-	    // assume 64 MB main memory
-	    memsize = 64 * 1024 * 1024;
+	// assume 64 MB main memory
+	memsize = 64 * 1024 * 1024;
 	}
-	//realmem <=64m, swap 128m
-	//realmem <=128m, swap 256m
-	//realmem > 128m, swap = realmem + 128m, max 1024m
-	if (memsize <= 128 * 1024 * 1024)
+    //realmem <=64m, swap 128m
+    //realmem <=128m, swap 256m
+    //realmem > 128m, swap = realmem + 128m, max 1024m
+    if (memsize <= 128 * 1024 * 1024)
 	{
-	    return 2 * memsize;
+	return 2 * memsize;
 	}
-	memsize = memsize + (128*1024*1024);
-	integer one_gig = 1024*1024*1024;
-	if (memsize > one_gig)
+    memsize = memsize + (128*1024*1024);
+    integer one_gig = 1024*1024*1024;
+    if (memsize > one_gig)
 	{
-	    return one_gig;
+	return one_gig;
 	}
-	return memsize;
+    return memsize;
     };
 }

@@ -20,502 +20,481 @@
 */
 {
 
-  import "Mode";
-  import "Storage";
-  import "Partitions";
+import "Mode";
+import "Storage";
+import "Partitions";
 
   ////////////////////////////////////////////////////////
   // returns the end_cyl for a swap
   // returns -1 if an error occurs or no swap is possible
   
-  global define GetSwapSize( integer start_cyl, integer end_cyl, integer cyl_size)
-      ``{
-      
-      integer swap_size = 0;
-      integer slot_size = (end_cyl - start_cyl +1) * cyl_size;
-      
-      integer oneMB = 1024 * 1024;
-      integer oneGB = 1024 * oneMB;
+global define GetSwapSize( integer start_cyl, integer end_cyl, integer cyl_size)
+    ``{
+    integer swap_size = 0;
+    integer slot_size = (end_cyl - start_cyl +1) * cyl_size;
+    
+    integer oneMB = 1024 * 1024;
+    integer oneGB = 1024 * oneMB;
 
-      // a good approach swap == mem x 2
+    // a good approach swap == mem x 2
 
-      integer mem = 256 * oneMB;
-      if( !Mode::test )
+    integer mem = 256 * oneMB;
+    if( !Mode::test )
 	{
 	mem = lookup(lookup(SCR::Read(.proc.meminfo), "mem", $[]), "total", 0);
 	}
-      if ( mem == 0 || mem == nil ) mem = 64 * oneMB;
+    if( mem == 0 || mem == nil ) mem = 64 * oneMB;
 
-      if ( mem * 9 < slot_size )
-      {
-	  swap_size = mem * 2; 
-      }
-      else if ( mem * 5 < slot_size )
-      {
-	  swap_size = mem; 
-      }
-      else if ( mem * 3 < slot_size )
-      {
-	  swap_size = mem / 2; 
-      }
-      else if ( mem * 2 < slot_size )
-      {
-	  swap_size = mem / 3; 
-      }
+    if( mem * 9 < slot_size )
+	{
+	swap_size = mem * 2; 
+	}
+    else if( mem * 5 < slot_size )
+	{
+	swap_size = mem; 
+	}
+    else if( mem * 3 < slot_size )
+	{
+	swap_size = mem / 2; 
+	}
+    else if( mem * 2 < slot_size )
+	{
+	swap_size = mem / 3; 
+	}
 
-      if ( swap_size > oneGB )
-      {
-	  swap_size =  oneGB;
+    if( swap_size > oneGB )
+	{
+	swap_size =  oneGB;
 
-	  if ( swap_size < 0 ) swap_size = 0;
-      }
-
-
-      // look for a min size
-      // 1G    -> 128MB
-      // 2G    -> 256MB
-      // 10G   -> 512MB
-      // 40G   -> 1GB
-
-      if ( slot_size > (40 * oneGB) &&  (swap_size + mem) < 1 * oneGB )
-      {
-	  swap_size = (1 * oneGB) - mem;
-      }
-      else if ( slot_size > (10 * oneGB)  &&  (swap_size + mem) < 512 * oneMB )
-      {
-	  swap_size = (512 * oneMB) - mem;
-      }
-      else if ( slot_size > (2 * oneGB)  &&  (swap_size + mem) < 256 * oneMB )
-      {
-	  swap_size = (256 * oneMB) - mem;
-      }
-      else if ( slot_size > (1 * oneGB)  &&  (swap_size + mem) < 128 * oneMB )
-      {
-	  swap_size = (128 * oneMB) - mem;
-      }
+	if ( swap_size < 0 ) swap_size = 0;
+	}
 
 
-      //debug( "Mem %2 MB  Disk %3 MB ==> Swap: %1 MB, ",
-      //	    ToStringLen( 4, swap_size / ( 1024*1024)),
-      //	    ToStringLen( 5, mem       / ( 1024*1024)),
-      //	    ToStringLen( 7, slot_size / ( 1024*1024)));
+    // look for a min size
+    // 1G    -> 128MB
+    // 2G    -> 256MB
+    // 10G   -> 512MB
+    // 40G   -> 1GB
 
-      if ( swap_size == 0 )
-      {
-	  return( -1 );
-      }
-      else
-      {
-	  return( start_cyl + (swap_size / cyl_size));
-      }
-      
-  };
-
-
-  
-  global define HitToTargetMap( map targetMap, map hit )
-  ``{
-
-      ////////////////////////////////////
-      // 1. create boot partition if required
-      //    by "split"     split base-slot
-      //    or by "have" : use a slot
-      // 2. create root partition
-      //
-      // 3. swap if possible
-
-      boolean hiterror       = false;
-      
-      string  mode 	     = lookup( hit, 	  "mode",     "free" );
-      map     slot           = lookup( hit, 	  "slot",      $[] );
-      map     boot_slot      = lookup( hit, 	  "boot_slot", $[] );
-      map     swap_slot      = lookup( hit, 	  "swap_slot", $[] );
-      map     disk_info      = lookup( hit, 	  "disk_info", $[] );
-      string  p_or_l         = lookup( hit, 	  "p_or_l",   "primary" );
-      string  type           = lookup( hit, 	  "type",     "" );            
-      string  slot_type      = lookup( slot,      "type",     "" );            
-      string  slot_dev       = lookup( slot,      "dev",      "" );            
-      string  boot_slot_type = lookup( boot_slot, "type",     "" );            
-      integer nr             = lookup( hit,       "nr",       -1 );
-      integer boot_nr        = lookup( hit,       "boot_nr",  -1 );
-      integer slot_nr        = lookup( slot,      "nr",       -1 );
-      integer boot_slot_nr   = lookup( boot_slot, "nr",       -1 );
-      integer swap_slot_nr   = lookup( swap_slot, "nr",       -1 );
-      integer add_slot_nr    = hit["swap_slot_nr"]:-1;
-
-      integer slot_start_cyl       = lookup( slot, "start_cyl",   -1  );
-      integer slot_end_cyl         = lookup( slot, "end_cyl",     -1  );
-      integer slot_win_size        = lookup( slot, "win_size",    10000000000 );
-      integer slot_win_length      = lookup( slot, "win_length",  -1 );
-      integer slot_win_max_length  = lookup( slot, "win_max_length",  -1 );
-      integer boot_slot_win_size   = lookup( boot_slot, "win_size",    10000000000 );
-      integer boot_slot_win_length = lookup( boot_slot, "win_length",  -1 );
-      integer boot_slot_start_cyl  = lookup( boot_slot, "start_cyl",   -1  );
-      integer boot_slot_end_cyl    = lookup( boot_slot, "end_cyl",     -1  );
-
-      
-      map disk        = lookup( targetMap, slot_dev, $[] );
-      list partitions = lookup( disk, "partitions", [] );
+    if( slot_size > (40 * oneGB) &&  (swap_size + mem) < 1 * oneGB )
+	{
+	swap_size = (1 * oneGB) - mem;
+	}
+    else if( slot_size > (10 * oneGB)  &&  (swap_size + mem) < 512 * oneMB )
+	{
+	swap_size = (512 * oneMB) - mem;
+	}
+    else if( slot_size > (2 * oneGB)  &&  (swap_size + mem) < 256 * oneMB )
+	{
+	swap_size = (256 * oneMB) - mem;
+	}
+    else if( slot_size > (1 * oneGB)  &&  (swap_size + mem) < 128 * oneMB )
+	{
+	swap_size = (128 * oneMB) - mem;
+	}
 
 
-      boolean need_boot_part = lookup( hit, "need_boot",  false );
-      boolean need_extended  = lookup( hit, "extd",       false );
-      boolean boot_by_split  = lookup( hit, "boot_split",   false );
-      boolean root_by_split  = lookup( hit, "root_split",   false );
+    //debug( "Mem %2 MB  Disk %3 MB ==> Swap: %1 MB, ",
+    //	    ToStringLen( 4, swap_size / ( 1024*1024)),
+    //	    ToStringLen( 5, mem       / ( 1024*1024)),
+    //	    ToStringLen( 7, slot_size / ( 1024*1024)));
 
-      integer cyl_size       = lookup( disk, "cyl_size", 1);
-	  
-      integer min_nb_boot_cyl = (Partitions::minimal_needed_bootsize / cyl_size) + 1;
+    if( swap_size == 0 )
+	{
+	return( -1 );
+	}
+    else
+	{
+	return( start_cyl + (swap_size / cyl_size));
+	}
+    };
+
+global define HitToTargetMap( map targetMap, map hit )
+    ``{
+
+    ////////////////////////////////////
+    // 1. create boot partition if required
+    //    by "split"     split base-slot
+    //    or by "have" : use a slot
+    // 2. create root partition
+    //
+    // 3. swap if possible
+
+    boolean hiterror       = false;
+    y2milestone( "hit:%1", hit );
+    
+    string  mode 	   = hit["mode"]:"free";
+    map     slot           = hit["slot"]:$[];
+    map     boot_slot      = hit["boot_slot"]:$[];
+    map     swap_slot      = hit["swap_slot"]:$[];
+    map     disk_info      = hit["disk_info"]:$[];
+    string  p_or_l         = hit["p_or_l"]:"primary";
+    string  type           = hit["type"]:"";            
+    string  slot_type      = slot["type"]:"";            
+    string  slot_dev       = slot["dev"]:"";            
+    string  boot_slot_type = boot_slot["type"]:"";            
+    integer nr             = hit["nr"]:-1;
+    integer boot_nr        = hit["boot_nr"]:-1;
+    integer slot_nr        = slot["nr"]:-1;
+    integer boot_slot_nr   = boot_slot["nr"]:-1;
+    integer swap_slot_nr   = swap_slot["nr"]:-1;
+    integer add_slot_nr    = hit["swap_slot_nr"]:-1;
+
+    integer slot_start_cyl       = slot["start_cyl"]:-1;
+    integer slot_end_cyl         = slot["end_cyl"]:-1;
+    integer slot_win_size        = slot["win_size"]:10000000000;
+    integer slot_win_length      = slot["win_length"]:-1;
+    integer slot_win_max_length  = slot["win_max_length"]:-1;
+    integer boot_slot_win_size   = boot_slot["win_size"]:10000000000;
+    integer boot_slot_win_length = boot_slot["win_length"]:-1;
+    integer boot_slot_start_cyl  = boot_slot["start_cyl"]:-1;
+    integer boot_slot_end_cyl    = boot_slot["end_cyl"]:-1;
 
     
-      //
-      map boot_win_part = $[];   // resized windows partition, if mode == win
-      map boot_part     = $[];   // partition of base slot
-      map win_part      = $[];   // resized windows partition, if mode == win
-      map del_part      = $[];
-      map part          = $[];   // partition of base slot
-      map ext_part      = $[];
+    map disk        = targetMap[slot_dev]:$[];
+    list partitions = disk["partitions"]:[];
 
-      boolean have_old_swap_part = ( swap_slot != $[] );
+    boolean need_boot_part = hit["need_boot"]:false;
+    boolean need_extended  = hit["extd"]:false;
+    boolean boot_by_split  = hit["boot_split"]:false;
+    boolean root_by_split  = hit["root_split"]:false;
 
+    integer cyl_size       = disk["cyl_size"]:1;
+	
+    integer min_nb_boot_cyl = (Partitions::minimal_needed_bootsize / cyl_size) +
+                              1;
 
-      // we need this prop_reuse_nr, bececause we have entered slot_nr and therefore partition numbers
-      // but, if I delete a logical part. this number may change, and we loose our handle. We can not
-      // use the "orig_nb" because sometimes we will create a proposal on an already changed partitioning:
-      // therefore the base is always the targetMap with its definition.
-      
-      partitions = maplist( `part, partitions, ``( add( part, "prop_reuse_nr", lookup( part, "nr", 0)))); 
+    //
+    map boot_win_part = $[];   // resized windows partition, if mode == win
+    map boot_part     = $[];   // partition of base slot
+    map win_part      = $[];   // resized windows partition, if mode == win
+    map del_part      = $[];
+    map part          = $[];   // partition of base slot
+    map ext_part      = $[];
 
-			    
-      /////////////////////////////////////////////////////
-      // Create BOOT Partition ... (but not the split mode)
-      // HAVE-mode
-      // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-
-      if ( need_boot_part && !boot_by_split )
-      {
-	  if ( boot_slot_type == "win_resize")
-	  {
-	      partitions = resize_partition( partitions,  boot_slot_nr, boot_slot_win_length, boot_slot_win_size, boot_slot_win_length  );
-	  }
-
-	  if ( boot_slot_type == "linux" )
-	  {
-	      if ( boot_slot_end_cyl > Partitions::boot_cyl )
-	      {
-		  partitions = delete_partition( partitions, boot_slot_nr );
-
-		  partitions = create_partition( partitions,
-					     boot_slot_start_cyl,
-					     boot_slot_start_cyl + min_nb_boot_cyl-1,
-					     boot_slot_nr,
-					     "/boot",
-					     "no-extended" );
-	      }
-	      else
-	      {
-		  partitions = reuse_partition( partitions, boot_slot_nr, "/boot" );
-	      }
-	  }
-	  else
-	  {
-	      if ( boot_slot_end_cyl < Partitions::boot_cyl )
-	      {
-  	          partitions = create_partition( partitions,
-						 boot_slot_start_cyl,
-						 boot_slot_end_cyl,
-						 boot_nr,
-						 "/boot",
-						 "no-extended" );
-	      }
-	      else
-	      {
-		  partitions = create_partition( partitions,
-						 boot_slot_start_cyl,
-						 boot_slot_start_cyl + min_nb_boot_cyl-1,
-						 boot_nr,
-						 "/boot",
-						 "no-extended" );
-	      }
-	  }
-      }  
+    boolean have_old_swap_part = ( swap_slot != $[] );
 
 
-      /////////////////////////////////////////////////////
-      // Create ROOT Partition ... (but not the split mode)
-      // no extended! see root_split_mode
-      // HAVE + NOTH-mode withOUT root-split
-      // bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    // we need this prop_reuse_nr, bececause we have entered slot_nr and 
+    // therefore partition numbers but, if I delete a logical part. this 
+    // number may change, and we loose our handle. We can not use the 
+    // "orig_nb" because sometimes we will create a proposal on an already 
+    // changed partitioning:
+    // therefore the base is always the targetMap with its definition.
+    
+    partitions = maplist( `part, partitions, 
+                          ``( add( part, "prop_reuse_nr", part["nr"]:0))); 
 
-      if ( !boot_by_split && !root_by_split )
-      {
-	  if ( slot_type == "win_resize")     partitions = resize_partition( partitions,  slot_nr, slot_win_length, slot_win_size, slot_win_max_length );
+			  
+    /////////////////////////////////////////////////////
+    // Create BOOT Partition ... (but not the split mode)
+    // HAVE-mode
+    // aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
-	  
-	  if ( slot_type == "linux" )
-	  {
-	      partitions = reuse_partition( partitions, slot_nr, "/" );
-	  }
-	  else
-	  {
-	      partitions = create_partition( partitions,
-					     slot_start_cyl,
-					     slot_end_cyl,
-					     nr,
-					     "/",
-					     "no-extended" );
-	  }
-      }	
-      
+    y2milestone( "need_boot_part:%1 boot_by_split:%2", need_boot_part, 
+                 boot_by_split );
+    if( need_boot_part && !boot_by_split )
+	{
+	if( boot_slot_type == "win_resize")
+	    {
+	    partitions = resize_partition( partitions,  boot_slot_nr, 
+	                                   boot_slot_win_length, 
+					   boot_slot_win_size, 
+					   boot_slot_win_length );
+	    }
 
+	if( boot_slot_type == "linux" )
+	    {
+	    if( boot_slot_end_cyl > Partitions::boot_cyl )
+		{
+		partitions = delete_partition( partitions, boot_slot_nr );
 
-      /////////////////////////////////////////////////////
-      // BOOT && ROOT  Partition if  split mode
-      // SPLIT-mode
-      // cccccccccccccccccccccccccccccccccccccccccccccccc
-
-      if ( need_boot_part && boot_by_split )
-      {
-	  integer rootnr = 5;
-
-	  if ( slot_type == "win_resize")
-	  {
-	      partitions = resize_partition( partitions, slot_nr, slot_win_length, slot_win_size, slot_win_max_length  );
-	  }
-	  if ( slot_type == "linux" )
-	  {
-	      partitions = delete_partition( partitions, slot_nr );
-	  }
-
-	  if ( need_extended )
-	  {
-	      partitions = create_partition( partitions,
-					     slot_start_cyl,
-					     slot_end_cyl,
-					     slot_type == "linux" ? slot_nr: nr,
-					     "",
-					     "extended");
-	  }
-	  else
-	  {
-	      rootnr = (slot_type == "linux" ? slot_nr: nr);
-	  }
-
-	  partitions = create_partition( partitions,
-					slot_start_cyl,
-					slot_start_cyl + min_nb_boot_cyl-1,
-					need_extended ? 6:boot_nr,
-					"/boot",
-					"no-extended");
-
-	  integer new_start_cyl = slot_start_cyl + min_nb_boot_cyl;
-          integer swap_end      = GetSwapSize( new_start_cyl, slot_end_cyl, cyl_size);
-
-	  if ( !have_old_swap_part
-	       && swap_end != -1  && swap_end > slot_start_cyl
-	       &&  ((((slot_end_cyl+1) - swap_end +1) * cyl_size) > Partitions::minimal_needed_disksize)
-	       &&  ( rootnr >= 5 ) )
-	  {
-	      // swap in extended
-	      partitions = create_partition( partitions,
-					     new_start_cyl,
-					     swap_end,
-					     rootnr,
-					     "swap",
-					     "no-extended");
-	      
-	      partitions = create_partition( partitions,
-					     swap_end +1,
-					     slot_end_cyl,
-					     rootnr+1,
-					     "/",
-					     "no-extended");	      
-
-	  }
-	  else
-	  {
-	      partitions = create_partition( partitions,
-					     slot_start_cyl + min_nb_boot_cyl,
-					     slot_end_cyl,
-					     rootnr,
-					     "/",
-					     "no-extended");	      
-	  }
+		partitions = create_partition( partitions, boot_slot_start_cyl,
+					       boot_slot_start_cyl+min_nb_boot_cyl-1,
+					       boot_slot_nr, "/boot",
+					       "no-extended" );
+		}
+	    else
+		{
+		partitions = reuse_partition( partitions, boot_slot_nr, 
+		                              "/boot" );
+		}
+	    }
+	else
+	    {
+	    if( boot_slot_end_cyl < Partitions::boot_cyl )
+		{
+		partitions = create_partition( partitions, boot_slot_start_cyl,
+					       boot_slot_end_cyl, boot_nr,
+					       "/boot", "no-extended" );
+		}
+	    else
+		{
+		partitions = create_partition( partitions, boot_slot_start_cyl,
+					       boot_slot_start_cyl+min_nb_boot_cyl-1,
+					       boot_nr, "/boot",
+					       "no-extended" );
+		}
+	    }
+	}  
 
 
-      }
+    /////////////////////////////////////////////////////
+    // Create ROOT Partition ... (but not the split mode)
+    // no extended! see root_split_mode
+    // HAVE + NOTH-mode withOUT root-split
+    // bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
-      /////////////////////////////////////////////////////
-      // ROOT by split
-      // HAVE + NOTH-mode with root-split
-      // (if I have a reusable swap partition. I donot need
-      // to split root
-      //dddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    if( !boot_by_split && !root_by_split )
+	{
+	if( slot_type == "win_resize")     
+	    partitions = resize_partition( partitions, slot_nr, slot_win_length,
+	                                   slot_win_size, slot_win_max_length );
 
-      if ( (!need_boot_part && root_by_split)
-	   || (need_boot_part && root_by_split && !boot_by_split))
-      {
-	  if ( slot_type == "win_resize")
-	  {
-	      partitions = resize_partition( partitions, slot_nr, slot_win_length, slot_win_size, slot_win_max_length );
-	  }
+	if( slot_type == "linux" )
+	    {
+	    partitions = reuse_partition( partitions, slot_nr, "/" );
+	    }
+	else
+	    {
+	    partitions = create_partition( partitions, slot_start_cyl,
+					   slot_end_cyl, nr, "/",
+					   "no-extended" );
+	    }
+	}	
+    
 
-	  if ( !have_old_swap_part )
-	  {
-	      ////////////////////////
-	      // Do the rootsplit ...
-	      if ( slot_type == "linux" )
-	      {
-		  partitions = delete_partition( partitions, slot_nr );
-	      }
+    /////////////////////////////////////////////////////
+    // BOOT && ROOT  Partition if  split mode
+    // SPLIT-mode
+    // cccccccccccccccccccccccccccccccccccccccccccccccc
 
+    if( need_boot_part && boot_by_split )
+	{
+	integer rootnr = 5;
 
-	      if ( need_extended )
-	      {
-		  partitions = create_partition( partitions,
-						 slot_start_cyl,
-						 slot_end_cyl,
-						 slot_type == "linux" ? slot_nr: nr,
-						 "",
-						 "extended");
-	      }
+	if( slot_type == "win_resize")
+	    {
+	    partitions = resize_partition( partitions, slot_nr, slot_win_length,
+	                                   slot_win_size, slot_win_max_length );
+	    }
+	if( slot_type == "linux" )
+	    {
+	    partitions = delete_partition( partitions, slot_nr );
+	    }
 
-	  
-	      integer swap_end = GetSwapSize( slot_start_cyl, slot_end_cyl, cyl_size);
+	if( need_extended )
+	    {
+	    partitions = create_partition( partitions, slot_start_cyl,
+					   slot_end_cyl,
+					   slot_type == "linux" ? slot_nr: nr,
+					   "", "extended");
+	    }
+	else
+	    {
+	    rootnr = (slot_type == "linux" ? slot_nr: nr);
+	    }
 
-	      if ( swap_end != -1
-		   &&  swap_end > slot_start_cyl
-		   &&  ((((slot_end_cyl+1) - swap_end +1) * cyl_size) > Partitions::minimal_needed_disksize)
-		   &&  need_extended )
-	      {
-		  // swap
-		  partitions = create_partition( partitions,
-						 slot_start_cyl,
-						 swap_end,
-						 5,
-						 "swap",
-						 "no-extended");
-		  partitions = create_partition( partitions,
-						 swap_end +1,
-						 slot_end_cyl,
-						 6,
-						 "/",
-						 "no-extended");
-	      }
-	      else
-	      {
-		  partitions = create_partition( partitions,
-						 slot_start_cyl,
-						 slot_end_cyl,
-						 5,
-						 "/",
-						 "no-extended");
-	      }
-	  }
-	  else
-	  {
-	      //////////////////////////////////////////////////////////////
-	      // We don't need a root split ...
-	      
-	      if ( slot_type == "linux" )
-	      {
-		  partitions = reuse_partition( partitions, slot_nr, "/" );
-	      }
-	      else
-	      {
-		  partitions = create_partition( partitions,
-						 slot_start_cyl,
-						 slot_end_cyl,
-						 nr,
-						 "/",
-						 "no-extended");
-	      }
-	  }
-      }
+	if( boot_nr==-1 )
+	    {
+	    boot_nr = rootnr;
+	    rootnr = hit["nr"]:0;
+	    }
+	y2milestone( "rootnr:%1", rootnr );
 
-      if ( have_old_swap_part )
-      {
-	  partitions = reuse_partition( partitions, swap_slot_nr, "swap" );
-      }
+	partitions = create_partition( partitions, slot_start_cyl,
+				       slot_start_cyl + min_nb_boot_cyl-1,
+				       need_extended ? 6:boot_nr, "/boot",
+				       "no-extended");
 
-      if ( hit["boot_r_slot"]:$[] != $[] && 
-           size(filter(`p, partitions, ``(p["mount"]:""=="/boot")))==0 )
-	  {
-          map slot = hit["boot_r_slot"]:$[];
-	  partitions = reuse_partition( partitions, slot["nr"]:0, "/boot" );
-	  }
+	integer new_start_cyl = slot_start_cyl + min_nb_boot_cyl;
+	integer swap_end = GetSwapSize( new_start_cyl, slot_end_cyl, cyl_size);
 
-      y2debug( "NEW: add_slot_nr:%1", add_slot_nr );
+	if( !have_old_swap_part && swap_end != -1 && 
+	    swap_end > slot_start_cyl && rootnr >= 5 &&
+	    ((((slot_end_cyl+1)-swap_end+1) * cyl_size) > 
+		Partitions::minimal_needed_disksize))
+	    {
+	    // swap in extended
+	    partitions = create_partition( partitions, new_start_cyl, swap_end,
+					   rootnr, "swap", "no-extended");
+	    
+	    partitions = create_partition( partitions, swap_end+1, slot_end_cyl,
+					   rootnr+1, "/", "no-extended");
+	    }
+	else
+	    {
+	    partitions = create_partition( partitions,
+					   slot_start_cyl+min_nb_boot_cyl,
+					   slot_end_cyl, rootnr, "/",
+					   "no-extended");	      
+	    }
 
-      if ( add_slot_nr != -1 && 
-           size(filter(`p, partitions, ``(p["mount"]:""=="swap")))==0 )
-	  {
-	  list pt = filter(`p, partitions, 
-	                   ``(p["mount"]:""=="/" && p["delete"]:false==false));
-	  if( size(pt)>0 )
+	}
+
+    /////////////////////////////////////////////////////
+    // ROOT by split
+    // HAVE + NOTH-mode with root-split
+    // (if I have a reusable swap partition. I donot need
+    // to split root
+    //dddddddddddddddddddddddddddddddddddddddddddddddddddddd
+
+    if( (!need_boot_part && root_by_split) ||
+	(need_boot_part && root_by_split && !boot_by_split))
+	{
+	if( slot_type == "win_resize")
+	    {
+	    partitions = resize_partition( partitions, slot_nr, slot_win_length,
+	                                   slot_win_size, slot_win_max_length );
+	    }
+
+	if( !have_old_swap_part )
+	    {
+	    ////////////////////////
+	    // Do the rootsplit ...
+	    if( slot_type == "linux" )
+		{
+		partitions = delete_partition( partitions, slot_nr );
+		}
+
+	    if( need_extended )
+		{
+		partitions = create_partition( partitions, slot_start_cyl,
+					       slot_end_cyl,
+					       slot_type=="linux" ? slot_nr:nr,
+					       "", "extended");
+		}
+
+	    integer swap_end = GetSwapSize( slot_start_cyl, slot_end_cyl, 
+	                                    cyl_size);
+
+	    if( swap_end != -1 && swap_end > slot_start_cyl && need_extended &&
+		((slot_end_cyl+1-swap_end+1) * cyl_size) > 
+		    Partitions::minimal_needed_disksize )
+		{
+		// swap
+		partitions = create_partition( partitions, slot_start_cyl,
+					       swap_end, 5, "swap",
+					       "no-extended");
+		partitions = create_partition( partitions, swap_end+1,
+					       slot_end_cyl, 6, "/",
+					       "no-extended");
+		}
+	    else
+		{
+		partitions = create_partition( partitions, slot_start_cyl,
+					       slot_end_cyl, 5, "/",
+					       "no-extended");
+		}
+	    }
+	else
+	    {
+	    //////////////////////////////////////////////////////////////
+	    // We don't need a root split ...
+	    
+	    if( slot_type == "linux" )
+		{
+		partitions = reuse_partition( partitions, slot_nr, "/" );
+		}
+	    else
+		{
+		partitions = create_partition( partitions, slot_start_cyl,
+					       slot_end_cyl, nr, "/",
+					       "no-extended");
+		}
+	    }
+	}
+
+    if( have_old_swap_part )
+	{
+	partitions = reuse_partition( partitions, swap_slot_nr, "swap" );
+	}
+
+    if ( hit["boot_r_slot"]:$[] != $[] && 
+	 size(filter(`p, partitions, ``(p["mount"]:""=="/boot")))==0 )
+	{
+	map slot = hit["boot_r_slot"]:$[];
+	partitions = reuse_partition( partitions, slot["nr"]:0, "/boot" );
+	}
+
+    y2debug( "NEW: add_slot_nr:%1", add_slot_nr );
+
+    if( add_slot_nr != -1 && 
+	size(filter(`p, partitions, ``(p["mount"]:""=="swap")))==0 )
+	{
+	list pt = filter(`p, partitions, 
+			 ``(p["mount"]:""=="/" && !p["delete"]:false));
+	if( size(pt)>0 )
 	    {
 	    map root = pt[0]:$[];
 	    integer start = root["region",0]:0;
 	    integer end = start + root["region",1]:0 - 1;
-	    integer swap_end = GetSwapSize( start, end, cyl_size);
+	    integer swap_end = GetSwapSize( start, end, cyl_size );
 
 	    y2debug( "NEW: start:%1 end:%2 swap_end:%3 cyl_size:%4", 
-	             start, end, swap_end, cyl_size );
+		     start, end, swap_end, cyl_size );
 	    if( swap_end != -1 &&  swap_end > start &&
-	        (end-swap_end+1) * cyl_size > Partitions::minimal_needed_disksize)
-	      {
-	      integer old_num = root["nr"]:0;
-	      y2debug( "NEW: old_num:%1", old_num );
-	      if( root["create"]:false == false )
+		(end-swap_end+1)*cyl_size > Partitions::minimal_needed_disksize)
 		{
-	        partitions = delete_partition( partitions, old_num );
-		partitions = create_partition( partitions, start, swap_end, 
-		                               old_num, "swap", "no-extended" );
+		integer old_num = root["nr"]:0;
+		y2debug( "NEW: old_num:%1", old_num );
+		if( root["create"]:false == false )
+		    {
+		    partitions = delete_partition( partitions, old_num );
+		    partitions = create_partition( partitions, start, swap_end, 
+						   old_num, "swap", 
+						   "no-extended" );
+		    }
+		else
+		    {
+		    partitions = filter( `p, partitions,
+					 ``(!(p["nr"]:-1 == old_num &&
+					      p["delete"]:false==false)));
+		    partitions = create_partition( partitions, start, swap_end, 
+						   old_num, "swap", 
+						   "no-extended" );
+		    }
+		partitions = create_partition( partitions, swap_end+1, end, 
+					       add_slot_nr, "/", 
+					       "no-extended" );
 		}
-	      else
-		{
-		partitions = filter( `p, partitions,
-				     ``(!(p["nr"]:-1 == old_num &&
-					  p["delete"]:false==false)));
-		partitions = create_partition( partitions, start, swap_end, 
-		                               old_num, "swap", "no-extended" );
-		}
-	      partitions = create_partition( partitions, swap_end+1, end, 
-		                             add_slot_nr, "/", "no-extended" );
-	      }
 	    }
-	  }
+	}
 
-      
-      // change( disk, "partitions", partitions );
-      foreach( `part, partitions,
-	  ``{
-	  part["device"] = Storage::GetDeviceName( slot_dev, part["nr"]:0 );
-	  });
+    
+    // change( disk, "partitions", partitions );
+    foreach( `part, partitions,
+	``{
+	part["device"] = Storage::GetDeviceName( slot_dev, part["nr"]:0 );
+	});
 
-      disk      = add( disk, "partitions", partitions);
-      targetMap = add( targetMap, slot_dev, disk);
-      Storage::SetPartDisk( slot_dev );
+    disk["partitions"] = partitions;
+    targetMap[slot_dev] = disk;
+    Storage::SetPartDisk( slot_dev );
 
-      if ( hiterror == true)
-      {
-	  y2debug( "hit slot      :  %1", slot); 
-	  y2debug( "hit boot_slot :  %1", boot_slot); 
-	  y2debug( "hit was       :  %1", filter( `key, `value, hit, ``( key != "slot" && key != "boot_slot")));  
-	  return( nil );
-      }
-      else
-      {
-	  y2debug( "hit slot      :  %1", slot); 
-	  y2debug( "hit boot_slot :  %1", boot_slot); 
-	  y2debug( "hit was       :  %1", filter( `key, `value, hit, ``( key != "slot" && key != "boot_slot")));  
-	  return( targetMap );
-      }
-  }
+    if( hiterror == true)
+	{
+	y2debug( "hit slot      :  %1", slot); 
+	y2debug( "hit boot_slot :  %1", boot_slot); 
+	y2debug( "hit was       :  %1", 
+	          filter( `key, `value, hit, 
+			  ``( key != "slot" && key != "boot_slot")));  
+	return( nil );
+	}
+    else
+	{
+	y2debug( "hit slot      :  %1", slot); 
+	y2debug( "hit boot_slot :  %1", boot_slot); 
+	y2debug( "hit was       :  %1", 
+	         filter( `key, `value, hit, 
+			 ``( key != "slot" && key != "boot_slot")));  
+	return( targetMap );
+	}
+    }
 
 
 
-    /////////////////////////////////////////////////////////////////////
+  /////////////////////////////////////////////////////////////////////
   // next step is find the best hit
   // 	hit rating for the best proposal:
   // 	all mode==free are better than win_reuse/reuse    
@@ -537,91 +516,87 @@
   //  >2        use swap
   //
   
-  global define GetTheBestHit( list hitlist )
-  ``{
+global define GetTheBestHit( list hitlist )
+    ``{
+    ////////////////////////////////////
+    // build a score
+    // first rough implemtaion
+    // todo: implement the rules above 
+    hitlist = maplist( `hit, hitlist, ``{
+	integer score = 0;
+	boolean root_split  = hit["root_split"]:false;
+	boolean boot_split  = hit["boot_split"]:false;
+	boolean need_ext    = hit["extd"]:false;
+	map     slot        = hit["slot"]:$[];
+	map     boot_slot   = hit["boot_slot"]:$[];
+	map     swap_slot   = hit["swap_slot"]:$[];
+	integer ssize       = slot["size"]:0;
+	string  type        = slot["type"]:0;
+	string  boot_type   = "split";
+	integer swap_slot_nr = hit["swap_slot_nr"]:-1;
+	integer free_primary = hit["free_primary"]:0;
 
-      ////////////////////////////////////
-      // build a score
-      // first rough implemtaion
-      // todo: implement the rules above 
-      hitlist = maplist( `hit, hitlist, ``{
-	  integer score = 0;
-	  boolean root_split  = lookup( hit,  "root_split", false);
-	  boolean boot_split  = lookup( hit,  "boot_split", false);
-	  boolean need_ext    = lookup( hit,  "extd",       false);
-	  map     slot        = lookup( hit,  "slot", $[]);
-	  map     boot_slot   = lookup( hit,  "boot_slot", $[]);
-	  map     swap_slot   = lookup( hit,  "swap_slot", $[]);
-	  integer ssize       = lookup( slot, "size", 0);
-	  string  type        = lookup( slot, "type", 0);
-	  string  boot_type   = "split";
-	  integer swap_slot_nr = hit["swap_slot_nr"]:-1;
-	  integer free_primary = hit["free_primary"]:0;
-
-	  score = ssize / 1000000;
-
-
-	  // don resize two times if you don't have to
-	  boot_type = lookup( boot_slot, "type", "split" );
-	  if ( boot_type == "win_resize" ) score = 900 + (score/100);
+	score = ssize / 1000000;
 
 
-	  // try to use free space
-	  if ( type=="free")       score = 400 *  score;
-	  if ( type=="linux")      score =  20 *  score;
-	  if ( type=="win_resize") score =   1 *  score;
+	// don resize two times if you don't have to
+	boot_type = boot_slot["type"]:"split";
+	if( boot_type == "win_resize" ) score = 900 + (score/100);
 
-	  // prefer a solution that contains a swap partition
-	  if ( swap_slot == $[] )
-	  {
-	      if ( root_split ) score = score * 2;
-	      else if ( swap_slot_nr != -1 ) 
-	          {
-		  score = score * 2;
-		  if( free_primary < 3 )
+	// try to use free space
+	if( type=="free")       score = 400 *  score;
+	if( type=="linux")      score =  20 *  score;
+	if( type=="win_resize") score =   1 *  score;
+
+	// prefer a solution that contains a swap partition
+	if( swap_slot == $[] )
+	    {
+	    if( root_split ) score = score * 2;
+	    else if( swap_slot_nr != -1 ) 
+		{
+		score = score * 2;
+		if( free_primary < 3 )
 		    {
 		    score = score - 5;
 		    }
-		  }
+		}
 
-	  }
-	  else
-	  {
-	      // if I have swap : try to avoid split
-	      if ( !boot_split ) score = score * 2;
-	  }
+	    }
+	else
+	    {
+	    // if I have swap : try to avoid split
+	    if ( !boot_split ) score = score * 2;
+	    }
 
-	  // prefer a solution that needs no extended partition
-	  if( need_ext ) score = score - 1;
+	// prefer a solution that needs no extended partition
+	if( need_ext ) score = score - 1;
 
-	  // give a penalty to hits with reuse of a way too large boot slot
-	  if( boot_slot["type"]:"" == "linux" &&
-	      boot_slot["size"]:0>200*1024*1024 )
-	      {
-	      score = score / 4;
-	      }
+	// give a penalty to hits with reuse of a way too large boot slot
+	if( boot_slot["type"]:"" == "linux" &&
+	    boot_slot["size"]:0>200*1024*1024 )
+	    {
+	    score = score / 4;
+	    }
 
-	  y2debug( "score=%1 type=%2 root_split=%3 boot_split=%4 free:%5",
-	           score, type, root_split, boot_split, free_primary );
+	y2debug( "score=%1 type=%2 root_split=%3 boot_split=%4 free:%5",
+		 score, type, root_split, boot_split, free_primary );
 
-	  return( add( hit, "score", score ) );
-      });
-			 
+	return( add( hit, "score", score ) );
+	});
+		       
 
-      hitlist = sort(`slot_x, `slot_y, hitlist, ``(lookup(slot_x, "score", 0) >= lookup(slot_y, "score", 0)));
+    hitlist = sort(`slot_x, `slot_y, hitlist, 
+                   ``(slot_x["score"]:0 >= slot_y["score"]:0));
 
-      if ( size( hitlist ) > 0 )
-      {
-	  return( select( hitlist, 0, $[]));
-      }
-      else
-      {
-	  return( $[] );
-      }
-  };
-
-  
-      
+    if( size( hitlist ) > 0 )
+	{
+	return( hitlist[0]:$[] );
+	}
+    else
+	{
+	return( $[] );
+	}
+    };
 
 }
   

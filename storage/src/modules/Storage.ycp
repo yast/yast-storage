@@ -2813,5 +2813,34 @@ global define MapS390Device( string device, map device_map )
 	}
     return( ret );
     };
+
+global define map SpecialBootHandling( map tg )
+    ``{
+    foreach( `dev, `disk, tg,
+	``{
+	list new_part = [];
+	foreach( `part, disk["partitions"]:"",
+	    ``{
+	    if( Partitions::PrepBoot() && !part["delete"]:false &&
+		part["mount"]:"" == "/boot" )
+		{
+		integer id = Partitions::fsid_prep_chrp_boot;
+		part["format"] = false;
+		part["mount"] = "";
+		part["fstype"] = Partitions::FsIdToString( id );
+		if( !part["create"]:false && part["fsid"]:0 != id )
+		    {
+		    part["ori_fsid"] = part["fsid"]:0;
+		    part["change_fsid"] = true;
+		    }
+		part["fsid"] = id;
+		y2milestone( "part=%1", part );
+		}
+	    new_part = add( new_part, part );
+	    });
+	tg[dev,"partitions"] = new_part;
+	});
+    return( tg );
+    }
 	
 }
