@@ -7,6 +7,11 @@
 #include "Y2PartedComponent.h"
 #include "WIN_Partition.h"
 #include <ycp/y2log.h>
+#include <y2/Y2ComponentBroker.h>
+#include <y2/Y2Component.h>
+#include <y2/Y2Namespace.h>
+#include <y2/Y2Function.h>
+
 
 #define RETURN_OK      YCPSymbol("ok")     	// `ok
 #define RETURN_ERROR   YCPSymbol("error")	// `error
@@ -30,6 +35,8 @@ Y2PartedComponent::doActualWork(const YCPList& options, Y2Component *displayserv
    YCPValue val 	= YCPVoid();
 
 
+
+
    // get the parameters from the YCP level as:
    // <progress_macro>		- macro to adjust progress bar
    // <directory_macro>		- macro to display directory information
@@ -38,17 +45,50 @@ Y2PartedComponent::doActualWork(const YCPList& options, Y2Component *displayserv
    // "0.0"			- new start of partition in MB on disk
    // "200.3"			- length of partition im MB on disk
 
+   report_macro = NULL;
+
    // get the progress macro
-   progress_macro = (options->value(0)->isVoid() ? ""
-		     : options->value(0)->asString()->value());
+   string macro = (options->value(0)->isVoid() ? ""
+		      : options->value(0)->asString()->value());
 
-   // get the directory macro
-   directory_macro = (options->value(1)->isVoid() ? ""
-		      : options->value(1)->asString()->value());
+   string::size_type colonpos = macro.find("::");
+   if( colonpos != string::npos ) 
+       {
+       module = macro.substr ( 0, colonpos );
+       progress_symbol = macro.substr ( colonpos + 2 );
+       Y2Component* comp = 
+	   Y2ComponentBroker::getNamespaceComponent( module.c_str() );
+       if( comp != NULL )
+	   {
+	   report_macro = comp->import( module.c_str() );
+	   if( report_macro == NULL )
+	       {
+	       y2error( "Component does does not provide %s", module.c_str() );
+	       }
+	   }
+       else
+	   {
+	   y2error( "Cannot find a component to provide %s", module.c_str() );
+	   }
+       }
 
-   // get the exception macro
-   exception_macro = (options->value(2)->isVoid() ? ""
-		      : options->value(2)->asString()->value());
+   // get the directory symbol
+   macro = (options->value(1)->isVoid() ? ""
+	       : options->value(1)->asString()->value());
+   colonpos = macro.find("::");
+   if( colonpos != string::npos ) 
+       {
+       directory_symbol = macro.substr ( colonpos + 2 );
+       }
+
+   // get the exception symbol
+   macro = (options->value(2)->isVoid() ? ""
+	       : options->value(2)->asString()->value());
+   colonpos = macro.find("::");
+   if( colonpos != string::npos ) 
+       {
+       exception_symbol = macro.substr ( colonpos + 2 );
+       }
 
    // get the partition
    partition = (options->value(3)->isVoid() ? ""
@@ -142,35 +182,35 @@ Y2PartedComponent::doActualWork(const YCPList& options, Y2Component *displayserv
 YCPValue
 Y2PartedComponent::report_progress(Y2Component *displayserver,
 				   string message_progress )
-{
-   YCPValue val = YCPVoid();
+    {
+    YCPValue val = YCPVoid();
+    Y2Function* t = NULL;
+    // get the percent value from the string
+    long long percent = atol( message_progress.c_str() );
 
+    y2debug ("Reporting progress: <%lld>", percent );
 
-   // if no macro at hand return immediately
-   if ( progress_macro == "" ) return YCPVoid();
+    if( report_macro ) 
+        {
+        // build command
+        t = report_macro->createFunctionCall( progress_symbol );
+        }
+    if( report_macro && t )
+	{
+	t->appendParameter( YCPInteger( percent ) ); // progress
+	YCPValue val = t->evaluateCall ();
+	delete t;
 
-   // get the percent value from the string
-   long long percent = atol( message_progress.c_str() );
-
-   y2debug ("Reporting progress: <%lld>", percent );
-
-   // build command
-   YCPTerm t(progress_macro);			// command
-   t->add( YCPInteger( percent ) );		// percent
-
-   // let the UI evaluate it
-   val = displayserver->evaluate(t);
-
-   // check result
-   if (!val->isVoid())
-   {
-      y2error ("displayserver(progress) returned <%s>", val->toString().c_str() );
-
-      return RETURN_ERROR;
-   }
-
-   return val;
-}	// End of report_progress()
+        // check result
+	if( !val->isVoid() )
+	    {
+	    y2error( "displayserver(progress) returned <%s>", 
+	             val->toString().c_str() );
+	    return RETURN_ERROR;
+	    }
+	}
+    return val;
+    }	// End of report_progress()
 
 
 //
@@ -181,54 +221,58 @@ Y2PartedComponent::report_progress(Y2Component *displayserver,
 YCPValue
 Y2PartedComponent::report_directory(Y2Component *displayserver,
 				    string message_directory )
-{
-   YCPValue val = YCPVoid();
+    {
+    YCPValue val = YCPVoid();
+    Y2Function* t = NULL;
 
-   // if no macro at hand return immediately
-   if ( directory_macro == "" ) return YCPVoid();
+    if( report_macro ) 
+	{
+	// build command
+	t = report_macro->createFunctionCall (directory_symbol);
+	}
 
-   // filter out garbage
-   const char* message_buf = message_directory.c_str();
-   char  message_final[64];	// should be enough in any case
+    // if no macro at hand return immediately
+    if( report_macro && t )
+	{
+	// filter out garbage
+	const char* message_buf = message_directory.c_str();
+	char  message_final[64];	// should be enough in any case
 
-   int length = strlen( message_buf );
-   int i = 0;
-   int k = 0;
+	int length = strlen( message_buf );
+	int i = 0;
+	int k = 0;
 
-   memset( message_final, 0, 64 );
+	memset( message_final, 0, 64 );
 
-   for ( i = 0, k = 0; i < length && k < 8; i++ )
-   {
-      if ( isalnum( (int) message_buf[i] ) || index( ".-_", (int) message_buf[i] ) )
-      {
-	 message_final[k++] = message_buf[i];
-      }
-   }
+	for( i = 0, k = 0; i < length && k < 8; i++ )
+	    {
+	    if( isalnum( (int) message_buf[i] ) || 
+		index( ".-_", (int) message_buf[i] ) )
+		{
+		message_final[k++] = message_buf[i];
+		}
+	    }
+	message_final[k++] = '.';
+	message_final[k++] = '.';
+	message_final[k++] = '.';
+	message_final[k++] = '\n';
 
-   message_final[k++] = '.';
-   message_final[k++] = '.';
-   message_final[k++] = '.';
-   message_final[k++] = '\n';
+	y2debug ("Reporting directory: <%s>", message_final );
 
-   y2debug ("Reporting directory: <%s>", message_final );
+	t->appendParameter( YCPString( string(message_final) ) ); // directory
+	YCPValue val = t->evaluateCall ();
+	delete t;
 
-   // build command
-   YCPTerm t(directory_macro);				// command
-   t->add( YCPString( string(message_final) ) );	// directory
-
-   // let the UI evaluate it
-   val = displayserver->evaluate(t);
-
-   // check result
-   if (!val->isVoid())
-   {
-      y2error ("displayserver(directory) returned <%s>", val->toString().c_str() );
-
-      return RETURN_ERROR;
-   }
-
-   return val;
-}	// End of report_directory()
+	// check result
+	if( !val->isVoid() )
+	    {
+	    y2error( "displayserver(directory) returned <%s>", 
+		     val->toString().c_str() );
+	    return RETURN_ERROR;
+	    }
+	}
+     return val;
+     }	// End of report_directory()
 
 
 
@@ -240,29 +284,32 @@ Y2PartedComponent::report_directory(Y2Component *displayserver,
 YCPValue
 Y2PartedComponent::report_exception(Y2Component *displayserver,
 				   string message_exception )
-{
-  YCPValue val = YCPVoid();
+    {
+    YCPValue val = YCPVoid();
+    Y2Function* t = NULL;
 
+    y2debug ("Reporting exception: <%s>", message_exception.c_str() );
+    if( report_macro ) 
+	{
+	// build command
+	t = report_macro->createFunctionCall( exception_symbol );
+	}
 
-  // if no macro at hand return immediately
-  if ( exception_macro == "" ) return YCPVoid();
+    // if no macro at hand return immediately
+    if( report_macro && t )
+	{
+	t->appendParameter( YCPString( message_exception ) ); // excpetion
+	YCPValue val = t->evaluateCall ();
+	delete t;
 
-  y2debug ("Reporting exception: <%s>", message_exception.c_str() );
+	// check result
+	if( !val->isVoid() )
+	    {
+	    y2error( "displayserver(exception) returned <%s>", 
+		     val->toString().c_str() );
+	    return RETURN_ERROR;
+	    }
+	}
 
-  // build command
-  YCPTerm t(exception_macro);			// command
-  t->add( YCPString( message_exception ) );	// exception
-
-  // let the UI evaluate it
-  val = displayserver->evaluate(t);
-
-  // check result
-  if (!val->isVoid())
-  {
-      y2error ("displayserver(exception) returned <%s>", val->toString().c_str() );
-
-      return RETURN_ERROR;
-  }
-
-  return val;
-}	// End of report_exception()
+    return val;
+    }	// End of report_exception()

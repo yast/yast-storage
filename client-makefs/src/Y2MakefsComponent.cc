@@ -9,6 +9,10 @@
 
 #include <sys/statvfs.h>
 #include <ycp/y2log.h>
+#include <y2/Y2ComponentBroker.h>
+#include <y2/Y2Component.h>
+#include <y2/Y2Namespace.h>
+#include <y2/Y2Function.h>
 
 #include "Y2MakefsComponent.h"
 #include "Ext2_Partition.h"
@@ -32,8 +36,32 @@ Y2MakefsComponent::doActualWork (const YCPList & options,
     // get the parameters
 
     // get the report macro
-    report_macro = (options->value (0)->isVoid () ? "" :
+    string macro = (options->value (0)->isVoid () ? "" :
 		    options->value (0)->asString ()->value ());
+		    
+    // get a way to call the macro
+    report_macro = NULL;
+    
+    string::size_type colonpos = macro.find("::");
+    if ( colonpos != string::npos ) {
+	module = macro.substr ( 0, colonpos );
+        symbol = macro.substr ( colonpos + 2 );
+	
+	Y2Component* comp = Y2ComponentBroker::getNamespaceComponent (module.c_str ());
+	if (comp != NULL)
+	{
+	    report_macro = comp->import (module.c_str ());
+	    if (report_macro == NULL)
+	    {
+		y2error ("Component does does not provide %s", module.c_str ());
+	    }
+	}
+	else
+	{
+	    y2error ("Cannot find a component to provide %s", module.c_str ());
+	}
+    }
+
 
     // get partition type
     partition_type = (options->value (1)->isVoid () ? "" :
@@ -122,25 +150,32 @@ Y2MakefsComponent::report_progress (Y2Component* displayserver, double percent)
 {
     y2debug ("Reporting progress: %f percent", percent);
 
-    if (report_macro == "")
+    if (report_macro == NULL)
 	return YCPVoid ();
 
     // build command
-    YCPTerm t (report_macro);			// command
-    t->add (YCPInteger ((long long) percent));	// percent
-
-    // let the UI evaluate it
-    YCPValue val = displayserver->evaluate (t);
-
-    // check result
-    if (!val.isNull () && !val->isVoid ())
+    Y2Function* t = report_macro->createFunctionCall (symbol);
+    
+    if (t != NULL)
     {
-	if (val->isSymbol () && val->asSymbol ()->symbol () == "cancel")
-	    return val;
+	t->appendParameter (YCPInteger ((long long) percent));
+	
+	YCPValue val = t->evaluateCall ();
+	
+	delete t;
 
-	y2error ("displayserver returned %s", val->toString ().c_str ());
-	return RETURN_ERROR;
+	// check result
+	if (!val.isNull () && !val->isVoid ())
+	{
+	    if (val->isSymbol () && val->asSymbol ()->symbol () == "cancel")
+		return val;
+
+	    y2error ("macro returned %s", val->toString ().c_str ());
+	    return RETURN_ERROR;
+	}
+	return val;
     }
+    
+    return YCPVoid ();
 
-    return val;
 }

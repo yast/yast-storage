@@ -21,9 +21,13 @@ class Y2MakefsComponent:public Y2Component
 private:
 
     /**
-     * Name of macro to call for progress bar, or NULL if quiet
+     * A namespace to provide progress bar, or NULL if quiet or error
      */
-    string report_macro;
+    Y2Namespace* report_macro;
+    
+    string module;
+    
+    string symbol;
 
     /**
      * type of partition (e.g. "ext2", "reiserfs", ...)
@@ -46,7 +50,9 @@ public:
      * Create a new makefs component
      */
     Y2MakefsComponent::Y2MakefsComponent ()
-	: report_macro (""),
+	: report_macro (NULL),
+	  module (""),
+	  symbol (""),
 	  partition_type (""),
 	  partition_name (""),
 	  partition_options ()

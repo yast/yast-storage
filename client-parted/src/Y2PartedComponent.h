@@ -12,10 +12,13 @@ class Y2PartedComponent : public Y2Component
 {
 private:
    // Name of macros to call for progress indication.
-   string progress_macro;
-   string directory_macro;
-   string exception_macro;
 
+   string module;
+   string progress_symbol;
+   string directory_symbol;
+   string exception_symbol;
+
+   Y2Namespace* report_macro;
 
    string partition;		// partition to resize
    string partition_start;	// start of the partition in MB on disk
@@ -27,9 +30,11 @@ public:
     * Create a new parted component
     */
    Y2PartedComponent::Y2PartedComponent()
-      : progress_macro(""),
-	directory_macro(""),
-	exception_macro(""),
+      : module(""),
+        progress_symbol(""),
+	directory_symbol(""),
+	exception_symbol(""),
+	report_macro(NULL),
 	partition(""),
 	partition_start(""),
 	partition_length(""){}

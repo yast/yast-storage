@@ -13,6 +13,7 @@ module_DATA =				\
 		Partitions.ycp		\
 		FileSystems.ycp		\
 		Storage.ycp		\
+		StorageClients.ycp      \
 		StorageControllers.ycp  \
 		StorageDevices.ycp
 
