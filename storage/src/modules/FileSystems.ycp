@@ -16,10 +16,12 @@
   import "String";
   import "Partitions";
 
+  import "Mode";
 
 
 
-  global list system_m_points = [ "/", "/boot", "/usr" , "/var", "/opt" ];
+
+  global list<string> system_m_points = [ "/", "/boot", "/usr" , "/var", "/opt" ];
   global list suggest_m_points = union( system_m_points,
                                         [ "/home", "/srv", "/tmp", "/local", ""] );
   global list swap_m_points   = [ "swap", ""  ];
@@ -247,31 +249,6 @@ Mutiple options are separated by commas.</p>
              `type : `text
 	   ];
     return( opt );
-    };
-
-global define list GetFstabOptWidgets( symbol fsys )
-    ``{
-    list ret = [];
-    if( fsys != `swap )
-	{
-	map fs = GetAllFileSystems( true, false );
-	ret = fs[fsys,`fst_options]:[];
-	if( contains( [`ext3, `reiser], fsys ) )
-	    {
-	    ret = union( ret, GetJournalFstabOptions() );
-	    }
-	if( contains( [`ext2, `ext3, `reiser], fsys ) )
-	    {
-	    ret = union( ret, GetAclFstabOptions() );
-	    }
-	}
-    else
-	{
-	ret = swap_fst_options;
-	}
-    y2milestone( "fsys %1", fsys );
-    y2milestone( "ret %1", ret );
-    return( ret );
     };
 
 define map GetNormalFilesystems()``{
@@ -608,6 +585,37 @@ number of inodes on a file system after its creation, so be sure to enter a reas
   return( RealFileSystems );
   };
 
+  list swap_fst_options = [
+    $[ `widget 	    : `TextEntry( `id("priority"), `opt(`hstretch),
+				  // label text
+                                  _("Swap &Priority"), "42" ),
+       `query_key   : "priority",
+       `between	    : [ 0, 32767],
+       `valid_chars : "0123456789",
+       // popup text
+       `error_text  : _("Value must be between 0 and 32767. Try again."),
+       `type : `text,
+       `str_opt : "pri=%1",
+       `str_scan : "pri=\(.*\)",
+	 // help text, richtext format
+       `help_text   : _("<p><b>Swap Priority:</b>
+Enter the swap priority. Higher numbers mean higher priority.</p>
+")
+     ]];
+
+  map SwapFileSystems =
+    $[ `swap :
+	$[ `name 	    : "Swap" ,
+	   `fsid 	    : Partitions::fsid_swap,
+	   `supports_format : true ,
+	   `fsid_item 	    : "0x82 Linux swap ",
+	   `fstype 	    : "Linux swap",
+	   `crypt 	    : false,
+	   `fst_options     : swap_fst_options,
+	   `mountpoints     : swap_m_points
+	 ]
+     ];
+
 
   map PseudoFileSystems = $[
 			    `lvm	: $[
@@ -642,36 +650,54 @@ number of inodes on a file system after its creation, so be sure to enter a reas
 					   ]
   ];
 
-  list swap_fst_options = [
-    $[ `widget 	    : `TextEntry( `id("priority"), `opt(`hstretch),
-				  // label text
-                                  _("Swap &Priority"), "42" ),
-       `query_key   : "priority",
-       `between	    : [ 0, 32767],
-       `valid_chars : "0123456789",
-       // popup text
-       `error_text  : _("Value must be between 0 and 32767. Try again."),
-       `type : `text,
-       `str_opt : "pri=%1",
-       `str_scan : "pri=\(.*\)",
-	 // help text, richtext format
-       `help_text   : _("<p><b>Swap Priority:</b>
-Enter the swap priority. Higher numbers mean higher priority.</p>
-")
-     ]];
 
-  map SwapFileSystems =
-    $[ `swap :
-	$[ `name 	    : "Swap" ,
-	   `fsid 	    : Partitions::fsid_swap,
-	   `supports_format : true ,
-	   `fsid_item 	    : "0x82 Linux swap ",
-	   `fstype 	    : "Linux swap",
-	   `crypt 	    : false,
-	   `fst_options     : swap_fst_options,
-	   `mountpoints     : swap_m_points
-	 ]
-     ];
+  /**
+   * Filesystem Definitions
+   * @return map map with all supported filesystems
+   */
+global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
+    ``{
+    map ret = filter( `fs_key, `fs_map, GetNormalFilesystems(),
+                      ``( support[fs_key]:false ));
+
+    if( add_swap )
+	{
+	ret = union( ret, SwapFileSystems );
+	}
+    if( add_pseudo )
+	{
+	ret = union( ret, filter( `fs_key, `fs_map, PseudoFileSystems,
+				  ``( support[fs_key]:false )));
+	}
+    return ret;
+    }
+
+
+global define list GetFstabOptWidgets( symbol fsys )
+    ``{
+    list ret = [];
+    if( fsys != `swap )
+	{
+	map fs = GetAllFileSystems( true, false );
+	ret = fs[fsys,`fst_options]:[];
+	if( contains( [`ext3, `reiser], fsys ) )
+	    {
+	    ret = union( ret, GetJournalFstabOptions() );
+	    }
+	if( contains( [`ext2, `ext3, `reiser], fsys ) )
+	    {
+	    ret = union( ret, GetAclFstabOptions() );
+	    }
+	}
+    else
+	{
+	ret = swap_fst_options;
+	}
+    y2milestone( "fsys %1", fsys );
+    y2milestone( "ret %1", ret );
+    return( ret );
+    };
+
 
 
 
@@ -710,28 +736,6 @@ global define void FileSystems()
 	support[`hfs] = true;
 	}
     y2milestone( "support %1", support );
-    }
-
-
- /**
-   * Filesystem Definitions
-   * @return map map with all supported filesystems
-   */
-global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
-    ``{
-    map ret = filter( `fs_key, `fs_map, GetNormalFilesystems(),
-                      ``( support[fs_key]:false ));
-
-    if( add_swap )
-	{
-	ret = union( ret, SwapFileSystems );
-	}
-    if( add_pseudo )
-	{
-	ret = union( ret, filter( `fs_key, `fs_map, PseudoFileSystems,
-				  ``( support[fs_key]:false )));
-	}
-    return ret;
     }
 
 
@@ -852,9 +856,9 @@ global define boolean LoadModule( symbol used_fs )
     y2milestone("all needed modules for %1: %2", used_fs, all_needed_modules );
     boolean load_success = true;
 
-    map loaded_modules = SCR::Read(.proc.modules);
+    map loaded_modules = (map) SCR::Read(.proc.modules);
     y2milestone( "loaded_modules %1", loaded_modules );
-    string pm = SCR::Read(.target.string, "/proc/modules" );
+    string pm = (string) SCR::Read(.target.string, "/proc/modules" );
     y2milestone( "/proc/modules %1", splitstring(pm,"\n") );
 
     foreach(`modulename, all_needed_modules ,
@@ -862,12 +866,12 @@ global define boolean LoadModule( symbol used_fs )
 	if( modulename != "" &&  size (loaded_modules[modulename]:$[])==0 )
 	    {
 	    if( load_success )
-		load_success = SCR::Execute(.target.insmod, modulename , "" );
+		load_success = (boolean) SCR::Execute(.target.insmod, modulename , "" );
 
 	    y2milestone ("Loaded fs module %1 %2", modulename, load_success?"Ok":"Failed");
 	    }
 	});
-    pm = SCR::Read(.target.string, "/proc/modules" );
+    pm = (string) SCR::Read(.target.string, "/proc/modules" );
     y2milestone( "/proc/modules %1", splitstring(pm,"\n") );
     return load_success;
     };
@@ -922,36 +926,82 @@ global define map IsResizable( symbol fsys )
     return( ret );
     };
 
-global define map GetFsysInfos( map part )
+  /*
+   * DetectFs
+   *---------------------------------------------------------------------
+   * Detect the existing fs on the partition. Right now only ext2 and
+   * reiserfs are detected.
+   * arguments: <partition> for ex. "/dev/sda1"
+   * returns:   Symbol for filesystem or `unknown
+   *---------------------------------------------------------------------
+   */
+global define symbol DetectFs( string current_dev )
     ``{
-    string dev = part["device"]:"";
-    y2milestone( "device:%1", dev );
-    if( size(part["loop_dev"]:"")>0 )
+    symbol  return_value = `unknown;
+    string  testcall     = "";
+    map bc        	 = $[];
+
+    testcall  = sformat( "/bin/guessfstype %1 2>%1", current_dev );
+    bc = (map) SCR::Execute (.target.bash_output, testcall, $[] );
+    y2milestone( "cmd %1", testcall, bc["exit"]:-1 );
+    y2milestone( "%1", bc );
+
+    if (bc["exit"]:1 == 0)
 	{
-	dev = part["loop_dev"]:"";
-	y2milestone( "device:%1", dev );
+	string type = select( filter(string e, splitstring( bc["stdout"]:"", "\n" ),
+				      ``(find(e,current_dev)==0) ),
+			      0, "" );
+	integer pos = findlastof(type, " ");
+	if (pos != nil)
+	   {
+	   type = substring (type, pos+1);
 	}
-    part["detected_fs"] = DetectFs( dev );
-    if( part["detected_fs"]:`unknown != `unknown )
+	pos = findfirstof(type, " ,");
+	if (pos != nil)
 	{
-	part["used_fs"] = part["detected_fs"]:`unknown;
+	   type = substring (type, 0, pos);
 	}
-    if( part["detected_fs"]:`unknown != `unknown &&
-        part["detected_fs"]:`unknown != `swap )
+	y2milestone( "type %1", type );
+	if( type == "ext2" )
 	{
-	map info = GetUuidVolume( dev, part["detected_fs"]:`unknown );
-	if( size(info["uuid"]:"")>0 )
+	  return_value = `ext2;
+	  }
+	else if( type == "ext3" )
 	    {
-	    part["uuid"] = info["uuid"]:"";
+	  return_value = `ext3;
 	    }
-	if( size(info["label"]:"")>0 )
+	else if( type == "reiserfs" )
 	    {
-	    part["label"] = info["label"]:"";
+	  return_value = `reiser;
 	    }
+	else if( type == "jfs" )
+	  {
+	  return_value = `jfs;
 	}
-    y2milestone( "ret part:%1", part );
-    return( part );
+	else if( type == "xfs" )
+	  {
+	  return_value = `xfs;
     }
+	else if( type == "vfat" || type == "fat" )
+	  {
+	  return_value = `fat32;
+	  }
+	else if( type == "ntfs" )
+	  {
+	  return_value = `ntfs;
+	  }
+	else if( type == "hfs" )
+	  {
+	  return_value = `hfs;
+	  }
+	else if( type == "swap" )
+	  {
+	  return_value = `swap;
+	  }
+	}
+    y2milestone( "DetectFs %1: %2", current_dev, return_value );
+    return( return_value );
+    };
 
 global define map GetUuidVolume( string dev, symbol fs )
     ``{
@@ -965,7 +1015,7 @@ global define map GetUuidVolume( string dev, symbol fs )
 	{
 	cmd = sformat( "/sbin/tune2fs -l %1", dev );
 	y2debug( "executing cmd %1", cmd );
-	cmd_ret = SCR::Execute(.target.bash_output, cmd);
+	cmd_ret = (map) SCR::Execute(.target.bash_output, cmd);
 	val = cmd_ret["stdout"]:"";
 	search = "UUID:";
 	pos = find( val, search );
@@ -1005,7 +1055,7 @@ global define map GetUuidVolume( string dev, symbol fs )
 	{
 	cmd = sformat( "/sbin/debugreiserfs %1 2>&1", dev );
 	y2milestone( "executing cmd %1", cmd );
-	cmd_ret = SCR::Execute(.target.bash_output, cmd);
+	cmd_ret = (map) SCR::Execute(.target.bash_output, cmd);
 	y2milestone( "output %1", cmd_ret["stdout"]:"" );
 	val = cmd_ret["stdout"]:"";
 	search = "UUID:";
@@ -1046,7 +1096,7 @@ global define map GetUuidVolume( string dev, symbol fs )
 	{
 	cmd = sformat( "/usr/sbin/xfs_admin -l -u %1", dev );
 	y2debug( "executing cmd %1", cmd );
-	cmd_ret = SCR::Execute(.target.bash_output, cmd);
+	cmd_ret = (map) SCR::Execute(.target.bash_output, cmd);
 	val = cmd_ret["stdout"]:"";
 	search = "uuid =";
 	pos = find( val, search );
@@ -1087,84 +1137,41 @@ global define map GetUuidVolume( string dev, symbol fs )
     }
 
 
+
+global define map GetFsysInfos( map part )
+    ``{
+    string dev = part["device"]:"";
+    y2milestone( "device:%1", dev );
+    if( size(part["loop_dev"]:"")>0 )
+      {
+	dev = part["loop_dev"]:"";
+	y2milestone( "device:%1", dev );
+      }
+    part["detected_fs"] = DetectFs( dev );
+    if( part["detected_fs"]:`unknown != `unknown )
+      {
+	part["used_fs"] = part["detected_fs"]:`unknown;
+      }
+    if( part["detected_fs"]:`unknown != `unknown &&
+        part["detected_fs"]:`unknown != `swap )
+      {
+	map info = GetUuidVolume( dev, part["detected_fs"]:`unknown );
+	if( size(info["uuid"]:"")>0 )
+      {
+	    part["uuid"] = info["uuid"]:"";
+      }
+	if( size(info["label"]:"")>0 )
+      {
+	    part["label"] = info["label"]:"";
+      }
+      }
+    y2milestone( "ret part:%1", part );
+    return( part );
+    }
+
 global define symbol FsToSymbol( string type )
     ``{
     symbol return_value = `none;
-    if( type == "ext2" )
-      {
-      return_value = `ext2;
-      }
-    else if( type == "ext3" )
-      {
-      return_value = `ext3;
-      }
-    else if( regexpmatch( type, "reiser.*" ) )
-      {
-      return_value = `reiser;
-      }
-    else if( type == "jfs" )
-      {
-      return_value = `jfs;
-      }
-    else if( type == "xfs" )
-      {
-      return_value = `xfs;
-      }
-    else if( type == "vfat" || regexpmatch( type, "fat.*" ))
-      {
-      return_value = `fat32;
-      }
-    else if( type == "ntfs" )
-      {
-      return_value = `ntfs;
-      }
-    else if( type == "hfs" )
-      {
-      return_value = `hfs;
-      }
-    else if( type == "swap" )
-      {
-      return_value = `swap;
-      }
-    return( return_value );
-    }
-
-  /*
-   * DetectFs
-   *---------------------------------------------------------------------
-   * Detect the existing fs on the partition. Right now only ext2 and
-   * reiserfs are detected.
-   * arguments: <partition> for ex. "/dev/sda1"
-   * returns:   Symbol for filesystem or `unknown
-   *---------------------------------------------------------------------
-   */
-global define symbol DetectFs( string current_dev )
-    ``{
-    symbol  return_value = `unknown;
-    string  testcall     = "";
-    map bc        	 = $[];
-
-    testcall  = sformat( "/bin/guessfstype %1 2>%1", current_dev );
-    bc = SCR::Execute (.target.bash_output, testcall, $[] );
-    y2milestone( "cmd %1", testcall, bc["exit"]:-1 );
-    y2milestone( "%1", bc );
-
-    if (bc["exit"]:1 == 0)
-	{
-	string type = select( filter( `e, splitstring( bc["stdout"]:"", "\n" ),
-				      ``(find(e,current_dev)==0) ),
-			      0, "" );
-	integer pos = findlastof(type, " ");
-	if (pos != nil)
-	   {
-	   type = substring (type, pos+1);
-	   }
-	pos = findfirstof(type, " ,");
-	if (pos != nil)
-	   {
-	   type = substring (type, 0, pos);
-	   }
-	y2milestone( "type %1", type );
 	if( type == "ext2" )
 	  {
 	  return_value = `ext2;
@@ -1173,7 +1180,7 @@ global define symbol DetectFs( string current_dev )
 	  {
 	  return_value = `ext3;
 	  }
-	else if( type == "reiserfs" )
+    else if( regexpmatch( type, "reiser.*" ) )
 	  {
 	  return_value = `reiser;
 	  }
@@ -1185,7 +1192,7 @@ global define symbol DetectFs( string current_dev )
 	  {
 	  return_value = `xfs;
 	  }
-	else if( type == "vfat" || type == "fat" )
+    else if( type == "vfat" || regexpmatch( type, "fat.*" ))
 	  {
 	  return_value = `fat32;
 	  }
@@ -1201,11 +1208,8 @@ global define symbol DetectFs( string current_dev )
 	  {
 	  return_value = `swap;
 	  }
-	}
-    y2milestone( "DetectFs %1: %2", current_dev, return_value );
     return( return_value );
-    };
-
+    }
 
 global define boolean SetVolumeLabel( string dev, map part )
     ``{
@@ -1271,11 +1275,11 @@ global define map GetFreeSpace( string device, integer testsize,
     integer free = 0;
     boolean win_disk = false;
     boolean mounted = false;
-    string mount_point = SCR::Read (.target.tmpdir) + "/gfs_mnt";
+    string mount_point = (string) SCR::Read (.target.tmpdir) + "/gfs_mnt";
 
     if( !Mode::initial )
 	{
-	list mounts = filter( `e, SCR::Read(.proc.mounts), 
+	list mounts = filter(map e, (list<map>) SCR::Read(.proc.mounts),
 			      ``(e["spec"]:""==device));
 	y2milestone( "mounts %1", mounts );
         if( size(mounts)>0 && size(mounts[0,"file"]:"")>0 )
@@ -1312,7 +1316,7 @@ global define map GetFreeSpace( string device, integer testsize,
 	//
 	y2milestone( "mount %1 used_fs %2 type %3", device, used_fs, 
 	             mount_type );
-	boolean mount_ret = SCR::Execute(.target.mount, [device, mount_point],
+	boolean mount_ret = (boolean) SCR::Execute(.target.mount, [device, mount_point],
 					 mount_type );
 
 	if ( !mount_ret)
@@ -1327,7 +1331,7 @@ global define map GetFreeSpace( string device, integer testsize,
 
     // get usage information for the partition via df
     //
-    list df_result = SCR::Read(.run.df);
+    list<map> df_result = (list) SCR::Read(.run.df);
     if( used_fs==`fat32 || used_fs==`fat16 || used_fs==`ntfs )
 	{
 	list chkf = ["boot.ini", "msdos.sys", "io.sys", "config.sys",
@@ -1349,7 +1353,7 @@ global define map GetFreeSpace( string device, integer testsize,
     y2debug( ".run.df: %1", df_result );
 
     // filter out headline and other invalid entries
-    df_result = filter( `part, df_result, ``( part["spec"]:""==device ) );
+    df_result = filter(map part, df_result, ``( part["spec"]:""==device ) );
     y2milestone( "df_result %1", df_result );
 
     // get the usage values
@@ -1373,13 +1377,13 @@ global define map GetFreeSpace( string device, integer testsize,
 	{
 	string cmd = sformat("ntfsresize -f -i %1", device );
 	y2milestone( "Excuting cmd:%1", cmd );
-	map bcall = SCR::Execute( .target.bash_output, cmd, 
+	map bcall = (map) SCR::Execute( .target.bash_output, cmd, 
 	                          $[ "LC_MESSAGES" :"POSIX"] );
 	y2milestone( "Excuting ret:%1", bcall );
 	free = 0;
 	if( bcall["exit"]:1 == 0 )
 	    {
-	    string line = find( `l, splitstring( bcall["stdout"]:"", "\n" ),
+	    string line = find(string l, splitstring( bcall["stdout"]:"", "\n" ),
 	                        ``( find(l, " could resize at ")>0 ));
 	    y2milestone( "line %1", line );
 	    if( line != nil )
@@ -1466,8 +1470,8 @@ global define boolean IsSystemMp( string mount, boolean prefix )
     boolean ret = contains( system_m_points, mount );
     if( !ret && prefix )
 	{
-	list mp = filter( `s, system_m_points, ``(s!="/") );
-	foreach( `s, mp,
+	list mp = filter(string s, system_m_points, ``(s!="/") );
+	foreach(string s, mp,
 	    ``{
 	    ret = ret || find( mount, s + "/" )==0;
 	    });

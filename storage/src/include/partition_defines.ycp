@@ -27,14 +27,14 @@
   import "Report";
 
   import "Popup";
-  include "partitioning/custom_part_testdata.ycp";
+//  include "partitioning/custom_part_testdata.ycp";
 
   textdomain "storage";
 
     //////////////////////////////////////////////////////////////////////
     // fills up a string to a minimum length
 
-    global define ToLen( integer wide, string str )
+    define string ToLen( integer wide, string str )
     ``{
 	while ( size(str) < wide ) str = " " + str;
 	return( str );
@@ -44,7 +44,7 @@
     // converts int to string
     // fills up the  string to a minimum length
 
-    global define ToStringLen( integer wide, integer number )
+    define string ToStringLen( integer wide, integer number )
     ``{
 	return( ToLen( wide, sformat("%1", number )));
     };
@@ -57,7 +57,7 @@
     //
     // 8 is 8k
     // 16K == 16k == 16KB == 16kb
-global define kmgt_str_to_byte( string input )
+define integer kmgt_str_to_byte( string input )
     ``{
     integer number = 0;
 
@@ -121,6 +121,65 @@ global define kmgt_str_to_byte( string input )
     };
 
 
+    /*---------------------------------------------------------------------
+     * returns for a string a string with a minimum of 9 characters:
+     * "1"      -> "       1"
+     * "22"     -> "      22"
+     * "145"    -> "     145"
+     * "2134"   -> "    2134"
+     *----------------------------------------------------------------------
+     */
+    define string sto8string( string str )
+    ``{
+	integer nb = size( str );
+	if ( nb > 8  )   return( sformat( "%1", str ));
+	if ( nb > 7  )   return( sformat( " %1", str ));
+	if ( nb > 6  )   return( sformat( "  %1", str ));
+	if ( nb > 5  )   return( sformat( "   %1", str ));
+	if ( nb > 4  )   return( sformat( "    %1", str ));
+	if ( nb > 3  )   return( sformat( "     %1", str ));
+	if ( nb > 2  )   return( sformat( "      %1", str ));
+	if ( nb > 1  )   return( sformat( "       %1", str ));
+	return( sformat( "         %1", str ));
+    };
+
+/*---------------------------------------------------------------------
+ * Convert <number-of-bytes> to XXX.X MB or XXX.X GB or XXX.X TB
+ *
+ * see also ByteToHumanStringWithZero !
+ * Return value: string  "unknown" if input == 0
+ *----------------------------------------------------------------------
+ */
+define string ByteToHumanString ( integer number )
+    ``{
+    // column description, if disk space is not known
+    if( number == 0 ) return( _("unknown") );
+
+    if( number < 1073741824 )
+	{
+	// < 1 GB
+	integer MB    = number / 1048576;
+	integer hunKB = (number - (MB * 1048576)) / 104858;
+	return( sto8string(sformat( "%1.%2 MB", MB,hunKB )));
+	}
+    else if ( number < 1099511627776 )
+	{
+	// < 1 TB
+	integer GB    = number / 1073741824;
+	integer hunMB = (number - (GB * 1073741824)) / 107374183;
+	return( sto8string(sformat( "%1.%2 GB", GB,hunMB )));
+	}
+    else
+        {
+        // >= 1 TB
+        integer TB    = number / 1099511627776;
+        integer hunGB = (number - (TB * 1099511627776)) / 109951162778;
+	return( sto8string(sformat( "%1.%2 TB", TB,hunGB )));
+        }
+    };
+
+
+
 
     /*---------------------------------------------------------------------
      * TargetChangesToRichText()
@@ -129,7 +188,7 @@ global define kmgt_str_to_byte( string input )
      *---------------------------------------------------------------------
      */
 
-global define TargetChangesToRichText( map targetMap, map modTg )
+define string TargetChangesToRichText( map targetMap, map modTg )
     ``{
     if( targetMap == nil )
 	{
@@ -145,12 +204,12 @@ global define TargetChangesToRichText( map targetMap, map modTg )
     list other_lst  = [];
 
 
-    foreach( `disk, `diskinfo, targetMap, 
+    foreach(string disk, map diskinfo, targetMap, 
 	``{
-	list    partitions = diskinfo["partitions"]:[];
+	list<map>    partitions = (list<map>) (diskinfo["partitions"]:[]);
 	integer cyl_size  = diskinfo["cyl_size"]:1;
 
-	foreach( `part, partitions, 
+	foreach(map part, partitions, 
 	    ``{
 	    string  device  = part["device"]:"";
 	    string  used_fs = substring(sformat("%1", part["used_fs"]:" "), 1);
@@ -376,7 +435,7 @@ global define TargetChangesToRichText( map targetMap, map modTg )
 	});
 
 
-    foreach( `num, `entry, modTg, 
+    foreach(any num, map entry, modTg, 
 	``{
 	if( entry["type"]:"" == "remove_lv" )
 	    {
@@ -439,7 +498,7 @@ global define TargetChangesToRichText( map targetMap, map modTg )
      *---------------------------------------------------------------------
      */
 
-     global define notUsedMountpoints( map targetMap , list all_mountpoints )
+     define list notUsedMountpoints( map targetMap , list all_mountpoints )
      ``{
 	 if( all_mountpoints == [] || all_mountpoints == nil  )
 	 {
@@ -447,16 +506,16 @@ global define TargetChangesToRichText( map targetMap, map modTg )
 	 }
 
 
-	list mountpoints = maplist( `dev, `devmap, targetMap,
+	list mountpoints = maplist(any dev, map devmap, targetMap,
 			   ``{
-			       list not_del_part = filter(  `part, lookup( devmap, "partitions", []),
-							    ``( lookup( part, "delete", false) == false));
+			       list not_del_part = filter(map part, devmap["partitions"]:[],
+							    ``( part["delete"]:false == false));
 
-			       return( maplist( `part, not_del_part, ``( lookup( part, "mount", "")) ));
+			       return( maplist(map part, not_del_part, ``( part["mount"]:"") ));
 			   });
 
 
-	mountpoints = flatten(mountpoints);
+	mountpoints = (list) flatten(mountpoints);
 	mountpoints = union(mountpoints, []); // remove double entrys "" and swap
 
 	list not_used_mountpoints = filter( `mnt, all_mountpoints,
@@ -473,10 +532,10 @@ global define TargetChangesToRichText( map targetMap, map modTg )
  * Return value: string  "0" if input == 0
  *----------------------------------------------------------------------
  */
-global define ByteToHumanStringWithZero ( integer number )
+define string ByteToHumanStringWithZero ( integer number )
     ``{
     // string or locale
-    any ret = ByteToHumanString( number );
+    string  ret = ByteToHumanString( number );
 
     // label text
     if( ret == _("unknown") )
@@ -491,66 +550,7 @@ global define ByteToHumanStringWithZero ( integer number )
     };
 
 
-/*---------------------------------------------------------------------
- * Convert <number-of-bytes> to XXX.X MB or XXX.X GB or XXX.X TB
- *
- * see also ByteToHumanStringWithZero !
- * Return value: string  "unknown" if input == 0
- *----------------------------------------------------------------------
- */
-global define ByteToHumanString ( integer number )
-    ``{
-    // column description, if disk space is not known
-    if( number == 0 ) return( _("unknown") );
-
-    if( number < 1073741824 )
-	{
-	// < 1 GB
-	integer MB    = number / 1048576;
-	integer hunKB = (number - (MB * 1048576)) / 104858;
-	return( sto8string(sformat( "%1.%2 MB", MB,hunKB )));
-	}
-    else if ( number < 1099511627776 )
-	{
-	// < 1 TB
-	integer GB    = number / 1073741824;
-	integer hunMB = (number - (GB * 1073741824)) / 107374183;
-	return( sto8string(sformat( "%1.%2 GB", GB,hunMB )));
-	}
-    else
-        {
-        // >= 1 TB
-        integer TB    = number / 1099511627776;
-        integer hunGB = (number - (TB * 1099511627776)) / 109951162778;
-	return( sto8string(sformat( "%1.%2 TB", TB,hunGB )));
-        }
-    };
-
-
-
-    /*---------------------------------------------------------------------
-     * returns for a string a string with a minimum of 9 characters:
-     * "1"      -> "       1"
-     * "22"     -> "      22"
-     * "145"    -> "     145"
-     * "2134"   -> "    2134"
-     *----------------------------------------------------------------------
-     */
-    global define sto8string( string str )
-    ``{
-	integer nb = size( str );
-	if ( nb > 8  )   return( sformat( "%1", str ));
-	if ( nb > 7  )   return( sformat( " %1", str ));
-	if ( nb > 6  )   return( sformat( "  %1", str ));
-	if ( nb > 5  )   return( sformat( "   %1", str ));
-	if ( nb > 4  )   return( sformat( "    %1", str ));
-	if ( nb > 3  )   return( sformat( "     %1", str ));
-	if ( nb > 2  )   return( sformat( "      %1", str ));
-	if ( nb > 1  )   return( sformat( "       %1", str ));
-	return( sformat( "         %1", str ));
-    };
-
-  global define get_device_name( string disk, any partition ) ``{
+  define string get_device_name( string disk, any partition ) ``{
       return( Storage::GetDeviceName( disk, partition ));
   };
 
@@ -560,83 +560,45 @@ global define ByteToHumanString ( integer number )
 
  
 
+    //////////////////////////////////////////////////////////////////////
+    // remove an entry from the execution stack "modify_targets"
+    // renumber the rest of the entries
 
-  /*---------------------------------------------------------------------
-   * changeExtendedIdTo15
-   *---------------------------------------------------------------------
-   * change the fsid of every extended partiton in  the map targets
-   * in user_settings from 5 to 15
-   *---------------------------------------------------------------------
-   */
-
-    global define void changeExtendedIdTo15()
-    ``{
-        include "partitioning/lvm_lib.ycp";
-
-	map modify_targets = Storage::GetModifyTargets();
-	map targets        = Storage::GetTargetMap();
-
-	foreach ( `dev, `disk, targets,
-	``{
-	    list partitions = lookup ( disk, "partitions", [] );
-
-	    foreach ( `partition, partitions,
+    define map removeTargetModification( map modify_targets, integer num )
 	    ``{
-		if ( (lookup( partition , "fsid", 0 ) == 5) &&
-		     (lookup(partition, "create", false)  ) &&
-		     ( !lookup(partition, "define", false))    )
+	// delete entry
+	modify_targets = filter(integer k, any v, modify_targets, ``(k != num ) );
+	// renumber 1 2 4 5 -> 1 2 3 4
+	modify_targets = mapmap(integer k, any v, modify_targets, ``{
+	    if ( k > num )
 		{
-		    modify_targets = addTargetModification( modify_targets, $[
-									      "disk" : dev,
-									      "id" : 15,
-									      "nr" : lookup( partition, "nr", 0 ),
-									      "type" : "change_id",
-									      "use_module" : "fdisk_ll" ]);
+	       return($[k-1: v]);
 		}
-	    });
-	});
-
-
-	//SCR::Write(.target.ycp, "/tmp/my_modify", modify_targets );
-	Storage::SetModifyTargets( modify_targets);
-    };
-
-
-
-global define integer GetModifyIdx( map modify_targets, map new )
-    ``{
-    integer idx = -1;
-    foreach( `key, `entry, modify_targets,
-	``{
-	if( idx == -1 && 
-	    entry["use_module"]:""==new["use_module"]:"" &&
-	    entry["type"]:""==new["type"]:"" &&
-	    entry["name"]:""==new["name"]:"" &&
-	    entry["vgname"]:""==new["vgname"]:"" )
+	    else
 	    {
-	    idx = key;
+	       return($[k: v]);
 	    }
 	});
-    y2debug( "get_modify_idx new:%1 ret:%2", new, idx );
-    return( idx );
-    };
+	return( modify_targets );
+      }
+
 
 
     //////////////////////////////////////////////////////////////////////
     // add a new entry into the execution stack "modify_targets"
 
-    global define addTargetModification( map modify_targets, map add_el )
+    define map addTargetModification( map modify_targets, map add_el )
     ``{
         boolean done = false;
 	y2milestone( "addTargetModification %1", add_el );
         if( add_el["type"]:"" == "remove_pv" )
 	    {
-	    map rem = filter( `k, `m, modify_targets,
+	    map rem = (map) filter(integer k, map m, modify_targets,
 	                      ``(m["type"]:""=="create_pv" &&
 				 m["device"]:""==add_el["device"]:"") );
 	    if( size(rem)>0 )
 		{
-		integer num = select( maplist( `k, `m, rem, ``(k) ), size(rem)-1, -1 );
+		integer num = (integer) select( maplist(integer k, map m, rem, ``(k) ), size(rem)-1, -1 );
 		modify_targets = removeTargetModification( modify_targets, num );
 		y2milestone( "addTargetModification remove pv %1", modify_targets );
 		done = true;
@@ -644,37 +606,37 @@ global define integer GetModifyIdx( map modify_targets, map new )
 	    }
 	else if( add_el["type"]:"" == "remove_lv" )
 	    {
-	    map rem = filter( `k, `m, modify_targets,
+	    map rem = filter(integer k, map m, modify_targets,
 	                      ``(m["type"]:""=="create_lv" &&
 			         m["vgname"]:""==add_el["vgname"]:"" &&
 				 m["name"]:""==add_el["name"]:"") );
 	    if( size(rem)>0 )
 		{
-		integer num = select( maplist( `k, `m, rem, ``(k) ), size(rem)-1, -1 );
+		integer num = (integer) select( maplist(integer k, map m, rem, ``(k) ), size(rem)-1, -1 );
 		modify_targets = removeTargetModification( modify_targets, num );
 		y2milestone( "addTargetModification remove lv %1", modify_targets );
 		done = true;
 		}
-	    rem = filter( `k, `m, modify_targets,
+	    rem = filter(integer k, map m, modify_targets,
 	                  ``(m["type"]:""=="resize_lv" &&
 			     m["vgname"]:""==add_el["vgname"]:"" &&
 			     m["name"]:""==add_el["name"]:"") );
 	    if( size(rem)>0 )
 		{
-		integer num = select( maplist( `k, `m, rem, ``(k) ), size(rem)-1, -1 );
+		integer num = (integer) select( maplist(integer k, map m, rem, ``(k) ), size(rem)-1, -1 );
 		modify_targets = removeTargetModification( modify_targets, num );
 		y2milestone( "addTargetModification resize lv %1", modify_targets );
 		}
 	    }
 	else if( add_el["type"]:"" == "resize_lv" )
 	    {
-	    map rem = filter( `k, `m, modify_targets,
+	    map rem = filter(integer k,map m, modify_targets,
 	                      ``(m["type"]:""=="resize_lv" &&
 			         m["vgname"]:""==add_el["vgname"]:"" &&
 				 m["name"]:""==add_el["name"]:"") );
 	    if( size(rem)>0 )
 		{
-		integer num = select( maplist( `k, `m, rem, ``(k) ), size(rem)-1, -1 );
+		integer num = (integer) select( maplist(integer k, map m, rem, ``(k) ), size(rem)-1, -1 );
 		modify_targets = removeTargetModification( modify_targets, num );
 		y2milestone( "addTargetModification resize lv %1", modify_targets );
 		}
@@ -690,27 +652,65 @@ global define integer GetModifyIdx( map modify_targets, map new )
 	    }
     };
 
-    //////////////////////////////////////////////////////////////////////
-    // remove an entry from the execution stack "modify_targets"
-    // renumber the rest of the entries
+  /*---------------------------------------------------------------------
+   * changeExtendedIdTo15
+   *---------------------------------------------------------------------
+   * change the fsid of every extended partiton in  the map targets
+   * in user_settings from 5 to 15
+   *---------------------------------------------------------------------
+   */
 
-    global define removeTargetModification( map modify_targets, integer num )
+    define void changeExtendedIdTo15()
     ``{
-	// delete entry
-	modify_targets = filter( `k, `v, modify_targets, ``(k != num ) );
-	// renumber 1 2 4 5 -> 1 2 3 4
-	modify_targets = mapmap( `k, `v, modify_targets, ``{
-	    if ( k > num )
+//        include "partitioning/lvm_lib.ycp";
+
+	map modify_targets = Storage::GetModifyTargets();
+	map targets        = Storage::GetTargetMap();
+
+	foreach (string dev, map disk, targets,
+	``{
+	    list partitions = disk["partitions"]:[];
+
+	    foreach (map partition, partitions,
+	    ``{
+		if ( (partition["fsid"]:0 == 5) &&
+		     (partition["create"]:false ) &&
+		     (!partition["define"]:false)    )
 	       {
-	       return([k-1, v]);
-	       }
-	    else
-	       {
-	       return([k, v]);
+		    modify_targets = addTargetModification( modify_targets, $[
+									      "disk" : dev,
+									      "id" : 15,
+									      "nr" : lookup( partition, "nr", 0 ),
+									      "type" : "change_id",
+									      "use_module" : "fdisk_ll" ]);
 	       }
 	    });
-	return( modify_targets );
-      }
+	});
+
+
+	//SCR::Write(.target.ycp, "/tmp/my_modify", modify_targets );
+	Storage::SetModifyTargets( modify_targets);
+    };
+
+
+
+define integer GetModifyIdx( map modify_targets, map new )
+    ``{
+    integer idx = -1;
+    foreach(integer key, map entry, modify_targets,
+	``{
+	if( idx == -1 && 
+	    entry["use_module"]:""==new["use_module"]:"" &&
+	    entry["type"]:""==new["type"]:"" &&
+	    entry["name"]:""==new["name"]:"" &&
+	    entry["vgname"]:""==new["vgname"]:"" )
+	       {
+	    idx = key;
+	       }
+	    });
+    y2debug( "get_modify_idx new:%1 ret:%2", new, idx );
+    return( idx );
+    };
 
 
     ////////////////////////////////////////////////////////////////////////
@@ -720,7 +720,7 @@ global define integer GetModifyIdx( map modify_targets, map new )
     //
     // output: lentgh of win-region in cylinder
 
-    global define PartedSizeToCly( float win_size_f, integer cyl_size )
+    define integer PartedSizeToCly( float win_size_f, integer cyl_size )
     ``{
 	float   new_length_f = (win_size_f) / tofloat( cyl_size );
 	integer new_length_i = tointeger( new_length_f );
@@ -736,7 +736,7 @@ global define integer GetModifyIdx( map modify_targets, map new )
     };
 
 
-    global define convertFsOptionMapInList(map  partition ) ``{
+    define list convertFsOptionMapInList(map  partition ) ``{
 
 	map fs_options 	  = lookup( partition, "fs_options" , $[]);
 	list all_options  = [];
@@ -751,10 +751,10 @@ global define integer GetModifyIdx( map modify_targets, map new )
 
 	list ignore = [ "auto", "default", "none", "" ];
 
-	foreach( `option_key, `option, fs_options , ``{
+	foreach(any option_key, map option, fs_options , ``{
 
-	    string option_str   = lookup( option, "option_str", "");
-	    any    option_value = lookup( option, "option_value", "");
+	    string option_str   = option["option_str"]:"";
+	    any    option_value = option["option_value"]:"";
 	    boolean option_blank = option["option_blank"]:false;
 
 	    if( is( option_value, string) && option_value != nil )
@@ -767,12 +767,12 @@ global define integer GetModifyIdx( map modify_targets, map new )
 			all_options = add( all_options, option_value);
 			}
 		    else
-			all_options = add( all_options , option_str + option_value);
+			all_options = add( all_options , option_str + (string) option_value);
 		}
 	    }
 	    else if ( is( option_value, boolean) && option_value != nil )
 	    {
-		if( option_value )
+		if( (boolean) option_value )
 		    all_options = add( all_options ,  option_str );
 	    }
 	    else if ( is( option_value, integer) && option_value != nil )
@@ -799,7 +799,7 @@ global define integer GetModifyIdx( map modify_targets, map new )
      * @parm targetMap all targets
      * @return string next mountpoint
      **/
-global define GetMountPointProposal( map targetMap, 
+define string GetMountPointProposal( map targetMap, 
                                      list not_supported_mount_points )
     ``{
     list base = [ "/", "/usr", "/boot", "/var", "/opt", "/home" ];
@@ -810,9 +810,9 @@ global define GetMountPointProposal( map targetMap,
 	``{
 	boolean found = false;
 
-	foreach( `dev, `disk, targetMap, 
+	foreach(any dev, map disk, targetMap, 
 	    ``{
-	    map parti = find( `part, disk["partitions"]:[], 
+	    map parti = (map) find(map part, disk["partitions"]:[], 
 	                      ``( part["mount"]:"" == point && 
 			          !part["delete"]:false ));
 	    if (parti != nil)

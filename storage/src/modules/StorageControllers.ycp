@@ -24,6 +24,7 @@
     import "Storage";
     import "StorageDevices";
     import "Label";
+    import "Popup";
 
     textdomain "storage";
 
@@ -61,40 +62,13 @@
 
     // --------------------------------------------------------------
 
-    /**
-     * Probe storage controllers
-     * probing, loading modules
-     *
-     * @returns integer	number of controllers, 0 = none found 
-     */
-
-global define integer Probe ()
-    ``{
-    y2milestone( "StorageControllers::Probe()" );
-
-    // probe 'storage' list
-
-    controllers = SCR::Read (.probe.storage);
-
-    if (!Arch::s390 && size (controllers) == 0)
-	{
-	y2milestone("no controllers");
-	}
-    if( !dasdProbed && Arch::s390 && Mode::initial )
-	{
-	dasdParam = S390DasdParams();
-	dasdProbed = true;
-	return 1+size(controllers);
-	}
-    return size (controllers);
-    }
 
 define list GetDasdList()
     ``{
     list ret = [];
-    list dasd = SCR::Read(.proc.dasddev);
+    list dasd = (list<map>) SCR::Read(.proc.dasddev);
     y2milestone( "dasd=%1", dasd );
-    foreach( `entry, dasd,
+    foreach( map entry, dasd,
 	``{
 	term a = `item( `id(entry["name"]:"") );
 	a = add( a, entry["name"]:"" );
@@ -105,13 +79,12 @@ define list GetDasdList()
     return( ret );
     }
 
-
 define string S390DasdParams()
     ``{
-    map mod = SCR::Read(.proc.modules);
+    map mod = (map)SCR::Read(.proc.modules);
     boolean mod_loaded = haskey(mod, "dasd_mod");
     y2milestone( "mod %1", mod );
-    string param = SCR::Read(.etc.install_inf.DASD_Parameter);
+    string param = (string)SCR::Read(.etc.install_inf.DASD_Parameter);
     if( param==nil )
 	{
 	param = "";
@@ -180,7 +153,7 @@ press \"%2\".
 	symbol ret = `none;
 	do
 	    {
-	    ret = UI::UserInput();
+	    ret = (symbol)UI::UserInput();
 	    y2milestone( "ret = %1", ret );
 	    if( ret == `load )
 		{
@@ -189,10 +162,10 @@ press \"%2\".
 		    SCR::Execute( .target.bash, 
 		                  "/sbin/rmmod dasd_eckd_mod dasd_fba_mod dasd_mod" );
 		    }
-		param = UI::QueryWidget( `id(`param), `Value );
+		param = (string)UI::QueryWidget( `id(`param), `Value );
 		string cmd = sformat( "/sbin/insmod dasd_mod %1", param );
 		y2milestone( "cmd %1", cmd );
-		integer ret = SCR::Execute(.target.bash, cmd );
+		integer ret = (integer)SCR::Execute(.target.bash, cmd );
 		mod_loaded = true;
 		y2milestone( "ret=%1", ret );
 		if( ret != 0 )
@@ -225,6 +198,35 @@ active DASD devices."));
     return( param );
     }
 
+    /**
+     * Probe storage controllers
+     * probing, loading modules
+     *
+     * @returns integer	number of controllers, 0 = none found 
+     */
+global define integer Probe ()
+    ``{
+    y2milestone( "StorageControllers::Probe()" );
+
+    // probe 'storage' list
+
+    controllers = (list<map>)SCR::Read (.probe.storage);
+
+    if (!Arch::s390 && size (controllers) == 0)
+	{
+	y2milestone("no controllers");
+	}
+    if( !dasdProbed && Arch::s390 && Mode::initial )
+	{
+	dasdParam = S390DasdParams();
+	dasdProbed = true;
+	return 1+size(controllers);
+	}
+    return size (controllers);
+    }
+
+
+
 // --------------------------------------------------------------
 
 // parportInitialize
@@ -240,7 +242,7 @@ define void parportInitialize ()
     boolean parport_loaded = false;
     boolean parport_pc_loaded = false;
 
-    foreach (`postlist, postinstall_info,
+    foreach (list postlist, postinstall_info,
 	``{
 	boolean post_modprobe = postlist[0]:false;
 	string post_name      = postlist[1]:"";
@@ -297,13 +299,13 @@ define boolean startController (map controller)
 	return false;
 
     // get list of modules from /proc/modules
-    map loaded_modules = SCR::Read(.proc.modules);		
+    map loaded_modules = (map)SCR::Read(.proc.modules);		
 
     // loop through all drivers checking if one is already active
     // or if one is already listed in /proc/modules
 
     boolean already_active = false;
-    foreach (`modulemap, module_drivers,
+    foreach (map modulemap, module_drivers,
 	``{
 	if( modulemap["active"]:true ||
 	    size( loaded_modules[modulemap["modules",0]:""]:$[] ) > 0 )
@@ -329,7 +331,7 @@ define boolean startController (map controller)
     // loop through all drivers defined for this controller
     // break after first successful load
     //   no need to check "active", already done before !
-    foreach (`modulemap, module_drivers,
+    foreach (map modulemap, module_drivers,
 	``{
 	y2milestone ("modulemap: %1", modulemap);
 	boolean module_modprobe = modulemap["modprobe"]:false;
@@ -338,7 +340,7 @@ define boolean startController (map controller)
 
 	if (!stop_loading)
 	    {
-	    foreach (`module_entry, modulemap["modules"]:[],
+	    foreach (list module_entry, modulemap["modules"]:[],
 		``{
 		string module_name = module_entry[0]:"";
 		string module_args = module_entry[1]:"";
@@ -439,7 +441,7 @@ define boolean anyActive (list resources)
 ``{
     boolean active = size(resources)==0;
 
-    foreach (`res, resources,
+    foreach (map res, resources,
     ``{
 	if (res["active"]:false)
 	    active = true;

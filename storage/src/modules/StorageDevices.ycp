@@ -25,12 +25,15 @@
     import "Mode";
     import "String";
     import "HwStatus";
-    import "Storage";
     import "Partitions";
     import "Installation";
     import "Kernel";
 
+    import "Arch";
+    import "Popup";
+
     textdomain "storage";
+
 
     boolean disks_valid = false;
 
@@ -46,7 +49,7 @@
      * @see: FloppyDevice
      * @see: FloppyReady
      */
-    global list FloppyDrives = [];
+    global list<map> FloppyDrives = [];
 
 
     /**
@@ -70,7 +73,7 @@
     /**
      * list of cd-rom drives
      */
-    global list cddrives = [];
+    global list<map> cddrives = [];
 
     global list TypeNames = [ "cdrom", "dvd", "cdrecorder", "dvdrecorder", 
                               "dvdram" ];
@@ -85,6 +88,34 @@
 // CD Recorders and CD-ROM links
 list idecdrws = [];		// list of IDE CD-RW drivers for ide-scsi
 list scsicds = [];		// list of SCSI CDs
+
+
+  /**
+   *	
+      #include "storage/routines.ycp";
+   */
+global define string GetDeviceName( string disk, any partition ) 
+    ``{
+      string ret = disk;
+
+      if( is( partition, integer ) )
+	  {
+  	  if( find( disk, "/dev/cciss/" )==0 ||
+  	      find( disk, "/dev/ida/" )==0 ||
+  	      find( disk, "/dev/ataraid/" )==0 ||
+  	      find( disk, "/dev/rd/" )==0 )
+  	      {
+  	      ret = ret + "p";
+  	      }
+  	  ret = ret + sformat( "%1", partition );
+	  }
+      else
+          {
+  	  ret = ret + "/" + (string)partition;
+	  }
+      return( ret );
+  };
+
 
 /**
   * ProbeCDROMs()
@@ -103,9 +134,9 @@ global define boolean ProbeCDROMs()
 	{
 	if (Mode::initial || Mode::cont)
 	    {
-	    cddrives = SCR::Read (.probe.cdrom);
+	    cddrives = (list<map>) SCR::Read (.probe.cdrom);
 	    // write out data for hardware status check
-	    foreach (`drive, cddrives,
+	    foreach (map drive, cddrives,
 		``{
 		HwStatus::Set (drive["unique_key"]:"", `yes);
 		});
@@ -113,9 +144,9 @@ global define boolean ProbeCDROMs()
 	else
 	    {
 	    cddrives = [];
-	    foreach( `e, SCR::Read (.probe.cdrom.manual),
+	    foreach(map e, (list<map>) SCR::Read (.probe.cdrom.manual),
 		``{
-		map conf = SCR::Read(.probe.status, e["unique_key"]:"");
+		map conf = (map) SCR::Read(.probe.status, e["unique_key"]:"");
 		if( conf["available"]:`no != `no )
 		    {
 		    cddrives = add( cddrives, e );
@@ -129,7 +160,7 @@ global define boolean ProbeCDROMs()
 	    }
 
 	// sort out idecdrws and scsicds
-	foreach (`e, cddrives,
+	foreach (map e, cddrives,
 	    ``{
 	    if( (e["cdr"]:false || e["cdrw"]:false || e["dvdr"]:false ) &&
 		e["bus"]:"" == "IDE" )
@@ -145,7 +176,7 @@ global define boolean ProbeCDROMs()
 
 	// now rewrite the /dev-names for the IDE drives
 	// as they appear _after_ loading of ide-scsi
-	foreach (`e, cddrives,
+	foreach (map e, cddrives,
 	    ``{
 	    if( contains( idecdrws, substring( e["dev_name"]:"", 5) ))
 		{
@@ -159,7 +190,7 @@ global define boolean ProbeCDROMs()
 
 	Kernel::IDERecorders (idecdrws);
 
-	foreach( `e, filter( `v, cddrives, ``(v["dev_name"]:""!="/dev/cdrom")),
+	foreach(map e, filter(map v, cddrives, ``(v["dev_name"]:""!="/dev/cdrom")),
 	    ``{
 	    // first, determine the drive type and make a linkname guess
 	    string cddevice = e["dev_name"]:"";
@@ -202,7 +233,7 @@ global define boolean ProbeCDROMs()
 global define map GetCdromEntry( string device )
     ``{
     map ret = $[];
-    ret = find( `e, cddrives, ``(e["dev_orig"]:(e["dev_name"]:"") == device));
+    ret = find(map e, cddrives, ``(e["dev_orig"]:(e["dev_name"]:"") == device));
     if( ret == nil )
 	{
 	ret = $[];
@@ -224,13 +255,13 @@ global define boolean FloppyReady ()
     if( Mode::initial )
 	{
 	y2milestone( "before .probe.floppy" );
-	FloppyDrives = SCR::Read(.probe.floppy);
+	FloppyDrives = (list<map>) SCR::Read(.probe.floppy);
 	y2milestone( "after .probe.floppy" );
 
 	if( !FloppyPresent )	// only once !
 	    {
 	    // write out data for hardware status check
-	    foreach (`drive, FloppyDrives,
+	    foreach (map drive, FloppyDrives,
 		``{
 		HwStatus::Set (drive["unique_key"]:"", `yes);
 		});
@@ -238,7 +269,7 @@ global define boolean FloppyReady ()
 	}
     else
 	{
-	FloppyDrives = SCR::Read(.probe.floppy.manual);
+	FloppyDrives = (list<map>) SCR::Read(.probe.floppy.manual);
 	}
 
     map floppy_data = FloppyDrives[0]:$[];
@@ -258,7 +289,7 @@ global define boolean FloppyReady ()
 define map findZIPs ()
     ``{
     map zips = $[];
-    foreach (`disk, FloppyDrives,
+    foreach (map disk, FloppyDrives,
 	``{
 	if (disk["zip"]:false)
 	    {
@@ -287,6 +318,225 @@ define map findZIPs ()
 
 
 /*
+ * Fake probing for storage devices in test or demo mode -
+ * read ready-made target maps from file.
+ *
+ * @return	map	TargetMap
+ */
+
+global define map fakeProbe ()
+    ``{
+    string fake_map_file = ( Mode::demo ? "demo_target_map.ycp" : "test_target_map.ycp" );
+    
+    y2milestone( "%1 mode - using fake target map from %2",
+                 Mode::demo ? "Demo" : "Test", fake_map_file );
+
+    map target_map = (map) SCR::Read( .target.yast2, fake_map_file );
+
+    y2debug( "Fake target map: %1", target_map );
+
+    return target_map;
+    } // fakeProbe()
+
+
+/*
+ * check partitions for given disk (as path, i.e. '.sda')
+ * returns list as specified in README.target_partition
+ */
+global define list<map> Check4partitions (string diskdev, map disk, path diskpath)
+    ``{
+    list partitions = [];
+
+    partitions = (list) SCR::Read(.disk+diskpath+.partitions,
+			   Partitions::UseParted() );
+    if( is(partitions[0]:"", string ) )
+	{
+	if( size(partitions[0]:"")>0 )
+	    {
+	    disk["label"] = partitions[0]:"";
+	    }
+	else
+	    {
+	    disk["label"] = Partitions::DefaultPartLabel();
+	    }
+	}
+    else
+	{
+	disk["label"] = Partitions::DefaultPartLabel();
+	}
+    disk["max_primary"] = Partitions::MaxPrimary( disk["label"]:"" );
+    y2milestone( "disk %1 label %2", diskdev, disk["label"]:"" );
+    partitions = remove( partitions, 0 );
+    partitions = maplist(map part, partitions,
+	``{
+	if( part["fsid"]:0 > 0 && (part["fsid"]:0<256||disk["label"]:""=="gpt"))
+	    {
+	    part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
+	    }
+	return( part );
+	});
+    partitions = maplist(map p, partitions,
+	``{
+	p["device"] = GetDeviceName( diskdev, p["nr"]:0 );
+	return( p );
+	});
+    return partitions;
+    };
+
+global define map CheckPartedValid( string ddevice, map disk, 
+				    list<map> partitions, list<map> ppart )
+    ``{
+    map plist1 = $[];
+    map plist2 = $[];
+    boolean ret = true;
+    y2milestone( "target %1", disk );
+    string regex = substring( ddevice, 5 )+"[p]*[0-9]+";
+    y2milestone( "ddevice %1 regex %2", ddevice, regex );
+    list<map> ps = filter( map p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
+    y2milestone( "ps %1", ps );
+    integer cyl_blocks = disk["cyl_size"]:1000000 / 1024;
+    list bsd_part = [ Partitions::fsid_freebsd, Partitions::fsid_openbsd ];
+    boolean openbsd = find(map e,partitions, 
+                            ``(contains(bsd_part,e["fsid"]:0)))!=nil;
+    y2milestone( "openbsd %1", openbsd );
+    foreach(map p, ps,
+	``{
+	integer pnr = tointeger(deletechars(substring(p["name"]:"",size(ddevice)-5),"p"));
+	plist1[pnr] = p["size"]:0/cyl_blocks;
+	});
+    foreach(map p, partitions,
+	``{
+	plist2[p["nr"]:0] = p["region",1]:0;
+	});
+    map ext = find(map p, partitions, ``(p["type"]:`unknown==`extended));
+    if( ext != nil )
+	{
+	plist1 = filter(integer k, any e, plist1, ``(k!=ext["nr"]:0));
+	plist2 = filter(integer k, any e, plist2, ``(k!=ext["nr"]:0));
+	}
+    y2milestone( "plist1 %1", plist1 );
+    y2milestone( "plist2 %1", plist2 );
+    ret = size(plist1) >= size(plist2);
+    if( ret )
+	{
+	foreach(integer k, integer e, plist1, 
+	    ``{
+	    if( !haskey( plist2, k ))
+		{
+		ret = ret && openbsd;
+		}
+	    else
+		{
+		integer diff = e - plist2[k]:0;
+		ret = ret && diff >= -1 && diff <= 1;
+		y2milestone( "k:%1 diff:%2", k, diff );
+		}
+	    });
+	foreach(integer k, integer e, plist2, 
+	    ``{
+	    if( !haskey( plist1, k ))
+		{
+		ret = false;
+		}
+	    else
+		{
+		integer diff = e - plist1[k]:0;
+		ret = ret && diff >= -1 && diff <= 1;
+		y2milestone( "k:%1 diff:%2", k, diff );
+		}
+	    });
+	}
+    if( !ret )
+	{
+	list new_p = [];
+	integer reg_start=0;
+	y2milestone( "ps=%1", ps );
+	foreach(map p, ps,
+	    ``{
+	    map part = $[];
+	    integer pnr = tointeger(substring(p["name"]:"",size(ddevice)-5));
+	    part["nr"] = pnr;
+	    part["region"] = [ reg_start, p["size"]:0/cyl_blocks ];
+	    reg_start = reg_start + part["region",1]:0;
+	    part["device"] =  GetDeviceName( ddevice, pnr );
+	    if( part["region",1]:0==0 )
+		{
+		part["type"] = `extended;
+		part["fsid"] = Partitions::fsid_extended_win;
+		}
+	    else
+		{
+		part["type"] = pnr<5 ? `primary : `logical;
+		part["fsid"] = Partitions::fsid_native;
+		}
+	    map pp = find(map e, partitions, ``(e["nr"]:0==pnr));
+	    if( pp != nil )
+		{
+		y2milestone( "entry in parted list %1", pp );
+		part["fsid"] = pp["fsid"]:0;
+		part["type"] = pp["type"]:`primary;
+		}
+	    part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
+	    new_p = add( new_p, part );
+	    });
+	partitions = new_p;
+	y2milestone( "new p %1", partitions );
+	}
+    y2milestone( "disk %1 ret:%2", ddevice, ret );
+    return( $["ret":ret, "partitions":partitions ] );
+    };
+
+
+global define list GetS390Partitions( string ddev, map target, list<map> ppart )
+    ``{
+    list<map> partitions = [];
+    y2milestone( "target %1", target );
+    string regex = substring( ddev, 5 )+"[0-9]+";
+    y2milestone( "ddev %1 regex %2", ddev, regex );
+    list<map> ps = filter(map p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
+    y2milestone( "ps %1", ps );
+    integer cyl_blocks = target["cyl_size"]:1000000 / 1024;
+    foreach(map p, ps,
+	``{
+	map part = $[];
+	part["nr"] = tointeger(substring(p["name"]:"",size(ddev)-5));
+	part["region"] = [ 0, p["size"]:0/cyl_blocks ];
+	part["fsid"] = Partitions::fsid_native;
+	part["type"] = `s390;
+	part["fstype"] = "S390 DASD";
+	y2milestone( "part %1", part );
+	partitions = add( partitions, part );
+	});
+
+    /* TODO: no partition found ==> "fdasd -a" needed instead of
+       simply pretending a first partition.  this needs to be done on a
+       *disk* level, not on partition level.
+
+       This hack is needed, however, to have a partiton visible, so
+       the user can choose 'low level format dasd'.
+
+    */
+
+    if( size(ps)==0 )
+	{
+	map part = $[];
+	part["nr"] = 1;
+	part["region"] = [ 0, target["cyl_count"]:0 ];
+	part["fsid"] = Partitions::fsid_native;
+	part["type"] = `s390;
+	part["fstype"] = "S390 DASD";
+	partitions = [ part ];
+	}
+    partitions = maplist(map p, partitions,
+	``{
+	p["device"] = GetDeviceName( ddev, p["nr"]:0 );
+	return( p );
+	});
+    y2milestone( "part %1", partitions );
+    return( partitions );
+    }
+
+/*
  * Probe for storage devices attached to storage controllers
  * Should be called after StorageControllers::Initialize
  * @return	map	TargetMap
@@ -295,17 +545,17 @@ define map findZIPs ()
 define map localProbe ()
     ``{
     map targets = $[];
-    list ppart = [];
+    list<map> ppart = [];
 
     if( Mode::test )
 	{
 	return fakeProbe();
 	}
-    ppart = SCR::Read(.proc.partitions);
+    ppart = (list<map>) SCR::Read(.proc.partitions);
     y2milestone( "ppart %1", ppart );
 
     // do the probing
-    list all_disks = SCR::Read(.probe.disk);
+    list<map> all_disks = (list<map>) SCR::Read(.probe.disk);
 
     y2milestone("disks probed");
     y2milestone( "all_disks %1", all_disks );
@@ -323,7 +573,7 @@ define map localProbe ()
     integer scsi_count = 0;
     integer raid_count = 0;
 
-    foreach (`disk, filter(`e,all_disks,``(size(e["dev_name"]:"")>0)),
+    foreach (map disk, filter(map e,all_disks,``(size(e["dev_name"]:"")>0)),
 	``{
 	map target = $[];
 
@@ -434,9 +684,9 @@ define map localProbe ()
 	    // call fdisk agent to get size information
 	    if (!is_zip && !notready )
 		{
-		cyl_count = SCR::Read(fullpath+.disk_size);
-		cyl_size= SCR::Read(fullpath+.bytes_per_unit);
-		max_primary= SCR::Read(fullpath+.max_primary);
+		cyl_count = (integer) SCR::Read(fullpath+.disk_size);
+		cyl_size= (integer) SCR::Read(fullpath+.bytes_per_unit);
+		max_primary= (integer) SCR::Read(fullpath+.max_primary);
 		if( Arch::board_mac )
 		    {
 		    max_primary = 16;
@@ -475,7 +725,7 @@ define map localProbe ()
 	dname = dname + String::FormatSize(cyl_count * cyl_size) + ", " + ddevice + ", ";
 
 	string dinfo = disk["vendor"]:"";
-	target["vendor"]:dinfo;
+//	target["vendor"]:dinfo;
 
 	if (dinfo != "")
 	    {
@@ -545,9 +795,9 @@ define map localProbe ()
 
     ZipDrives = union (ZipDrives, findZIPs ());
 
-    foreach( `k, `e, ZipDrives, 
+    foreach(string k, any e, ZipDrives, 
 	``{
-	FloppyDrives = filter( `f, FloppyDrives, ``(f["dev_name"]:""!=k));
+	FloppyDrives = filter(map f, FloppyDrives, ``(f["dev_name"]:""!=k));
 	});
     y2milestone( "FloppyDrives %1", FloppyDrives );
     y2milestone( "ZipDrives %1", ZipDrives );
@@ -557,55 +807,6 @@ define map localProbe ()
 
     return targets;
     } // localProbe()
-
-global define list GetS390Partitions( string ddev, map target, list ppart )
-    ``{
-    list partitions = [];
-    y2milestone( "target %1", target );
-    string regex = substring( ddev, 5 )+"[0-9]+";
-    y2milestone( "ddev %1 regex %2", ddev, regex );
-    list ps = filter( `p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
-    y2milestone( "ps %1", ps );
-    integer cyl_blocks = target["cyl_size"]:1000000 / 1024;
-    foreach( `p, ps,
-	``{
-	map part = $[];
-	part["nr"] = tointeger(substring(p["name"]:"",size(ddev)-5));
-	part["region"] = [ 0, p["size"]:0/cyl_blocks ];
-	part["fsid"] = Partitions::fsid_native;
-	part["type"] = `s390;
-	part["fstype"] = "S390 DASD";
-	y2milestone( "part %1", part );
-	partitions = add( partitions, part );
-	});
-
-    /* TODO: no partition found ==> "fdasd -a" needed instead of
-       simply pretending a first partition.  this needs to be done on a
-       *disk* level, not on partition level.
-
-       This hack is needed, however, to have a partiton visible, so
-       the user can choose 'low level format dasd'.
-
-    */
-
-    if( size(ps)==0 )
-	{
-	map part = $[];
-	part["nr"] = 1;
-	part["region"] = [ 0, target["cyl_count"]:0 ];
-	part["fsid"] = Partitions::fsid_native;
-	part["type"] = `s390;
-	part["fstype"] = "S390 DASD";
-	partitions = [ part ];
-	}
-    partitions = maplist( `p, partitions,
-	``{
-	p["device"] = Storage::GetDeviceName( ddev, p["nr"]:0 );
-	return( p );
-	});
-    y2milestone( "part %1", partitions );
-    return( partitions );
-    }
 
 /*
  * Probe ()
@@ -627,29 +828,6 @@ global define map Probe (boolean force_reset)
 	}
     return targetMap;
     }
-
-
-/*
- * Fake probing for storage devices in test or demo mode -
- * read ready-made target maps from file.
- *
- * @return	map	TargetMap
- */
-
-global define map fakeProbe ()
-    ``{
-    string fake_map_file = ( Mode::demo ? "demo_target_map.ycp" : "test_target_map.ycp" );
-    
-    y2milestone( "%1 mode - using fake target map from %2",
-                 Mode::demo ? "Demo" : "Test", fake_map_file );
-
-    map target_map =  SCR::Read( .target.yast2, fake_map_file );
-
-    y2debug( "Fake target map: %1", target_map );
-
-    return target_map;
-    } // fakeProbe()
-
 
 
 /*
@@ -705,14 +883,14 @@ global define void MakeCDLinks ()
     ``{
     if( ProbeCDROMs() )
 	{
-	string boot_device = SCR::Read (.etc.install_inf.Cdrom);
+	string boot_device = (string) SCR::Read (.etc.install_inf.Cdrom);
 	if (boot_device == nil) boot_device = "";
 
 	if (boot_device != "")
 	    boot_device = "/dev/" + boot_device;
 
 	// our boot device might be re-mapped due to ide-scsi
-	map idecdwr = find( `e, cddrives, ``(e["dev_orig"]:""==boot_device));
+	map idecdwr = find(map e, cddrives, ``(e["dev_orig"]:""==boot_device));
 	if( idecdwr != nil )
 	    {
 	    boot_device = idecdwr["dev_name"]:"";
@@ -727,13 +905,13 @@ global define void MakeCDLinks ()
                 }
             }
 
-	foreach (`drive, cddrives, ``{ symlink_cdrom (drive); });
+	foreach (map drive, cddrives, ``{ symlink_cdrom (drive); });
 
 	// if we didn't made a /dev/cdrom link, we dont have a
 	// plain cdrom drive (only cdrecorders, dvds, etc.)
 	// force such a link here.
 
-	if( find( `e, cddrives, ``(e["linkname"]:""=="/dev/cdrom")) == nil )
+	if( find(map e, cddrives, ``(e["linkname"]:""=="/dev/cdrom")) == nil )
 	    {
 	    // if we didnt boot from cd, just link to the first drive
 	    if( boot_device=="" )
@@ -749,10 +927,10 @@ global define void MakeCDLinks ()
 
 	// if we didn't made a /dev/dvd link so far try to 
 	// force such a link here.
-	map te = find( `e, cddrives, ``(e["linkname"]:""=="/dev/dvd"));
+	map te = find(map e, cddrives, ``(e["linkname"]:""=="/dev/dvd"));
 	if( te == nil )
 	    {
-	    te = find( `e, cddrives, ``(e["dvd"]:false));
+	    te = find(map e, cddrives, ``(e["dvd"]:false));
 	    if( te != nil )
 		{
 		symlink_cdrom ($["dev_name":te["dev_name"]:"", 
@@ -762,10 +940,10 @@ global define void MakeCDLinks ()
 
 	// if we didn't made a /dev/cdrecorder link so far try to 
 	// force such a link here.
-	te = find( `e, cddrives, ``(e["linkname"]:""=="/dev/cdrecorder"));
+	te = find(map e, cddrives, ``(e["linkname"]:""=="/dev/cdrecorder"));
 	if( te == nil )
 	    {
-	    te = find( `e, cddrives, ``(e["cdrw"]:false));
+	    te = find(map e, cddrives, ``(e["cdrw"]:false));
 	    if( te != nil )
 		{
 		symlink_cdrom ($["dev_name":te["dev_name"]:"", 
@@ -785,153 +963,6 @@ global define void FullProbe ()
     FloppyReady();		// probe floppy
     ProbeCDROMs();		// probe CDs
     }
-
-global define map CheckPartedValid( string ddevice, map disk, 
-				    list partitions, list ppart )
-    ``{
-    map plist1 = $[];
-    map plist2 = $[];
-    boolean ret = true;
-    y2milestone( "target %1", disk );
-    string regex = substring( ddevice, 5 )+"[p]*[0-9]+";
-    y2milestone( "ddevice %1 regex %2", ddevice, regex );
-    list ps = filter( `p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
-    y2milestone( "ps %1", ps );
-    integer cyl_blocks = disk["cyl_size"]:1000000 / 1024;
-    list bsd_part = [ Partitions::fsid_freebsd, Partitions::fsid_openbsd ];
-    boolean openbsd = find( `e,partitions, 
-                            ``(contains(bsd_part,e["fsid"]:0)))!=nil;
-    y2milestone( "openbsd %1", openbsd );
-    foreach( `p, ps,
-	``{
-	integer pnr = tointeger(deletechars(substring(p["name"]:"",size(ddevice)-5),"p"));
-	plist1[pnr] = p["size"]:0/cyl_blocks;
-	});
-    foreach( `p, partitions,
-	``{
-	plist2[p["nr"]:0] = p["region",1]:0;
-	});
-    map ext = find( `p, partitions, ``(p["type"]:`unknown==`extended));
-    if( ext != nil )
-	{
-	plist1 = filter( `k, `e, plist1, ``(k!=ext["nr"]:0));
-	plist2 = filter( `k, `e, plist2, ``(k!=ext["nr"]:0));
-	}
-    y2milestone( "plist1 %1", plist1 );
-    y2milestone( "plist2 %1", plist2 );
-    ret = size(plist1) >= size(plist2);
-    if( ret )
-	{
-	foreach( `k, `e, plist1, 
-	    ``{
-	    if( !haskey( plist2, k ))
-		{
-		ret = ret && openbsd;
-		}
-	    else
-		{
-		integer diff = e - plist2[k]:0;
-		ret = ret && diff >= -1 && diff <= 1;
-		y2milestone( "k:%1 diff:%2", k, diff );
-		}
-	    });
-	foreach( `k, `e, plist2, 
-	    ``{
-	    if( !haskey( plist1, k ))
-		{
-		ret = false;
-		}
-	    else
-		{
-		integer diff = e - plist1[k]:0;
-		ret = ret && diff >= -1 && diff <= 1;
-		y2milestone( "k:%1 diff:%2", k, diff );
-		}
-	    });
-	}
-    if( !ret )
-	{
-	list new_p = [];
-	integer reg_start=0;
-	y2milestone( "ps=%1", ps );
-	foreach( `p, ps,
-	    ``{
-	    map part = $[];
-	    integer pnr = tointeger(substring(p["name"]:"",size(ddevice)-5));
-	    part["nr"] = pnr;
-	    part["region"] = [ reg_start, p["size"]:0/cyl_blocks ];
-	    reg_start = reg_start + part["region",1]:0;
-	    part["device"] =  Storage::GetDeviceName( ddevice, pnr );
-	    if( part["region",1]:0==0 )
-		{
-		part["type"] = `extended;
-		part["fsid"] = Partitions::fsid_extended_win;
-		}
-	    else
-		{
-		part["type"] = pnr<5 ? `primary : `logical;
-		part["fsid"] = Partitions::fsid_native;
-		}
-	    map pp = find( `e, partitions, ``(e["nr"]:0==pnr));
-	    if( pp != nil )
-		{
-		y2milestone( "entry in parted list %1", pp );
-		part["fsid"] = pp["fsid"]:0;
-		part["type"] = pp["type"]:`primary;
-		}
-	    part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
-	    new_p = add( new_p, part );
-	    });
-	partitions = new_p;
-	y2milestone( "new p %1", partitions );
-	}
-    y2milestone( "disk %1 ret:%2", ddevice, ret );
-    return( $["ret":ret, "partitions":partitions ] );
-    };
-
-/*
- * check partitions for given disk (as path, i.e. '.sda')
- * returns list as specified in README.target_partition
- */
-global define list Check4partitions (string diskdev, map disk, path diskpath)
-    ``{
-    list partitions = [];
-
-    partitions = SCR::Read(.disk+diskpath+.partitions,
-			   Partitions::UseParted() );
-    if( is(partitions[0]:"", string ) )
-	{
-	if( size(partitions[0]:"")>0 )
-	    {
-	    disk["label"] = partitions[0]:"";
-	    }
-	else
-	    {
-	    disk["label"] = Partitions::DefaultPartLabel();
-	    }
-	}
-    else
-	{
-	disk["label"] = Partitions::DefaultPartLabel();
-	}
-    disk["max_primary"] = Partitions::MaxPrimary( disk["label"]:"" );
-    y2milestone( "disk %1 label %2", diskdev, disk["label"]:"" );
-    partitions = remove( partitions, 0 );
-    partitions = maplist( `part, partitions,
-	``{
-	if( part["fsid"]:0 > 0 && (part["fsid"]:0<256||disk["label"]:""=="gpt"))
-	    {
-	    part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
-	    }
-	return( part );
-	});
-    partitions = maplist( `p, partitions,
-	``{
-	p["device"] = Storage::GetDeviceName( diskdev, p["nr"]:0 );
-	return( p );
-	});
-    return partitions;
-    };
 
 global define void InitDone()
     ``{
