@@ -75,6 +75,21 @@ PartedAccess::CheckError( const string& CmdString_Cv, SystemCmd& Cmd_C )
     Stderr_C += Tmp_Ci;
     }
 
+bool 
+PartedAccess::Init( const string& Label_Cv )
+    {
+    y2milestone( "label:%s", Label_Cv.c_str() );
+    std::ostringstream Buf_Ci;
+    bool Ok_bi = true;
+    Changed_b = true;
+    Stderr_C.erase();
+    Buf_Ci << PARTEDCMD << Disk_C << " mklabel " << Label_Cv;
+    SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );
+    Label_C = Label_Cv;
+    Ok_bi = Cmd_Ci.Retcode()==0;
+    return( Ok_bi );
+    }
+
 bool
 PartedAccess::NewPartition(const PartitionType Part_e,
 			  const unsigned PartNr_iv,
@@ -90,11 +105,7 @@ PartedAccess::NewPartition(const PartitionType Part_e,
   Stderr_C.erase();
   if( Label_C.length()==0 || Label_C == "aix" )
       {
-      Buf_Ci << PARTEDCMD << Disk_C << " mklabel " << DefLabel_Cv;
-      SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );
-      Label_C = DefLabel_Cv;
-      CheckError( Buf_Ci.str(), Cmd_Ci );
-      Buf_Ci.str( "" );
+      Ok_bi = Init( DefLabel_Cv );
       }
   Buf_Ci << PARTEDCMD << Disk_C << " mkpart ";
   switch (Part_e)

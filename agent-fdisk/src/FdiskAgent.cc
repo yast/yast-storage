@@ -447,6 +447,18 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
 		ret = fdisk_cmd.Resize( part_nr, new_cyl_cnt );
 		}
 	    }
+	else if( type_string == "init" )
+	    {
+	    string label;
+	    YCPValue content = cmd->value(YCPString("label"));
+	    if( !content.isNull() && content->isString())
+		{
+		label = content->asString()->value();
+		}
+	    string device = string("/dev") + device_name;
+	    PartedAccess disk_cmd( device, false );
+	    ret = disk_cmd.Init( label );
+	    }
 	else
 	    {
 	    y2error( "fdisk invalid cmd" );

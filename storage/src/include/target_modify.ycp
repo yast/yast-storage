@@ -21,38 +21,6 @@ import "Label";
 import "Partitions";
 import "Storage";
 
-define boolean fdisk_call( map curr_map )
-    ``{
-    boolean ok  = false;
-    integer pos = 0;
-    string disk = curr_map["disk"]:"";
-    string pt   = "";
-
-    disk = substring( disk, 5 );
-    pos = findfirstof( disk, "/" );
-    while( pos != nil && pos > 0 )
-	{
-	pt = pt + "." + substring( disk, 0, pos );
-	disk = substring( disk, pos+1 );
-	pos = findfirstof( disk, "/" );
-	}
-
-    boolean parted = Partitions::UseParted();
-    if( curr_map["type"]:"" == "resize" )
-	{
-	parted = true;
-	}
-
-    pt = pt + "." + disk;
-    if( size(pt)>0 )
-	{
-	pt = ".disk" + pt + ".command";
-	y2debug( "pt=%1", pt );
-	ok = SCR::Write(topath(pt), curr_map, parted );
-	}
-    return( ok );
-    }
-
 define boolean target_modify( map modify_targets, boolean installation )
     ``{
 
@@ -208,7 +176,7 @@ define boolean target_modify( map modify_targets, boolean installation )
 	    }
 	else if( curr_module == "disk_ll" )
 	    {
-	    ok = fdisk_call( curr_map );
+	    ok = Storage::DiskAgentCall( curr_map );
 	    }
 	}
 
@@ -228,7 +196,7 @@ define boolean target_modify( map modify_targets, boolean installation )
 //  "id"   : 142,          // new id
 //   "nr"  : 8,            // for sdb8
 
-define boolean fdisk_change_id( string disk, integer nr, integer id  )
+define boolean disk_change_id( string disk, integer nr, integer id  )
     ``{
     map curr_change_id = $[
 			   "disk" : disk,
@@ -236,7 +204,7 @@ define boolean fdisk_change_id( string disk, integer nr, integer id  )
 			   "nr"   :  nr,
 			   "type" : "change_id" ];
 
-    return( fdisk_call( curr_change_id ));
+    return( Storage::DiskAgentCall( curr_change_id ));
     };
 
 
@@ -247,7 +215,7 @@ define boolean fdisk_change_id( string disk, integer nr, integer id  )
     //   "nr"           : 8,            // for sdb8
     //   "new_cyl_num"  : 1500          // resize to 1500 cylinders
 
-define boolean fdisk_resize( string disk, integer nr, integer new_cyl  )
+define boolean disk_resize( string disk, integer nr, integer new_cyl  )
     ``{
     map curr_change = $[
 			   "disk"         : disk,
@@ -255,7 +223,7 @@ define boolean fdisk_resize( string disk, integer nr, integer new_cyl  )
 			   "nr"           :  nr,
 			   "type"         : "resize" ];
 
-    return( fdisk_call( curr_change ));
+    return( Storage::DiskAgentCall( curr_change ));
     };
 
 
@@ -424,8 +392,8 @@ You could unmount the file system manually and retry resizing.
 	    }
 	if( result && !lvm )
 	    {
-	    result = fdisk_resize( disk_dev, part["nr"]:0, part["region",1]:0 );
-	    y2milestone( "fdisk_resize ret:%1", result );
+	    result = disk_resize( disk_dev, part["nr"]:0, part["region",1]:0 );
+	    y2milestone( "disk_resize ret:%1", result );
 	    }
 	if( result && lvm && !format && !decrease && possible["parted"]:false )
 	    {

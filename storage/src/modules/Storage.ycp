@@ -2790,6 +2790,39 @@ global define void SetWizardKey( string key )
 
 
 
+global define boolean DiskAgentCall( map curr_map )
+    ``{
+    boolean ok  = false;
+    integer pos = 0;
+    string disk = curr_map["disk"]:"";
+    string pt   = "";
+
+    y2milestone( "DiskAgentCall map=%1", curr_map );
+    disk = substring( disk, 5 );
+    pos = findfirstof( disk, "/" );
+    while( pos != nil && pos > 0 )
+	{
+	pt = pt + "." + substring( disk, 0, pos );
+	disk = substring( disk, pos+1 );
+	pos = findfirstof( disk, "/" );
+	}
+
+    boolean parted = Partitions::UseParted();
+    if( curr_map["type"]:"" == "resize" )
+	{
+	parted = true;
+	}
+
+    pt = pt + "." + disk;
+    if( size(pt)>0 )
+	{
+	pt = ".disk" + pt + ".command";
+	y2debug( "pt=%1", pt );
+	ok = SCR::Write(topath(pt), curr_map, parted );
+	}
+    return( ok );
+    }
+
 
     /**
      * Delete the partition table and disk label of device
@@ -2799,45 +2832,20 @@ global define void SetWizardKey( string key )
 
 global define integer ZeroDevice(string del_device)
     ``{
-    string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1 2>&1",
-                         del_device );
-    map bo = $[];
-    bo = (map) SCR::Execute(.target.bash_output, zero_string );
-    y2milestone( "%1", bo );
-    integer ret_zero = bo["exit"]:1 == 0 ? 1 : 0;
+    y2milestone( "ZeroDevice %1", del_device );
     map tg = GetTargetMap();
-    if( tg[del_device,"label"]:"msdos" == "gpt" )
-	{
-	bo = (map) SCR::Execute(.target.bash_output,
-			  "/sbin/blockdev --getsize " + del_device );
-	y2milestone( "bo %1", bo );
-	integer siz = 0;
-	siz = tointeger( bo["stdout"]:"" ) / 2;
-	y2milestone( "size %1", siz );
-	if( siz>0 )
-	    {
-	    zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=1k seek=%2 2>&1",
-	                           del_device, siz-5 );
-	    y2milestone( "zero_string %1", zero_string );
-	    bo = (map) SCR::Execute(.target.bash_output, zero_string );
-	    y2milestone( "%1", bo );
-	    ret_zero = bo["exit"]:1 == 0 ? 1 : 0;
-	    }
-	}
-    integer ret_reread = (integer) SCR::Execute(.target.bash,
-                                      sformat("/sbin/blockdev --rereadpt %1",
-				              del_device ));
-    y2milestone( "Partitiontable of device %1 deleted (%2-%3)", del_device,
-                 ret_zero, ret_reread);
-    if( ret_reread != 0 )
+    map init_disk = $[ "disk" : del_device, "type" : "init", 
+                       "label" : tg[del_device,"label"]:"msdos" ];
+
+    boolean ok = Storage::DiskAgentCall( init_disk );
+    if( !ok )
 	{
 	// popup text
-	Popup::Message( _("Reread of the partition table failed.
-
-Reboot your system to make the changes visible
-to the Linux kernel."));
+	Popup::Message( sformat(_("Initialisation of disk %1 failed."), del_device ));
 	}
-    return (ret_zero + ret_reread);
+    integer ret = ok ? 0 : 1;
+    y2milestone( "ZeroDevice ret %1", ret );
+    return(ret);
     }
 
 
@@ -4225,6 +4233,7 @@ global define void FinishInstall()
 	}
     y2milestone( "FinishInstall" );
     }
+
 }
 
 
