@@ -56,8 +56,9 @@ define boolean has_flex_proposal()
 
 define map try_add_boot( map conf, map disk )
     ``{
-    boolean boot = size(filter( map e, conf["partitions"]:[], 
-				``(e["mount"]:""=="/boot"))) > 0;
+    boolean boot = 
+	size(filter( map e, conf["partitions"]:[], 
+		     ``(e["mount"]:""==Partitions::BootMount()))) > 0;
     boolean root = size(filter( map e, conf["partitions"]:[], 
 				``(e["mount"]:""=="/"))) > 0;
     map tc = (map) eval(conf);
@@ -66,7 +67,7 @@ define map try_add_boot( map conf, map disk )
 	 Arch::ia64 || Arch::ppc || Arch::sparc) )
 	{
 	map pb = $[];
-	pb["mount"] = "/boot";
+	pb["mount"] = Partitions::BootMount();
 	pb["size"] = Partitions::MinimalNeededBootsize();
 	pb["fsys"] = Partitions::DefaultBootFs();
 	pb["id"] = Partitions::FsidBoot();
@@ -340,7 +341,8 @@ define map process_partition_data( string dev, map solution )
     string value = "";
     boolean remove_boot = false;
     if( size( filter( map e, solution["partitions"]:[], 
-              ``(e["mount"]:""=="/boot" && e["auto_added"]:false)))>0 )
+              ``(e["mount"]:""==Partitions::BootMount() && 
+	         e["auto_added"]:false)))>0 )
 	{
 	foreach( map e, solution["solution","gap"]:[],
 	    ``{
@@ -365,11 +367,12 @@ define map process_partition_data( string dev, map solution )
 	    foreach( list a, e["added"]:[],
 		``{
 		integer pindex = a[0]:0;
-		if( solution["partitions",pindex,"mount"]:"" == "/boot" )
+		if( solution["partitions",pindex,"mount"]:"" == 
+		    Partitions::BootMount() )
 		    {
 		    integer rest = a[2]:0;
-		    y2milestone( "remove unneeded /boot %1 cyl %2", 
-		                 e["added"]:[], rest );
+		    y2milestone( "remove unneeded %3 %1 cyl %2", 
+		                 e["added"]:[], rest, Partitions::BootMount() );
 		    list nlist = filter( list l, e["added"]:[], ``(l[0]:0!=pindex));
 		    if( size(nlist)>0 && !e["exists"]:false )
 			{
@@ -381,7 +384,8 @@ define map process_partition_data( string dev, map solution )
 			e["cylinders"] = e["cylinders"]:0 - r["diff"]:0;
 			}
 		    solution["solution","gap",index,"added"] = eval(nlist);
-		    y2milestone( "remove unneeded /boot %1", e["added"]:[] );
+		    y2milestone( "remove unneeded %2 %1", e["added"]:[],
+		                 Partitions::BootMount() );
 		    }
 		pindex = pindex+1;
 		});
@@ -1354,7 +1358,7 @@ define map read_partition_config( string fpath )
 	    {
 	    part["size"] = 1024*1024*Partitions::SwapSizeMb(0);
 	    }
-	if( part["mount"]:"" == "/boot" )
+	if( part["mount"]:"" == Partitions::BootMount() )
 	    {
 	    if( part["size"]:0 == -1 )
 		{
