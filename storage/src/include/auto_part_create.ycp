@@ -30,7 +30,6 @@ global define create_partitions( map disk, list partitions,
     ``{
     y2milestone ("disk:%1 partitions %2 selected_region %3)", disk, partitions,
                  selected_region);
-    y2milestone( "partition_type %1", partition_type );
     partitions = filter( `pentry, partitions, 
                          ``(pentry["type"]:`unknown != `free));
     partitions = renumber_logical_partitions (partitions);
@@ -57,7 +56,7 @@ global define create_partitions( map disk, list partitions,
 		    ``(!pentry["delete"]:false &&
 		       pentry["nr"]:0<disk["max_primary"]:4)),
 	    ``(entry["nr"]:0) );
-    if( partition_type == `ABSD || partition_type == `SBSD )
+    if( disk["label"]:""=="bsd" || disk["label"]:""=="sun" )
 	{
 	used_primaries = add( used_primaries, 3 );
 	}
@@ -124,27 +123,36 @@ global define create_partitions( map disk, list partitions,
 
     y2milestone( "use_pnrs %1", use_pnrs );
 
+    integer boot_add = 1;
+
     list boot_region = [ selected_region[0]:0, size_to_units( size_of_boot ) ];
+    if( !need_boot_partititon(selected_region) )
+	{
+	boot_region[1] = 0;
+	boot_add = 0;
+	}
     list swap_region = [ end_of_region( boot_region ), 
-                         size_to_units( size_of_swap ) ];
-    list root_region = [ end_of_region( swap_region),
+                         size_to_units( 1024*1024*Partitions::SwapSizeMb(size_of_region(selected_region)/1024/1024) ) ];
+    list root_region = [ end_of_region(swap_region),
 			 end_of_region(selected_region) - 
 			     end_of_region(swap_region) ];
 
-    // add /boot for all partitions
-
-    map boot_part = $[ "create":true, "format":true,
-		       "type": ptype, "fsid":Partitions::FsidBoot(),
-		       "nr":use_pnrs[0]:0,
-		       "region":boot_region,
-		       "mount":"/boot",
-		       "used_fs":Partitions::DefaultBootFs()];
-    partitions = add (partitions, boot_part);
+    if( boot_add>0 )
+	{
+	// add /boot for all partitions
+	map boot_part = $[ "create":true, "format":true,
+			   "type": ptype, "fsid":Partitions::FsidBoot(),
+			   "nr":use_pnrs[0]:0,
+			   "region":boot_region,
+			   "mount":"/boot",
+			   "used_fs":Partitions::DefaultBootFs()];
+	partitions = add (partitions, boot_part);
+	}
 
     partitions = add (partitions,
 		    $[ "create":true, "format":true,
 		       "type": ptype, "fsid":Partitions::fsid_swap,
-		       "nr":use_pnrs[1]:0,
+		       "nr":use_pnrs[0+boot_add]:0,
 		       "region":swap_region,
 		       "mount":"swap" ]);
 
@@ -152,13 +160,13 @@ global define create_partitions( map disk, list partitions,
 		    $[ "create":true, "format":true,
 		       "type": ptype, "fsid":Partitions::fsid_native,
 		       "used_fs" : Partitions::default_fs,
-		       "nr":use_pnrs[2]:0,
+		       "nr":use_pnrs[1+boot_add]:0,
 		       "region":root_region,
 		       "mount":"/" ]);
 
     // create #3 on bsd if needed
 
-    if( (partition_type==`ABSD || partition_type==`SBSD) && empty_disk)
+    if( (disk["label"]:""=="bsd" || disk["label"]:""=="sun") && empty_disk)
 	{
 	partitions = add( partitions, absd_partition );
 	}

@@ -28,7 +28,7 @@
 
     // fall through to inst_custom_part if target_is not "USE_DISK"
     if ( Storage::GetPartMode()!="USE_DISK" )
-	return `auto;
+	return Storage::GetExitKey();
 
     // Get test_mode flag from module Mode
     boolean test_mode = Mode::test;
@@ -49,7 +49,7 @@
     // Return   : `back or `abort
     //
     define allow_back_abort_only( string message ) ``{
-	any ret = `auto;
+	any ret = `next;
 
 	// Enable back and next buttons independent of the settings
 	// in installation.ycp so the user has a chance to see the
@@ -79,18 +79,12 @@
     map win_partition = $[];	// may be needed later in the resize case (is also a flag)
 
     // --------------------------------------------------------------
-    // set type of partition needed
-
-    string boot_mode = Bootloader::getLoaderType (); // needed later also
-    symbol partition_type = compute_partition_type (boot_mode);
-
-    // --------------------------------------------------------------
     // find the selected target in the map of all possible targets
 
     map targetMap = Storage::GetTargetMap();
 
     // description of the choosen target disk
-    map target = lookup (targetMap, target_is, $[]);
+    map target = targetMap[target_is]:$[];
 
     if (target == $[]) {
 	UI::MessagePopup(_("Internal Error, Use 'custom' partitioning"));
@@ -98,16 +92,16 @@
     }
 
     // user visible name of target
-    string targetname = lookup (target, "name", "");
+    string targetname = target["name"]:"";
 
     // The current list of partitions
-    list partitions = lookup (target, "partitions", []);
+    list partitions = target["partitions"]:[];
 
     //-------------------------------------------------------------------------
     // The action
     //-------------------------------------------------------------------------
 
-    integer max_partitions = compute_max_partitions (target, partition_type);
+    integer max_partitions = compute_max_partitions (target);
 
     // The partition number of the first logical partition
     integer first_logical_nr = 5;
@@ -118,10 +112,8 @@
     // --------------------------------------------------------------
     // general settings for automatically created partitions
 
-    include   "partitioning/size_calculations.ycp";
-
     // How much to allocate for swap
-    integer size_of_swap = calculate_needed_swap ();
+    integer size_of_swap = 1024*1024*Partitions::SwapSizeMb(0);
 
     // --------------------------------------------------------------
     // set size of /boot partition
@@ -129,7 +121,7 @@
     integer size_of_boot = Partitions::MinimalNeededBootsize();
 
     // The number of possible primary partitions
-    integer max_primary = compute_max_primary (partition_type);
+    integer max_primary = target["max_primary"]:4;
 
     // this will tell if automatic partitioning if feasible
     boolean can_do_auto = false;
@@ -160,8 +152,8 @@
 
     // show list of partitions if any found (else the disk is completely unpartitioned
 
-    if ( (num_primary ( partitions ) > 0) || contains_extended ( partitions ) ) {
-
+    if( num_primary(partitions)>0 || contains_extended(partitions) ) 
+	{
 	already_partitioned = true;
 
 	// If there is an unpartitioned area on the disk, ask user to use it
@@ -177,7 +169,7 @@
 		rewrite_settings (partitions, target, targetMap);
 		auto_undefine ();
 
-		return `auto;
+		return Storage::GetExitKey();
 	    }
 	}
 	else
@@ -202,7 +194,7 @@
 	    // this is the normal case
 	    // ATTENTION: also sets highest_id
 	    //
-	    vbox = construct_partition_dialog (partitions, partition_type);
+	    vbox = construct_partition_dialog (partitions, target["label"]:"");
 	}
     }
 
@@ -231,63 +223,63 @@
 	}
 
     while (true)
-    {
- 
+	{
 	ret = Wizard::UserInput();
 	
-	if ( ret == `abort && WFM::CallFunction(`inst_confirm_abort(`painless) ) )
-	{
+	if( ret == `abort && WFM::CallFunction(`inst_confirm_abort(`painless)))
+	    {
 	    return `abort;
-	}
+	    }
 	else if (ret == `full)
-	{
+	    {
 	    // Set all checkboxes
-	    foreach (`pentry, partitions, ``{
+	    foreach (`pentry, partitions, 
+		``{
 		symbol ptype = lookup (pentry, "type", `unknown);
 		integer ui_id = 0;
-		if (ptype != `extended) {
-		    ui_id = lookup (pentry, "ui_id", 0);
+		if (ptype != `extended) 
+		    {
+		    ui_id = pentry["ui_id"]:0;
 		    if (ui_id != 0)
 			UI::ChangeWidget (`id (ui_id), `Value, true);
-		}
-	    });
+		    }
+		});
 	    continue;
-	}
+	    }
 	else if ((ret == `back) || (ret == `next))
-	{
-
-	    if (!already_partitioned)
 	    {
-		if (ret == `next)
+	    if (!already_partitioned)
 		{
+		if (ret == `next)
+		    {
 		    partitions = create_partitions (target, partitions, unused_region);
 		    rewrite_settings (partitions, target, targetMap);
-		}
+		    }
 		break;
-	    }
+		}
 
-	    if ( ret == `next )
-	    {
-		if ( win_partition != $[] )		// resize dialog
+	    if( ret == `next )
 		{
-		    if (UI::QueryWidget (`id (`resize), `Value) == true)
+		if( win_partition != $[] )		// resize dialog
 		    {
+		    if( UI::QueryWidget( `id(`resize), `Value) == true)
+			{
 			// The user decided to shrink his windows.
 			// Check if this is Windows NT or Windows 2000 (curently not supported)
 			//
-			any ret = `auto;
+			any ret = `next;
 
-			integer local_ret = check_win_nt_system( targetMap );
+			integer local_ret = check_win_nt_system( target );
 
-			if ( test_mode )
-			{
+			if( test_mode )
+			    {
 			    // In test mode we _always_ assume there is no system that could cause problem
 			    // so the windows resizer is always accessible (e.g. for screen shots).
 			    local_ret = 0;
-			}
+			    }
 
-			if ( local_ret == 1 )	// Win NT / 2000
-			{
+			if( local_ret == 1 )	// Win NT / 2000
+			    {
 			    // The Windows version is Windows NT or Windows 2000. Tell the user that this is currently
 			    // not supported and that he can go back in the installation or abort it.
 			    string explanation =  sformat( _("An error has occurred.
@@ -304,9 +296,9 @@ shrink your Windows partition by other means.
 			    ret = allow_back_abort_only( explanation );
 
 			    return( ret );
-			}
+			    }
 			else if ( local_ret == 2 )	// local error
-			{
+			    {
 			    // The Windows version used could not be determined. Tell the user
 			    // he can go back in the installation or abort it.
 			    string explanation =  sformat( _("An error has occurred!
@@ -322,7 +314,7 @@ shrink your Windows partition by other means.
 			    ret = allow_back_abort_only( explanation );
 
 			    return( ret );
-			}
+			    }
 
 			// OK --> No NT or 2000
                         // Tell the user about the risks of resizing his windows.
@@ -350,8 +342,9 @@ Are you sure you want to shrink your Windows partition?
 			y2milestone ("Partition '%1' selected for resize", fat_nr);
 			Storage::SetDoResize( fat_nr );
 			break;
-		    }
-		    else {
+			}
+		    else 
+			{
 			// Tell the user about the consequences of deleting his windows.
 			// Ask him if he really wants to do it
 			string explanation = _("You decided to delete your Windows partition completely.
@@ -360,23 +353,26 @@ All data on this partition will be irreversibly lost.
 
 Are you sure you want to delete your Windows partition?
 ");
-			if ( ! UI::AnyQuestionPopup( NoHeadline(), explanation,
-						     _("&Delete Windows"), CancelButtonLabel(), `focus_yes ))
+			if ( !UI::AnyQuestionPopup( NoHeadline(), explanation,
+						    _("&Delete Windows"), 
+						    CancelButtonLabel(), 
+						    `focus_yes ))
 			    continue;
 			y2milestone ("Don't resize, use entire partition");
 			Storage::SetDoResize( "NO" );
-			win_partition_to_delete = tointeger( lookup ( win_partition, "nr", -1) );
+			win_partition_to_delete = tointeger( win_partition["nr"]:-1 );
 			Storage::SetWholeDisk( true );
+			}
 		    }
-		}
-		else if (UI::QueryWidget (`id (highest_id), `Value) != true) {
+		else if (UI::QueryWidget (`id (highest_id), `Value) != true) 
+		    {
 		    // user must mark partitions for deletion. This must start
 		    // with the highest numbered partition since we can't install
 		    // 'in the middle'
 		    display_error_box (_("You must start your selection with the highest numbered partition."));
 		    continue;
+		    }
 		}
-	    }
 
 	    // The partitions that remain untouched.
 	    list old_partitions = [];
@@ -396,55 +392,61 @@ Are you sure you want to delete your Windows partition?
 	    // for deletion in the foreach() loop
 	    boolean windows_part_marked_for_deletion = false;
 
-	    foreach (`pentry, partitions, ``{
+	    foreach (`pentry, partitions, 
+		``{
 		symbol ptype = lookup (pentry, "type", `unknown);
 		integer ui_id = 0;
-		if (ptype != `extended) {
-		    ui_id = lookup (pentry, "ui_id", 0);
-		    boolean selection = (UI::QueryWidget (`id (ui_id), `Value) == true);
+		if (ptype != `extended) 
+		    {
+		    ui_id = pentry["ui_id"]:0;
+		    boolean selection = (UI::QueryWidget (`id(ui_id), `Value) == true);
                    
-		    if ( win_partition_to_delete == lookup( pentry, "nr", -2 )) { // -2 !! (not -1 to be different from init)
+		    if ( win_partition_to_delete == pentry["nr"]:-2 ) 
+		        { // -2 !! (not -1 to be different from init)
 			selection = true;
 			windows_part_marked_for_deletion = true;
-			y2milestone ("Windows partition marked for deletion: <%1>", win_partition_to_delete);
-		    }
-		    else if (windows_part_marked_for_deletion
-			     && (lookup (pentry, "type", `dummy) == `free)) {
+			y2milestone( "Windows partition marked for deletion: <%1>", win_partition_to_delete);
+			}
+		    else if (windows_part_marked_for_deletion &&
+			     (pentry["type"]:`dummy == `free)) 
+			{
 			// trailing free partition after (deleted) windows partition
 			selection = true;
 			y2milestone ("Trailing `free partition marked for deletion");
-		    }
+			}
 
 		    pentry = add (pentry, "delete", selection);
 
-		    if (!selection) {
+		    if (!selection) 
+			{
 			// Read extended partition if any logical partitions
 			// remain
-			if ((ptype == `logical)
-			    && (size (extended_pentry) > 0)) {
+			if( (ptype == `logical) && (size(extended_pentry) > 0))
+			    {
 			    old_partitions = add (old_partitions, extended_pentry);
 			    all_partitions = add (all_partitions, extended_pentry);
 			    extended_pentry = $[];
-			}
+			    }
 
 			old_partitions = add (old_partitions, pentry);
-		    }
-		    else {
+			}
+		    else 
+			{
 			selected_partitions = add (selected_partitions, pentry);
-		    }
+			}
 		    all_partitions = add (all_partitions, pentry);
-		}
+		    }
 		else
 		    extended_pentry = pentry;
-	    });
+		});
 
-	    if (size (extended_pentry) > 0) {
-
+	    if (size (extended_pentry) > 0)
+		{
 		// There are no logical partitions left, mark the extended
 		// partition for deletion
 		extended_pentry = add (extended_pentry, "delete", true);
 		all_partitions = add (all_partitions, extended_pentry);
-	    }
+		}
 
 	    y2milestone ("all_partitions '%1'", all_partitions);
 	    y2milestone ("selected_partitions '%1'", selected_partitions);
@@ -453,87 +455,95 @@ Are you sure you want to delete your Windows partition?
 	    // No consistency checking if the user wants to go back
 	    // but save new selection
 
-	    if (ret == `back) {
+	    if( ret == `back) 
+		{
 		target = add (target, "partitions", all_partitions);
 		targetMap = add (targetMap, target_is, target);
 		Storage::SetTargetMap( targetMap );
 		break;
-	    }
+		}
 
 	    // Check selection for plausability
 	    boolean ok = false;
 	    string reason = nil;
 	    list selected = [];
+	    integer needed_partitions = 2;
+	    if( need_boot_partititon( calculate_selected_region(selected_partitions, nil) ))
+		{
+		needed_partitions = needed_partitions+1;
+		}
 
 	    if (!contiguous_selection (selected_partitions))
-	    {
+		{
 		// consistency check: a condition for the installation is not fullfilled
 		// this condition is described within the reason
 		reason = _("The selected partitions are not contiguous.");
-	    }
-	    else if (contains_extended (old_partitions))
-	    {
-		selected = calculate_selected_region (selected_partitions, extended_region (old_partitions));
-
-		if (!can_create_logical (old_partitions))
+		}
+	    else if (contains_extended(old_partitions))
 		{
+		selected = 
+		    calculate_selected_region( selected_partitions, 
+					       extended_region(old_partitions));
+
+		if (!can_create_logical(old_partitions))
+		    {
 		    // consistency check: a condition for the installation is not fullfilled
 		    // this condition is described within the reason
 		    reason = _("Too few partitions are marked for removal. To install Linux, select more partitions to remove.");
-		}
-		else if (size_of_region (selected) < minimal_size)
-		{
+		    }
+		else if( size_of_region(selected) < minimal_size)
+		    {
 		    y2debug("selected: %1", selected);
-		    // consistency check: a condition for the installation is not fullfilled
-		    // this condition is described within the reason
+		    // consistency check: a condition for the installation 
+		    // is not fullfilled this condition is described within 
+		    // the reason
 		    reason = _("The selected partitions are not big enough to contain a minimal installation.");
-		}
+		    }
 		else
-		{
+		    {
 		    ok = true;
 		    if (!bootable (selected))
 			warn_not_bootable ();
+		    }
 		}
-	    }
-	    else if ((num_primary (old_partitions) == max_primary)
-		     || ((partition_type == `ABSD || partition_type == `SBSD)
-			 && (size (old_partitions) - size (selected_partitions) + 3 >= max_partitions)))
-	    {
+	    else if( (target["label"]:"msdos"=="msdos" && 
+	              num_primary(old_partitions)==max_primary) ||
+		     (target["label"]:"msdos"!="msdos" &&
+		      (size(old_partitions)-size(selected_partitions)+needed_partitions >= max_partitions)))
+		{
 		// consistency check: a condition for the installation is not fullfilled
 		// this condition is described within the reason
 		reason = _("Too few partitions are marked for removal. To install Linux, select more partitions to remove.");
-	    }
+		}
 	    else
-	    {
-		selected = calculate_selected_region (selected_partitions, nil);
-		if (size_of_region (selected) < minimal_size)
 		{
+		selected = calculate_selected_region(selected_partitions, nil);
+		if( size_of_region(selected) < minimal_size)
+		    {
 		    y2debug ("selected: %1", selected);
 		    // consistency check: a condition for the installation is not fullfilled
 		    // this condition is described by the reason
 		    reason = _("The selected partitions are not big enough to contain a minimal installation.");
-		}
+		    }
 		else
-		{
+		    {
 		    ok = true;
 		    if (!bootable (selected))
 			warn_not_bootable ();
+		    }
 		}
-	    }
 
 	    if (ok)
-	    {
+		{
 		partitions = create_partitions (target, all_partitions, selected);
 		y2milestone ("finale partitions %1", partitions);
 		rewrite_settings (partitions, target, targetMap);
-
 		break;
-	    }
+		}
 
 	    display_error_box (reason);
-	}
-
-    } // while (true)
+	    }
+	} // while (true)
 
     if( ret == `next )
 	{
@@ -544,6 +554,7 @@ Are you sure you want to delete your Windows partition?
         {
 	Storage::RestoreTargetBackup("disk");
 	}
+    Storage::SaveExitKey( ret );
 
     // remove all defines from global env.
 

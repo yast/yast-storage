@@ -61,7 +61,7 @@
   
   if ( Arch::s390 )
       {
-      return `auto;
+      return Storage::GetExitKey();
       }	
 
 
@@ -162,22 +162,20 @@ advanced options like RAID and LVM.</p>
 
   any ret = nil;
 
-  if ( !run_in_testsuite )
-  {
-
+  if( !run_in_testsuite )
+      {
       /////////////////////////////////////////////////////////////////////
       // next step to visualize the hit the new target map from hit
 
-      if ( no_suggestion_possible && orig_proposal_firsttime )
-      {
+      if( no_suggestion_possible && orig_proposal_firsttime )
+	  {
 	  y2milestone( "Could not create a proposal %1 %2 ",
-		       no_suggestion_possible,
-		       orig_proposal_firsttime );
+		       no_suggestion_possible, orig_proposal_firsttime );
 	  
-	  return( `auto );
-      }
+	  return( Storage::GetExitKey() );
+	  }
       else
-      {
+	  {
 	  string changes = TargetChangesToRichText(targetMap,$[]);
 	  y2milestone( "current proposal: %1", changes );
 
@@ -188,62 +186,63 @@ advanced options like RAID and LVM.</p>
 	      }
 	  Wizard::SetContents(title, contents, help_text, WFM::Args(0), WFM::Args(1));
 	  UI::ChangeWidget( `id("richtext"), `Value, changes);
-      }
+	  }
 
       repeat
-	  
           {
-              UI::SetFocus(`id(`next));
-              ret = Wizard::UserInput();
+          UI::SetFocus(`id(`next));
+          ret = Wizard::UserInput();
      
-              string part_proposal_mode = UI::QueryWidget(`id("part_option"),  `CurrentButton);
+          string part_proposal_mode = 
+	      UI::QueryWidget(`id("part_option"), `CurrentButton);
          
-              if ( ret == `abort && WFM::CallFunction(`inst_confirm_abort(`painless) ) )
-                  return `abort;
+	  if( ret == `abort && WFM::CallFunction(`inst_confirm_abort(`painless) ) )
+	      return `abort;
      
          
-              if (ret != `back) 
+	  if (ret != `back) 
               {
-		  Storage::SetPartProposalFirst( false );
+	      Storage::SetPartProposalFirst( false );
 
-                  string target_is = "";
+	      string target_is = "";
              
-                  Storage::SetPartProposalMode( part_proposal_mode );
+	      Storage::SetPartProposalMode( part_proposal_mode );
      
-                  if ( part_proposal_mode == "accept")
+	      if ( part_proposal_mode == "accept")
 		  {
-		      symbol doagain = `next;
+		  symbol doagain = `next;
 		      
-		      target_is = "SUGGESTION";
-		      list retval = check_created_partiton_table( targetMap , true, true );
-		      targetMap   = select( retval, 0, $[] );
-		      doagain     = select( retval, 1, `next );
+		  target_is = "SUGGESTION";
+		  list retval = check_created_partiton_table( targetMap , true, true );
+		  targetMap   = select( retval, 0, $[] );
+		  doagain     = select( retval, 1, `next );
 
-		      if ( doagain == `again ) return `again;
+		  if ( doagain == `again ) return `again;
 		  }
-		  else if( part_proposal_mode == "modify" )
+	      else if( part_proposal_mode == "modify" )
+		  {
+		  target_is = "PROP_MODIFY";
+		  }
+	      else if( part_proposal_mode == "detailed" )
+		  {
+		  if( Storage::GetPartMode()!="CUSTOM" )
 		      {
-		      target_is = "PROP_MODIFY";
+		      target_is = "NORMAL";
 		      }
-		  else if( part_proposal_mode == "detailed" )
+		  else
 		      {
-		      if( Storage::GetPartMode()!="CUSTOM" )
-			{
-			target_is = "NORMAL";
-			}
-		      else
-			{
-			target_is = "CUSTOM";
-			}
-		      Storage::SetPartDisk( "" );
+		      target_is = "CUSTOM";
 		      }
+		  Storage::SetPartDisk( "" );
+		  }
 		  
-                  Storage::SetPartMode( target_is );
-		  Storage::SetTargetMap( targetMap );
+	      Storage::SetPartMode( target_is );
+	      Storage::SetTargetMap( targetMap );
 	      }
 
 	  } until ( ret == `next || ret == `back || ret == `cancel );
-  }
+      }
+  Storage::SaveExitKey( ret );
 
   return ret;
 }

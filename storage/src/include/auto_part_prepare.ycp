@@ -21,20 +21,20 @@
  * integer max_primary
  */
 {
-    textdomain "storage";
-    import "Storage";
-    import "Partitions";
-    import "Mode";
+textdomain "storage";
+import "Storage";
+import "Partitions";
+import "Mode";
 
-  global define prepare_partitions (map target, list partitions) ``{
-
+global define prepare_partitions (map target, list partitions) 
+    ``{
     // --------------------------------------------------------------
     // The size of a unit (eg. one cylinder)
-    bytes_per_unit = lookup (target, "cyl_size", 1);
+    bytes_per_unit = target["cyl_size"]:1;
     y2debug("bytes_per_unit: %1", bytes_per_unit);
 
     // The size of the disk in units
-    disk_size = lookup (target, "cyl_count", 1);
+    disk_size = target["cyl_count"]:1;
     y2debug("disk_size: %1", disk_size);
     
     size_of_boot = Partitions::MinimalNeededBootsize();
@@ -49,15 +49,15 @@
     // partition data
 
     if (Mode::test)
-    {
+	{
 	SCR::Write( .target.ycp, "/tmp/initial_partitions", partitions);
-    }
+	}
     
 
     // filter out all "create" paritions, they will be re-created at exit
     //   (this ensures a 'clean' partition list if this dialogue is re-entered
 
-    partitions = filter (`pentry, partitions, ``(!lookup (pentry, "create", false)));
+    partitions = filter (`pentry, partitions, ``(!pentry["create"]:false));
 
     // reset all "delete" paritions, they will be re-created at exit
     //   (this ensures a 'clean' partition list if this dialogue is re-entered
@@ -76,52 +76,54 @@
     //-------------------------------------------------------------------------
 
     // First sort the partitions on the starting cylinder
-    partitions = sort (`p1, `p2, partitions,
-		       ``(start_of_region (lookup (p1, "region", []))
-			  <= start_of_region (lookup (p2, "region", []))));
+    partitions = sort( `p1, `p2, partitions,
+		       ``(start_of_region (p1["region"]:[])
+			  <= start_of_region(p2["region"]:[])));
 
     // now check if automatic partitioning if feasible
 
     // unpartitioned disk -> yes
 
-    if (size (partitions) == 0) {
+    if( size(partitions)==0 ) 
+	{
 	// No partitions -> use the entire disk
 	can_do_auto = true;
 	unused_region = full_region;
-    }
+	}
 
     // extended region with enough free space -> yes
 
-    if ((!can_do_auto) && contains_extended (partitions)) {
-	    // Extended partition already exists -> look for free space at
-	    // the end of it
-	    unused_region = unused_extended_region (partitions);
+    if( (!can_do_auto) && contains_extended(partitions) ) 
+	{
+	// Extended partition already exists -> look for free space at
+	// the end of it
+	unused_region = unused_extended_region (partitions);
 
-	    // check if this is enough
-	    if ((size_of_region (unused_region) > required_size)
-		&& can_create_logical (partitions))
-		can_do_auto = true;
-    }
+	// check if this is enough
+	if( (size_of_region (unused_region) > required_size) && 
+	    can_create_logical (partitions))
+	    can_do_auto = true;
+	}
 
     // no extended region, but primaries left
     //   if there is enough space after the last defined primary -> yes
 
-    if ((!can_do_auto) && (!contains_extended (partitions))
-	&& num_primary (partitions) != max_primary) {
+    if( !can_do_auto && !contains_extended (partitions) && 
+	    num_primary(partitions) != max_primary ) 
+	{
+	map last_partition = partitions[size(partitions)-1]:$[];
+	if( ignored_partition( target, last_partition ))
+	    last_partition = partitions[size(partitions)-2]:$[];
+	list last_region = last_partition["region"]:[];
+	integer last_used = end_of_region(last_region);
 
-	map last_partition = select (partitions, size (partitions) - 1, $[]);
-	// skip #3 on AlphaBSD and SparcBSD
-	if ((partition_type == `ABSD || partition_type == `SBSD) && (lookup (last_partition, "nr", 0) == 3))
-	    last_partition = select (partitions, size (partitions) - 2,$[]);
-	list last_region = lookup (last_partition, "region", []);
-	integer last_used = end_of_region (last_region);
-
-	if (last_used < disk_size) {
-	    unused_region = [ last_used, disk_size - last_used ];
+	if (last_used < disk_size) 
+	    {
+	    unused_region = [ last_used, disk_size-last_used ];
 	    if (size_of_region (unused_region) > required_size)
 		can_do_auto = true;
+	    }
 	}
-    }
 
 
     //-------------------------------------------------------------------------
@@ -132,43 +134,41 @@
 
     // first the mid-disk holes
 
-    partitions = flatten (maplist (`pentry, partitions, ``{
+    partitions = flatten( maplist( `pentry, partitions, 
+	``{
 	list ret = [];
-	list region = lookup (pentry, "region", []);
+	list region = pentry["region"]:[];
 
-	// skip #3 on AlphaBSD and SparcBSD
-	if (((partition_type != `ABSD && partition_type != `SBSD) || (lookup (pentry, "nr", 0) != 3))
-	   && (start_of_region (region) > last_end)) {
+	if( !ignored_partition( target, pentry ) &&
+	    start_of_region (region) > last_end) 
+	    {
 	    free_nr = free_nr + 1;
 	    ret = add (ret, $["type":`free,
 			     "region": [ last_end,
 				       start_of_region (region) - last_end ]]);
 	    // if free space is directly located before extended partition
 	    last_end = start_of_region (region);
-	}
+	    }
 
-	// if this partition is not the extended partition,
+	// if this partition is not the extended partition or a ignored
 	//    use its end_of_region as last_end
 	// on BSD-like partitions, partition # 3 is handled similary
 
-	if ((lookup (pentry, "type", `unknown) != `extended)
-	    && (!(
-		((partition_type == `ABSD || partition_type == `SBSD)
-		  && (lookup (pentry, "nr", 0) == 3))
-		))
-	   )
-	    last_end = end_of_region (lookup (pentry, "region", []));
+	if( (pentry["type"]:`unknown != `extended) &&
+	    !ignored_partition( target, pentry ) )
+	    last_end = end_of_region (pentry["region"]:[]);
 	return add (ret, pentry);
-    }));
+	}));
 
     // then the end-disk hole
 
-    if (last_end < disk_size) {
+    if (last_end < disk_size) 
+	{
 	free_nr = free_nr + 1;
 	partitions = add (partitions,
 			  $[ "type":`free,
 			   "region": [ last_end, disk_size - last_end ]]);
-    }
+	}
 
     // now the partitions list spans the whole disk
     if (Mode::test) y2milestone("all partitions: %1", partitions);
@@ -180,11 +180,14 @@
     // give each partition a unique id
 
     integer ui_id = 0;
-    partitions = maplist (`pentry, partitions, ``{
+    partitions = maplist (`pentry, partitions, 
+	``{
 	ui_id = ui_id + 1;
 	return add (pentry, "ui_id", ui_id);
-    });
+	});
+
+    y2milestone( "unused_region %1", unused_region );
 
     return partitions;
-  };
+    };
 }

@@ -12,7 +12,6 @@
  * needs global variables:
  *
  * integer bytes_per_unit
- * symbol partition_type
  * integer first_logical_nr
  * integer max_partitions
  *
@@ -32,9 +31,8 @@
     global define renumber_logical_partitions (list partitions) ``{
     global define unused_extended_region (list partitions) ``{
     global define unused_logical_region (list partitions) ``{
-    global define compute_max_partitions (map target, symbol partition_type) ``{
-    global define compute_max_primary (symbol partition_type)
-    global define compute_partition_type (string boot_mode)
+    global define compute_max_partitions (map target) ``{
+    global define compute_max_primary (map target)
  *
  */
 {
@@ -89,40 +87,27 @@
     // disk, count from 0 on, return the maximal allowed value for
     // a partition number
 
-    global define compute_max_partitions (map target, symbol partition_type) ``{
-	// BSD label always allows only 8 partitions
-
-	if (partition_type == `ABSD || partition_type == `SBSD)
-	    return 7;
-
-	// mylex raid with /dev/rd/ only supports 8 (0-7) partitions
-
-	if (substring (lookup (target, "device", ""), 0, 8) == "/dev/rd/")
-	    return 7;
-
-	return lookup ($[ "SCSI":15, "IDE":63, "RAID":15 ],
-				     lookup (target, "bus", "SCSI"),
-				     15);
-    };
+    global define compute_max_partitions (map disk) 
+	``{
+	integer ret = disk["max_primary"]:4 - 1;
+	if( disk["label"]:""=="msdos" )
+	    {
+	    if( disk["bus"]:"" == "IDE" )
+		{
+		ret = 63;
+		}
+	    else
+		{
+		ret = 15;
+		}
+	    }
+	return( ret );
+	};
 
     // return the maximal number of primary partitions
 
-    global define compute_max_primary (symbol partition_type) ``{
-	if (partition_type == `ABSD || partition_type == `SBSD)
-	    return 8;
-	return 4;
-    };
-
-    // return the usual type of partitions for the architecture
-
-    global define compute_partition_type (string boot_mode) ``{
-	if (Arch::alpha && (boot_mode == "aboot"))
-	    return `ABSD;
-
-	if (Arch::sparc)
-	    return `SBSD;
-
-	return `FAT;
+    global define compute_max_primary (map disk) ``{
+	return disk["max_primary"]:4;
     };
 
     // Return whether the list of selected partitions is contiguous.
@@ -151,15 +136,22 @@
 
     // Return true if an extended partition exists
 
-    global define contains_extended (list partitions) ``{
-	if (partition_type != `FAT) return false;
-	boolean ret = false;
-	foreach (`pentry, partitions, ``{
-	if (lookup (pentry, "type", `unknown) == `extended
-	    && !lookup (pentry, "delete", false))
-	  ret = true;
-	});
-	return ret;
+    global define boolean contains_extended (list partitions) ``{
+	boolean ret = find( `p, partitions, 
+	                    ``(p["type"]:`unknown==`extended && 
+			       !p["delete"]:false)) != nil;
+	return( ret );
+    };
+
+global define boolean ignored_partition( map disk, map part )
+    ``{
+    // skip #3 on AlphaBSD and SparcBSD
+    boolean ret = target["label"]:""=="bsd" || target["label"]:""=="sun";
+    if( ret )
+	{
+	ret = part["nr"]:0 == 3;
+	}
+    return( ret );
     };
 
     // Return the region of the extended partition
@@ -178,27 +170,31 @@
     // is not nil it is used to clip the region so that it is contained
     // entirely within it.
 
-    global define calculate_selected_region (list selection, list extended_region) ``{
-	integer start = -1;
-	integer end = 0;
-	if (size (selection) > 0) {
-	    start = start_of_region (lookup (select (selection, 0,$[]), "region", []));
-	    end = end_of_region (lookup (select (selection, size (selection) - 1,$[]), "region", []));
+global define calculate_selected_region (list selection, list extended_region) 
+    ``{
+    integer start = -1;
+    integer end = 0;
+    if( size(selection) > 0) 
+	{
+	start = start_of_region( selection[0,"region"]:[] );
+	end = end_of_region( selection[size(selection)-1,"region"]:[] );
 	}
-	if (start != -1) {
-	    if (size (extended_region) > 0) {
-		// Use only the part that is contained in the extended
-		// partition
-		if (start >= end_of_region (extended_region))
-		    return [ 0, 0 ];
-		if (start < start_of_region (extended_region))
-		    start = start_of_region (extended_region);
-		if (end > end_of_region (extended_region))
-		    end = end_of_region (extended_region);
+    if (start != -1) 
+	{
+	if (size (extended_region)>0) 
+	    {
+	    // Use only the part that is contained in the extended
+	    // partition
+	    if (start >= end_of_region (extended_region))
+		return [ 0, 0 ];
+	    if (start < start_of_region (extended_region))
+		start = start_of_region (extended_region);
+	    if (end > end_of_region (extended_region))
+		end = end_of_region (extended_region);
 	    }
-	    return [ start, end - start ];
+	return [ start, end - start ];
 	}
-	return [ 0, 0 ];
+    return [ 0, 0 ];
     }; // selected_region
 
 
@@ -217,7 +213,7 @@
 
 global define bootable (list region) 
     ``{
-    return( start_of_region (region) + size_to_units (size_of_boot) < 
+    return( start_of_region(region) + size_to_units(size_of_boot) < 
 		Partitions::BootCyl() );
     };
 
@@ -303,93 +299,92 @@ global define bootable (list region)
     // Return: true if found, false if not.
     //
     global define file_exist( string file_path ) ``{
-	  string fileCommand = "/usr/bin/test -f " + file_path;
-	  boolean file_found = (SCR::Execute (.target.bash, fileCommand) == 0);
+	  boolean file_found = SCR::Read(.target.size, file_path) >= 0;
+	  y2milestone( "file %1 found %2 ret:%3", file_path, file_found,
+	               SCR::Read(.target.size, file_path) );
 	  return file_found;
     }
 
     
-    // Check whether the partition list has a resizable partition as the highest partition.
-    // Input:  map of data containing the target map
-    // Return: true if there is NT on the system, otherwise false
+// Check whether the partition list has a resizable partition as the highest 
+// partition.
+// Input:  map of data containing the disk
+// Return: true if there is NT on the system, otherwise false
+//
+global define check_win_nt_system( map disk ) 
+    ``{
+    boolean is_nt = false;
+    boolean go_on = true;
+    integer local_ret = 0;
+    boolean local_err = false;
+    list partitions = [];
+    list partitions_local = [];
+    string fat_partition = "";
+    
+    partitions = disk["partitions"]:[];
+    if ( ! is_nt && ! local_err && go_on )
+	{
+	// First check if there are any NTFS partitions on the system
+	//
+	partitions_local = filter( `pentry, partitions, 
+	                           ``( is_ntfs_partition( pentry ) ) );
+
+	if ( size( partitions_local ) != 0 ) is_nt = true;	// is NT system
+	}
+
+    if( !is_nt && !local_err && go_on )
+	{
+	// Then look for specific files on all FAT partitions
+	//
+	partitions_local = filter( `pentry, partitions, 
+	                           ``( is_fat_partition( pentry ) ) );
+	
+	if ( size( partitions_local ) == 0 ) go_on = false;	// not an NT system
+	}
+
+    // If there are FAT partitions mount them and check specific files
     //
-    global define check_win_nt_system( map targets ) ``{
-	boolean is_nt = false;
-	boolean go_on = true;
-	integer local_ret = 0;
-	boolean local_err = false;
-	list partitions = [];
-	list partitions_local = [];
-	string fat_partition = "";
-	
-	foreach (`targetdevice,`target, targets, ``{
-	    // we are looping over all devices in the target map
-	    //
-	    if ( ! is_nt && ! local_err && go_on )
-	    {
-		partitions = lookup ( target, "partitions", [] );
-	
-		// First check if there are any NTFS partitions on the system
-		//
-		partitions_local = filter(`pentry, partitions, ``( is_ntfs_partition( pentry ) ) );
+    if( ! is_nt && ! local_err && go_on )
+	{
+	foreach (`pentry, partitions_local, 
+	    ``{
+	    // Now we are looping over all partitions for the current device.
+	    // get some special values from the partition entry.
 
-		if ( size( partitions_local ) != 0 ) is_nt = true;	// is NT system
-	    }
+	    if( ! is_nt && ! local_err && go_on )
+		{
+		// build devicename.
+		fat_partition = pentry["device"]:"";
 
-	    if ( ! is_nt && ! local_err && go_on )
-	    {
-		// Then look for specific files on all FAT partitions
-		//
-		partitions_local = filter(`pentry, partitions, ``( is_fat_partition( pentry ) ) );
-		
-		if ( size( partitions_local ) == 0 ) go_on = false;	// not an NT system
-	    }
+		// mount the partition
+		local_ret = SCR::Execute(.target.bash, "/bin/mount " + fat_partition + " /mnt");
 
-	    // If there are FAT partitions mount them and check specific files
-	    //
-	    if ( ! is_nt && ! local_err && go_on )
-	    {
-		foreach (`pentry, partitions_local, ``{
-		    // Now we are looping over all partitions for the current device.
-		    // get some special values from the partition entry.
-
-		    if ( ! is_nt && ! local_err && go_on )
+		if ( local_ret != 0 )
 		    {
-			// build devicename.
-			fat_partition = get_device_name( targetdevice, lookup( pentry, "nr", 0 ) );
-
-			// mount the partition
-			local_ret = SCR::Execute(.target.bash, "/bin/mount " + fat_partition + " /mnt");
-
-			if ( local_ret != 0 )
-			{
-			    y2error( "FAT partition <%1> could not be mounted. Canceled", fat_partition );
-			    local_err = true;
-			}
+		    y2error( "FAT partition <%1> could not be mounted. Canceled", fat_partition );
+		    local_err = true;
 		    }
+		}
 
-		    if ( ! is_nt && ! local_err && go_on )
+	    if( ! is_nt && ! local_err && go_on )
+		{
+		if ( file_exist( "/mnt/winnt/system32/ntoskrnl.exe" ) ||
+		     file_exist( "/mnt/winnt/system32/dllcache" ) )
 		    {
-			if ( file_exist( "/mnt/winnt/system32/ntoskrnl.exe" ) ||
-			     file_exist( "/mnt/winnt/system32/dllcache" ) )
-			{
-			    y2error( "Current Windows device <%1> is NT or 2000. Canceled", fat_partition );
-			    is_nt = true;
-			}
-			
-			
+		    y2error( "Current Windows device <%1> is NT or 2000. Canceled", fat_partition );
+		    is_nt = true;
 		    }
+		}
 
-		    // unmount the partition if was mounted
-		    if ( ! local_err ) SCR::Execute(.target.bash, "/bin/umount " + fat_partition );
-		});   // loop over all partitions
-	    }
-	});   // loop over all devices
+	    // unmount the partition if was mounted
+	    if ( !local_err ) SCR::Execute(.target.bash, "/bin/umount " + fat_partition );
+	    });   // loop over all partitions
+	}
 
-	if ( local_err ) return 2;
-	if ( is_nt ) 	 return 1;
-	else 		 return 0;
-    }   // End of check_win_nt_system()
+    if ( local_err ) return 2;
+    if ( is_nt )     return 1;
+    else 	     return 0;
+    }; // End of check_win_nt_system()
 
 
     // --------------------------------------------------------------
@@ -443,5 +438,17 @@ global define bootable (list region)
 	    return [ start_of_region(extended), start_of_region (extended) - start_of_logicals ];
 	return [0, 0];
     };
+
+global define integer calculate_needed_swap ()
+    ``{
+    return 1024*1024*Partitions::SwapSizeMb( 0 );
+    };
+
+global define boolean need_boot_partititon( list region )
+    ``{
+    return( Partitions::NeedBoot() || 
+            (start_of_region(region)<Partitions::BootCyl() && 
+	     end_of_region(region)>=Partitions::BootCyl()));
+    }
 
 }

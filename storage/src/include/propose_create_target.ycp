@@ -30,88 +30,9 @@ import "Partitions";
   
 global define GetSwapSize( integer start_cyl, integer end_cyl, integer cyl_size)
     ``{
-    integer swap_size = 0;
-    integer slot_size = (end_cyl - start_cyl +1) * cyl_size;
-    
-    integer oneMB = 1024 * 1024;
-    integer oneGB = 1024 * oneMB;
-
-    // a good approach swap == mem x 2
-
-    integer mem = 256 * oneMB;
-    if( !Mode::test )
-	{
-	mem = lookup(lookup(SCR::Read(.proc.meminfo), "mem", $[]), "total", 0);
-	}
-    if( mem == 0 || mem == nil ) mem = 64 * oneMB;
-
-    if( mem * 9 < slot_size )
-	{
-	swap_size = mem * 2; 
-	}
-    else if( mem * 5 < slot_size )
-	{
-	swap_size = mem; 
-	}
-    else if( mem * 3 < slot_size )
-	{
-	swap_size = mem / 2; 
-	}
-    else if( mem * 2 < slot_size )
-	{
-	swap_size = mem / 3; 
-	}
-    else 
-	{
-	swap_size = mem / 4;
-	}
-
-    if( swap_size > oneGB )
-	{
-	swap_size =  oneGB;
-
-	if ( swap_size < 0 ) swap_size = 0;
-	}
-
-
-    // look for a min size
-    // 1G    -> 128MB
-    // 2G    -> 256MB
-    // 10G   -> 512MB
-    // 40G   -> 1GB
-
-    if( slot_size > (40 * oneGB) &&  (swap_size + mem) < 1 * oneGB )
-	{
-	swap_size = (1 * oneGB) - mem;
-	}
-    else if( slot_size > (10 * oneGB)  &&  (swap_size + mem) < 512 * oneMB )
-	{
-	swap_size = (512 * oneMB) - mem;
-	}
-    else if( slot_size > (2 * oneGB)  &&  (swap_size + mem) < 256 * oneMB )
-	{
-	swap_size = (256 * oneMB) - mem;
-	}
-    else if( slot_size > (1 * oneGB)  &&  (swap_size + mem) < 128 * oneMB )
-	{
-	swap_size = (128 * oneMB) - mem;
-	}
-
-    y2milestone( "swap_size %1", swap_size );
-
-    //debug( "Mem %2 MB  Disk %3 MB ==> Swap: %1 MB, ",
-    //	    ToStringLen( 4, swap_size / ( 1024*1024)),
-    //	    ToStringLen( 5, mem       / ( 1024*1024)),
-    //	    ToStringLen( 7, slot_size / ( 1024*1024)));
-
-    if( swap_size == 0 )
-	{
-	return( -1 );
-	}
-    else
-	{
-	return( start_cyl + (swap_size / cyl_size));
-	}
+    integer swap_mb = 
+	Partitions::SwapSizeMb( (end_cyl-start_cyl+1) * cyl_size / (1024*1024));
+    return( start_cyl + (swap_mb*1024*1024)/cyl_size );
     };
 
 global define HitToTargetMap( map targetMap, map hit )

@@ -82,48 +82,52 @@ Warning: This disk has foreign partitions and
 must be handled by the custom partitioner."));
     };
 
-    global define construct_partition_dialog(list partitions, symbol partition_type) ``{
-	term vbox_contents = `VBox(
-				   // Message between the full name of the hard disk to use
-				   // and the "Use entire hard disk" button
-				   // - please avoid excessively long lines - rather, include a newline
-				   `Left( `Label (_("Choose partitions that can be erased\nto make room for SuSE Linux:"))),
-				   `VSpacing(0.3)
-				   );
+global define construct_partition_dialog(list partitions, string ptype) 
+    ``{
+    term vbox_contents = 
+	`VBox(  // Message between the full name of the hard disk to use
+	        // and the "Use entire hard disk" button
+		// - please avoid excessively long lines - rather, include a newline
+		`Left( `Label (_("Choose partitions that can be erased\nto make room for SuSE Linux:"))),
+		`VSpacing(0.3)
+	     );
 
-	// Add option to select the entire disk at once
-	vbox_contents = add (vbox_contents,
-		    // pushbutton to choose the entire disk, erasing all data on the disk
-		    // this is an easy way to select all partitions on the target disk
-		    `Left(`PushButton (`id (`full), _("Use &entire hard disk"))));
+    // Add option to select the entire disk at once
+    vbox_contents = 
+	add( vbox_contents,
+	     // pushbutton to choose the entire disk, erasing all data on 
+	     // the disk this is an easy way to select all partitions on 
+	     // the target disk
+	     `Left(`PushButton (`id (`full), _("Use &entire hard disk"))));
 
-	vbox_contents = add (vbox_contents, `VSpacing(0.5) );
+    vbox_contents = add (vbox_contents, `VSpacing(0.5) );
 
-	integer i = 0;
-	integer ui_id = 0;
-	foreach (`pentry, partitions, ``{
-	    symbol ptype = lookup (pentry, "type", `unknown);
-	    if (ptype != `extended) {
-	        list hit = filter(`v, Partitions::not_shown_partitions,
-				  ``(issubstring(pentry["fstype"]:"", v)) );
-		// skip #3 on AlphaBSD and SparcBSD
-		if (size(hit)==0 &&
-		    ((partition_type != `ABSD && partition_type != `SBSD) || 
-		     (lookup (pentry, "nr", 0) != 3)) &&
-		    (!lookup (pentry, "create", false))) {
-		    ui_id = lookup (pentry, "ui_id", 0);
-		    i = i + 1;
-		    vbox_contents = add (vbox_contents,
-				     `Left(`CheckBox (`id (ui_id),
-						      partition_text (i, pentry),
-						      lookup (pentry, "delete", false))));
+    integer i = 0;
+    integer ui_id = 0;
+    foreach( `pentry, partitions, 
+	``{
+	symbol ptype = pentry["type"]:`unknown;
+	if (ptype != `extended) 
+	    {
+	    list hit = filter(`v, Partitions::not_shown_partitions,
+			      ``(issubstring(pentry["fstype"]:"", v)) );
+	    // skip #3 on AlphaBSD and SparcBSD
+	    if (size(hit)==0 &&
+		((ptype!="bsd" && ptype!="sun") || pentry["nr"]:0 != 3) &&
+		!pentry["create"]:false) 
+		{
+		ui_id = pentry["ui_id"]:0;
+		i = i + 1;
+		vbox_contents = add (vbox_contents,
+				 `Left(`CheckBox (`id (ui_id),
+						  partition_text(i, pentry),
+						  pentry["delete"]:false)));
 		}
 	    }
 	});
 
-	highest_id = ui_id;
-
-	return vbox_contents;
+    highest_id = ui_id;
+    return vbox_contents;
     };
 
     global define create_whole_disk_dialog () ``{

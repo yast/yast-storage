@@ -35,7 +35,7 @@
 
     if( Storage::GetPartMode() == "PROP_MODIFY" ||
         Storage::GetPartMode() == "SUGGESTION" )
-        return `auto;
+        return Storage::GetExitKey();
 
 
     //////////////////////////////////////////////////////
@@ -44,26 +44,6 @@
     if( Mode::update ) {
 	return `cancel;
     }
-
-    // return the maximal number of primary partitions
-
-    define compute_max_primary (symbol partition_type) ``{
-	if (partition_type == `ABSD || partition_type == `SBSD)
-	    return 8;
-	return 4;
-    };
-
-    // return the usual type of partitions for the architecture
-
-    define compute_partition_type (string boot_mode) ``{
-	if (Arch::alpha && (boot_mode == "aboot"))
-	    return `ABSD;
-
-	if (Arch::sparc)
-	    return `SBSD;
-
-	return `FAT;
-    };
 
     /*
      *----------------------------------------------------------------------
@@ -76,179 +56,191 @@
      *
      */
     
-    define CheckPartitionTableSanity( map targetMap )
+define CheckPartitionTableSanity( map targetMap )
     ``{
-      boolean     logical_drive_is_missing = false;
-      boolean     too_many_primary         = false;
-      boolean     logical_without_extended = false;
-      string      ldim_dev                 = "";
-      string      err_dev                  = "";
-      
-      foreach(`dev, `disk, targetMap,
-      ``{
-          string type = substring(dev, 5, 2);
-	  
-          boolean extended_exists      = false;
-	  
-          list primary_list  = filter( `part, lookup( disk, "partitions", []),
-                                        ``( (lookup( part, "type", `unknown) == `primary)  && (!lookup( part, "delete", false) )));
-          list extended_list = filter( `part, lookup( disk, "partitions", []),
-                                        ``( (lookup( part, "type", `unknown) == `extended) && (!lookup( part, "delete", false) )));
-          list logical_list  = filter( `part, lookup( disk, "partitions", []),
-                                          ``( (lookup( part, "type", `unknown) == `logical)  && (!lookup( part, "delete", false) )));
+    boolean     logical_drive_is_missing = false;
+    boolean     too_many_primary         = false;
+    boolean     logical_without_extended = false;
+    string      ldim_dev                 = "";
+    string      err_dev                  = "";
+    
+    foreach(`dev, `disk, targetMap,
+	``{
+	string type = substring(dev, 5, 2);
+	
+	boolean extended_exists      = false;
+	
+	list primary_list = 
+	    filter( `part, disk["partitions"]:[],
+		    ``( (part["type"]:`unknown == `primary) && 
+		        !part["delete"]:false ));
+	list extended_list = 
+	    filter( `part, disk["partitions"]:[],
+		    ``( (part["type"]:`unknown == `extended) && 
+		        !part["delete"]:false ));
+	list logical_list = 
+	    filter( `part, disk["partitions"]:[],
+		    ``( (part["type"]:`unknown == `logical) && 
+		        !part["delete"]:false ));
 
-	  symbol partition_type = compute_partition_type (Bootloader::getLoaderType ());
-	  integer maximal_primaries = compute_max_primary (partition_type);
-          if (  (size(extended_list) + size(primary_list)) > maximal_primaries )
-          {
-              too_many_primary = true;
-	      err_dev          = dev;
-	      y2error("Error Sanity: Extended List %1", extended_list ); 
-	      y2error("Error Sanity: Primary List %1",  primary_list ); 
-          }
+	integer maximal_primaries = disk["max_primary"]:4;
+	if( (size(extended_list) + size(primary_list)) > maximal_primaries )
+	    {
+	    too_many_primary = true;
+	    err_dev          = dev;
+	    y2error("Error Sanity: Extended List %1", extended_list ); 
+	    y2error("Error Sanity: Primary List %1",  primary_list ); 
+	    }
 
-          if ( (size(extended_list) == 0)  && (size(logical_list) != 0) )
-          {
-              logical_without_extended = true;
-	      err_dev                  = dev;
-	      y2error("Error Sanity: Extended List %1", extended_list ); 
-	      y2error("Error Sanity: Primary List %1",  primary_list ); 
-          }
+	if( (size(extended_list) == 0)  && (size(logical_list) != 0) )
+	    {
+	    logical_without_extended = true;
+	    err_dev                  = dev;
+	    y2error("Error Sanity: Extended List %1", extended_list ); 
+	    y2error("Error Sanity: Primary List %1",  primary_list ); 
+	    }
 
+	// this will only trigger for FAT partitions
+	if( size(extended_list) > 0 )
+	    {
+	    integer nb_logical_drives  = size( logical_list );
+	    list lst_logical_drives = 
+		maplist( `part, logical_list, ``(part["nr"]:0));
 
-	  // this will only trigger for FAT partitions
-          if (  size(extended_list) > 0 )
-          {
-	      integer nb_logical_drives  = size( logical_list );
-	      list    lst_logical_drives = maplist( `part, logical_list, ``(lookup(part, "nr", 0)));
+	    integer n = 5;
 
-	      integer n = 5;
+	    // example:
+	    // - hda5 an hda6 ->  nb_logical_drives = 2
+	    // - while( n <= 6 )  # 4 + nb_logical_drives)
+	    //   - check
+	    
+	    while( n <= ( 4 + nb_logical_drives ))
+		{
+		if( contains( lst_logical_drives, n ))
+		    {
+		    // all is ok
+		    }
+		else
+		    {
+		    // Oops
+		    logical_drive_is_missing = true;
+		    ldim_dev                 = dev;
+		    y2error("Error Sanity: Extended List %1 %2", lst_logical_drives, n ); 
+		    }
+		       
+		n = n + 1;
+		}
+	    }
+	});
 
-	      // example:
-	      // - hda5 an hda6 ->  nb_logical_drives = 2
-	      // - while( n <= 6 )  # 4 + nb_logical_drives)
-              //   - check
-	      
-              while (n <= ( 4 + nb_logical_drives ))
-	      {
-		  if ( contains( lst_logical_drives, n ))
-		  {
-		      // all is ok
-		  }
-		  else
-		  {
-		      // Oops
-		      logical_drive_is_missing = true;
-		      ldim_dev                 = dev;
-		      y2error("Error Sanity: Extended List %1 %2", lst_logical_drives, n ); 
-		  }
-		  	 
-                  n = n + 1;
-              }
-	  }
-      });
-
-      return( true );
-         
+    return( true );
     };
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////
-    // MAIN:
-    /////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+// MAIN:
+/////////////////////////////////////////////////////////////////////
 
     map targetMap = Storage::GetTargetMap();
 
-    if ( test_mode && (size(targetMap) == 0) ) {
-	if ( demo_mode ) {
+    if( test_mode && (size(targetMap) == 0) ) 
+        {
+	if( demo_mode ) 
+	    {
 	    y2warning("***** Demo mode active - using fake demo values *****");
 	    targetMap = SCR::Read(.target.yast2, "demo_target_map.ycp");
-	}
-	else {// ! demo_mode
+	    }
+	else 
+	    {// ! demo_mode
 	    y2warning("***** Test mode active - using fake values *****");
 	    targetMap = SCR::Read(.target.yast2, "test_target_map.ycp");
-	}
-	Storage::SetTargetMap( targetMap );
-    }
-    
-
-  // Check the partition table for correctness
-  
-  boolean targetMap_isSane = CheckPartitionTableSanity( targetMap );
-  if ( !targetMap_isSane ) return `back;
-
-  term contents = `Dummy();
-
-  if (size(targetMap) > 0) {
-
-    if (test_mode) y2milestone("found targetMap\n%1\n target_is '%2'", targetMap, Storage::GetPartDisk());
-
-    // loop over targetMap and build radio buttons for selection
-    // dont use foreach here since we need a counter (as a shortcut)
-    // anyway
-
-    term buttonbox = `VBox();
-
-    integer i = 0;
-    foreach (`tname, `tdata, targetMap, ``{
-        if( !lookup(tdata, "is_lvm_vg", false) && tname != "/dev/md" )
-	    {
-	    string tlinename = lookup (tdata, "name", "?");
-	    string tline = "&" + (i+1) + ":    " + tlinename;
-	    buttonbox = add(buttonbox, `Left(`RadioButton(`id(tname), tline, 
-	                    (Storage::GetPartDisk()==tname && Storage::GetPartMode()!="CUSTOM"))));
-	    i = i + 1;
 	    }
-    });
-
-    buttonbox = add(buttonbox, `VSpacing(0.8) );
-    buttonbox = add(buttonbox, `Left(`RadioButton(`id("CUSTOM"),
-						  // Check box for expert partitioning mode rather than
-						  // just selecting one of the hard disks and use
-						  // a standard partitioning scheme
-						  _("&Custom partitioning -- for experts"),
-						  ((Storage::GetPartMode() == "CUSTOM") )
-						  )
-				     )
-		    );
+	Storage::SetTargetMap( targetMap );
+	}
     
-    // This dialog selects the target disk for the installation.
-    // Below this label, all targets are listed that can be used as installation target
+    // Check the partition table for correctness
+  
+    boolean targetMap_isSane = CheckPartitionTableSanity( targetMap );
+    if ( !targetMap_isSane ) return `back;
 
-    contents = `Frame ( _("Choose a hard disk"),
-			`RadioButtonGroup(`id(`options),
-					  `VBox(
-						`VSpacing(0.4),
-						`HSquash(buttonbox),
-						`VSpacing(0.4)
-						)
-					  )
-			);
-  }
-  else {
-    if (test_mode) y2milestone("NO targetMap");
-    // normally the target is located on hard disks. Here no hard disks can be found.
-    // YaST2 cannot install - now the fallback YaST must be used
-    contents = `Label (_("No disks found, please use the update CD for installation."));
-  }
+    term contents = `Dummy();
+
+    if( size(targetMap) > 0) 
+	{
+	if (test_mode) 
+	    y2milestone( "found targetMap\n%1\n target_is '%2'", targetMap, 
+	                 Storage::GetPartDisk());
+
+	// loop over targetMap and build radio buttons for selection
+	// dont use foreach here since we need a counter (as a shortcut)
+	// anyway
+
+	term buttonbox = `VBox();
+
+	integer i = 0;
+	foreach( `tname, `tdata, targetMap, 
+	    ``{
+	    if( !lookup(tdata, "is_lvm_vg", false) && tname != "/dev/md" )
+		{
+		string tlinename = tdata["name"]:"?";
+		string tline = "&" + (i+1) + ":    " + tlinename;
+		boolean sel = Storage::GetPartDisk()==tname && 
+		              Storage::GetPartMode()!="CUSTOM";
+		buttonbox = add( buttonbox, 
+		                 `Left(`RadioButton(`id(tname), tline, sel )));
+		i = i + 1;
+		}
+	    });
+
+	buttonbox = add(buttonbox, `VSpacing(0.8) );
+	// Check box for expert partitioning mode rather than
+	// just selecting one of the hard disks and use
+	// a standard partitioning scheme
+	buttonbox = 
+	    add(buttonbox, `Left(`RadioButton(`id("CUSTOM"),
+				 _("&Custom partitioning -- for experts"),
+				 ((Storage::GetPartMode() == "CUSTOM") ))));
+    
+	// This dialog selects the target disk for the installation.
+	// Below this label, all targets are listed that can be used as 
+	// installation target
+
+	contents = `Frame( _("Choose a hard disk"),
+			   `RadioButtonGroup(`id(`options),
+					     `VBox( `VSpacing(0.4),
+						    `HSquash(buttonbox),
+						    `VSpacing(0.4)
+						  )
+					    )
+			 );
+	}
+    else 
+	{
+	if (test_mode) y2milestone("NO targetMap");
+	// normally the target is located on hard disks. Here no hard disks 
+	// can be found. YaST2 cannot install - now the fallback YaST must be 
+	// used
+	contents = 
+	  `Label (_("No disks found, please use the update CD for installation."));
+	}
 
 
-  // There are several hard disks found. Linux is completely installed on
-  // one hard disk - this selection is done here
-  // "Preparing Hard Disk - Step 1" is the description of the dialog what to do
-  // while the following locale is the help description
-  // help part 1 of 3
-  string helptext = _("<p>
+    // There are several hard disks found. Linux is completely installed on
+    // one hard disk - this selection is done here
+    // "Preparing Hard Disk - Step 1" is the description of the dialog what to 
+    // do while the following locale is the help description
+    // help part 1 of 3
+    string helptext = _("<p>
 All hard disks automatically detected on your system
 are shown here. Select the hard disk on which to install SuSE Linux.
 </p>
 ");
-  // help part 2 of 3
-  helptext = helptext + _("<p>
+    // help part 2 of 3
+    helptext = helptext + _("<p>
 You may select later which part of the disk is used for SuSE Linux.
 </p>
 ");
-  // help part 3 of 3
-  helptext = helptext + _("
+    // help part 3 of 3
+    helptext = helptext + _("
 <p>
 The <b>custom partitioning</b> option for experts allows full
 control over partitioning the hard disks and assigning
@@ -258,67 +250,65 @@ partitions to mount points when installing SuSE Linux.
 ");
 
 
-// first step of hd prepare, select a single disk or "expert" partitioning
-  Wizard::SetContents( _("Preparing Hard Disk -- Step 1"),
-			   contents, helptext, WFM::Args(0), WFM::Args(1));
-  any ret = nil;
+    // first step of hd prepare, select a single disk or "expert" partitioning
+    Wizard::SetContents( _("Preparing Hard Disk -- Step 1"),
+			 contents, helptext, WFM::Args(0), WFM::Args(1));
+    any ret = nil;
 
-  // Event handling
+    // Event handling
 
-  any option = nil;
+    any option = nil;
 
-  repeat
-  {
-    ret = Wizard::UserInput();
+    repeat
+	{
+	ret = Wizard::UserInput();
 
-    if ( ret == `abort && WFM::CallFunction(`inst_confirm_abort(`painless) ) )
-	return `abort;
-    
-    if (ret == `next ) {
-      option = UI::QueryWidget(`id(`options), `CurrentButton);
-      y2milestone( "option %1", option );
-      if (option == nil) {
-	if ( ret != `back ) {
-	  // there is a selection from that one option has to be chosen - at the moment
-	  // no option is chosen
-	  UI::MessagePopup(_("Choose one of the
-options to continue.
-"));
-	  continue;
-	}
-      }
-      else if (substring(option,0,5) == "/dev/" )
-	  {
-	  Storage::SetPartMode( "USE_DISK" );
-	  y2milestone( "PartMode Disk old %1 name %2", Storage::GetPartDisk(),
-	               option );
-	  Storage::DisposeTargetBackup("disk");
-	  Storage::CreateTargetBackup("disk");
-	  Storage::ResetOndiskTarget();
-	  map tg = Storage::GetTargetMap();
-	  tg = Storage::AddMountPointsForWin(tg);
-	  Storage::SetTargetMap( tg );
-	  Storage::SetPartDisk( option );
-	  } // if (option)
-      else 
-	  {
-	  y2milestone( "PartMode %1 %2", Storage::GetPartMode(), 
-	               Storage::GetPartDisk() );
-	  Storage::DisposeTargetBackup("disk");
-	  Storage::CreateTargetBackup("disk");
-	  Storage::ResetOndiskTarget();
-	  map tg = Storage::GetTargetMap();
-	  // when creating your own setup you probably do not want to have
-	  // these windows mount point (/windows/C, /windows/D) as default
-	  // tg = Storage::AddMountPointsForWin(tg);
-	  tg = Storage::AddSwapMp(tg);
-	  Storage::SetTargetMap( tg );
-	  Storage::SetPartMode( "CUSTOM" );
-	  }
+	if( ret == `abort && WFM::CallFunction(`inst_confirm_abort(`painless) ))
+	    return `abort;
+	
+	if( ret == `next ) 
+	    {
+	    option = UI::QueryWidget(`id(`options), `CurrentButton);
+	    y2milestone( "option %1", option );
+	    if( option == nil ) 
+		{
+		// there is a selection from that one option has to be 
+		// chosen - at the moment no option is chosen
+		UI::MessagePopup(_("Choose one of the options to continue."));
+		continue;
+		}
+	    else if (substring(option,0,5) == "/dev/" )
+		{
+		Storage::SetPartMode( "USE_DISK" );
+		y2milestone( "PartMode Disk old %1 name %2", 
+		             Storage::GetPartDisk(), option );
+		Storage::DisposeTargetBackup("disk");
+		Storage::CreateTargetBackup("disk");
+		Storage::ResetOndiskTarget();
+		map tg = Storage::GetTargetMap();
+		tg = Storage::AddMountPointsForWin(tg);
+		Storage::SetTargetMap( tg );
+		Storage::SetPartDisk( option );
+		} // if (option)
+	    else 
+		{
+		y2milestone( "PartMode %1 %2", Storage::GetPartMode(), 
+			     Storage::GetPartDisk() );
+		Storage::DisposeTargetBackup("disk");
+		Storage::CreateTargetBackup("disk");
+		Storage::ResetOndiskTarget();
+		map tg = Storage::GetTargetMap();
+		// when creating your own setup you probably do not want to have
+		// these windows mount point (/windows/C, /windows/D) as default
+		// tg = Storage::AddMountPointsForWin(tg);
+		tg = Storage::AddSwapMp(tg);
+		Storage::SetTargetMap( tg );
+		Storage::SetPartMode( "CUSTOM" );
+		}
 
-    } // if (ret == next)
-    
-  } until ( ret == `next || ret == `back || ret == `cancel );
-
-  return ret;
+	    } // if (ret == next)
+	
+	} until ( ret == `next || ret == `back || ret == `cancel );
+    Storage::SaveExitKey( ret );
+    return ret;
 }
