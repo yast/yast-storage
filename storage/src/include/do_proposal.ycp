@@ -499,13 +499,13 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 			    curr_first_pri      = -1;
 			    }
 
-
 			//////////////////////////////////////
 			// Do I need a boot partition?
 			//////////////////////////////////////
 			if( need_boot ||
 			    // due to dist team
-			    ((end_cyl > 1024 ) && !Boot::LbaSupport() ))
+			    (end_cyl>Partitions::boot_cyl && 
+			     !Boot::LbaSupport() ))
 			    {
 			    // yes I need a boot partition
 			    if( is_primary )
@@ -536,7 +536,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 
 				    y2debug( "OUT: cr one %1 split %2 ", 
 				             free_primary>0, 
-					     split_boot_end < 1024);
+					     split_boot_end<Partitions::boot_cyl);
 				    y2debug( "OUT: cr two %1 HavePL %2", 
 				             free_primary>1, 
 					     HaveBootSlot( "p_or_l", 
@@ -555,7 +555,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 							   boot_slot_list) );
 
 				    if( free_primary>0 && 
-				        split_boot_end < 1024 )
+				        split_boot_end<Partitions::boot_cyl )
 					{
 					AddHit( mode, slot, "2p-nE-2pri-split",
 					        $[], curr_first_pri, "extd", 
@@ -635,7 +635,8 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 					 HaveBootSlot("logical", slotnb, mode, 
 					              boot_slot_list) );
 				y2debug( "OUT: cr two %1 split %2", 
-				         free_primary>1, split_boot_end<1024 );
+				         free_primary>1, 
+					 split_boot_end<Partitions::boot_cyl );
 				y2debug( "OUT: cr two %1 HavePL %2",
 				         free_primary>1, 
 					 HaveBootSlot( "p_or_l", slotnb, mode, 
@@ -691,7 +692,8 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 					    curr_second_pri, free_primary );
 				    }
 
-				if( free_primary>1 && split_boot_end < 1024 )
+				if( free_primary>1 && 
+				    split_boot_end < Partitions::boot_cyl )
 				    {
 				    AddHit( mode, slot, "2p-E-2pri-split", $[],
 					    curr_second_pri, "no_extd", 
@@ -719,7 +721,8 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 				{
 				y2debug( "OUT: test of logical slot %1", 
 				         slotnb);
-				y2debug( "OUT: split %1", split_boot_end<1024 );
+				y2debug( "OUT: split %1", 
+				         split_boot_end<Partitions::boot_cyl );
 				y2debug( "OUT: HaveL %1", 
 				         HaveBootSlot("logical", slotnb, mode, 
 					              boot_slot_list));
@@ -731,7 +734,7 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 				///////////////////////
 				// base slot is logical
 
-				if( split_boot_end < 1024 )
+				if( split_boot_end < Partitions::boot_cyl )
 				    {
 				    AddHit( mode, slot, "2p-log-split", $[],
 					    first_free_logical, "no_extd", 
@@ -898,6 +901,31 @@ global define map do_proposal_real( boolean need_boot, map targetMap )
 
 	tmptargetMap = HitToTargetMap( filter( `key, `val, targetMap, 
 	                                       ``(true)), the_hit );
+	foreach( `dev, `disk, tmptargetMap,
+	    ``{
+	    list new_part = [];
+	    foreach( `part, disk["partitions"]:"",
+		``{
+		if( Partitions::PrepBoot() && !part["delete"]:false &&
+		    part["mount"]:"" == "/boot" )
+		    {
+		    integer id = Partitions::fsid_prep_chrp_boot;
+		    y2milestone( "part=%1", part );
+		    part["format"] = false;
+		    part["mount"] = "";
+		    part["fstype"] = Partitions::FsIdToString( id );
+		    if( !part["create"]:false && part["fsid"]:0 != id )
+			{
+			part["ori_fsid"] = part["fsid"]:0;
+			part["change_fsid"] = true;
+			}
+		    part["fsid"] = id;
+		    y2milestone( "part=%1", part );
+		    }
+		new_part = add( new_part, part );
+		});
+	    tmptargetMap[dev,"partitions"] = new_part;
+	    });
 	}
     return( $[ "ok" : size(tmptargetMap)>0, "target" : tmptargetMap ] );
     }

@@ -30,11 +30,13 @@
     global integer fsid_prep_chrp_boot = 0x41;
     global integer fsid_root = fsid_native;
     global integer fsid_boot = fsid_native;
+    global integer boot_cyl = 1024;
 
     global boolean no_fsid_menu = false;
 
     // filesystems for /win
-    global list fsid_wintypes = [ 6, 11, 12, 14 ]; /* FAT32, Win95-Fat32, Win95LBA, Win95-Fat16  */
+                         /* FAT32, Win95-Fat32, Win95LBA, Win95-Fat16  */
+    global list fsid_wintypes = [ 6, 11, 12, 14 ]; 
 
     // filesystems for /dos
     global list fsid_dostypes = [ 1, 4 ];          /* FAT12, FAT16  */
@@ -54,33 +56,51 @@
     global symbol default_fs      = `reiser;
     global symbol default_boot_fs = `ext2;
 
-    global define Partitions()
+global define Partitions()
     ``{
-	import "Boot";
-	if( Arch::ia64 || Boot::LoaderType == "milo" )
-	    {
-	    fsid_boot = fsid_fat32;
-	    default_boot_fs = `fat32;
-	    }
-	if( Arch::ia64 )
-	    {
-	    minimal_needed_bootsize = 48*1024*1024;
-	    }
+    import "Boot";
+    if( Arch::ia64 || Boot::LoaderType == "milo" )
+	{
+	fsid_boot = fsid_fat32;
+	default_boot_fs = `fat32;
+	}
+    if( Arch::ia64 )
+	{
+	minimal_needed_bootsize = 48*1024*1024;
+	}
+    if( PrepBoot() )
+	{
+	fsid_boot = fsid_prep_chrp_boot;
+	minimal_needed_bootsize = 2*1024*1024;
+	}
+    if( !Arch::i386 || Boot::LbaSupport() )
+	{
+	// Assume on non-i386 archs machine can boot from every cylinder
+	boot_cyl = 4*1024*1024*1024;
+	}
+    y2milestone( "fsid_boot:%1 boot_size:%2 boot_cyl:%3", fsid_boot, 
+                 minimal_needed_bootsize, boot_cyl );
     }
 
-    global define boolean IsDosPartition( integer fsid )
+global define boolean PrepBoot()
     ``{
-	return (contains( fsid_dostypes, fsid)
-		|| contains( fsid_wintypes, fsid));
+    boolean ret = Arch::ppc && 
+		  (Arch::board_chrp || Arch::board_prep || Arch::board_iseries);
+    y2milestone( "ret:%1", ret );
+    return( ret );
+    };
+
+global define boolean IsDosPartition( integer fsid )
+    ``{
+    return (contains( fsid_dostypes, fsid) || contains( fsid_wintypes, fsid));
     }
 
-    global define boolean IsDosWinNtPartition( integer fsid )
+global define boolean IsDosWinNtPartition( integer fsid )
     ``{
-    return( IsDosPartition( fsid ) || 
-            contains( fsid_ntfstypes, fsid ));
+    return( IsDosPartition( fsid ) || contains( fsid_ntfstypes, fsid ));
     }
 
-    global define boolean UseParted()
+global define boolean UseParted()
     ``{
     boolean ret = true;
     if( Arch::i386 || Arch::x86_64 )
@@ -89,16 +109,7 @@
     return( ret );
     }
 
-    global define boolean PartitionIdParted( integer fsid )
-    ``{
-    boolean ret = true;
-    ret = contains( [ fsid_lvm, fsid_raid, fsid_swap, fsid_native, fsid_fat16 ],
-                    fsid );
-    y2milestone( "PartitionIdParted id:%1 ret:%2", fsid, ret );
-    return( ret );
-    }
-
-    global define boolean IsResizable( integer fsid )
+global define boolean IsResizable( integer fsid )
     ``{
     boolean ret = false;
     ret = IsDosPartition(fsid) || fsid == fsid_swap || fsid == fsid_native;
@@ -106,121 +117,121 @@
     return( ret );
     }
 
-    global define boolean IsLinuxPartition( integer fsid )
+global define boolean IsLinuxPartition( integer fsid )
     ``{
-	return ( fsid==fsid_native || fsid==fsid_swap || fsid==fsid_lvm ||
-	         fsid==fsid_raid );
+    return ( fsid==fsid_native || fsid==fsid_swap || fsid==fsid_lvm ||
+	     fsid==fsid_raid );
     };
 
-  //////////////////////////////////////////////////////////////////////////
-  // mount partition and look how much free space is available
-  // size: size of partition
-  //////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+// mount partition and look how much free space is available
+// size: size of partition
+//////////////////////////////////////////////////////////////////////////
 
-  global define map GetFreeSpace( string device, integer testsize )
-  ``{
-      integer used = 0;
-      integer free = 0;
+global define map GetFreeSpace( string device, integer testsize )
+    ``{
+    integer used = 0;
+    integer free = 0;
 
-      if ( Mode::test )
-      {
-	  integer wf =  tointeger(tofloat(testsize) * 0.6);
-	  integer wu =  tointeger(tofloat(testsize) * 0.4);
-	  integer ls =  tointeger(tofloat(testsize) * 0.5);
-	  return( $[ "free"  : wf,
-		   "used"    : wu,
-		   "linux_size"  : ls,
-		   "new_size": (wu + wf - ls) ] );
-      }
+    if ( Mode::test )
+	{
+	integer wf =  tointeger(tofloat(testsize) * 0.6);
+	integer wu =  tointeger(tofloat(testsize) * 0.4);
+	integer ls =  tointeger(tofloat(testsize) * 0.5);
+	return( $[ "free"  : wf, "used"    : wu,
+		   "linux_size"  : ls, "new_size": (wu + wf - ls) ] );
+	}
 
-      // mount the partition to execute some checks
-      //
-      boolean mount_ret = SCR::Execute(.target.mount, [device, "/mnt", Installation::mountlog]);
+    // mount the partition to execute some checks
+    //
+    boolean mount_ret = SCR::Execute(.target.mount, 
+                                     [device, "/mnt", Installation::mountlog]);
 
-      if ( !mount_ret)
-      {
-	  y2error( "Current device <%1> could not be mounted. Canceled", device );
-	  return( nil );	// abort installation
-      }
-      else y2milestone( "Current device <%1> mounted on /mnt.", device );
+    if ( !mount_ret)
+	{
+	y2error( "Current device <%1> could not be mounted. Canceled", device );
+	return( nil );	// abort installation
+	}
+    else y2milestone( "Current device <%1> mounted on /mnt.", device );
 
-      // get usage information for the partition via df
-      //
-      list df_result = SCR::Read(.run.df);
+    // get usage information for the partition via df
+    //
+    list df_result = SCR::Read(.run.df);
 
-      SCR::Execute(.target.umount, device);
+    SCR::Execute(.target.umount, device);
 
-      y2debug( ".run.df: %1", df_result );
+    y2debug( ".run.df: %1", df_result );
 
-      // filter out headline and other invalid entries
-      df_result = filter( `part, df_result, ``( substring ( lookup( part, "spec", "" ), 0, 1 ) == "/" ) );
+    // filter out headline and other invalid entries
+    df_result = filter( `part, df_result, 
+                        ``( substring( part["spec"]:"", 0, 1 ) == "/" ) );
 
-      boolean ok = false;
+    boolean ok = false;
 
-      foreach( `part, df_result,
-      ``{
-	  if ( lookup( part, "spec", "" ) == device )	// find right entry
-	  {
-	      // get the usage values
-	      //
-	      used = tointeger( lookup( part, "used", "-1" ));
-	      free = tointeger( lookup( part, "free", "-1" ));
+    foreach( `part, df_result,
+	``{
+	if( part["spec"]:"" == device )	// find right entry
+	    {
+	    // get the usage values
+	    //
+	    used = tointeger( part["used"]:"-1" );
+	    free = tointeger( part["free"]:"-1" );
 
-	      if ( used != -1 && free != -1 )
-	      {
-		  used = used * 1024;	// Byte
-		  free = free * 1024;	// Byte
+	    if ( used != -1 && free != -1 )
+		{
+		used = used * 1024;	// Byte
+		free = free * 1024;	// Byte
 
-		  ok = true;
-		  y2milestone( ".run.df: used: <%1> free:<%2>", used, free );
-	      }
-	  }
-      });
+		ok = true;
+		y2milestone( ".run.df: used: <%1> free:<%2>", used, free );
+		}
+	    }
+	});
 
-      integer linux_size = 0;
-      integer min_linux_size = 0;
+    integer linux_size = 0;
+    integer min_linux_size = 0;
 
-      if( free > 300000000  && free < 600000000 )
-      {
-	  linux_size = free - 75000000;
-	  min_linux_size = linux_size;
-      }
-      else if ( free < 1000000000 )
-      {
-	  linux_size = free - 200000000;
-	  min_linux_size = 300000000;
-      }
-      else if ( free < 2000000000 )
-      {
-	  linux_size = free - 300000000;
-	  min_linux_size = 500000000;
-      }
-      else if ( free < 3000000000 )
-      {
-	  linux_size = free - 800000000;
-	  min_linux_size = 500000000;
-      }
-      else
-      {
-	  linux_size = free - ( free / 3 );
-	  min_linux_size = 500000000;
-      }
+    if( free > 300000000  && free < 600000000 )
+	{
+	linux_size = free - 75000000;
+	min_linux_size = linux_size;
+	}
+    else if ( free < 1000000000 )
+	{
+	linux_size = free - 200000000;
+	min_linux_size = 300000000;
+	}
+    else if ( free < 2000000000 )
+	{
+	linux_size = free - 300000000;
+	min_linux_size = 500000000;
+	}
+    else if ( free < 3000000000 )
+	{
+	linux_size = free - 800000000;
+	min_linux_size = 500000000;
+	}
+    else
+	{
+	linux_size = free - ( free / 3 );
+	min_linux_size = 500000000;
+	}
 
-      integer new_size = used + free - linux_size;
+    integer new_size = used + free - linux_size;
 
-      if (ok)
-      {
-	  return( $[ "free":free,
-		   "used":used,
+    if (ok)
+	{
+	return( $[ "free":free, 
+	           "used":used,
 		   "linux_size":linux_size,
 		   "max_win_size":used + free - min_linux_size,
 		   "new_size":new_size ] );
-      }
-      else
-      {
-	  return( nil );
-      }
-  };
+	}
+    else
+	{
+	return( nil );
+	}
+    };
 
 
 global define list mountedPartitionsOnDisk( string dev_str, list mounts_read )
@@ -369,9 +380,9 @@ global define string FsIdToString( integer fs_id )
     if ( fs_id == 0x9)  return( "AIX boot");
     if ( fs_id == 0xa)  return( "OS/2 boot manager");
     if ( fs_id == 0xb)  return( "Win95 FAT32");
-    if ( fs_id == 0xc)  return( "Win95 FAT32");
+    if ( fs_id == 0xc)  return( "Win95 FAT32 LBA");
     if ( fs_id == 0xe)  return( "Win95 FAT16");
-    if ( fs_id == 0xf)  return( "Win95 Erw. LBA");
+    if ( fs_id == 0xf)  return( "Extended");
     if ( fs_id == 0x10) return( "OPUS");
     if ( fs_id == 0x11) return( "Hidden FAT12");
     if ( fs_id == 0x12) return( "Compaq diag");

@@ -30,10 +30,11 @@ import "Partitions";
 global define get_boot_slot_list( list base_slots )
     ``{
 
-    // todo: a free slot, which start_cyl +3 <1024 are also a start cyl!
+    // todo: a free slot, which start_cyl +3 < Partitions::boot_cyl area
+    // also a start cyl!
     list boot_slots = 
         filter( `slot, base_slots, 
-	        ``( slot["start_cyl"]:0 + min_nb_boot_cyl < 1024 && 
+	        ``( slot["start_cyl"]:0+min_nb_boot_cyl<Partitions::boot_cyl && 
 		    slot["size"]:1 > Partitions::minimal_needed_bootsize ));
 
     list boot_slots_win = 
@@ -79,18 +80,17 @@ global define GetSlots( list part_list, integer start_cyl, integer end_cyl,
 	integer begin_of_part = part["region",0]:0;
 	integer end_of_part  = begin_of_part + part["region",1]:1 - 1;
 
-	y2debug( "last_border %1, begin %2, end %3 ", last_border, 
+	y2debug( "last_border %1, begin %2, end %3", last_border, 
 	         begin_of_part, end_of_part );
 
 	//////////////////////////////////////////////////////////////
 	// is there a gap between partitions -> create free slot
 	//////////////////////////////////////////////////////////////
-	if( last_border < begin_of_part )
+	if( last_border+1 < begin_of_part )
 	    {
 	    // create freeslot
 	    // example: last = 1 begin = 10 -> free = 1..9  
 	    //          size = 10 - 1 * cylsize
-
 
 	    integer psize  = ((end_of_part - begin_of_part +1)*cyl_size);
 	    slot_list = 
@@ -110,65 +110,65 @@ global define GetSlots( list part_list, integer start_cyl, integer end_cyl,
 	    y2error( "slot_list %1", slot_list);
 	    y2error( "part_list %1", part_list);
 	    }
-	else
+
+	/////////////////////////////////////////////////////////
+	// create the slot for the current partition
+	/////////////////////////////////////////////////////////
+	integer nr     = part["nr"]:0;
+	string  type   = "other";
+	integer psize  = ((end_of_part - begin_of_part +1)*cyl_size);
+	integer pstart =  begin_of_part;
+	integer win_len = -1;
+	integer win_max_len = -1;
+	map     win_dat    = $[];
+
+	integer fsid = part["fsid"]:0;
+	if ( Partitions::IsDosPartition( fsid ) )
 	    {
-	    /////////////////////////////////////////////////////////
-	    // create the slot for the current partition
-	    /////////////////////////////////////////////////////////
-	    integer nr     = part["nr"]:0;
-	    string  type   = "other";
-	    integer psize  = ((end_of_part - begin_of_part +1)*cyl_size);
-	    integer pstart =  begin_of_part;
-	    integer win_len = -1;
-	    integer win_max_len = -1;
-	    map     win_dat    = $[];
-
-	    integer fsid = part["fsid"]:0;
-	    if ( Partitions::IsDosPartition( fsid ) )
+	    win_dat = Partitions::GetFreeSpace( part["device"]:"", psize );
+	    if ( win_dat != nil  )
 		{
-		win_dat = Partitions::GetFreeSpace( part["device"]:"", psize );
-		if ( win_dat != nil  )
-		    {
-		    type    = "win_resize";
-		    psize   = win_dat["linux_size"]:-1;
-		    win_len = PartedSizeToCly( tofloat(win_dat["new_size"]:0), 
-					       cyl_size );
-		    win_max_len = 
-			PartedSizeToCly( tofloat(win_dat["max_win_size"]:0), 
-			                 cyl_size );
-		    pstart     = begin_of_part + win_len;
-		    }
-		else
-		    {
-		    // error: to other -> not useable
-		    y2error("Storage::GetFreeSpace -> nil from %1", 
-		            part["device"]:"" );
-		    }
+		type    = "win_resize";
+		psize   = win_dat["linux_size"]:-1;
+		win_len = PartedSizeToCly( tofloat(win_dat["new_size"]:0), 
+					   cyl_size );
+		win_max_len = 
+		    PartedSizeToCly( tofloat(win_dat["max_win_size"]:0), 
+				     cyl_size );
+		pstart     = begin_of_part + win_len;
 		}
-	    if( fsid == Partitions::fsid_native )       type = "linux";
-	    if( fsid == Partitions::fsid_swap )         type = "swap";
-	    if( fsid == Partitions::fsid_extended )     type = "extended";
-	    if( fsid == Partitions::fsid_extended_win ) type = "extended";
-
-	    // for now, this auto mode does not handle raid/lvm
-
-	    map slot = $[ "type"      :     type,
-			  "dev"       :     dev,
-			  "nr"        :     nr,
-			  "end_cyl"   :     end_of_part,
-			  "start_cyl" :     pstart,
-			  "size"      :     psize ];
-
-	    if( type == "win_resize" )
+	    else
 		{
-		slot["win_size"] = win_dat["new_size"]:0;
-		slot["win_length"] = win_len;
-		slot["win_max_length"] = win_max_len;
+		// error: to other -> not useable
+		y2error("Storage::GetFreeSpace -> nil from %1", 
+			part["device"]:"" );
 		}
-	    slot_list = add( slot_list, slot );
-
-	    last_border = end_of_part +1;
 	    }
+	if( fsid == Partitions::fsid_native )       type = "linux";
+	if( fsid == Partitions::fsid_swap )         type = "swap";
+	if( fsid == Partitions::fsid_extended )     type = "extended";
+	if( fsid == Partitions::fsid_extended_win ) type = "extended";
+	if( Partitions::PrepBoot() && fsid == Partitions::fsid_prep_chrp_boot )
+	    type = "linux";
+
+	// for now, this auto mode does not handle raid/lvm
+
+	map slot = $[ "type"      :     type,
+		      "dev"       :     dev,
+		      "nr"        :     nr,
+		      "end_cyl"   :     end_of_part,
+		      "start_cyl" :     pstart,
+		      "size"      :     psize ];
+
+	if( type == "win_resize" )
+	    {
+	    slot["win_size"] = win_dat["new_size"]:0;
+	    slot["win_length"] = win_len;
+	    slot["win_max_length"] = win_max_len;
+	    }
+	slot_list = add( slot_list, slot );
+
+	last_border = end_of_part +1;
 	});
 
     //////////////////////////////////////////////////////////////
@@ -254,7 +254,7 @@ global define GetBootSlot( string type, integer curr_slotnb, string mode,
 	{
 	slots = filter( `slot, slots, 
 	                ``( curr_slotnb != slot["slotnb"]:-1 && 
-			    slotr["p_or_l"]:"" == type ));
+			    slot["p_or_l"]:"" == type ));
 	}
 
     slots = sort( `slot_x, `slot_y, slots, 

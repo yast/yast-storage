@@ -25,6 +25,7 @@
     import "Mode";
     import "HwStatus";
     import "Storage";
+    import "Partitions";
 
     textdomain "storage";
 
@@ -678,20 +679,12 @@ global define list Check4partitions (string diskdev, map disk, path diskpath)
 	{  
 	partitions = SCR::Read(.disk + diskpath + .partitions, 
 			       Partitions::UseParted() );
-	// fdisk may fail on ppc, check with pdisk in this case
-	if (Arch::ppc && (size (partitions) == 0))
-	    {
-	    // ppath == ".hda"
-	    string ppath = "" + diskpath;
-	    // llpath == [ "", "hda" ]
-	    list lppath = splitstring (ppath, ".");
-	    // ppath = "/hda"
-	    ppath = mergestring (lppath, "/");
-	    y2milestone("ppath: %1", ppath);
-	    partitions = pdisk2target (SCR::Read(.pdisk, [ "/dev"+ppath ]));
-	    }
 	partitions = maplist( `part, partitions, ``{
-	    part["device"] = sformat( "%1%2", diskdev, part["nr"]:0 );
+	    part["device"] = Storage::GetDeviceName( diskdev, part["nr"]:0 );
+	    if( part["fsid"]:0 > 0 && part["fsid"]:0<256 )
+		{
+		part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
+		}
 	    return( part );
 	    });
        
@@ -705,7 +698,7 @@ global define list Check4partitions (string diskdev, map disk, path diskpath)
 	map partition = $[];
 	partition["nr"] = 1;
 	partition["device"] = 
-	    Storage::GetDeviceName( diskdev, partitions["nr"]:0);
+	    Storage::GetDeviceName( diskdev, partition["nr"]:0 );
 	partition["region"] = [ 0, cyl_count-1 ];
 	partition["fsid"] = Partitions::fsid_native;
 	partition["type"] = `s390;

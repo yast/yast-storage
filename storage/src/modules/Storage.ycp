@@ -314,7 +314,7 @@ global define list AddMountPointsForWinParts( list partitions, boolean primary )
 			   Partitions::fsid_wintypes), fsid ) &&
 	    (partition["used_fs"]:`none==`fat32||partition["used_fs"]:`none==`ntfs))
 	    {
-	    string mtops = "gid=users,umask=0002";
+	    string mntops = "gid=users,umask=0002";
 	    string enc = "iso8859-1";
 	    string code = "437";
 	    if( (Console::encoding)>0 )
@@ -325,7 +325,14 @@ global define list AddMountPointsForWinParts( list partitions, boolean primary )
 		{
 		code = "852";
 		}
-	    mntops = ",iocharset=" + enc + ",code=" + code;
+	    if( size(enc)>0 )
+		{
+		mntops = mntops + ",iocharset=" + enc;
+		}
+	    if( size(code)>0 )
+		{
+		mntops = mntops + ",code=" + code;
+		}
 	    if( contains (Partitions::fsid_readonly, fsid))
 		{
 		mntops = "ro," + mntops;
@@ -2588,7 +2595,6 @@ global define map GetLvmMdSystemInfo( map targetMap )
 		}
 	    part["persistent_superblock"] = pv["persistent_superblock"]:false;
 	    part["raid_type"] = pv["raid_type"]:"";
-	    part["raid_nb"] = sformat("%1",pv["nr"]:0);
 	    part["type"] = `sw_raid;
 	    y2debug ("key=%2 part=%1", part, pk);
 	    partitions = add (partitions, part);
@@ -2735,7 +2741,7 @@ global define map GetS390DeviceMap( map targetMap )
     string newdev = "";
     string param = "";
     map ret =  $[];
-    map dasd = SCR::Read(.proc.dasddev);
+    list dasd = SCR::Read(.proc.dasddev);
 
     foreach( `key, `value, targetMap, ``{
         list part = value["partitions"]:[];

@@ -194,340 +194,318 @@ click 'Create', select 'Do not format', and set the partition ID to 0x8e.
      *   all partitions have a fsid have of the type 130 131 5 // all fsid 131 partitions are mounted
      *
      * - checks if / mountpoint is set
-     * - check if the boot partition ends in < 1024 cylinder (/or/boot)
+     * - check if the boot partition ends in a bootable cylinder (/or/boot)
      * - check that all reiser Filesystems are bigger than 60MB
      */
 
-      global define check_created_partiton_table( map targetMap , boolean setup_lvm  , boolean installation )
-       ``{
+global define check_created_partiton_table( map targetMap, boolean setup_lvm,
+                                            boolean installation )
+   ``{
+    y2milestone( "now checking generated target map ...");
+    string  curr_boot_mode  = Boot::LoaderType; 
+    boolean show_all_popups = false;
 
-	  y2milestone( "now checking generated target map ...");
+    boolean partition_mounted_but_not_formated = false;
+    boolean have_swap            = false;
+    symbol  retval               = `next;
+    boolean sparc_first_is_swap  = false;
+    string  sparc_first_dev      = "";
+    boolean swap_found           = false;
+    boolean boot_found           = false;
+    boolean root_found           = false;
+    integer boot_end             = 0;
+    integer root_end             = 0;
+    boolean root_raid            = false;
+    boolean jfs_found            = false;
+    boolean xfs_found            = false;
+    symbol  root_fs              = `unknown;
+    symbol  boot_fs              = `unknown;
+    integer boot_cyl_nb          = 0;
+    integer boot_start_cyl       = 0;
+    integer boot_cyl_size        = 0;
+    integer boot_size            = 0;
+    boolean boot_size_check      = true; 
+    integer root_cyl_for_gb      = 0;
+    integer boot_cyl_for_gb      = 0;
+    string  axp_start_dev        = "";
+    integer axp_start_nth        = 0;
+    boolean axp_start_Cr_failure = false;
+    boolean axp_start_Ex_failure = false;
+    boolean all_whole_disk       = true;
+    boolean fat_system_mount     = false;
+    //boolean crypt_fs_system      = false;
+    //boolean lvm_part_found       = false;
+    
+    //list 	  bad_mountpoints      = [ "/lib", "/bin" , "/etc", "/sbin", "/dev" ];	
+    //boolean bad_mountpoint_found = false;
+    
+    foreach( `disk, `diskinfo, targetMap, ``{
 
-	  string  curr_boot_mode  = Boot::LoaderType; 
-	  boolean show_all_popups = false;
+	list part_info     = lookup( diskinfo, "partitions", [] );
+	boolean whole_disk = true;
+	integer cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
 
-          boolean partition_mounted_but_not_formated = false;
-          boolean have_swap            = false;
-          symbol  retval               = `next;
-          boolean sparc_first_is_swap  = false;
-          string  sparc_first_dev      = "";
-          boolean swap_found           = false;
-          boolean boot_found           = false;
-          boolean root_found           = false;
-          integer boot_end             = 0;
-          integer root_end             = 0;
-          boolean root_raid            = false;
-          boolean jfs_found            = false;
-          boolean xfs_found            = false;
-          symbol  root_fs              = `unknown;
-          symbol  boot_fs              = `unknown;
-          integer boot_cyl_nb          = 0;
-          integer boot_start_cyl       = 0;
-          integer boot_cyl_size        = 0;
-          integer boot_size            = 0;
-	  boolean boot_size_check      = true; 
-          integer root_cyl_for_gb      = 0;
-          integer boot_cyl_for_gb      = 0;
-          string  axp_start_dev        = "";
-          integer axp_start_nth        = 0;
-          boolean axp_start_Cr_failure = false;
-          boolean axp_start_Ex_failure = false;
-          boolean lba_support          = Boot::LbaSupport(); // no 1024cyl check neccesary
-          boolean all_whole_disk       = true;
-	  boolean fat_system_mount     = false;
-	  //boolean crypt_fs_system      = false;
-	  //boolean lvm_part_found       = false;
-	  
-	  //list 	  bad_mountpoints      = [ "/lib", "/bin" , "/etc", "/sbin", "/dev" ];	
-	  //boolean bad_mountpoint_found = false;
-	  
-          foreach( `disk, `diskinfo, targetMap, ``{
+	//////////////////////////////////////////////////////////////
+	// for axp
+	// look if the user wants to create a partition
+	// or there is a partition, which overlaps
+	// the zone from 0-th cylinder to <n>th-cylinder
+	// <n> ist that cylinder, which is even for little part written,
+	// when I write 1MB to the disk, starting from cylinder 0
+	// (typically its only the first cylinder)
+	//
+	// now we calculate <n> : nth-cyl
+	//////////////////////////////////////////////////////////////
 
-              list part_info     = lookup( diskinfo, "partitions", [] );
-	      boolean whole_disk = true;
-	      integer cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
+	integer nth_cyl = (1048576 / cyl_size);
 
-              //////////////////////////////////////////////////////////////
-              // for axp
-              // look if the user wants to create a partition
-              // or there is a partition, which overlaps
-              // the zone from 0-th cylinder to <n>th-cylinder
-              // <n> ist that cylinder, which is even for little part written,
-              // when I write 1MB to the disk, starting from cylinder 0
-              // (typically its only the first cylinder)
-              //
-              // now we calculate <n> : nth-cyl
-              //////////////////////////////////////////////////////////////
-
-              integer nth_cyl = (1048576 / cyl_size);
-
-	      boolean id_sw_raid_dev = (disk == "/dev/md");
+	boolean id_sw_raid_dev = (disk == "/dev/md");
 
 
-              foreach( `part, part_info, ``{
+	foreach( `part, part_info, ``{
 
-                  if ( lookup( part, "delete", false) == false )
-                  {
-                      // All valid partitions ...
-                      integer fsid       =  lookup( part, "fsid", 0);
-                      boolean is_mounted = (lookup( part, "mount", "") != "");
-		      string  mountpoint = lookup( part, "mount", "" );
+	    if ( lookup( part, "delete", false) == false )
+	    {
+		// All valid partitions ...
+		integer fsid       =  lookup( part, "fsid", 0);
+		boolean is_mounted = (lookup( part, "mount", "") != "");
+		string  mountpoint = lookup( part, "mount", "" );
 
-                      //////////////////////////////////////////////////////////////
-                      // axp+aboot (bsd-label): look for first cylinders of disk
-                      // see comment above
-                      //////////////////////////////////////////////////////////////
+		//////////////////////////////////////////////////////////////
+		// axp+aboot (bsd-label): look for first cylinders of disk
+		// see comment above
+		//////////////////////////////////////////////////////////////
 
-                      if ( (curr_boot_mode == "aboot")
-			   && select(lookup( part, "region", []), 0,0) <= nth_cyl
-			   && lookup( part, "nr", 0) != 3 )
-                      {
-                          axp_start_dev          = disk;
-                          axp_start_nth          = nth_cyl;
-                          y2error("WWWWWWWWWWWWWWW1 %1", nth_cyl );
-
-                          if ( lookup( part, "create", false) == true )
-                          {
-                              y2error("WWWWWWWWWWWWWWW2 %1", nth_cyl );
-                              axp_start_Cr_failure = true;
-                          }
-                          else
-                          {
-                              y2error("WWWWWWWWWWWWWWW3 %1", nth_cyl );
-                              axp_start_Ex_failure = true;
-                          }
-                      }
-
-                      //////////////////////////////////////////////////////////////
-                      // check for xfs: its experimental
-                      //////////////////////////////////////////////////////////////
-		      if ( part["used_fs"]:`unknown == `xfs && 
-		           part["format"]:false )
-		      {
-			  xfs_found = true;
-		      }
-
-                      //////////////////////////////////////////////////////////////
-                      // check for jfs: in ppc its experimental
-                      //////////////////////////////////////////////////////////////
-		      if ( Arch::ppc
-		           && (lookup( part, "used_fs", `unknown ) == `jfs)
-			   && lookup( part , "format" ,false) )
-		      {
-			  jfs_found = true;
-		      }
-
-
-                      //////////////////////////////////////////////////////////////
-                      // look for root and boot
-                      //
-                      //////////////////////////////////////////////////////////////
-
-                      if ( mountpoint == "/" )
-                      {
-                          root_found      = true;
-                          root_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
-			  if( part["raid_type"]:"" != "" || part["is_lvm_vg"]:false )
-			    {
-			    // root_end does not have anything to do with physical cylinders
-			    root_end = 0;
-			    }
-                          root_fs         = lookup( part, "used_fs", `unknown );
-                          root_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
-			  
-			  if ( id_sw_raid_dev ) root_raid = true;
-                      }
-                      else if ( mountpoint == "/boot" )
-                      {
-                          boot_found      = true;
-                          boot_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
-                          boot_cyl_nb     = select(lookup( part, "region", []), 1,0);
-                          boot_fs         = lookup( part, "used_fs", `unknown );
-                          boot_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
-                          boot_cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
-			  boot_size       = boot_cyl_size * boot_cyl_nb; 
-                          boot_start_cyl  = select(lookup( part, "region", []), 0,0);
-                      }
-		      else if ( mountpoint == "" )
-                      {
-			  if (Arch::ppc
-			      && ( Arch::board_chrp || Arch::board_prep || Arch::board_iseries)
-			      && fsid == Partitions::fsid_prep_chrp_boot )
- 			  {
-			      boot_size_check = false; 
-			      boot_found      = true;
-			      boot_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
-			      boot_cyl_nb     = select(lookup( part, "region", []), 1,0);
-			      boot_fs         = lookup( part, "used_fs", `unknown );
-			      boot_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
-			      boot_cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
-			      boot_size       = boot_cyl_size * boot_cyl_nb; 
-			      boot_start_cyl  = select(lookup( part, "region", []), 0, 0);
-			  }
-                      }
-
-
-		      /*
-		      if( contains( bad_mountpoints, lookup( part, "mount" , "") ) )
-		      {
-			  bad_mountpoint_found = true;
-		      }
-		      */
-		      
-		      //////////////////////////////////////////////////////////////
-                      // look for swap partition and check:
-                      // - is there any
-                      // - on sparc: is first partition a swap partition
-                      //
-                      // check only "swap" not fsid cause for example on pdisk fsid = 0
-                      //
-                      //////////////////////////////////////////////////////////////
-
-                      if ( ( mountpoint == "swap" ) )
-                      {
-                          have_swap = true;
-
-                          // first partition of a sparc system shouldn't be a swap parition
-
-                          if ( Arch::sparc && lookup( part, "nr", 0) == 1 )
-                          {
-                              sparc_first_is_swap = true;
-                              sparc_first_dev     = disk;
-                          }
-                      }
-
-
-		      // check if a fat filesystem  is greater than 2 GB
-		      if (fsid == Partitions::fsid_fat16
-			  && lookup( part , "format" ,false) )
-		      {	
-			  // usesd a mountpoint like /urs / /var /home /opt with fat 
-			  if( ! fat_system_mount )
-			  {
-			      if( mountpoint == "/usr"  ||   mountpoint == "/"     || 
-				  mountpoint == "/home" ||   mountpoint == "/var"  ||   mountpoint == "/opt"  )
-			      {
-				  fat_system_mount = true;
-			      }
-			  }
-			  
-		      }
-
-		      /*
-		      if( lookup(part, "crypt_fs", false ) )
-		      {
-			  if( mountpoint == "/"
-			      ||  mountpoint == "/boot"
-			      ||  mountpoint == "/usr"
-			      ||  mountpoint == "swap"  )
-			  {
-			      crypt_fs_system = true;
-			  }  
-		      }
-		      */
-		
-                      //    | NOT
-                      //    v
-                      if (  ! ( fsid==Partitions::fsid_native || 
-		                fsid==Partitions::fsid_swap || 
-				fsid==Partitions::fsid_extended || 
-				fsid==Partitions::fsid_extended_win || 
-				fsid==Partitions::fsid_raid || 
-				fsid==Partitions::fsid_lvm ) )
-                      {
-                          whole_disk = false;
-                      }
-
-                      if ( fsid == Partitions::fsid_native
-                           && lookup( part, "mount", nil )   != nil
-                           && substring( lookup( part, "mount", ""), 0, 1 ) == "/"
-                           &&            lookup( part, "format", false  ) == false )
-                      {
-                          partition_mounted_but_not_formated = true;
-                      }
-
-		      ///////////////////////////////////////////////////////
-		      // For SW-RAID fill in the "syntetic" start/end cyl
-		      // so that other programms knoe the size of the raid
-
-		      if ( id_sw_raid_dev )
-		      {
-			  // cyl_size should be constant 1MB
-			  integer nb_of_cyl  = (raid_size_byte( targetMap, part) / cyl_size);
-
-			  list raid_region  = [ 1, nb_of_cyl ]; 
-
-			  change( part, "region", raid_region);
-		      }
-                  }
-              });
-
-	      whole_disk = whole_disk || lookup( diskinfo, "is_lvm_vg", false );
-              diskinfo  = add( diskinfo, "whole_disk", whole_disk );
-	      all_whole_disk = all_whole_disk && whole_disk;
-              targetMap = add( targetMap, disk, diskinfo );
-
-          } );
-
-
-            Storage::SetWholeDisk( all_whole_disk );
-	    boolean xfs_boot_warning = false;
-
-	    if( (!boot_found && root_fs == `xfs) ||
-	        ( boot_found && boot_fs == `xfs) || show_all_popups )
+		if ( (curr_boot_mode == "aboot")
+		     && select(lookup( part, "region", []), 0,0) <= nth_cyl
+		     && lookup( part, "nr", 0) != 3 )
 		{
-		xfs_boot_warning = (!boot_found && root_fs == `xfs) ||
-		                   ( boot_found && boot_fs == `xfs);
-		boolean ret = UI::YesNoPopup(_("Warning:
+		    axp_start_dev          = disk;
+		    axp_start_nth          = nth_cyl;
+		    y2error("WWWWWWWWWWWWWWW1 %1", nth_cyl );
+
+		    if ( lookup( part, "create", false) == true )
+		    {
+			y2error("WWWWWWWWWWWWWWW2 %1", nth_cyl );
+			axp_start_Cr_failure = true;
+		    }
+		    else
+		    {
+			y2error("WWWWWWWWWWWWWWW3 %1", nth_cyl );
+			axp_start_Ex_failure = true;
+		    }
+		}
+
+		//////////////////////////////////////////////////////////////
+		// check for xfs: its experimental
+		//////////////////////////////////////////////////////////////
+		if ( part["used_fs"]:`unknown == `xfs && 
+		     part["format"]:false )
+		{
+		    xfs_found = true;
+		}
+
+		//////////////////////////////////////////////////////////////
+		// check for jfs: in ppc its experimental
+		//////////////////////////////////////////////////////////////
+		if ( Arch::ppc
+		     && (lookup( part, "used_fs", `unknown ) == `jfs)
+		     && lookup( part , "format" ,false) )
+		{
+		    jfs_found = true;
+		}
+
+
+		//////////////////////////////////////////////////////////////
+		// look for root and boot
+		//
+		//////////////////////////////////////////////////////////////
+
+		if ( mountpoint == "/" )
+		{
+		    root_found      = true;
+		    root_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
+		    if( part["raid_type"]:"" != "" || part["is_lvm_vg"]:false )
+		      {
+		      // root_end does not have anything to do with physical cylinders
+		      root_end = 0;
+		      }
+		    root_fs         = lookup( part, "used_fs", `unknown );
+		    root_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
+		    
+		    if ( id_sw_raid_dev ) root_raid = true;
+		}
+		else if ( mountpoint == "/boot" )
+		{
+		    boot_found      = true;
+		    boot_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
+		    boot_cyl_nb     = select(lookup( part, "region", []), 1,0);
+		    boot_fs         = lookup( part, "used_fs", `unknown );
+		    boot_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
+		    boot_cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
+		    boot_size       = boot_cyl_size * boot_cyl_nb; 
+		    boot_start_cyl  = select(lookup( part, "region", []), 0,0);
+		}
+		else if ( mountpoint == "" )
+		{
+		    if( Partitions::PrepBoot() &&
+			fsid == Partitions::fsid_prep_chrp_boot )
+		    {
+			boot_size_check = false; 
+			boot_found      = true;
+			boot_end        = select(lookup( part, "region", []), 0,0) + select(lookup( part, "region", []), 1,1) -1;
+			boot_cyl_nb     = select(lookup( part, "region", []), 1,0);
+			boot_fs         = lookup( part, "used_fs", `unknown );
+			boot_cyl_for_gb = 1073741824 / lookup( diskinfo, "cyl_size", 1000000);   // 1GB/cylinder size
+			boot_cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
+			boot_size       = boot_cyl_size * boot_cyl_nb; 
+			boot_start_cyl  = select(lookup( part, "region", []), 0, 0);
+		    }
+		}
+
+
+		//////////////////////////////////////////////////////////////
+		// look for swap partition and check:
+		// - is there any
+		// - on sparc: is first partition a swap partition
+		//
+		// check only "swap" not fsid cause for example on pdisk fsid = 0
+		//
+		//////////////////////////////////////////////////////////////
+
+		if ( ( mountpoint == "swap" ) )
+		{
+		    have_swap = true;
+
+		    // first partition of a sparc system shouldn't be a swap parition
+
+		    if ( Arch::sparc && lookup( part, "nr", 0) == 1 )
+		    {
+			sparc_first_is_swap = true;
+			sparc_first_dev     = disk;
+		    }
+		}
+
+
+		// check if a fat filesystem  is greater than 2 GB
+		if (fsid == Partitions::fsid_fat16
+		    && lookup( part , "format" ,false) )
+		{	
+		    // usesd a mountpoint like /urs / /var /home /opt with fat 
+		    if( ! fat_system_mount )
+		    {
+			if( mountpoint == "/usr"  ||   mountpoint == "/"     || 
+			    mountpoint == "/home" ||   mountpoint == "/var"  ||
+			    mountpoint == "/opt"  )
+			{
+			    fat_system_mount = true;
+			}
+		    }
+		    
+		}
+
+		//    | NOT
+		//    v
+		if (  ! ( fsid==Partitions::fsid_native || 
+			  fsid==Partitions::fsid_swap || 
+			  fsid==Partitions::fsid_extended || 
+			  fsid==Partitions::fsid_extended_win || 
+			  fsid==Partitions::fsid_raid || 
+			  fsid==Partitions::fsid_lvm ) )
+		{
+		    whole_disk = false;
+		}
+
+		if ( fsid == Partitions::fsid_native
+		     && lookup( part, "mount", nil )   != nil
+		     && substring( lookup( part, "mount", ""), 0, 1 ) == "/"
+		     &&            lookup( part, "format", false  ) == false )
+		{
+		    partition_mounted_but_not_formated = true;
+		}
+
+		///////////////////////////////////////////////////////
+		// For SW-RAID fill in the "syntetic" start/end cyl
+		// so that other programms knoe the size of the raid
+
+		if ( id_sw_raid_dev )
+		{
+		    // cyl_size should be constant 1MB
+		    integer nb_of_cyl  = (raid_size_byte( targetMap, part) / cyl_size);
+
+		    list raid_region  = [ 1, nb_of_cyl ]; 
+
+		    change( part, "region", raid_region);
+		}
+	    }
+	});
+
+	whole_disk = whole_disk || lookup( diskinfo, "is_lvm_vg", false );
+	diskinfo  = add( diskinfo, "whole_disk", whole_disk );
+	all_whole_disk = all_whole_disk && whole_disk;
+	targetMap = add( targetMap, disk, diskinfo );
+
+    } );
+
+
+      Storage::SetWholeDisk( all_whole_disk );
+      boolean xfs_boot_warning = false;
+
+      if( (!boot_found && root_fs == `xfs) ||
+	  ( boot_found && boot_fs == `xfs) || show_all_popups )
+	  {
+	  xfs_boot_warning = (!boot_found && root_fs == `xfs) ||
+			     ( boot_found && boot_fs == `xfs);
+	  boolean ret = UI::YesNoPopup(_("Warning:
 You want to use the XFS file system for your files below /boot.
 Currently, it is not possible to boot your system with lilo if the 
 files below /boot are on a XFS file system.
 
 Change the format?
 "));
-		}
-		
+	  }
+	  
 
-	    if ( (!xfs_boot_warning && xfs_found) || show_all_popups )
-            {
-		boolean ret = UI::YesNoPopup(_("Warning:
+      if ( (!xfs_boot_warning && xfs_found) || show_all_popups )
+      {
+	  boolean ret = UI::YesNoPopup(_("Warning:
 You chose to format one of your partitions with XFS.
 XFS is still experimental and not well tested.
 
 Select another format?
 "));
-                if (ret == true) retval = `again;
+	  if (ret == true) retval = `again;
 
-            }
+      }
 
-	    if ( (Arch::ppc && jfs_found) || show_all_popups )
-            {
-		boolean ret = UI::YesNoPopup(_("Warning:
+      if ( (Arch::ppc && jfs_found) || show_all_popups )
+      {
+	  boolean ret = UI::YesNoPopup(_("Warning:
 You want to format one of your partitiones with JFS.
 Please notice, that JFS for PPC is still experimental and not well tested! 
 
 Do you want to change this?
 "));
-                if (ret == true) retval = `again;
+	  if (ret == true) retval = `again;
 
-            }
+      }
 
-            if ( (axp_start_Cr_failure && installation) || show_all_popups )
-            {
-                UI::ErrorPopup( sformat(_("\
+      if ( (axp_start_Cr_failure && installation) || show_all_popups )
+      {
+	  UI::ErrorPopup( sformat(_("\
 You have created a partition at the beginning of the disk %2.
 This is not compatible with the bootloader.
 Change the start cylinder of your partition to cylinder %1
 or delete this partition"), axp_start_nth +1, axp_start_dev ));
 
-                retval = `again;
-            }
+	  retval = `again;
+      }
 
-	  
-	    
-            if ( ( axp_start_Ex_failure && installation ) || show_all_popups )
-            {
-                boolean ret = UI::YesNoPopup( sformat(_("You have a partition at the beginning of disk %2.
+    
+      
+      if ( ( axp_start_Ex_failure && installation ) || show_all_popups )
+      {
+	  boolean ret = UI::YesNoPopup( sformat(_("You have a partition at the beginning of disk %2.
 This is not compatible with the bootloader.
 You should delete this partition and create a
 new partition starting at cylinder %1.
@@ -535,68 +513,54 @@ new partition starting at cylinder %1.
 Do you want to change your partitioning?
 "), axp_start_nth +1, axp_start_dev ) );
 
-                if (ret == true) retval = `again;
-            }
+	  if (ret == true) retval = `again;
+      }
 
 
-          if (( !root_found  && installation ) || show_all_popups  )
-          {
-              UI::ErrorPopup(_("
+    if (( !root_found  && installation ) || show_all_popups  )
+    {
+	UI::ErrorPopup(_("
 YaST2 needs a root partition to install SuSE Linux.
 Assign the root mount point \"/\" to a partition.
 "));
 
-              retval = `again;
-          }
-  
-	  
-	  
-	  if( fat_system_mount || show_all_popups )
-	  {
-	      UI::ErrorPopup(_("You tried to mount a fat partition to
+	retval = `again;
+    }
+
+    
+    
+    if( fat_system_mount || show_all_popups )
+    {
+	UI::ErrorPopup(_("You tried to mount a fat partition to
 one of the following mount points: / /usr /home /opt /var.
 Use a Linux file system, such as ext2 or reiserfs, for these mount points.
 "));
-	      
-              retval = `again;  
-	  }
+	
+	retval = `again;  
+    }
 
-	  /* now in define check_crypt_mount_points -> partition_defines
-	  if( crypt_fs_system || show_all_popups )
-	  {
-	      UI::ErrorPopup(_("You have assigned an encrypted file system to a
-partition with one of the following
-mount points: \"/\", \"/usr\", \"/boot\", \"swap\". This is
-not possible. Change the mount point or deselect
-the encryption option.
-"));
-   
-              retval = `again;    
-	  }
-	  */
-	  
-          if (( boot_found) && installation || show_all_popups )
-          {
-              if ( (Arch::i386 && !lba_support && boot_end >= 1024) || show_all_popups )
-              {
-                  boolean ret = UI::YesNoPopup(_("Warning:
-Your boot partition ends above cylinder 1024.
+    if( (boot_found) && installation || show_all_popups )
+    {
+	if ( boot_end >= Partitions::boot_cyl || show_all_popups )
+	{
+	    boolean ret = UI::YesNoPopup(sformat(_("Warning:
+Your boot partition ends above cylinder %1.
 Your BIOS does not seem able to boot
-partitions above cylinder 1024.
+partitions above cylinder %1.
 With the current setup, your SuSE Linux
 installation might not be directly bootable.
 
 Do you want to change this?
-"));
+"),Partitions::boot_cyl));
 
-                  if ( ret ) retval = `again;
-              }
+	    if ( ret ) retval = `again;
+	}
 
-	 
-              // not substring sparc!
-              if ( ( Arch::sparc32 && boot_end >= boot_cyl_for_gb ) || show_all_popups )
-              {
-                  boolean ret = UI::YesNoPopup(_("Warning:
+   
+	// not substring sparc!
+	if ( ( Arch::sparc32 && boot_end >= boot_cyl_for_gb ) || show_all_popups )
+	{
+	    boolean ret = UI::YesNoPopup(_("Warning:
 With the current setup, your SuSE Linux
 installation might not be directly bootable.
 Some PROM versions have problems with a boot
@@ -605,51 +569,48 @@ partition with an end cylinder above 1 GB.
 Do you want to change this?
 "));
 
-		
-                  if (ret == true) retval = `again;
-              }
-	    
+	  
+	    if (ret == true) retval = `again;
+	}
+      
 
-              if (Arch::ppc
-		  && (Arch::board_chrp || Arch::board_prep || Arch::board_iseries))
-              {
-                  ///////////////////////////////////////////////////////////
-                  // For PReP the boot partition has to be smaller than 4 MB if
-                  // possible
-		 
-                  if ( boot_cyl_nb > get_max_cyl_for_4mb( boot_cyl_size) )
-                  {
-                      targetMap = change_boot_region( targetMap, [ boot_start_cyl, get_max_cyl_for_4mb(boot_cyl_size) ]);
-                  }
-		
-                  y2debug( "PReP resized: %1 %2 %3",  boot_cyl_nb, get_max_cyl_for_4mb( boot_cyl_size), targetMap );
-              }
+	if( Partitions::PrepBoot() )
+	{
+	    ///////////////////////////////////////////////////////////
+	    // For PReP the boot partition has to be smaller than 4 MB if
+	    // possible
 	   
-	      if ( (boot_size < 12582912 && boot_size_check) || show_all_popups )
-	      {
-		  boolean ret = UI::YesNoPopup(_("Warning:
+	    if ( boot_cyl_nb > get_max_cyl_for_4mb( boot_cyl_size) )
+	    {
+		targetMap = change_boot_region( targetMap, [ boot_start_cyl, get_max_cyl_for_4mb(boot_cyl_size) ]);
+	    }
+	  
+	    y2debug( "PReP resized: %1 %2 %3",  boot_cyl_nb, get_max_cyl_for_4mb( boot_cyl_size), targetMap );
+	}
+     
+	if ( (boot_size < 12582912 && boot_size_check) || show_all_popups )
+	{
+	    boolean ret = UI::YesNoPopup(_("Warning:
 Your boot partition is less than 12MB.
 It is recommended to increase the size of /boot.
 
 Do you want to do this?
 "));
 
-		  if (ret == true) retval = `again;
-	      }
-          }
+	    if (ret == true) retval = `again;
+	}
+    }
 
-          ///////////////////////////// NO BOOT ///////////////////////////
+    ///////////////////////////// NO BOOT ///////////////////////////
 
-          if( (! boot_found && installation ) || show_all_popups )
-          {
+    if( (! boot_found && installation ) || show_all_popups )
+    {
 
-              if (Arch::ppc
-		  && (Arch::board_chrp || Arch::board_prep)
-		  || show_all_popups )
-              {
-		  // If the user chooses 'no' here, the system will not be able to
-		  // boot from the hard drive!
-                  boolean ret = UI::YesNoPopup(_("Warning: There is no partition mounted as /boot.
+	if( Partitions::PrepBoot() || show_all_popups )
+	{
+	    // If the user chooses 'no' here, the system will not be able to
+	    // boot from the hard drive!
+	    boolean ret = UI::YesNoPopup(_("Warning: There is no partition mounted as /boot.
 To boot from your hard disk, a small /boot partition
 (approx. 4MB) is required.  Consider creating one.
 (Partitions assigned to /boot will automatically be changed to
@@ -658,30 +619,30 @@ type 0x41 PReP/CHRP).
 Do you want to change your setup?
 "));
 
-                  if (ret == true)  retval = `again;
+	    if (ret == true)  retval = `again;
 
-              }
+	}
 
 
-              // no boot but root
-              if ( ( Arch::i386 && !lba_support && root_end >= 1024 ) || show_all_popups ) 
-              {
-                  boolean ret = UI::YesNoPopup(_("Warning: According to your setup, you intend to
+	// no boot but root
+	if( root_end >= Partitions::boot_cyl || show_all_popups ) 
+	{
+	    boolean ret = UI::YesNoPopup(sformat(_("Warning: According to your setup, you intend to
 boot your machine from the root partition (/), which, unfortunately,
-has an end cylinder above 1024. Your BIOS does not seem capable
-of booting partitions beyond the 1024 cylinder boundary,
+has an end cylinder above %1. Your BIOS does not seem capable
+of booting partitions beyond the %1 cylinder boundary,
 which means that your SuSE Linux installation will not be
 directly bootable.
 
 Do you want to change this?
-"));
+"), Partitions::boot_cyl));
 
-                  if (ret == true)  retval = `again;
-              }
+	    if (ret == true)  retval = `again;
+	}
 
-              if ( (Arch::sparc32 && root_end >= root_cyl_for_gb) || show_all_popups )
-              {
-                  boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux
+	if ( (Arch::sparc32 && root_end >= root_cyl_for_gb) || show_all_popups )
+	{
+	    boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux
 installation might not be directly bootable, because
 some PROM versions have problems with a boot partition
 ending above the 1 GB boundary.
@@ -689,12 +650,12 @@ ending above the 1 GB boundary.
 Do you want to change this?
 "));
 
-                  if (ret == true) retval = `again;
-              }
+	    if (ret == true) retval = `again;
+	}
 
-	      if ( (Arch::sparc && root_fs != `ext2) || show_all_popups )
-              {
-                  boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux
+	if ( (Arch::sparc && root_fs != `ext2) || show_all_popups )
+	{
+	    boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux
 installation might not be directly bootable, because
 some PROM versions have problems with a boot partition
 ending above the 1 GB boundary.
@@ -702,12 +663,12 @@ ending above the 1 GB boundary.
 Do you want to change this?
 "));
 
-                  if (ret == true) retval = `again;
-              }
+	    if (ret == true) retval = `again;
+	}
 
-	      if ( root_raid || show_all_popups )
-              {
-                  boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux
+	if ( root_raid || show_all_popups )
+	{
+	    boolean ret = UI::YesNoPopup(_("Warning: With your current setup, your SuSE Linux
 installation might not be directly bootable, because
 you have no \"boot\" partition, and your \"root\" partition is RAID.
 LILO sometimes fails in this configuration.
@@ -715,15 +676,15 @@ LILO sometimes fails in this configuration.
 Do you want to change this?
 "));
 
-                  if (ret == true) retval = `again;
-              }
+	    if (ret == true) retval = `again;
+	}
 
-	      
-          }
+	
+    }
 
-          if ( !have_swap || show_all_popups )
-          {
-              boolean ret = UI::YesNoPopup(_("
+    if ( !have_swap || show_all_popups )
+    {
+	boolean ret = UI::YesNoPopup(_("
 You have not assigned a swap partition. There is nothing wrong with that, but
 in most cases it is highly recommended to create and assign a swap partition.
 Swap partitions on your system are listed in the main window with the
@@ -734,23 +695,23 @@ You can assign more than one swap partition, if desired.
 Do you want to change this?
 "));
 
-	      if (ret == true) retval = `again;
-          }
+	if (ret == true) retval = `again;
+    }
 
-          if ( sparc_first_is_swap || show_all_popups )
-          {
-              // popup message
-              UI::ErrorPopup(  sformat(_("
+    if ( sparc_first_is_swap || show_all_popups )
+    {
+	// popup message
+	UI::ErrorPopup(  sformat(_("
 Your swap partition is the first partition of %1.
 It is strongly recommended to change this, because
 the disk label will be deleted.
 "), sparc_first_dev ));
-              retval = `again;
-          }
+	retval = `again;
+    }
 
-          if (( partition_mounted_but_not_formated && installation) || show_all_popups )
-          {
-              string message = _("
+    if (( partition_mounted_but_not_formated && installation) || show_all_popups )
+    {
+	string message = _("
 WARNING:
 
 You chose to install onto an existing partition that will not be
@@ -759,7 +720,7 @@ particularly in any of the following cases:
 ") +
 _("- if this is an existing ReiserFS partition
 - if this partition already contains a Linux distribution that will be
-  overwritten
+overwritten
 - if this partition does not yet contain a file system
 ") +
 _("If in doubt, you might want to go back and mark this partition for
@@ -771,13 +732,13 @@ _("If you decide to format the partition, all data on it will be lost.
 Do you want to change your setup?
 ");
 
-              boolean ret = UI::YesNoPopup( message);
+	boolean ret = UI::YesNoPopup( message);
 
-              if (ret == true) retval = `again;
-          }
+	if (ret == true) retval = `again;
+    }
 
-          return( [targetMap, retval] );
-      };
+    return( [targetMap, retval] );
+};
 
 
 

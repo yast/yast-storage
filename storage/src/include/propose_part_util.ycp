@@ -233,99 +233,104 @@
   //   "type":`primary
   //   "used_fs": `ext2
 
-  global define create_partition( list    partitions,
-				  integer start_cyl,
-				  integer end_cyl,
-				  integer nr,             // ignore if logical!
-				  string  mount,
-				  string  extended )
-  ``{
+global define create_partition( list    partitions, 
+                                integer start_cyl,
+				integer end_cyl, 
+				integer nr,  // ignore if logical!
+				string  mount,
+				string  extended )
+    ``{
+    symbol fs     = Partitions::default_fs;  
+    integer fsid  = Partitions::fsid_native;
 
-      symbol fs     = Partitions::default_fs;  
-      string fstype = "Linux (" + Partitions::default_fs + ")";
-      integer fsid  = Partitions::fsid_native;
+    if ( mount == "/boot" )
+	{
+	fs     = Partitions::default_boot_fs;
+	fsid   = Partitions::fsid_boot;
+	}
+    if ( mount == "swap" )
+	{
+	fs     = `swap;
+	fsid   = Partitions::fsid_swap;
+	}
 
-      if ( mount == "/boot" )
-      {
-	  fs     = Partitions::default_boot_fs;
-	  fstype = "Linux (" + Partitions::default_boot_fs + ")";
-	  fsid   = Partitions::fsid_native;
-      }
-      if ( mount == "swap" )
-      {
-	  fs     = `swap;
-	  fstype = "Linux Swap";
-	  fsid   = Partitions::fsid_swap;
-      }
+    string fstype = Partitions::FsIdToString( fsid );
 
-      map part = $[];
+    map part = $[];
 
-      if ( extended == "extended" )
-      {
-          //////////////////////////////////////////////////
-	  // mode win or free: we have to create a new partition
-	  part = $[
-		       "create" : true,
-		       "fsid"   : Partitions::fsid_extended_win,
-		       "nr"     : nr,
-		       // short description for extended partition
-		       "fstype" : _("Extended"),
-		       "region" : [start_cyl, end_cyl-start_cyl+1 ],
-		       "type"   : `extended,
-		       "mount"  : mount,
-		       //"format" : true
-	  ];
-      }
-      else
-      {
-	  symbol type = `primary;
-	  
-	  if ( nr >= 5 )
-	  {
-	      // due to the fact, we have deleted one partition, "nr" is only a first guess
-	      // now lets see wich real number we have to create
+    if( extended == "extended" )
+	{
+	//////////////////////////////////////////////////
+	// mode win or free: we have to create a new partition
+	part = $[
+		  "create" : true,
+		  "fsid"   : Partitions::fsid_extended_win,
+		  "nr"     : nr,
+		  // short description for extended partition
+		  "fstype" : 
+		      Partitions::FsIdToString( Partitions::fsid_extended_win ),
+		  "region" : [start_cyl, end_cyl-start_cyl+1 ],
+		  "type"   : `extended,
+		  "mount"  : mount,
+		];
+	}
+    else
+	{
+	symbol type = `primary;
+	
+	if ( nr >= 5 )
+	    {
+	    // due to the fact, we have deleted one partition, "nr" is only 
+	    // a first guess now lets see wich real number we have to create
 
-	      type = `logical;
+	    type = `logical;
 
-	      list base = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,
-		     40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64];
+	    list base = [5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,
+	                 24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+			 41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,
+			 58,59,60,61,62,63,64];
 
-	      list dev_nb = maplist( `part, filter( `pa, partitions, ``(lookup( pa, "delete", false) == false)), ``(lookup( part, "nr", 0) ));
-	      list result = filter( `base_nr, base, ``( find(`nr, dev_nb, ``(nr == base_nr)) == nil));
+	    list dev_nb = maplist( `part, 
+	                           filter( `pa, partitions, 
+				           ``(!pa["delete"]:false )), 
+				   ``(part["nr"]:0 ));
+	    list result = filter( `base_nr, base, 
+	                          ``( find(`nr, dev_nb, 
+				           ``(nr == base_nr)) == nil));
 
-	      nr = select( sort( result ), 0, 0 );
-	      y2debug( "New logical nr: %1", nr );
-	  }
+	    nr = select( sort( result ), 0, 0 );
+	    y2debug( "New logical nr: %1", nr );
+	    }
 
+	//////////////////////////////////////////////////
+	// mode win or free: we have to create a new partition
+	part = $[
+		     "create" : true,
+		     "fsid"   : fsid,
+		     "nr"     : nr,
+		     "region" : [start_cyl, end_cyl-start_cyl+1 ],
+		     "type"   : type,
+		     "fstype" : fstype,
+		     "used_fs": fs,
+		     "mount"  : mount,
+		     "format" : true
+	    ];
+	}
 
-	  //////////////////////////////////////////////////
-	  // mode win or free: we have to create a new partition
-	  part = $[
-		       "create" : true,
-		       "fsid"   : fsid,
-		       "nr"     : nr,
-		       "region" : [start_cyl, end_cyl-start_cyl+1 ],
-		       "type"   : type,
-		       "fstype" : fstype,
-		       "used_fs": fs,
-		       "mount"  : mount,
-		       "format" : true
-	  ];
-      }
-
-      if (    part == $[]   || part == nil || start_cyl == -1
-	   || end_cyl == -1 || nr == -1   )
-      {
-	  // ERROR
-	  y2error("create partition %1 %2 %3 %4 %5 %6 ", nr, mount, start_cyl, end_cyl, nr , part);
-	  hiterror = true;
-	  return( partitions );
-      }
-      else
-      {
-	  return( add( partitions, part ));
-      }
-  };
+    if( part == $[] || part == nil || start_cyl == -1 || end_cyl == -1 || 
+        nr == -1   )
+	{
+	// ERROR
+	y2error("create partition %1 %2 %3 %4 %5 %6 ", nr, mount, start_cyl,
+	        end_cyl, nr , part);
+	hiterror = true;
+	return( partitions );
+	}
+    else
+	{
+	return( add( partitions, part ));
+	}
+    };
 
 
 
