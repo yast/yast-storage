@@ -264,6 +264,15 @@ define void DumpPartitionStart( string device, boolean crypt_fs )
 	}
     }
 
+define boolean CheckExistDevice( string device )
+    ``{
+    map st = (map)SCR::Read( .target.stat, device );
+    y2milestone( "CheckExistDevice stat %1", st );
+    boolean ret = size(st)>0 && st["isblock"]:false;
+    y2milestone( "CheckExistDevice %1 ret %2", device, ret );
+    return( ret );
+    }
+
 define boolean HandleFormatPartition( map partition )
     ``{
     boolean format = partition["format"]:false;
@@ -371,23 +380,32 @@ define boolean HandleFormatPartition( map partition )
 		    }
 		y2milestone( "Format options %1", options );
 
+
 		string makefs_type = 
 		    FileSystems::GetMakeFsType( used_fs, "ext2");
 
-		DumpPartitionStart( device, crypt_fs );
-		if( used_fs != `hfs )
+		if( !CheckExistDevice( device ))
 		    {
-		    list tmp = [ "StorageClients::MkfsProgressBar", 
-				 makefs_type,  device, options ];
-		    ret = (symbol)WFM::CallFunction( "makefs", tmp );
-		    y2milestone( "format ret = %1", ret );
+		    ret = `not_ok;
 		    }
-		else
+
+		if( ret == `ok )
 		    {
-		    string cmd = sformat( "/usr/bin/hformat %1", device );
-		    y2milestone( "cmd %1", cmd );
-		    SCR::Execute (.target.bash, cmd );
-		    ret = `ok;
+		    DumpPartitionStart( device, crypt_fs );
+		    if( used_fs != `hfs )
+			{
+			list tmp = [ "StorageClients::MkfsProgressBar", 
+				     makefs_type,  device, options ];
+			ret = (symbol)WFM::CallFunction( "makefs", tmp );
+			y2milestone( "format ret = %1", ret );
+			}
+		    else
+			{
+			string cmd = sformat( "/usr/bin/hformat %1", device );
+			y2milestone( "cmd %1", cmd );
+			SCR::Execute (.target.bash, cmd );
+			ret = `ok;
+			}
 		    }
 		if( ret == `ok )
 		    {
@@ -506,7 +524,7 @@ define list CreateAndActivateSwap( list<list> swd )
 		}
 	    UI::ChangeWidget(`id(`progress), `Label, label );
 
-	    if (swaplist[1]:false == true)		// format == yes ?
+	    if( swaplist[1]:false && CheckExistDevice(swapdev))
 	       {
 	       DumpPartitionStart( swapdev, false );
 	       if( SCR::Execute (.target.bash, "/sbin/mkswap "+ swapdev) != 0 )
