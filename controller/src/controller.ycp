@@ -1,0 +1,544 @@
+/**
+ * File:
+ *   disk.ycp
+ *
+ * Module:
+ *   Configuration of disk
+ *
+ * Summary:
+ *   Main file
+ *
+ * Authors:
+ *   Michael Hager <mike@suse.de>
+ *
+ * $Id$
+ *
+ * Wrapper file for inst_disk.ycp
+ * 
+ */
+
+{
+textdomain "storage";
+
+import "Wizard";
+import "Misc";
+
+include "ui/common_popups.ycp";
+
+list initrd = [];
+list initrd_orig = [];
+map params = $[];
+map params_orig = $[];
+
+define string HelpText()
+    ``{
+    return( _(
+"<p>This module configures the disk controllers that are accessed by a
+kernel module.</p>
+<p>The table on top contains the controllers to configure. If
+there is more than one controller you can switch between controllers
+by clicking on a line in the table.</p>
+<p>You can influence the order in which module are loaded with the
+buttons to the right of the table.</p>
+<p>The next line contains the name of the kernel module for the selected 
+controller. There are controllers where more than one alternative kernel
+module can be used. If there is more than one module you can switch 
+between these modules.</p>
+<p>The next line displays if the module is currently loaded or not</p>
+<p>Next there is a check box where you determine if the module is loaded
+at system bootup (in initrd) or not.</p>
+<p>The text edit field may contain module parameters with that the module
+get loaded. These field may stay empty for most modules.</p>
+<p>Last follows a button with wich you can try loading the selected module
+with the given parameters. It is <b>strongly</b> recommended to try that
+if you chenged module parameters and plan to use your module in initrd.</p>"));
+    }
+
+define term ModComboBox( list modules )
+    ``{
+    return( `ComboBox( `id(`module), `opt(`editable,`notify), 
+                       _("&Module to use:"), modules ));
+    };
+
+define term InitCheckBox( boolean val )
+    ``{
+    return( `CheckBox( `id(`initrd), `opt(`notify),
+		       _("&Load module in initrd"), val ));
+    };
+
+define void SetModule( map cont )
+    ``{
+    integer num = 0;
+    list mod = maplist( `entry, cont["drivers"]:[],
+	``{
+	term it = `item( `id(num), mergestring(entry["modules",0]:[]," "), 
+	                 cont["modnum"]:0==num );
+	num = num+1;
+	return( it );
+	});
+    y2milestone( "mod=%1", mod );
+    UI::ReplaceWidget( `id(`rep_mod), ModComboBox( mod ));
+    if( !haskey( cont, "modnum" ))
+	{
+	cont["modnum"] = 0;
+	}
+    };
+
+define void SetLoaded( string mod )
+    ``{
+    map lmod = SCR::Read(.proc.modules);
+    string val = haskey(lmod, mod) ? _("Yes") : _("No");
+    UI::ChangeWidget( `id(`loaded), `Value, val );
+    y2milestone( "Loaded=%1", val );
+    }
+
+define void SetInitrd( string mod )
+    ``{
+    boolean val = contains(initrd,mod);
+    UI::ReplaceWidget( `id(`rep_initrd), InitCheckBox( val ));
+    y2milestone( "Initrd=%1", val );
+    }
+
+define void SetParams( string mod, string default )
+    ``{
+    string param = default;
+    if( haskey( params, mod ))
+	{
+	param = params[mod]:"";
+	}
+    else if( haskey( params_orig, mod ))
+	{
+	param = params_orig[mod]:"";
+	}
+    else
+	{
+	list opts = SCR::Read( .modules.options );
+	y2milestone( "ppts=%1", opts ); 
+	if( contains( opts, mod ))
+	    {
+	    map options = SCR::Read( .modules.options, mod );
+	    y2milestone( "options %1 = %2", mod, options ); 
+	    foreach( `k, `v, options,
+		``{
+		if( size(param)>0 )
+		    {
+		    param = param + " ";
+		    }
+		if( size(v)==0 )
+		    {
+		    param = param + k;
+		    }
+		else
+		    {
+		    param = param + k + "=" + v;
+		    }
+		});
+	    }
+	params_orig[mod] = param;
+	}
+    UI::ChangeWidget( `id(`param), `Value, param );
+    }
+
+define string ModNameChanged( map cont, integer num, integer old )
+    ``{
+    string old = cont["drivers",old,"modules",0,0]:"";
+    string mod = cont["drivers",num,"modules",0,0]:"";
+    y2milestone( "mod=%1 old=%2", mod, old );
+    if( old != mod )
+	{
+	params[old] = UI::QueryWidget( `id(`param), `Value );
+        if( contains( initrd, old ) )
+	    {
+	    initrd = maplist( `e, initrd, ``{ return( e==old ? mod : e ); });
+	    y2milestone( "new initrd=%1", initrd );
+	    }
+	}
+    SetLoaded( mod );
+    SetInitrd( mod );
+    SetParams( mod, cont["drivers",num,"modules",0,1]:"" );
+    return( mod );
+    }
+
+define integer TermToId( term t )
+    ``{
+    return( select(select(t,0,0),0,0) );
+    }
+
+define integer GetArrayPos( list l, integer num )
+    ``{
+    integer i = 0;
+    while( i < size(l) && TermToId(l[i]:`empty)!=num )
+	{
+	i = i+1;
+	}
+    return( i );
+    }
+
+define string SetAllData( map cont, list clist, integer cur )
+    ``{
+    string ret = "";
+    if( size(cont)>0 )
+	{
+	SetModule( cont );
+	integer num = UI::QueryWidget( `id(`module), `Value );
+	ret = ModNameChanged( cont, num, num );
+	UI::ChangeWidget( `id(`moveup), `Enabled, GetArrayPos(clist,cur)>0 );
+	UI::ChangeWidget( `id(`movedown), `Enabled, 
+	                  GetArrayPos(clist,cur)<size(clist)-1 );
+	}
+    return( ret );
+    }
+
+define boolean TestLoad( map cont )
+    ``{
+    y2milestone( "num %1 drivers %2", cont["modnum"]:0, cont["drivers"]:[] );
+    string cmd = "";
+    foreach( `e, cont["drivers"]:[],
+	``{
+	foreach( `m, e["modules"]:[],
+	    ``{
+	    if( size(m[0]:"")>0 )
+		{
+		cmd = "/sbin/rmmod -r " + m[0]:"";
+		y2milestone( "cmd %1", cmd );
+		SCR::Execute( .target.bash, cmd );
+		}
+	    });
+	});
+    map m = cont["drivers",cont["modnum"]:0]:$[];
+    if( size(m)>0 && size(m["modules"]:[])>0 )
+	{
+	boolean ok = true;
+	string param = UI::QueryWidget( `id(`param), `Value );
+	integer num = 0;
+	foreach( `d, m["modules"]:[],
+	    ``{
+	    cmd = m["modprobe"]:false ? "/sbin/modprobe " : "/sbin/insmod ";
+	    y2milestone( "cmd %1", cmd );
+	    cmd = cmd + d[0]:"" + " ";
+	    y2milestone( "cmd %1", cmd );
+	    cmd = cmd + (num==0 ? param : d[1]:"");
+	    y2milestone( "cmd %1", cmd );
+	    map ret = SCR::Execute( .target.bash_output, cmd );
+	    if( ret["exit"]:1 == 1)
+		{
+		string text = sformat( _(
+"
+Error loading module.
+Exected cmd was:
+    %1
+
+Stderr was:
+%2"), cmd, ret["stderr"]:"" );
+		UI::ErrorPopup( text );
+		ok = false;
+		}
+	    });
+	if( ok )
+	    {
+	    UI::MessagePopup( sformat(_("Module \"%1\" successfully loaded"),
+	                              m["modules",0,0]:"" ));
+	    }
+	}
+    }
+
+    term buttons = `HBox( `PushButton(`id(`abort ), AbortButtonLabel() ),
+                          `HStretch(),
+			  `PushButton(`id(`apply), _("&Apply") ),
+                          `HStretch(),
+			  `PushButton(`id(`finish), FinishButtonLabel() ) );
+
+    Wizard::OpenDialog( Wizard::GenericDialog( buttons ) );
+
+    list dev = [];
+    SCR::Write(.dumpto.tmp.dev, SCR::Read(.probe.storage.manual) );
+    foreach( `entry, SCR::Read(.probe.storage.manual), 
+	``{
+	map conf = SCR::Read(.probe.status, entry["unique_key"]:"");
+	y2milestone( "entry:%1", entry );
+	y2milestone( "conf:%1", conf );
+	if( conf["available"]:`no != `no && size(entry["drivers"]:[])>0 )
+	    {
+	    entry["conf"] = conf;
+	    dev = add( dev, entry );
+	    }
+	});
+    SCR::Write(.dumpto.tmp.found, dev );
+
+    dev = add( dev, $[ "conf" : $[ "configured" : `new ],
+                       "drivers" : [ $[ "modprobe" : false,
+		                        "modules" : [ [ "loop_fish2", "" ]]]],
+		       "model" : "Loop driver" ] );
+
+    boolean first_new = true;
+    integer cur_num = 0;
+    integer num = 0;
+    list clist = maplist( `entry, dev,
+	``{
+	term it = `item( `id(num) );
+	it = add( it, entry["model"]:"" );
+	if( entry["conf","configured"]:`no==`new )
+	    {
+	    it = add( it, _("Yes"));
+	    if( first_new )
+		{
+		first_new = false;
+		cur_num = num;
+		}
+	    }
+	else
+	    {
+	    it = add( it, _("No") );
+	    }
+	num = num+1;
+	return( it );
+	});
+    y2milestone( "clist=%1", clist );
+
+    string tmp = Misc::SysconfigRead( .sysconfig.kernel.INITRD_MODULES, "");
+    initrd_orig = filter( `e, splitstring( tmp, " " ), ``(size(e)>0) );
+    y2milestone( "initrd %1", tmp );
+    y2milestone( "initrd list %1", initrd_orig );
+    initrd = eval(initrd_orig);
+
+    term dialog =
+	`VBox( 
+	    `VSpacing(2),
+	    `Left(`HBox( `HWeight(70, `Table( `id(`controller),
+	                                      `opt(`notify,`immediate),
+	                                      `header( _("Disk Controller"), 
+					               _("New")),
+					      clist )), 
+			 `HWeight(30, 
+			     `VBox( `PushButton( `id(`moveup), _("Move &Up") ),
+			            `PushButton( `id(`movedown), 
+				                 _("Move &Down")))))),
+	    `VSpacing(2),
+	    `Left(`HBox( `HWeight(40, `ReplacePoint(`id(`rep_mod),
+	                                            ModComboBox( [] ) )),
+			 `HWeight(60, `HStretch()) )),
+	    `VSpacing(2),
+	    `Left(`HBox( `Label( _("Module currently loaded:")), `HSpacing(2),
+	           `Label( `id(`loaded), _("Yes") ))),
+	    `VSpacing(2),
+	    `Left(`ReplacePoint(`id(`rep_initrd), InitCheckBox( false ))),
+	    `VSpacing(2),
+	    `Left(`TextEntry( `id(`param), _("Module &Parameters"), "abdef" )),
+	    `VSpacing(2),
+	    `PushButton( `id(`test_load), _("&Test loading of module")),
+	    `VSpacing(3) 
+	    );
+
+    if( size(dev)==0 )
+	{
+	UI::MessagePopup( _("No configurable controller found") );
+	return;
+	}
+    Wizard::SetContents( _("Disk controller configuration"), dialog,
+			 HelpText(), false, false );
+
+    UI::ChangeWidget( `id(`controller), `CurrentItem, cur_num );
+    string modname = SetAllData( dev[cur_num]:$[], clist, cur_num );
+    symbol ret = `none;
+    boolean changed = false;
+    y2milestone( "cur %1", dev[cur_num]:$[] );
+    do
+	{
+	ret = UI::UserInput();
+	y2milestone( "ret = %1", ret );
+	if( ret == `controller )
+	    {
+	    num = UI::QueryWidget( `id(`controller), `CurrentItem );
+	    y2milestone( "num %1 cur_num %2", num, cur_num );
+	    if( num != cur_num )
+		{
+		cur_num = num;
+		params[modname] = UI::QueryWidget( `id(`param), `Value );
+		modname = SetAllData( dev[cur_num]:$[], clist, cur_num );
+		y2milestone( "controller module=%1", modname );
+		}
+	    }
+	else if( ret == `moveup )
+	    {
+	    changed = true;
+	    integer rpos = GetArrayPos( clist, cur_num );
+	    term tmp = clist[rpos]:"";
+	    clist[rpos] = clist[rpos-1]:"";
+	    clist[rpos-1] = tmp;
+	    UI::ChangeWidget( `id(`controller), `Items, clist );
+	    UI::ChangeWidget( `id(`controller), `CurrentItem, cur_num );
+	    rpos = GetArrayPos( clist, cur_num );
+	    y2milestone( "items=%1", clist );
+	    y2milestone( "rpos=%1", rpos );
+	    UI::ChangeWidget( `id(`moveup), `Enabled, rpos>0 );
+	    UI::ChangeWidget( `id(`movedown), `Enabled, rpos<size(clist)-1 );
+	    }
+	else if( ret == `movedown )
+	    {
+	    changed = true;
+	    integer rpos = GetArrayPos( clist, cur_num );
+	    term tmp = clist[rpos]:"";
+	    clist[rpos] = clist[rpos+1]:"";
+	    clist[rpos+1] = tmp;
+	    UI::ChangeWidget( `id(`controller), `Items, clist );
+	    UI::ChangeWidget( `id(`controller), `CurrentItem, cur_num );
+	    rpos = GetArrayPos( clist, cur_num );
+	    y2milestone( "items=%1", clist );
+	    y2milestone( "rpos=%1", rpos );
+	    UI::ChangeWidget( `id(`moveup), `Enabled, rpos>0 );
+	    UI::ChangeWidget( `id(`movedown), `Enabled, rpos<size(clist)-1 );
+	    }
+	else if( ret == `module )
+	    {
+	    num = UI::QueryWidget( `id(`module), `Value );
+	    if( num != dev[cur_num,"modnum"]:0 )
+		{
+		changed = true;
+		modname = ModNameChanged( dev[cur_num]:$[], num, 
+		                          dev[cur_num,"modnum"]:0 );
+		dev[cur_num,"modnum"] = num;
+		y2milestone( "module=%1", modname );
+		}
+	    }
+	else if( ret == `initrd )
+	    {
+	    changed = true;
+	    if( contains( initrd, modname ))
+		{
+		initrd = filter( `e, initrd, ``(e!=modname));
+		}
+	    else
+		{
+		initrd = add( initrd, modname );
+		}
+	    y2milestone( "initrd=%1", initrd );
+	    }
+	else if( ret == `test_load )
+	    {
+	    TestLoad( dev[cur_num]:$[] );
+	    SetLoaded( modname );
+	    }
+	else if( ret == `apply || ret == `finish )
+	    {
+	    boolean mkinitrd = false;
+	    params[modname] = UI::QueryWidget( `id(`param), `Value );
+	    list new_initrd = [];
+	    foreach( `e, clist,
+		``{
+		integer num = TermToId( e );
+		integer modnum = dev[num,"modnum"]:0;
+		if( contains( initrd, 
+		              dev[num,"drivers",modnum,"modules",0,0]:"" ) )
+		    {
+		    foreach( `d, dev[num,"drivers",modnum,"modules"]:[],
+			``{
+			new_initrd = add( new_initrd, d[0]:"" );
+			initrd = filter( `e, initrd, ``(e!=d[0]:""));
+			if( size(params[d[0]:""]:"")==0 )
+			    params[d[0]:""] = d[1]:"";
+			mkinitrd = mkinitrd || size(d[1]:"")>0;
+			});
+		    }
+		});
+	    foreach( `e, initrd,
+		``{
+		if( size(e)>0 && !contains( new_initrd, e ) )
+		    new_initrd = add( new_initrd, e );
+		});
+	    string newinit = mergestring( new_initrd, " " );
+	    string old = Misc::SysconfigRead( .sysconfig.kernel.INITRD_MODULES,
+	                                      "");
+	    mkinitrd = mkinitrd || newinit != old;
+	    if( newinit != old )
+		{
+		initrd = eval( new_initrd );
+		initrd_orig = eval( new_initrd );
+		}
+	    y2milestone( "make %3 new \"%1\" old \"%2\"", newinit, old, 
+	                 mkinitrd );
+	    y2milestone( "params %1", params );
+	    boolean writemod = false;
+	    foreach( `k, `v, params, 
+		``{
+		y2milestone( "par orig:\"%1\" new:\"%2\"", params_orig[k]:"", 
+		             v );
+		if( params_orig[k]:"" != v )
+		    {
+		    mkinitrd = mkinitrd || contains(new_initrd,k);
+		    params_orig[k] = v;
+		    list val = filter( `e, splitstring( v, " " ), 
+		                       ``(size(e)>0) );
+		    y2milestone( "val %1", val );
+		    map opts = $[];
+		    foreach( `v, val,
+			``{
+			integer pos = find( v, "=" );
+			y2milestone( "v %1 pos %2", v, pos );
+			if( pos<0 )
+			    {
+			    opts[v] = "";
+			    }
+			else
+			    {
+			    opts[substring(v,0,pos)] = substring( v, pos+1 );
+			    }
+			});
+		    writemod = true;
+		    y2milestone( "k %1 opts:%2 write:%3", k, opts, writemod );
+		    SCR::Write( .modules.options, opts, k );
+		    }
+		});
+	    if( writemod )
+		{
+		y2milestone( "writing modules.conf" );
+		SCR::Write( .modules, nil );
+		y2milestone( "finished writing modules.conf" );
+		}
+	    y2milestone( "mkinitrd %1", mkinitrd );
+	    if( mkinitrd )
+		{
+		SCR::Write( .sysconfig.kernel.INITRD_MODULES, newinit );
+		SCR::Write( .sysconfig.kernel, nil );
+		UI::OpenDialog( `VBox( `Label( _("Executing mkinitrd") ) ) );
+		integer exit = SCR::Execute( .target.bash, "/sbin/mk_initrd" );
+		UI::CloseDialog();
+		if( exit != 0 )
+		    {
+		    UI::ErrorPopup( _("Executing mkinitrd failed!
+Try executing /sbin/mkinitrd manually and look at the error messages"));
+		    }
+		else
+		    {
+		    UI::MessagePopup( _("/boot/initrd succesfully created.
+Depending on the bootloader you use you have to 
+rerun the bootloader (e.g. by calling \"/sbin/lilo\"
+if you use lilo) to use the new initrd after next
+reboot."));
+		    }
+		}
+	    foreach( `entry, dev,
+		``{
+		if( size(entry["unique_key"]:"")>0 )
+		    SCR::Write(.probe.status.configured, entry["unique_key"]:"",
+			       `yes);
+		});
+	    changed = false;
+	    }
+	else if( ret == `abort )
+	    {
+	    if( changed )
+		{
+		if( !UI::YesNoPopup( _("You have unsaved changes.
+These changes will be lost when you abort now.
+
+Discard changes?")))
+		    {
+		    ret = `continue;
+		    }
+		}
+	    }
+	}
+    while( ret != `abort && ret != `finish );
+    UI::CloseDialog();
+
+}
