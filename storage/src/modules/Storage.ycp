@@ -277,8 +277,7 @@
 		    (partition["fsid"]:0 == Partitions::fsid_native ||
 		     Partitions::IsDosPartition( partition["fsid"]:0 )))
 		    {
-		    string dev = GetDeviceName( device, partition["nr"]:0 );
-		    partition["used_fs"] = DetectFs( dev );
+		    partition = FileSystems::GetFsysInfos( device, partition );
 		    }
 		p_new = add( p_new, partition );
 	      });
@@ -1413,7 +1412,7 @@
     global define map SetPartitionData( map tg, string disk, any nr, string key,
 					any value )``{
 
-        y2debug( "SetPartitionData disk=%1, nr=%2 key=%3 value=%4", disk, nr, key, value );
+        y2debug( "disk=%1, nr=%2 key=%3 value=%4", disk, nr, key, value );
 	list r_part = filter( `part, tg[disk,"partitions"]:[],
 			      ``(part["nr"]:-1 != nr ||
 				 part["delete"]:false == true));
@@ -1435,7 +1434,7 @@
        changed map <tg> */
     global define map DelPartitionData( map tg, string disk, any nr, string key)
         ``{
-        y2debug( "DelPartitionData disk=%1, nr=%2 key=%3", disk, nr, key );
+        y2debug( "disk=%1, nr=%2 key=%3", disk, nr, key );
 	list r_part = filter( `part, tg[disk,"partitions"]:[],
 			      ``(part["nr"]:-1 != nr ||
 				 part["delete"]:false == true));
@@ -1458,18 +1457,29 @@
     global define map GetPartition( map tg, string disk, any nr )
 	``{
 	any ret = $[];
-        y2debug( "GetPartition disk=%1, nr=%2", disk, nr );
+        y2debug( "disk=%1, nr=%2", disk, nr );
 	list part = filter( `part, tg[disk,"partitions"]:[],
 			    ``(part["nr"]:-1 == nr && !part["delete"]:false));
 	if( size(part)>=0 )
 	    {
 	    ret = part[0]:$[];
 	    }
-        y2debug( "GetPartition ret=%1", ret );
+        y2debug( "ret=%1", ret );
 	return( ret );
     }
 
 
+/* set <part> in disk <disk> return changed map <tg> */
+global define map SetPartition( map tg, string disk, map part )
+    ``{
+    y2debug( "SetPartition disk=%1, part=%2", disk, part );
+    list r_part = filter( `p, tg[disk,"partitions"]:[],
+			  ``(p["nr"]:-1 != part["nr"]:-1 ||
+			     p["delete"]:false == true));
+    r_part = add( r_part, part );
+    tg[disk,"partitions"] = r_part;
+    return( tg );
+    }
     
     /* replace SubDev entry with newsubdev */
     global define SetSubDev( string subdevkey , map newsubdev )``{
@@ -1508,23 +1518,17 @@
 	list partitions		= [];
 
 	if( maindevkey == "all" )
-	{
+	    {
 	    foreach(`maindevkey,`maindev,GetTargetMap(),``{
 	        list part = maindev["partitions"]:[];
-		foreach( `p, part, ``{ 
-		    p["device"] = GetDeviceName(maindevkey,p["nr"]:"");
-		    });
 		partitions = union( partitions, part );
-	    });
-	}
-	else
-	{
-	    partitions 	= GetMainDevParam( maindevkey , "partitions" );
-	    foreach( `p, partitions, ``{ 
-		p["device"] = GetDeviceName(maindevkey,p["nr"]:"");
 		});
-	}
-	y2milestone(" GetSubDevFilterList partitions %1", partitions );
+	    }
+	else
+	    {
+	    partitions 	= GetMainDevParam( maindevkey , "partitions" );
+	    }
+	y2milestone("GetSubDevFilterList partitions %1", partitions );
 	
 	list filterPartitions 	= [];
 

@@ -20,6 +20,8 @@
      textdomain "storage";
      import "Storage";
      import "Partitions";
+
+     include "partitioning/lvm_lib.ycp";
      include "partitioning/lvm_lv_lib.ycp";
      
     //////////////////////////////////////////////////////////////////////
@@ -40,13 +42,9 @@
     //
     //  out: "10.6 GB"
      
-    global define get_vg_size( list partition_list, string current_vg , symbol `what )
+    global define get_vg_size( list partition_list, string current_vg, symbol `what )
     ``{
-	partition_list = filter( `part, partition_list,
-				 ``( lookup(part, "lvm_group","") == current_vg ) );
-	integer sum_byte = 0;
-	foreach( `part, partition_list, ``{ sum_byte = sum_byte + lookup(part, "size_byte", 0);});
-
+	integer sum_byte = vg_size( partition_list, current_vg );
 	if( what == `string )
 	    return( ByteToHumanStringWithZero( sum_byte ));
 	return sum_byte;
@@ -82,17 +80,15 @@
 	
 	
 
-	boolean pdisk_disk =  check_pdisk( lookup( targetMap, maindev , $[]), `warn_not );
 	
-	if( lookup( partition, "fsid", 0 )!=Partitions::fsid_lvm && !pdisk_disk )
-	{
-	 
-	    if( ! lookup( partition, "change_fsid", false ))
+	if( lookup( partition, "fsid", 0 )!=Partitions::fsid_lvm )
 	    {
+	    if( ! lookup( partition, "change_fsid", false ))
+		{
 		change ( partition , "change_fsid", true );
 		change ( partition , "ori_fsid",    lookup( partition, "fsid", 0 ));
 		change ( partition , "ori_fstype" , lookup( partition, "fstype" ,""));
-	    }
+		}
 
 	    
 	    /*
@@ -121,7 +117,7 @@
 			      "use_module" : "lvm_ll",
 			      "type"       : "create_pv",
 			      "vgname"     : current_vg,
-			      "device"     : get_device_name(maindev,lookup(partition,"nr","")) ];
+			      "device"     : Storage::GetDeviceName(maindev,partition["nr"]:"") ];
 	
 	modify_targets = addTargetModification( modify_targets, new_create_pv );
 	y2debug( "EEE s %1", modify_targets);
@@ -130,11 +126,8 @@
 	/////////////////////////////////////////////////
 	// change targetMap
 
-	if( ! pdisk_disk )
-	{
-	    change( partition, "fsid",      Partitions::fsid_lvm);
-	    change( partition, "fstype",    "Linux LVM");
-	}
+	change( partition, "fsid",      Partitions::fsid_lvm);
+	change( partition, "fstype",    "Linux LVM");
 	change( partition, "lvm_group", current_vg);
 
 
@@ -152,56 +145,38 @@
     //
     //////////////////////////////////////////////////////////////////////
 
-    global define removePhysicalVolume( map    modify_targets,
-				 map    targetMap,
-				 string id,
-				 string current_vg )
+global define removePhysicalVolume( map modify_targets, map targetMap,
+				    string id, string current_vg )
     ``{
-	string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
-	string subdev  = Storage::GetSubDevIndex( id);  // i.e. 1        for /dev/hda1
+    string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
+    string subdev  = Storage::GetSubDevIndex(id); // i.e. 1        for /dev/hda1
 
-	map  disk       = lookup( targetMap, maindev, $[] );
-	list partitions = lookup( disk, "partitions", []  );
-	map  partition  = select( filter( `part, partitions,
-					  ``( (sformat("%1", lookup(part, "nr", "")) == subdev)
-					       && (lookup( part, "delete", false) == false) ) ), 0, $[]);
-	
-	list p_without  =         filter( `part, partitions,
-					  ``( (sformat("%1", lookup(part, "nr", "")) != subdev)
-					       || (lookup( part, "delete", false) != false) ) );
+    map partition  = Storage::GetPartition( targetMap, maindev, subdev );
 
-	if( lookup( partition, "change_fsid", false ) )
+    if( partition["change_fsid"]:false )
 	{
-	    partition = add( partition, "fsid",   lookup( partition, "ori_fsid", 0));
-	    partition = add( partition, "fstype", lookup( partition, "ori_fstype" , ""));
-	    partition = filter( `key, `value, partition, ``( key != "ori_fsid" && key != "change_fsid" && key != "ori_fstype" ));
-	   
+	partition["fsid"] = partition["ori_fsid"]:0;
+	partition["fstype"] = partition["ori_fstype"]:"";
+	partition = filter( `key, `value, partition, 
+			    ``( key != "ori_fsid" && 
+				key != "change_fsid" && 
+				key != "ori_fstype" ));
 	}
 
-	partition = filter( `key, `val, partition, ``( key != "lvm_group" ));
+    partition = filter( `key, `val, partition, ``( key != "lvm_group" ));
 
-	partitions = add( p_without, partition );
+    targetMap = Storage::SetPartition( targetMap, maindev, partition );
+
+    map new_remove_pv = $[
+			  "use_module" : "lvm_ll",
+			  "type"       : "remove_pv",
+			  "vgname"     : current_vg,
+			  "device"     : Storage::GetDeviceName(maindev,partition["nr"]:"") ];
 	
-	disk["partitions"] = partitions;
-	targetMap[maindev] = disk;
+    modify_targets = addTargetModification( modify_targets, new_remove_pv );
 
-	// removed since it make the check for changes in `back of inst_lvm_pv not work
-
-	// Storage::SetSubDev( id, partition );
-	
-	/////////////////////////////////////////////////
-	// new entry in execution stack "modify_targets"
-	
-	map new_remove_pv = $[
-			      "use_module" : "lvm_ll",
-			      "type"       : "remove_pv",
-			      "vgname"     : current_vg,
-			      "device"     : get_device_name(maindev,lookup(partition,"nr","")) ];
-	
-	modify_targets = addTargetModification( modify_targets, new_remove_pv );
-
-
-	return( $[ "modify_targets":modify_targets, "targets":targetMap, "error":false ] );
+    return( $[ "modify_targets":modify_targets, "targets":targetMap, 
+               "error":false ] );
     };
 	
 
@@ -223,11 +198,11 @@
 	if ( id != nil )
 	{
 	    // Message popup
-	    UI::MessagePopup(sformat(UI(_("The item %1%2 is already a physical volume.
+	    UI::MessagePopup(sformat(_("The item %1%2 is already a physical volume.
 To add it to a different volume group,
 remove it from its current volume group
 then add it to the new group.
-")), Storage::GetMainDevKey(id), Storage::GetSubDevIndex( id)));
+"), Storage::GetMainDevKey(id), Storage::GetSubDevIndex(id)));
 	}
 	else
 	{
@@ -258,9 +233,9 @@ then add it to the new group.
 	if ( id != nil )
 	{
 	    // Message popup
-	    UI::MessagePopup(sformat(UI(_("The item %1%2 cannot be removed.
+	    UI::MessagePopup(sformat(_("The item %1%2 cannot be removed.
 It does not belong to a volume group.
-")), Storage::GetMainDevKey(id), Storage::GetSubDevIndex( id)));
+"), Storage::GetMainDevKey(id), Storage::GetSubDevIndex(id)));
 	}
 	else
 	{
@@ -295,76 +270,68 @@ It does not belong to a volume group.
     // Get all partitions, we can probably use as physical volumes
     // Add needed information: devname, devkey, is_lv, disksize 
 
-    global define get_possible_pvs( map targetMap )
+global define get_possible_pvs( map targetMap )
     ``{
 
-	list ret = [];
+    list ret = [];
 	
-        //////////////////////////////////////////////////////////////////////
-	// add the devicename i.e /dev/hda1 or /dev/system/usr to partition list
-	// and the device key  <subdevice>/<maindevice> i.e. 1//dev/hda
-	
-	targetMap = mapmap( `dev, `devmap, targetMap,
+    //////////////////////////////////////////////////////////////////////
+    // add the devicename i.e /dev/hda1 or /dev/system/usr to partition list
+    // and the device key  <subdevice>/<maindevice> i.e. 1//dev/hda
+    
+    targetMap = mapmap( `dev, `devmap, targetMap,
 	``{
-		boolean is_lvm_vg  = lookup( devmap, "is_lvm_vg", false );
-		boolean pdisk_disk = check_pdisk( devmap, `warn_not );
-		integer cyl_size   = lookup ( devmap, "cyl_size",  1000000 );
+	boolean is_lvm_vg  = devmap["is_lvm_vg"]:false;
+	integer cyl_size   = devmap["cyl_size"]:1000000;
 					    
+	list partitions = maplist( `part, devmap["partitions"]:[],
+	    ``{
+	    integer bytes_of_part = 0;
+	    integer nb_cyl        = part["region",1]:0;
+    
+	    bytes_of_part =  nb_cyl * cyl_size;
+	    part["size_byte"] = bytes_of_part;
+	    part["size_str"] = ByteToHumanStringWithZero( bytes_of_part);
+	    if ( is_lvm_vg )
+		{
+		part = add( part, "is_lv",   true);
+		}
+	    part = add( part, "maindev", dev);
+	    part["devname"] = Storage::GetDeviceName( dev, part["nr"]:"");
+	    part["devkey"] = sformat( "%2/%1", dev, part["nr"]:"");
+	    return( part );
+	    });
 		
-		list partitions = maplist( `part, lookup( devmap, "partitions", []),
-			``{
-			    integer bytes_of_part = 0;
-			    string  devname       = "";
-			    integer nb_cyl        = select ( lookup ( part, "region", []), 1, 0 );
-		
-			    if (   pdisk_disk )  bytes_of_part =  ( nb_cyl ) * 512;
-			    if ( ! pdisk_disk )  bytes_of_part =  ( nb_cyl ) * cyl_size;
-			    part = add( part, "size_byte", bytes_of_part);
-			    part = add( part, "size_str",  ByteToHumanStringWithZero( bytes_of_part));
-					       
-			    if ( is_lvm_vg )
-			    {
-				part = add( part, "is_lv",   true);
-			    }
-			    devname = get_device_name( dev, lookup(part, "nr", ""));
-			    string devkey  = sformat( "%2/%1", dev, lookup(part, "nr", ""));
-			    part = add( part, "maindev", dev);
-			    part = add( part, "devname", devname);
-			    part = add( part, "devkey",  devkey);
-			    return( part );
-			});
-		
-		return( [ dev, add( devmap, "partitions", partitions)] );
+	return( [ dev, add(devmap, "partitions", partitions) ] );
 	});
 
-	////////////////////////////////////////////////////////////
-	// Look for all partitions:
-	// not LVM ( here I mean /dev/<lvm_volumegroup>/<lv> entrys!
-	//            there are only the lv's in the targetMap under /dev/<lvm_volumegroup>/<lv> !)
-	// no mountpoint
-	// id 0x83 or 0x8e or 0xfe
-	// RAID
+    ////////////////////////////////////////////////////////////
+    // Look for all partitions:
+    // not LVM ( here I mean /dev/<lvm_volumegroup>/<lv> entries!
+    //           there are only the lv's in the targetMap under /dev/<lvm_volumegroup>/<lv> !)
+    // no mountpoint
+    // id 0x83 or 0x8e or 0xfe
+    // RAID
 
-	foreach( `dev, `devmap, targetMap,
+    foreach( `dev, `devmap, targetMap,
 	``{
-	    ret = add( ret, filter( `partition, lookup( devmap, "partitions", [] ),
-				    ``(
-				       ( lookup( partition, "mount" , ""  ) == ""
-					 ||  substring(lookup( partition, "mount" , ""), 0, 5) == "/data" )
-				       &&
-				       ( lookup( partition, "is_lv", false ) == false )
-				       && partition["raid_name"]:"" == "" 
-				       &&
-				       ( lookup( partition, "delete", false ) == false)
-				       &&
-				       ( lookup( partition, "fsid", 0) == Partitions::fsid_lvm
-					 ||
-					 lookup( partition, "fsid", 0) == Partitions::fsid_raid
-					 ||
-					 lookup( partition, "fsid", 0) == Partitions::fsid_native ) )));
+	ret = add( ret, 
+		   filter( `part, devmap["partitions"]:[],
+			   ``(( part["mount"]:"" == "" ||
+				substring(part["mount"]:"", 0, 5) == "/data" )
+			     &&
+			     ( !part["is_lv"]:false && 
+			       part["raid_name"]:"" == "" )
+			     &&
+			       !part["delete"]:false 
+			     &&
+			       ( part["fsid"]:0 == Partitions::fsid_lvm ||
+				 part["fsid"]:0 == Partitions::fsid_raid ||
+				 part["fsid"]:0 == Partitions::fsid_native )
+		 )));
 	});
 
-	return( flatten(ret) );
+    return( flatten(ret) );
     };
 
 
@@ -427,79 +394,43 @@ It does not belong to a volume group.
      * -> Existing LVM partition with volume group
      * -> size of volume group to small for all logical partition
      */
-    global define check_pv_delete (map    targetMap,
-				   string id,
-				   string current_vg  ) ``{
-	
-	
-	string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
-	string subdev  = Storage::GetSubDevIndex( id);  // i.e. 1        for /dev/hda1
+global define check_pv_delete( map targetMap, string id, string current_vg ) 
+    ``{
+    string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
+    string subdev  = Storage::GetSubDevIndex(id); // i.e. 1        for /dev/hda1
+    map partition  = Storage::GetPartition( targetMap, maindev, subdev );
 
-	map  disk       = lookup( targetMap, maindev, $[] );
-	list partitions = lookup( disk, "partitions", []  );
-	map  partition  = select( filter( `part, partitions,
-					  ``( (sformat("%1", lookup(part, "nr", "")) == subdev)
-					      && (lookup( part, "delete", false) == false) ) ), 0, $[]);
+    y2debug( "part %1 current_vg: %2", partition, current_vg );
 
-	y2debug( "part %1 current_vg: %2 " , partition , current_vg );
+    //new partition should be deleted -> check size for volume group
+    //total size of volume group  
+    integer vg_size = get_vg_size( get_possible_pvs(targetMap), current_vg,
+                                   `integer );
+    y2debug( "vg_size : %1", vg_size);
 
-	//test
-	//partition = add( partition, "create" , false );
-
-	/*
-	if( lookup( partition, "create", false) == false )
-	{
-	    // existing partition
-	    if( UI::YesNoPopup(sformat(_("CAUTION!
-If you remove %1 from the volume group, the system will
-have to reboot after the partition setup is complete.
-
-Do you really want to remove this partition from the volume group?
-"), maindev+subdev )))
-	    {
-		return `immediate_prepdisk;
-	    }
-	    else
-	    {
-		return `nodelete;
-	    }
-	}
-	else
-	{
-	*/
-	
-	//new partition should be deleted -> check size for volume group
-	//total size of volume group  
-	integer vg_size = get_vg_size( get_possible_pvs( targetMap ) , current_vg , `integer);
-	y2debug( "vg_size : %1", vg_size);
-
-	//used size (sum logical partitions)
-	list parts 	    = get_lvs_and_mounted_partitions(  targetMap, false, current_vg );
-	y2debug( "parts=%1 current_vg=%2", parts, current_vg );
+    //used size (sum logical partitions)
+    list parts = get_lvs_and_mounted_partitions( targetMap, false, current_vg );
+    y2debug( "parts=%1 current_vg=%2", parts, current_vg );
 	    
-	integer used_size   = select(  get_lv_size_info( targetMap,  parts, current_vg ) , 0, 0);
+    integer used_size = select( get_lv_size_info( targetMap, parts, current_vg ) , 0, 0);
 	
-	// size of the seleted partition
-	boolean pdisk_disk 	  = check_pdisk( disk, `warn_not );
-	integer bytes_of_part = 0;
-	integer nb_cyl        = select ( lookup ( partition, "region", []), 1, 0 );
-	    
-	if (   pdisk_disk )  bytes_of_part =  ( nb_cyl ) * 512;
-	if ( ! pdisk_disk )  bytes_of_part =  ( nb_cyl ) *  lookup (disk, "cyl_size",  1000000 ); 
+    // size of the seleted partition
+    integer bytes_of_part = 0;
+    integer nb_cyl = partition["region",1]:0;
 	
-	if( vg_size - bytes_of_part < used_size)
+    bytes_of_part = nb_cyl * targetMap[maindev,"cyl_size"]:1000000; 
+	
+    if( vg_size - bytes_of_part < used_size)
 	{
-	    UI::ErrorPopup(_("If you remove the selected partition from the volume group,
+	UI::ErrorPopup(_("If you remove the selected partition from the volume group,
 there will not be enough space for all logical volumes in this group.
 To delete the volume group completely, remove its
 logical volumes first.
 "));
-	    return `nodelete;
+	return `nodelete;
 	}
 	    
-	    //}
-	return `delete;
-	
+    return `delete;
     }
     
 }

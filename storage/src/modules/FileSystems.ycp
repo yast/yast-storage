@@ -19,7 +19,9 @@
 
   
   global list system_m_points = [ "/", "/boot", "/usr" , "/var", "/home", "/opt" , "/local" , ""];
-  list swap_m_points   = [ "swap", ""  ];
+  global list swap_m_points   = [ "swap", ""  ];
+
+  global string nchars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
   /* All supported filesystems */
   map support 	= $[
@@ -32,44 +34,53 @@
 		   `fat32  	: true
   ];
 
-  /* All supported filesystems */
-  map resize 	= $[
-		   `reiser	: $[ "extend":true,  "shrink":true,
+  map capabilities = $[
+		   `reiser	: $[ 
+		                     "extend":true,  
+				     "shrink":true,
 		                     "mount_extend":true, 
-				     "mount_shrink":false,
-				     "parted" : false ],
-		   `xfs		: $[ "extend":true,  "shrink":false,
+				     "uuid" : true,
+				     "label_length" : 16,
+				     "label" : true
+				   ],
+		   `xfs		: $[ 
+		                     "extend":true, 
 		                     "mount_extend":true, 
-				     "mount_shrink":false,
-				     "parted" : false ],
-		   `ext2        : $[ "extend":true,  "shrink":true,
-		                     "mount_extend":false, 
-				     "mount_shrink":false,
-				     "parted" : true ],
-		   `ext3        : $[ "extend":true,  "shrink":true,
-		                     "mount_extend":false, 
-				     "mount_shrink":false,
-				     "parted" : true ],
-		   `jfs    	: $[ "extend":false, "shrink":false,
-		                     "mount_extend":false, 
-				     "mount_shrink":false,
-				     "parted" : false ],
-		   `fat16  	: $[ "extend":false, "shrink":true,
-		                     "mount_extend":false, 
-				     "mount_shrink":false,
-				     "parted" : true ],
-		   `fat32  	: $[ "extend":false, "shrink":true,
-		                     "mount_extend":false, 
-				     "mount_shrink":false,
-				     "parted" : true ],
-		   `swap  	: $[ "extend":true,  "shrink":true,
-		                     "mount_extend":false, 
-				     "mount_shrink":false,
-				     "parted" : false ],
-		   `unknown  	: $[ "extend":false, "shrink":false,
-		                     "mount_extend":false, 
-				     "mount_shrink":false,
-				     "parted" : false ]
+				     "label_length" : 12,
+				     "set_label_mount" : true,
+				     "uuid" : true,
+				     "label" : true
+				   ],
+		   `ext2        : $[ 
+		                     "extend":true,  
+		                     "shrink":true,
+				     "parted" : true,
+				     "uuid" : true,
+				     "label_length" : 16,
+				     "set_label_mount" : true,
+				     "label" : true
+				   ],
+		   `ext3        : $[ "extend":true,
+		                     "shrink":true,
+				     "parted" : true,
+				     "uuid" : true,
+				     "label_length" : 16,
+				     "set_label_mount" : true,
+				     "label" : true
+				   ],
+		   `jfs    	: $[ 
+				   ],
+		   `fat16  	: $[ "shrink":true,
+				     "parted" : true,
+				   ],
+		   `fat32  	: $[ "shrink":true,
+				     "parted" : true,
+				   ],
+		   `swap  	: $[ "extend":true,  
+		                     "shrink":true,
+				   ],
+		   `unknown  	: $[ 
+				   ],
   ];
 
 
@@ -444,49 +455,32 @@ Sets the volume name (label) of the file system. The default is no label.</p>
 
   
   /* FileS build fss map with all supported filesystems ( list support ) */
-  global define void FileSystems()``{
-
-
-  if( Arch::ppc || Arch::s390 || Arch::alpha || Arch::sparc32 )
-	{
-	reiserfs_support = false;
-	}
-    if( Arch::sparc32 )
-	{
-	xfs_support = false;
-        jfs_support = false;
-	ext3_support = false;
-	}
+global define void FileSystems()
+    ``{
     if( Arch::sparc64 )
 	{
-        jfs_support = false;
+        support[`jfs] = false;
 	}
-
-    
-      
-      if ( Arch::ppc )
-      {
-	  support[ `xfs ]   = false;
-      }
-
-      if ( Arch::s390 )
-      {
-	  support[ `reiser] = false;
-      }
-
-      if ( Arch::alpha )
-      {
-	  support[ `reiser] = false;
-      }	
-
-      if ( Arch::sparc32 )
-      {
-	  support[ `reiser] = false;
-	  support[ `xfs ]   = false;
-	  support[ `jfs ]   = false;
-	  support[ `ext3 ]  = false;       
-      }
-  }
+    if ( Arch::ppc )
+	{
+	support[`xfs] = false;
+	}
+    if ( Arch::s390 )
+	{
+	support[`xfs] = false;
+	}
+    if ( Arch::alpha )
+	{
+	support[`reiser] = false;
+	}	
+    if ( Arch::sparc32 )
+	{
+	support[`reiser] = false;
+	support[`xfs] = false;
+	support[`jfs] = false;
+	support[`ext3] = false;       
+	}
+    }
   
 
  /**
@@ -619,11 +613,304 @@ Sets the volume name (label) of the file system. The default is no label.</p>
 	return load_success;
     };
 
+global define boolean MountUuid( symbol fsys )
+    ``{
+    map cap = capabilities[`unknown]:$[];
+    cap = capabilities[fsys]:cap;
+    boolean ret = cap["uuid"]:false;
+    y2milestone( "MountUuid fsys:%1 ret:%2", fsys, ret );
+    return( ret );
+    }
+
+global define boolean MountLabel( symbol fsys )
+    ``{
+    map cap = capabilities[`unknown]:$[];
+    cap = capabilities[fsys]:cap;
+    boolean ret = cap["label"]:false;
+    y2milestone( "fsys:%1 ret:%2", fsys, ret );
+    return( ret );
+    }
+
+global define integer LabelLength( symbol fsys )
+    ``{
+    map cap = capabilities[`unknown]:$[];
+    cap = capabilities[fsys]:cap;
+    integer ret = cap["label_legth"]:16;
+    y2milestone( "fsys:%1 ret:%2", fsys, ret );
+    return( ret );
+    }
+
 global define map IsResizable( symbol fsys )
     ``{
-    map ret = resize[`unknown]:$[];
-    ret = resize[fsys]:ret;
+    map cap = capabilities[`unknown]:$[];
+    cap = capabilities[fsys]:cap;
+    map ret = $[];
+    ret["extend"] = capabilities["extend"]:false;
+    ret["shrink"] = capabilities["shrink"]:false;
+    ret["mount_extend"] = capabilities["mount_extend"]:false;
+    ret["mount_shrink"] = capabilities["mount_shrink"]:false;
+    ret["parted"] = capabilities["parted"]:false;
     y2milestone( "IsResizable fsys:%1 ret:%2", fsys, ret );
+    return( ret );
+    };
+
+global define map GetFsysInfos( string disk, map part )
+    ``{
+    y2milestone( "disk:%1 part[nr]:%2", disk, part["nr"]:0 );
+    string dev = Storage::GetDeviceName( disk, part["nr"]:0 );
+    if( size(part["loop"]:"")>0 )
+	{
+	dev = part["loop"]:"";
+	}
+    part["used_fs"] = DetectFs( dev );
+    if( part["used_fs"]:`unknown != `unknown )
+	{
+	map info = GetUuidVolume( dev, part["used_fs"]:`unknown );
+	if( size(info["uuid"]:"")>0 )
+	    {
+	    part["uuid"] = info["uuid"]:"";
+	    }
+	if( size(info["label"]:"")>0 )
+	    {
+	    part["label"] = info["label"]:"";
+	    }
+	}
+    y2milestone( "ret part:%1", part );
+    return( part );
+    }
+
+global define map GetUuidVolume( string dev, symbol fs )
+    ``{
+    map ret = $[];
+    string val = "";
+    string cmd = "";
+    string search = "";
+    map cmd_ret = $[];
+    integer pos = 0;
+    if( fs == `ext2 || fs == `ext3 )
+	{
+	cmd = sformat( "/sbin/tune2fs -l %1", dev );
+	y2debug( "executing cmd %1", cmd );
+	cmd_ret = SCR::Execute(.target.bash_output, cmd);
+	val = cmd_ret["stdout"]:"";
+	search = "UUID:";
+	pos = find( val, search );
+	if( pos != -1 )
+	    {
+	    val = substring( val, pos+size(search) );
+	    pos = findfirstof( val, "\n" );
+	    if( pos != nil )
+		{
+		val = substring( val, 0, pos );
+		}
+	    val = deletechars( val, " \n\t" );
+	    if( size(val)>0 )
+		{
+		ret["uuid"] = val;
+		}
+	    }
+	val = cmd_ret["stdout"]:"";
+	search = "volume name:";
+	pos = find( val, search );
+	if( pos != -1 )
+	    {
+	    val = substring( val, pos+12 );
+	    pos = findfirstof( val, "\n" );
+	    if( pos != nil )
+		{
+		val = substring( val, 0, pos );
+		}
+	    val = deletechars( val, " \n\t" );
+	    if( size(val)>0 && val != "<none>" )
+		{
+		ret["label"] = val;
+		}
+	    }
+	}
+    else if( fs == `reiser )
+	{
+	cmd = sformat( "/sbin/debugreiserfs %1", dev );
+	y2debug( "executing cmd %1", cmd );
+	cmd_ret = SCR::Execute(.target.bash_output, cmd);
+	val = cmd_ret["stdout"]:"";
+	search = "UUID:";
+	pos = find( val, search );
+	if( pos != -1 )
+	    {
+	    val = substring( val, pos+size(search) );
+	    pos = findfirstof( val, "\n" );
+	    if( pos != nil )
+		{
+		val = substring( val, 0, pos );
+		}
+	    val = deletechars( val, " \n\t" );
+	    if( size(val)>0 )
+		{
+		ret["uuid"] = val;
+		}
+	    }
+	val = cmd_ret["stdout"]:"";
+	search = "LABEL:";
+	pos = find( val, search );
+	if( pos != -1 )
+	    {
+	    val = substring( val, pos+size(search) );
+	    pos = findfirstof( val, "\n" );
+	    if( pos != nil )
+		{
+		val = substring( val, 0, pos );
+		}
+	    val = deletechars( val, " \n\t" );
+	    if( size(val)>0 )
+		{
+		ret["label"] = val;
+		}
+	    }
+	}
+    else if( fs == `xfs )
+	{
+	cmd = sformat( "/usr/sbin/xfs_admin -l -u %1", dev );
+	y2debug( "executing cmd %1", cmd );
+	cmd_ret = SCR::Execute(.target.bash_output, cmd);
+	val = cmd_ret["stdout"]:"";
+	search = "uuid =";
+	pos = find( val, search );
+	if( pos != -1 )
+	    {
+	    val = substring( val, pos+size(search) );
+	    pos = findfirstof( val, "\n" );
+	    if( pos != nil )
+		{
+		val = substring( val, 0, pos );
+		}
+	    val = deletechars( val, " \n\t" );
+	    if( size(val)>0 )
+		{
+		ret["uuid"] = val;
+		}
+	    }
+	val = cmd_ret["stdout"]:"";
+	search = "label =";
+	pos = find( val, search );
+	if( pos != -1 )
+	    {
+	    val = substring( val, pos+size(search) );
+	    pos = findfirstof( val, "\n" );
+	    if( pos != nil )
+		{
+		val = substring( val, 0, pos );
+		}
+	    val = deletechars( val, " \"\n\t" );
+	    if( size(val)>0 )
+		{
+		ret["label"] = val;
+		}
+	    }
+	}
+    y2milestone( "GetUuidVolume dev:%1 fs:%2 ret:%3", dev, fs, ret );
+    return( ret );
+    }
+
+  /*
+   * DetectFs
+   *---------------------------------------------------------------------
+   * Detect the existing fs on the partition. Right now only ext2 and
+   * reiserfs are detected.
+   * arguments: <partition> for ex. "/dev/sda1"
+   * returns:   Symbol for filesystem or `unknown
+   *---------------------------------------------------------------------
+   */
+global define symbol DetectFs( string current_dev )
+    ``{
+    symbol  return_value = `unknown;
+    string  testcall     = "";
+    map bash_call        = $[];
+
+    testcall  = sformat( "/bin/guessfstype %1", current_dev );
+    bash_call = SCR::Execute (.target.bash_output, testcall, $[] );
+
+    if (bash_call["exit"]:1 == 0)
+	{
+	string type = bash_call["stdout"]:"";
+	integer pos = findlastof(type, "\n");
+	if (pos != nil)
+	   {
+	   type = substring (type, 0, pos);
+	   }
+	pos = findlastof(type, " ");
+	if (pos != nil)
+	   {
+	   type = substring (type, pos+1);
+	   }
+	pos = findfirstof(type, " ,");
+	if (pos != nil)
+	   {
+	   type = substring (type, 0, pos);
+	   }
+	y2milestone( "type %1", type );
+	if( type == "ext2" )
+	  {
+	  return_value = `ext2;
+	  }
+	else if( type == "ext3" )
+	  {
+	  return_value = `ext3;
+	  }
+	else if( type == "reiserfs" )
+	  {
+	  return_value = `reiser;
+	  }
+	else if( type == "jfs" )
+	  {
+	  return_value = `jfs;
+	  }
+	else if( type == "xfs" )
+	  {
+	  return_value = `xfs;
+	  }
+	else if( type == "vfat" )
+	  {
+	  return_value = `fat32;
+	  }
+	}
+    y2debug( "detect fs ret %1 bash %2", return_value, bash_call );
+
+    y2milestone( "DetectFs %1: %2", current_dev, return_value );
+    return( return_value );
+    };
+
+
+global define boolean SetVolumeLabel( string dev, map part )
+    ``{
+    boolean ret = false;
+    string cmd = "";
+    symbol fs = part["used_fs"]:`unknown;
+    string label = part["label"]:"";
+    y2milestone( "dev:%1 fs:%2 label:%3", dev, fs, label );
+    if( size(label)>0 )
+	{
+	if( fs == `ext2 || fs == `ext3 )
+	    {
+	    cmd = sformat("/sbin/tune2fs -L %1 %2", label, dev );
+	    }
+	else if( fs == `xfs )
+	    {
+	    cmd = sformat("/usr/sbin/xfs_admin -L %1 %2", label, dev );
+	    }
+	else if( fs == `reiser )
+	    {
+	    cmd = sformat("/sbin/reiserfstune -l %1 %2", label, dev );
+	    }
+	if( size(cmd)>0 )
+	    {
+	    y2milestone( "Excuting cmd:%1", cmd );
+	    ret = SCR::Execute(.target.bash, cmd ) == 0;
+	    // /sbin/reiserfstune always seems to return 1 even on success
+	    if( fs == `reiser )
+		ret = true;
+	    }
+	}
+    y2milestone( "ret:%1", ret );
     return( ret );
     };
 

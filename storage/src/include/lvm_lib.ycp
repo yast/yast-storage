@@ -98,11 +98,11 @@
 		    {
 			ret = `again;
 		    
-			UI::ErrorPopup(sformat(UI(_("Physical volume for volume group \"%1\" is missing.
+			UI::ErrorPopup(sformat(_("Physical volume for volume group \"%1\" is missing.
 
 For every volume group, you must
 create at least one physical volume.
-")), vg ));
+"), vg ));
 
 		    }
 		}
@@ -191,7 +191,7 @@ create at least one physical volume.
 	
 	foreach( `dev, `devmap, targetMap,
 	``{
-	    if ( lookup( devmap, "is_lvm_vg", false) == true )
+	    if ( devmap["is_lvm_vg"]:false == true )
 	    {
 		// add a found volume group
 		lvm_vg = add( lvm_vg, substring(dev, 5) ); 
@@ -199,6 +199,24 @@ create at least one physical volume.
 	});
 
 	return( lvm_vg );
+    };
+
+global define integer vg_size( list partitions, string current_vg )
+    ``{
+    integer sum_byte_vg = 0;
+    list parts = filter( `part, partitions,
+			 ``( part["lvm_group"]:"" == current_vg ));
+    foreach( `part, parts, 
+	``{
+	integer sum = part["lvm_size_bytes"]:0;
+	if( sum>0 )
+	    {
+	    sum_byte_vg = sum_byte_vg + sum;
+	    }
+	else
+	    sum_byte_vg = sum_byte_vg + part["size_byte"]:0;
+	});
+    return( sum_byte_vg );
     };
 
 
@@ -224,7 +242,7 @@ create at least one physical volume.
 	      pesize     = pesize_str_to_byte( lookup( vg, "pesize", 0 ));
 	    
 	      // Display current vg:
-	      UI::new_vg_list( lvm_vgs );
+	      new_vg_list( lvm_vgs );
 	      UI::ChangeWidget( `id(`vg), `Value, current_vg);
 
 	      map new_volume = $[
@@ -299,10 +317,10 @@ create at least one physical volume.
 	  string new_vg = select( lvm_vgs, 0, "" );
 
 	  // Display current vg:
-	  UI::new_vg_list( lvm_vgs );
+	  new_vg_list( lvm_vgs );
 	  UI::ChangeWidget( `id(`vg), `Value, current_vg);
       }
-      else  UI::new_vg_list( [] );
+      else  new_vg_list( [] );
      
 	  
       map tmp = filter( `k, `v, modify_targets, ``(

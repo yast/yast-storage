@@ -22,7 +22,10 @@
   textdomain "storage";
   import "Mode";
   import "Partitions";
+  import "FileSystems";
 
+  #include "partitioning/partition_defines.ycp";
+  #include "partitioning/custom_part_dialogs.ycp";
 
   /**
    * Find and read fstab by installation. Scan existing partitions.
@@ -112,56 +115,465 @@
      * @parm part2 partition 2
      * @return boolean
      */
-    global define arePartitionsEqual( map part1 , map part2 )``{
+    global define arePartitionsEqual( map part1, map part2 )``{
 
-	if( lookup( part1, "create", false) )
+	if( part1["create"]:false )
 	    return true;
 	
-	/*	 min readed keys
-		 $[
-	 *	 "fsid":131,
-		 "fstype":"Linux native",
-		 "mount":"/suseinst_images",
-		 "nr":1,
-		 "ori_nr":1,
-		 "region":[0, 89355],
-		 "type":`primary]
-	*/
-
-	/* LVM return 
-	   "create"	  : create,
-	   "format"	  : format,
-	   "fs_options"  : fs_options,
-	   "stripes"     : stripes_k,
-	   "lv_size"     : kmgt_str_to_byte(lv_size),
-	   "mountpoint"  : mountpoint,
-	   "changed_size": lv_size!=curr_size,
-	   "volume_name" : volume_name,
-	   "filesystem"  : filesystem,
-	   "crypt_fs"    : new_crypt,
-	   "crypt_key"   : crypt_key
-	*/
-	
-	y2milestone("part1 : %1", part1);
-	y2milestone("---------------------------------------------");
-	y2milestone("part2 : %1", part2);
+	y2debug("part1 : %1", part1);
+	y2debug("part2 : %1", part2);
 	
 	// -> not all keys
-	if( (lookup( part1 , "nr"     , 0  ) 	== 	lookup( part2, "nr",      1  )) &&
-	    (lookup( part1 , "fsid"   , 0  ) 	== 	lookup( part2, "fsid",    1  )) &&
-	    (lookup( part1 , "region" , [] ) 	== 	lookup( part2, "region",  [11] )) &&
-	    (lookup( part1 , "create" , false)  ==      lookup( part2, "create" , false)) &&
-	    (lookup( part1 , "format" , false)  == 	lookup( part2, "format" , false)) &&
-	    (lookup( part1 , "used_fs", false)  ==      lookup( part2, "used_fs", false)) &&
-	    (lookup( part1 , "mount",   false)  ==      lookup( part2, "mount",   false)) &&
-	    (lookup( part1 , "mountpoint", false) == 	lookup( part2, "mountpoint", false))
-	    )
+	if( part1["nr"]:0 	       == part2["nr"]:0 &&
+	    part1["fsid"]:0 	       == part2["fsid"]:0 &&
+	    part1["region"]:[] 	       == part2["region"]:[] &&
+	    part1["create"]:false      == part2["create"]:false &&
+	    part1["format"]:false      == part2["format"]:false &&
+	    part1["used_fs"]:`unknown  == part2["used_fs"]:`unknown &&
+	    part1["crypt_fs"]:false    == part2["crypt_fs"]:false &&
+	    part1["fstab_mnt"]:`device == part2["fstab_mnt"]:`device &&
+	    part1["label"]:""          == part2["label"]:"" &&
+	    part1["mount"]:""          == part2["mount"]:""
+	  )
 	{
 	    return true;
 	}
 	return false;
     }
 
+  /**
+   * Check lvm mount points
+   * @param mount mount point
+   * @return boolean
+   */
+   global define check_lvm_mount_points( string mount ) ``{
+
+       list not_allowed_lvm_mount_points  = [ "/boot", "/" , "swap" ];
+       y2milestone( " check lvm mount");
+       if( contains(  not_allowed_lvm_mount_points , mount ))
+       {
+	   UI::ErrorPopup(_("You cannot use the mount points \"/boot\", \"/\", and \"swap\" for LVM.\n"));
+
+	    return false;
+	}
+	return true;
+   };
+
+
+  /**
+   * Check raid mount points
+   * @param mount mount point
+   * @return boolean
+   **/
+    global define check_raid_mount_points( string mount )
+    ``{
+	list not_allowed_raid_mount_points  = [ "/boot", "swap" ];
+	y2milestone( " check raid mount");
+	if( contains(  not_allowed_raid_mount_points , mount ))
+	{
+	    UI::ErrorPopup(_("You cannot use the mount points /boot and swap for RAID.
+"));
+
+	    return false;
+	}
+	return true;
+    };
+
+
+
+  /**
+   * Check crypted mount points and return true if the mount point is ok.
+   * @param mount mount point
+   * @param crypt_fs boolean
+   * @return boolean
+   **/
+    global define check_crypt_fs_mount_points( 	string mount , boolean crypt_fs )
+    ``{
+	list not_allowed_cryptfs_mount_points = [ "/" , "/boot" ,  "/usr" ,  "swap" ];
+
+	//y2milestone( "cryptfs %1, mount: %2", crypt_fs, mount );
+
+	if ( crypt_fs && contains( not_allowed_cryptfs_mount_points , mount ))
+	{
+	     UI::ErrorPopup(_("You have assigned an encrypted file system to a
+partition with one of the following
+mount points: \"/\", \"/usr\", \"/boot\", \"swap\". This is
+not possible. Change the mount point or deselect
+the encryption option.
+"));
+	    return false;
+	}
+	return true;
+    };
+
+
+    /**
+     * Check all label and return true if the label is unique.
+     * @param targetMap the TargetMap
+     * @param part      partition to check
+     * @return boolean
+     **/
+global define boolean check_unique_label( map targetMap, map part )
+    ``{
+    boolean unique = true;
+
+    // check if the label is already in use
+    foreach( `disk, `diskinfo, targetMap, ``{
+	foreach( `p, diskinfo["partitions"]:[], ``{
+	    if ( !p["delete"]:false && p["device"]:"" != part["device"]:"" )
+		{
+		// all valid partitions
+		if ( p["label"]:"" == part["label"]:"" ) unique = false;
+		}
+	    });
+	});
+    return( unique );
+    };
+
+    /**
+     * Check all mount points and return true if the mount point is ok.
+     * @param targetMap the TargetMap
+     * @param mount mount point
+     * @return boolean
+     **/
+global define check_mount_point( map targetMap, string dev, map part )
+    ``{
+    string mount = part["mount"]:"";
+    symbol used_fs = part["used_fs"]:`unknown;
+
+    boolean allowed = true;
+    list not_allowed_system_mount_points  = [ "/proc", "/dev", "/mnt", "var/adm/mnt", "/lost+found", "/lib", "/bin", "/etc", "/sbin" ];
+
+    if ( mount != ""  && mount != "swap"  )
+	{
+	// check if the mount point is already in use
+	foreach( `disk, `diskinfo, targetMap, ``{
+	    foreach( `part, diskinfo["partitions"]:[], ``{
+		if ( !part["delete"]:false && 
+		     Storage::GetDeviceName( disk, part["nr"]:0 ) != dev )
+		    {
+		    // all valid partitions
+		    if ( part["mount"]:"" == mount )   allowed = false;
+		    }
+		});
+	    });
+
+	if ( allowed == false )
+	    {
+	    UI::ErrorPopup(_("This mount point is already in use. Select a different one."));
+	    }
+	// check if a dos filesystem is used for system purposes
+	else if( (used_fs == `fat16 || used_fs == `fat32) &&
+		 (mount == "/" || mount == "/usr" || mount == "/opt" ||
+		  mount == "/var" || mount == "/home"))
+	    {
+	    allowed = false;
+	    UI::ErrorPopup(_("FAT filesystem used for system mount point (/, /usr, /opt, /var, /home).\nThis is not possible."));
+	    }
+
+	// check if the mount countains chars making trouble
+	else if( findfirstof( mount, " `'´!\"%#" ) >= 0 )
+	    {
+	    allowed = false;
+	    UI::ErrorPopup(_("Invalid character in mount point. Dont use \"`'´!\"%#\" in a mount point."));
+	    }
+
+	// check if the mount point is a system mount point
+	else if ( contains( not_allowed_system_mount_points , mount) )
+	    {
+	    allowed = false;
+	    UI::ErrorPopup(_("You cannot use any of the following mount points:
+/proc, /dev, /lib, /bin, /etc, /sbin, /mnt, /var/adm/mnt, /lost+found
+"));
+	    }
+	else if ( substring( mount, 0, 1 ) != "/"  )
+	    {
+	    allowed = false;
+	    UI::ErrorPopup(_("Your mount point must start with a \"/\" "));
+	    }
+	}
+    else
+	{
+	allowed = true;
+	}
+    return( allowed );
+    };
+
+    /**
+     * Do all checks concerning mount points, uuid, volume labels and 
+     * fstab options 
+     * @param targetMap the TargetMap
+     * @param mount mount point
+     * @return map
+     **/
+global define map CheckOkMount( string dev, map old, map new )
+    ``{
+    y2milestone( "CheckOkMount old:%2 new:%3", old, new );
+    map ret = $[];
+    ret["ok"] = true;
+    new["mount"] = UI::QueryWidget(`id(`mount_point), `Value);
+    new["mount"] = deletechars( new["mount"]:"", " \t" );
+    if( size(new["mount"]:"")>0 && old["mount"]:"" != new["mount"]:"" )
+	{
+	if( !check_mount_point( Storage::GetTargetMap(), dev, new ))
+	    {
+	    ret["ok"] = false;
+	    ret["field"] = `mount_point;
+	    }
+	if( !check_crypt_fs_mount_points(new["mount"]:"",
+					 UI::QueryWidget(`id(`crypt_fs), `Value ) ))
+	    {
+	    ret["ok"] = false;
+	    ret["field"] = `mount_point;
+	    }
+	if( new["type"]:`primary == `sw_raid )
+	    {
+	    if( !check_raid_mount_points(new["mount"]:""))
+		{
+		ret["ok"] = false;
+		ret["field"] = `mount_point;
+		}
+	    }
+	else if( new["type"]:`primary == `lvm )
+	    {
+	    if( !check_lvm_mount_points(new["mount"]:""))
+		{
+		ret["ok"] = false;
+		ret["field"] = `mount_point;
+		}
+	    }
+	}
+    if( !new["format"]:false && !new["create"]:false && 
+        old["mount"]:"" != new["mount"]:"" && ret["ok"]:false )
+	{
+	if( !haskey( new, "ori_mount" ) )
+	    new["ori_mount"] = old["mount"]:"";
+	}
+    if( !new["format"]:false )
+	{
+	new = filter(`key, `value, new, ``( key != "fs_options"));
+	}
+    y2milestone( "CheckOkMount ret:%1 new:%2", ret, new );
+    return( ret );
+    };
+
+    /**
+     * Do all checks concerning handling of crypt fs 
+     * @param new partition map
+     * @return map
+     **/
+global define map CheckCryptOk( map new )
+    ``{
+    map ret = $[];
+    ret["ok"] = true;
+    y2milestone( "CheckCryptOk new:%1", new );
+    boolean crypt_fs = UI::QueryWidget(`id(`crypt_fs), `Value );
+    new["crypt_fs"] = crypt_fs;
+    if( crypt_fs && new["format"]:false )
+	{
+	string fs_passwd = DlgCreateCryptFs();
+	// Ask the user for a password for cryptofs, else set crypto to nil??
+	if ( fs_passwd != nil )
+	    {
+	    string crypt_key = Storage::AddCryptToClassified( fs_passwd );
+	    new["crypt_key"] = crypt_key;
+	    }
+	else
+	    {
+	    ret["ok"] = false;
+	    }
+	}
+    y2milestone( "CheckCryptOk ret:%1 new:%2", ret, new );
+    return( ret );
+    };
+
+global define void HandleFsChanged( boolean init, map new, map file_Systems )
+    ``{
+    list not_used_mp = [];
+    symbol used_fs = new["used_fs"]:`unknown;
+    map selected_fs = file_systems[used_fs]:$[];
+    y2milestone( "HandleFsChanged init:%1 used_fs:%2 new:%3", 
+                 init, used_fs, new );
+
+    UI::ChangeWidget(`id(`crypt_fs), `Enabled, selected_fs[`crypt]:false );
+    if( !selected_fs[`crypt]:false )
+	{
+	UI::ChangeWidget(`id(`crypt_fs), `Value, false );
+	}
+
+    ////////////////////////////////////////////////
+    // switch between swap and other mountpoints
+    string mount = UI::QueryWidget( `id(`mount_point), `Value);
+    new["mount"] = mount;
+    if( used_fs == `swap )
+	{
+	not_used_mp = selected_fs[`mountpoints]:[];
+	if( mount != "swap" )
+	    new["mount"] = "swap";
+	}
+    else
+	{
+	not_used_mp = 
+	    notUsedMountpoints( Storage::GetTargetMap(), 
+				selected_fs[`mountpoints]:[] );
+	if( new["type"]:`primary == `lvm )
+	    {
+	    not_used_mp = filter( `mp, not_used_mp,
+				  ``( mp != "/"  && mp != "swap" && 
+				      mp != "/boot" ));
+	    }
+	if(mount == "swap")
+	    new["mount"] = "";
+	}
+    UI::ReplaceWidget(`id(`mount_dlg_rp), MountDlg( new, not_used_mp));
+    UI::ChangeWidget( `id(`mount_point), `Value, new["mount"]:"" );
     
- 
+    UI::ChangeWidget(`id(`fstab_options), `Enabled, used_fs != `swap );
+    UI::ChangeWidget(`id(`fs_options), `Enabled, 
+                     new["format"]:false && selected_fs[`options]:[] != [] );
+    if( !init )
+	{
+	new["fs_options"] = $[];
+	integer max_len = FileSystems::LabelLength( used_fs );
+	if( size(new["label"]:"") > max_len )
+	    {
+	    new["label"] = substring( new["label"]:"", 0, max_len );
+	    }
+	symbol mountby = new["mountby"]:`device;
+	if( (mountby == `uuid && !FileSystems::MountUuid( used_fs )) ||
+	    (mountby == `label && !FileSystems::MountLabel( used_fs )) )
+	    {
+	    new["mountby"] = `device;
+	    }
+	}
+    };
+
+
+global define void HandlePartWidgetChanges( boolean init, any ret, 
+					    map file_systems, map old, 
+					    map new )
+    ``{
+    y2milestone( "HandlePartWidgetChanges init:%1 ret:%2 new:%3", 
+                 init, ret, new );
+    symbol used_fs = new["used_fs"]:`unknown;
+    map selected_fs = file_systems[used_fs]:$[];
+    /////////////////////////////////////////////////////////
+    // configure main dialog and modify map new
+    if( init || ret == `format_true || ret == `format_false )
+	{
+	boolean format = UI::QueryWidget(`id(`format), `CurrentButton) == 
+	                 `format_true;
+
+	////////////////////////////////////////////////
+	// format partition
+	new["format"] = format;
+
+	////////////////////////////////////////////////
+	// modify widgets
+	UI::ChangeWidget( `id(`fs), `Enabled, format );
+	UI::ChangeWidget( `id(`fs_options), `Enabled, 
+			  format && selected_fs[`options]:[] != [] );
+	UI::ChangeWidget( `id(`crypt_fs), `Enabled, 
+	                  format && selected_fs[`crypt]:false );
+	if( UI::WidgetExists( `id(`fsid_point) ))
+	    {
+	    UI::ChangeWidget( `id(`fsid_point), `Enabled, !format);
+	    }
+	if( !format )
+	    {
+	    new["fs_options"] = $[];
+	    }
+	}
+    if( init || ret == `fs )
+	{
+	symbol used_fs  = UI::QueryWidget(`id(`fs), `Value);
+
+	if( init || new["used_fs"]:`unknown != used_fs )
+	    {
+	    map selected_fs = file_systems[used_fs]:$[];
+	    new["used_fs"] = used_fs;
+
+	    HandleFsChanged( init, new, file_systems );
+
+	    new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
+	    if( UI::WidgetExists( `id(`fsid_point) ))
+		{
+		UI::ChangeWidget( `id(`fsid_point), `Value, 
+				  selected_fs[`fsid_item]:"");
+		}
+
+	    }
+	}
+    if( (init && UI::WidgetExists(`id(`fsid_point))) || ret == `fsid_point )
+	{
+	////////////////////////////////////////////////
+	// modify map new
+	string fs_string = UI::QueryWidget(`id(`fsid_point ), `Value);
+	fs_string        = substring( fs_string, 0, 4  );
+	integer fs_int   = tointeger( fs_string );
+	integer old_id   = new["fsid"]:0;
+
+	if( fs_int != old_id )
+	    {
+	    if( fs_int >= 0 && fs_int <= 255 )
+		{
+		new["fsid"] = fs_int;
+		}
+	    else
+		{
+		UI::WarningPopup(_("The fsid must be between 0x00 and 0xff"));
+		UI::SetFocus(`id(`fsid_point));
+		}
+	    boolean no_fs = contains( [ Partitions::fsid_lvm, 
+	                                Partitions::fsid_raid,
+					Partitions::fsid_hibernation,
+					Partitions::fsid_prep_chrp_boot ],
+				      fs_int );
+
+	    UI::ChangeWidget( `id(`fstab_options), `Enabled, 
+	                      !no_fs && fs_int!=Partitions::fsid_swap );
+	    UI::ChangeWidget( `id(`format_true), `Enabled, !no_fs );
+	    UI::ChangeWidget( `id(`mount_point), `Enabled, !no_fs );
+	    if( no_fs )
+		{
+		new["mount"] = "";
+		UI::ChangeWidget( `id(`mount_point), `Value, new["mount"]:"" );
+		ChangeExistingSymbolsState( [ `crypt_fs, `fs_options, `fs ],
+		                            false );
+		}
+	    else if( fs_int == Partitions::fsid_native )
+		{
+		new["used_fs"] = Partitions::default_fs;
+		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
+		HandleFsChanged( init, new, file_systems );
+		}
+	    else if( fs_int == Partitions::fsid_swap )
+		{
+		new["used_fs"] = `swap;
+		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
+		HandleFsChanged( init, new, file_systems );
+		}
+	    else if( contains( Partitions::fsid_wintypes, fs_int ))
+		{
+		new["mount"] = "";
+		new["used_fs"] = `fat32;
+		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
+		HandleFsChanged( init, new, file_systems );
+		}
+	    }
+	}
+    if( ret == `fstab_options )
+	{
+	FstabOptions( old, new );
+	}
+    if( ret == `fs_options )
+	{
+	new["fs_options"] = FileSystemOptions( new["fs_options"]:$[], 
+	                                       selected_fs );
+	}
+    y2debug( "HandlePartWidgetChanges old:%1", old );
+    y2debug( "HandlePartWidgetChanges new:%1", new );
+    };
+
+
 }

@@ -207,64 +207,37 @@
 
     /**
      * add a partition to the current raid
-     * !!!!!!! changes targetMap by reference !!!!!!
      */
     global define void addRaid(  string id,  string current_raid )
     ``{
 
-
 	string maindevkey = Storage::GetMainDevKey(id);
 	string subdevkey  = id;
 
-	map  disk       = Storage::GetMainDev(id);
-	map partition   = Storage::GetSubDev(id);
+	map disk       = Storage::GetMainDev(id);
+	map partition  = Storage::GetSubDev(id);
 
 
-	boolean pdisk_disk =  check_pdisk( lookup( Storage::GetTargetMap() , maindevkey , $[]), `warn_not );
-
-	if( lookup( partition, "fsid", 0 )!=Partitions::fsid_raid && !pdisk_disk )
-	{
-
-	    if( ! lookup( partition, "change_fsid", false ))
+	if( partition["fsid"]:0 !=Partitions::fsid_raid )
 	    {
-		partition = add ( partition , "change_fsid", true );
-		partition = add ( partition , "ori_fsid",    lookup( partition, "fsid", 0 ));
-		partition = add ( partition , "ori_fstype" , lookup( partition, "fstype" ,""));
+	    if( !partition["change_fsid"]:false )
+		{
+		partition["change_fsid"] = true;
+		partition["ori_fsid"] = partition["fsid"]:0;
+		partition["ori_fstype"] = partition["fstype"]:"";
+		}
 	    }
-	}
 
-
-
-	if( !pdisk_disk )
-	{
-	    partition = add( partition, "fsid", Partitions::fsid_raid);
-	    partition = add( partition, "fstype",     "Linux RAID");
-	}
-	partition = add( partition, "raid_name",  "/dev/md" + current_raid);
-	partition = add( partition, "raid_nb",    current_raid);
-	partition = add( partition, "mount",      "");
+	partition["fsid"] = Partitions::fsid_raid;
+	partition["fstype"] = "Linux RAID";
+	partition["raid_name"] = "/dev/md" + current_raid;
+	partition["raid_nb"] = current_raid;
+	partition["mount"] = "";
+	partition["region"] = [0, raid_size_byte(Storage::GetTargetMap(), 
+	                                         partition) / (1024 * 1024)];
 
 	Storage::SetSubDev( subdevkey, partition );
 
-
-	/////////////////////////////////////////////////
-	// fill in the new size of the raid:
-	/*
-	map  rd_disk       = lookup( targetMap, "/dev/md", $[] );
-	list rd_partitions = lookup( rd_disk, "partitions", []  );
-
-
-	map rd_partition   = select( filter( `part, rd_partitions,
-					  ``( (sformat("%1", lookup(part, "nr", "")) == current_raid)
-					       && (lookup( part, "delete", false) == false) ) ), 0);
-	y2milestone( "TTTT %1", current_raid );
-
-
-	rd_partition = add( rd_partition, "region", [0 , raid_size_byte( targetMap, rd_partition) / (1024 * 1024)] );
-
-	// targetMap = changePartitionInTargetMap( "/dev/md" , current_raid , targetMap , rd_partition );
-	*/
-	//return( $[ /* "modify_targets":modify_targets,*/ "targets":targetMap, "error":false ]);
     };
 
 
@@ -395,36 +368,33 @@ It does not belong to a RAID.
 
 	targetMap = mapmap( `dev, `devmap, targetMap,
 	``{
-		boolean is_lvm_vg  = lookup( devmap, "is_lvm_vg", false );
-		boolean is_raid    = (dev == "/dev/md" );
-		boolean pdisk_disk = check_pdisk( devmap, `warn_not );
-		integer cyl_size   = lookup ( devmap, "cyl_size",  1000000 );
+		boolean is_lvm_vg  = devmap["is_lvm_vg"]:false;
+		boolean is_raid    = (dev == "/dev/md");
+		integer cyl_size   = devmap["cyl_size"]:1000000;
 
-
-		list partitions = maplist( `part, lookup( devmap, "partitions", []),
+		list partitions = maplist( `part, devmap["partitions"]:[],
 			``{
 			    integer bytes_of_part = 0;
 			    string  devname       = "";
-			    integer nb_cyl        = select ( lookup ( part, "region", []), 1, nilinteger );
+			    integer nb_cyl        = part["region",1]:0;
 
-			    if (   pdisk_disk )  bytes_of_part =  ( nb_cyl ) * 512;
-			    if ( ! pdisk_disk )  bytes_of_part =  ( nb_cyl ) * cyl_size;
-			    part = add( part, "size_byte", bytes_of_part);
-			    part = add( part, "size_str",  ByteToHumanStringWithZero( bytes_of_part));
+			    bytes_of_part =  nb_cyl * cyl_size;
+			    part["size_byte"] = bytes_of_part;
+			    part["size_str"] = ByteToHumanStringWithZero( bytes_of_part);
 
 			    if ( is_lvm_vg )
-			    {
-				part = add( part, "is_lv",   true);
-			    }
+				{
+				part["is_lv"] = true;
+				}
 			    if ( is_raid )
-			    {
-				part = add( part, "is_raid",   true);
-			    }
-			    devname = get_device_name( dev, lookup(part, "nr", ""));
-			    string devkey  = sformat( "%2/%1", dev, lookup(part, "nr", ""));
-			    part = add( part, "maindev", dev);
-			    part = add( part, "devname", devname);
-			    part = add( part, "devkey",  devkey);
+				{
+				part["is_raid"] = true;
+				}
+			    devname = get_device_name( dev, part["nr"]:"");
+			    string devkey  = sformat( "%2/%1", dev, part["nr"]:"");
+			    part["maindev"] = dev;
+			    part["devname"] = devname;
+			    part["devkey"] = devkey;
 			    return( part );
 			});
 

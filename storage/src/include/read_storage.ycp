@@ -78,7 +78,7 @@
    * check partitions for given disk (as path, i.e. '.sda')
    * returns list as specified in README.target_partition
    **/
-  global define list Check4partitions (map disk, path diskpath)
+  global define list Check4partitions (string diskdev, map disk, path diskpath)
     ``{
 
 	list partitions = [];
@@ -87,12 +87,9 @@
 	{  
 	    partitions = SCR::Read(.disk + diskpath + .partitions, 
 	                           Partitions::UseParted() );
-	   
 	    // fdisk may fail on ppc, check with pdisk in this case
-
-	    if (Arch::ppc
-		&& (size (partitions) == 0))
-	    {
+	    if (Arch::ppc && (size (partitions) == 0))
+		{
 		// ppath == ".hda"
 		string ppath = "" + diskpath;
 		// llpath == [ "", "hda" ]
@@ -101,27 +98,28 @@
 		ppath = mergestring (lppath, "/");
 		y2milestone("ppath: %1", ppath);
 		partitions = pdisk2target (SCR::Read(.pdisk, [ "/dev"+ppath ]));
+		}
+	    partitions = maplist( `part, partitions, ``{
+		part["device"] = sformat( "%1%2", diskdev, part["nr"]:0 );
+		return( part );
+		});
+	   
 	    }
-	}
 	else
-	{
+	    {
 	    // On s390 there is only one partition per device /dev/dasd*
-
-	    integer cyl_count  = lookup ( disk, "cyl_count", 0  );
-	    integer cyl_size   = lookup ( disk, "cyl_size",  1000000    );
+	    integer cyl_count  = disk["cyl_count"]:0;
+	    integer cyl_size   = disk["cyl_size"]:1000000;
 
 	    map partition = $[];
-
-	    partition = add( partition, "create",  true );
-	    partition = add( partition, "nr",      1 );
-	    partition = add( partition, "format",  true );
-	    partition = add( partition, "region",  [0, cyl_count-1] );
-	    partition = add( partition, "fsid",    Partitions::fsid_native  );
-	    partition = add( partition, "type",    `s390 );
-	    partition = add( partition, "used_fs", `ext2 );
-
-	    partitions = [ partition ];
-	}
+	    partition["nr"] = 1;
+	    partition["device"] = sformat( "%1%2", diskdev, partitions["nr"]:0);
+	    partition["region"] = [ 0, cyl_count-1 ];
+	    partition["fsid"] = Partitions::fsid_native;
+	    partition["type"] = `s390;
+	    partitions = add( partitions, partition );
+	    y2milestone( "s390 part disk:%1 part:%2", diskpath, partitions );
+	    }
 
 	return partitions;
     };
@@ -155,37 +153,34 @@
 	  integer total_size = 0;
 	  map entry = $[];
 	  list partitions = [];
-	  entry = add (entry, "name", "Linux Software Raid" );
-	  entry = add (entry, "cyl_size", (1024 * 1024));
+	  entry["name"] = "Linux Software Raid";
+	  entry["cyl_size"] = 1024 * 1024;
 	  foreach (`pk, `pv, md, ``{
 	      map part = $[];
 	      integer lsize = 0;
 	      y2debug ("key=%1 map=%2", pk, pv );
-	      part = add (part, "fsid", Partitions::fsid_native );
-	      part = add (part, "fstype", "Linux Raid");
-	      part = add (part, "used_fs", DetectFs (pk));
-	      list region = [0];
-	      lsize = lookup (pv, "blocks",0) / 1024;
+	      part["fsid"] = Partitions::fsid_native;
+	      part["fstype"] = "Linux Raid";
+	      lsize = pv["blocks"]:0 / 1024;
 	      total_size = total_size + lsize;
-	      region = add (region, lsize);
-	      part = add (part, "region", region);
-	      part = add (part, "nr", tointeger(substring (pk, 7)));
-	      part = add (part, "ori_nr", tointeger(substring (pk, 7)));
-	      part = add( part, "size_byte", pv["blocks"]:0 * 1024);
-	      if( lookup (pv, "chunk", 0 )>0 )
+	      list region = [0, lsize];
+	      part["region"] = [0, lsize];
+	      part["nr"] = tointeger(substring (pk, 7));
+	      part["ori_nr"] = part["nr"]:"";
+	      part["device"] = Storage::GetDeviceName( key, part["nr"]:"" );
+	      part["size_byte"] = pv["blocks"]:0 * 1024;
+	      part = FileSystems::GetFsysInfos( "/dev/md", part );
+	      if( pv["chunk"]:0 >0 )
 		  {
-		  part = add( part, "chunk_size",
-			      sformat("%1",lookup (pv, "chunk", 0)));
+		  part["chunk_size"] = sformat("%1",pv["chunk"]:0);
 		  }
-	      if( size(lookup( pv, "parity_algorithm",""))>0 )
+	      if( size(pv["parity_algorithm"]:"")>0 )
 		  {
-		  part = add( part, "parity_algorithm",
-			      lookup (pv, "parity_algorithm", "") );
+		  part["parity_algorithm"] = pv["parity_algorithm"]:"";
 		  }
-	      part = add (part, "persistent_superblock",
-	                        lookup (pv, "persistent_superblock",false));
-	      part = add (part, "raid_type", lookup (pv, "raid_type",""));
-	      part = add( part, "raid_nb", sformat("%1",lookup( pv, "nr", 0 )) );
+	      part["persistent_superblock"] = pv["persistent_superblock"]:false;
+	      part["raid_type"] = pv["raid_type"]:"";
+	      part["raid_nb"] = sformat("%1",pv["nr"]:0);
 
 	      if( !Mode::installation )
 		{
@@ -205,21 +200,20 @@
 		   name = substring (name, 0, pos);
 		   }
 
-	        part = add (part, "mount", name);
+	        part["mount"] = name;
 		}
-	      part = add (part, "type", `sw_raid);
+	      part["type"] = `sw_raid;
 	      y2debug ("key=%2 part=%1", part, pk);
 	      partitions = add (partitions, part);
 	      });
-	  entry = add (entry, "cyl_count", total_size);
-          entry = add (entry, "partitions", partitions);
-          targetMap = add (targetMap, key, entry);
+	  entry["cyl_count"] = total_size;
+          entry["partitions"] = partitions;
+          targetMap[key] = entry;
 	  }
       foreach (`k, `v, md, ``{
           integer dcnt = 0;
-	  list devices = lookup( v, "devices", "");
-	  integer spare = size(devices) -
-	                  lookup(v, "used_disks", size(devices));
+	  list devices = v["devices"]:[];
+	  integer spare = size(devices) - v["used_disks"]:size(devices);
 	  foreach( `e, devices, ``{
 	      map device = GetDiskPartition (e);
 	      map disk = lookup (targetMap, lookup (device, "disk","" ), $[]);
@@ -248,7 +242,7 @@
       foreach (`k, `v, lvm_vg, ``{
 	  string key = ("/dev/" + k);
 	  map entry = $[];
-	  integer `pesize = lookup (v, "pesize", 4096);
+	  integer pesize = v["pesize"]:4096;
 	  list partitions = [];
 	  entry = add (entry, "is_lvm_vg", true);
 	  entry = add (entry, "name", k);
@@ -260,12 +254,13 @@
 	      part = add (part, "fsid", Partitions::fsid_lvm);
 	      part = add (part, "fstype", "LV");
 	      string name = substring (pk, (findlastof (pk, "/") + 1));
-	      part = add (entry, "used_fs", DetectFs (pk));
 	      list region = [0];
 	      region = add (region, (lookup (pv, "blocks", 1) / pesize));
 	      part = add (part, "region", region);
 	      part = add (part, "nr", name);
 	      part = add (part, "ori_nr", name);
+	      part["device"] = Storage::GetDeviceName( key, name );
+	      part = FileSystems::GetFsysInfos( key, part );
 	      if( !Mode::installation )
 		{
 	        name = "";
@@ -312,7 +307,7 @@
 	  foreach (`e, crypto, ``{
 	      if( size( e["file"]:"" )>0 )
 		{
-		map device = GetDiskPartition( e["file"]:"" );
+		map device = Storage::GetDiskPartition( e["file"]:"" );
 		targetMap = Storage::SetPartitionData( targetMap, device["disk"]:"",
 		                                       device["nr"]:-1, "crypt_fs",
 						       true );
@@ -320,15 +315,15 @@
 		                                       device["nr"]:-1, "mount",
 						       e["mount"]:"" );
 		string loop = e["loop"]:"";
-		y2milestone( "loop=%1 fs=%2", loop, DetectFs(loop) );
+		y2milestone( "loop=%1", loop );
 		if( size(loop)>0 )
 		    {
-		    targetMap = Storage::SetPartitionData( targetMap, device["disk"]:"",
-							   device["nr"]:-1, "loop_dev",
-							   loop );
-		    targetMap = Storage::SetPartitionData( targetMap, device["disk"]:"",
-							   device["nr"]:-1, "used_fs",
-							   DetectFs(loop) );
+		    map p = Storage::GetPartition( targetMap, device["disk"]:"",
+		                                   device["nr"]:-1 );
+		    p["loop_dev"] = loop;
+		    p = FileSystems::GetFsysInfos( "/dev/loop", p );
+		    targetMap = Storage::SetPartition( targetMap, 
+		                                       device["disk"]:"", p );
 		    }
 		}
 	      });
@@ -336,75 +331,6 @@
 	}
       return targetMap;
     };
-
-
-  /*
-   * DetectFs
-   *---------------------------------------------------------------------
-   * Detect the existing fs on the partition. Right now only ext2 and
-   * reiserfs are detected.
-   * arguments: <partition> for ex. "/dev/sda1"
-   * returns:   `ext2 or `reiser or `unknown
-   *---------------------------------------------------------------------
-   */
-  global define symbol DetectFs( string current_dev )
-  ``{
-      symbol  return_value = `unknown;
-      string  testcall     = "";
-      map bash_call        = $[];
-
-      testcall  = sformat( "/bin/guessfstype %1", current_dev );
-      bash_call = SCR::Execute (.target.bash_output, testcall, $[] );
-
-      if (bash_call["exit"]:1 == 0)
-	  {
-	  string type = bash_call["stdout"]:"";
-	  integer pos = findlastof(type, "\n");
-	  if (pos != nil)
-	     {
-	     type = substring (type, 0, pos);
-	     }
-	  pos = findlastof(type, " ");
-	  if (pos != nil)
-	     {
-	     type = substring (type, pos+1);
-	     }
-	  pos = findfirstof(type, " ,");
-	  if (pos != nil)
-	     {
-	     type = substring (type, 0, pos);
-	     }
-	  y2milestone( "type %1", type );
-	  if( type == "ext2" )
-	    {
-	    return_value = `ext2;
-	    }
-	  else if( type == "ext3" )
-	    {
-	    return_value = `ext3;
-	    }
-	  else if( type == "reiserfs" )
-	    {
-	    return_value = `reiser;
-	    }
-	  else if( type == "jfs" )
-	    {
-	    return_value = `jfs;
-	    }
-	  else if( type == "xfs" )
-	    {
-	    return_value = `xfs;
-	    }
-	  else if( type == "vfat" )
-	    {
-	    return_value = `fat32;
-	    }
-          }
-      y2debug( "detect fs ret %1 bash %2", return_value, bash_call );
-
-      y2milestone( "DetectFs %1: %2", current_dev, return_value );
-      return( return_value );
-  };
 
 
     /*---------------------------------------------------------------------
@@ -509,8 +435,7 @@
     /*
      * Reset Info about LVM and Partitioning
      */
-    /* TODO  Return Typ  map or symbol
-       ErrorPopup
+    /* TODO  Return Typ  map or symbol ErrorPopup
     */
     global define ResetLVMandPartitionInfo( boolean local_test_mode )
     ``{
