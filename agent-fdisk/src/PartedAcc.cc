@@ -59,6 +59,10 @@ PartedAccess::CheckError( const string& CmdString_Cv, SystemCmd& Cmd_C )
 	y2error( "cmd:%s", CmdString_Cv.c_str() );
 	y2error( "err:%s", Tmp_Ci.c_str() );
 	}
+    if( Cmd_C.Retcode() != 0 )
+	{
+	y2error( "retcode:%d", Cmd_C.Retcode() );
+	}
     Stderr_C += Tmp_Ci;
     }
 
