@@ -437,14 +437,14 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 	    entry["consumes"] = e["consumes"]:[];
 	    entry["partitions"] = [];
 	    targetMap[key] = entry;
-	    y2milestone ("e=%1 key:%2 map=%3", e, key, entry);
+	    y2milestone ("GetLvmMdSystemInfo e=%1 key:%2 map=%3", e, key, entry);
 	    });
 	list<map> vol = (list<map>) SCR::Read (.evms.volume);
 	foreach( map e, vol, 
 	    ``{
 	    integer pos = findlastof( e["device"]:"", "/" );
 	    string key = substring( e["device"]:"", 0, pos );
-	    y2milestone ("key:%1", key );
+	    y2milestone ("GetLvmMdSystemInfo key:%1", key );
 	    if( !haskey( targetMap, key ) )
 		{
 		map entry = $[];
@@ -452,7 +452,7 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 		entry["cyl_size"] = 1024*1024;
 		entry["cyl_count"] = 0;
 		entry["partitions"] = [];
-		y2milestone ("add entry key:%1", entry );
+		y2milestone ("GetLvmMdSystemInfo add entry key:%1", entry );
 		targetMap[key] = entry;
 		}
 	    map part = $[];
@@ -468,13 +468,21 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 	    list region = [0, e["size"]:0 / (targetMap[key,"cyl_size"]:1/1024)];
 	    part["region"] = region;
 	    part = FileSystems::GetFsysInfos( part );
-	    y2milestone ("part=%1", part);
-	    targetMap[key,"partitions"] = add( targetMap[key,"partitions"]:[], 
-					       part );
+	    y2milestone ("GetLvmMdSystemInfo part=%1", part);
+	    if( part["evms_native"]:false || !regexpmatch( part["nr"]:"", "loop[0-9]*" ))
+		{
+		targetMap[key,"partitions"] = add( targetMap[key,"partitions"]:[], 
+						   part );
+		}
+	    else
+		{
+		y2milestone( "skip %1", part["device"]:"" );
+		}
 	    });
 	foreach( map e, vol, 
 	    ``{
 	    string cons = e["consumes",0]:"";
+	    y2milestone( "GetLvmMdSystemInfo %1 consumes %2", e,  cons );
 	    if( "/dev/evms/" + cons != e["device"]:"" )
 		{
 		string name = substring( e["device"]:"", 
@@ -484,6 +492,7 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 		else if( find( cons, "aix/" ) == 0 )
 		    cons = substring( cons, 4 );
 		string dev = "/dev/" + cons;
+		y2milestone( "GetLvmMdSystemInfo dev %1", dev );
 		map p = Storage::GetPartition( targetMap, dev );
 		if( size(p)>0 )
 		    {
@@ -2813,7 +2822,7 @@ to the Linux kernel."));
 global define boolean IsRealDisk( string disk, map entry )
     ``{
     return( disk != "/dev/md" && disk != "/dev/loop" &&
-            !entry["is_lvm_vg"]:false && !entry["is_evms"]:false );
+            !entry["is_lvm_vg"]:false && find( disk, "/dev/evms")!=0 );
     }
 
 global define list GetPartitionList()``{
