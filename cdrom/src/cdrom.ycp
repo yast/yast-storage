@@ -20,7 +20,6 @@ textdomain "storage";
 
 import "Wizard";
 import "Misc";
-/*import "Bootloader";*/
 import "AsciiFile";
 import "Partitions";
 
@@ -29,12 +28,12 @@ import "Popup";
 import "Storage";
 import "StorageDevices";
 
-map cdrom = $[];
+map<integer,map> cdrom = $[];
 
-define map GetCdromLinks()
+define map<string,string> GetCdromLinks()
     ``{	    
     list pat = [ "cdrom*", "dvd*", "dvdrecorder*", "cdrecorder*", "dvdram*" ];
-    map links = $[];
+    map<string,string> links = $[];
     foreach( string l, Storage::GetDirPatterns( "/dev", pat ),
 	``{
 	map st = (map)SCR::Read( .target.lstat, l );
@@ -54,7 +53,7 @@ define map GetCdromLinks()
     return( links );
     }
 
-define list CreateTableList( map cdrom )
+define list CreateTableList( map<any,map> cdrom )
     ``{
     list clist = maplist( any k, map entry, cdrom,
 	``{
@@ -145,11 +144,11 @@ of integration of an entry in the list.</p>
 
     Wizard::OpenDialog( Wizard::GenericDialog( buttons ) );
 
-    map links = GetCdromLinks();
+    map<string,string> links = GetCdromLinks();
 
     map fstab = Partitions::GetFstab( "/etc/fstab" );
 
-    list tmp = maplist( map entry, (list)SCR::Read(.probe.cdrom),
+    list<map> tmp = maplist( map entry, (list<map>)SCR::Read(.probe.cdrom),
 	``{
 	map cd = StorageDevices::GetCdromEntry( entry["dev_name"]:"" );
         cd = union( cd, entry );
@@ -159,10 +158,15 @@ of integration of an entry in the list.</p>
 	cd["changed"] = false;
 	string device = cd["dev_name"]:(entry["dev_name"]:"");
 	cd["device"] = device;
-	map l = filter( any k, string e, links, ``(e==substring(device,5)));
+	map<string,string> l = filter( string k, string e, links, ``(e==substring(device,5)));
 	y2milestone( "l %1", l );
-	list link = [];
-	link = maplist( string k, any e, l, ``(substring(k,5)));
+	list<string> link = [];
+	link = maplist( string k, string e, l, ``(substring(k,5)));
+	if( find( string e, link, ``(e=="cdrom")) != nil )
+	    {
+	    link = filter( string e, link, ``(e!="cdrom"));
+	    link = add( link, "crom" );
+	    }
 	link = sort( string a, string b, link, ``(a!="cdrom"&&a!=b) );
 	cd["link"] = link;
 	cd["configured"] = cd["configured"]:false && size(link)>0;
@@ -262,11 +266,11 @@ of integration of an entry in the list.</p>
 			lnames = add(lnames, e["link",0]:"");
 		    });
 		y2milestone( "lnames %1", lnames );
-		lnames = filter( string e, lnames, ``(find(e, type)==0));
+		lnames = filter( string e, (list<string>)lnames, ``(find(e, type)==0));
 		y2milestone( "lnames %1", lnames );
-		lnames = maplist( string e, lnames, ``(substring(e, size(type))));
+		lnames = maplist( string e, (list<string>)lnames, ``(substring(e, size(type))));
 		y2milestone( "lnames %1", lnames );
-		lnames = maplist( string e, lnames, 
+		lnames = maplist( string e, (list<string>)lnames, 
 				  ``{
 				  integer ret = 1;
 				  if( e=="1" )
@@ -315,16 +319,16 @@ Discard changes?
 	    }
 	else if( ret == `apply || ret == `finish )
 	    {
-	    list ch = maplist( any l, any v, 
-	                       filter( any k, map e, cdrom, ``(e["changed"]:false)),
+	    list<map> ch = maplist( integer l, map v, 
+	                       filter( integer k, map e, cdrom, ``(e["changed"]:false)),
 			       ``(v));
 	    y2milestone( "changed %1", ch );
 	    if( size(ch)>0 && size(links)>0 )
 		{
 		string cmd = "rm -f ";
-                list keep = [];
-		foreach( map e, maplist( any l, any m,
-		                      filter( any k, map v, cdrom, 
+                list<string> keep = [];
+		foreach( map e, maplist( integer l, map m,
+		                      filter( integer k, map v, cdrom, 
 				              ``(v["configured"]:false)),
 				      ``(m)),
 		    ``{
@@ -341,7 +345,7 @@ Discard changes?
 		y2milestone( "cmd=%1", cmd );
 		SCR::Execute( .target.bash, cmd );
 		}
-	    list remfstab = [];
+	    list<integer> remfstab = [];
 	    list<string> remdirs = [];
 	    foreach( map e, filter( map v, ch, ``(!v["configured"]:false)),
 		``{
@@ -352,7 +356,7 @@ Discard changes?
 				   Storage::FindFstabLines( fstab, "", "/dev/"+l,
 							    "", "" ));
 		    });
-		remfstab = union( remfstab, lines );
+		remfstab = (list<integer>)union( remfstab, lines );
 		remdirs = (list<string>) union( remdirs, e["link"]:[] );
 		cdrom[e["index"]:-1,"link"] = [];
 		});
@@ -403,7 +407,7 @@ Discard changes?
 		    entry["link"] = [ "cdrom" ];
 		    entry["mount"] = "/media/cdrom";
 		    map ret = IntegrateCd( entry, fstab );
-		    remfstab = filter( any e, remfstab, ``(e!=ret["l"]:-1));
+		    remfstab = filter( integer e, remfstab, ``(e!=ret["l"]:-1));
 		    cdrom[idx,"link"] = add( cdrom[idx,"link"]:[], "cdrom" );
 		    }
 		if( size(remfstab)>0 )

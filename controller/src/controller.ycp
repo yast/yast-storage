@@ -25,10 +25,10 @@ import "Misc";
 import "Label";
 import "Popup";
 
-list initrd = [];
-list initrd_orig = [];
-map params = $[];
-map params_orig = $[];
+list<string> initrd = [];
+list<string> initrd_orig = [];
+map<string,string> params = $[];
+map<string,string> params_orig = $[];
 
 define string HelpText()
     ``{
@@ -120,7 +120,7 @@ define void SetParams( string mod, string default )
 	y2milestone( "ppts=%1", opts ); 
 	if( contains( opts, mod ))
 	    {
-	    map options = (map)SCR::Read( .modules.options, mod );
+	    map<string,string> options = (map<string,string>)SCR::Read( .modules.options, mod );
 	    y2milestone( "options %1 = %2", mod, options ); 
 	    foreach( string k, string v, options,
 		``{
@@ -150,10 +150,10 @@ define string ModNameChanged( map cont, integer num, integer old )
     y2milestone( "mod=%1 old=%2", mod, old );
     if( oldmod != mod )
 	{
-	params[oldmod] = UI::QueryWidget( `id(`param), `Value );
+	params[oldmod] = (string)UI::QueryWidget( `id(`param), `Value );
         if( contains( initrd, oldmod ) )
 	    {
-	    initrd = maplist( `e, initrd, ``{ return( e==oldmod ? mod : e ); });
+	    initrd = maplist( string e, initrd, ``{ return( e==oldmod ? mod : e ); });
 	    y2milestone( "new initrd=%1", initrd );
 	    }
 	}
@@ -257,8 +257,8 @@ Stderr was:
 
     Wizard::OpenDialog( Wizard::GenericDialog( buttons ) );
 
-    list dev = [];
-    foreach( map entry, (list)SCR::Read(.probe.storage), 
+    list<map> dev = [];
+    foreach( map entry, (list<map>)SCR::Read(.probe.storage), 
 	``{
 	map conf = (map)SCR::Read(.probe.status, entry["unique_key"]:"");
 	y2milestone( "entry:%1", entry );
@@ -310,7 +310,7 @@ Stderr was:
 
     string tmp = Misc::SysconfigRead( .sysconfig.kernel.INITRD_MODULES, "");
     initrd_orig = filter( string e, splitstring( tmp, " " ), ``(size(e)>0) );
-    initrd = (list)eval(initrd_orig);
+    initrd = initrd_orig;
     y2milestone( "initrd %1", tmp );
 
     clist = sort( term a, term b, clist,
@@ -447,7 +447,7 @@ Stderr was:
 	    if( num != cur_num )
 		{
 		cur_num = num;
-		params[modname] = UI::QueryWidget( `id(`param), `Value );
+		params[modname] = (string)UI::QueryWidget( `id(`param), `Value );
 		modname = SetAllData( dev[cur_num]:$[], clist, cur_num );
 		y2milestone( "controller module=%1", modname );
 		}
@@ -499,7 +499,7 @@ Stderr was:
 	    changed = true;
 	    if( contains( initrd, modname ))
 		{
-		initrd = filter( `e, initrd, ``(e!=modname));
+		initrd = filter( string e, initrd, ``(e!=modname));
 		}
 	    else
 		{
@@ -515,9 +515,9 @@ Stderr was:
 	else if( ret == `apply || ret == `finish )
 	    {
 	    boolean mkinitrd = false;
-	    params[modname] = UI::QueryWidget( `id(`param), `Value );
+	    params[modname] = (string)UI::QueryWidget( `id(`param), `Value );
 	    list<string> new_initrd = [];
-	    list tlist = (list)eval(initrd);
+	    list<string> tlist = initrd;
 	    foreach( term e, clist,
 		``{
 		integer num = TermToId( e );
@@ -528,7 +528,7 @@ Stderr was:
 		    foreach( list d, dev[num,"drivers",modnum,"modules"]:[],
 			``{
 			new_initrd = add( new_initrd, d[0]:"" );
-			tlist = filter( `e, tlist, ``(e!=d[0]:""));
+			tlist = filter( string e, tlist, ``(e!=d[0]:""));
 			if( size(params[d[0]:""]:"")==0 )
 			    params[d[0]:""] = d[1]:"";
 			mkinitrd = mkinitrd || size(d[1]:"")>0;
@@ -546,8 +546,8 @@ Stderr was:
 	    mkinitrd = mkinitrd || newinit != old;
 	    if( newinit != old )
 		{
-		initrd = (list)eval( new_initrd );
-		initrd_orig = (list)eval( new_initrd );
+		initrd = new_initrd;
+		initrd_orig = new_initrd;
 		}
 	    y2milestone( "make %3 new \"%1\" old \"%2\"", newinit, old, 
 	                 mkinitrd );
@@ -561,8 +561,8 @@ Stderr was:
 		    {
 		    mkinitrd = mkinitrd || contains(new_initrd,k);
 		    params_orig[k] = v;
-		    list val = filter( string e, splitstring( v, " " ), 
-		                       ``(size(e)>0) );
+		    list<string> val = filter( string e, splitstring( v, " " ), 
+					       ``(size(e)>0) );
 		    y2milestone( "val %1", val );
 		    map opts = $[];
 		    foreach( string v, val,
