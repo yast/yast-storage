@@ -642,7 +642,8 @@ global define GetMountPoints()
     ``{
     map mountPoints = $[];
     list swapPoints = [];
-    foreach ( string targetdevice, map target, GetTargetMap(),
+    map tg = GetTargetMap();
+    foreach ( string targetdevice, map target, tg,
 	``{
 	list partitions = FilterDelete( target["partitions"]:[] );
 	foreach (map partition, partitions,
@@ -674,6 +675,32 @@ global define GetMountPoints()
 	});
     if (size (swapPoints) > 0)
 	mountPoints = add (mountPoints, "swap", swapPoints);
+    if( !Mode::initial )
+	{
+	list cm = filter( `e, Partitions::CurMounted(), 
+	                  ``(find(e["spec"]:"","/dev/")==0));
+	foreach( `e, cm,
+	    ``{
+	    if( !haskey( mountPoints, e["file"]:"" ) )
+		{
+		map p = GetPartition( tg, e["spec"]:"" );
+		if( size(p)>0 )
+		    {
+		    string raid_type = "";
+		    if( p["type"]:-1 == `sw_raid )
+			{
+			raid_type = p["raid_type"]:"";
+			}
+		    map d = GetDiskPartition( e["spec"]:"" );
+		    mountPoints[e["file"]:""] = 
+			[ p["device"]:"", p["fsid"]:0, d["disk"]:"", 
+			  raid_type ];
+		    }
+		}
+	    });
+	y2milestone( "cm %1", cm );
+	}
+    y2milestone( "ret %1", mountPoints );
     return mountPoints;
     }
     
