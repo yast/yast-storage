@@ -3615,29 +3615,42 @@ define void HandleModulesOnBoot( map<string,map> targetMap )
                               (list<string>) splitstring( Misc::SysconfigRead( .sysconfig.kernel.MODULES_LOADED_ON_BOOT, "" ), " \t"), 
 			      ``(size(e)>0));
     y2milestone( "HandleModulesOnBoot ml %1", ml );
-    if( find( string e, ml, ``(e=="loop_fish2"))==nil )
-	{
-	boolean need_fish2 = false;
-	foreach( string disk, map e, targetMap,
+    boolean need_cryptoloop = false;
+    boolean need_fish2 = false;
+    foreach( string disk, map e, targetMap,
+	``{
+	foreach( map p, e["partitions"]:[],
 	    ``{
-	    foreach( map p, e["partitions"]:[],
-		``{
-		if( p["noauto"]:false && p["loop_fs"]:false && 
-		    p["crypt"]:"none" != "none" )
-		    {
-		    y2milestone( "HandleModulesOnBoot need %1", p );
+	    if( p["noauto"]:false && p["loop_fs"]:false )
+		{
+		if( p["crypt"]:"none" == "twofish256" )
+		    need_cryptoloop = true;
+		else if( find( p["crypt"]:"none", "twofish")==0 )
 		    need_fish2 = true;
-		    }
-		});
+		}
 	    });
-	y2milestone( "HandleModulesOnBoot need_fish2 %1", need_fish2 );
-	if( need_fish2 )
-	    {
-	    ml = add( ml, "loop_fish2" );
-	    SCR::Write( .sysconfig.kernel.MODULES_LOADED_ON_BOOT,
-			mergestring( ml, " " ) );
+	});
+    y2milestone( "HandleModulesOnBoot need_fish2 %1 need_cryptoloop %2", need_fish2,
+                 need_cryptoloop );
+    if( need_fish2 && find( string e, ml, ``(e=="loop_fish2"))==nil )
+	{
+	ml = add( ml, "loop_fish2" );
+	SCR::Write( .sysconfig.kernel.MODULES_LOADED_ON_BOOT,
+		    mergestring( ml, " " ) );
 
-	    }
+	}
+    if( need_cryptoloop && find( string e, ml, ``(e=="cryptoloop"))==nil )
+	{
+	ml = add( ml, "cryptoloop" );
+	SCR::Write( .sysconfig.kernel.MODULES_LOADED_ON_BOOT,
+		    mergestring( ml, " " ) );
+	}
+    if( need_cryptoloop && find( string e, ml, ``(e=="twofish"))==nil )
+	{
+	ml = add( ml, "twofish" );
+	SCR::Write( .sysconfig.kernel.MODULES_LOADED_ON_BOOT,
+		    mergestring( ml, " " ) );
+
 	}
     }
 
@@ -3843,6 +3856,11 @@ define string GetLosetupCmd( map loop, string tmpf )
     list noext = [ "twofish", "none" ];
     string encr = loop["encryption"]:"twofish";
     string cmd = sformat( "/sbin/losetup -e %1", encr );
+    # XXX: This could be done better
+    if ( encr == "twofishSL92" ) 
+       {
+          cmd = "/sbin/losetup -e twofish256";
+       }
     if( !contains( noext, encr ) && size(loop["phash"]:"")>0 )
 	{
 	cmd = cmd + " -H " + loop["phash"]:"";
@@ -3904,12 +3922,33 @@ global define boolean SetCryptLoop( map& part )
     map loaded_modules = (map) SCR::Read(.proc.modules);
     if( part["loop_fs"]:false )
 	{
-	if( find( part["crypt"]:"", "twofish")==0 )
+	if( part["crypt"]:"" == "twofish" )
 	    {
 	    if( !haskey( loaded_modules, "loop_fish2" ) )
 		{
 		crypt_ok = (boolean) SCR::Execute( .target.modprobe, 
 		                                  "loop_fish2", "");
+		}
+	    }
+       else if( part["crypt"]:"" == "twofishSL92" )
+            {
+            if( !haskey( loaded_modules, "loop_fish2" ) )
+                {
+                crypt_ok = (boolean) SCR::Execute( .target.modprobe,
+                                                  "loop_fish2", "");
+                }
+            }
+	else if( find(part["crypt"]:"","twofish")==0 )
+	    {
+	    if( !haskey( loaded_modules, "cryptoloop" ) )
+		{
+		crypt_ok = (boolean) SCR::Execute( .target.modprobe, 
+		                                   "cryptoloop", "");
+		}
+	    if( crypt_ok && !haskey( loaded_modules, "twofish" ) )
+		{
+		crypt_ok = (boolean) SCR::Execute( .target.modprobe, 
+		                                   "twofish", "");
 		}
 	    }
 	}
@@ -4274,6 +4313,45 @@ global define void UpdateFstabDiskmap( map diskmap )
     AsciiFile::RewriteFile( crtab, tabpath );
     }
 
+global define void UpdateCryptoType()
+    ``{
+    y2milestone( "UpdateCryptoType" );
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    integer pos = 0;
+    string search = "encryption=twofish256";
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	pos = find( l["fields",3]:"", search );
+	if( pos >= 0 )
+	    {
+	    string new = substring( l["fields",3]:"", 0, pos );
+	    new = new + "encryption=twofishSL92";
+	    new = new + substring( l["fields",3]:"", pos+size(search) );
+	    y2milestone( "new options line in %1 is %2", l, new );
+	    AsciiFile::ChangeLineField( fstab, line, 3, new );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( fstab, tabpath );
+    tabpath = PathToDestdir( "/etc/cryptotab" );
+    map crtab = Partitions::GetCrypto( tabpath );
+    line = 0;
+    while( line<=AsciiFile::NumLines( crtab ) )
+	{
+	map l = AsciiFile::GetLine( crtab, line );
+	if( l["fields",4]:"" == "twofish256" )
+	    {
+	    y2milestone( "set twofishSL92 in line %1", l );
+	    AsciiFile::ChangeLineField( crtab, line, 4, "twofishSL92" );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( crtab, tabpath );
+    }
+
 global define void UpdateFstabUsbdevfs()
     ``{
     y2milestone( "UpdateFstabUsbdevfs updating usbdevfs to usbfs" );
@@ -4373,6 +4451,7 @@ global define void Update( map oldv, map newv )
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0<=2))
 	{
 	StorageDevices::MakeCDLinks();
+	Storage::UpdateCryptoType();
 	}
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
 	{
