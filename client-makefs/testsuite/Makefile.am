@@ -1,5 +1,5 @@
 #
-# Makefile.am for core/client-makefs/testsuite
+# Makefile.am for storage/client-makefs/testsuite
 #
 
 AUTOMAKE_OPTIONS = dejagnu
@@ -11,10 +11,9 @@ y2makefs_SOURCES = y2makefs.cc
 
 y2makefs_LDADD = -ly2 -lycp
 y2makefs_LDFLAGS = -L$(libdir)				\
-	-L$(srcdir)/../../libycp/src			\
 	-Xlinker --whole-archive			\
-	$(srcdir)/../../liby2/src/libpy2stdio.la	\
-	$(srcdir)/../../liby2/src/libpy2script.la	\
+	$(plugindir)/libpy2stdio.la			\
+	$(plugindir)/libpy2script.la			\
 	$(srcdir)/../src/libpy2makefs.la		\
 	-Xlinker --no-whole-archive
 

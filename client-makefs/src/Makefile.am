@@ -1,5 +1,5 @@
 #
-# Makefile.am for core/client-makefs/src
+# Makefile.am for storage/client-makefs/src
 #
 
 AM_CXXFLAGS = -DY2LOG=\"client-makefs\"
@@ -18,6 +18,4 @@ libpy2makefs_la_SOURCES =				\
 
 libpy2makefs_la_LDFLAGS = -version-info 2:0
 
-INCLUDES =						\
-	-I$(srcdir)/../../libycp/src/include		\
-	-I$(srcdir)/../../liby2/src/include
+INCLUDES = -I$(includedir)
