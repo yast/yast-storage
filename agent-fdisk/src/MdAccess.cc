@@ -223,6 +223,8 @@ void MdAccess::ReadMdData()
 		    Key_Ci = ExtractNthWord( 0, Line_Ci );
 		    }
 		}
+	    else
+		getline( Tab_Ci, Line_Ci );
 	    }
 	else
 	    {

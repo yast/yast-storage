@@ -31,21 +31,21 @@
  * Build raid dev item list e.g.: [`item (`id ("2//dev/md"), "/dev/md2", false)]
  *
  **/
-global define list get_raid_devices( string subdevraidindex )
+global define list get_raid_devices( integer raid_nr )
     ``{
-    list all_raid_devices  = [];
+    list all_raid_devices = [];
     list partitions = Storage::GetMainDevParam( "/dev/md", "partitions" );
 
     foreach( `part, partitions, 
 	``{
 	if( !part["delete"]:false )
 	    {
-	    string nr_str = sformat("%1", part["nr"]:0 );
-	    all_raid_devices = add( all_raid_devices, 
-				    `item( `id(sformat("%2/%1", "/dev/md", 
-				                       nr_str )),
-				           "/dev/md"+nr_str, 
-				           nr_str == subdevraidindex ));
+	    integer num = part["nr"]:255;
+	    all_raid_devices = 
+		add( all_raid_devices, 
+		     `item( `id(sformat("%2/%1", "/dev/md", num )),
+			    Storage::GetDeviceName( "/dev/md", num ), 
+			    num == raid_nr ));
 	    }
 	});
     return all_raid_devices;
@@ -56,7 +56,7 @@ global define list get_raid_devices( string subdevraidindex )
    * Checks if a RAID is currently created or if it was already
    *
    **/
-global define boolean IsRaidCreated( string subdevraidindex , symbol what )
+global define boolean IsRaidCreated( string device, symbol what )
     ``{
     if( what != `wizard )
 	{
@@ -65,14 +65,10 @@ global define boolean IsRaidCreated( string subdevraidindex , symbol what )
 
 	foreach( `part, partitions, 
 	    ``{
-	    if( !part["delete"]:false )
+	    if( !part["delete"]:false && part["raid_name"]:""==device && 
+	        part["create"]:false )
 		{
-		string nr_str = sformat("%1", part["nr"]:0 );
-
-		if ( subdevraidindex == nr_str && part["create"]:false )
-		    {
-		    created = true;
-		    }
+		created = true;
 		}
 	    });
 
@@ -124,11 +120,10 @@ global define integer get_raid_size_byte( list partition_list,
 					  string current_raid_type )
     ``{
     integer sdefault = 0;
-    y2milestone( "partition_list:%1", partition_list );
-    y2debug("--- subdevraidindex %1", subdevraidindex );
-    y2debug("--- current_raid type %1", current_raid_type );
+    string dev = Storage::GetDeviceName( "/dev/md", tointeger(subdevraidindex));
+    y2milestone( "dev:%1 type:%2", dev, current_raid_type );
     partition_list = filter( `part, partition_list,
-			     ``( part["raid_nb"]:""== subdevraidindex ));
+			     ``( part["raid_name"]:""==dev ));
 
     y2milestone( "partition_list:%1", partition_list );
     if( size(partition_list) > 0 )
@@ -216,9 +211,10 @@ global define integer raid_size_byte( map targetMap, map partition )
 global define integer getNrOfParts( map targetMap, string current_raid )
     ``{
     list partition_list = get_possible_rds( targetMap );
+    string dev = Storage::GetDeviceName( "/dev/md", tointeger(current_raid));
 
-    partition_list = filter( `part, partition_list,
-			     ``( part["raid_nb"]:""== current_raid ) );
+    partition_list = filter( `part, partition_list, 
+			     ``( part["raid_name"]:""==dev ) );
     return( size( partition_list ) );
     };
 
@@ -248,7 +244,6 @@ global define void addRaid( string id, string current_raid )
     partition["fsid"] = Partitions::fsid_raid;
     partition["fstype"] = Partitions::FsIdToString(Partitions::fsid_raid);
     partition["raid_name"] = "/dev/md" + current_raid;
-    partition["raid_nb"] = current_raid;
     partition["mount"] = "";
     y2milestone( "part %1", partition );
 
@@ -265,10 +260,11 @@ global define void removeRaid( string id, string current_raid, symbol what )
     string subdevkey  = id;  // i.e. 1        for 1//dev/hda
     map  disk         = Storage::GetMainDev(id);
     map  partition    = Storage::GetSubDev(id);
+    string dev = Storage::GetDeviceName( "/dev/md", tointeger(current_raid));
 
 
-    if ( (what == `wizard  && current_raid == partition["raid_nb"]:-1 ) ||
-	 IsRaidCreated( partition["raid_nb"]:-1, `settings ))
+    if ( (what == `wizard  && dev==partition["raid_name"]:-1 ) ||
+	 IsRaidCreated( partition["raid_name"]:"", `settings ))
 	{
 	if( partition["change_fsid"]:false )
 	    {
@@ -279,7 +275,6 @@ global define void removeRaid( string id, string current_raid, symbol what )
 			    key != "ori_fstype" ));
 	    }
 
-	partition = filter( `key, `val, partition, ``( key != "raid_nb" ));
 	partition = filter( `key, `val, partition, ``( key != "raid_name" ));
 
 	Storage::SetSubDev( id, partition);
@@ -409,6 +404,7 @@ global define list get_possible_rds( map targetMap )
 				                            part["nr"]:"");
 				   part["maindev"] = dev;
 				   part["devkey"] = devkey;
+				   y2milestone( "part=%1", part );
 				   return( part );
 				   });
 
@@ -497,9 +493,9 @@ global define list get_raid_widget_table( list possRdList )
 /**
  * number for /dev/mdX, 0 for /dev/md0, 1 for /dev/md1
  */
-global define string get_free_raid_nr( map targetMap )
+global define string get_free_raid_nr( map targetMap, integer min )
     ``{
-    integer i = 0;
+    integer i = min;
     map curr_md = targetMap["/dev/md"]:$[];
     if( curr_md != $[] )
 	{
@@ -578,7 +574,7 @@ global define boolean prepare_raid( map targets, boolean installation )
     if( bresult )
 	{
 	list raids = targets["/dev/md","partitions"]:[];
-	raids = filter( `mdX, raids, ``( mdX["status"]:"" == "create" ));
+	raids = filter( `mdX, raids, ``( mdX["create"]:false ));
 	list raid_nrs = maplist( `mdX, raids, ``( mdX["nr"]:256));
 	boolean cancel = false;
 

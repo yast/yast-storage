@@ -1500,30 +1500,31 @@ global define GetSubDev( string subdevkey )
     return part;
     }
     
-    define boolean delRaidNameEntries( string raid_name )``{
-	map targetMap     = GetTargetMap();
-	map new_targetMap = targetMap;
+global define map RemoveAllPartEntry( map tg, string skey, string value )
+    ``{
+    map new_tg = tg;
 
-	foreach ( `dev, `disk, targetMap, ``{
-	    list new_partitions = [];
-	    foreach ( `partition, lookup ( disk, "partitions", []) , ``{
-
-		if( lookup( partition , "raid_name" , "" ) == raid_name )
-		    partition = filter( `key, `value , partition , ``( key != "raid_name" && key != "raid_nb"));
-
-		new_partitions = add( new_partitions , partition);
+    foreach( `dev, `disk, tg, 
+	``{
+	boolean changed = false;
+	list new_partitions = [];
+	foreach ( `partition, disk["partitions"]:[], 
+	    ``{
+	    if( partition[skey]:"" == value )
+		{
+		partition = filter( `key, `value, partition, ``( key != skey));
+		changed = true;
+		}
+	    new_partitions = add( new_partitions , partition);
 	    });
 
-	    disk          = add( disk, "partitions" , new_partitions);
-	    new_targetMap = add( new_targetMap, dev, disk );
+	if( changed )
+	    {
+	    disk["partitions"] = new_partitions;
+	    new_tg[dev] = disk;
+	    }
 	});
-
-	
-	if ( new_targetMap == nil  )
-	    return false;
-
-	SetTargetMap( new_targetMap );
-	return true;
+    return( new_tg );
     };
 
     
@@ -1558,7 +1559,9 @@ global define boolean DelSubDev( string subdevkey )
 
     if( IsMainDevMd( maindevkey ))
 	{
-        delRaidNameEntries( maindevkey + subdevindex  );
+	map tg = GetTargetMap();
+	tg = RemoveAllPartEntry( tg, "raid_name", maindevkey+subdevindex );
+	SetTargetMap(tg);
 	}
 	
     if ( curr_part["type"]:`unknown == `extended )
@@ -1566,9 +1569,9 @@ global define boolean DelSubDev( string subdevkey )
 	curr_partitions = filter( `parti, curr_partitions, ``(parti["nr"]:0<5));
 	}
 
-
-    map part_created = find( `parti, curr_partitions, ``( parti["nr"]:0 == number && 
-                                                          parti["create"]:false ));
+    map part_created = find( `parti, curr_partitions, 
+                             ``( parti["nr"]:0 == number && 
+                                 parti["create"]:false ));
 
     if (part_created == nil)
 	{
@@ -1720,10 +1723,10 @@ global define map SetPartition( map tg, map part )
     }
     
 /* replace SubDev entry with newsubdev */
-global define SetSubDev( string subdevkey , map newsubdev )
+global define SetSubDev( string subdevkey, map newsubdev )
     ``{
     string maindevkey = GetMainDevKey( subdevkey );
-    list partitions   = GetMainDevParam( maindevkey , "partitions" );
+    list partitions = GetMainDevParam( maindevkey, "partitions" );
 
     // and now delete the old partition number in curr_disk to replace it in the next step
     list r_part =
@@ -1860,36 +1863,15 @@ global define SetSubDev( string subdevkey , map newsubdev )
 
 
     
-    map default_sub_dev_param  = $[
+    map default_sub_dev_param = $[
 				   "delete"	:	false,
-				   "fsid"	:	Partitions::fsid_native,                   
+				   "fsid"	:	Partitions::fsid_native,
 				   "fstype"	:	"Linux native",         
-				   "nr"		:	1,                       
+				   "nr"		:	1,                 
 				   "region"	: 	[0,1],             
-				   "use"	:	false,                    
 				   "type"	:	`primary,
-				   "format"	:	false,
-				   "mount"	:	"",
-				   "create"	:	false,
-				   "used_fs"	:	`ext2,
-				   "resize"     : 	false,
-				   "new_size"   : 	0,
-				   "ori_length" : 	0,
-				   "crypt_fs" 	: 	false,
-				   "crypt_key" 	:	"",
-				   "use_module" : 	"",
-				   "ori_fsid"   : 	Partitions::fsid_native,
-				   "change_fsid": 	false,
-				   "lvm_group" 	: 	"",
-				   "ori_nr" 	: 	1,
-				   "vgname" 	: 	"",
-				   "parity_algorithm" : "left-asymmetric",
-				   "persistent_superblock" : true,
-				   "raid_type" 	: 	"",
-				   "chunk_size" : 	"32",
-				   "raid_name" 	: 	"",       
-				   "raid_nb"	: 	""
-    ];
+				   "used_fs"	:	`ext2
+				 ];
 				   
 
     global define GetSubDevParam(string subdevkey, string paramkey )``{
@@ -2583,7 +2565,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    integer lsize = 0;
 	    y2debug ("key=%1 map=%2", pk, pv );
 	    part["fsid"] = Partitions::fsid_native;
-	    part["fstype"] = "Linux Raid";
+	    part["fstype"] = "Linux Software RAID";
 	    lsize = pv["blocks"]:0 / 1024;
 	    total_size = total_size + lsize;
 	    list region = [0, lsize];
@@ -2619,19 +2601,6 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    ``{
 	    map p = Storage::GetPartition( targetMap, e );
 	    p["raid_name"] = k;
-	    p["raid_nb"] = sformat("%1",v["nr"]:0 );
-	    p["raid_type"] = v["raid_type"]:"";
-/*
-	    dcnt = dcnt + 1;
-	    if( dcnt <= spare )
-		{
-		p["raid_type"] = "spare";
-		}
-	    else
-		{
-		p["raid_type"] = "raid";
-		}
-*/
 	    targetMap = Storage::SetPartition( targetMap, p );
 	    y2debug ("changed partition=%1", p);
 	    });
@@ -2852,4 +2821,53 @@ global define map SpecialBootHandling( map tg )
     return( tg );
     }
 	
+global define list AutodetectMultipathRaid( map tg )
+    ``{
+    list ret = [];
+    map disks = $[];
+    foreach( `dev, `disk, tg,
+	``{
+	string id = disk["unique"]:"";
+	integer pos = find( id, "." );
+	if( pos >= 0 )
+	    {
+	    id = substring( id, pos+1 );
+	    if( haskey( disks, id ) )
+		{
+		disks[id] = add( disks[id]:[], dev );
+		}
+	    else
+		{
+		disks[id] = [ dev ];
+		}
+	    }
+	});
+    disks = filter( `key, `entry, disks, ``(size(entry)>=2) );
+    y2milestone( "disks %1", disks );
+    foreach( `key, `entry, disks,
+	     ``{
+	     foreach( `p, tg[entry[0]:"","partitions"]:[],
+		      ``{
+		      string dev1 = p["device"]:"";
+		      map tmp = GetDiskPartition( dev1 );
+		      string dev2 = GetDeviceName( entry[1]:"", tmp["nr"]:0 );
+		      map p1 = GetPartition( tg, dev1 );
+		      map p2 = GetPartition( tg, dev2 );
+		      if( p1["type"]:`primary != `extended &&
+		          p2["type"]:`primary != `extended &&
+		          size(p1["raid_name"]:"")==0 && 
+		          size(p1["mount"]:"")==0 &&
+			  size(p1["vg_name"]:"")==0 &&
+		          size(p2["raid_name"]:"")==0 && 
+		          size(p2["mount"]:"")==0 &&
+			  size(p2["vg_name"]:"")==0 )
+			  {
+			  ret = add( ret, [ dev1, dev2 ] );
+			  }
+		      });
+
+	     });
+    y2milestone( "ret %1", ret );
+    return( ret );
+    }
 }

@@ -151,7 +151,6 @@
 		    HwStatus::Set (drive["unique_key"]:"", `yes);
 		});
 	    }
-	    y2milestone( "after Mode::initial" );
 	}
 	else
 	{
@@ -223,241 +222,241 @@
      * @return	map	TargetMap
      */
 
-    define map localProbe ()
+define map localProbe ()
     ``{
-	map targets = $[];
+    map targets = $[];
 
-	if ( Mode::test )
+    if( Mode::test )
 	{
-	    return fakeProbe();
+	return fakeProbe();
 	}
 
-	// do the probing
-	list all_disks = SCR::Read(.probe.disk);
+    // do the probing
+    list all_disks = SCR::Read(.probe.disk);
 
-	y2milestone("disks probed");
+    y2milestone("disks probed");
 
-	if (size (all_disks) == 0)
+    if( size(all_disks)==0 )
 	{
-	    // somehow, we couldn't find any harddisks for installation. This is a fatal error,
-	    // we can't do anything about it
-	    return targets;
+	// somehow, we couldn't find any harddisks for installation. 
+	// This is a fatal error, we can't do anything about it
+	return targets;
 	}
 
-	// loop over all_disks, constructing targets map
+    // loop over all_disks, constructing targets map
 
-	integer ide_count = 0;
-	integer scsi_count = 0;
-	integer raid_count = 0;
+    integer ide_count = 0;
+    integer scsi_count = 0;
+    integer raid_count = 0;
 
-	foreach (`disk, all_disks,
+    foreach (`disk, all_disks,
 	``{
-	    map target = $[];
+	map target = $[];
 
-	    boolean is_zip = false;
+	boolean is_zip = false;
 
-	    boolean notready = disk["notready"]:false;
+	boolean notready = disk["notready"]:false;
 
-	    is_zip = (notready || check4zip (disk));
+	is_zip = (notready || check4zip (disk));
 
-	    string bus = disk["bus"]:"?";
-	    string dname = "";
-	    integer i = 0;
+	string bus = disk["bus"]:"?";
+	string dname = "";
+	integer i = 0;
 
-	    // write out data for hardware status check
-	    HwStatus::Set (disk["unique_key"]:"", `yes);
+	// write out data for hardware status check
+	HwStatus::Set (disk["unique_key"]:"", `yes);
 
-	    // ------------------------------------------------------
-	    // check bus, count disks per bus
+	target["unique"] = disk["unique_key"]:"";
 
-	    if (bus == "IDE")
+	// ------------------------------------------------------
+	// check bus, count disks per bus
+
+	if (bus == "IDE")
 	    {
-		ide_count = ide_count + 1;
-		i = ide_count;
+	    ide_count = ide_count + 1;
+	    i = ide_count;
 	    }
-	    else if (bus == "SCSI")
+	else if (bus == "SCSI")
 	    {
-		scsi_count = scsi_count + 1;
-		i = scsi_count;
+	    scsi_count = scsi_count + 1;
+	    i = scsi_count;
 	    }
-	    else if (bus == "RAID")
+	else if (bus == "RAID")
 	    {
-		raid_count = raid_count + 1;
-		i = raid_count;
+	    raid_count = raid_count + 1;
+	    i = raid_count;
 	    }
-	    else
+	else
 	    {
-		i = 1;		// Oops, which bus ?
+	    i = 1;		// Oops, which bus ?
 	    }
 
-	    target["bus"] = bus;
+	target["bus"] = bus;
 
-	    // ------------------------------------------------------
-	    // construct disk name for user
+	// ------------------------------------------------------
+	// construct disk name for user
 
-	    dname = ""+i+". "+bus+", ";
+	dname = ""+i+". "+bus+", ";
 
-	    // needed also later as key
-	    string ddevice = disk["dev_name"]:"?";
+	// needed also later as key
+	string ddevice = disk["dev_name"]:"?";
 
-	    // remember bios id code if set
-	    string bios_id = disk["bios_id"]:"";
-	    if (bios_id != "")
+	// remember bios id code if set
+	string bios_id = disk["bios_id"]:"";
+	if (bios_id != "")
 	    {
-		if ((bios_id == "0x80")		// first BIOS drive
-		    && (ddevice != "/dev/hda"))	// is not hda
+		// first BIOS drive is not hda
+	    if( (bios_id == "0x80") && (ddevice != "/dev/hda"))	
 		{
-		    mixedDevices = true;
+		mixedDevices = true;
 		}
-		target["bios_id"] = bios_id;
+	    target["bios_id"] = bios_id;
 	    }
 
-	    // - - - - - - - - - - - - - - - - - - - - 
-	    // split /dev/... -> [ "", "dev", "hda" ]
+	// - - - - - - - - - - - - - - - - - - - - 
+	// split /dev/... -> [ "", "dev", "hda" ]
 
-	    list listpath = splitstring (ddevice, "/");
+	list listpath = splitstring (ddevice, "/");
 
-	    if (size (listpath) < 3)
+	if (size (listpath) < 3)
 	    {
-		y2error("too few / in %1", ddevice);
+	    y2error("too few / in %1", ddevice);
 	    }
 
-	    if (listpath[1]:"" != "dev")
+	if (listpath[1]:"" != "dev")
 	    {
-		y2error("not /dev in %1", ddevice);
+	    y2error("not /dev in %1", ddevice);
 	    }
 
-	    // get first path after /dev
+	// get first path after /dev
 
-	    string stringpath = "." + listpath[2]:"";
+	string stringpath = "." + listpath[2]:"";
 
-	    // might be RAID /dev/ida/xy -> [ "", "dev", "ida", "xy" ]
+	// might be RAID /dev/ida/xy -> [ "", "dev", "ida", "xy" ]
 
-	    if (size (listpath) > 3)
+	if (size (listpath) > 3)
 	    {
-		list raidpathes = [ ".rd", ".ida", ".cciss", ".ataraid" ];
-		if (contains (raidpathes, stringpath))
+	    list raidpathes = [ ".rd", ".ida", ".cciss", ".ataraid" ];
+	    if (contains (raidpathes, stringpath))
 		{
-		    target["raid"] = true;
+		target["raid"] = true;
 		}
 	    }
 
-	    integer pathidx = 3;
-	    while (pathidx < size (listpath))
+	integer pathidx = 3;
+	while (pathidx < size (listpath))
 	    {
-		stringpath = stringpath + "." + listpath[pathidx]:"";
-		pathidx = pathidx + 1;
+	    stringpath = stringpath + "." + listpath[pathidx]:"";
+	    pathidx = pathidx + 1;
 	    }
 
-	    path diskpath = topath (stringpath);
-	    path fullpath = .disk + diskpath;
+	path diskpath = topath (stringpath);
+	path fullpath = .disk + diskpath;
 
-	    y2milestone("disk_size: %1", ddevice);
+	y2milestone("disk_size: %1", ddevice);
 
+	// call fdisk agent to get size information
+
+	integer cyl_count = 0;
+	integer cyl_size = 0;
+	integer max_primary = 4;
+
+	if( !Arch::s390 )
+	    {
 	    // call fdisk agent to get size information
-
-	    integer cyl_count = 0;
-	    integer cyl_size = 0;
-	    integer max_primary = 4;
-
-	    if ( !Arch::s390 )
-	    {
-		// call fdisk agent to get size information
-	
-		if (!is_zip)
-		{
-		    cyl_count = SCR::Read(fullpath+.disk_size);
-		    cyl_size= SCR::Read(fullpath+.bytes_per_unit);
-		    max_primary= SCR::Read(fullpath+.max_primary);
-		}
-
-		target["cyl_count"] = cyl_count;
-		target["cyl_size"] = cyl_size;
-		target["max_primary"] = max_primary;
-
-		y2milestone( "diskinfo: cyl_count %1 cyl_size %2 max_primary %3", 
-		             cyl_count, cyl_size, max_primary);
-	    }
-	    else
-	    {
-		// on s390 look at libhd-info for diskinfo
-		// "resource":$["disk_log_geo":[$["cylinders":2226, "heads":15, "sectors":12]
-		//              "size":[$["unit":"sectors", "x":400680, "y":4096]]
-
-		map     size_map   = disk["resource", "size", 0]:$[];
-		integer disk_size  = size_map["x"]:0 * size_map["y"]:0;
-
-		cyl_count  = disk["resource", "disk_log_geo", 0, "cylinders"]:1;
-		cyl_size   = disk_size / cyl_count;
-
-		target["cyl_count"] = cyl_count;
-		target["cyl_size"] = cyl_size;
-
-		y2milestone( "diskinfo: sizemap %1 disksize %2 cyl_count %3 cyl_size %4", size_map, disk_size, cyl_count, cyl_size);
-	    }
-
-	    // ------------------------------------------------------
-	    // construct full target name
-
-	    dname = dname + size_text(cyl_count * cyl_size) + ", " + ddevice + ", ";
-
-	    string dinfo = disk["vendor"]:"";
-	    target["vendor"]:dinfo;
-
-	    if (dinfo != "")
-	    {
-	        dname = dname + dinfo + "-";
-	    }
-	    dinfo = disk["device"]:"";
-	    target["model"] = dinfo;
-
-	    if (dinfo != "")
-	    {
-	        dname = dname + dinfo;
-	    }
-
-	    target["name"] = dname;
-
-	    // ----------------------------------------------------------
-	    // Partitions
-
-	    list partitions = [];
+    
 	    if (!is_zip)
 		{
-		partitions = Check4partitions (ddevice, target, diskpath);
+		cyl_count = SCR::Read(fullpath+.disk_size);
+		cyl_size= SCR::Read(fullpath+.bytes_per_unit);
+		max_primary= SCR::Read(fullpath+.max_primary);
 		}
 
-	    target["scrpath"] = diskpath;
-	    target["partitions"] = partitions;
+	    target["cyl_count"] = cyl_count;
+	    target["cyl_size"] = cyl_size;
+	    target["max_primary"] = max_primary;
 
-	    // add constructed target map to list of all targets
-
-	    if (!notready
-		&& (size (target) > 0))
+	    y2milestone( "diskinfo: cyl_count %1 cyl_size %2 max_primary %3", 
+			 cyl_count, cyl_size, max_primary);
+	    }
+	else
 	    {
-		if (is_zip)
-		    zipDrives[ddevice] = target;
-		else
-		    targets[ddevice] = target;
+	    // on s390 look at libhd-info for diskinfo
+	    // "resource":$["disk_log_geo":
+	    //                  [$["cylinders":2226, "heads":15, "sectors":12]
+	    //              "size":[$["unit":"sectors", "x":400680, "y":4096]]
+
+	    map     size_map   = disk["resource", "size", 0]:$[];
+	    integer disk_size  = size_map["x"]:0 * size_map["y"]:0;
+
+	    cyl_count  = disk["resource", "disk_log_geo", 0, "cylinders"]:1;
+	    cyl_size   = disk_size / cyl_count;
+
+	    target["cyl_count"] = cyl_count;
+	    target["cyl_size"] = cyl_size;
+
+	    y2milestone( "diskinfo: sizemap %1 disksize %2 cyl_count %3 cyl_size %4", size_map, disk_size, cyl_count, cyl_size);
+	    }
+
+	// ------------------------------------------------------
+	// construct full target name
+
+	dname = dname + size_text(cyl_count * cyl_size) + ", " + ddevice + ", ";
+
+	string dinfo = disk["vendor"]:"";
+	target["vendor"]:dinfo;
+
+	if (dinfo != "")
+	    {
+	    dname = dname + dinfo + "-";
+	    }
+	dinfo = disk["device"]:"";
+	target["model"] = dinfo;
+
+	if (dinfo != "")
+	    {
+	    dname = dname + dinfo;
+	    }
+
+	target["name"] = dname;
+
+	// ----------------------------------------------------------
+	// Partitions
+
+	list partitions = [];
+	if (!is_zip)
+	    {
+	    partitions = Check4partitions (ddevice, target, diskpath);
+	    }
+
+	target["scrpath"] = diskpath;
+	target["partitions"] = partitions;
+
+	// add constructed target map to list of all targets
+
+	if (!notready && (size (target) > 0))
+	    {
+	    if (is_zip)
+		zipDrives[ddevice] = target;
+	    else
+		targets[ddevice] = target;
 	    }
 
 	}); // foreach (`disk)
 
-	if ((ide_count > 0)
-	     && (scsi_count > 0))
+    if( (ide_count > 0) && (scsi_count > 0))
 	{
-	    mixedDevices = true;
+	mixedDevices = true;
 	}
 
-	SCR::UnmountAgent(.disk);
+    SCR::UnmountAgent(.disk);
 
-	zipDrives = union (zipDrives, findZIPs ());
+    zipDrives = union (zipDrives, findZIPs ());
 
-	if (Mode::test)
-	    SCR::Write(.dumpto.tmp.targets, targets);
+    if (Mode::test)
+	SCR::Write(.dumpto.tmp.targets, targets);
 
-	return targets;
-
+    return targets;
     } // localProbe()
 
 
@@ -557,7 +556,7 @@
 
     // count the links for "pseudo" devices
 
-    map linknum = $[ "cdrom":0, "cdrecorder":0, "dvd":0];
+map linknum = $[ "cdrom":0, "cdrecorder":0, "dvd":0];
 
 define void symlink_cdrom( map cdinfo )
     ``{
@@ -674,7 +673,7 @@ global define list Check4partitions (string diskdev, map disk, path diskpath)
     ``{
     list partitions = [];
 
-    if ( !Arch::s390 )
+    if( find( diskdev, "/dev/dasd" )!=0 )
 	{  
 	partitions = SCR::Read(.disk + diskpath + .partitions, 
 			       Partitions::UseParted() );
@@ -690,7 +689,7 @@ global define list Check4partitions (string diskdev, map disk, path diskpath)
 	}
     else
 	{
-	// On s390 there is only one partition per device /dev/dasd*
+	// There is only one partition per device /dev/dasd*
 	integer cyl_count  = disk["cyl_count"]:0;
 	integer cyl_size   = disk["cyl_size"]:1000000;
 
