@@ -482,7 +482,7 @@ EvmsAccess::EvmsAccess()
     {
     y2debug( "begin Konstruktor EvmsAccess" );
     unlink( "/var/lock/evms-engine" );
-//    evms_set_load_plugin_fct( PluginFilterFunction );
+    evms_set_load_plugin_fct( PluginFilterFunction );
     int ret = evms_open_engine( NULL, (engine_mode_t)ENGINE_READWRITE, NULL, 
                                 EVERYTHING, NULL );
     y2debug( "evms_open_engine ret %d", ret );
@@ -1477,15 +1477,3 @@ ostream& operator<<( ostream &str, const EvmsAccess& obj )
     obj.Output( str );
     return( str );
     }
-
-string EvmsAccess::GetErrorText()
-    {
-    return Error_C;
-    }
-
-string EvmsAccess::GetCmdLine()
-    {
-    return CmdLine_C;
-    }
-
-

@@ -123,8 +123,8 @@ class EvmsAccess
 	void Output( ostream &Stream ) const;
 	void ListVolumes( list<const EvmsVolumeObject*>& l ) const;
 	void ListContainer(list<const EvmsContainerObject*>& l ) const;
-	string GetErrorText();
-	string GetCmdLine();
+	string GetErrorText() {return Error_C;};
+	string GetCmdLine() {return CmdLine_C;};
 	bool ChangeActive( const string& Name_Cv, bool Active_bv );
 	bool DeleteCo( const string& Container_Cv );
 	bool ExtendCo( const string& Container_Cv, const string& PvName_Cv );
