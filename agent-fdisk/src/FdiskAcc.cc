@@ -83,6 +83,7 @@ FdiskAccess::FdiskAccess(string Disk_Cv, bool Readonly_bv )
 	}
 #endif // __alpha__
 #endif // ! __sparc_
+    Label_C = BsdLabel_b ? "bsd" : "msdos";
     SendPrint();
     }
 }
@@ -127,7 +128,7 @@ bool
 FdiskAccess::NewPartition(const PartitionType Part_e,
 			  const unsigned PartNr_iv,
 			  string Von_Cv, string Bis_Cv,
-			  const unsigned Type_iv )
+			  const unsigned Type_iv, string DefLabel_Cv )
 {
   bool ret = false;
   Changed_b = true;

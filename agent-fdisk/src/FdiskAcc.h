@@ -26,7 +26,7 @@ public:
   virtual void Delete(const unsigned Part_iv);
   virtual bool NewPartition(const PartitionType Part_e, const unsigned Part_nr,
 		            string Von_Cv, string Bis_Cv, 
-			    const unsigned Type_iv);
+			    const unsigned Type_iv, string DefLabel_Cv );
   virtual void DeleteAll();
 
 protected:

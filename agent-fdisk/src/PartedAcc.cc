@@ -19,13 +19,10 @@ PartedAccess::PartedAccess(string Disk_Cv, bool Readonly_bv )
   y2debug( "Constructor called Disk:%s Readonly:%d", Disk_Cv.c_str(),
            Readonly_bv );
 
-  if( Readonly_bv )
-    {
-    GetPartitionList();
-    }
+  GetPartitionList( !Readonly_bv );
 }
 
-void PartedAccess::GetPartitionList()
+void PartedAccess::GetPartitionList( bool OnlyLabel_bv )
     {
     string Tmp_Ci = string(PARTEDCMD);
     Tmp_Ci += Disk_C;
@@ -42,7 +39,10 @@ void PartedAccess::GetPartitionList()
 	Label_C = ExtractNthWord( 3, Tmp_Ci );
 	}
     y2debug( "Label:%s", Label_C.c_str() );
-    CheckOutput(Cmd_Ci, Disk_C);
+    if( !OnlyLabel_bv )
+	{
+	CheckOutput(Cmd_Ci, Disk_C);
+	}
     }
 
 PartedAccess::~PartedAccess()
@@ -62,56 +62,35 @@ PartedAccess::CheckError( const string& CmdString_Cv, SystemCmd& Cmd_C )
     Stderr_C += Tmp_Ci;
     }
 
-string 
-PartedAccess::DiskLabel()
-    {
-    return( Label_C );
-    }
-
 bool
 PartedAccess::NewPartition(const PartitionType Part_e,
 			  const unsigned PartNr_iv,
 			  string Von_Cv, string Bis_Cv,
-			  const unsigned Type_iv )
+			  const unsigned Type_iv,
+			  string DefLabel_Cv )
 {
   y2milestone( "type:%d nr:%d von:%s bis:%s type:%d", Part_e, PartNr_iv,
                Von_Cv.c_str(), Bis_Cv.c_str(), Type_iv );
   std::ostringstream Buf_Ci;
   bool Ok_bi = true;
   Changed_b = true;
-  Buf_Ci << PARTEDCMD << Disk_C << " mkpart ";
   Stderr_C.erase();
+  if( Label_C.length()==0 )
+      {
+      Buf_Ci << PARTEDCMD << Disk_C << " mklabel " << DefLabel_Cv;
+      SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );
+      CheckError( Buf_Ci.str(), Cmd_Ci );
+      Buf_Ci.str( "" );
+      }
+  Buf_Ci << PARTEDCMD << Disk_C << " mkpart ";
   switch (Part_e)
     {
     case PAR_TYPE_LOGICAL:
       Buf_Ci << "logical ";
-      if( Type_iv == 0x82 )
-	  {
-	  Buf_Ci << "linux-swap ";
-	  }
-      else if( Type_iv == 0x06 || Type_iv == 0x0c )
-	  {
-	  Buf_Ci << "fat32 ";
-	  }
-      else
-	  {
-	  Buf_Ci << "ext2 ";
-	  }
       break;
     case PAR_TYPE_PRIMARY:
       Buf_Ci << "primary ";
-      if( Type_iv == 0x82 )
-	  {
-	  Buf_Ci << "linux-swap ";
-	  }
-      else if( Type_iv == 0x06 || Type_iv == 0x0c )
-	  {
-	  Buf_Ci << "fat32 ";
-	  }
-      else
-	  {
-	  Buf_Ci << "ext2 ";
-	  }
+      break;
       break;
     case PAR_TYPE_EXTENDED:
       Buf_Ci << "extended ";
@@ -120,6 +99,25 @@ PartedAccess::NewPartition(const PartitionType Part_e,
       Ok_bi = false;
       break;
     }
+  if( Ok_bi && Part_e != PAR_TYPE_EXTENDED )
+      {
+      if( Type_iv == 0x82 )
+	  {
+	  Buf_Ci << "linux-swap ";
+	  }
+      else if( Type_iv == 0x06 || Type_iv == 0x0c )
+	  {
+	  Buf_Ci << "fat32 ";
+	  }
+      else if( Type_iv == 0x102 )
+	  {
+	  Buf_Ci << "hfs ";
+	  }
+      else
+	  {
+	  Buf_Ci << "ext2 ";
+	  }
+      }
   std::istringstream Data_Ci( Von_Cv );
   unsigned Num_ui;
   Data_Ci >> Num_ui;
@@ -208,7 +206,7 @@ PartedAccess::Resize(const unsigned Part_iv, const unsigned NewCylCnt_iv )
 {
   Changed_b = true;
   bool ret = false;
-  GetPartitionList();
+  GetPartitionList(false);
   std::ostringstream Buf_Ci;
   Buf_Ci << PARTEDCMD << Disk_C << " resize " << Part_iv << " ";
   vector<PartInfo>::iterator I_ii = Part_C.begin();
@@ -371,6 +369,19 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
 		val = val.substr( 0, pos );
 		}
 	    Part_rr.Info_C = val;
+	    if( Part_rr.Id_i == PART_ID_LINUX_NATIVE )
+		{
+		if( val.find( "Apple_partition" ) != string::npos || 
+		    val.find( "Apple_Driver" ) != string::npos ||
+		    val.find( "Apple_Patches" ) != string::npos )
+		    {
+		    Part_rr.Id_i = 0x101;
+		    }
+		else if( val.find( "Apple_HFS" ) != string::npos )
+		    {
+		    Part_rr.Id_i = 0x102;
+		    }
+		}
 	    }
 	}
     y2debug( "Fields Num:%d Id:%x Ptype:%d Start:%d End:%d Block:%lu",

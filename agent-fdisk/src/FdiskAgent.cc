@@ -87,6 +87,7 @@ FdiskAgent::Read(const YCPPath& path, const YCPValue& arg)
     {
       // Return the partition table
       YCPList partitions;
+      partitions->add (YCPString(fdisk_cmd->DiskLabel()));
       vector<PartInfo> &part_info = fdisk_cmd->Partitions();
       for (vector<PartInfo>::iterator entry = part_info.begin();
 	   entry != part_info.end(); entry++)
@@ -174,10 +175,27 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
   y2milestone("FdiskAgent::Write(%s, %s, %s)", path->toString().c_str(),
 	      value.isNull()?"nil":value->toString().c_str(),
 	      arg.isNull()?"nil":arg->toString().c_str());
+  string DefLabel_Ci = "msdos";
 
   bool use_parted = false;
   if( !arg.isNull() && arg->isBoolean() && arg->asBoolean()->value() )
       use_parted = true;
+  else if( !arg.isNull() && arg->isMap() )
+      {
+      y2milestone( "is map" );
+      YCPMap mp = arg->asMap();
+      YCPValue ped = mp->value(YCPString("parted"));
+      YCPValue lbl = mp->value(YCPString("label"));
+      if( !ped.isNull() && ped->isBoolean() && ped->asBoolean()->value() )
+	  {
+	  use_parted = true;
+	  }
+      if( !lbl.isNull() && lbl->isString() )
+	  {
+	  DefLabel_Ci = lbl->asString()->value();
+	  }
+      }
+  y2milestone( "use_parted %d label:%s", use_parted, DefLabel_Ci.c_str() );
 
   if (path->length() < 2)
     {
@@ -318,12 +336,14 @@ FdiskAgent::Write(const YCPPath& path, const YCPValue& value, const YCPValue& ar
 			   cpart->type, cpart->nr, start_string.c_str(),
 			   end_string.c_str());
 	      y2milestone( "setting type of partition to %x", cpart->fsid);
-	      if (!fdisk_cmd->NewPartition (cpart->type, cpart->nr, start_string,
-					   end_string, cpart->fsid ))
-		{
-		  y2error("fdisk failed for %s", cpart->entry->toString().c_str());
+	      if( !fdisk_cmd->NewPartition( cpart->type, cpart->nr, 
+	                                    start_string, end_string, 
+					    cpart->fsid, DefLabel_Ci ))
+		  {
+		  y2error( "fdisk failed for %s", 
+		           cpart->entry->toString().c_str());
 		  return YCPBoolean(false);
-		}
+		  }
 
 	    }
 	  if (fdisk_cmd->Changed())

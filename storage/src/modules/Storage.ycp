@@ -2237,12 +2237,34 @@ global define list GetRootInitrdModules()
      * @return integer
      */
     
-    global define integer ZeroDevice(string del_device)``{
-	string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1", del_device );
-	integer ret_zero   = SCR::Execute(.target.bash, zero_string );
-	integer ret_reread = SCR::Execute(.target.bash, sformat("/sbin/blockdev --rereadpt %1", del_device ));
-	y2milestone( "Partitiontable of device %1 deleted (%2-%3)", del_device, ret_zero, ret_reread);
-	return (ret_zero + ret_reread);
+global define integer ZeroDevice(string del_device)
+    ``{
+    string zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=2k count=1", 
+                         del_device );
+    integer ret_zero   = SCR::Execute(.target.bash, zero_string );
+    map tg = GetTargetMap();
+    if( tg[del_device,"label"]:"msdos" == "gpt" )
+	{
+	map bo = SCR::Execute(.target.bash_output, 
+	                      "/sbin/blockdev --getsize " + del_device );
+	y2milestone( "bo %1", bo );
+	integer siz = 0;
+	siz = tointeger( bo["stdout"]:"" ) / 2;
+	y2milestone( "size %1", siz );
+	if( siz>0 )
+	    {
+	    zero_string = sformat( "/bin/dd if=/dev/zero of=%1 bs=1k seek=%2",
+	                           del_device, siz-5 );
+	    y2milestone( "zero_string %1", zero_string );
+	    ret_zero = SCR::Execute(.target.bash, zero_string );
+	    }
+	}
+    integer ret_reread = SCR::Execute(.target.bash, 
+                                      sformat("/sbin/blockdev --rereadpt %1", 
+				              del_device ));
+    y2milestone( "Partitiontable of device %1 deleted (%2-%3)", del_device, 
+                 ret_zero, ret_reread);
+    return (ret_zero + ret_reread);
     }
 
 

@@ -27,6 +27,7 @@ public:
   unsigned PrimaryMax();
   bool Changed() { return Changed_b; };
   vector<PartInfo>& Partitions();
+  string DiskLabel();
 
   static string GetDiskName(string Part_Cv);
   static int GetPartNumber(const string& Part_Cv);
@@ -38,7 +39,8 @@ public:
   virtual void DeleteAll() {};
   virtual bool NewPartition(const PartitionType Part_e, const unsigned Part_nr,
 		            string Von_Cv, string Bis_Cv, 
-			    const unsigned Type_iv) { return false; };
+			    const unsigned Type_iv,
+			    string DefLabel_Cv ) { return false; };
   virtual void SetType(const unsigned Part_iv, const unsigned Type_iv) {};
   string Stderr();
 
@@ -48,6 +50,7 @@ protected:
 
   string Stderr_C;
   string Disk_C;
+  string Label_C;
   int Head_i;
   int Cylinder_i;
   int Sector_i;

@@ -189,4 +189,9 @@ DiskAccess::GetPartDeviceName(int Num_iv, string Disk_Cv)
   return Ret_Ci;
 }
 
+string 
+DiskAccess::DiskLabel()
+    {
+    return( Label_C );
+    }
 

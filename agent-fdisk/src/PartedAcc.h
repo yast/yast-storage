@@ -24,10 +24,9 @@ public:
   virtual void DeleteAll();
   virtual bool NewPartition(const PartitionType Part_e, const unsigned Part_nr,
 		            string Von_Cv, string Bis_Cv, 
-			    const unsigned Type_iv );
+			    const unsigned Type_iv, string DefLabel_Cv );
   bool Resize( const unsigned Part_iv, const unsigned NewLastCyl_iv );
   virtual void SetType(const unsigned Part_iv, const unsigned Type_iv);
-  string DiskLabel();
 
 protected:
   void CheckError( const string& CmdString_Cv, SystemCmd& Cmd_C );
@@ -35,8 +34,7 @@ protected:
   string GetPartitionNumber(int Part_iv);
   void CheckOutput(SystemCmd& Cmd_C, string Pat_Cv);
   bool ScanLine(string Line_Cv, PartInfo& Part_rr);
-  void GetPartitionList();
-  string Label_C;
+  void GetPartitionList( bool OnlyLabel_bv );
 };
 
 #endif
