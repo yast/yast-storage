@@ -123,13 +123,12 @@ HINTS: Always use
    if ( Arch::s390 )
    {
        showT_cyl	 = false;
-       showT_format	 = false;
        showT_id 	 = true;
-       show_disk         = false;
        edit_cylinder     = false;
        button_create     = false;
        button_delete	 = false;
        button_resize	 = false;
+       button_delete_parttable	= false;
     }
 
    if ( Arch::alpha )
@@ -999,7 +998,8 @@ define FillPartitionList ()
 	     term a = `item(`id(disk_dev_name));
 
 	     if  ( showT_dev )    a = add(a, disk_dev_name );
-	     if  ( showT_id )     a = add(a, "" );
+	     if  ( showT_id )     a = add(a, sformat( " (%1)", 
+	                                              disk["bios_id"]:"" ) );
 	     if  ( showT_size )   a = add(a, dev_size );
 	     if  ( showT_format ) a = add(a, " ");
 	     if  ( showT_fs )     a = add(a, vendor);
@@ -1024,8 +1024,8 @@ define FillPartitionList ()
 	     ``{
 	     // dont show "system partitions"
 	     string fstype = partition["fstype"]:"";
-	     list   hit    = filter(`v, not_shown_partitions, 
-	                            ``(issubstring(fstype, v)) );
+	     list hit = filter(`v, not_shown_partitions, 
+	                       ``(issubstring(fstype, v)) );
 	     if ( hit != [] ) continue;
 
 	     if ( !partition["delete"]:false || log_mode )
@@ -1039,16 +1039,7 @@ define FillPartitionList ()
 		string   part_dev_name   = "";
 		string   part_id         = "";
 
-		if ( !Arch::s390 )
-		   {
-		   part_dev_name = Storage::GetDeviceName( disk_dev_name, lookup ( partition, "nr", 0) );
-		   }
-		else
-		   {
-		   // s390:
-		   part_dev_name = substring( disk_dev_name, 5);
-		   part_id       = sformat( " (%1)", disk["bios_id"]:"" );
-		   }
+	        part_dev_name = partition["device"]:"";
 
 		////////////////////////////////////////////////////////////
 		// Format other Colums:
@@ -1157,6 +1148,9 @@ define FillPartitionList ()
 	map disk1 = Storage::GetDiskPartition( select(lineA, 1, 0) );
 	map disk2 = Storage::GetDiskPartition( select(lineB, 1, 0) );
 
+	y2milestone( "disk1 %1", disk1 );
+	y2milestone( "disk2 %1", disk2 );
+
 	ret = disk1["disk"]:"" <= disk2["disk"]:"";
 
 	if( is( disk1["nr"]:0, integer ) != is( disk2["nr"]:0, integer ))
@@ -1167,6 +1161,7 @@ define FillPartitionList ()
 	    {
 	    ret = disk1["nr"]:0 <= disk2["nr"]:0;
 	    }
+	y2milestone( "ret %1", ret );
 	return ret;
 	}));
     };
@@ -2286,9 +2281,27 @@ global define ChoosePart( string usage )
 
     
     list expert_item_list =[];
-    if ( button_reread   ) 	   expert_item_list = add( expert_item_list , `item (`id (`reread),  _("&Reread partition table")));
-    if ( button_adapt_mp ) 	   expert_item_list = add( expert_item_list,  `item (`id (`adapt_mp), 	_("&Import mount points from existing /etc/fstab")));
-    if ( button_delete_parttable ) expert_item_list = add( expert_item_list,  `item (`id (`delete_parttable),_("Delete partition &table and disk label")));
+    if( button_reread ) 
+	expert_item_list = 
+	    add( expert_item_list , 
+		 `item( `id (`reread),  _("&Reread partition table")));
+    if( button_adapt_mp ) 
+	expert_item_list = 
+	    add( expert_item_list, 
+		 `item( `id (`adapt_mp), 
+		        _("&Import mount points from existing /etc/fstab")));
+    if ( button_delete_parttable ) 
+	expert_item_list = 
+	    add( expert_item_list,  
+		 `item( `id (`delete_parttable),
+		        _("Delete partition &table and disk label")));
+    if( Arch::s390 )
+	{
+	expert_item_list = 
+	    add( expert_item_list,
+		 `item( `id(`dasdfmt),
+		        _("Execute dasdfmt on the DASD device")));
+	}
 
     
     list raid_item_list = [];
@@ -2310,7 +2323,8 @@ global define ChoosePart( string usage )
     if ( button_raid )  buttonline_b = add( buttonline_b, `MenuButton( _("&RAID...") , raid_item_list  ));
 
     // main dialog: Menu-Button for Expert options 
-    if ( button_expert) buttonline_b = add( buttonline_b, `MenuButton ( _("E&xpert.."), expert_item_list ));
+    if( button_expert) buttonline_b = 
+	add( buttonline_b, `MenuButton ( _("E&xpert.."), expert_item_list ));
 
 
    
@@ -2974,9 +2988,9 @@ freed disk space?
 
 	boolean ask_reread = true;
 	
-	////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
         // Delete partition table and disk label
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
 	
         if (ret == `delete_parttable)
 	{
@@ -2996,10 +3010,56 @@ freed disk space?
 	    }
 	}
 
+	if( Arch::s390 && ret == `dasdfmt )
+	    {
+	    string id 		= UI::QueryWidget(`id(`table), `CurrentItem);
+	    string maindevkey 	= Storage::GetMainDevKey(id);
+
+	    y2milestone( "dasdfmt disk:%1", maindevkey );
+
+	    if( Storage::IsKeyMainDevKey(id) && 
+	        find( maindevkey, "/dev/dasd")==0 )
+		{
+		map tg = Storage::GetTargetMap();
+		map curr_disk = tg[maindevkey]:$[];
+		boolean yn = UI::YesNoPopup(sformat(
+_("Do you really want to execute dasdfmt on disk %1?
+All data on this disk will be lost"),maindevkey));
+                y2milestone( "yn=%1", yn );
+		if( yn )
+		    {
+		    curr_disk["dasdfmt"] = true;
+		    curr_disk["partitions"] = 
+			StorageDevices::GetS390Partitions( maindevkey, 
+			                                   curr_disk, [] );
+		    tg[maindevkey] = curr_disk;
+		    Storage::SetTargetMap( tg );
+		    }
+		else
+		    {
+		    if( curr_disk["dasdfmt"]:false )
+			{
+			list ppart = SCR::Read(.proc.partitions);
+			curr_disk["partitions"] = 
+			    StorageDevices::GetS390Partitions( maindevkey,
+			                                       curr_disk,
+							       ppart );
+			curr_disk["dasdfmt"] = false;
+			tg[maindevkey] = curr_disk;
+			Storage::SetTargetMap( tg );
+			}
+		    }
+		}
+	    else
+		{
+		UI::ErrorPopup( _("You have to select the DASD disk for which dasdfmt should be executed"));
+		}
+	    }
+
 	
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
         // REREAD
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
 
         if (ret == `reread)
 	    {

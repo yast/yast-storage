@@ -493,25 +493,62 @@ damage to your file systems, it is safer to cancel and reboot.
 
     SCR::Write(Storage::SaveDumpPath("targetMap_p2"), Storage::GetTargetMap() );
     foreach (`tdevice, `target, Storage::GetTargetMap(),
-    ``{
-
+	``{
 	if (cancel)
-	{
+	    {
 	    return;
-	};
+	    };
 
 	// every disk
 	list partitions = target["partitions"]:[];
 
 	y2debug("Target: %1", tdevice );
 
-	// Partitioning with fdisk agent  (s390 needs no partitioning)
-	if ( this_is_for_real
-	     && !Arch::s390
-	     && !target["is_lvm_vg"]:false
-	     && tdevice != "/dev/md" )
-	{
+	if( Arch::s390 && target["dasdfmt"]:false )
+	    {
+	    boolean ok = true;
+	    retry = false;
+	    UI::ChangeWidget(`id(`progress), `Label,
+			     sformat(_("dasdfmt disk %1"), tdevice ));
+	    string cmd = sformat( "dasdfmt -y -v -b 4096 -d cdl -f %1", 
+	                          tdevice );
+	    do
+		{
+		y2milestone( "Executing cmd = %1", cmd );
+		ok = SCR::Execute( .target.bash, cmd ) == 0; 	
+		if( ok )
+		    {
+		    cmd = sformat( "fdasd -a %1", tdevice );
+		    y2milestone( "Executing cmd = %1", cmd );
+		    ok = SCR::Execute( .target.bash, cmd ) == 0; 
+		    }
+		if( !ok )
+		    {
+		    symbol ret = UI::AnyQuestionPopup3( _("dasdfm failed."),
+			sformat( _("dasdfmt failed on disk %1"), tdevice),
+			UI::ContinueButtonLabel(),
+			UI::AbortButtonLabel(),
+			UI::RetryButtonLabel(), `focus_no);
 
+		    if( ret == `retry )
+			{
+			retry = true;
+			}
+		    else if ( ret == `no )
+			{
+			cancel = true;
+			//abort foreach run
+			return;
+			}
+		    }
+		}
+	    while( !ok && retry );
+	    }
+
+	// Partitioning with fdisk agent  (s390 needs no partitioning)
+	if( this_is_for_real && !Arch::s390 && !target["is_lvm_vg"]:false &&
+	    tdevice != "/dev/md" )
+	    {
 	    string zero_partition_table = target["zero_partition_table"]:"";
 	    if ( zero_partition_table != "")
 		{

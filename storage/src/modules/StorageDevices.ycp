@@ -26,6 +26,7 @@
     import "HwStatus";
     import "Storage";
     import "Partitions";
+    import "ModuleLoading";
 
     textdomain "storage";
 
@@ -225,10 +226,15 @@
 define map localProbe ()
     ``{
     map targets = $[];
+    list ppart = [];
 
     if( Mode::test )
 	{
 	return fakeProbe();
+	}
+    if( Arch::s390 )
+	{
+	ppart = SCR::Read(.proc.partitions);
 	}
 
     // do the probing
@@ -364,7 +370,6 @@ define map localProbe ()
 	if( !Arch::s390 )
 	    {
 	    // call fdisk agent to get size information
-    
 	    if (!is_zip)
 		{
 		cyl_count = SCR::Read(fullpath+.disk_size);
@@ -424,9 +429,16 @@ define map localProbe ()
 	// Partitions
 
 	list partitions = [];
-	if (!is_zip)
+	if( !is_zip )
 	    {
-	    partitions = Check4partitions (ddevice, target, diskpath);
+	    if( find( ddevice, "/dev/dasd" )!=0 )
+		{
+		partitions = Check4partitions (ddevice, target, diskpath);
+		}
+	    else
+		{
+		partitions = GetS390Partitions( ddevice, target, ppart );
+		}
 	    }
 
 	target["scrpath"] = diskpath;
@@ -459,102 +471,142 @@ define map localProbe ()
     return targets;
     } // localProbe()
 
-
-    /**
-     * Probe ()
-     * probe for target devices, return map
-     * used like proposal-api
-     *
-     * @param boolean force_reset
-     */
-    global define map Probe (boolean force_reset)
+global define list GetS390Partitions( string ddev, map target, list ppart )
     ``{
-	if (force_reset)
-	    targetMap = $[];
-
-	if (targetMap == $[])
+    list partitions = [];
+    y2milestone( "ppart %1", ppart );
+    y2milestone( "target %1", target );
+    string regex = substring( ddev, 5 )+"[0-9]+";
+    y2milestone( "ddev %1 regex %2", ddev, regex );
+    list ps = filter( `p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
+    y2milestone( "ps %1", ps );
+    integer cyl_blocks = target["cyl_size"]:1000000 / 1024;
+    foreach( `p, ps,
+	``{
+	map part = $[];
+	part["nr"] = tointeger(substring(p["name"]:"",size(ddev)-5));
+	part["region"] = [ 0, p["size"]:0/cyl_blocks ];
+	part["fsid"] = Partitions::fsid_native;
+	part["type"] = `s390;
+	part["fstype"] = "S390 DASD";
+	y2milestone( "part %1", part );
+	partitions = add( partitions, part );
+	});
+    if( size(ps)==0 )
 	{
-	    targetMap = localProbe();
+	map part = $[];
+	part["nr"] = 1;
+	part["region"] = [ 0, target["cyl_count"]:0 ];
+	part["fsid"] = Partitions::fsid_native;
+	part["type"] = `s390;
+	part["fstype"] = "S390 DASD";
+	partitions = [ part ];
 	}
-	return targetMap;
+    partitions = maplist( `p, partitions, 
+	``{
+	p["device"] = Storage::GetDeviceName( ddev, p["nr"]:0 );
+	return( p );
+	});
+    y2milestone( "part %1", partitions );
+    return( partitions );
     }
 
-    
-    /**
-     * Fake probing for storage devices in test or demo mode -
-     * read ready-made target maps from file.
-     *
-     * @return	map	TargetMap
-     */
-
-    global define map fakeProbe ()
+/**
+* Probe ()
+* probe for target devices, return map
+* used like proposal-api
+*
+* @param boolean force_reset
+*/
+global define map Probe (boolean force_reset)
     ``{
-	string fake_map_file = "/usr/lib/YaST2/test/"
-	    + ( Mode::demo ? "demo_target_map.ycp" : "test_target_map.ycp" );
-	y2milestone( "%1 mode - using fake target map from %2", Mode::demo ? "Demo" : "Test", fake_map_file );
-	map target_map = SCR::Read( .target.ycp, fake_map_file );
-	y2debug( "Fake target map: %1", target_map );
+    if (force_reset)
+    targetMap = $[];
 
-	return target_map;
+    if (targetMap == $[])
+	{
+	targetMap = localProbe();
+	}
+    return targetMap;
+    }
+
+
+/**
+* Fake probing for storage devices in test or demo mode -
+* read ready-made target maps from file.
+*
+* @return	map	TargetMap
+*/
+
+global define map fakeProbe ()
+    ``{
+    string fake_map_file = "/usr/lib/YaST2/test/" + 
+                           ( Mode::demo ? "demo_target_map.ycp" :
+			                  "test_target_map.ycp" );
+    y2milestone( "%1 mode - using fake target map from %2", 
+                 Mode::demo ? "Demo" : "Test", fake_map_file );
+    map target_map = SCR::Read( .target.ycp, fake_map_file );
+    y2debug( "Fake target map: %1", target_map );
+
+    return target_map;
     } // fakeProbe()
 
 
-    //---------------------------------------------------------------
-    // CD Recorders and CD-ROM links
+//---------------------------------------------------------------
+// CD Recorders and CD-ROM links
 
-    list idecdrws = [];		// list of IDE CD-RW drivers for ide-scsi
-    list scsicds = [];		// list of SCSI CDs
+list idecdrws = [];		// list of IDE CD-RW drivers for ide-scsi
+list scsicds = [];		// list of SCSI CDs
 
-    /**
-     * ProbeIDERecorders ()
-     *
-     * probe for IDE cd recorders and return list of hdX names
-     * for ide-scsi setup
-     */
+/**
+* ProbeIDERecorders ()
+*
+* probe for IDE cd recorders and return list of hdX names
+* for ide-scsi setup
+*/
 
-    global define list ProbeIDERecorders ()
+global define list ProbeIDERecorders ()
     ``{
-	idecdrws = [];
-	scsicds = [];
+    idecdrws = [];
+    scsicds = [];
 
-	if (ProbeCDROMs ())
+    if (ProbeCDROMs ())
 	{
-	    // build up ide-scsi information
-	    // loop over CDROMs and select IDE and SCSI drives
+	// build up ide-scsi information
+	// loop over CDROMs and select IDE and SCSI drives
 
-	    foreach (`drive, cddrives,
+	foreach (`drive, cddrives,
 	    ``{
-		if ((drive["cdtype"]:"" == "cdrw")
-		    && (drive["bus"]:"" == "IDE"))
+	    if ((drive["cdtype"]:"" == "cdrw") && (drive["bus"]:"" == "IDE"))
 		{
-		    string devname = substring (drive["dev_name"]:"", 5);
-		    idecdrws = add (idecdrws, devname);
-		    y2milestone ("IDE CD-RW /dev/%1", devname);
+		string devname = substring (drive["dev_name"]:"", 5);
+		idecdrws = add (idecdrws, devname);
+		y2milestone ("IDE CD-RW /dev/%1", devname);
 
-		    // ** must reboot
+		// ** must reboot
 
 		}
-		else if (drive["bus"]:"" == "SCSI")
+	    else if (drive["bus"]:"" == "SCSI")
 		{
-		    scsicds = add (scsicds, drive["dev_name"]:"");
+		scsicds = add (scsicds, drive["dev_name"]:"");
 		}
 	    });
 
 	}
-	y2milestone ("idecdrws %1", idecdrws);
-	return idecdrws;
+    y2milestone ("idecdrws %1", idecdrws);
+    return idecdrws;
     }
 
-    /**
-     * symlink_cdrom
-     *
-     * make proper symlink for cd-rom/dvd/cdrecorder drive
-     *
-     * @param	map	cdinfo	result of .probe.cdrom
-     * @param	string	cdrom	device for /dev/cdrom, or ""
-     */
+/**
+* symlink_cdrom
+*
+* make proper symlink for cd-rom/dvd/cdrecorder drive
+*
+* @param	map	cdinfo	result of .probe.cdrom
+* @param	string	cdrom	device for /dev/cdrom, or ""
+*/
 
-    // count the links for "pseudo" devices
+// count the links for "pseudo" devices
 
 map linknum = $[ "cdrom":0, "cdrecorder":0, "dvd":0];
 
@@ -569,8 +621,8 @@ define void symlink_cdrom( map cdinfo )
 	{
 	linkname = "dvd";
 	}
-    else if( (cdtype == "cdr") || (cdtype == "cdrw") || (cdtype == "dvdr") ||
-	     (cdtype == "dvdram"))
+    else if( (cdtype == "cdr") || (cdtype == "cdrw") || 
+             (cdtype == "dvdr") || (cdtype == "dvdram"))
 	{
 	linkname = "cdrecorder";
 	}
@@ -581,7 +633,7 @@ define void symlink_cdrom( map cdinfo )
     string devname = "/dev/" + linkname;
 
     if( number > 0)
-        devname = devname + number;
+    devname = devname + number;
 
     cddevices = add (cddevices, devname);
 
@@ -599,10 +651,10 @@ define void symlink_cdrom( map cdinfo )
     }
 
 /**
-  * Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
-  * create cdtype dependant links (i.e. /dev/dvd for a DVD drive
-  * but make sure that at least /dev/cdrom exists.
-  */
+* Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
+* create cdtype dependant links (i.e. /dev/dvd for a DVD drive
+* but make sure that at least /dev/cdrom exists.
+*/
 
 global define void MakeCDLinks (list ide_recorders)
     ``{
@@ -611,7 +663,7 @@ global define void MakeCDLinks (list ide_recorders)
 	string boot_device = Mode::installMap["cdrom"]:"";
 
 	if (boot_device != "")
-	    boot_device = "/dev/" + boot_device;
+	boot_device = "/dev/" + boot_device;
 
 	// build up ide-scsi information
 
@@ -655,67 +707,50 @@ global define void MakeCDLinks (list ide_recorders)
     return;
     }
 
-    /**
-     * Initialize
-     */
+/**
+* Initialize
+*/
 
-    global define void FullProbe ()
+global define void FullProbe ()
     ``{
-	FloppyReady();		// probe floppy
-	ProbeCDROMs();		// probe CDs
+    FloppyReady();		// probe floppy
+    ProbeCDROMs();		// probe CDs
     }
 
 /**
- * check partitions for given disk (as path, i.e. '.sda')
- * returns list as specified in README.target_partition
- **/
+* check partitions for given disk (as path, i.e. '.sda')
+* returns list as specified in README.target_partition
+**/
 global define list Check4partitions (string diskdev, map disk, path diskpath)
     ``{
     list partitions = [];
 
-    if( find( diskdev, "/dev/dasd" )!=0 )
-	{  
-	partitions = SCR::Read(.disk + diskpath + .partitions, 
-			       Partitions::UseParted() );
-	partitions = maplist( `part, partitions, ``{
-	    part["device"] = Storage::GetDeviceName( diskdev, part["nr"]:0 );
-	    if( part["fsid"]:0 > 0 && part["fsid"]:0<256 )
-		{
-		part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
-		}
-	    return( part );
-	    });
-       
-	}
-    else
-	{
-	// There is only one partition per device /dev/dasd*
-	integer cyl_count  = disk["cyl_count"]:0;
-	integer cyl_size   = disk["cyl_size"]:1000000;
-
-	map partition = $[];
-	partition["nr"] = 1;
-	partition["device"] = 
-	    Storage::GetDeviceName( diskdev, partition["nr"]:0 );
-	partition["region"] = [ 0, cyl_count-1 ];
-	partition["fsid"] = Partitions::fsid_native;
-	partition["type"] = `s390;
-	partitions = add( partitions, partition );
-	y2milestone( "s390 part disk:%1 part:%2", diskpath, partitions );
-	}
+    partitions = SCR::Read(.disk+diskpath+.partitions, 
+			   Partitions::UseParted() );
+    partitions = maplist( `part, partitions, 
+	``{
+	if( part["fsid"]:0 > 0 && part["fsid"]:0<256 )
+	    {
+	    part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
+	    }
+	return( part );
+	});
+    partitions = maplist( `p, partitions, 
+	``{
+	p["device"] = Storage::GetDeviceName( diskdev, p["nr"]:0 );
+	return( p );
+	});
     return partitions;
     };
 
-    /**
-     * Constructor
-     */
+/**
+* Constructor
+*/
 
-    global define void StorageDevices ()
+global define void StorageDevices ()
     ``{
-	if (!Mode::initial && !Mode::config)
-	    FullProbe ();
-	return;
+    if (!Mode::initial && !Mode::config)
+	FullProbe ();
+    return;
     }
-
-
 }

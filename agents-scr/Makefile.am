@@ -9,6 +9,7 @@ scrconf_DATA = etc_cryptotab.scr \
 	       proc_meminfo.scr  \
 	       parted_check.scr  \
 	       proc_swaps.scr	 \
+	       proc_partitions.scr \
 	       dasddev.scr  	 \
 	       parted_print.scr  \
 	       etc_mtab.scr      \
