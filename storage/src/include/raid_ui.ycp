@@ -696,8 +696,12 @@ global define symbol RaidDevices( symbol what )
     ``{
     y2milestone( "what %1", what );
     /* get the current raid e.g.: 1//dev/md */
+
+    Storage::CreateTargetBackup("raid");
+   
     string subdevraidkey = Storage::GetWizardKey();
     map subdevraid = Storage::GetSubDev( subdevraidkey );
+    boolean changed = false;
 
     /* e.g.: subdevraidindex = 1; */
     string subdevraidindex = sformat( "%1", subdevraid["nr"]:255 );
@@ -837,6 +841,7 @@ global define symbol RaidDevices( symbol what )
 		string newkey = sformat( "%1//dev/md", new_num );
 		UI::ChangeWidget( `id(`raids), `Value, newkey );
 		subdevraid = Storage::GetSubDev( newkey );
+		changed = true;
 		}
 	    y2milestone( "old %1 new %2 new_num:%3", old, new, new_num );
 	    }
@@ -849,6 +854,7 @@ global define symbol RaidDevices( symbol what )
 	    if ( Popup::YesNo ( sformat(_("Do you really want to delete partition %1?"), "/dev/md"+subdevraidindex )))
 		{
 		Storage::DelSubDev( subdevraidkey );
+		changed = true;
 		}
 	    }
 
@@ -860,6 +866,7 @@ global define symbol RaidDevices( symbol what )
 	    subdevraidkey = UI::QueryWidget(`id(`raids), `Value );
 	    y2milestone( "subdevraidkey %1", subdevraidkey );
 	    subdevraidindex = Storage::GetSubDevIndex( subdevraidkey );
+	    changed = true;
 	    }
 	
 	if( ret == `raid_table )
@@ -891,6 +898,7 @@ global define symbol RaidDevices( symbol what )
 		if( IsRaidCreated( device, what )) // Popup!
 		    {
 		    addRaid( subdevpartkey, subdevraidindex );
+		    changed = true;
 		    }
 		else
 		    {
@@ -914,6 +922,7 @@ global define symbol RaidDevices( symbol what )
 		if( IsRaidCreated( device, what )) // Popup!
 		    {
 		    removeRaid( subdevpartkey, subdevraidindex, what );
+		    changed = true;
 		    }
 		else
 		    {
@@ -969,10 +978,27 @@ global define symbol RaidDevices( symbol what )
 		    }
 		});
 	    }
+	if( ret == `back )
+	    {
+	    if( changed )
+		{
+		// popup text %1 will be replaces with button text
+		string txt = sformat( _("You have changed the partitioning.
+These changes will be lost if you exit the dialog with \"%1\".
+Continue?
+"), 
+				      deletechars(Label::BackButton(),"&") );
+		if( !Popup::ContinueCancel( txt ))
+		    { 
+		    ret = `again;
+		    }
+		}
+	    }
+
 	} until (ret == `next || ret == `back || ret == `cancel || ret == `abort );
 
 
-    if( (ret == `next || ret == `back ) && what == `settings )
+    if( ret == `next && what == `settings )
 	{
 	// fix the raid size in all raid devices
 	map target = Storage::GetMainDev( "/dev/md" );
@@ -986,6 +1012,11 @@ global define symbol RaidDevices( symbol what )
 
 	Storage::SetMainDev("/dev/md", target );
 	Storage::Commit();
+	}
+    else if( ret == `back )
+	{
+	// Go back to last save settings in Storage  
+	Storage::RestoreTargetBackup("raid");
 	}
 
     return ret;
