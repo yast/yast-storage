@@ -12,7 +12,7 @@
 
 #include <ycp/YCPList.h>
 #include <ycp/YCPString.h>
-#include <y2/ExternalProgram.h>
+#include <y2util/ExternalProgram.h>
 
 
 class Partition
