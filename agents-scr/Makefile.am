@@ -6,7 +6,6 @@
 
 scrconf_DATA = etc_cryptotab.scr \
                pdisk.scr	 \
-	       etc_fstab.scr     \
 	       proc_meminfo.scr  \
 	       parted_check.scr  \
 	       proc_swaps.scr	 \

@@ -4,15 +4,14 @@
 # $Id$
 #
 
-clientsdir = $(YAST2DIR)/clients
-includedir = $(YAST2DIR)/include/partitioning
+yncludedir = @yncludedir@/partitioning
 
-clients_DATA =		\
+client_DATA =		\
 	disk.ycp	
 
-include_HEADERS =		\
+ynclude_HEADERS =		\
 	disk_io.ycp		
 
 config_DATA = disk.y2cc
 
-EXTRA_DIST = $(clients_DATA) $(include_HEADERS) $(config_DATA)
+EXTRA_DIST = $(client_DATA) $(ynclude_HEADERS) $(config_DATA)

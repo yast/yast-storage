@@ -1,0 +1,123 @@
+/**
+ * File:
+ *   lvm_config.ycp
+ *
+ * Module: 
+ *    configuration of lvm in installed system
+ * Summary:
+ *
+ * Authors:
+ *   mike <mike@suse.de>
+ *
+ * $Id$
+ *
+ */
+
+
+{
+
+    textdomain "storage";
+
+    include "ui/common_messages.ycp";
+    include "wizard/sequencer.ycp";
+    include "partitioning/lvm_ui_dialogs.ycp";
+    include "partitioning/custom_part_testdata.ycp";
+    include "partitioning/partition_defines.ycp";
+ 
+    /////////////////////////////////////////////////////////////////////////////////////////////
+    //                                  WORKFLOW                                               //
+    /////////////////////////////////////////////////////////////////////////////////////////////
+    
+    map Aliases = $[
+        "config_ui"            : ``(CallFunction (`lvm_config_ui())),
+        "apply_prepdisk"    : ``(CallFunction (`inst_prepdisk())),
+        "finish_prepdisk"   : ``(CallFunction (`inst_prepdisk()))
+        ];
+    
+    map dummy_Aliases = $[
+        "config_ui"            : ``(CallFunction (`lvm_config_ui())),
+        "apply_prepdisk"    : ``(Dummy_NextStep() ),
+        "finish_prepdisk"   : ``(Dummy_NextStep() )
+        ];
+
+    map Sequence = $[
+        "ws_start" : "config_ui",
+	
+        "config_ui"         : $[
+			     `abort   :	`abort ,
+			     `apply   : "apply_prepdisk",
+			     `finish  : "finish_prepdisk"
+	],
+        "apply_prepdisk" : $[
+			     `abort   :	`abort ,
+			     `next    : "config_ui"
+	],
+        "finish_prepdisk": $[
+			     `abort   :	`abort ,
+			     `next    : `end
+	]
+    ];
+    
+
+    /////////////////////////////////////////////////////////////////////////////////////////////
+    //                                   I N I T                                               //
+    /////////////////////////////////////////////////////////////////////////////////////////////
+
+
+    define Dummy_NextStep()
+    ``{
+        UI(`ContinueCancelPopup ( NextButtonLabel() ));
+	return( `next );
+    }
+    
+    //////////////////////////////////////////////////////////////////////
+    // Reset Info about LVM and Partitioning   
+    ////////////////////////////////////////////////////////////////////// 
+
+    Mode::installation = false;
+    Storage::StorageReadInSystem();
+
+    map     targetMap       = Storage::GetTargetMap();
+    any     ret             = nil;
+    boolean test_mode       = false;
+    boolean local_test_mode = false;
+    // boolean local_test_mode = true;
+    
+    list vg_list      = [ "" ]; // will be overwritten
+    list pv_table_list   =  [ ];
+    list lv_table_list   =  [ ];
+
+    SCR::Write( Storage::SaveDumpPath("target"),  targetMap );
+    
+    //----------------------------------------------------------------------------------------
+			   
+    global define getLvmDlg(byteblock image)
+    ``{
+	term diag = `VBox(
+			  `ReplacePoint( `id(`image ), `Image( `suseheader, "LVM Configuration") ),
+			  `HBox( get_config_content( pv_table_list, lv_table_list, vg_list, "0G", "0G", true )),
+			  `HBox(
+				`Left( `PushButton(`id(`help),   HelpButtonLabel())),
+				`Left( `PushButton(`id(`abort),  AbortButtonLabel())),
+				`Right(`PushButton(`id(`apply),  _("A&pply"))),
+				`Right(`PushButton(`id(`finish), FinishButtonLabel()))
+				)
+			  );
+	UI( `OpenDialog( `opt(`defaultsize), diag ));
+	
+    };
+
+    getLvmDlg( lvm_image );
+		    
+    /////////////////////////////////////////////////////////////////////////////////
+    any result = WizardSequencer (Aliases, Sequence);
+    // any result = WizardSequencer (dummy_Aliases, Sequence);
+    /////////////////////////////////////////////////////////////////////////////////
+
+    if (result == `end)
+    {
+	UI (`MessagePopup (_("All the settings were written and are ready to use.")));
+    }
+    
+    return UI(`CloseDialog());
+}
