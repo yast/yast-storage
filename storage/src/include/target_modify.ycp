@@ -259,11 +259,12 @@ define boolean fdisk_resize( string disk, integer nr, integer new_cyl  )
     };
 
 
-define boolean HandleFilesystem( string device, symbol fs, integer new_size,
-				 boolean decrease, string mp )
+define map HandleFilesystem( string device, symbol fs, integer new_size,
+			     boolean decrease, string mp )
     ``{
     boolean ret = true;
     string cmd = "";
+    string errtxt = "";
     y2milestone( "HandleFilesystem device:%1 fs:%2 new:%3 decrease:%4 mp:%5",
                  device, fs, new_size, decrease, mp );
     if( fs == `reiser )
@@ -287,7 +288,13 @@ define boolean HandleFilesystem( string device, symbol fs, integer new_size,
 	string cmd = sformat( "echo y | ntfsresize -f -s %1k %2",
 	                      new_size*1024*1024/1000, device );
 	y2milestone( "HandleFilesystem cmd %1", cmd );
-	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	map bm = (map)SCR::Execute(.target.bash_output, cmd );
+	y2milestone( "HandleFilesystem ret %1", bm );
+	ret = bm["exit"]:1 == 0;
+	if( !ret )
+	    {
+	    errtxt = bm["stdout"]:"" + bm["stderr"]:"";
+	    }
 	}
     else if( fs == `ext2 || fs == `ext3 )
 	{
@@ -329,14 +336,16 @@ define boolean HandleFilesystem( string device, symbol fs, integer new_size,
 	    SCR::Execute(.target.bash, cmd );
 	    }
 	}
-    y2milestone( "HandleFilesystem ret:%1", ret );
-    return( ret );
+    map m = $[ "errtxt":errtxt, "ret" : ret ];
+    y2milestone( "HandleFilesystem ret:%1", m );
+    return( m );
     }
 
 define boolean HandleResize( string disk_dev, map part, integer new_size,
                              integer old_size )
     ``{
     boolean ret = true;
+    string err_txt = "";
     y2milestone( "HandleResize disk:%1 new:%2 old:%3", disk_dev, new_size,
                  old_size );
     y2milestone( "HandleResize part:%1", part );
@@ -399,7 +408,12 @@ You could unmount the file system manually and retry resizing.
 	    }
 	if( result && decrease && !format )
 	    {
-	    result = HandleFilesystem( device, fs, new_size, decrease, mp );
+	    map m = HandleFilesystem( device, fs, new_size, decrease, mp );
+	    result = m["ret"]:false;
+	    if( !result )
+		{
+		err_txt = m["errtxt"]:"";
+		}
 	    }
 	if( result && lvm && !format && decrease && possible["parted"]:false )
 	    {
@@ -422,7 +436,12 @@ You could unmount the file system manually and retry resizing.
 	    }
 	if( result && !decrease && !format )
 	    {
-	    result = HandleFilesystem( device, fs, new_size, decrease, mp );
+	    map m = HandleFilesystem( device, fs, new_size, decrease, mp );
+	    result = m["ret"]:false;
+	    if( !result )
+		{
+		err_txt = m["errtxt"]:"";
+		}
 	    }
 	if( need_umount && !format )
 	    {
@@ -443,10 +462,16 @@ You could unmount the file system manually and retry resizing.
 	  {
 	  y2error("Oops, partition resize failed for device %1", device);
 	  symbol ans=`yes;
+	  // popup text
+	  string txt = sformat (_("Resizing device %1 failed."), device);
+	  if( size(err_txt)>0 )
+	      {
+	      txt = txt + "\n\n";
+	      // popup text
+	      txt = txt + _("Program output:\n") + err_txt;
+	      }
 	  // heading text
-	  ans = Popup::AnyQuestion3(_("Resize failed."),
-		  // popup text
-		  sformat (_("Resizing device %1 failed."), device),
+	  ans = Popup::AnyQuestion3(_("Resize failed."), txt,
 		  Label::ContinueButton(), Label::AbortButton(), Label::RetryButton(), `focus_no);
 
 	  if( ans == `retry )
