@@ -30,11 +30,19 @@ void PartedAccess::GetPartitionList()
     string Tmp_Ci = string(PARTEDCMD);
     Tmp_Ci += Disk_C;
     Tmp_Ci += " print | sort -n";
+    Label_C.erase();
     Stderr_C.erase();
     y2milestone( "executing cmd:%s", Tmp_Ci.c_str() );
     SystemCmd Cmd_Ci( Tmp_Ci.c_str(), true );
     CheckError( Tmp_Ci, Cmd_Ci );
     CheckOutput(Cmd_Ci, Disk_C);
+    if( Cmd_Ci.Select( "Disk label type:" )>0 )
+	{
+	Tmp_Ci = *Cmd_Ci.GetLine(0, true);
+	y2debug( "Label line:%s", Tmp_Ci.c_str() );
+	Label_C = ExtractNthWord( 3, Tmp_Ci );
+	}
+    y2debug( "Label:%s", Label_C.c_str() );
     }
 
 PartedAccess::~PartedAccess()
@@ -52,6 +60,12 @@ PartedAccess::CheckError( const string& CmdString_Cv, SystemCmd& Cmd_C )
 	y2error( "err:%s", Tmp_Ci.c_str() );
 	}
     Stderr_C += Tmp_Ci;
+    }
+
+string 
+PartedAccess::DiskLabel()
+    {
+    return( Label_C );
     }
 
 bool
@@ -157,19 +171,25 @@ PartedAccess::SetType(const unsigned Part_iv, const unsigned Type_iv)
     {
     SetType_bi = false;
     }
-  y2milestone( "type:%d executing cmd:%s", SetType_bi, Buf_Ci.str().c_str() );
+  SystemCmd Cmd_Ci( true );
   if( SetType_bi )
     {
-    SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );
+    y2milestone( "executing cmd:%s", Buf_Ci.str().c_str() );
+    Cmd_Ci.Execute( Buf_Ci.str().c_str() );
     CheckError( Buf_Ci.str(), Cmd_Ci );
     if( Type_iv == 0x83 )
 	{
 	Buf_Ci.str( "" );
         Buf_Ci << PARTEDCMD << Disk_C << " set " << Part_iv << " lvm off";
-	SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );
+	y2milestone( "executing cmd:%s", Buf_Ci.str().c_str() );
+	Cmd_Ci.Execute( Buf_Ci.str().c_str() );
 	CheckError( Buf_Ci.str(), Cmd_Ci );
 	}
     }
+  Buf_Ci.str( "" );
+  Buf_Ci << PARTEDCMD << Disk_C << " set " << Part_iv << " type " << Type_iv;
+  y2milestone( "executing cmd:%s", Buf_Ci.str().c_str() );
+  Cmd_Ci.Execute( Buf_Ci.str().c_str() );
 }
 
 string
@@ -239,16 +259,38 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
 {
   int Num_ii=0;
   double Start_fi, End_fi;
-  string Type_Ci, Field1_Ci, Field2_Ci;
+  string PType_Ci, Type_Ci;
 
   y2debug( "Line: %s", Line_Cv.c_str() );
   std::istringstream Data_Ci( Line_Cv );
 
   Start_fi = End_fi = 0.0;
-  Data_Ci >> Num_ii >> Start_fi >> End_fi >> Type_Ci >> Field1_Ci >> Field2_Ci;
-  y2debug( "Fields Num:%d Start:%5.2f End:%5.2f Type:%s F1:%s F2:%s",
-	   Num_ii, Start_fi, End_fi, Type_Ci.c_str(), Field1_Ci.c_str(),
-	   Field2_Ci.c_str() );
+  Data_Ci >> Num_ii >> Start_fi >> End_fi >> PType_Ci;
+  char c;
+  Type_Ci = ",";
+  Data_Ci.unsetf(ifstream::skipws);
+  Data_Ci >> c;
+  char last_char = ',';
+  while( !Data_Ci.eof() )
+      {
+      if( !isspace(c) )
+	{
+	Type_Ci += c;
+	last_char = c;
+	}
+      else
+        {
+	if( last_char != ',' )
+	    {
+	    Type_Ci += ",";
+	    last_char = ',';
+	    }
+	}
+      Data_Ci >> c;
+      }
+  Type_Ci += ",";
+  y2debug( "Fields Num:%d Start:%5.2f End:%5.2f PType:%s Type:%s",
+	   Num_ii, Start_fi, End_fi, PType_Ci.c_str(), Type_Ci.c_str() );
   if( Num_ii>0 )
     {
     Part_rr.Num_i = Num_ii;
@@ -259,52 +301,59 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
     Part_rr.PType_e = PAR_TYPE_LINUX;
     Part_rr.Id_i = PART_ID_LINUX_NATIVE;
     Part_rr.Info_C = "Linux native";
-    for( string::iterator i=Field1_Ci.begin(); i!=Field1_Ci.end(); i++ )
+    for( string::iterator i=Type_Ci.begin(); i!=Type_Ci.end(); i++ )
 	{
 	*i = tolower(*i);
 	}
-    for( string::iterator i=Field2_Ci.begin(); i!=Field2_Ci.end(); i++ )
-	{
-	*i = tolower(*i);
-	}
-    if( Type_Ci == "extended" )
+    if( PType_Ci == "extended" )
 	{
 	Part_rr.PType_e = PAR_TYPE_EXTENDED;
 	Part_rr.Id_i = 0x0f;
 	Part_rr.Info_C = "Extended";
 	}
-    else if( Field1_Ci.find( "fat" )!=string::npos )
+    else if( Type_Ci.find( ",fat" )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_DOS;
 	Part_rr.Id_i = 0x0b;
 	Part_rr.Info_C = "Win95 FAT32";
 	}
-    else if( Field1_Ci.find( "ntfs" )!=string::npos )
+    else if( Type_Ci.find( ",ntfs," )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_HPFS;
 	Part_rr.Id_i = 0x07;
 	Part_rr.Info_C = "HPFS/NTFS";
 	}
-    else if( Field1_Ci.find( "swap" )!=string::npos ||
-             Field2_Ci.find( "swap" )!=string::npos )
+    else if( Type_Ci.find( "swap," )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_SWAP;
 	Part_rr.Id_i = PART_ID_LINUX_SWAP;
 	Part_rr.Info_C = "Linux swap";
 	}
-    else if( Field1_Ci.find( "raid" )!=string::npos ||
-             Field2_Ci.find( "raid" )!=string::npos )
+    else if( Type_Ci.find( ",raid," )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_RAID_PV;
 	Part_rr.Id_i = 0xFD;
 	Part_rr.Info_C = "Linux Raid";
 	}
-    else if( Field1_Ci.find( "lvm" )!=string::npos ||
-             Field2_Ci.find( "lvm" )!=string::npos )
+    else if( Type_Ci.find( ",lvm," )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_LVM_PV;
 	Part_rr.Id_i = 0x8E;
 	Part_rr.Info_C = "Linux LVM";
+	}
+    string::size_type pos = Type_Ci.find( ",type=" );
+    if( pos != string::npos )
+	{
+	int id = 0;
+	string val = Type_Ci.substr( pos+6, 2 );
+	Data_Ci.clear();
+	Data_Ci.str( val );
+	Data_Ci >> std::hex >> id;
+	y2debug( "val=%s id=%d", val.c_str(), id );
+	if( id>0 )
+	    {
+	    Part_rr.Id_i = id;
+	    }
 	}
     y2debug( "Fields Num:%d Id:%x Ptype:%d Start:%d End:%d Block:%lu",
 	     Part_rr.Num_i, Part_rr.Id_i, Part_rr.PType_e, Part_rr.Start_i,

@@ -27,6 +27,7 @@ public:
 			    const unsigned Type_iv );
   bool Resize( const unsigned Part_iv, const unsigned NewLastCyl_iv );
   virtual void SetType(const unsigned Part_iv, const unsigned Type_iv);
+  string DiskLabel();
 
 protected:
   void CheckError( const string& CmdString_Cv, SystemCmd& Cmd_C );
@@ -35,6 +36,7 @@ protected:
   void CheckOutput(SystemCmd& Cmd_C, string Pat_Cv);
   bool ScanLine(string Line_Cv, PartInfo& Part_rr);
   void GetPartitionList();
+  string Label_C;
 };
 
 #endif
