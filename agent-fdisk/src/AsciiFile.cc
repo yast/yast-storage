@@ -5,6 +5,8 @@
 #include <unistd.h>
 #include <fstream>
 
+#include <ycp/y2log.h>
+
 #include "AppUtil.h"
 
 #include "SystemCmd.h"
@@ -37,7 +39,7 @@ bool AsciiFile::LoadFile( string Name_Cv )
 {
     bool Ret_bi;
 
-    DBG( App_pC->Dbg() << "Loading File:\"" << Name_Cv << "\"\n"; )
+    y2milestone( "Loading File:\"%s\"", Name_Cv.c_str() );
     Lines_C.clear();
     Ret_bi = AppendFile( Name_Cv, Lines_C );
     Name_C = Name_Cv;

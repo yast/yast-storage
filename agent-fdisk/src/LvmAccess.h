@@ -18,6 +18,7 @@ struct PvInfo
     bool Allocatable_b;
     bool Active_b;
     bool Created_b;
+    bool Multipath_b;
     int PartitionId_i;
     unsigned long Blocks_l;
     unsigned long Free_l;
@@ -102,8 +103,8 @@ class LvmAccess
 	list<PvInfo>::iterator SortIntoPvList( const PvInfo& PvElem_rv );
 	bool ExecuteLvmCmd( const string& Cmd_Cv );
 	bool MountRamdisk( const string& Path_Cv, unsigned SizeMb_iv );
-	string GetPvDevicename( const string& VgName_Cv, const string& Dev_Cv,
-				int Num_iv );
+	string GetPvDevicename( const string& VgName_Cv, const string& FDev_Cv,
+	                        const string& Dev_Cv, int Num_iv, int Mp_iv );
 
 
 	list<VgIntern>::iterator FindVg( const string& Name_Cv );

@@ -142,6 +142,7 @@ YCPMap LvmAgent::CreatePvMap( const PvInfo& Pv_Cv )
     PvMap_Ci->add( YCPString( "created" ), YCPBoolean( Pv_Cv.Created_b ));
     PvMap_Ci->add( YCPString( "blocks" ), YCPInteger( Pv_Cv.Blocks_l ));
     PvMap_Ci->add( YCPString( "free" ), YCPInteger( Pv_Cv.Free_l ));
+    PvMap_Ci->add( YCPString( "multipath" ), YCPBoolean( Pv_Cv.Multipath_b ));
     for( list<string>::const_iterator k=Pv_Cv.RealDevList_C.begin();
 	 k!=Pv_Cv.RealDevList_C.end(); k++ )
 	{

@@ -327,7 +327,7 @@ LvmAccess::ScanForInactiveVg()
 	if( Ok_bi )
 	    {
 	    VgList_C.push_back( VgElem_ri );
-	    y2debug( "Append VG Name:%s Act:%d PE:%ld Blocks:%ld Free:%ld "
+	    y2milestone( "Append VG Name:%s Act:%d PE:%ld Blocks:%ld Free:%ld "
 		     "Num PV:%d Num LV:%d", VgElem_ri.Name_C.c_str(),
 		     VgElem_ri.Active_b, VgElem_ri.PeSize_l, VgElem_ri.Blocks_l,
 		     VgElem_ri.Free_l, VgElem_ri.Pv_C.size(), 
@@ -1058,8 +1058,8 @@ bool LvmAccess::ChangeActive( const string& Name_Cv, bool Active_bv )
     }
 
 string 
-LvmAccess::GetPvDevicename( const string& VgName_Cv, const string& Dev_Cv, 
-                            int Num_iv )
+LvmAccess::GetPvDevicename( const string& VgName_Cv, const string& FDev_Cv,
+                            const string& Dev_Cv, int Num_iv, int Mp_iv )
     {
     string Ret_Ci = "/dev/" + Dev_Cv;
     DIR *Dir_pri;
@@ -1067,14 +1067,15 @@ LvmAccess::GetPvDevicename( const string& VgName_Cv, const string& Dev_Cv,
     string DirName_Ci = "/proc/lvm/VGs/" + VgName_Cv + "/PVs";
     bool Found_bi = false;
 
-    y2debug( "VG:%s Dev:%s Num:%d", VgName_Cv.c_str(), Dev_Cv.c_str(), Num_iv );
+    y2milestone( "VG:%s FDev:%s Dev:%s Num:%d MP:%d", VgName_Cv.c_str(), 
+                 FDev_Cv.c_str(), Dev_Cv.c_str(), Num_iv, Mp_iv );
     if( (Dir_pri=opendir( DirName_Ci.c_str() ))!=NULL )
 	{
 	while( !Found_bi && (Entry_pri=readdir( Dir_pri ))!=NULL )
 	    {
 	    string Name_Ci = Entry_pri->d_name;
 	    string Line_Ci;
-	    if( Name_Ci.find( Dev_Cv )>=0 )
+	    if( Name_Ci.find( FDev_Cv )==0 )
 		{
 		string Tmp_Ci = DirName_Ci + "/" + Name_Ci;
 		AsciiFile File_Ci( Tmp_Ci.c_str() );
@@ -1088,11 +1089,22 @@ LvmAccess::GetPvDevicename( const string& VgName_Cv, const string& Dev_Cv,
 			Found_bi = true;
 			}
 		    }
+		if( Mp_iv>0 )
+		    {
+		    int Line_ii = 0;
+		    if( SearchFile( File_Ci, "^Path", Line_Ci, Line_ii ))
+			{
+			Line_Ci = File_Ci[Line_ii+Mp_iv+1];
+			y2milestone( "Mp Line %s", Line_Ci.c_str() );
+			Ret_Ci = ExtractNthWord( 4, Line_Ci );
+			Found_bi = true;
+			}
+		    }
 		}
 	    }
 	closedir( Dir_pri );
 	}
-    y2debug( "Ret:%s", Ret_Ci.c_str() );
+    y2milestone( "Ret:%s", Ret_Ci.c_str() );
     return( Ret_Ci );
     }
 
@@ -1142,6 +1154,7 @@ void LvmAccess::ScanProcLvm()
 	    while( File_Ci.good() && Tmp_Ci.find( "LV" )!=0 )
 		{
 		Start_b = Start_b || Tmp_Ci.find( "PV" )==0;
+		string ShortName_Ci;
 		if( Start_b )
 		    {
 		    Num_ii++;
@@ -1154,11 +1167,13 @@ void LvmAccess::ScanProcLvm()
 		    PvElem_ri.Active_b = Line_Ci.find( 'A' )==0;
 		    Line_Ci.erase( 0, 1 );
 		    PvElem_ri.Allocatable_b = false;
+		    PvElem_ri.Multipath_b = false;
 		    PvElem_ri.Allocatable_b = Line_Ci.find( 'A' )==0;
 		    Line_Ci.erase( 0, Line_Ci.find( ']' )+1 );
+		    ShortName_Ci = ExtractNthWord( 0, Line_Ci );
 		    PvElem_ri.Name_C =
-			GetPvDevicename( PvElem_ri.VgName_C,
-			                 ExtractNthWord( 0, Line_Ci ), Num_ii );
+			GetPvDevicename( PvElem_ri.VgName_C, ShortName_Ci,
+			                 ShortName_Ci, Num_ii, 0 );
 		    PvElem_ri.RealDevList_C.push_back( PvElem_ri.Name_C );
 		    Tmp_Ci = ExtractNthWord( 1, Line_Ci );
 		    PvElem_ri.Blocks_l = 0;
@@ -1175,6 +1190,23 @@ void LvmAccess::ScanProcLvm()
 		    VgElem_ri.Pv_C.push_back( &(*Pix_Ci) );
 		    }
 		getline( File_Ci, Line_Ci );
+		y2milestone( "MP Line %s", Line_Ci.c_str() );
+		int Mp_ii = 1;
+		while( File_Ci.good() && Line_Ci.find( "+--" )!=string::npos )
+		    {
+		    PvElem_ri.Name_C =
+			GetPvDevicename( PvElem_ri.VgName_C, ShortName_Ci,
+			                 ExtractNthWord( 1, Line_Ci ), Num_ii,
+					 Mp_ii );
+		    PvElem_ri.Multipath_b = true;
+		    PvElem_ri.RealDevList_C.clear();
+		    PvElem_ri.RealDevList_C.push_back( PvElem_ri.Name_C );
+		    list<PvInfo>::iterator Pix_Ci = SortIntoPvList( PvElem_ri );
+		    y2milestone( "MP add Name:%s", PvElem_ri.Name_C.c_str() );
+		    VgElem_ri.Pv_C.push_back( &(*Pix_Ci) );
+		    getline( File_Ci, Line_Ci );
+		    Mp_ii++;
+		    }
 		Tmp_Ci = ExtractNthWord( 0, Line_Ci );
 		}
 	    while( File_Ci.good() && Tmp_Ci.find( "VG:" )!=0 )
