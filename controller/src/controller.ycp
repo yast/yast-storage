@@ -268,6 +268,8 @@ Stderr was:
 		       "model" : "Loop driver" ] );
     */
 
+    
+
     boolean first_new = true;
     integer cur_num = 0;
     integer num = 0;
@@ -291,14 +293,84 @@ Stderr was:
 	num = num+1;
 	return( it );
 	});
-    y2milestone( "clist=%1", clist );
 
     string tmp = Misc::SysconfigRead( .sysconfig.kernel.INITRD_MODULES, "");
     initrd_orig = filter( `e, splitstring( tmp, " " ), ``(size(e)>0) );
-    y2milestone( "initrd %1", tmp );
-    y2milestone( "initrd list %1", initrd_orig );
     initrd = eval(initrd_orig);
+    y2milestone( "initrd %1", tmp );
 
+    clist = sort( `a, `b, clist,
+	``{
+	boolean ret = true;
+	integer numa = TermToId(a);
+	integer numb = TermToId(b);
+	list pos_mod = [];
+	foreach( `e, dev[numa,"drivers"]:[],
+	    ``{
+	    if( size(e["modules",0,0]:"")>0 )
+		pos_mod = add( pos_mod, e["modules",0,0]:"");
+	    });
+	integer initrda = -1;
+	integer initrdb = -1;
+	integer posm = 0;
+	integer posi = 0;
+	while( posm < size(pos_mod) && initrda==-1 )
+	    {
+	    posi = 0;
+	    while( posi<size(initrd) && initrda==-1 )
+		{
+		if( initrd[posi]:"" == pos_mod[posm]:"" )
+		    {
+		    initrda = posi;
+		    }
+		posi = posi + 1;
+		}
+	    posm = posm + 1;
+	    }
+	pos_mod = [];
+	foreach( `e, dev[numb,"drivers"]:[],
+	    ``{
+	    if( size(e["modules",0,0]:"")>0 )
+		pos_mod = add( pos_mod, e["modules",0,0]:"");
+	    });
+	posm = 0;
+	while( posm < size(pos_mod) && initrdb==-1 )
+	    {
+	    posi = 0;
+	    while( posi<size(initrd) && initrdb==-1 )
+		{
+		if( initrd[posi]:"" == pos_mod[posm]:"" )
+		    {
+		    initrdb = posi;
+		    }
+		posi = posi + 1;
+		}
+	    posm = posm + 1;
+	    }
+	y2debug( "a:%1 initrda:%2 b:%3 initrdb:%4", numa, initrda, numb, 
+		 initrdb );
+	if( initrda!=-1 && initrdb!=-1 )
+	    {
+	    ret = initrda<=initrdb ;
+	    }
+	else if( initrda==-1 && initrdb==-1 )
+	    {
+	    boolean newa = dev[numa,"conf","configured"]:`no == `new;
+	    boolean newb = dev[numb,"conf","configured"]:`no == `new;
+	    if( newa && !newb )
+		ret = false;
+	    else
+		ret = true;
+	    }
+	else
+	    {
+	    ret = initrda!=-1;
+	    }
+	y2debug( "ret %1", ret );
+	return( ret );
+	});
+    y2milestone( "clist=%1", clist );
+    
     term dialog =
 	`VBox( 
 	    `VSpacing(2),

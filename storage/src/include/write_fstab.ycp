@@ -116,16 +116,15 @@ global define onepartition2fstab (map part)
 	freq = 0;
 	passno = 0;
 	string lower_point = tolower( mount_point );
-	// extra symlink for star office (-> #8310)
-	if( mntops == "defaults" )
-	    {
-	    mntops = "gid=users,umask=0002";
-	    if( contains (Partitions::fsid_readonly, fsid))
-		mntops = "ro," + mntops;
-	    }
 	if( lower_point != "" && mount_point != lower_point)
 	    {
-	    SCR::Execute(.target.symlink, mount_point, lower_point);
+	    if( Installation::destdir != "/" )
+		{
+		lower_point = Installation::destdir + lower_point;
+		}
+	    SCR::Execute(.target.symlink, 
+	                 substring(mount_point,(findlastof(mount_point,"/")+1)),
+	                 lower_point);
 	    }
 	if( contains (Partitions::fsid_dostypes, fsid))
 	    {
@@ -192,12 +191,40 @@ global define void allpartitions2fstab( map fstab, list partitions )
     };
 
 
-    //-----------------------------------------------------
-    //
-    // construct and write complete fstab
-    // return: string foreign_primary
-    //
+global define map MakeCdromFstabEntry( map cd )
+    ``{
+    map entry = $[];
+    string cdmount = cd["linkname"]:"";
+    string mpath = cdmount;
+    string short = substring(cdmount,5);
+    string media = "/media/"+short;
 
+    if( Installation::destdir != "/" )
+	{
+	mpath = Installation::destdir + "/" + short;
+	}
+    if( short == "cdrom" || short == "dvd" || short == "/cdwriter" )
+	{
+	// symlink /xxx -> /media/xxx
+	y2milestone( "symlink mpath %2 to %1", media, mpath );
+	SCR::Execute(.target.symlink, substring(media,1), mpath);
+	}
+    entry = $[ "spec":cdmount, "mount":media, "vfstype":"auto",
+	       "mntops":"ro,noauto,user,exec", "freq":0, "passno":0];
+    if( Storage::SaneConsoleEncoding() != "iso8859-1" )
+	{
+	entry["mntops"] = entry["mntops"]:"" + ",iocharset=" + 
+			  Storage::SaneConsoleEncoding();
+	}
+    y2milestone( "ret %1", entry );
+    return( entry );
+    };
+
+//-----------------------------------------------------
+//
+// construct and write complete fstab
+// return: string foreign_primary
+//
 global define void write_fstab( map targetMap, map zipdrives, list cddevices )
     ``{
     map tg = targetMap;
@@ -267,7 +294,7 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 		{
 		zfile = Installation::destdir + zfile;
 		}
-	    SCR::Execute(.target.symlink, media, zfile);
+	    SCR::Execute(.target.symlink, substring(media,1), zfile);
 
 	    fstab[zfile] = $["spec":""+tdevice+"4", "mount":media, 
 			     "vfstype":"auto", "mntops":"noauto,user", 
@@ -284,26 +311,8 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 
 	foreach (`cd, cddevices, ``{
 	    y2milestone( "cd %1", cd );
-	    // /dev/dvd -> /media/dvd, /dev/cdrom -> /media/cdrom, ...
-	    string cdmount = "/" + substring(cd, 5);
-	    string media = "/media"+cdmount;
-
-	    if( Installation::destdir != "/" )
-		{
-		cdmount = Installation::destdir + cdmount;
-		}
-	    // symlink /xxx -> /media/xxx
-	    y2milestone( "symlink media %1 cdmount %2", media, cdmount );
-	    SCR::Execute(.target.symlink, media, cdmount);
-
-	    fstab[cdmount] = $["spec":cd, "mount":media, "vfstype":"auto",
-			  "mntops":"ro,noauto,user,exec", "freq":0, "passno":0];
-	    if( Storage::SaneConsoleEncoding() != "iso8859-1" )
-		{
-		fstab[cdmount,"mntops"] = fstab[cdmount,"mntops"]:"" +
-		                          ",iocharset=" + 
-					  Storage::SaneConsoleEncoding();
-		}
+	    map ret = MakeCdromFstabEntry( cd );
+	    fstab[ret["mount"]:""] = ret;
 	    });
 	fstablist = union( fstablist, maplist (`k, `v, fstab, ``(v)));
 	fstab = $[];
@@ -326,7 +335,7 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 		    {
 		    fdname = Installation::destdir + fdname;
 		    }
-		SCR::Execute(.target.symlink, medianame, fdname);
+		SCR::Execute(.target.symlink, substring(medianame,1), fdname);
 		fstab[medianame] = $[ "spec":dev_name, "mount":medianame, 
 				      "vfstype":"auto", 
 				      "mntops":"noauto,user,sync", 
@@ -410,7 +419,6 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 
     write_cryptotab( tg );
     };
-
 
 global define map onepartition2cryptotab( map partition )
     ``{

@@ -106,8 +106,6 @@ global define map GetTargetMap()
     if( StorageMap[use_lvm_key]:false && !lvm_initialized )
 	{
 	map tmp = StorageMap[targets_key]:$[];
-	y2milestone ("getting fsys type" );
-	tmp = GetFsysType( tmp );
 	y2milestone ("initializing Lvm and Md" );
 	StorageMap[targets_key] = ReadLvmMd( tmp );
 	y2milestone ("lvm init done" );
@@ -120,6 +118,8 @@ global define map GetTargetMap()
     if( changed )
 	{
 	map tmp =  StorageMap[targets_key]:$[];
+	y2milestone ("getting fsys type" );
+	tmp = GetFsysType( tmp );
 	y2milestone ("AddSwapMp" );
 	tmp = AddSwapMp( tmp );
 	if( Mode::initial )
@@ -138,6 +138,36 @@ global define map GetTargetMap()
 	y2milestone ("changed done" );
 	}
     return StorageMap[targets_key]:$[];
+    };
+
+global define list FindFstabLines( map fstab, string mount, string device,
+                                   string uuid, string label )
+    ``{
+    list lines = [];
+    if( size(mount)>0 && mount != "swap" )
+	{
+	lines = AsciiFile::FindLineField( fstab, 1, mount );
+	}
+    if( size(lines)==0 )
+	{
+	lines = AsciiFile::FindLineField( fstab, 0, device );
+	}
+    if( size(lines)>1 )
+	{
+	string uuid = "UUID=" + uuid;
+	string label = "LABEL=" + label;
+	map tlines = AsciiFile::GetLines( fstab, lines );
+	map nlist = filter( `num, `line, tlines,
+			    ``( line["fields",0]:"" == device ||
+				line["fields",0]:"" == uuid ||
+				line["fields",0]:"" == label ));
+	if( size(nlist)>0 )
+	    {
+	    lines = maplist( `num, `line, nlist, ``(num));
+	    }
+	}
+    y2milestone( "lines %1", lines );
+    return( lines );
     };
 
 //  add info gotten from /etc/fstab to targetMap
@@ -167,31 +197,10 @@ global define map AddFstabInfo( map target, boolean lineno )
 		mp = part["ori_mount"]:"";
 		}
 	    list lines = [];
-	    if( size(mp)>0 && mp != "swap" )
-		{
-		lines = AsciiFile::FindLineField( fstab, 1, mp );
-		}
-	    if( size(lines)==0 )
-		{
-		lines = AsciiFile::FindLineField( fstab, 0, part["device"]:"" );
-		}
+	    lines = FindFstabLines( fstab, mp, part["device"]:"",
+	                            part["uuid"]:"", part["label"]:"" );
 	    if( size(lines)>0 )
 		{
-		if( size(lines)>1 )
-		    {
-		    string uuid = "UUID=" + part["uuid"]:"";
-		    string label = "LABEL=" + part["label"]:"";
-		    string device = part["device"]:"";
-		    map tlines = AsciiFile::GetLines( fstab, lines );
-		    map nlist = filter( `num, `line, tlines,
-					``( line["fields",0]:"" == device ||
-					    line["fields",0]:"" == uuid ||
-					    line["fields",0]:"" == label ));
-		    if( size(nlist)>0 )
-			{
-			lines = maplist( `num, `line, nlist, ``(num));
-			}
-		    }
 		if( lineno )
 		    {
 		    part["fstabline"] = lines[0]:-1;
@@ -359,6 +368,7 @@ global define list AddMountPointsForWinParts( list partitions, boolean primary )
 		    "/windows/" + substring (foreign_ids, foreign_nr, 1);
 		foreign_nr = foreign_nr + 1;
 		}
+	    y2milestone( "win part %1", new_partition );
 	    }
 
 	new_partitions = add ( new_partitions , new_partition );
@@ -2796,6 +2806,54 @@ global define map ReadLvmMd( map targetMap )
     return( targetMap );
     };
 
+//-----------------------------------------------------
+//
+// change an entry in /etc/fstab
+//
+global define void ChangeLineFstab( map entry )
+    ``{
+    string tabpath = "/etc/fstab";
+    if( Installation::destdir != "/" )
+	{
+	tabpath = Installation::destdir + tabpath;
+	if( SCR::Read( .target.size, tabpath )>= 0 )
+	    SCR::Execute( .target.remove, tabpath );
+	}
+    map fstab = Partitions::GetFstab( tabpath );
+    list lines = Storage::FindFstabLines( fstab, entry["mount"]:"", 
+                                          entry["spec"]:"", "x", "x" );
+    list fstlist = [ entry["spec"]:"", entry["mount"]:"", 
+		     entry["vfstype"]:"", entry["mntops"]:"", 
+		     sformat("%1",entry["freq"]:0),
+		     sformat("%1",entry["passno"]:0) ];
+    y2milestone( "lines %1", lines );
+    if( size(lines)==0 )
+	{
+	AsciiFile::AppendLine( fstab, fstlist );
+	}
+    else
+	{
+	integer field = 0;
+	while( field<4 )
+	    {
+	    AsciiFile::ChangeLineField( fstab, lines[0]:-1, field, 
+					fstlist[field]:"" );
+	    field = field+1;
+	    }
+	}
+    string dir = entry["mount"]:"";
+    if( substring( dir, 0, 1 )== "/" )
+	{
+	if( Installation::destdir != "/" )
+	    dir = Installation::destdir + dir;
+	if( SCR::Read( .target.size, dir )<=0 )
+	    {
+	    SCR::Execute( .target.mkdir, dir );
+	    }
+	}
+    AsciiFile::RewriteFile( fstab, tabpath );
+    };
+
 global define void WriteFstab( map targetMap )
     ``{
     y2milestone( "WriteFstab called" );
@@ -2805,10 +2863,9 @@ global define void WriteFstab( map targetMap )
     map tg = eval(targetMap);
     if( Mode::initial )
 	{
-	list ide_recorders = StorageDevices::ProbeIDERecorders();
-	StorageDevices::MakeCDLinks(ide_recorders);
+	StorageDevices::MakeCDLinks();
 	}
-    write_fstab( tg, StorageDevices::zipDrives, StorageDevices::cddevices );
+    write_fstab( tg, StorageDevices::zipDrives, StorageDevices::cddrives );
     }
 
 global define map GetS390DeviceMap( map targetMap )

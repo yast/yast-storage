@@ -389,57 +389,43 @@ global define ToEndRegion(string start_cyl, string end_part, integer cyl_size )
           boolean     extended_is_possible = false;
           boolean     logical_is_possible  = false;
 
-          list primary_list  = filter( `part, lookup( disk, "partitions", []),
-                                        ``( (lookup( part, "type", `unknown) == `primary)  && (!lookup( part, "delete", false) )));
-          list extended_list = filter( `part, lookup( disk, "partitions", []),
-                                        ``( (lookup( part, "type", `unknown) == `extended) && (!lookup( part, "delete", false) )));
-          list logical_list  = filter( `part, lookup( disk, "partitions", []),
-                                          ``( (lookup( part, "type",`unknown) == `logical)  && (!lookup( part, "delete", false) )));
+          list primary_list = 
+	      filter( `part, disk["partitions"]:[],
+		      ``( (part["type"]:`unknown == `primary) && 
+		          (!part["delete"]:false )));
+          list extended_list = 
+	      filter( `part, disk["partitions"]:[],
+		      ``( (part["type"]:`unknown == `extended) && 
+		          (!part["delete"]:false )));
+          list logical_list = 
+	      filter( `part, disk["partitions"]:[],
+		      ``( (part["type"]:`unknown == `logical) && 
+		          (!part["delete"]:false )));
 
-	  if ( !bsd_label )
-	  {
-	      if (  (size(extended_list) + size(primary_list)) <= 3 )
+	  if( (size(extended_list) + size(primary_list)) < 4 )
 	      {
-		  primary_is_possible = true;
+	      primary_is_possible = true;
 	      }
 
-	      if ( primary_is_possible && (size(extended_list) == 0) )
+	  if( primary_is_possible && (size(extended_list) == 0) )
 	      {
-		  extended_is_possible = true;
+	      extended_is_possible = true;
 	      }
 
-	      if ( size(extended_list) > 0 )            // "== 1" should also work, but ">" for safety
+	  if ( size(extended_list) > 0 )            // "== 1" should also work, but ">" for safety
 	      {
-		  no_extended_cause = `already;
-		  extended_exists = true;
-	      }
-	  }
-	  else
-	  {
-	      list primary_list  = filter( `part, lookup( disk, "partitions", []),
-					   ``( (lookup( part, "type",`unknown) == `primary)
-					       && (!lookup( part, "delete", false))
-					       && (lookup( part, "nr", 0) != 3)	 ));
-
-	      y2debug("primary list: %1", primary_list );
-
-	      if (  size(primary_list) <= 6 )
-	      {
-		  primary_is_possible  = true;
-                  extended_is_possible = false;
-                  logical_is_possible  = false;
-	      }
-	      else
-	      {
-		  primary_is_possible  = false;
-                  extended_is_possible = false;
-                  logical_is_possible  = false;
+	      no_extended_cause = `already;
+	      extended_exists = true;
 	      }
 
-	  }
+	  if( disk["max_primary"]:4 > 4 )
+              {
+	      logical_is_possible = false;
+	      extended_is_possible = false;
+	      }
 
-          if ( extended_exists )
-          {
+          if( extended_exists )
+	      {
    	      no_logical_cause = `no_extsp;
 
               // test if extended partition has space left == a slot exists

@@ -27,6 +27,7 @@
     import "Storage";
     import "Partitions";
     import "ModuleLoading";
+    import "Installation";
 
     textdomain "storage";
 
@@ -37,15 +38,6 @@
      * (used in LILO configuration to generate proper 'bios=' entries
      */
     global boolean mixedDevices = false;
-
-
-    /**
-     * @return list of /dev/* symlinks to cd drives
-     * This returns ["/dev/dvd", "/dev/cdrom", "/dev/dvd1", ...]
-     * instead of the real devices.
-     * @see cddrives
-     */
-    global list cddevices = [];
 
 
     /**
@@ -82,11 +74,9 @@
     //---------------------------------------------------------------
 
     /**
-     * local !
-     * list of real cd-rom drives, i.e. ["/dev/hdc", "/dev/sr0", ...]
-     * @see cddevices
+     * list of cd-rom drives
      */
-    list cddrives = [];
+    global list cddrives = [];
 
     // storage for localProbe, see Probe()
     map targetMap = $[];
@@ -94,38 +84,123 @@
     //---------------------------------------------------------------
 
 
-    /**
-     * ProbeCDROMs()
-     *
-     * Initialize cddrives
-     *
-     */
-    global define boolean ProbeCDROMs()
+//---------------------------------------------------------------
+// CD Recorders and CD-ROM links
+list idecdrws = [];		// list of IDE CD-RW drivers for ide-scsi
+list scsicds = [];		// list of SCSI CDs
+
+/**
+  * ProbeCDROMs()
+  *
+  * Initialize cddrives
+  *
+  */
+global define boolean ProbeCDROMs()
     ``{
-	if (size (cddrives) == 0)
+    map linknum = $[ "cdrom":0, "cdrecorder":0, "dvd":0];
+    if (size (cddrives) == 0)
 	{
-	    if (Mode::initial
-		|| Mode::cont)
+	if (Mode::initial || Mode::cont)
 	    {
-		cddrives = SCR::Read (.probe.cdrom);
-		// write out data for hardware status check
-		foreach (`drive, cddrives,
+	    cddrives = SCR::Read (.probe.cdrom);
+	    // write out data for hardware status check
+	    foreach (`drive, cddrives,
 		``{
-		    HwStatus::Set (drive["unique_key"]:"", `yes);
+		HwStatus::Set (drive["unique_key"]:"", `yes);
 		});
 	    }
-	    else
+	else
 	    {
-		cddrives = SCR::Read (.probe.cdrom.manual);
-		if ((cddrives == nil)
-		    || (size (cddrives) == 0))
+	    cddrives = [];
+	    foreach( `e, SCR::Read (.probe.cdrom.manual),
+		``{
+		map conf = SCR::Read(.probe.status, e["unique_key"]:"");
+		if( conf["available"]:`no != `no )
+		    {
+		    cddrives = add( cddrives, e );
+		    }
+		});
+
+	    SCR::Write(.dumpto.tmp.dev1, cddrives );
+	    if ((cddrives == nil) || (size (cddrives) == 0))
 		{
-		    cddrives = $["dev_name":"/dev/cdrom"];
+		cddrives = $["dev_name":"/dev/cdrom"];
 		}
 	    }
+
+	// sort out idecdrws and scsicds
+	foreach (`e, cddrives,
+	    ``{
+	    if( e["cdtype"]:"" == "cdrw" && e["bus"]:"" == "IDE" )
+		{
+		idecdrws = add (idecdrws, substring( drive["dev_name"]:"", 5));
+		y2milestone ("IDE CD-RW %1", idecdrws );
+		// ** must reboot
+		}
+	    else if( e["bus"]:"" == "SCSI" )
+		{
+		scsicds = add (scsicds, e["dev_name"]:"");
+		}
+	    });
+
+	// now rewrite the /dev-names for the IDE drives
+	// as they appear _after_ loading of ide-scsi
+	foreach (`e, cddrives,
+	    ``{
+	    if( contains( idecdrws, substring( e["dev_name"]:"", 5) ))
+		{
+		string scsiname = "/dev/sr" + size (scsicds);
+		y2milestone ("IDE CD-RW %1 -> %2", devname, scsiname);
+		scsicds = add (scsicds, scsiname);
+		e["name_orig"] = e["dev_name"]:"";
+		e["dev_name"] = scsiname;
+		}
+	    });
+
+	foreach( `e, filter( `v, cddrives, ``(v["dev_name"]:""!="/dev/cdrom")),
+	    ``{
+	    // first, determine the drive type and make a linkname guess
+	    string cddevice = e["dev_name"]:"";
+	    string cdtype = e["cdtype"]:"cdrom";
+
+	    string linkname = "cdrom";
+	    if (cdtype == "dvd")
+		{
+		linkname = "dvd";
+		}
+	    else if( (cdtype == "cdr") || (cdtype == "cdrw") ||
+		     (cdtype == "dvdr") || (cdtype == "dvdram"))
+		{
+		linkname = "cdrecorder";
+		}
+
+	    // now check the number (for /dev/cdrom, /dev/cdrom1, ...)
+	    integer number = linknum[linkname]:0;
+	    linknum[linkname] = number + 1;
+
+	    string devname = "/dev/" + linkname;
+
+	    if( number > 0)
+		devname = devname + number;
+
+	    e["linkname"] = devname;
+	    });
+
 	}
-	y2milestone ("ProbeCDROMs (%1)", cddrives);
-	return (size (cddrives) > 0);
+    y2milestone ("ProbeCDROMs (%1)", cddrives);
+    return (size (cddrives) > 0);
+    }
+
+global define map GetCdromEntry( string device )
+    ``{
+    map ret = $[];
+    ret = find( `e, cddrives, ``(e["dev_orig"]:(e["dev_name"]:"") == device));
+    if( ret == nil )
+	{
+	ret = $[];
+	}
+    y2milestone( "ret %1", ret );
+    return( ret );
     }
 
     /**
@@ -445,6 +520,11 @@ define map localProbe ()
 		}
 	    }
 
+	if( target["label"]:"" == "mac" || target["label"]:"" == "gpt" )
+	    {
+	    target["max_primary"] = 16;
+	    }
+
 	target["scrpath"] = diskpath;
 	target["partitions"] = partitions;
 
@@ -556,11 +636,6 @@ global define map fakeProbe ()
     } // fakeProbe()
 
 
-//---------------------------------------------------------------
-// CD Recorders and CD-ROM links
-
-list idecdrws = [];		// list of IDE CD-RW drivers for ide-scsi
-list scsicds = [];		// list of SCSI CDs
 
 /**
 * ProbeIDERecorders ()
@@ -571,32 +646,7 @@ list scsicds = [];		// list of SCSI CDs
 
 global define list ProbeIDERecorders ()
     ``{
-    idecdrws = [];
-    scsicds = [];
-
-    if (ProbeCDROMs ())
-	{
-	// build up ide-scsi information
-	// loop over CDROMs and select IDE and SCSI drives
-
-	foreach (`drive, cddrives,
-	    ``{
-	    if ((drive["cdtype"]:"" == "cdrw") && (drive["bus"]:"" == "IDE"))
-		{
-		string devname = substring (drive["dev_name"]:"", 5);
-		idecdrws = add (idecdrws, devname);
-		y2milestone ("IDE CD-RW /dev/%1", devname);
-
-		// ** must reboot
-
-		}
-	    else if (drive["bus"]:"" == "SCSI")
-		{
-		scsicds = add (scsicds, drive["dev_name"]:"");
-		}
-	    });
-
-	}
+    ProbeCDROMs();
     y2milestone ("idecdrws %1", idecdrws);
     return idecdrws;
     }
@@ -607,49 +657,23 @@ global define list ProbeIDERecorders ()
 * make proper symlink for cd-rom/dvd/cdrecorder drive
 *
 * @param	map	cdinfo	result of .probe.cdrom
-* @param	string	cdrom	device for /dev/cdrom, or ""
 */
 
 // count the links for "pseudo" devices
 
-map linknum = $[ "cdrom":0, "cdrecorder":0, "dvd":0];
-
 define void symlink_cdrom( map cdinfo )
     ``{
-    // first, determine the drive type and make a linkname guess
-    string cddevice = cdinfo["dev_name"]:"";
-    string cdtype = cdinfo["cdtype"]:"cdrom";
-
-    string linkname = "cdrom";
-    if (cdtype == "dvd")
+    if( size(cdinfo["linkname"]:"")>0 && size(cdinfo["dev_name"]:"")>0 )
 	{
-	linkname = "dvd";
-	}
-    else if( (cdtype == "cdr") || (cdtype == "cdrw") ||
-             (cdtype == "dvdr") || (cdtype == "dvdram"))
-	{
-	linkname = "cdrecorder";
-	}
-
-    // now check the number (for /dev/cdrom, /dev/cdrom1, ...)
-    integer number = linknum[linkname]:0;
-
-    string devname = "/dev/" + linkname;
-
-    if( number > 0)
-    devname = devname + number;
-
-    cddevices = add (cddevices, devname);
-
-    if (cddevice != "")
-	{
+	string link = cdinfo["linkname"]:"";
+	string device = cdinfo["dev_name"]:"";
+	
 	if( Installation::destdir != "/" )
 	    {
-	    devname = Installation::destdir + devname;
+	    link = Installation::destdir + link;
 	    }
-	SCR::Execute (.target.symlink, cddevice, devname);
-	number = number + 1;
-	linknum[linkname] = number;
+	y2milestone( "pathname %1 links to %2", link, device );
+	SCR::Execute (.target.symlink, substring(device,5), link);
 	}
     return;
     }
@@ -660,7 +684,7 @@ define void symlink_cdrom( map cdinfo )
 * but make sure that at least /dev/cdrom exists.
 */
 
-global define void MakeCDLinks (list ide_recorders)
+global define void MakeCDLinks ()
     ``{
     if( ProbeCDROMs() )
 	{
@@ -670,42 +694,39 @@ global define void MakeCDLinks (list ide_recorders)
 	if (boot_device != "")
 	    boot_device = "/dev/" + boot_device;
 
-	// build up ide-scsi information
+	// our boot device might be re-mapped due to ide-scsi
+	map idecdwr = find( `e, cddrives, ``(e["name_orig"]:""==boot_device));
+	if( idecdwr != nil )
+	    {
+	    boot_device = idecdwr["dev_name"]:"";
+	    }
 
-	// now look again and rewrite the /dev-names for the IDE drives
-	// as they appear _after_ loading of ide-scsi
+	if( Installation::destdir != "/" )
+            {
+            string dir = Installation::destdir + "/dev";
+            if( SCR::Read( .target.size, dir )<=0 )
+                {
+                SCR::Execute( .target.mkdir, dir );
+                }
+            }
 
-	foreach (`drive, cddrives,
-	    ``{
-	    string devname = substring (drive["dev_name"]:"", 5);
-	    if (contains (ide_recorders, devname))
-		{
-		string scsiname = "/dev/sr" + size (scsicds);
-		y2milestone ("IDE CD-RW %1 -> %2", devname, scsiname);
-		scsicds = add (scsicds, scsiname);
-		drive["dev_name"] = scsiname;
-
-		// our boot device might be re-mapped due to ide-scsi
-		if (("/dev/" + devname) == boot_device)
-		    boot_device = scsiname;
-		}
-	    symlink_cdrom (drive);
-	    });
+	foreach (`drive, cddrives, ``{ symlink_cdrom (drive); });
 
 	// if we didn't made a /dev/cdrom link, we dont have a
 	// plain cdrom drive (only cdrecorders, dvds, etc.)
 	// force such a link here.
 
-	if( !contains (cddevices, "/dev/cdrom"))
+	if( find( `e, cddrives, ``(e["linkname"]:""=="/dev/cdrom")) == nil )
 	    {
 	    // if we didnt boot from cd, just link to the first drive
 	    if( boot_device=="" )
 		{
-		boot_device = cddevices[0]:"";
+		boot_device = cddrives[0,"dev_name"]:"";
 		}
 	    if (boot_device != "")
 		{
-		symlink_cdrom ($["dev_name" : boot_device, "cdtype" : "cdrom"]);
+		symlink_cdrom ($["dev_name":boot_device, 
+                                 "linkname":"/dev/cdrom"]);
 		}
 	    }
 	}
