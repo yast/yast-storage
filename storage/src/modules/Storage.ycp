@@ -535,7 +535,7 @@ global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
 	    v["loop"] = e["loop"]:"";
 	    v["used_fs"] = e["vfstype"]:"";
 	    v["mount"] = e["mount"]:"";
-	    v["crypt"] = "twofish";
+	    v["crypt"] = e["opt1"]:"twofish";
 	    loop = add( loop, v );
 	    });
 	y2milestone( "loop %1", loop );
@@ -3520,27 +3520,76 @@ global define list<list<string> > AutodetectMultipathRaid( map<string,map> tg )
     return( ret );
     }
 
+define string GetLosetupCmd( map loop, string tmpf )
+    ``{
+    list noext = [ "twofish", "none" ];
+    string encr = loop["encryption"]:"twofish";
+    string cmd = sformat( "/sbin/losetup -e %1", encr );
+    if( !contains( noext, encr ) && size(loop["phash"]:"")>0 )
+	{
+	cmd = cmd + " -H " + loop["phash"]:"";
+	}
+    if( !contains( noext, encr ) && size(loop["itercountk"]:"")>0 )
+	{
+	cmd = cmd + " -C " + loop["itercountk"]:"";
+	}
+    cmd = cmd + " " + loop["loop_dev"]:"" + " " + loop["partitionName"]:"" +
+          " -p0 < " + tmpf;
+    y2milestone( "GetLosetupCmd %1", cmd );
+    return( cmd );
+    }
+
+global define boolean PerformLosetup( map loop, boolean format )
+    ``{
+    boolean crypt_ok = false;
+    string pwd = loop["passwd"]:"";
+    loop = (map)filter( string k, any val, (map<string,any>)loop, ``(k!="passwd"));
+    y2milestone( "PerformLosetup format %1 loop %2", format, loop );
+
+    string tmpf = SaveDumpPath( "tmpf" );
+    y2milestone( "PerformLosetup tmpf %1", tmpf );
+    SCR::Write( .target.string, tmpf, pwd );
+
+    string cmd = GetLosetupCmd( loop, tmpf );
+    map r = (map)SCR::Execute( .target.bash_output, cmd );
+    y2milestone( "PerformLosetup r %1", r );
+    crypt_ok = r["exit"]:1 == 0;
+    if( crypt_ok && !format && loop["encryption"]:""=="twofish" )
+	{
+	symbol fs = FileSystems::DetectFs( loop["loop_dev"]:"" );
+	y2milestone( "PerformLosetup fs on %1 is %2", loop["loop_dev"]:"", fs );
+	if( fs == `unknown )
+	    {
+	    SCR::Execute( .target.bash, "/sbin/losetup -d "+loop["loop_dev"]:"" );
+	    loop["encryption"] = "twofish256";
+	    cmd = GetLosetupCmd( loop, tmpf );
+	    map r = (map)SCR::Execute( .target.bash_output, cmd );
+	    y2milestone( "PerformLosetup r %1", r );
+	    crypt_ok = r["exit"]:1 == 0;
+	    }
+	}
+    //SCR::Execute( .target.remove, tmpf );
+    y2milestone( "PerformLosetup ret %1", crypt_ok );
+    return( crypt_ok );
+    }
+
 global define boolean SetCryptLoop( map part )
     ``{
     string crypt_passwd = lookup( GetClassifiedUserSettings(),
                                   part["crypt_key"]:"", "");
     string loop_dev = part["loop_dev"]:"";
-    if( size(loop_dev)==0 )
-	{
-	loop_dev = GetLoopDev(0);
-	}
 
     boolean crypt_ok = size(loop_dev)>0;
 
-    y2milestone( "crypt %1 %2", crypt_ok, loop_dev );
+    y2milestone( "SetCryptLoop crypt %1 %2", crypt_ok, loop_dev );
 
     map loaded_modules = (map) SCR::Read(.proc.modules);
-    if( part["loop_fs"]:false && part["crypt"]:""=="twofish" &&
+    if( part["loop_fs"]:false && find(part["crypt"]:"","twofish")==0 &&
         !haskey( loaded_modules, "loop_fish2" ) )
 	{
 	crypt_ok = (boolean) SCR::Execute( .target.modprobe, "loop_fish2", "");
 	}
-    y2milestone( "crypt mp: %1", crypt_ok);
+    y2milestone( "SetCryptLoop crypt mp: %1", crypt_ok);
 
     boolean retry = false;
 
@@ -3548,19 +3597,25 @@ global define boolean SetCryptLoop( map part )
 	{
 	if( crypt_ok )
 	    {
-	    part["loop_dev"] = loop_dev;
-
 	    map setloop =
 		$[ "encryption"    : part["crypt"]:"twofish",
 		   "passwd"        : crypt_passwd,
 		   "loop_dev"      : loop_dev,
 		   "partitionName" : part["device"]:"" ];
-
+	    if( size(part["itercountk"]:"")>0 )
+		{
+		setloop["itercountk"] = part["itercountk"]:"";
+		}
+	    if( size(part["phash"]:"")>0 )
+		{
+		setloop["phash"] = part["phash"]:"";
+		}
 	    if( part["type"]:`none == `loop )
 		{
 		setloop["partitionName"] = PathToDestdir( part["fpath"]:"" );
 		}
-	    crypt_ok = SCR::Write( .losetup, setloop );
+
+	    crypt_ok = PerformLosetup( setloop, part["format"]:false );
 	    }
 	if( !crypt_ok )
 	    {
@@ -3785,13 +3840,10 @@ global define void UpdateFstabSubfs()
     AsciiFile::RewriteFile( fstab, tabpath );
     }
 
-global define void Update( string oldv, string newv )
+global define void Update( map oldv, map newv )
     ``{
     y2milestone( "UpdateFstab old:%1 new:%2", oldv, newv );
-    list<string> o = filter( string e, splitstring( oldv, " " ), ``(size(e)>0));
-    list<string> n = filter( string e, splitstring( newv, " " ), ``(size(e)>0));
-    y2milestone( "oldv = %1 newv = %2", o, n );
-    if( o[2]:""=="9.0" || tointeger( o[2]:"" )<9 )
+    if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
 	{
 	StorageDevices::MakeCDLinks();
 	UpdateFstabSubfs();

@@ -49,6 +49,7 @@
   include "partitioning/partition_defines.ycp";
   include "partitioning/target_modify.ycp";
   include "partitioning/raid_lib.ycp";
+  include "partitioning/lvm_pv_lib.ycp";
   include "partitioning/lvm_lib.ycp";
 
   //integer loop_dev_nb	   = 0;
@@ -279,7 +280,8 @@ define boolean HandleFormatPartition( map partition )
 	device = partition["device"]:"";
 	retry = false;
 
-	y2milestone( "dev:%1 loop_dev %2", device, partition["loop_dev"]:"" );
+	y2milestone( "HandleFormatPartition dev:%1 crypt %2 loop_dev %3", 
+	             device, crypt_fs, partition["loop_dev"]:"" );
 
 	boolean loop_match = false;
 
@@ -291,22 +293,26 @@ define boolean HandleFormatPartition( map partition )
 		SCR::Execute( .target.bash, 
 			      "/sbin/losetup -d " + partition["loop_dev"]:"" );
 	    }
-	y2milestone( "loop_match %1", loop_match );
+	y2milestone( "HandleFormatPartition loop_match %1", loop_match );
 	///////////////////////////////
 	// CRYPT ?
 	if( !loop_match && (crypt_fs || partition["type"]:`none==`loop) )
 	    {
+	    if( size(partition["loop_dev"]:"")==0 )
+		{
+		partition["loop_dev"] = Storage::GetLoopDev(0);
+		}
 	    cancel = !Storage::SetCryptLoop( partition );
 	    if( !cancel )
 		{
 		if( !format && !partition["delete"]:false )
 		    {
 		    partition = FileSystems::GetFsysInfos( partition );
-		    map<string,map> tg = Storage::GetTargetMap();
-		    tg = Storage::SetPartition( tg, partition );
-		    Storage::SetTargetMap( tg );
 		    y2milestone( "loop part info %1", partition );
 		    }
+		map<string,map> tg = Storage::GetTargetMap();
+		tg = Storage::SetPartition( tg, partition );
+		Storage::SetTargetMap( tg );
 		if( haskey( partition, "loop_dev" ))
 		    {
 		    device = partition["loop_dev"]:"";
@@ -516,7 +522,7 @@ define boolean DoMountList( map<string,list> mp )
     string source_partition = (string)SCR::Read (.etc.install_inf.Partition);
     if (source_partition == nil) source_partition = "";
 
-    y2milestone( "mp %1", mp );
+    y2milestone( "DoMountList mp %1", mp );
     foreach( string mount, list mountData, mp,
 	``{
 	if (cancel)
