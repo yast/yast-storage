@@ -152,7 +152,7 @@ global define list GetJournalFstabOptions()
     ``{
     list options =
 	[ $[
-	     `widget : `VBox( `ComboBox(`id("opt_journal"), `opt(`hstretch), 
+	     `widget : `VBox( `ComboBox(`id("opt_journal"), `opt(`hstretch),
 					// label text
 					_("Data &Journaling Mode"),
 					["journal", "ordered", "writeback"]),
@@ -255,7 +255,7 @@ define map GetNormalFilesystems()``{
 	$[
 	   // label text
 	   `widget : `ComboBox(`id("opt_iocharset"), `opt(`editable,`hstretch), _("Char&set for file names"),
-	                       ["", "iso8859-1", "iso8859-15", "iso8859-2", 
+	                       ["", "iso8859-1", "iso8859-15", "iso8859-2",
 			        "iso8859-5", "iso8859-7", "iso8859-9", "utf8",
 			        "sjis", "koi8-r" ]),
 	   `query_key : "opt_iocharset",
@@ -610,7 +610,7 @@ number of inodes on a file system after its creation, so be sure to enter a reas
   ];
 
   list swap_fst_options = [
-    $[ `widget 	    : `TextEntry( `id("priority"), `opt(`hstretch), 
+    $[ `widget 	    : `TextEntry( `id("priority"), `opt(`hstretch),
 				  // label text
                                   _("Swap &Priority"), "42" ),
        `query_key   : "priority",
@@ -627,8 +627,8 @@ Enter the swap priority. Higher numbers mean higher priority.</p>
 ")
      ]];
 
-  map SwapFileSystems = 
-    $[ `swap : 
+  map SwapFileSystems =
+    $[ `swap :
 	$[ `name 	    : "Swap" ,
 	   `fsid 	    : Partitions::fsid_swap,
 	   `supports_format : true ,
@@ -786,7 +786,7 @@ global define map GetAllFileSystems(boolean add_swap, boolean add_pseudo )
 	{
 	ret = ["ntfs"];
 	}
-      else 
+      else
 	{
 	ret = fsmap[`needed_modules ]:[];
 	}
@@ -892,7 +892,7 @@ global define map GetFsysInfos( map part )
 	}
     part["used_fs"] = DetectFs( dev );
     part["detected_fs"] = part["used_fs"]:`unknown;
-    if( part["used_fs"]:`unknown != `unknown && 
+    if( part["used_fs"]:`unknown != `unknown &&
         part["used_fs"]:`unknown != `swap )
 	{
 	map info = GetUuidVolume( dev, part["used_fs"]:`unknown );
@@ -1181,6 +1181,9 @@ global define map GetFreeSpace( string device, integer testsize,
     integer used = 0;
     integer free = 0;
     boolean win_disk = false;
+    string mount_point = SCR::Read (.target.tmpdir) + "/gfs_mnt";
+
+    SCR::Execute (.target.mkdir, mount_point, 0755);
 
     LoadModule( used_fs );
     if ( Mode::test )
@@ -1201,7 +1204,7 @@ global define map GetFreeSpace( string device, integer testsize,
     // mount the partition to execute some checks
     //
     y2milestone( "mount %1 used_fs %2 type %3", device, used_fs, mount_type );
-    boolean mount_ret = SCR::Execute(.target.mount, [device, "/mnt"],
+    boolean mount_ret = SCR::Execute(.target.mount, [device, mount_point],
 				     mount_type );
 
     if ( !mount_ret)
@@ -1209,7 +1212,7 @@ global define map GetFreeSpace( string device, integer testsize,
 	y2error( "Current device <%1> could not be mounted. Canceled", device );
 	return( $[] );	// abort installation
 	}
-    else y2milestone( "Current device <%1> mounted on /mnt.", device );
+    else y2milestone( "Current device <%1> mounted on <%2>", device, mount_point );
 
     // get usage information for the partition via df
     //
@@ -1221,12 +1224,12 @@ global define map GetFreeSpace( string device, integer testsize,
 	integer num = 0;
 	while( !win_disk && num<size(chkf) )
 	    {
-	    win_disk = SCR::Read( .target.size, "/mnt/"+chkf[num]:"XX" ) >= 0;
+	    win_disk = SCR::Read( .target.size, mount_point + "/" + chkf[num]:"XX" ) >= 0;
 	    num = num+1;
 	    }
 	}
 
-    SCR::Execute(.target.umount, device);
+    SCR::Execute(.target.umount, mount_point);
 
     y2debug( ".run.df: %1", df_result );
 

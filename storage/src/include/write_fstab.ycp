@@ -210,7 +210,7 @@ global define map MakeCdromFstabEntry( map cd )
 global define void write_fstab( map targetMap, map zipdrives, list cddevices )
     ``{
     map tg = targetMap;
-    if( !Mode::initial )
+    if( !Mode::initial || Mode::live_eval )
 	{
 	tg = AddFstabInfo( tg, true );
 	}
@@ -240,9 +240,12 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 
     if( Mode::initial )
 	{
-	// proc
-	fstab["/proc"] = $["spec":"proc", "mount":"/proc", "vfstype":"proc",
-			   "mntops":"defaults", "freq":0, "passno":0];
+        if( !Mode::live_eval )
+        {
+	    // proc
+	    fstab["/proc"] = $["spec":"proc", "mount":"/proc", "vfstype":"proc",
+			       "mntops":"defaults", "freq":0, "passno":0];
+        }
 
 	// usbdevfs added with noauto
 	if (Hotplug::haveUSB)
@@ -329,13 +332,14 @@ global define void write_fstab( map targetMap, map zipdrives, list cddevices )
 	}
 
     string tabpath = "/etc/fstab";
-    if( Installation::destdir != "/" )
+    if( Installation::destdir != "/" && !Mode::live_eval )
 	{
 	tabpath = Installation::destdir + tabpath;
 	if( SCR::Read( .target.size, tabpath )>= 0 )
 	    SCR::Execute( .target.remove, tabpath );
 	}
     fstab = Partitions::GetFstab( tabpath );
+    y2milestone( "live %1 tabpath %2", Mode::live_eval, tabpath );
 
     // fstab is sorted by mountpoint
     y2milestone( "dellist=%1", dellines );
