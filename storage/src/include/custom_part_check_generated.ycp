@@ -47,39 +47,37 @@ HINTS: Always use
   textdomain "storage";
   
 
-  /*---------------------------------------------------------------------
-   * change_boot_region
-   *---------------------------------------------------------------------
-   * changes the "region" key in the (all) partitions, which have a
-   * mountpoint "/boot"
-   *---------------------------------------------------------------------
-   */
+/*---------------------------------------------------------------------
+ * change_boot_region
+ *---------------------------------------------------------------------
+ * changes the "region" key in the (all) partitions, which have a
+ * mountpoint "/boot"
+ *---------------------------------------------------------------------
+ */
 
-  global define change_boot_region( map targetMap, list new_region )
+global define change_boot_region( map targetMap, list new_region )
   ``{
-      foreach( `disk, `diskinfo, targetMap, ``{
+  foreach( `disk, `diskinfo, targetMap, 
+      ``{
+      list new_part_info = [];
+      list part_info     = diskinfo["partitions"]:[];
 
-          list new_part_info = [];
-          list part_info     = lookup( diskinfo, "partitions", [] );
+      foreach( `part, part_info,
+	  ``{
+	  map new_part = part;
 
-          foreach( `part, part_info,
-                   ``{
+	  if( !part["delete"]:false && 
+	      part["fsid"]:0 == Partitions::fsid_prep_chrp_boot )
+	      {
+	      new_part["region"] = new_region;
+	      }
+	  new_part_info = add( new_part_info, new_part );
+	  });
 
-              map new_part = part;
-
-              if ( lookup( part, "delete", false) == false )
-              {
-                  if ( lookup( part, "mount", "" ) == "/boot" ) new_part = add( new_part, "region", new_region );
-              }
-
-              new_part_info = add( new_part_info, new_part );
-          });
-
-          diskinfo  = add( diskinfo, "partitions", new_part_info );
-          targetMap = add( targetMap, disk, diskinfo );
-      } );
-
-      return( targetMap );
+      diskinfo["partitions"] = new_part_info;
+      targetMap[disk] = diskinfo;
+      });
+  return( targetMap );
   };
 
 
@@ -541,10 +539,10 @@ Do you want to change this?
 	    // desired size on CHRP: max 5MB, at least 1MB (for yaboot)
 	    // FIXME: this function shrinks mount point /boot unconditional!!!
 
-	    if ( boot_cyl_nb > get_max_cyl_for_4mb( boot_cyl_size) )
-	    {
+	    if( boot_cyl_nb > get_max_cyl_for_4mb( boot_cyl_size) )
+		{
 		targetMap = change_boot_region( targetMap, [ boot_start_cyl, get_max_cyl_for_4mb(boot_cyl_size) ]);
-	    }
+		}
 
 	    y2milestone( "PReP resized: %1 %2 %3",  boot_cyl_nb, get_max_cyl_for_4mb( boot_cyl_size), targetMap );
 	}
