@@ -780,6 +780,9 @@ global define map CheckPartedValid( string ddevice, map disk,
     list ps = filter( `p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
     y2milestone( "ps %1", ps );
     integer cyl_blocks = disk["cyl_size"]:1000000 / 1024;
+    boolean openbsd = size(filter(`e,partitions,
+				  ``(e["fsid"]:0==Partitions::fsid_openbsd)))>0;
+    y2milestone( "openbsd %1", openbsd );
     foreach( `p, ps,
 	``{
 	integer pnr = tointeger(deletechars(substring(p["name"]:"",size(ddevice)-5),"p"));
@@ -797,19 +800,19 @@ global define map CheckPartedValid( string ddevice, map disk,
 	}
     y2milestone( "plist1 %1", plist1 );
     y2milestone( "plist2 %1", plist2 );
-    ret = size(plist1) == size(plist2);
+    ret = size(plist1) >= size(plist2);
     if( ret )
 	{
 	foreach( `k, `e, plist1, 
 	    ``{
 	    if( !haskey( plist2, k ))
 		{
-		ret = false;
+		ret = ret && openbsd;
 		}
 	    else
 		{
 		integer diff = e - plist2[k]:0;
-		ret = diff >= -1 && diff <= 1;
+		ret = ret && diff >= -1 && diff <= 1;
 		y2milestone( "k:%1 diff:%2", k, diff );
 		}
 	    });
@@ -822,7 +825,7 @@ global define map CheckPartedValid( string ddevice, map disk,
 	    else
 		{
 		integer diff = e - plist1[k]:0;
-		ret = diff >= -1 && diff <= 1;
+		ret = ret && diff >= -1 && diff <= 1;
 		y2milestone( "k:%1 diff:%2", k, diff );
 		}
 	    });
@@ -831,6 +834,7 @@ global define map CheckPartedValid( string ddevice, map disk,
 	{
 	partitions = [];
 	integer reg_start=0;
+	y2milestone( "ps=%1", ps );
 	foreach( `p, ps,
 	    ``{
 	    map part = $[];
