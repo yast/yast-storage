@@ -126,10 +126,16 @@ void LvmAccess::ActivateLvm()
 	}
     }
 
-bool LvmAccess::ActivateVGs( bool Activate_bv )
+bool LvmAccess::ActivateVGs( bool Activate_bv, const string& VgName_Cv )
     {
+    y2milestone( "Activate_bv:%d VgName_Cv:\"%s\"", Activate_bv,
+                 VgName_Cv.c_str() );
     string Cmd_Ci = "/sbin/vgchange -a ";
     Cmd_Ci += Activate_bv?"y":"n";
+    if( VgName_Cv.length()>0 )
+	{
+	Cmd_Ci += " " + VgName_Cv;
+	}
     return( ExecuteLvmCmd( Cmd_Ci ) );
     if( Activate_bv && !Lvm2() )
 	{

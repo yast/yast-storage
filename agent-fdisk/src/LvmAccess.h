@@ -82,7 +82,7 @@ class LvmAccess
 	bool DeleteLv( const string& LvName_Cv );
 	void UpdateDisk( list<PartInfo>& Part_Cv, const string& Disk_Cv );
 	void ActivateLvm();
-	bool ActivateVGs( bool Activate_bv=true );
+	bool ActivateVGs( bool Activate_bv=true, const string& VgName_Cv="" );
 	list<string> PhysicalDeviceList();
 	static unsigned long long UnitToValue( const string& Unit_Cv );
 

@@ -548,8 +548,23 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 	}
     else if (conf_name == "activate")
 	{
-	y2milestone( "activate all LVM VGs" );
-	ret = Lvm_pC->ActivateVGs( true );
+	string VgName_Ci = "";
+	if( !value.isNull() || value->isString())
+	    {
+	    VgName_Ci = value->toString();
+	    if( VgName_Ci == "\"\"" )
+		VgName_Ci.clear();
+	    }
+	if( VgName_Ci.length()>0 )
+	    {
+	    y2milestone( "activate LVM VG %s", VgName_Ci.c_str() );
+	    ret = Lvm_pC->ActivateVGs( true, VgName_Ci );
+	    }
+	else
+	    {
+	    y2milestone( "activate all LVM VGs" );
+	    ret = Lvm_pC->ActivateVGs( true );
+	    }
 	return( ret );
 	}
     else
