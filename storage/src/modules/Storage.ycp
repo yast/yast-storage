@@ -4048,6 +4048,23 @@ global define void UpdateFstabIseriesVd()
     AsciiFile::RewriteFile( crtab, tabpath );
     }
 
+global define void UpdateCdromLinks( map diskmap )
+    ``{
+    y2milestone( "UpdateCdromLinks map %1", diskmap );
+    foreach( string link, StorageDevices::TypeNames,
+	``{
+	string dev = "/dev/" + link;
+	string cont = (string)SCR::Read( .target.symlink, dev );
+	if( cont!=nil && haskey( diskmap, cont ) && size(diskmap[cont]:"")>0 )
+	    {
+	    y2milestone( "Change symlink %1 from %2 -> %3", dev, cont,
+	                 diskmap[cont]:"" );
+	    SCR::Execute( .target.remove, dev );
+	    SCR::Execute( .target.symlink, dev, diskmap[cont]:"" );
+	    }
+	});
+    }
+
 global define void UpdateFstabDiskmap( map diskmap )
     ``{
     y2milestone( "UpdateFstabdiskmap map %1", diskmap );
@@ -4169,6 +4186,7 @@ global define void Update( map oldv, map newv )
     if( size(dm)>0 )
 	{
 	UpdateFstabDiskmap( dm );
+	UpdateCdromLinks( dm );
 	}
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
 	{
