@@ -31,3 +31,11 @@ libpy2ag_storage_la_LDFLAGS = -version-info 2:0
 
 install-data-hook:
 	rm -f $(DESTDIR)$(plugindir)/$(plugin_LTLIBRARIES)
+
+# Formerly, the redirection from ag_{fdisk,lvm,md} to ag_storage
+# was done in liby2 (sic!)
+# Now we make symlinks, which kinda circumvents libtool. Oh well.
+install-exec-local:
+	ln -s libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_fdisk.so.2
+	ln -s libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_lvm.so.2
+	ln -s libpy2ag_storage.so.2 $(DESTDIR)$(plugindir)/libpy2ag_md.so.2
