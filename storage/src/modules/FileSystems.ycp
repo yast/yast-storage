@@ -1256,11 +1256,27 @@ global define map GetFreeSpace( string device, integer testsize,
     integer used = 0;
     integer free = 0;
     boolean win_disk = false;
+    boolean mounted = false;
     string mount_point = SCR::Read (.target.tmpdir) + "/gfs_mnt";
 
-    SCR::Execute (.target.mkdir, mount_point, 0755);
+    if( !Mode::initial )
+	{
+	list mounts = filter( `e, SCR::Read(.proc.mounts), 
+			      ``(e["spec"]:""==device));
+	y2milestone( "mounts %1", mounts );
+        if( size(mounts)>0 && size(mounts[0,"file"]:"")>0 )
+	    {
+	    mount_point = mounts[0,"file"]:"";
+	    mounted = true;
+	    }
+	}
+    y2milestone( "mount_point %1 mounted %2", mount_point, mounted );
 
-    LoadModule( used_fs );
+    if( !mounted )
+	{
+	SCR::Execute (.target.mkdir, mount_point, 0755);
+	LoadModule( used_fs );
+	}
     if ( Mode::test )
 	{
 	integer wf =  tointeger(tofloat(testsize) * 0.6);
@@ -1270,26 +1286,30 @@ global define map GetFreeSpace( string device, integer testsize,
 		   "linux_size"  : ls, "new_size": (wu + wf - ls) ] );
 	}
 
-    string mount_type = GetMountString( used_fs, "");
-    if (mount_type != "")
+    if( !mounted )
 	{
-	mount_type = "-r -t " + mount_type;
-	}
+	string mount_type = GetMountString( used_fs, "");
+	if (mount_type != "")
+	    {
+	    mount_type = "-r -t " + mount_type;
+	    }
 
-    // mount the partition to execute some checks
-    //
-    y2milestone( "mount %1 used_fs %2 type %3", device, used_fs, mount_type );
-    boolean mount_ret = SCR::Execute(.target.mount, [device, mount_point],
-				     mount_type );
+	// mount the partition to execute some checks
+	//
+	y2milestone( "mount %1 used_fs %2 type %3", device, used_fs, 
+	             mount_type );
+	boolean mount_ret = SCR::Execute(.target.mount, [device, mount_point],
+					 mount_type );
 
-    if ( !mount_ret)
-	{
-	y2error( "Current device <%1> could not be mounted. Canceled", device );
-	return( $[] );	// abort installation
+	if ( !mount_ret)
+	    {
+	    y2error( "Current device <%1> could not be mounted. Canceled", device );
+	    return( $[] );	// abort installation
+	    }
+	else 
+	    y2milestone( "Current device <%1> mounted on <%2>", device, 
+			 mount_point );
 	}
-    else 
-	y2milestone( "Current device <%1> mounted on <%2>", device, 
-	             mount_point );
 
     // get usage information for the partition via df
     //
@@ -1307,7 +1327,10 @@ global define map GetFreeSpace( string device, integer testsize,
 	    }
 	}
 
-    SCR::Execute(.target.umount, mount_point);
+    if( !mounted )
+	{
+	SCR::Execute(.target.umount, mount_point);
+	}
 
     y2debug( ".run.df: %1", df_result );
 
