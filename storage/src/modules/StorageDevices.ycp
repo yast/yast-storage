@@ -72,6 +72,9 @@
      */
     global list cddrives = [];
 
+    global list TypeNames = [ "cdrom", "dvd", "cdrecorder", "dvdrecorder", 
+                              "dvdram" ];
+
     // storage for localProbe, see Probe()
     map targetMap = $[];
 
@@ -149,7 +152,7 @@ global define boolean ProbeCDROMs()
 		string scsiname = "/dev/sr" + size (scsicds);
 		y2milestone ("IDE CD-RW %1 -> %2", e["dev_name"]:"", scsiname);
 		scsicds = add (scsicds, scsiname);
-		e["name_orig"] = e["dev_name"]:"";
+		e["dev_orig"] = e["dev_name"]:"";
 		e["dev_name"] = scsiname;
 		}
 	    });
@@ -177,14 +180,14 @@ global define boolean ProbeCDROMs()
 		linkname = "dvd";
 		}
 
-	    // now check the number (for /dev/cdrom, /dev/cdrom1, ...)
+	    // now check the number (for /dev/cdrom, /dev/cdrom2, ...)
 	    integer number = linknum[linkname]:0;
 	    linknum[linkname] = number + 1;
 
 	    string devname = "/dev/" + linkname;
 
 	    if( number > 0)
-		devname = devname + number;
+		devname = devname + number+1;
 
 	    e["linkname"] = devname;
 	    });
@@ -206,100 +209,99 @@ global define map GetCdromEntry( string device )
     return( ret );
     }
 
-    /**
-     * FloppyReady ()
-     * @return floppy media status
-     * determines if a media is present.
-     * @see: FloppyPresent
-     * @see: FloppyDevice
-     */
+/*
+ * FloppyReady ()
+ * @return floppy media status
+ * determines if a media is present.
+ * @see: FloppyPresent
+ * @see: FloppyDevice
+ */
 
-    global define boolean FloppyReady ()
+global define boolean FloppyReady ()
     ``{
-	if (Mode::initial)
+    if( Mode::initial )
 	{
-	    y2milestone( "before .probe.floppy" );
-	    FloppyDrives = SCR::Read(.probe.floppy);
-	    y2milestone( "after .probe.floppy" );
+	y2milestone( "before .probe.floppy" );
+	FloppyDrives = SCR::Read(.probe.floppy);
+	y2milestone( "after .probe.floppy" );
 
-	    if (!FloppyPresent)	// only once !
+	if( !FloppyPresent )	// only once !
 	    {
-		// write out data for hardware status check
-		foreach (`drive, FloppyDrives,
+	    // write out data for hardware status check
+	    foreach (`drive, FloppyDrives,
 		``{
-		    HwStatus::Set (drive["unique_key"]:"", `yes);
+		HwStatus::Set (drive["unique_key"]:"", `yes);
 		});
 	    }
 	}
-	else
+    else
 	{
-	    FloppyDrives = SCR::Read(.probe.floppy.manual);
+	FloppyDrives = SCR::Read(.probe.floppy.manual);
 	}
 
-	map floppy_data = FloppyDrives[0]:$[];
-	FloppyDevice = floppy_data["dev_name"]:"";
-	if ((FloppyDevice != "")
-	    || Mode::test)
+    map floppy_data = FloppyDrives[0]:$[];
+    FloppyDevice = floppy_data["dev_name"]:"";
+    if( (FloppyDevice != "") || Mode::test)
 	{
-	    FloppyPresent = true;
+	FloppyPresent = true;
 	}
-	return( size(floppy_data)>0 && !haskey(floppy_data,"notready") );
+    return( size(floppy_data)>0 && !haskey(floppy_data,"notready") );
     }
 
 
-    // check if this device is a ZIP drive
+// check if this device is a ZIP drive
 
-    define boolean check4zip (map disk)
+define boolean check4zip (map disk)
     ``{
-	list zlist = splitstring (disk["device"]:"", " ");
-	boolean zip_found = false;
-	foreach (`zelement, zlist,
+    list zlist = splitstring (disk["device"]:"", " ");
+    boolean zip_found = false;
+    foreach (`zelement, zlist,
 	``{
-	    if (zelement == "ZIP")
-		zip_found = true;
+	if (zelement == "ZIP")
+	    zip_found = true;
 	});
-	return zip_found;
+    return zip_found;
     }
 
-    // loop over floppy drives to find IDE ZIPs
-    // return map of $[ "device" : $[target], ...]
+// loop over floppy drives to find IDE ZIPs
+// return map of $[ "device" : $[target], ...]
 
-    define map findZIPs ()
+define map findZIPs ()
     ``{
-	map zipdrives = $[];
-	foreach (`disk, FloppyDrives,
+    map zipdrives = $[];
+    foreach (`disk, FloppyDrives,
 	``{
-	    boolean is_zip = check4zip (disk);
-	    if (is_zip)
+	boolean is_zip = check4zip (disk);
+	if (is_zip)
 	    {
-		map target = $[];
-		string dname = "";
+	    map target = $[];
+	    string dname = "";
 
-		string ddevice = disk["dev_name"]:"?";
-	        string dinfo = disk["vendor"]:"";
+	    string ddevice = disk["dev_name"]:"?";
+	    string dinfo = disk["vendor"]:"";
 
-		target["vendor"] = dinfo;
-		if (dinfo != "") dname = dname + dinfo + "-";
+	    target["vendor"] = dinfo;
+	    if (dinfo != "") dname = dname + dinfo + "-";
 
-		dinfo = disk["device"]:"";
-		target["model"] = dinfo;
+	    dinfo = disk["device"]:"";
+	    target["model"] = dinfo;
 
-		if (dinfo != "") dname = dname + dinfo;
-		target["name"] = dname;
-		target["partitions"] = [];
+	    if (dinfo != "") dname = dname + dinfo;
+	    target["name"] = dname;
+	    target["partitions"] = [];
 
-		zipdrives[ddevice] = target;
+	    zipdrives[ddevice] = target;
 	    }
 	});
-	return zipdrives;
+    return zipdrives;
     }
 
 
-    /**
-     * Probe for storage devices attached to storage controllers
-     * Should be called after StorageControllers::Initialize
-     * @return	map	TargetMap
-     */
+/*
+ * Probe for storage devices attached to storage controllers
+ * Should be called after StorageControllers::Initialize
+ * @return	map	TargetMap
+ */
 
 define map localProbe ()
     ``{
@@ -609,13 +611,13 @@ global define list GetS390Partitions( string ddev, map target, list ppart )
     return( partitions );
     }
 
-/**
-* Probe ()
-* probe for target devices, return map
-* used like proposal-api
-*
-* @param boolean force_reset
-*/
+/*
+ * Probe ()
+ * probe for target devices, return map
+ * used like proposal-api
+ *
+ * @param boolean force_reset
+ */
 global define map Probe (boolean force_reset)
     ``{
     y2milestone( "force_reset:%1 disks_valid:%2", force_reset, disks_valid );
@@ -630,12 +632,12 @@ global define map Probe (boolean force_reset)
     }
 
 
-/**
-* Fake probing for storage devices in test or demo mode -
-* read ready-made target maps from file.
-*
-* @return	map	TargetMap
-*/
+/*
+ * Fake probing for storage devices in test or demo mode -
+ * read ready-made target maps from file.
+ *
+ * @return	map	TargetMap
+ */
 
 global define map fakeProbe ()
     ``{
@@ -653,12 +655,12 @@ global define map fakeProbe ()
 
 
 
-/**
-* ProbeIDERecorders ()
-*
-* probe for IDE cd recorders and return list of hdX names
-* for ide-scsi setup
-*/
+/*
+ * ProbeIDERecorders ()
+ *
+ * probe for IDE cd recorders and return list of hdX names
+ * for ide-scsi setup
+ */
 
 global define list ProbeIDERecorders ()
     ``{
@@ -667,13 +669,13 @@ global define list ProbeIDERecorders ()
     return idecdrws;
     }
 
-/**
-* symlink_cdrom
-*
-* make proper symlink for cd-rom/dvd/cdrecorder drive
-*
-* @param	map	cdinfo	result of .probe.cdrom
-*/
+/*
+ * symlink_cdrom
+ *
+ * make proper symlink for cd-rom/dvd/cdrecorder drive
+ *
+ * @param	map	cdinfo	result of .probe.cdrom
+ */
 
 // count the links for "pseudo" devices
 
@@ -694,11 +696,11 @@ define void symlink_cdrom( map cdinfo )
     return;
     }
 
-/**
-* Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
-* create type dependant links (i.e. /dev/dvd for a DVD drive
-* but make sure that at least /dev/cdrom exists.
-*/
+/*
+ * Symlink (/mnt)/dev/cdromX to all real cdrom devices (/dev/sr0, etc.)
+ * create type dependant links (i.e. /dev/dvd for a DVD drive
+ * but make sure that at least /dev/cdrom exists.
+ */
 
 global define void MakeCDLinks ()
     ``{
@@ -711,7 +713,7 @@ global define void MakeCDLinks ()
 	    boot_device = "/dev/" + boot_device;
 
 	// our boot device might be re-mapped due to ide-scsi
-	map idecdwr = find( `e, cddrives, ``(e["name_orig"]:""==boot_device));
+	map idecdwr = find( `e, cddrives, ``(e["dev_orig"]:""==boot_device));
 	if( idecdwr != nil )
 	    {
 	    boot_device = idecdwr["dev_name"]:"";
@@ -749,9 +751,9 @@ global define void MakeCDLinks ()
     return;
     }
 
-/**
-* Initialize
-*/
+/*
+ * Initialize
+ */
 
 global define void FullProbe ()
     ``{
@@ -849,10 +851,10 @@ global define map CheckPartedValid( string ddevice, map disk,
     return( $["ret":ret, "partitions":partitions ] );
     };
 
-/**
-* check partitions for given disk (as path, i.e. '.sda')
-* returns list as specified in README.target_partition
-**/
+/*
+ * check partitions for given disk (as path, i.e. '.sda')
+ * returns list as specified in README.target_partition
+ */
 global define list Check4partitions (string diskdev, map disk, path diskpath)
     ``{
     list partitions = [];
@@ -899,13 +901,13 @@ global define void InitDone()
     y2milestone( "called disks_valid %1", disks_valid );
     }
 
-/**
-* Constructor
-*/
+/*
+ * Constructor
+ */
 
 global define void StorageDevices ()
     ``{
-    if (!Mode::initial && !Mode::config)
+    if( !Mode::initial && !Mode::config )
 	{
 	FullProbe ();
 	disks_valid = true;
