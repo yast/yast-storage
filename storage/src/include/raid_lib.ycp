@@ -571,9 +571,9 @@ It does not belong to a RAID.
 
 	if ( bresult )
 	{
-	    list raids    = lookup( lookup( targets, "/dev/md", $[] ), "partitions", [] );
-	    raids         = filter(  `mdX, raids, ``( lookup(mdX, "status", "") == "create" ));
-	    list raid_nrs = maplist( `mdX, raids, ``( lookup(mdX, "nr",     256)));
+	    list raids = targets["/dev/md","partitions"]:[];
+	    raids = filter( `mdX, raids, ``( mdX["status"]:"" == "create" ));
+	    list raid_nrs = maplist( `mdX, raids, ``( mdX["nr"]:256));
 	    boolean cancel = false;
 
 	    y2milestone( "created raids: %1", raid_nrs );
@@ -584,12 +584,12 @@ It does not belong to a RAID.
 
 		//////////////////////////////////////////////////////////////////////
 		// load raid module if not loaded!!
-		map    raid          = find( `raid , raids, ``( lookup(raid, "nr", 0) == raid_nr ));
-		string modulename    = lookup(  raid, "raid_type", "raid1");
+		map raid = find( `raid , raids, ``( raid["nr"]:0 == raid_nr ));
+		string modulename    = raid["raid_type"]:"raid1";
 		map loaded_modules   = SCR::Read(.proc.modules);
 		boolean load_success = true;
 
-		if ( size (lookup (loaded_modules, modulename, $[])) == 0)
+		if ( size (loaded_modules[modulename]:$[]) == 0)
 		{
 		    if (modulename == "raid5" )
 			load_success = SCR::Execute(.target.insmod, "xor", "" );
@@ -602,29 +602,28 @@ It does not belong to a RAID.
 		}
 
 		if(  load_success )
-		{
-
+		    {
 		    // force !! create raid even  if  they appear to have data on them already.
 		    string command = sformat ("/sbin/mkraid -c /etc/raidtab --really-force /dev/md%1", raid_nr);
 
 		    if ( SCR::Execute (.target.bash, command) == 0 )
-		    {
+			{
 			y2milestone( "success for: %1", command  );
-		    }
+			}
 		    else
-		    {
+			{
 			y2error("Command <%1> failed", command );
 			string message = sformat(_("Could not create the RAID /dev/md%1"), raid_nr);
 			UI::ErrorPopup(message);
 			cancel=true;
+			}
 		    }
-		}
 		else
-		{
+		    {
 		    UI::ErrorPopup(sformat(_("Could not load module %1."), modulename ));
 		    cancel=true;
-		}
-	    });
+		    }
+		});
 
 	    //failure in foreach
 	    if(cancel==true)

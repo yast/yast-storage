@@ -34,75 +34,75 @@
    * @parm search_point mount point where partitions can be mounted
    * @return list list with fstab if only one existing fstab is found
    */
-  global define findExistingFstab( map targetMap  , map file_systems , string search_point )``{
+global define findExistingFstab( map targetMap, map file_systems, 
+                                string search_point )
+    ``{
+    /////////////////////////////////////////////////////////////////
+    // foreach partition on each target
+    integer count_fstab_found = 0;
+    list    fstab = [];
 
-	/////////////////////////////////////////////////////////////////////////////////////////
-	// foreach partition on each target
-	integer count_fstab_found = 0;
-	list    fstab = [];
-
-	foreach ( `dev, `disk, targetMap, ``{
-	    foreach ( `partition, lookup ( disk, "partitions", []) , ``{
-
-		if( count_fstab_found==0 &&
-		    lookup ( partition, "fsid", 0 ) == Partitions::fsid_native )
+    foreach ( `dev, `disk, targetMap, ``{
+	foreach ( `partition, disk["partitions"]:[], ``{
+	    if( count_fstab_found==0 &&
+		partition["fsid"]:0 == Partitions::fsid_native )
 		{
-		    /////////////////////////////////////////////////////////////////////////////////////////
-		    // try to mount
+		/////////////////////////////////////////////////////
+		// try to mount
 
-		    string mount_option = lookup( lookup( file_systems, lookup ( partition, "used_fs", `ext2 ), $[]) , `mount_option, "");
+		string mount_option = file_systems[partition["used_fs"]:`ext2,`mount_option]:"";
 
-		    SCR::Execute(.target.bash, "/bin/mount " + mount_option + "  " +  get_device_name(dev,partition["nr"]:0) + " " + search_point );
+		SCR::Execute(.target.bash, "/bin/mount " + mount_option + "  " +  get_device_name(dev,partition["nr"]:0) + " " + search_point );
 
-		    if(  SCR::Execute(.target.bash, sformat("/usr/bin/test -e %1/etc/fstab", search_point)) == 0 )
+		if( SCR::Execute(.target.bash, sformat("/usr/bin/test -e %1/etc/fstab", search_point)) == 0 )
 		    {
-		        if (SCR::Execute(.target.bash, "/bin/cp " + Installation::destdir + "/etc/fstab /etc") == 0)
-			    {
-			    fstab = SCR::Read( .etc.fstab );
-			    count_fstab_found = count_fstab_found + 1;
-			    if( Mode::test )
-				SCR::Write(.dumpto.tmp.fstabmap,   fstab );
-			    }
+		    if (SCR::Execute(.target.bash, "/bin/cp " + Installation::destdir + "/etc/fstab /etc") == 0)
+			{
+			fstab = SCR::Read( .etc.fstab );
+			count_fstab_found = count_fstab_found + 1;
+			if( Mode::test )
+			    SCR::Write(.dumpto.tmp.fstabmap,   fstab );
+			}
 
 		    }
 
-		    /////////////////////////////////////////////////////////////////////////////////////////
-		    // unmount
+		/////////////////////////////////////////////////////
+		// unmount
 
-		    SCR::Execute(.target.bash, "/bin/umount " + search_point );
+		SCR::Execute(.target.bash, "/bin/umount " + search_point );
 		}
 	    });
 	});
-	y2milestone( "count_fstab_found %1", count_fstab_found );
-
-	if( count_fstab_found >= 1 )
-	    return  fstab;
-
+    y2milestone( "count_fstab_found %1", count_fstab_found );
+    if( count_fstab_found >= 1 )
+	return fstab;
+    else
 	return [];
-  };
+    };
 
 
-    /**
-    * Scan and Read and return fstab.
-    * @parm targetMap all targets
-    * @parm file_systems filesystem map
-    * @return list list with fstab
-    */
-    global define scanAndReadExistingFstab( map targetMap ,map file_systems )``{
-	string  search_point      = "/mnt";
-	list fstab = [];
+/**
+  * Scan and Read and return fstab.
+  * @parm targetMap all targets
+  * @parm file_systems filesystem map
+  * @return list list with fstab
+  */
+global define scanAndReadExistingFstab( map targetMap, map file_systems )
+    ``{
+    string  search_point      = "/mnt";
+    list fstab = [];
 
-	/////////////////////////////////////////////////////////////////////////////////////////
-	// make search dir
+    /////////////////////////////////////////////////////////////////
+    // make search dir
 
-	if( SCR::Execute(.target.bash, ("/usr/bin/test -d " + search_point) ) != 0)
+    if( SCR::Execute(.target.bash, ("/usr/bin/test -d " + search_point) ) != 0)
 	{
-	    SCR::Execute(.target.mkdir, search_point );
+	SCR::Execute(.target.mkdir, search_point );
 	}
 
-	fstab = findExistingFstab( targetMap, file_systems, search_point );
+    fstab = findExistingFstab( targetMap, file_systems, search_point );
 
-	return fstab;
+    return fstab;
     };
 
 
@@ -575,5 +575,60 @@ global define void HandlePartWidgetChanges( boolean init, any ret,
     y2debug( "HandlePartWidgetChanges new:%1", new );
     };
 
+/**
+ * Merge readed list fstab with targetMap
+ * @parm targetMap all targets
+ * @parm fstab readed fstab list
+ * @return return ( [ targetMap, table_input ] 
+ *
+ */
+global define list AddFstabToData( map targetMap, list fstab )
+    ``{
+    if( fstab == nil )
+	return [targetMap] ;
+
+    map new_targetMap = eval( targetMap );
+    list table_input = [];
+
+    foreach( `dev, `disk, targetMap, 
+	``{
+	list new_partitions = [];
+	map target = disk;
+	foreach( `partition, disk["partitions"]:[], 
+	    ``{
+	    map new_partition = partition;
+
+	    /////////////////////////////////////////////////////////
+	    // if the partition is not to delete
+	    if( !partition["delete"]:false )
+		{
+		foreach( `fstab_entry, fstab,
+		    ``{
+		    string dev_fstab   = fstab_entry["spec"]:"";
+		    string mount_fstab = fstab_entry["file"]:"";
+
+		    /////////////////////////////////////////////////
+		    //  find equal device
+		    if( dev_fstab == partition["device"]:"" )
+			{
+			new_partition["mount"] = mount_fstab;
+
+			/////////////////////////////////////////////
+			// entries for table
+			term a = `item(`id(dev_fstab));
+			a = add( a, dev_fstab );
+			a = add( a, mount_fstab );
+			table_input = add( table_input, a );
+			}
+		    });
+		}
+	    new_partitions = add( new_partitions, new_partition);
+	    });
+	target["partitions"] = new_partitions;
+	new_targetMap[dev] = target;
+	});
+
+    return [ new_targetMap, table_input ];
+    };
 
 }

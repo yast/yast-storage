@@ -99,7 +99,7 @@ HINTS: Always use
 
    boolean test_mode          = Mode::test;
    string  boot_mode	      =	Boot::LoaderType;
-   boolean immediate_prepdisk = Installation::immediate_prepdisk;
+   boolean immediate_prepdisk = Storage::immediate_prepdisk;
    string  focusline          = "";
    boolean focusset           = false;
 
@@ -149,7 +149,7 @@ HINTS: Always use
        bsd_label         = true;
    }
 
-   if( Mode::installation )
+   if( Mode::initial )
    {
        button_adapt_mp	       = true; 
    }
@@ -942,9 +942,10 @@ define FillPartitionList ()
      list table_input 	= [];
      boolean log_mode 	= false;
 
+     SCR::Write(Storage::SaveDumpPath("targetMap_c"), targets );
      foreach( `disk_dev_name, `disk, targets,
 	 ``{
-	 if (!focusset)
+	 if (!focusset && !disk["is_lvm_vg"]:false )
 	     {
 	     focusline = disk_dev_name;
 	     focusset  = true;
@@ -1153,27 +1154,19 @@ define FillPartitionList ()
     return sort( `lineA, `lineB, table_input, ``(
 	{
 	boolean ret = false;
-	integer length_lineA = size(select(lineA, 1, 0));
-	integer length_lineB = size(select(lineB, 1, 0));
+	map disk1 = Storage::GetDiskPartition( select(lineA, 1, 0) );
+	map disk2 = Storage::GetDiskPartition( select(lineB, 1, 0) );
 
-	if(select(lineA, 1, 0) <= select(lineB, 1, 0 ))
+	ret = disk1["disk"]:"" <= disk2["disk"]:"";
+
+	if( is( disk1["nr"]:0, integer ) != is( disk2["nr"]:0, integer ))
 	    {
-	    ret = true;
+	    ret = is( disk1["nr"]:0, integer );
 	    }
-
-	if( length_lineA > 8 && length_lineB > 8 &&
-	    length_lineA != length_lineB            ) //more than /dev/hda
+	else if( disk1["disk"]:"" == disk2["disk"]:"" )
 	    {
-	    if( length_lineA <= length_lineB )
-		{
-		ret = true;
-		}
-	    else
-		{
-		ret = false;
-		}
+	    ret = disk1["nr"]:0 <= disk2["nr"]:0;
 	    }
-
 	return ret;
 	}));
     };
@@ -2224,7 +2217,16 @@ global define ChoosePart( string usage )
 
     SCR::Write( Storage::SaveDumpPath("targetMap_s"), Storage::GetTargetMap() );
 
-    Storage::SetTargetMap( Storage::InitTargets( Storage::GetTargetMap() ));
+    // delete pseudo partitions with `free from target_partitioner
+    map tg = Storage::GetTargetMap();
+    foreach( `diskdev, `disk, tg,
+	``{
+	list partitions = filter( `part, disk["partitions"]:[], 
+	                          ``(part["type"]:`unknown != `free) );
+	disk["partitions"] = partitions;
+	tg[diskdev] = disk;
+	});
+    Storage::SetTargetMap( tg );
 
     list table_list = [];
     table_list = FillPartitionList();
@@ -2321,17 +2323,20 @@ global define ChoosePart( string usage )
     // Main dialog: Header
 
     string back_label = "";
-    if( Mode::installation )
+    string next_label = "";
+    if( Mode::initial )
 	{
 	back_label = BackButtonLabel();
+	next_label = NextButtonLabel();
 	}
     else
 	{
 	back_label = QuitButtonLabel();
+	next_label =  _("&Apply");
 	}
 
     Wizard::SetContentsButtons(_("Expert Partitioner"), contents, help_text,
-                               back_label, NextButtonLabel());
+                               back_label, next_label );
     Wizard::ReplaceHelp(`VBox( `HSpacing(25),`RichText(`id(`help), help_text)));
 
 
@@ -2340,8 +2345,8 @@ global define ChoosePart( string usage )
    ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-   repeat
-   {
+    repeat
+        {
         table_list = FillPartitionList();
         UI::ChangeWidget(`id(`table), `Items,  table_list);
 
@@ -2351,7 +2356,7 @@ global define ChoosePart( string usage )
 
 	if ( show_disk )
 	{
-	   UI::SetFocus(    `id(`table));
+	   UI::SetFocus( `id(`table));
 	   if( focusline != nil )
 	   {
 	       UI::ChangeWidget(`id(`table), `CurrentItem, focusline);
@@ -2576,7 +2581,7 @@ global define ChoosePart( string usage )
 				    "crypt_fs"	: false,
 				    "crypt_key" : "",
 				    "nr"	: curr_nr,
-				    "device"	: Storage::GetDeviceName( dev, curr_nr )
+				    "device"	: Storage::GetDeviceName( maindev, curr_nr )
 		    ];
 
 
@@ -2621,7 +2626,7 @@ global define ChoosePart( string usage )
 						       edit_cylinder,
 						       pdisk_disk,
 						       lookup( curr_disk, "cyl_size", 1000000),
-						       Mode::installation
+						       Mode::initial
 						     );
                     }
 
@@ -2702,8 +2707,8 @@ global define ChoosePart( string usage )
 
 		if( test_mode )
 		{
-		    y2debug("List: %1 %2", lookup( curr_disk, "partitions", []), number);
-		    SCR::Write(.dumpto.tmp.part, lookup( curr_disk, "partitions", []));
+		    y2debug("List: %1 %2", curr_disk["partitions"]:[], number);
+		    SCR::Write(.dumpto.tmp.part, curr_disk["partitions"]:[] );
 		}
 
 
@@ -2754,7 +2759,7 @@ WARNING: All data on this partition will be lost.
 		        new_val	 =  RaidExpertDlg(`settings,
 						  "/dev/md" + subdevindex,
 						  curr_part,
-						  Mode::installation,
+						  Mode::initial,
 						  FileSystems::GetAllFileSystems( false, true ),
 						  false,
 						  Storage::GetTargetMap()
@@ -2784,7 +2789,7 @@ WARNING: All data on this partition will be lost.
 						      edit_cylinder,
 						      pdisk_disk ,
 						      lookup( curr_disk, "cyl_size", 1000000),
-						      Mode::installation
+						      Mode::initial
 						      );
 		    }
 		}
@@ -2827,7 +2832,7 @@ WARNING: All data on this partition will be lost.
 		{
 		     map new_targetMap  = deleteAllDevPartitions( Storage::GetTargetMap() ,
 								  id,
-								  Mode::installation ,
+								  Mode::initial ,
 								  bsd_label );
 		     if( new_targetMap != nil )
 		     {
@@ -2864,7 +2869,7 @@ WARNING: All data on this partition will be lost.
 							    true,  // bsd_check
 							    true,  // lvm_check
 							    true ,
-							    Mode::installation ); // raid_check
+							    Mode::initial ); // raid_check
 
 
 		if( ret_delete == `immediate_prepdisk )
@@ -2880,7 +2885,7 @@ WARNING: All data on this partition will be lost.
 
 		if( Storage::IsSubDevExtended( id ) )
 		{
-		    if( ! check_extended_delete( maindevkey,  curr_disk, Mode::installation ) )
+		    if( ! check_extended_delete( maindevkey,  curr_disk, Mode::initial ) )
 		    {
 			focusline = id;
 			continue;
@@ -2995,23 +3000,17 @@ freed disk space.")) )
         ////////////////////////////////////////////////////////////////////////////////////////////////////
 
         if (ret == `reread)
-        {
+	    {
 	    boolean ret2 = true;
 
 	    if ( ask_reread ) 
 		ret2 = UI::YesNoPopup(_("Do you really want to reread the partition table?\nAll current changes made in this dialog will be lost!")); 
 
 	    if ( ret2 )
-            {
-		if( ! Mode::installation )
 		{
-		    Storage::StorageReadInSystem();
-		}
-		else {
-		    Storage::ReReadTargetMap();
+		Storage::ReReadTargetMap();
 		}
 	    }
-        }
 
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3039,32 +3038,32 @@ freed disk space.")) )
         // Adapt mount points from existing /etc/fstab
         ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        if (ret == `adapt_mp && Mode::installation )
-	{
-	    list fstab   = scanAndReadExistingFstab( Storage::GetTargetMap() ,  FileSystems::GetAllFileSystems(true, true));
-	    
-	    list  ret_l  = Storage::AddFstabToWhat( Storage::GetTargetMap() ,  fstab , `targetMap_table );
+        if (ret == `adapt_mp && Mode::initial )
+	    {
+	    list fstab = scanAndReadExistingFstab( Storage::GetOndiskTarget(), 
+	                                           FileSystems::GetAllFileSystems(true, true));
+	    list ret_l = AddFstabToData( Storage::GetOndiskTarget(), fstab );
 
 	    if( ret_l != nil && size( ret_l ) == 2 )
-	    {
-	    
+		{
 		map new_targetMap = select( ret_l, 0, $[] );
 		list table_input  = select( ret_l, 1, [] );
 
-		if( FstabAddDialog( table_input  ))
-		{
-		    Storage::SetTargetMap ( new_targetMap );
+		if( FstabAddDialog( table_input ))
+		    {
+		    Storage::ResetOndiskTarget();
+		    Storage::SetTargetMap( new_targetMap );
+		    }
 		}
 	    }
-	}
 
-
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
         // End of Actions, Now check the returncode
-        ////////////////////////////////////////////////////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
 
-        if (ret == `next || ret == `back || ret == `raid || ret == `lvm || ret == `raid_settings || ret == `raid_wizard )
-        {
+        if (ret == `next || ret == `back || ret == `raid || ret == `lvm || 
+	    ret == `raid_settings || ret == `raid_wizard )
+	    {
     	    symbol doagain = `next;
 
 	    if( ret == `back )
@@ -3084,14 +3083,14 @@ Continue?
 		    }
 		}
 	    if ( ret == `next && !immediate_prepdisk )
-            {
-		list retval = check_created_partiton_table( Storage::GetTargetMap() , true, Mode::installation );
+		{
+		list retval = check_created_partiton_table( Storage::GetTargetMap() , true, Mode::initial );
 		Storage::SetTargetMap( select( retval, 0, $[] ) );
 	        doagain     = select( retval, 1, `next );
-	    }
+		}
 
 	    // write partition information
-	    Installation::immediate_prepdisk = immediate_prepdisk;
+	    Storage::immediate_prepdisk = immediate_prepdisk;
 
 	    if( (ret==`back || ret==`next) && doagain!=`again )
 		{
@@ -3101,12 +3100,21 @@ Continue?
 	    if ( doagain == `again ) return `again;
 
             if ( ret != `back )
-            {
+		{
                 if (ret == `apply) return `again;
-            }
-        }
+		}
+	    }
 
-  } until (ret == `next || ret == `back || ret == `cancel || ret == `raid_wizard || ret == `raid_settings || ret == `lvm || ret == `lvmlv || ret == `abort );
+        } until (ret == `next || ret == `back || ret == `cancel ||
+	         ret == `raid_wizard || ret == `raid_settings || 
+		 ret == `lvm || ret == `lvmlv || ret == `abort );
+ 
+  if( (ret == `raid_wizard || ret == `raid_settings || ret == `lvm) &&
+      !Mode::initial )
+      {
+      Wizard::RestoreBackButton();
+      Wizard::RestoreNextButton();
+      }
 
 
   Wizard::RestoreHelp( help_text );
@@ -3114,11 +3122,11 @@ Continue?
 
 
   //next by installation
-  if( Mode::installation && ret == `next )
+  if( Mode::initial && ret == `next )
       ret = `instnext;
 
   //next in existing system
-  if( ! Mode::installation && ret == `next )
+  if( !Mode::initial && ret == `next )
       ret = `sysnext;
 
   if( ret == `back )

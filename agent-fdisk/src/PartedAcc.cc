@@ -105,8 +105,9 @@ PartedAccess::NewPartition(const PartitionType Part_e,
 
   Buf_Ci << std::setprecision(3) 
          << std::setiosflags(std::ios_base::fixed) 
-	 << ((double)Num_ui-0.9)*CylinderToKb(1)/1024 
+	 << (double)Num_ui*CylinderToKb(1)/1024 
          << " ";
+  Data_Ci.clear();
   Data_Ci.str( Bis_Cv );
   Data_Ci >> Num_ui;
   y2debug( "Bis:%s bis:%u", Bis_Cv.c_str(), Num_ui );
@@ -250,17 +251,31 @@ PartedAccess::ScanLine(string Line_Cv, PartInfo& Part_rr)
     Part_rr.PType_e = PAR_TYPE_LINUX;
     Part_rr.Id_i = PART_ID_LINUX_NATIVE;
     Part_rr.Info_C = "Linux native";
+    for( string::iterator i=Field1_Ci.begin(); i!=Field1_Ci.end(); i++ )
+	{
+	*i = tolower(*i);
+	}
+    for( string::iterator i=Field2_Ci.begin(); i!=Field2_Ci.end(); i++ )
+	{
+	*i = tolower(*i);
+	}
     if( Type_Ci == "extended" )
 	{
 	Part_rr.PType_e = PAR_TYPE_EXTENDED;
 	Part_rr.Id_i = 0x0f;
 	Part_rr.Info_C = "Extended";
 	}
-    else if( Field1_Ci.find( "FAT" )!=string::npos )
+    else if( Field1_Ci.find( "fat" )!=string::npos )
 	{
 	Part_rr.PType_e = PAR_TYPE_DOS;
 	Part_rr.Id_i = 0x0b;
 	Part_rr.Info_C = "Win95 FAT32";
+	}
+    else if( Field1_Ci.find( "ntfs" )!=string::npos )
+	{
+	Part_rr.PType_e = PAR_TYPE_HPFS;
+	Part_rr.Id_i = 0x07;
+	Part_rr.Info_C = "HPFS/NTFS";
 	}
     else if( Field1_Ci.find( "swap" )!=string::npos ||
              Field2_Ci.find( "swap" )!=string::npos )

@@ -13,6 +13,8 @@
     textdomain "storage";
 
     import "Arch";
+    import "Mode";
+    import "AsciiFile";
 
     // The filesystem ids for the partitions
     global integer fsid_empty    = 0;
@@ -54,8 +56,7 @@
     global define Partitions()
     ``{
 	import "Boot";
-	if (Arch::ia64
-	    || Boot::LoaderType == "milo")
+	if (Arch::ia64 || Boot::LoaderType == "milo")
 	{
 	    fsid_boot = fsid_fat16;
 	    default_boot_fs = `fat16;
@@ -77,8 +78,9 @@
     global define boolean UseParted()
     ``{
     boolean ret = true;
-    if( Arch::i386 )
+    if( Arch::i386 || Arch::x86_64 )
 	ret = false;
+    ret = true;
     y2milestone( "UseParted ret:%1", ret );
     return( ret );
     }
@@ -246,39 +248,31 @@ global define string MountedOn( string partition_str, list mounts_read )
     return "";
     };
 
-    /**
-     *	Return a list with all mounted partition
-     *  @return list
-     */
+/**
+ *	Return a list with all mounted partition
+ *  @return list
+ */
 global define list CurMounted() 
     ``{
-
     list mounts = SCR::Read(.proc.mounts);
     list swaps  = SCR::Read(.proc.swaps );
+    list mtab   = SCR::Read(.etc.mtab );
 
     foreach( `swap, swaps, 
 	``{
 	map swap_entry = $[
 			   "file" : "swap",
-			   "spec" :  lookup( swap, "file", "" )
-	];
+			   "spec" :  swap["file"]:""
+	    ];
 
-	mounts = add( mounts , swap_entry );
+	mounts = add( mounts, swap_entry );
 
 	});
 
-    SCR::Execute(.target.bash, "/bin/mount | grep \" / \" >/tmp/YaST2_mounts");
-
-    string root_str  = SCR::Read(.target.string, "/tmp/YaST2_mounts");
-    SCR::Execute(.target.bash, "/bin/rm /tmp/YaST2_mounts");
-
-    list root_list = splitstring( root_str, " ");
-
-    y2debug( " root device : %1", select( root_list , 0, "" ));
-
-    map root_map  = find( `mount, mounts, ``( lookup( mount ,"spec", "") == "/dev/root"));
-    root_map = add( root_map, "spec", select( root_list , 0, "" ) );
-    mounts = filter( `mount, mounts, ``( lookup( mount ,"spec", "") != "/dev/root"));
+    map mtab_root = find( `mount, mtab, ``( mount["file"]:"" == "/" ));
+    map root_map  = find( `mount, mounts, ``( mount["spec"]:"" == "/dev/root"));
+    root_map["spec"] = mtab_root["spec"]:"";
+    mounts = filter( `mount, mounts, ``( mount["spec"]:"" != "/dev/root"));
     mounts = add( mounts, root_map );
     list ret = [];
     foreach( `p, mounts, ``{ 
@@ -303,9 +297,28 @@ global define list CurMounted()
 	ret = add( ret, p );
 	});
 
-    y2debug( " all mounts %1", ret);
+    y2debug( "all mounts %1", ret);
     return ret;
     };
 
+global define map GetFstab( string pathname )
+    ``{
+    map file = $[];
+    AsciiFile::SetComment( file, "^[ \t]*#" );
+    AsciiFile::SetDelimiter( file, " \t" );
+    AsciiFile::SetListWidth( file, [ 25, 15, 10, 20, 1, 1 ] );
+    AsciiFile::ReadFile( file, pathname );
+    return( file );
+    };
+
+global define map GetCrypto( string pathname )
+    ``{
+    map file = $[];
+    AsciiFile::SetComment( file, "^[ \t]*#" );
+    AsciiFile::SetDelimiter( file, " \t" );
+    AsciiFile::SetListWidth( file, [ 12, 30, 15, 10, 10, 20 ] );
+    AsciiFile::ReadFile( file, pathname );
+    return( file );
+    };
 
 }

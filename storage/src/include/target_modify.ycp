@@ -251,7 +251,7 @@
 	{
 	part = filter( `p, part, ``(p["region",1]:0 > p["ori_length"]:0));
 	}
-    if( Mode::installation )
+    if( Mode::initial )
 	{
 	part = filter( `p, part, 
 		       ``(!Partitions::IsDosWinNtPartition( p["fsid"]:0 )));
@@ -275,8 +275,8 @@ global define boolean HandleResizeLvm( map target, map mod, boolean decrease )
     integer num = 1;
     map doit = $[];
     foreach( `n, `e, mod, ``{
-	string vg = "/dev/" + e["vgname"]:"";
-        map p = Storage::GetPartition( target, vg, e["name"]:"abcde" );
+	string device = "/dev/" + e["vgname"]:"" + "/" + e["name"]:"abcde";
+        map p = Storage::GetPartition( target, device );
 	y2debug( "p:%1", p );
         integer new_size = e["size"]:0;
         integer old_size = p["ori_length"]:new_size;
@@ -295,7 +295,7 @@ global define boolean HandleResizeLvm( map target, map mod, boolean decrease )
 	{
 	if( !decrease )
 	    {
-	    ret = target_modify( doit, Mode::installation );
+	    ret = target_modify( doit, Mode::initial );
 	    }
 	foreach( `n, `e, doit, ``{
 	    if( ret )
@@ -309,7 +309,7 @@ global define boolean HandleResizeLvm( map target, map mod, boolean decrease )
 	    });
 	if( decrease )
 	    {
-	    ret = target_modify( doit, Mode::installation );
+	    ret = target_modify( doit, Mode::initial );
 	    }
 	}
     return( ret );
@@ -341,7 +341,7 @@ global define boolean HandleResize( string disk_dev, map part,
 	boolean result = true;
 	boolean need_umount = false;
 	string mp = "";
-	if( !Mode::installation )
+	if( Mode::normal )
 	    mp = Partitions::MountedOn( device, Partitions::CurMounted() );
 	if( size(mp)>0 )
 	    {
@@ -436,10 +436,8 @@ You could umount the filesystem manually and retry resizing." ));
 	else
 	  {
 	  map tg = Storage::GetTargetMap();
-	  tg = Storage::DelPartitionData( tg, disk_dev, part["nr"]:0, 
-	                                  "ori_length" );
-	  tg = Storage::DelPartitionData( tg, disk_dev, part["nr"]:0, 
-	                                  "resize" );
+	  tg = Storage::DelPartitionData( tg, part["device"]:"", "ori_length" );
+	  tg = Storage::DelPartitionData( tg, part["device"]:"", "resize" );
 	  Storage::SetTargetMap( tg );
 	  }
 	} while ( retry );

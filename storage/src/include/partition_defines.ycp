@@ -1014,10 +1014,11 @@ global define integer GetModifyIdx( map modify_targets, map new )
 
     // check for ppc-PReP/CHRP system, they need a special boot partition
 
-    global define prepare_ppc_boot_part( map targets )    
+    global define void prepare_ppc_boot_part()    
     ``{
 	// Chancing patition-type of /boot to 0x41.
 	y2milestone( "Checking partitions for ppc prep chrp " );
+	map targets = Storage::GetTargetMap();
 
 	list ppc_partitions = [];
 	foreach (`targetdevice,`target, targets, ``{
@@ -1053,98 +1054,11 @@ global define integer GetModifyIdx( map modify_targets, map new )
 		}
 
 	    });
-
-	    change ( target, "partitions", ppc_partitions );
-	    change ( targets, targetdevice, target );
+	    targets[targetdevice] = target;
+	    targets[targetdevice,"partitions"] = ppc_partitions;
 	});
 	
 	Storage::SetTargetMap(  targets);
-
-	return( targets );
     };
 
-
-    
-    global define get_s390_device_map( map targetMap )``{
-    integer num = 0;
-    string alph = "abcdefghijklmnopqrstuvwxyz";
-    string newdev = "";
-    string param = "";
-    map ret =  $[];
-    map dasd = SCR::Read(.proc.dasddev);
-
-    foreach( `key, `value, targetMap, ``{
-        list part = lookup( value, "partitions", [] );
-	if( find( `p, part, ``( lookup( p, "crypt_fs", false ) ||
-				lookup( p, "lvm_group", "") != "" ||
-				lookup( p, "raid_name", "") != "" ||
-				lookup( p, "mount", "") != "" )) != nil )
-	    {
-	    newdev = "/dev/dasd";
-	    if( num < 26 )
-		{
-		newdev = newdev + substring( alph, num, 1 );
-		}
-	    else
-		{
-		newdev = newdev + substring( alph, (num/26)-1, 1 ) +
-		         substring( alph, num%26, 1 );
-		}
-	    ret = add( ret, key, newdev );
-	    map ddev = find( `p, dasd, ``( lookup( p, "name", "" ) == 
-	                                   substring( key, 5 )));
-	    if( ddev != nil )
-		{
-		param = param + lookup( ddev, "address", "" );
-		param = param + ",";
-		}
-	    num = num + 1;
-	    }
-	if( size(param)>0 && substring(param, size(param)-1, 1)=="," )
-	    {
-	    param = substring( param, 0, size(param)-1 );
-	    }
-	ret = add( ret, "param", param );
-	});
-
-    return(ret);
-    };
-
-
-    global define rename_s390_dasd_device( map targetMap, map device_map )``{
-
-    map newTarget = $[];
-
-    foreach( `key, `value, targetMap, ``{
-        if( find( key, "/dev/dasd" ) == 0 && lookup( key, device_map, "" )!="" )
-	    {
-	    newTarget = add( newTarget, lookup( key, device_map, "" ), value );
-	    }
-	else
-	    {
-	    newTarget = add( newTarget, key, value );
-	    }
-	});
-
-    return(newTarget);
-    };
-
-
-    
-    global define map_s390_device( string device, map device_map )``{
-
-    string ret = device;
-
-    if( find( device, "/dev/dasd" ) == 0 )
-	{
-	map dev = Storage::GetDiskPartition( device );
-	string disk = lookup( dev, "disk", "" );
-	if( disk != "" && lookup( disk, device_map, "" )!="" )
-	    {
-	    ret = Storage::GetDeviceName( lookup( disk, device_map, "" ),
-					  lookup( dev, "nr", 0 ) );
-	    }
-	}
-    return( ret );
-    };
 }

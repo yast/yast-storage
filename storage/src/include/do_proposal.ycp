@@ -54,14 +54,26 @@ global define map do_proposal()
       {
       string use_disk = "";
       list del_part = [];
+      list nodelpart = [ 222 ];
       foreach ( string dev, map disk, target, ``{
 	if( dev != "/dev/md" && !disk["is_lvm_vg"]:false && use_disk == "" && 
 	    find( dev, "/dev/" )==0 )
 	    {
 	    use_disk = dev;
+	    list keep = [];
 	    del_part = maplist( `p, disk["partitions"]:[], 
-	               ``(add(p,"delete",true)));
-	    disk["partitions"] = [];
+			   ``{
+			   if( !contains( nodelpart, p["fsid"]:0 ))
+			       {
+			       p["delete"] = true;
+			       }
+			   else
+			       {
+			       keep = add( keep, p );
+			       }
+			   return( p );
+			   });
+	    disk["partitions"] = keep;
 	    }
 	});
       y2milestone( "use_disk %1 del_part %2", use_disk, del_part );

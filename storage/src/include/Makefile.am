@@ -5,7 +5,6 @@
 yncludedir = @yncludedir@/partitioning
 
 ynclude_HEADERS = \
-	read_storage.ycp		\
 	partition_defines.ycp		\
 	custom_part_testdata.ycp	\
 	custom_part_check_generated.ycp	\

@@ -24,10 +24,10 @@
 
     import "Mode";
     import "HwStatus";
+    import "Storage";
 
     textdomain "storage";
 
-    include "partitioning/read_storage.ycp";
     include "ui/common_functions.ycp";
     
     /**
@@ -248,7 +248,6 @@
 	integer ide_count = 0;
 	integer scsi_count = 0;
 	integer raid_count = 0;
-	integer foreign_nr = 0; // for /windows and /dos mountpoints
 
 	foreach (`disk, all_disks,
 	``{
@@ -424,7 +423,6 @@
 	    list partitions = [];
 	    if (!is_zip)
 		{
-		// -> read_storage.ycp
 		partitions = Check4partitions (ddevice, target, diskpath);
 		}
 
@@ -453,9 +451,6 @@
 	SCR::UnmountAgent(.disk);
 
 	zipDrives = union (zipDrives, findZIPs ());
-
-	if( Mode::installation )
-	    targets = AddMountPointsForWin( targets );
 
 	if (Mode::test)
 	    SCR::Write(.dumpto.tmp.targets, targets);
@@ -671,6 +666,54 @@
 	ProbeCDROMs();		// probe CDs
     }
 
+/**
+ * check partitions for given disk (as path, i.e. '.sda')
+ * returns list as specified in README.target_partition
+ **/
+global define list Check4partitions (string diskdev, map disk, path diskpath)
+    ``{
+    list partitions = [];
+
+    if ( !Arch::s390 )
+	{  
+	partitions = SCR::Read(.disk + diskpath + .partitions, 
+			       Partitions::UseParted() );
+	// fdisk may fail on ppc, check with pdisk in this case
+	if (Arch::ppc && (size (partitions) == 0))
+	    {
+	    // ppath == ".hda"
+	    string ppath = "" + diskpath;
+	    // llpath == [ "", "hda" ]
+	    list lppath = splitstring (ppath, ".");
+	    // ppath = "/hda"
+	    ppath = mergestring (lppath, "/");
+	    y2milestone("ppath: %1", ppath);
+	    partitions = pdisk2target (SCR::Read(.pdisk, [ "/dev"+ppath ]));
+	    }
+	partitions = maplist( `part, partitions, ``{
+	    part["device"] = sformat( "%1%2", diskdev, part["nr"]:0 );
+	    return( part );
+	    });
+       
+	}
+    else
+	{
+	// On s390 there is only one partition per device /dev/dasd*
+	integer cyl_count  = disk["cyl_count"]:0;
+	integer cyl_size   = disk["cyl_size"]:1000000;
+
+	map partition = $[];
+	partition["nr"] = 1;
+	partition["device"] = 
+	    Storage::GetDeviceName( diskdev, partitions["nr"]:0);
+	partition["region"] = [ 0, cyl_count-1 ];
+	partition["fsid"] = Partitions::fsid_native;
+	partition["type"] = `s390;
+	partitions = add( partitions, partition );
+	y2milestone( "s390 part disk:%1 part:%2", diskpath, partitions );
+	}
+    return partitions;
+    };
 
     /**
      * Constructor
@@ -682,4 +725,6 @@
 	    FullProbe ();
 	return;
     }
+
+
 }

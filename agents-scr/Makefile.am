@@ -11,6 +11,7 @@ scrconf_DATA = etc_cryptotab.scr \
 	       proc_swaps.scr	 \
 	       dasddev.scr  	 \
 	       parted_print.scr  \
+	       etc_mtab.scr      \
 	       run_swapon_s.scr
 
 EXTRA_DIST = $(scrconf_DATA)

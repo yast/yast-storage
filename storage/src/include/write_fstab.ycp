@@ -23,6 +23,8 @@
     import "Storage";
     import "FileSystems";
     import "Partitions";
+    import "Installation";
+    import "AsciiFile";
     
     textdomain "storage";
 
@@ -31,259 +33,156 @@
 //-----------------------------------------------------
 // convert partitions to fstab entries
 // return map (might be empty)
-global define onepartition2fstab (string device, map part)
+global define onepartition2fstab (map part)
     ``{
-    y2milestone( "device=%1 part=%2", device, part );
-	if (part["delete"]:false || 
-	    part["type"]:`unknown == `extended ||
-	    part["crypt_fs"]:false ||
-	    part["lvm_group"]:"" != "" ||
-	    part["fsid"]:0 == Partitions::fsid_prep_chrp_boot ||
-	    (part["fsid"]:0 == Partitions::fsid_lvm && 
-	     is( part["nr"]:"", integer)) ||
-	    part["raid_name"]:"" != "")
+    y2milestone( "part=%1", part );
+    if (part["delete"]:false || 
+	part["type"]:`unknown == `extended ||
+	part["crypt_fs"]:false ||
+	part["lvm_group"]:"" != "" ||
+	part["raid_name"]:"" != "" ||
+	part["fsid"]:0 == Partitions::fsid_prep_chrp_boot ||
+	(part["fsid"]:0 == Partitions::fsid_lvm && is( part["nr"]:"", integer)) )
+	{
+	return $[];
+	}
+
+    string spec = part["device"]:""; 
+    if( part["mountby"]:`device == `label && size(part["label"]:"")>0 )
+	{
+	spec = sformat("LABEL=%1", part["label"]:"" );
+	}
+    else if( part["mountby"]:`device == `uuid && size(part["uuid"]:"")>0 )
+	{
+	spec = sformat("UUID=%1", part["uuid"]:"" );
+	}
+    y2milestone( "spec=%1", spec );
+    string  mount_point = part["mount"]:"";
+    integer fsid = part["fsid"]:0;
+
+    symbol  used_fs = part["used_fs"]:`ext2;
+    boolean format  = part["format"]:false;
+
+    string  vfstype = "unknown";	// keep "unknown", used again below
+    integer freq    = 0;
+    integer passno  = 0;
+    string  mntops  = part["fstopt"]:"defaults";
+
+    if (fsid == Partitions::fsid_swap)
+	{
+	// Only use our new swap partition
+	if (mount_point == "") return $[];
+	vfstype = "swap";
+	if( mntops == "defaults" )
 	    {
-	    return $[];
+	    mntops = "pri=42";
 	    }
+	passno = 0;
+	}
+    else if( fsid==Partitions::fsid_native || fsid==Partitions::fsid_lvm )
+	{
+	vfstype = FileSystems::GetMountString( used_fs, 
+	                                       (format ? "ext2" : "auto"));
 
-	string spec = get_device_name( device, part["nr"]:0 );
-	if( part["mountby"]:`device == `label && size(part["label"]:"")>0 )
-	    {
-	    spec = sformat("LABEL=%1", part["label"]:"" );
-	    }
-	else if( part["mountby"]:`device == `uuid && size(part["uuid"]:"")>0 )
-	    {
-	    spec = sformat("UUID=%1", part["uuid"]:"" );
-	    }
-        y2milestone( "spec=%1", spec );
-	string  mount_point = part["mount"]:"";
-	integer fsid = part["fsid"]:0;
-
-	symbol  used_fs = part["used_fs"]:`ext2;
-	boolean format  = part["format"]:false;
-
-	string  vfstype = "unknown";	// keep "unknown", used again below
-	integer freq    = 0;
-	integer passno  = 0;
-	string  mntops  = "defaults";
-
-	if (mount_point == "/")
+	freq = 1;
+	if( mount_point == "/" )
 	    {
 	    passno = 1;
 	    }
-	else if (mount_point != "")
+	else if( mount_point != "" )
 	    {
 	    passno = 2;
 	    }
-
-	if (fsid == Partitions::fsid_swap)
-	    {
-	    // Only use our new swap partition
-	    if (mount_point == "") return $[];
-	    vfstype = "swap";
-	    mntops = "pri=42";
-	    passno = 0;
-	    }
-	else if( fsid==Partitions::fsid_native || fsid==Partitions::fsid_lvm )
-	    {
-	    vfstype = FileSystems::GetMountString( used_fs, ((format) ? "ext2" : "auto"));
-
-	    freq = 1;
-	    if( mount_point == "/" )
-		{
-		passno = 1;
-		}
-	    else if( mount_point != "" )
-		{
-		passno = 2;
-		}
-	    else
-	    {
-	        mount_point = "/data" + other_nr;
-		// Don't mount and fsck this filesystem during boot, its
-		// state is unknown.
-		mntops = "noauto,user";
-		vfstype = "auto";
-		freq = 0;
-		passno = 0;
-		other_nr = other_nr + 1;
-		SCR::Execute(.target.mkdir, mount_point);
-	        y2milestone( "TT add MountPoint %1", mount_point );
-	    }
-	}
-	else if ((fsid == 0) && Arch::ppc && (mount_point != "") )
-	    {
-	    /* All PPC pdisk partitions: (some driver partitions are not show and not mounted) */
-
-	    symbol ppc_used_fs = part["used_fs"]:nil;
-	    string ppc_type    = part["ppc_type"]:"";
-
-	    freq = 1;
-
-	    if (mount_point == "swap")
-		{
-		vfstype = "swap";
-		freq    = 0;
-		passno  = 0;
-		mntops = "pri=42";
-		}
-	    else if ((ppc_type != "" ) && !format ) 
-		{
-		SCR::Execute(.target.mkdir, "/mac");
-		SCR::Execute(.target.mkdir, mount_point);
-		vfstype = ppc_type;          // for example "hfs"
-		freq	= 0;
-		passno	= 0;
-		mntops = "ro,noauto,user";
-		}
-	    else  if (ppc_used_fs == `ext2 )
-		{
-		vfstype = "ext2";
-		}
-	    else  if (ppc_used_fs == `reiser )
-		{
-		vfstype = "reiser";
-		}
-	    else  if (ppc_used_fs == `ext3 )
-		{
-		vfstype = "ext3";
-		}
-	    else  if (ppc_used_fs == `jfs )
-		{
-		vfstype = "jfs";
-		}
-	    else
-		{
-		vfstype = "auto";
-		}
-	    }
-	else if (Arch::i386
-		 && contains (Partitions::fsid_dostypes, fsid))
-	    {	// dos type
-	    vfstype = "auto";
-	    if (contains (Partitions::fsid_readonly, fsid))
-		mntops = "ro,noauto,user";
-	    else
-		mntops = "noauto,user";
-	    freq = 0;
-	    passno = 0;
-	    string lower_point = "";
-
-	    if (mount_point == "")
-		{
-		return $[];
-		}
-	    else
-		{
-		lower_point = tolower( mount_point );
-		}
-
-	    // extra symlink for star office (-> #8310)
-	    if (lower_point != "" && mount_point != lower_point)
-		{
-		SCR::Execute(.target.symlink, mount_point, lower_point);
-		}
-	    foreign_nr = foreign_nr + 1;
-	    }
-	else if (Arch::i386
-		 && contains (Partitions::fsid_ntfstypes, fsid))
-	    {	// ntfs type
-	    vfstype = "ntfs";
-	    if (contains (Partitions::fsid_readonly, fsid))
-		mntops = "ro,noauto,user,umask=022";
-	    else
-		mntops = "noauto,user,umask=022";
-	    freq = 0;
-	    passno = 0;
-	    string lower_point = "";
-	    if (mount_point == "")
-		{
-		return $[];
-		}
-	    else
-		{
-		lower_point = tolower( mount_point );
-		}
-
-	    // extra symlink for star office (-> #8310)
-	    if (lower_point != "" && mount_point != lower_point)
-		{
-		SCR::Execute(.target.symlink, mount_point, lower_point);
-		}
-	    foreign_nr = foreign_nr + 1;
-	    }
-	else if (contains (Partitions::fsid_wintypes, fsid))	// win type
-	    {
-	    vfstype = "vfat";
-	    if (mount_point != "/boot")
-		{
-		if (contains (Partitions::fsid_readonly, fsid))
-		    mntops = "ro,noauto,user";
-		else
-		    mntops = "noauto,user";
-		}
-	    freq = 0;
-	    passno = 0;
-	    string lower_point = "";
-	    if (mount_point == "")
-		{
-		return $[];
-		}
-	    else
-		{
-		lower_point = tolower( mount_point );
-		}
-
-	    // extra symlink for star office (-> #8310)
-	    if (lower_point != "" && mount_point != lower_point)
-		{
-		SCR::Execute(.target.symlink, mount_point, lower_point);
-		}
-	    foreign_nr = foreign_nr + 1;
-	    }
-	else if ((Arch::sparc || Arch::alpha)
-		 && contains (Partitions::fsid_skip, fsid))
-	    {
-	    return $[];		// skip "whole disk" partition
-	    }
 	else
 	    {
-	    y2debug("unknown type (RAID)  %1", part);
-	    return $[];				    // unknown type
+	    mount_point = "/data" + other_nr;
+	    // Don't mount and fsck this filesystem during boot, its
+	    // state is unknown.
+	    mntops = "noauto,user";
+	    vfstype = "auto";
+	    freq = 0;
+	    passno = 0;
+	    other_nr = other_nr + 1;
+	    y2milestone( "TT add MountPoint %1", mount_point );
 	    }
+	}
+    else if( (Arch::i386||Arch::ia64||Arch::x86_64) && size(mount_point)>0 &&
+             contains(union(union(Partitions::fsid_dostypes, 
+				  Partitions::fsid_ntfstypes),
+			    Partitions::fsid_wintypes), fsid ))
+	{
+	freq = 0;
+	passno = 0;
+	string lower_point = tolower( mount_point );
+	// extra symlink for star office (-> #8310)
+	if( mntops == "defaults" )
+	    {
+	    mntops = "gid=users,umask=0002";
+	    if( contains (Partitions::fsid_readonly, fsid))
+		mntops = "ro," + mntops;
+	    }
+	if( lower_point != "" && mount_point != lower_point)
+	    {
+	    SCR::Execute(.target.symlink, mount_point, lower_point);
+	    }
+	if( contains (Partitions::fsid_dostypes, fsid))
+	    {
+	    vfstype = "auto";
+	    }
+	else if( contains (Partitions::fsid_ntfstypes, fsid))
+	    {
+	    vfstype = "ntfs";
+	    }
+	else if (contains (Partitions::fsid_wintypes, fsid))
+	    {
+	    vfstype = "vfat";
+	    }
+	}
+    else if( (Arch::sparc || Arch::alpha) &&
+	     contains (Partitions::fsid_skip, fsid))
+	{
+	return $[];		// skip "whole disk" partition
+	}
+    else
+	{
+	return $[];	        // unknown type
+	}
 
-    return ($["spec":spec, "file":mount_point, "vfstype":vfstype,
-	      "mntops":mntops, "freq":freq, "passno":passno]);
+    map ret = $[ "spec":spec, 
+                 "file":mount_point, 
+		 "vfstype":vfstype,
+                 "mntops":mntops, 
+		 "freq":freq, 
+		 "passno":passno ];
+
+    if( part["fstabline"]:0 != 0 )
+	{
+	ret["line"] = part["fstabline"]:0;
+	}
+    return( ret );
     };
 
 
-    //-----------------------------------------------------
+//-----------------------------------------------------
 
-    // needs "map fstab" globally
+// needs "map fstab" globally
 
-    global define allpartitions2fstab (string device, list partitions) ``{
-	if (size (partitions) == 0)
-	    return;
+global define void allpartitions2fstab( map fstab, list partitions ) 
+    ``{
+    foreach (`partition, partitions, 
+	``{
+	map fstabentry = onepartition2fstab(partition);
 
-	foreach (`partition, partitions, ``{
-
-	    map fstabentry = onepartition2fstab (device, partition);
-
-
-	    if (fstabentry != $[] && fstabentry != nil )
+	if (size(fstabentry)>0 && size(fstabentry["file"]:"")>0)
 	    {
-		// mount_point not enough !! ( two swap mount points )!!
-		// string mount_point = fstabentry["file"]:"";
-
-		//mount_point = "swap/dev/hda2";
-		//mount_point = "/usr/dev/hda5";
-		// ..........
-
-		string mount_point = fstabentry["file"]:"" + fstabentry["spec"]:"";
-		// add to map, key is mount point
-
-		if (mount_point != "" && mount_point != nil )
-		    fstab[mount_point] = fstabentry;
+	    string mount_point = fstabentry["file"]:"";
+	    // mount_point not enough !! ( two swap mount points )!!
+	    if( mount_point=="swap" )
+		{
+		mount_point = mount_point + fstabentry["spec"]:"";
+		}
+	    // add to map, key is mount point
+	    fstab[mount_point] = fstabentry;
 	    }
 	});
     };
@@ -295,74 +194,85 @@ global define onepartition2fstab (string device, map part)
     // return: string foreign_primary
     //
 
-    global define write_fstab (map targetMap, map zipdrives, list cddevices) ``{
+global define void write_fstab( map targetMap, map zipdrives, list cddevices )
+    ``{
+    map tg = targetMap;
+    if( !Mode::initial )
+	{
+	tg = AddFstabInfo( tg, true );
+	}
+    map fstab = $[];
+    list dellines = [];
+    string dir = "";
 
+    integer other_nr = 1;		// count other mounts
 
-	// check partitions list for primary partitions with dos/win id
-	// returns list of [ partition-device, partition-name ] entries
-	// target is "/dev/?da" (i.e. full device, w/o paritition numbers)
-
-	map fstab = $[];
-
-	integer other_nr = 1;		// count other mounts
-	integer foreign_nr = 0;		// count dos/win mounts
-	string foreign_ids = "CDEFGHIJKLMNOPQRSTUVW";
-	string lower_ids = "cdefghijklmnopqrstuvw";
-
-	string foreign_primary = "";	// might be windows boot partition
-
-	if (!Arch::i386)
-	    foreign_primary = "X";
-
-
-	// FIXME filter ZIP drives here
-
-	foreach (`tdevice, `tdata, targetMap,
+    foreach (`tdevice, `tdata, tg,
 	``{
-	    list partitions = tdata["partitions"]:[];
-	    allpartitions2fstab (tdevice, partitions);
+	list partitions = tdata["partitions"]:[];
+	allpartitions2fstab (fstab, partitions);
+	list delpart = filter( `p, partitions, 
+			       ``( p["fstabline"]:0>0 &&
+				   ( p["delete"]:false ||
+				     p["crypt_fs"]:false ||
+				     size(p["mount"]:"")==0 )));
+	dellines = union( dellines, maplist( `p, delpart, ``(p["fstabline"]:0 )));
 	});
 
+    list fstablist = maplist (`k, `v, fstab, ``(v));
+    fstab = $[];
 
-	if (size (zipdrives) > 0)
+    if( Mode::initial )
 	{
-	    integer zipnum = 0;
-	    foreach (`tdevice, `tdata, zipdrives, ``{
-		string zfile = "";
-		if (zipnum > 0)
-		    zfile = "/zip" + zipnum;
-		else
-		    zfile = "/zip";
-
-		string media = "/media"+zfile;
-		SCR::Execute(.target.mkdir, media);
-		SCR::Execute(.target.symlink, media, zfile);
-
-		fstab[zfile] =  $["spec":""+tdevice+"4", "file":media, "vfstype":"auto",
-			      "mntops":"noauto,user", "freq":0, "passno":0];
-		zipnum = zipnum + 1;
-	    });
-	}
-
 	// proc
-
 	fstab["/proc"] = $["spec":"proc", "file":"/proc", "vfstype":"proc",
-		      "mntops":"defaults", "freq":0, "passno":0];
+			   "mntops":"defaults", "freq":0, "passno":0];
 
 	// usbdevfs added with noauto
 	if (Hotplug::haveUSB)
-	{
-	    fstab["/proc/bus/usb"] = $["spec":"usbdevfs", "file":"/proc/bus/usb", "vfstype":"usbdevfs",
-			  "mntops":"noauto", "freq":0, "passno":0];
-	}
+	    {
+	    fstab["/proc/bus/usb"] = $["spec":"usbdevfs", "file":"/proc/bus/usb", 
+				       "vfstype":"usbdevfs", "mntops":"noauto", 
+				       "freq":0, "passno":0];
+	    }
 
 	// devpts
+	fstab["/dev/pts"] = $["spec":"devpts", "file":"/dev/pts", 
+	                      "vfstype":"devpts", "mntops":"defaults", 
+			      "freq":0, "passno":0];
+	fstablist = union( fstablist, maplist(`k, `v, fstab, ``(v)));
+	fstab = $[];
 
-	fstab["/dev/pts"] = $["spec":"devpts", "file":"/dev/pts", "vfstype":"devpts",
-		      "mntops":"defaults", "freq":0, "passno":0];
+	y2milestone( "zipdrives=%1", zipdrives );
+	integer zipnum = 0;
+	foreach (`tdevice, `tdata, zipdrives, 
+	    ``{
+	    string zfile = "";
+	    if (zipnum > 0)
+		zfile = "/zip" + zipnum;
+	    else
+		zfile = "/zip";
+
+	    string media = "/media"+zfile;
+	    //SCR::Execute(.target.mkdir, media);
+	    if( Installation::destdir != "/" )
+		{
+		zfile = Installation::destdir + zfile;
+		}
+	    SCR::Execute(.target.symlink, media, zfile);
+
+	    fstab[zfile] = $["spec":""+tdevice+"4", "file":media, 
+			     "vfstype":"auto", "mntops":"noauto,user", 
+			     "freq":0, "passno":0];
+	    zipnum = zipnum + 1;
+	    });
+	fstablist = union( fstablist, maplist (`k, `v, fstab, ``(v)));
+	fstab = $[];
 
 	// add all cd-drives to fstab
 	// cddevices is a list of symlinked names starting with "/dev/"
+
+	y2milestone( "cddevices=%1", cddevices );
 
 	foreach (`cd, cddevices, ``{
 	    // /dev/dvd -> /media/dvd, /dev/cdrom -> /media/cdrom, ...
@@ -370,71 +280,128 @@ global define onepartition2fstab (string device, map part)
 	    string media = "/media"+cdmount;
 
 	    // create /media/xxx directory
-	    SCR::Execute(.target.mkdir, media);
+	    //SCR::Execute(.target.mkdir, media);
 
 	    // symlink /xxx -> /media/xxx
+	    if( Installation::destdir != "/" )
+		{
+		cdmount = Installation::destdir + cdmount;
+		}
 	    SCR::Execute(.target.symlink, media, cdmount);
 
 	    fstab[cdmount] = $["spec":cd, "file":media, "vfstype":"auto",
 			  "mntops":"ro,noauto,user,exec", "freq":0, "passno":0];
-	});
+	    });
+	fstablist = union( fstablist, maplist (`k, `v, fstab, ``(v)));
+	fstab = $[];
 
-	// there is no floppy drive on new Macs and iSeries
-	if(!(Arch::board_mac_new || Arch::board_iseries))
-	{
-	    // handle all drives with /dev/fdX
+	// handle all drives with /dev/fdX
 
-	    integer fdnum = 0;
-	    foreach (`drive, StorageDevices::FloppyDrives,
+	y2milestone( "FloppyDrives=%1", StorageDevices::FloppyDrives );
+
+	integer fdnum = 0;
+	foreach (`drive, StorageDevices::FloppyDrives,
 	    ``{
-		string dev_name = drive["dev_name"]:"";
-		if (substring(dev_name, 0, 7) == "/dev/fd")
+	    string dev_name = drive["dev_name"]:"";
+	    if (find(dev_name, "/dev/fd")==0 )
 		{
-		    string fdname = "/floppy";
-		    if (fdnum > 0)
-			fdname = fdname + fdnum;
-		    string medianame = "/media"+fdname;
-		    SCR::Execute(.target.mkdir, medianame);
-		    SCR::Execute(.target.symlink, medianame, fdname);
-		    fstab[medianame] = $["spec":dev_name,
-			  "file":medianame, "vfstype":"auto",
-			  "mntops":"noauto,user,sync", "freq":0, "passno":0];
-		    fdnum = fdnum + 1;
+		string fdname = "/floppy";
+		if (fdnum > 0)
+		    fdname = fdname + fdnum;
+		string medianame = "/media"+fdname;
+/*
+		SCR::Execute(.target.mkdir, 
+		    Installation:destdir=="/" ? medianame
+					      : Installation:destdir+medianame );
+*/
+                if( Installation::destdir != "/" )
+		    {
+		    fdname = Installation::destdir + fdname;
+		    }
+		SCR::Execute(.target.symlink, medianame, fdname);
+		fstab[medianame] = $[ "spec":dev_name, "file":medianame, 
+				      "vfstype":"auto", 
+				      "mntops":"noauto,user,sync", 
+				      "freq":0, "passno":0 ];
+		fdnum = fdnum + 1;
 		}
 	    });
+	fstablist = union( fstablist, maplist (`k, `v, fstab, ``(v)));
+	fstab = $[];
 	}
-	// fstab is now sorted by mountpoint
-	// now convert this to a list usable by .etc.fstab agent
 
-	list fstablist = maplist (`k, `v, fstab, ``(v));
+    string tabpath = "/etc/fstab";
+    if( Installation::destdir != "/" )
+	{
+	tabpath = Installation::destdir + tabpath;
+	if( SCR::Read( .target.size, tabpath )>= 0 )
+	    SCR::Execute( .target.remove, tabpath );
+	}
+    fstab = Partitions::GetFstab( tabpath );
 
-	if (Mode::test)
-	    y2milestone("fstablist: %1", fstablist);
-	else
-	    SCR::Write(.etc.fstab, fstablist);
+    // fstab is sorted by mountpoint
+    y2milestone( "dellist=%1", dellines );
+    y2milestone( "fstablist=%1", fstablist );
 
-
-	if( Arch::i386 || Arch::ia64 )
+    foreach( `entry, fstablist,
+	``{
+	list fstlist = [ entry["spec"]:"", entry["file"]:"", entry["vfstype"]:"",
+	                 entry["mntops"]:"", 
+			 sformat("%1",entry["freq"]:0),
+			 sformat("%1",entry["passno"]:0) ];
+	if( entry["line"]:0 > 0 )
 	    {
-	    list win = Storage::GetWinPrimPartitions( targetMap );
-	    if( size(win)>0 )
+	    map part = Storage::GetPartition( tg, entry["spec"]:"" );
+	    if( part["format"]:false || 
+	        part["mountby"]:`device!=part["ori_mountby"]:`device ||
+	        part["ori_mount"]:""!=part["mount"]:"" ||
+	        part["ori_fstopt"]:""!=part["fstopt"]:"" ||
+	        part["ori_nr"]:""!=part["nr"]:"" ||
+	        (part["mountby"]:`device==`label && part["ori_label"]:"" != part["label"]:""))
 		{
-		foreign_primary = sformat( "%1 %2", win[0,"device"]:"",
-		                            win[0,"string"]:"" );
+		integer field = 0;
+		while( field<4 )
+		    {
+		    AsciiFile::ChangeLineField( fstab, entry["line"]:0, field, 
+		                                fstlist["field"]:"" );
+		    field = field+1;
+		    }
 		}
 	    }
+	else
+	    {
+	    AsciiFile::AppendLine( fstab, fstlist );
+	    }
+	dir = entry["file"]:"";
+	if( substring( dir, 0, 1 )== "/" )
+	    {
+	    if( Installation::destdir != "/" )
+		dir = Installation::destdir + dir;
+	    if( SCR::Read( .target.size, dir )<=0 )
+		{
+		SCR::Execute( .target.mkdir, dir );
+		}
+	    }
+	});
 
-        y2milestone( "write_fstab ret=%1", foreign_primary );
-	return foreign_primary;
+    AsciiFile::RemoveLines( fstab, dellines );
+    if( Installation::destdir != "/" )
+	{
+	dir = Installation::destdir + "/etc";
+	if( SCR::Read( .target.size, dir )<=0 )
+	    {
+	    SCR::Execute( .target.mkdir, dir );
+	    }
+	}
+    AsciiFile::RewriteFile( fstab, tabpath );
+
+    write_cryptotab( tg );
     };
 
 
-
-
-
-global define onepartition2cryptotab( string dev, map partition )``{
-
-    string  partitionName = get_device_name( dev , partition["nr"]:0 );
+global define onepartition2cryptotab( map partition )
+    ``{
+    string  partitionName = partition["device"]:"";
     string  mountPoint    = partition["mount"]:"";
     symbol  used_fs       = partition["used_fs"]:`unknown;
     boolean crypt_fs      = partition["crypt_fs"]:false;
@@ -444,409 +411,115 @@ global define onepartition2cryptotab( string dev, map partition )``{
     if( Mode::test && loop_dev == "")
 	loop_dev = "/dev/loop1";
 
-    if ( partition["delete"]:false
-	 || (partition["type"]:`unknown == `extended )
-	 || !(partition["crypt_fs"]:false)
-	 || (mountPoint == "")
-	 || (mountPoint == "swap"))
+    if( partition["delete"]:false || 
+	partition["type"]:`unknown == `extended ||
+        !partition["crypt_fs"]:false ||
+	mountPoint == "" || 
+	mountPoint == "swap" )
 	{
-	    return $[];
+	return $[];
 	}
 
-    string used_fs_str     = FileSystems::GetMountString( used_fs, "auto" );
+    string used_fs_str = FileSystems::GetMountString( used_fs, "auto" );
 
+    ret = $[ "file"	:	partitionName,
+	     "loop"	:	loop_dev,
+	     "mount"	:	mountPoint,
+	     "vfstype":	used_fs_str,
+	     "opt1"	:	"twofish",
+	     "opt2"	:	partition["fsopts"]:"noatime" ];
 
-    return ( $[
-	       "file"	:	partitionName,
-	       "loop"	:	loop_dev,
-	       "mount"	:	mountPoint,
-	       "vfstype":	used_fs_str,
-	       "opt1"	:	"twofish",
-	       "opt2"	:	"noatime"
-    ]);
-
-};
-
-
-
-    global define write_cryptotab (map targets)
-    ``{
-	list cryptotab             =  [];      //"# /etc/cryptotab generated by yast2\n";
-	boolean do_write_cryptotab = false;
-
-
-	foreach (`targetdevice,`target, targets,
-        ``{
-	    any partitions = target["partitions"]:[];
-	    foreach (`partition, partitions,
-	    ``{
-		map cryptotabentry = onepartition2cryptotab( targetdevice, partition );
-
-		if( cryptotabentry != $[] && cryptotabentry != nil )
-		{
-		    cryptotab = add( cryptotab, cryptotabentry );
-		    do_write_cryptotab = true;
-		}
-		/*
-		string  partitionName =  get_device_name( targetdevice, partition["nr"]:0);
-		string  mountPoint  = partition["mount"]:"";
-		symbol  used_fs     = partition["used_fs"]:`unknown;
-		boolean crypt_fs    = partition["crypt_fs"]:false;
-		string  loop_dev    = partition["loop_dev"]:"";
-
-		if ( crypt_fs && mountPoint != "" && mountPoint != "swap" )
-		{
-		    do_write_cryptotab = true;
-		    string used_fs_str     = used2type[used_fs]:"auto";
-
-
-		    cryptotab = cryptotab + sformat( "%1 %2 %3 %4 twofish noatime\n", loop_dev, partitionName, mountPoint, used_fs_str);
-		}
-		*/
-
-	    });
-	});
-
-
-	if (Mode::test  )
+    if( part["crtabline"]:0 != 0 )
 	{
-	    y2milestone( "write cryptotab %1", cryptotab);
-	    SCR::Write(.dumpto.tmp.crypt_modify,   cryptotab );
+	ret["line"] = part["crtabline"]:0;
 	}
-	else if ( do_write_cryptotab )
-	{
-	    SCR::Write(.etc.cryptotab, cryptotab );
-	    //SCR::Write( .target.string, targetroot+ "/etc/cryptotab", cryptotab);
-	}
-
+    return( ret );
     };
 
 
 
+global define write_cryptotab (map targets)
+    ``{
+    map crtab = $[];
+    list dellines = [];
+    list cryptotab = [];
 
-global define change_cryptotab( map targetMap )``{
-
-
-    list cryptotab	=  SCR::Read(.etc.cryptotab);
-
-    if ( cryptotab == nil )
-	cryptotab = [];
-
-
-    boolean changed 	= false;
-
-    if( Mode::test )
-	  SCR::Write(.dumpto.tmp.readed_cryptotab, cryptotab );
-
-
-
-    foreach (`tdevice, `tdata, targetMap, ``{
-	list partitions    = tdata["partitions"]:[];
-
-	///////////////////////////////////////////////////////
-	//1. remove all fstab entries for deleted partitions!!
-	list delpartitions = filter(`part, partitions , ``( part["delete"]:false == true ));
-	partitions         = filter(`part, partitions , ``( part["delete"]:false == false ));
-
-	///////////////////////////////////////////////////////
-	//1b. remove all fstab entries for non-crypted partitions!!
-	delpartitions = union( delpartitions, filter(`part, partitions, ``( part["crypt_fs"]:false == false )));
-	partitions    = filter(`part, partitions , ``( part["crypt_fs"]:false == true ));
-
-	y2debug(" all delpartitions on %1 : %2 ", tdevice, delpartitions );
-	  
-	foreach( `partition, delpartitions, ``{
-	    string  partitionName =  get_device_name( tdevice , partition["nr"]:0);
-
-	    if( size(partition["loop_dev"]:"") > 0 )
-		{
-		SCR::Execute (.target.bash, "/sbin/losetup -d "+partition["loop_dev"]:"");
-		}
-	    cryptotab   = filter( `value, cryptotab, ``( value["file"]:"" != partitionName  ));
-	    changed = true;
-	});
-
-
-	///////////////////////////////////////////////////////
-	//2. change and add fstab entries 
-	foreach (`partition, partitions,
+    foreach( `targetdevice, `target, targets,
 	``{
-	    string  partitionName  =  get_device_name( tdevice , partition["nr"]:0);
-	    map     cryptotabentry = $[];
+	list partitions = target["partitions"]:[];
+	foreach (`partition, partitions,
+	    ``{
+	    map cryptotabentry = onepartition2cryptotab( partition );
 
-	    list excryptotablistentry = filter( `value, cryptotab , ``( value["file"]:"" == partitionName  ));
-
-	    y2debug(" existing cryptotab list %1 ", excryptotablistentry );
-
-	      // existing fstab entry
-	      //  only one mount point ?
-	      if( size( excryptotablistentry) == 1 )
-	      {
-		  map ex_crypto_entry = select(excryptotablistentry, 0 , $[] );
-
-		  // it exists a fstab entry for partition
-		  // check if partition has changed
-
-		  // mount point changed
-		  if( partition["mount"]:"" != ex_crypto_entry["mount"]:"" )
-		  {
-		      cryptotab      = filter( `value, cryptotab, ``( value["file"]:"" != partitionName  ));
-		      if( partition["mount"]:"" != "")
-		      {
-			  cryptotabentry = ex_crypto_entry;
-			  cryptotabentry = add ( cryptotabentry , "mount",  partition["mount"]:"");
-		      }
-
-		      changed =true;
-		  } 
-
-		  // used_fs changed
-		  if( FileSystems::GetMountString( partition["used_fs"]:`ext2, "ext2")  !=  ex_crypto_entry["vfstype"]:"ext2" )
-		  {
-		      // delete old entry and 
-		      cryptotab      = filter( `value, cryptotab, ``( value["file"]:"" != partitionName  ));
-
-		      cryptotabentry  = onepartition2cryptotab (tdevice, partition);
-		      changed =true;    
-		  }
-	      
-	      }
-	      else
-	      {
-		  // no fstab entry existing -> add new
-		  cryptotabentry = onepartition2cryptotab (tdevice, partition);
-		  changed = true;
-	      }
-	      
-	      
-	      if ( cryptotabentry != $[] && cryptotabentry != nil )
-	      {		
-		  cryptotab = add ( cryptotab, cryptotabentry );
-	      }
+	    if( size(cryptotabentry)>0 )
+		{
+		crtab[partitions["mount"]:""] = cryptotabentry;
+		}
+	    });
+	list delpart = filter( `p, partitions, 
+			       ``( p["crtabline"]:0>0 &&
+				   ( p["delete"]:false ||
+				     !p["crypt_fs"]:false ||
+				     size(p["mount"]:"")==0 )));
+	dellines = union( dellines, maplist( `p, delpart, ``(p["crtabline"]:0 )));
 	});
-    });
-    
-    if (Mode::test)
-    {
-	y2milestone("fstablist: %1", cryptotab );
-	SCR::Write(.dumpto.tmp.cryptotab_modify,   cryptotab );
-    }	
-    else if( changed ) 
+
+    list crtablist = maplist (`k, `v, crtab, ``(v));
+
+    string tabpath = "/etc/cryptotab";
+    if( Installation::destdir != "/" )
 	{
-        if( size(cryptotab)==0 )
+	tabpath = Installation::destdir + tabpath;
+	if( SCR::Read( .target.size, tabpath )>=0 )
+	    SCR::Execute( .target.remove, tabpath );
+	}
+    crtab = Partitions::GetCrypto( tabpath );
+
+    // crtab is sorted by mountpoint
+    y2milestone( "dellist=%1", dellines );
+    y2milestone( "crtablist=%1", crtablist );
+
+
+    foreach( `entry, crtablist,
+	``{
+	list fstlist = [ entry["loop"]:"", entry["file"]:"", entry["mount"]:"",
+	                 entry["vfstype"]:"", entry["opt1"]:"", 
+			 entry["opt2"]:"" ];
+	if( entry["line"]:0 > 0 )
 	    {
-	    SCR::Execute( .target.remove, "/etc/cryptotab" );
+	    map part = Storage::GetPartition( tg, entry["spec"]:"" );
+	    if( part["format"]:false ||
+		part["ori_mount"]:""!=part["mount"]:"" ||
+		part["ori_fstopt"]:""!=part["fstopt"]:"" ||
+		part["ori_nr"]:""!=part["nr"]:"" )
+		{
+		integer field = 0;
+		while( field<6 )
+		    {
+		    AsciiFile::ChangeLineField( crtab, entry["line"]:0, field, 
+						fstlist["field"]:"" );
+		    field = field+1;
+		    }
+		}
 	    }
 	else
 	    {
-	    SCR::Write(.etc.cryptotab, cryptotab );
+	    AsciiFile::AppendLine( crtab, fstlist );
 	    }
-	}
-
-    y2milestone("change_cryptotab changed:%1", changed );
-    if( changed )
-	y2milestone(" cryptotab %1", cryptotab );
-    return `next;
-};
-
-
-/**
- * Change an existing /etc/fstab file ( in running system )
- * -> add new lines for new mount points
- * -> modify existing mount points if fstype or mount point has changed
- * -> remove lines of deleted partitions
- */
-  global define change_fstab(map targetMap)``{
-      
-      list fstab_list = Storage::ReadExistingFstab();
-      // mountpoint alone is not unique, eg. swap can have more
-      // than one entry and mountpoint is always swap
-      map  fstab      = listmap( `entry, fstab_list , ``(
-			    [ entry["file"]:""
-			    + entry["spec"]:"", entry  ] ));
-      //list of mountpoints that have to be created by mkdir
-      list new_mountpoints = [];
-
-      if( Mode::test )
-	  SCR::Write(.dumpto.tmp.fstab_map,   fstab );
-      
-      integer other_nr   	= 1;		// count other mounts
-      integer foreign_nr 	= 0;		// count dos/win mounts
-      string foreign_ids 	= "CDEFGHIJKLMNOPQRSTUVW";
-      string lower_ids 		= "cdefghijklmnopqrstuvw";
-      string foreign_primary 	= "";	// right be windows boot partition
-      boolean changed 		= false;
-
-      if (!Arch::i386)
-	  foreign_primary = "X";
-
-   
-   
-      foreach (`tdevice, `tdata, targetMap, ``{
-	  list partitions    = lookup (tdata, "partitions", []);
-	
-	  ///////////////////////////////////////////////////////
-	  //1. remove all fstab entries for deleted partitions!!
-	  list delpartitions = filter(`part, partitions , ``( lookup( part, "delete", false) == true ));
-	  partitions         = filter(`part, partitions , ``( lookup( part, "delete", false) == false ));
-
-	  ///////////////////////////////////////////////////////
-	  //1b. remove all fstab entries for crypted partitions!!
-	  delpartitions = union( delpartitions, filter(`part, partitions, ``( part["crypt_fs"]:false == true )));
-	  partitions    = filter(`part, partitions, ``( part["crypt_fs"]:false == false ));
-
-	  y2debug(" all delpartitions on %1 : %2 ", tdevice ,delpartitions );
-	  y2debug(" all partitions on %1    : %2 ", tdevice ,partitions );
-	  
-	  foreach( `partition, delpartitions, ``{
-	      string  partitionName =  get_device_name( tdevice , lookup (partition, "nr", 0 ));
-	      y2debug ("filtering %1 from fstab", partitionName );
-	   
-	      fstab   = filter( `key, `value, fstab, ``( lookup( value, "spec", "") != partitionName  ));
-	      changed = true;
-	
-	  });
-
-	  y2debug("resulting fstab: %1",fstab);
-
-	
-	  ///////////////////////////////////////////////////////
-	  //2. change and add fstab entries 
-	  foreach (`partition, partitions,
-	  ``{
-	      string  partitionName =  get_device_name( tdevice , lookup (partition, "nr", 0 ));
-	      // when deleting a logical partition, all following partitions change their number,
-	      // ori_nr stores the old value which may be contained in the fstab
-	      string  oldLogicPartitionName =  get_device_name( tdevice , lookup (partition, "ori_nr", 0 ));
-	      string  affectedPartitionInFstab ="";
-	      map fstabentry = $[];
-		
-	      // do we have to search for moved logical partition?
-	      if ( partitionName != oldLogicPartitionName )
-	      {
-		  y2milestone("logic partition %1 has moved to %2",oldLogicPartitionName,partitionName);
-		  affectedPartitionInFstab = oldLogicPartitionName;
-	      }
-	      else
-	      {
-		  affectedPartitionInFstab = partitionName;
-	      }
-
-	      //find fstab entry
-	      map exfstabmapentry   =  filter( `key, `value, fstab, ``( lookup( value, "spec", "") == affectedPartitionInFstab  ));
-	      list exfstablistentry =  maplist (`k, `v, exfstabmapentry , ``(v));
-	      
-	      y2milestone(" existing fstab list %1 ", exfstablistentry );
-					    
-	      // check if one or more enries exist in fstab
-	      if( size( exfstablistentry) >= 1 )
-	      {
-		  // use first entry
-		  map ex_fstab_entry = select( exfstablistentry, 0 , $[] );
-
-		  // it exists a fstab entry for partition
-		  // check if partition has changed
-
-		  // mount point changed
-		  if( lookup ( partition ,"mount" , ""     )  != lookup( ex_fstab_entry , "file" , "" ) )
-		  {
-		      y2milestone("mount point changed for %1",affectedPartitionInFstab);
-		      fstab = filter( `key, `value, fstab, ``( lookup( value , "spec", "") != affectedPartitionInFstab  ));
-		      if(  lookup ( partition ,"mount" , ""     ) != "")
-		      {
-			  if( fstabentry == $[] )
-			  {
-			      fstabentry     = ex_fstab_entry;
-			  }
-			  fstabentry     = add( fstabentry , "file",  lookup ( partition ,"mount" , ""     ));
-			  // add to list of mountpoints
-			  new_mountpoints = add (new_mountpoints, lookup ( partition ,"mount" , ""));
-
-		      }
-		      else
-		      {
-			  y2milestone("no change to fstab because new mountpoint is empty");
-		      }
-		     
-		  } 
-
-		  string vfstype = FileSystems::GetMountString( lookup ( partition ,"used_fs" , `unknown), "auto");
-		  boolean format = lookup (partition, "format", false);
-		  // if partition is selected for formating, check if used_fs changed
-		  if( format && vfstype != lookup( ex_fstab_entry, "vfstype", "auto") )
-		  {
-		      //FIXME: filter old entry necessary because of crude addition below
-		      fstab          = filter( `key, `value, fstab, ``( lookup( value , "spec", "") != affectedPartitionInFstab  ));
-		      y2milestone("fs changed for %1",affectedPartitionInFstab);
-
-		      if( fstabentry == $[] )
-		      {
-			  fstabentry     = ex_fstab_entry;
-		      }
-		      fstabentry     = add( fstabentry , "vfstype", vfstype );
-		  }
-
-		  // change device if logical partition has moved
-		  if ( partitionName != oldLogicPartitionName )
-		  {
-		      y2milestone ("change fstab entry %2 to %1",partitionName,oldLogicPartitionName);
-		      //FIXME: filter old entry necessary because of crude addition below
-		      fstab          = filter( `key, `value, fstab, ``( lookup( value , "spec", "") != affectedPartitionInFstab  ));
-		      if( fstabentry == $[] )
-		      {
-			  fstabentry     = ex_fstab_entry;
-		      }
-		      fstabentry     = add( fstabentry , "spec", partitionName );
-		  }
-	      }
-	      // no fstab entry existing
-	      else
-	      {
-		  // only add fstab entry if user has entered a mount point,
-		  // otherwise /data* mountpoints would be created
-		  y2milestone("no fstab entry found for %1",partitionName);
-		  string mountp= lookup ( partition,"mount","" );
-		  if( mountp != "" )
-		  {
-		      fstabentry = onepartition2fstab (tdevice, partition);
-		      // inst_prepdisk uses this to mkdir the mountpoint
-		      if( mountp != "swap" )
-		      {
-			  new_mountpoints = add (new_mountpoints, mountp);
-		      }
-		  }
-	      }
-	      
-	      
-	      if (fstabentry != $[] && fstabentry != nil )
-	      {		
-		  //FIXME: wahhh! what is this addition good for? I didnt touch it, dunno what it breaks
-		  string mount_point = lookup (fstabentry, "file", "") + lookup(fstabentry, "spec", "" );
-
-		  // add to map, key is mount point
-		
-		  if (mount_point != "" && mount_point != nil )
-		  {
-		      fstab = add (fstab, mount_point, fstabentry);
-		      changed = true;
-		  y2milestone ("fstab changed \n%1\n",fstab);
-		  }
-	      }
+	string dir = entry["mount"]:"";
+	if( substring( dir, 0, 1 )== "/" )
+	    {
+	    if( Installation::destdir != "/" )
+		dir = Installation::destdir + dir;
+	    if( SCR::Read( .target.size, dir )<=0 )
+		{
+		SCR::Execute( .target.mkdir, dir );
+		}
+	    }
 	});
-      });
 
-      list fstablist = maplist (`k, `v, fstab, ``(v));
-
-      if (Mode::test)
-      {
-	  y2milestone("fstablist: %1", fstablist);
-	  SCR::Write(.dumpto.tmp.fstab_modify,   fstablist );
-      }
-      else if( changed ) 
-	  SCR::Write(.etc.fstab, fstablist);
-
-      return new_mountpoints;
-    
-  };
+    AsciiFile::RemoveLines( crtab, dellines );
+    AsciiFile::RewriteFile( crtab, tabpath );
+    };
 
 }	

@@ -5,6 +5,7 @@ module_DATA =				\
 		Partitions.ycp		\
 		FileSystems.ycp		\
 		Storage.ycp		\
+		AsciiFile.ycp		\
 		StorageControllers.ycp  \
 		StorageDevices.ycp
 
