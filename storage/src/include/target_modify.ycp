@@ -277,16 +277,26 @@ define boolean HandleFilesystem( string device, symbol fs, integer new_size,
 	    cmd = sformat("echo y | resize_reiserfs -q -s %1M -f %2", new_size,
 			device );
 	    }
-	y2milestone( "execute cmd:%1", cmd );
+	y2milestone( "HandleFilesystem execute cmd:%1", cmd );
 	map bm = (map)SCR::Execute(.target.bash_output, cmd );
-	y2milestone( "bm %1", bm );
+	y2milestone( "HandleFilesystem bm %1", bm );
 	ret = bm["exit"]:1 == 0;
 	}
     else if( fs == `ntfs )
 	{
 	string cmd = sformat( "echo y | ntfsresize -f -s %1k %2",
 	                      new_size*1024*1024/1000, device );
-	y2milestone( "cmd %1", cmd );
+	y2milestone( "HandleFilesystem cmd %1", cmd );
+	ret = SCR::Execute(.target.bash, cmd ) == 0;
+	}
+    else if( fs == `ext2 || fs == `ext3 )
+	{
+	string cmd = sformat( "/sbin/resize2fs %1", device );
+	if( decrease )
+	    {
+	    cmd = cmd + sformat( " %1M", new_size );
+	    }
+	y2milestone( "HandleFilesystem cmd %1", cmd );
 	ret = SCR::Execute(.target.bash, cmd ) == 0;
 	}
     else if( fs == `xfs && !decrease )
@@ -297,7 +307,7 @@ define boolean HandleFilesystem( string device, symbol fs, integer new_size,
 	    cmd = sformat("mkdir %1", mdir );
 	    SCR::Execute(.target.bash, cmd );
 	    cmd = sformat("mount %1 %2", device, mdir );
-	    y2milestone( "execute cmd:%1", cmd );
+	    y2milestone( "HandleFilesystem execute cmd:%1", cmd );
 	    ret = SCR::Execute(.target.bash, cmd ) == 0;
 	    }
 	else
@@ -307,19 +317,19 @@ define boolean HandleFilesystem( string device, symbol fs, integer new_size,
 	if( ret )
 	    {
 	    cmd = sformat("xfs_growfs %1", mdir );
-	    y2milestone( "execute cmd:%1", cmd );
+	    y2milestone( "HandleFilesystem execute cmd:%1", cmd );
 	    ret = SCR::Execute(.target.bash, cmd ) == 0;
 	    }
 	if( size(mp)==0 )
 	    {
 	    cmd = sformat("umount %1", device );
-	    y2milestone( "execute cmd:%1", cmd );
+	    y2milestone( "HandleFilesystem execute cmd:%1", cmd );
 	    SCR::Execute(.target.bash, cmd );
 	    cmd = sformat("rmdir %1", mdir );
 	    SCR::Execute(.target.bash, cmd );
 	    }
 	}
-    y2milestone( "ret:%1", ret );
+    y2milestone( "HandleFilesystem ret:%1", ret );
     return( ret );
     }
 
