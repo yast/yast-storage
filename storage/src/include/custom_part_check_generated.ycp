@@ -770,100 +770,94 @@ Please remove it from the volume group before you edit it."),lookup( curr_part, 
 
     
     
-    global define check_partition_delete( string dev, map curr_disk , map curr_part,  boolean bsd_label  ,
-					  boolean c_bsd,
-					  boolean c_lvm,
-					  boolean c_raid,
-					  boolean installation )
-	``{
+global define check_partition_delete( string dev, map curr_disk, map curr_part,
+                                      boolean bsd_label, boolean c_bsd,
+				      boolean c_lvm, boolean c_raid,
+				      boolean installation )
+    ``{
+    string part_name = curr_part["device"]:"";
 
-	string part_name = curr_part["device"]:"";
-
-	if( c_bsd )
+    if( c_bsd )
 	{
-	    ///////////////////////////////////////////////////////
-	    // with BSD-Disklabel partition 3 is always an additionl entry,
-	    // which describes the disk and should not be edited
+	///////////////////////////////////////////////////////
+	// with BSD-Disklabel partition 3 is always an additionl entry,
+	// which describes the disk and should not be edited
 
-	    if ( bsd_label && ( 3 ==  lookup( curr_part , "nr", 0 )))
+	if( bsd_label && curr_part["nr"]:0==3 )
 	    {
-		UI::MessagePopup(_("Partition 3 \"Entire Disk\" is not changeable"));
-		return `no_delete;
+	    UI::MessagePopup(_("Partition 3 \"Entire Disk\" is not changeable"));
+	    return `no_delete;
 	    }
 	}
 
-
-	if( c_lvm )
+    if( c_lvm )
 	{
-	    ////////////////////////////////////////////////////////////////////////////////////
-	    // Due to a bug in the lvm tools, an physical volume of an volume group can not be
-	    // deleted correctly without reboot ....
-
-	    if ( lookup( curr_part, "lvm_group", "") != "" )
+	if( curr_part["lvm_group"]:"" != "" )
 	    {
-		/*
-		// is it an already existing partition ?
-		//map part_created = find( `parti, curr_partitions, ``( (lookup(parti,"nr") == number) && (lookup( parti,"create",false ) == true)));
-		if ( lookup( curr_part , "create" , false) == false  )
-		{
-		    if( UI::YesNoPopup (sformat(_("CAUTION!\nIf you want to remove the LVM partition %1,
-you must carry out the partitioning in the next step.
-After the the partition table is written, you will have to
-reboot and then restart the installation.
-
-Do you really want to delete this partition?
-"),dev)))
-		    {
-			return `immediate_prepdisk;
-		    }
-		    else
-		    {
-			return `no_delete;
-		    }
-		}
-		else
-		{
-		*/
-		UI::ErrorPopup(sformat(_("The partition (%2) belongs to a volume group (%1).
+	    UI::ErrorPopup(sformat(_("The partition (%2) belongs to a volume group (%1).
 Please remove it from the volume group before you delete it."),lookup( curr_part, "lvm_group", "" ) , part_name) );
-		return  `no_delete;
-		//}
+	    return  `no_delete;
 	    }
 	}
 
-	if( c_raid )
+    if( c_raid )
 	{
-	    ////////////////////////////////////////////////////////////////////////////////////
-	    //  check raid
-	    if( lookup( curr_part , "raid_name" , "") != "")
+	////////////////////////////////////////////////////////////////////////////////////
+	//  check raid
+	if( curr_part["raid_name"]:"" != "")
 	    {
-		UI::MessagePopup(sformat(_("The partition (%2) belongs to the RAID (%1).
+	    UI::MessagePopup(sformat(_("The partition (%2) belongs to the RAID (%1).
 Please remove it from the RAID before you delete it."), lookup( curr_part, "raid_name", "" ), part_name ));
-		return `no_delete;
+	    return `no_delete;
 	    }
-	   
+       
 	}
-	
-	if( ! installation )
+    
+    if( !installation )
 	{
-	    string mounts =  Partitions::MountedOn( part_name, 
-	                                            Partitions::CurMounted() );
-	    if( mounts != "" ) 
+	string mounts =  Partitions::MountedOn( part_name, 
+						Partitions::CurMounted() );
+	if( mounts != "" ) 
 	    {
-		string message = _("The selected partition is currently mounted.
-It is *strongly* recommended to unmount this partition before you delete it.
-Please choose Cancel unless you know exactly what you are doing.
-");
+	    string message = sformat(_(
+"The selected partition is currently mounted on %1.
+It is *strongly* recommended to unmount this partition manually 
+before you delete it. 
 
-	
-		if( ! UI::ContinueCancelPopup(message))
+Please choose Cancel unless you know exactly what you are doing.
+
+If you proceed, YaST2 will try umounting the partition before deleting it.
+"), mounts );
+
+    
+	    if( ! UI::ContinueCancelPopup(message))
 		{
-		    return  `no_delete;
+		return  `no_delete;
+		}
+	    else
+		{
+		symbol ret = `none;
+		do
+		    {
+		    if( SCR::Execute(.target.bash, "/bin/umount " + part_name )!=0)
+			{
+			message = sformat(_("Umount of %1 failed.
+Remove Partition anyway?"), mounts );
+			ret = UI::AnyQuestionPopup3( WarningMsg(), message,
+						     YesButtonLabel(),
+						     NoButtonLabel(),
+						     _("&Retry umount"),
+						     `focus_yes );
+			}
+		    }
+		while( ret == `retry );
+		if( ret == `no )
+		    return `no_delete;
 		}
 	    } 
 	}
-	
-	return `delete;
+    
+    return `delete;
     };
 
 
