@@ -33,7 +33,7 @@
    * @parm search_point mount point where partitions can be mounted
    * @return list list with fstab data found
    */
-global define findExistingFstab( map targetMap, string search_point )
+global define list findExistingFstab( map targetMap, string search_point )
     ``{
     /////////////////////////////////////////////////////////////////
     // foreach partition on each target
@@ -43,9 +43,9 @@ global define findExistingFstab( map targetMap, string search_point )
     if( Mode::initial )
 	Storage::SetMdOn( true );
 
-    foreach( `dev, `disk, targetMap, 
+    foreach( string dev, map disk, targetMap, 
 	``{
-	foreach( `partition, filter( `p, disk["partitions"]:[], 
+	foreach( map partition, filter( map p, disk["partitions"]:[], 
 	                             ``(!contains( skip_fs, p["detected_fs"]:`unknown) )),
 	    ``{
 	    symbol fs = partition["detected_fs"]:`ext2;
@@ -57,7 +57,7 @@ global define findExistingFstab( map targetMap, string search_point )
 	                          FileSystems::GetMountOption( fs ),
 				  partition["device"]:"", search_point );
 	    y2milestone( "cmd %1", cmd );
-	    map bc = SCR::Execute(.target.bash_output, cmd );
+	    map bc = (map)SCR::Execute(.target.bash_output, cmd );
 	    y2milestone( "%1", bc );
 	    boolean mount_success = bc["exit"]:1 == 0;
 
@@ -71,7 +71,7 @@ global define findExistingFstab( map targetMap, string search_point )
 		if( SCR::Execute(.target.bash, cmd ) == 0)
 		    {
 		    SCR::UnmountAgent(.etc.fstab);
-		    list tmp = SCR::Read( .etc.fstab );
+		    list tmp = (list)SCR::Read( .etc.fstab );
 		    y2milestone( "fstab %1", tmp );
 		    if( size(tmp)>0 )
 			{
@@ -101,7 +101,7 @@ global define findExistingFstab( map targetMap, string search_point )
   * @parm file_systems filesystem map
   * @return list list with fstab
   */
-global define scanAndReadExistingFstab( map targetMap )
+global define list scanAndReadExistingFstab( map targetMap )
     ``{
     string search_point = "/mnt";
 
@@ -128,7 +128,7 @@ global define scanAndReadExistingFstab( map targetMap )
      * @parm part2 partition 2
      * @return boolean
      */
-    global define arePartitionsEqual( map part1, map part2 )``{
+    global define boolean arePartitionsEqual( map part1, map part2 )``{
 
 	if( part1["create"]:false )
 	    return true;
@@ -160,7 +160,7 @@ global define scanAndReadExistingFstab( map targetMap )
    * @param mount mount point
    * @return boolean
    */
-   global define check_lvm_mount_points( string mount ) ``{
+   global define boolean check_lvm_mount_points( string mount ) ``{
 
        list not_allowed_lvm_mount_points  = [ "/boot" ];
        y2milestone( " check lvm mount");
@@ -180,7 +180,7 @@ global define scanAndReadExistingFstab( map targetMap )
    * @param mount mount point
    * @return boolean
    **/
-    global define check_raid_mount_points( string mount )
+    global define boolean check_raid_mount_points( string mount )
     ``{
 	list not_allowed_raid_mount_points  = [ ];
 	if( Arch::ppc || Arch::s390 || Arch::ia64 || Arch::sparc )
@@ -206,7 +206,7 @@ global define scanAndReadExistingFstab( map targetMap )
    * @param mount mount point
    * @return boolean
    **/
-global define check_noauto_mount( string mount )
+global define boolean check_noauto_mount( string mount )
     ``{
     boolean ret = true;
     if( FileSystems::IsSystemMp( mount, true ) )
@@ -231,7 +231,7 @@ Really do this?
    * @param crypt_fs boolean
    * @return boolean
    **/
-global define check_crypt_fs_mount_points( string mount, boolean crypt_fs )
+global define boolean check_crypt_fs_mount_points( string mount, boolean crypt_fs )
     ``{
     if( crypt_fs && 
         (FileSystems::IsSystemMp( mount, false ) || mount=="swap" ))
@@ -260,8 +260,8 @@ global define boolean check_unique_label( map targetMap, map part )
     boolean unique = true;
 
     // check if the label is already in use
-    foreach( `disk, `diskinfo, targetMap, ``{
-	foreach( `p, diskinfo["partitions"]:[], ``{
+    foreach( string disk, map diskinfo, targetMap, ``{
+	foreach( map p, diskinfo["partitions"]:[], ``{
 	    if ( !p["delete"]:false && p["device"]:"" != part["device"]:"" )
 		{
 		// all valid partitions
@@ -298,7 +298,7 @@ must not be specified.
      * @param mount mount point
      * @return boolean
      **/
-global define check_mount_point( map targetMap, string dev, map part )
+global define boolean check_mount_point( map targetMap, string dev, map part )
     ``{
     string mount = part["mount"]:"";
     symbol used_fs = part["used_fs"]:`unknown;
@@ -309,8 +309,8 @@ global define check_mount_point( map targetMap, string dev, map part )
     if ( mount != ""  && mount != "swap"  )
 	{
 	// check if the mount point is already in use
-	foreach( `disk, `diskinfo, targetMap, ``{
-	    foreach( `part, diskinfo["partitions"]:[], ``{
+	foreach( string disk, map diskinfo, targetMap, ``{
+	    foreach( map part, diskinfo["partitions"]:[], ``{
 		if ( !part["delete"]:false &&
 		     Storage::GetDeviceName( disk, part["nr"]:0 ) != dev )
 		    {
@@ -832,11 +832,11 @@ global define list AddFstabToData( map targetMap, list fstab )
     map new_targetMap = eval( targetMap );
     map table_input = $["tbl":[]];
 
-    foreach( `dev, `disk, targetMap,
+    foreach( string dev, map disk, targetMap,
 	``{
 	list new_partitions = [];
 	map target = disk;
-	foreach( `partition, disk["partitions"]:[],
+	foreach( map partition, disk["partitions"]:[],
 	    ``{
 	    map new_partition = partition;
 
@@ -844,7 +844,7 @@ global define list AddFstabToData( map targetMap, list fstab )
 	    // if the partition is not to delete
 	    if( !partition["delete"]:false )
 		{
-		foreach( `fstab_entry, fstab,
+		foreach( map fstab_entry, fstab,
 		    ``{
 		    string dev_fstab   = fstab_entry["spec"]:"";
 		    string mount_fstab = fstab_entry["file"]:"";
@@ -903,7 +903,7 @@ global define list AddFstabToData( map targetMap, list fstab )
     return [ new_targetMap, table_input ];
     };
 
-global define check_max_size( integer byte_size, integer max_size )
+global define boolean check_max_size( integer byte_size, integer max_size )
     ``{
     y2milestone( "icheck_lv_size byte_size=%1 max_size=%2", byte_size,
                  max_size );
