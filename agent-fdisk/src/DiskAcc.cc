@@ -47,7 +47,7 @@ DiskAccess::DiskAccess(string Disk_Cv)
 	    Head_i = Geometry_ri.heads;
 	    Sector_i = Geometry_ri.sectors;
 	    }
-	long Sect_li;
+	unsigned long Sect_li;
 	if( ioctl(Fd_ii, BLKGETSIZE, &Sect_li) == 0 )
 	    {
 	    Cylinder_i = Sect_li / (Head_i*Sector_i);
