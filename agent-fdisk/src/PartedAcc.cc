@@ -83,6 +83,7 @@ PartedAccess::NewPartition(const PartitionType Part_e,
       {
       Buf_Ci << PARTEDCMD << Disk_C << " mklabel " << DefLabel_Cv;
       SystemCmd Cmd_Ci( Buf_Ci.str().c_str(), true );
+      Label_C = DefLabel_Cv;
       CheckError( Buf_Ci.str(), Cmd_Ci );
       Buf_Ci.str( "" );
       }
