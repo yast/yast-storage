@@ -31,10 +31,11 @@
  * Build raid dev item list e.g.: [`item (`id ("2//dev/md"), "/dev/md2", false)]
  *
  **/
-global define list get_raid_devices( integer raid_nr )
+define list get_raid_devices( integer raid_nr )
     ``{
     list all_raid_devices = [];
-    list partitions = (list)Storage::GetMainDevParam( "/dev/md", "partitions" );
+    list partitions = (list)Storage::GetMainDevParam( "/dev/md", "partitions",
+						      [] );
 
     foreach( map part, partitions, 
 	``{
@@ -56,12 +57,13 @@ global define list get_raid_devices( integer raid_nr )
    * Checks if a RAID is currently created or if it was already
    *
    **/
-global define boolean IsRaidCreated( string device, symbol what )
+define boolean IsRaidCreated( string device, symbol what )
     ``{
     boolean created = false;
     if( what != `wizard )
 	{
-	list partitions = (list)Storage::GetMainDevParam( "/dev/md", "partitions" );
+	list partitions = (list)Storage::GetMainDevParam( "/dev/md", 
+	                                                  "partitions", [] );
 	y2milestone( "parts %1", partitions );
 
 	foreach( map part, partitions, 
@@ -87,7 +89,7 @@ global define boolean IsRaidCreated( string device, symbol what )
   * Update Raid ComboBox
   *
   */
-global define void new_raid_list( list all_raids )
+define void new_raid_list( list all_raids )
     ``{
     y2milestone( "Update Raid ComboBox: all md devices: %1 " , all_raids );
     UI::ReplaceWidget( `id(`raids_rp) , `ComboBox(`id(`raids), `opt(`notify),
@@ -112,9 +114,8 @@ global define void new_raid_list( list all_raids )
   *
   * 	out: 10000000200
   **/
-global define integer get_raid_size_byte( list partition_list, 
-                                          string subdevraidindex, 
-					  string current_raid_type )
+define integer get_raid_size_byte( list partition_list, string subdevraidindex, 
+				   string current_raid_type )
     ``{
     integer sdefault = 0;
     string dev = Storage::GetDeviceName( "/dev/md", tointeger(subdevraidindex));
@@ -175,7 +176,7 @@ global define integer get_raid_size_byte( list partition_list,
  * Get all partitions, we can probably use as raid devices
  * Add needed information: devkey, is_raid, is_lv, disksize
  */
-global define list get_possible_rds( map targetMap )
+define list get_possible_rds( map targetMap )
     ``{
     list ret = [];
 
@@ -251,7 +252,7 @@ global define list get_possible_rds( map targetMap )
  * @param partition  the raid for which the size is calculated
  * out: size of RAID as string
  */
-global define string raid_size_str( map targetMap, map partition )
+define string raid_size_str( map targetMap, map partition )
     ``{
     string current_raid_type = partition["raid_type"]:"";
     string current_raid = sformat( "%1", partition["nr"]:99);
@@ -266,7 +267,7 @@ global define string raid_size_str( map targetMap, map partition )
  * in: partition: the raid for which the size is calculated
  * out: size of RAID in byte
  */
-global define integer raid_size_byte( map targetMap, map partition )
+define integer raid_size_byte( map targetMap, map partition )
     ``{
     string current_raid_type = partition["raid_type"]:"";
     string current_raid      = sformat( "%1", partition["nr"]:0 );
@@ -279,7 +280,7 @@ global define integer raid_size_byte( map targetMap, map partition )
 /*
  * get the number of devices which belong to the raid
  */
-global define integer getNrOfParts( map targetMap, string current_raid )
+define integer getNrOfParts( map targetMap, string current_raid )
     ``{
     list partition_list = get_possible_rds( targetMap );
     string dev = Storage::GetDeviceName( "/dev/md", tointeger(current_raid));
@@ -293,7 +294,7 @@ global define integer getNrOfParts( map targetMap, string current_raid )
 /**
  * add a partition to the current raid
  */
-global define void addRaid( string id, string current_raid )
+define void addRaid( string id, string current_raid )
     ``{
     string maindevkey = Storage::GetMainDevKey(id);
     string subdevkey  = id;
@@ -329,7 +330,7 @@ global define void addRaid( string id, string current_raid )
 /**
  * Removes a partition from its current raid.
  **/
-global define void removeRaid( string id, string current_raid, symbol what )
+define void removeRaid( string id, string current_raid, symbol what )
     ``{
     string maindevkey = Storage::GetMainDevKey(id);  // i.e. /dev/hda for 1//dev/hda
     string subdevkey  = id;  // i.e. 1        for 1//dev/hda
@@ -360,7 +361,7 @@ global define void removeRaid( string id, string current_raid, symbol what )
 /**
  * belongs the the partition "id" already to a raid
  **/
-global define boolean isItemRd( string id )
+define boolean isItemRd( string id )
     ``{
     if ( size(id) == 0 ) return( false );
 
@@ -381,7 +382,7 @@ global define boolean isItemRd( string id )
  * belongs the the partition "id" already to a raid
  * if YES: popup a proper Message and return(false)
  */
-global define boolean CheckItemIsNotRaid( string id )
+define boolean CheckItemIsNotRaid( string id )
     ``{
     y2debug("Check Item is not Raid ");
 
@@ -412,7 +413,7 @@ You cannot add it again.
  *  belongs the the partition "id" already to a raid?
  * if NO: popup a proper Message and return(false)
  **/
-global define boolean CheckItemIsRaid( string id )
+define boolean CheckItemIsRaid( string id )
     ``{
     if( isItemRd(id) )
 	{
@@ -458,7 +459,7 @@ It does not belong to a RAID.
   * 	`item(`id("/dev/hda2"), "/dev/hda2 ",   " 1G ",  " Linux ", " ")
   * ];
   **/
-global define list get_raid_widget_table( list possRdList )
+define list get_raid_widget_table( list possRdList )
     ``{
 
     list    ret = [];
@@ -490,7 +491,7 @@ global define list get_raid_widget_table( list possRdList )
 /**
  * number for /dev/mdX, 0 for /dev/md0, 1 for /dev/md1
  */
-global define string get_free_raid_nr( map targetMap, integer min )
+define string get_free_raid_nr( map targetMap, integer min )
     ``{
     integer i = min;
     map curr_md = targetMap["/dev/md"]:$[];
@@ -504,12 +505,6 @@ global define string get_free_raid_nr( map targetMap, integer min )
 	while( contains(raid_nrs, i) && i < 255)
 	    {
 	    i = i+1;
-	    }
-
-	if( i < 3 )
-	    {
-	    // todo mknod !!
-	    // targetmodify
 	    }
 
 	y2debug( "get_free: %1", i);
@@ -533,7 +528,7 @@ global define string get_free_raid_nr( map targetMap, integer min )
  * @param targetMap all targets
  * @return nil
  */
-global define void add_main_dev_to_partition_map( map targetMap )
+define void add_main_dev_to_partition_map( map targetMap )
     ``{
     foreach( string targetdevice, map target, targetMap, 
 	``{
@@ -552,7 +547,7 @@ global define void add_main_dev_to_partition_map( map targetMap )
  * @return list a list with all partition that have a key raid_name != "".
  * @param targetMap all targets
  */
-global define list all_raid_partitions( map targetMap ) 
+define list all_raid_partitions( map targetMap ) 
     ``{
     list<list> ret = 
       (list<list>) maplist( string targetdevice, map target, targetMap,
@@ -568,7 +563,7 @@ global define list all_raid_partitions( map targetMap )
  * @param r_partitions all raid partitions
  * @return string one raidtab entry
  */
-global define string onepartition2raidtab( map raid, list r_partitions ) 
+define string onepartition2raidtab( map raid, list r_partitions ) 
     ``{
     // omit deleted and not newly created raids
     if( raid["delete"]:false )
@@ -681,7 +676,7 @@ global define string onepartition2raidtab( map raid, list r_partitions )
  * @param targetMap all targets
  * @return string a string that has /etc/raidtab format.
  */
-global define string create_raidtab( map targets )
+define string create_raidtab( map targets )
     ``{
     // by change !!!
     add_main_dev_to_partition_map( targets );
@@ -722,7 +717,7 @@ global define string create_raidtab( map targets )
  * -> no change in /etc/raidtab for modified raids
  * @param targetMap all targets
  */
-global define string change_raidtab( map targetMap ) 
+define string change_raidtab( map targetMap ) 
     ``{
     // by change !!!
     add_main_dev_to_partition_map( targetMap );
@@ -829,7 +824,7 @@ and retry creation of your raid in YaST2.
  * !! the return value only reflects the existance of /etc/raidtab
  * !! not the success of the raid creation
  */
-global define boolean prepare_raid( map targets, boolean installation )
+define boolean prepare_raid( map targets, boolean installation )
     ``{
     string  raidtab = "";
     // if change_raidtab was called instead of create_raidtab

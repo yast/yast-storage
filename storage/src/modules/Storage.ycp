@@ -1340,22 +1340,12 @@ global define map GetMountPoints()
    *
      *
    */
-    global define any GetMainDevParam(string maindevkey, string paramkey )``{
+global define any GetMainDevParam( string maindevkey, string paramkey, 
+                                   any default )
+    ``{
+    any param =  lookup( GetMainDev( maindevkey ), paramkey, default );
 
-	any param =  lookup( GetMainDev( maindevkey ), paramkey , nil );
-
-	/* return default maindev parameter */
-	if( param == nil )
-  	      {
-	    y2milestone(" GetMainDevParam try to return default maindev parameter.");
-	    param = lookup ( default_main_dev_param, paramkey, nil );
-	  }
-	if( param == nil )
-          {
-	    y2error(" GetMainDevParam return nil - parameter not found.");
-	  }
-
-	return param;
+    return param;
     }
 
      global define list GetSubDevFilterList(string maindevkey, string what , string how )``{
@@ -1370,7 +1360,7 @@ global define map GetMountPoints()
 	  }
 	else
 	    {
-	    partitions 	= (list<map>) GetMainDevParam( maindevkey , "partitions" );
+	    partitions 	= (list<map>) GetMainDevParam( maindevkey , "partitions", [] );
       }
 	y2milestone("GetSubDevFilterList partitions %1", partitions );
 
@@ -1809,7 +1799,7 @@ global define map GetMountPoints()
 global define map GetSubDev( string subdevkey )
     ``{
 
-    list<map> partitions = (list<map>) GetMainDevParam( GetMainDevKey(subdevkey), "partitions");
+    list<map> partitions = (list<map>) GetMainDevParam( GetMainDevKey(subdevkey), "partitions", [] );
 
     map part = find(map c_part, partitions,
 		     ``(sformat("%1",c_part["nr"]:0) ==
@@ -1912,7 +1902,7 @@ global define map GetSubDev( string subdevkey )
      *
      */
     global define boolean IsMainDevVg(string maindevkey )``{
-	if( (boolean) GetMainDevParam( maindevkey , "is_lvm_vg" ))
+	if( (boolean) GetMainDevParam( maindevkey , "is_lvm_vg", false ))
 	    return true;
 	return false;
     }
@@ -2122,7 +2112,7 @@ global define boolean DelSubDev( string subdevkey )
     string  subdevindex 	= GetSubDevIndex( subdevkey );
     integer number     	= tointeger( subdevindex );
 
-    list curr_partitions 	= (list) GetMainDevParam( maindevkey, "partitions");
+    list curr_partitions 	= (list) GetMainDevParam( maindevkey, "partitions", []);
     map curr_part 		= GetSubDev(subdevkey);
     map curr_disk		= GetMainDev( maindevkey );
 
@@ -2232,7 +2222,7 @@ global define boolean DelSubDev( string subdevkey )
     global define void AddSubDev( string subdevkey, map newsubdev )``{
 
 	string maindevkey = GetMainDevKey( subdevkey );
-	list partitions   = (list) GetMainDevParam( maindevkey , "partitions" );
+	list partitions   = (list) GetMainDevParam( maindevkey , "partitions", [] );
 
 	partitions        = add( partitions, newsubdev );
 
@@ -2292,7 +2282,7 @@ global define map DelPartitionData( map tg, string device, string key)
 global define boolean SetSubDev( string subdevkey, map newsubdev )
     ``{
     string maindevkey = GetMainDevKey( subdevkey );
-    list partitions = (list) GetMainDevParam( maindevkey, "partitions" );
+    list partitions = (list) GetMainDevParam( maindevkey, "partitions", [] );
 
     // and now delete the old partition number in curr_disk to replace it in the next step
     list r_part =
@@ -3035,7 +3025,7 @@ global define boolean CheckNextCreated( map disk, list region )
 
 global define void AdaptResize( string maindev, list region, integer schange )
     ``{
-    list partitions = (list) GetMainDevParam( maindev, "partitions" );
+    list partitions = (list) GetMainDevParam( maindev, "partitions", [] );
     integer cylinder = region[0]:0 + region[1]:0;
     boolean found = false;
     integer index = -1;

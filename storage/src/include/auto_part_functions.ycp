@@ -48,33 +48,33 @@
 
     // Return the size of a disk region in bytes
 
-    global define integer size_of_region (list<integer> region, 
+define integer size_of_region (list<integer> region, 
                                           integer bytes_per_unit) ``{
 	return select (region, 1,0) * bytes_per_unit;
     };
 
     // Return the number of units that holds at least BYTES
 
-    global define integer size_to_units( integer bytes, 
+define integer size_to_units( integer bytes, 
                                          integer bytes_per_unit) ``{
 	return (bytes + bytes_per_unit - 1) / bytes_per_unit;
     };
 
     // Return the start of the region.
 
-    global define integer start_of_region (list<integer> region) ``{
+define integer start_of_region (list<integer> region) ``{
 	return select (region, 0,0);
     };
 
     // Return the end of the region, ie. start of the next region
 
-    global define integer end_of_region (list<integer> region) ``{
+define integer end_of_region (list<integer> region) ``{
 	return select (region, 0,0) + select (region, 1,0);
     };
 
     // Return the number of primary partitions
 
-    global define integer num_primary (list partitions) ``{
+define integer num_primary (list partitions) ``{
 	integer n = 0;
 
 	foreach (map pentry, partitions, ``{
@@ -89,7 +89,7 @@
     // disk, count from 0 on, return the maximal allowed value for
     // a partition number
 
-    global define integer compute_max_partitions (map disk) 
+define integer compute_max_partitions (map disk) 
 	``{
 	integer ret = disk["max_primary"]:4 - 1;
 	if( disk["label"]:""=="msdos" )
@@ -108,13 +108,13 @@
 
     // return the maximal number of primary partitions
 
-    global define integer compute_max_primary (map disk) ``{
+define integer compute_max_primary (map disk) ``{
 	return disk["max_primary"]:4;
     };
 
     // Return whether the list of selected partitions is contiguous.
 
-    global define boolean contiguous_selection (list selection) ``{
+define boolean contiguous_selection (list selection) ``{
 	boolean ret = true;
 	symbol  last_type = nil;
 	list<integer>    last_region = nil;
@@ -138,14 +138,14 @@
 
     // Return true if an extended partition exists
 
-    global define boolean contains_extended (list partitions) ``{
+define boolean contains_extended (list partitions) ``{
 	boolean ret = find( map p, partitions, 
 	                    ``(p["type"]:`unknown==`extended && 
 			       !p["delete"]:false)) != nil;
 	return( ret );
     };
 
-global define boolean ignored_partition( map disk, map part )
+define boolean ignored_partition( map disk, map part )
     ``{
     // skip #3 on AlphaBSD and SparcBSD
     boolean ret = disk["label"]:""=="bsd" || disk["label"]:""=="sun";
@@ -158,7 +158,7 @@ global define boolean ignored_partition( map disk, map part )
 
     // Return the region of the extended partition
 
-    global define list<integer> extended_region (list partitions) ``{
+define list<integer> extended_region (list partitions) ``{
 	list<integer> ret = [ 0, 0 ];
 	foreach (map pentry, partitions, ``{
 	if (pentry["type"]:`unknown == `extended)
@@ -172,7 +172,8 @@ global define boolean ignored_partition( map disk, map part )
     // is not nil it is used to clip the region so that it is contained
     // entirely within it.
 
-global define list<integer> calculate_selected_region( list selection, list<integer> ext_region ) 
+define list<integer> calculate_selected_region( list selection, 
+                                                list<integer> ext_region ) 
     ``{
     integer start = -1;
     integer end = 0;
@@ -203,7 +204,7 @@ global define list<integer> calculate_selected_region( list selection, list<inte
     // Check whether three logical partitions can be created without
     // running past the kernel limit for the number of partitions
 
-global define boolean can_create_logical( list partitions )
+define boolean can_create_logical( list partitions )
     ``{
     list logicals = filter( map pentry, partitions,
 			    ``(lookup (pentry, "type", `unknown) == `logical));
@@ -214,7 +215,7 @@ global define boolean can_create_logical( list partitions )
     // Check whether the boot partition is located entrely below the bootable
     // cylinder limit
 
-global define boolean bootable(list<integer> region, integer bps) 
+define boolean bootable(list<integer> region, integer bps) 
     ``{
     return( start_of_region(region) + size_to_units(size_of_boot,bps) < 
 		Partitions::BootCyl() );
@@ -225,7 +226,7 @@ global define boolean bootable(list<integer> region, integer bps)
     // Input:  partition map to be checked (from targets)
     // Return: true if partition is FAT, false otherwise
     //
-    global define boolean is_fat_partition( map partition ) ``{
+define boolean is_fat_partition( map partition ) ``{
 	return ( lookup( partition, "fsid", -1 ) == 0x06 ||	// FAT16
 		 lookup( partition, "fsid", -1 ) == 0x0b ||	// Win95 FAT32 CHS
 		 lookup( partition, "fsid", -1 ) == 0x0c ||	// Win95 FAT32 LBA
@@ -237,7 +238,7 @@ global define boolean bootable(list<integer> region, integer bps)
     // Input:  partition map to be checked (from targets)
     // Return: true if partition is NTFS, false otherwise
     //
-    global define boolean is_ntfs_partition( map partition ) ``{
+define boolean is_ntfs_partition( map partition ) ``{
 	return ( lookup( partition, "fsid", -1 ) == 0x07 || 	// HPFS/NTFS
 		 lookup( partition, "fsid", -1 ) == 0x86 || 	// NTFS-Datenträger
 		 lookup( partition, "fsid", -1 ) == 0x87 );	// NTFS-Datenträger
@@ -248,7 +249,7 @@ global define boolean bootable(list<integer> region, integer bps)
     // Input:  List of partition maps.
     // Return: Partition map if found or $[] if not.
     //
-    global define map get_last_used_partition( list partitions ) ``{
+define map get_last_used_partition( list partitions ) ``{
 	map last_partition = $[];
 	integer minor = -1;
 
@@ -268,7 +269,7 @@ global define boolean bootable(list<integer> region, integer bps)
     // Input:  List of partition maps
     // Return: resizeable partition map or $[] if none found
     //
-    global define map can_resize( list partitions ) ``{
+define map can_resize( list partitions ) ``{
 	map last_used_partition = $[];
 	
 	if ( !Arch::i386 )
@@ -301,7 +302,7 @@ global define boolean bootable(list<integer> region, integer bps)
     //         This may also point to a directory.
     // Return: true if found, false if not.
     //
-    global define boolean file_exist( string file_path ) ``{
+define boolean file_exist( string file_path ) ``{
 	  boolean file_found = (integer)SCR::Read(.target.size, file_path) >= 0;
 	  y2milestone( "file %1 found %2 ret:%3", file_path, file_found,
 	               SCR::Read(.target.size, file_path) );
@@ -314,7 +315,7 @@ global define boolean bootable(list<integer> region, integer bps)
 // Input:  map of data containing the disk
 // Return: true if there is NT on the system, otherwise false
 //
-global define integer check_win_nt_system( map disk ) 
+define integer check_win_nt_system( map disk ) 
     ``{
     boolean is_nt = false;
     boolean go_on = true;
@@ -396,7 +397,7 @@ global define integer check_win_nt_system( map disk )
     // Renumber the logical partitions if some of them are deleted
     // The returned list is sorted by partition number instead of region
 
-    global define list renumber_logical_partitions (list partitions) ``{
+define list renumber_logical_partitions (list partitions) ``{
 	partitions = sort (map a, map b, partitions, ``(lookup (a, "nr", 0) <= lookup (b, "nr", 0)));
 	integer logicals_deleted = 0;
 	return maplist (map pentry, partitions, ``{
@@ -412,7 +413,7 @@ global define integer check_win_nt_system( map disk )
     };
 
     // Find unused space at the end of the extended partition
-    global define list<integer> unused_extended_region (list partitions) ``{
+define list<integer> unused_extended_region (list partitions) ``{
 	list<integer> extended = extended_region (partitions);
 	list logicals = filter (map pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
 	integer end_of_logicals = 0;
@@ -429,7 +430,7 @@ global define integer check_win_nt_system( map disk )
 
 
     // Find unused space at the start of the extended partition
-    global define list<integer> unused_logical_region (list partitions) ``{
+define list<integer> unused_logical_region (list partitions) ``{
 	list<integer> extended = extended_region (partitions);
 	list logicals = filter (map pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
 	integer start_of_logicals = 0;
@@ -444,12 +445,12 @@ global define integer check_win_nt_system( map disk )
 	return [0, 0];
     };
 
-global define integer calculate_needed_swap ()
+define integer calculate_needed_swap ()
     ``{
     return 1024*1024*Partitions::SwapSizeMb( 0 );
     };
 
-global define boolean need_boot_partititon( list<integer> region )
+define boolean need_boot_partititon( list<integer> region )
     ``{
     return( Partitions::NeedBoot() || 
             (start_of_region(region)<Partitions::BootCyl() && 
