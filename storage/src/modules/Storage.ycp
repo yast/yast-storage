@@ -3481,6 +3481,43 @@ global define void DestroyLvmOnAllDisks()
     SCR::Write( .lvm.activate, "" );
     };
 
+global define void DestroyMdOnAllDisks()
+    ``{
+    y2milestone( "DestroyMdOnAllDisks called" );
+    map tg = GetTargetMap();
+    list raid_names = [];
+    SCR::Write( .md.deactivate, "" );
+    foreach( `disk, `data, tg,
+	``{
+	if( IsRealDisk( disk, data ) )
+	    {
+	    foreach( `p, data["partitions"]:[],
+		``{
+		if( p["fsid"]:0==Partitions::fsid_raid )
+		    {
+		    raid_names = add( raid_names, p["device"]:"" );
+		    }
+		});
+	    data["partitions"] = 
+		maplist( `p, data["partitions"]:[],
+		    ``{
+		    p = filter( `k, `e, p, ``(k!="raid_name"));
+		    return( p );
+		    });
+	    }
+	});
+    if( size(raid_names)>0 )
+	{
+	string cmd = sformat( "/sbin/mdadm --zero-superblock %1",
+	                      mergestring( raid_names, " " ));
+	y2milestone( "executing cmd %1", cmd );
+	SCR::Execute(.target.bash, cmd );
+	}
+    tg = filter( `k, `e, tg, ``( k != "/dev/md" ));
+    SetTargetMap( tg );
+    SCR::Write( .md.activate, "" );
+    };
+
 global define map InitialLoopEntry()
     ``{
     map part = $[ "type"     : `loop,
