@@ -161,6 +161,17 @@ global define boolean PrepBoot()
     return( ret );
     };
 
+global define boolean NeedBoot()
+    ``{
+    boolean ret = false;
+    if( Arch::ia64||Arch::ppc||Arch::sparc||Arch::alpha )
+	{
+	ret = true;
+	}
+    y2milestone( "ret %1", ret );
+    return( ret );
+    }
+
 global define boolean IsDosPartition( integer fsid )
     ``{
     return (contains( fsid_dostypes, fsid) || contains( fsid_wintypes, fsid));
@@ -170,6 +181,96 @@ global define boolean IsDosWinNtPartition( integer fsid )
     ``{
     return( IsDosPartition( fsid ) || contains( fsid_ntfstypes, fsid ));
     }
+
+global define integer SwapSizeMb( integer slot_size )
+    ``{
+    integer swap_size = 0;
+
+    // a good approach swap == mem x 2
+    integer mem = 256;
+    if( !Mode::test )
+	{
+	mem = lookup(lookup(SCR::Read(.proc.meminfo), "mem", $[]), "total", 0);
+	mem = mem / (1024*1024);
+	}
+    if( mem == 0 || mem == nil ) mem = 64;
+
+    if( slot_size==0 )
+	{
+	if( mem <= 128 )
+	    {
+	    swap_size = mem * 2;
+	    }
+	else
+	    {
+	    swap_size = mem + 128;
+	    }
+	}
+    else
+	{
+	if( mem * 9 < slot_size )
+	    {
+	    swap_size = mem * 2; 
+	    }
+	else if( mem * 5 < slot_size )
+	    {
+	    swap_size = mem; 
+	    }
+	else if( mem * 3 < slot_size )
+	    {
+	    swap_size = mem / 2; 
+	    }
+	else if( mem * 2 < slot_size )
+	    {
+	    swap_size = mem / 3; 
+	    }
+	else 
+	    {
+	    swap_size = mem / 4;
+	    }
+	}
+
+    if( swap_size > 1024 )
+	{
+	swap_size = 1024;
+	}
+    if( swap_size < 0 ) 
+	{
+	swap_size = 0;
+	}
+
+
+    // look for a min size
+    // 1G    -> 128MB
+    // 2G    -> 256MB
+    // 10G   -> 512MB
+    // 40G   -> 1GB
+
+    if( slot_size > (40 * 1024) &&  (swap_size + mem) < 1024 )
+	{
+	swap_size = 1024 - mem;
+	}
+    else if( slot_size > (10 * 1024)  &&  (swap_size + mem) < 512 )
+	{
+	swap_size = 512 - mem;
+	}
+    else if( slot_size > (2 * 1024)  &&  (swap_size + mem) < 256 )
+	{
+	swap_size = 256 - mem;
+	}
+    else if( slot_size > (1 * 1024)  &&  (swap_size + mem) < 128 )
+	{
+	swap_size = 128 - mem;
+	}
+
+    if( swap_size == 0 )
+	{
+	swap_size = -1;
+	}
+    y2milestone( "swap_size %1", swap_size );
+
+    return( swap_size );
+    };
 
 global define boolean UseParted()
     ``{
@@ -193,7 +294,7 @@ global define boolean IsResizable( integer fsid )
 global define boolean IsLinuxPartition( integer fsid )
     ``{
     return ( fsid==fsid_native || fsid==fsid_swap || fsid==fsid_lvm ||
-	     fsid==fsid_raid || fsid_gpt_boot );
+	     fsid==fsid_raid || fsid==fsid_gpt_boot );
     };
 
 global define list mountedPartitionsOnDisk( string dev_str, list mounts_read )
