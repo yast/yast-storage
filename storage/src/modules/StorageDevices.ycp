@@ -176,7 +176,7 @@ global define boolean ProbeCDROMs()
 
 	// now rewrite the /dev-names for the IDE drives
 	// as they appear _after_ loading of ide-scsi
-	foreach (map e, cddrives,
+	cddrives = maplist( map e, cddrives,
 	    ``{
 	    if( contains( idecdrws, substring( e["dev_name"]:"", 5) ))
 		{
@@ -186,45 +186,49 @@ global define boolean ProbeCDROMs()
 		e["dev_orig"] = e["dev_name"]:"";
 		e["dev_name"] = scsiname;
 		}
+	    return( e );
 	    });
 
 	Kernel::IDERecorders ((list<string>)idecdrws);
 
-	foreach(map e, filter(map v, cddrives, ``(v["dev_name"]:""!="/dev/cdrom")),
+	cddrives = maplist( map e, cddrives,
 	    ``{
-	    // first, determine the drive type and make a linkname guess
-	    string cddevice = e["dev_name"]:"";
-
-	    string linkname = "cdrom";
-	    if( e["dvdram"]:false )
+	    if( e["dev_name"]:"" != "/dev/cdrom" )
 		{
-		linkname = "dvdram";
-		}
-	    else if( e["dvdr"]:false )
-		{
-		linkname = "dvdrecorder";
-		}
-	    else if( e["cdr"]:false || e["cdrw"]:false )
-		{
-		linkname = "cdrecorder";
-		}
-	    else if( e["dvd"]:false )
-		{
-		linkname = "dvd";
-		}
+		// first, determine the drive type and make a linkname guess
+		string cddevice = e["dev_name"]:"";
 
-	    // now check the number (for /dev/cdrom, /dev/cdrom2, ...)
-	    integer number = linknum[linkname]:0;
-	    linknum[linkname] = number + 1;
+		string linkname = "cdrom";
+		if( e["dvdram"]:false )
+		    {
+		    linkname = "dvdram";
+		    }
+		else if( e["dvdr"]:false )
+		    {
+		    linkname = "dvdrecorder";
+		    }
+		else if( e["cdr"]:false || e["cdrw"]:false )
+		    {
+		    linkname = "cdrecorder";
+		    }
+		else if( e["dvd"]:false )
+		    {
+		    linkname = "dvd";
+		    }
 
-	    string devname = "/dev/" + linkname;
+		// now check the number (for /dev/cdrom, /dev/cdrom2, ...)
+		integer number = linknum[linkname]:0;
+		linknum[linkname] = number + 1;
 
-	    if( number > 0)
-		devname = devname + number+1;
+		string devname = "/dev/" + linkname;
 
-	    e["linkname"] = devname;
+		if( number > 0)
+		    devname = devname + number+1;
+
+		e["linkname"] = devname;
+		}
+	    return( e );
 	    });
-
 	}
     y2milestone ("ProbeCDROMs (%1)", cddrives);
     return (size (cddrives) > 0);
