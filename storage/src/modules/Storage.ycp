@@ -1141,7 +1141,7 @@ global define void SetTargetMap( map targets )
     };
 
     /* SubDev defines  ------------------------------------------------------------------ */
-    define list FilterDelete( list<map> partitions ) ``{
+    define list<map> FilterDelete( list<map> partitions ) ``{
 	return filter(map c_part, partitions ,
 			      ``( c_part["delete"]:false != true));
     }
@@ -1359,22 +1359,22 @@ global define map GetMountPoints()
     }
 
      global define list GetSubDevFilterList(string maindevkey, string what , string how )``{
-	list partitions		= [];
+	list<map> partitions		= [];
 
 	if( maindevkey == "all" )
 	  {
 	    foreach(any maindevkey_inner, map maindev,GetTargetMap(),``{
 	        list part = maindev["partitions"]:[];
-		partitions = union( partitions, part );
+		partitions = (list<map>)union( partitions, part );
 		});
 	  }
 	else
 	    {
-	    partitions 	= (list) GetMainDevParam( maindevkey , "partitions" );
+	    partitions 	= (list<map>) GetMainDevParam( maindevkey , "partitions" );
       }
 	y2milestone("GetSubDevFilterList partitions %1", partitions );
 
-	list filterPartitions 	= [];
+	list<map> filterPartitions 	= [];
 
 	if ( what == "all" )
       {
@@ -1809,7 +1809,7 @@ global define map GetMountPoints()
 global define map GetSubDev( string subdevkey )
     ``{
 
-    list<map> partitions = (list) GetMainDevParam( GetMainDevKey(subdevkey), "partitions");
+    list<map> partitions = (list<map>) GetMainDevParam( GetMainDevKey(subdevkey), "partitions");
 
     map part = find(map c_part, partitions,
 		     ``(sformat("%1",c_part["nr"]:0) ==
@@ -3583,7 +3583,7 @@ global define void DestroyMdOnAllDisks()
     if( size(raid_names)>0 )
 	{
 	string cmd = sformat( "/sbin/mdadm --zero-superblock %1",
-	                      mergestring( raid_names, " " ));
+	                      mergestring( (list<string>)raid_names, " " ));
 	y2milestone( "executing cmd %1", cmd );
 	SCR::Execute(.target.bash, cmd );
 	}
@@ -3596,7 +3596,7 @@ global define list<string> GetDirPatterns( string dir, list patterns )
     ``{
     list<string> ret = [];
     string cmd = sformat( "cd %1 && (ls %2 2>/dev/null)", dir,
-                          mergestring( patterns, " "));
+                          mergestring( (list<string>)patterns, " "));
     map out = (map) SCR::Execute( .target.bash_output, cmd );
     ret = splitstring( out["stdout"]:"", "\n" );
     ret = filter( string e, ret, ``(size(e)>0) );
