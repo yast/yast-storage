@@ -205,7 +205,7 @@ SystemCmd::DoExecute( string Cmd_Cv )
 	}
     OpenFiles();
     CheckOutput();
-    y2debug( "system() Returns:%d", Ret_i );
+    y2milestone( "system() Returns:%d", Ret_i );
     TimeMark( "After CheckOutput" );
     return( Ret_i );
     }
