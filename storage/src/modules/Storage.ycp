@@ -1349,7 +1349,7 @@ global define void SetTargetMap( map targets )
 	  }
     };
 
-    global define map<integer,any> GetModifyTargets()``{
+    global define map<integer,map> GetModifyTargets()``{
 	return StorageMap[modify_targets_key]:$[];
     };
 
@@ -2287,6 +2287,63 @@ global define list<map> RenumberS390Partitions( string dname,
     return( partitions );
     }
 
+global define map<string, map> 
+RenameTgDevices( map<string, map> tg, map<string, string> ren )
+    ``{
+    y2milestone( "RenameTgDevices ren:%1", ren );
+    foreach( string dev, map co, tg,
+	``{
+	if( find( dev, "/dev/evms/" ) == 0 )
+	    {
+	    y2milestone( "RenameTgDevices before added:%1 removed:%2",
+	                 co["added"]:[], co["removed"]:[] );
+	    if( size(co["added"]:[])>0 )
+		{
+		co["added"] = 
+		    maplist( string d, co["added"]:[], 
+			     ``(haskey( ren, d )?(ren[d]:""):d));
+		}
+	    if( size(co["removed"]:[])>0 )
+		{
+		co["removed"] = 
+		    maplist( string d, co["removed"]:[], 
+			     ``(haskey( ren, d )?(ren[d]:""):d));
+		}
+	    y2milestone( "RenameTgDevices after added:%1 removed:%2",
+	                 co["added"]:[], co["removed"]:[] );
+	    tg[dev] = co;
+	    }
+	});
+    return( tg );
+    }
+
+global define map<integer, map> 
+RenameMtDevices( map<integer, map> mt, map<string, string> ren )
+    ``{
+    y2milestone( "RenameMtDevices ren:%1", ren );
+    foreach( integer num, map entry, mt,
+	``{
+	if( entry["type"]:""=="create_vg" && size(entry["devices"]:[])>0 )
+	    {
+	    y2milestone( "RenameMtDevices before entry:%1", entry );
+	    entry["devices"] = 
+		maplist( string d, entry["devices"]:[], 
+			 ``(haskey( ren, d )?(ren[d]:""):d));
+	    y2milestone( "RenameMtDevices after entry:%1", entry );
+	    mt[num] = entry;
+	    }
+	if( (entry["type"]:""=="create_pv" || entry["type"]:""=="remove_pv") &&
+	    haskey( ren, entry["device"]:"" ))
+	    {
+	    y2milestone( "RenameMtDevices before entry:%1", entry );
+	    entry["device"] = ren[entry["device"]:""]:"";
+	    y2milestone( "RenameMtDevices after entry:%1", entry );
+	    mt[num] = entry;
+	    }
+	});
+    return( mt );
+    }
+
 
     /*
       Do not use DelSubDev for LVM !!!!!!!!!!!!!!!!!!
@@ -2296,12 +2353,14 @@ global define boolean DelSubDev( string subdevkey )
     ``{
     if ( ! IsKeySubDevKey( subdevkey ) ) return false;
 
+
     string  maindevkey         = GetMainDevKey( subdevkey  );
     string  subdevindex        = GetSubDevIndex( subdevkey );
     integer number             = tointeger( subdevindex );
 
     list<map> curr_partitions  = (list<map>) GetMainDevParam( maindevkey, 
                                                               "partitions", []);
+    map<string, string> renamed_parts = $[];
     map<string, any> curr_part = GetSubDev(subdevkey);
     map<string, any> curr_disk = GetMainDev( maindevkey );
 
@@ -2355,7 +2414,8 @@ global define boolean DelSubDev( string subdevkey )
 		    ``( !(parti["nr"]:(any)0 == number && parti["create"]:false )));
 	list<map> create_next = (list<map>)
 	    filter(map p, curr_partitions,
-		    ``( p["nr"]:(any)0 > number && p["create"]:false ));
+		    ``( p["nr"]:(any)0 > number && p["create"]:false &&
+		        curr_part["type"]:`unknown != `logical ));
 	create_next = sort( map a, map b, create_next, 
 	                    ``( a["nr"]:(any)0 < b["nr"]:(any)0 ));
 	y2milestone("curr_partitions %1", curr_partitions );
@@ -2366,7 +2426,9 @@ global define boolean DelSubDev( string subdevkey )
 	    integer old = p["nr"]:0;
 	    map part = (map)eval(p);
 	    part["nr"] = del_num;
-	    part["device"] = GetDeviceName( maindevkey, del_num );
+	    string new = GetDeviceName( maindevkey, del_num );
+	    renamed_parts[part["device"]:""] = new;
+	    part["device"] = new;
 	    del_num = old;
 	    curr_partitions = filter(map t, curr_partitions,
 				      ``( !(t["nr"]:(any)0 == old &&
@@ -2396,7 +2458,9 @@ global define boolean DelSubDev( string subdevkey )
 		    parti["ori_nr"] = parti["nr"]:(any)0;
 		    }
 		parti["nr"] = parti["nr"]:0 - 1;
-		parti["device"] = GetDeviceName( maindevkey, parti["nr"]:(any)0 );
+		string new = GetDeviceName( maindevkey, parti["nr"]:(any)0 );
+		renamed_parts[parti["device"]:""] = new;
+		parti["device"] = new;
 		}
 	    return( parti );
 	    }));
@@ -2409,6 +2473,15 @@ global define boolean DelSubDev( string subdevkey )
     curr_disk["partitions"] = curr_partitions;
 
     SetMainDev( maindevkey, curr_disk );
+    if( size(renamed_parts)>0 )
+	{
+	map<string, map> tg = GetTargetMap();
+	tg = RenameTgDevices( tg, renamed_parts );
+	SetTargetMap(tg);
+	map<integer,map> mt = GetModifyTargets();
+	mt = RenameMtDevices( mt, renamed_parts );
+	SetModifyTargets(mt);
+	}
     return true;
     }
 
