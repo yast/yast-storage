@@ -4287,6 +4287,45 @@ global define void UpdateFstabDiskmap( map diskmap )
     AsciiFile::RewriteFile( crtab, tabpath );
     }
 
+global define void UpdateCryptoType()
+    ``{
+    y2milestone( "UpdateCryptoType" );
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    integer pos = 0;
+    string search = "encryption=twofish256";
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	pos = find( l["fields",3]:"", search );
+	if( pos >= 0 )
+	    {
+	    string new = substring( l["fields",3]:"", 0, pos );
+	    new = new + "encryption=twofish";
+	    new = new + substring( l["fields",3]:"", pos+size(search) );
+	    y2milestone( "new options line in %1 is %2", l, new );
+	    AsciiFile::ChangeLineField( fstab, line, 3, new );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( fstab, tabpath );
+    tabpath = PathToDestdir( "/etc/cryptotab" );
+    map crtab = Partitions::GetCrypto( tabpath );
+    line = 0;
+    while( line<=AsciiFile::NumLines( crtab ) )
+	{
+	map l = AsciiFile::GetLine( crtab, line );
+	if( l["fields",4]:"" == "twofish256" )
+	    {
+	    y2milestone( "set twofish in line %1", l );
+	    AsciiFile::ChangeLineField( crtab, line, 4, "twofish" );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( crtab, tabpath );
+    }
+
 global define void UpdateFstabUsbdevfs()
     ``{
     y2milestone( "UpdateFstabUsbdevfs updating usbdevfs to usbfs" );
@@ -4386,6 +4425,7 @@ global define void Update( map oldv, map newv )
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0<=2))
 	{
 	StorageDevices::MakeCDLinks();
+	Storage::UpdateCryptoType();
 	}
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
 	{
