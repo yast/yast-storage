@@ -25,8 +25,7 @@ LvmAccess::LvmAccess( bool Expensive_bv ) :
     y2milestone( "Konstruktor LvmAccess Expensive:%d", Expensive_bv );
 
     LvmVersion_i = 1;
-    if( !access( "/proc/lvm/global", R_OK )==0 && 
-        access( "/sbin/vgs", R_OK )==0 )
+    if( access( "/sbin/vgs", R_OK )==0 )
 	{
 	LvmVersion_i = 2;
 	}
@@ -895,7 +894,8 @@ bool LvmAccess::DeleteVg( const string& VgName_C )
 
 
 bool LvmAccess::CreateLv( const string& LvName_Cv, const string& VgName_Cv,
-                          unsigned long Size_lv, unsigned long Stripe_lv )
+                          unsigned long Size_lv, unsigned long Stripe_lv,
+                          unsigned long StripeSize_lv )
     {
     y2milestone( "LvmAccess::CreateLv LV Name:%s VG Name:%s Size:%ld Stripe:%ld",
 	         LvName_Cv.c_str(), VgName_Cv.c_str(), Size_lv, Stripe_lv );
@@ -915,6 +915,11 @@ bool LvmAccess::CreateLv( const string& LvName_Cv, const string& VgName_Cv,
 	{
 	Tmp_Ci += " -i ";
 	Tmp_Ci += dec_string(Stripe_lv);
+	if( StripeSize_lv>0 )
+	    {
+	    Tmp_Ci += " -I ";
+	    Tmp_Ci += dec_string(StripeSize_lv);
+	    }
 	}
     Tmp_Ci += " -n ";
     string Name_Ci = LvName_Cv;

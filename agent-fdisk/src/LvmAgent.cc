@@ -208,6 +208,7 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 		unsigned long size = 0;
 		string vgname;
 		unsigned long stripes = 1;
+		unsigned long stripesize = 0;
 		YCPValue content = cmd->value(YCPString("name"));
 		if( !content.isNull() && content->isString())
 		    {
@@ -230,12 +231,18 @@ LvmAgent::Write( const YCPPath& path, const YCPValue& value,
 		    {
 		    stripes = content->asInteger()->value();
 		    }
+		content = cmd->value(YCPString("stripesize"));
+		if( !content.isNull() && content->isInteger())
+		    {
+		    stripesize = content->asInteger()->value();
+		    }
 		y2milestone("name:%s vgname:%s size:%ld stripes:%ld",
 			     name.c_str(), vgname.c_str(), size,
 			     stripes );
 		if( name.length()>0 && vgname.length()>0 && size>0 )
 		    {
-		    if( !Lvm_pC->CreateLv( name, vgname, size, stripes ))
+		    if( !Lvm_pC->CreateLv( name, vgname, size, stripes,
+		                           stripesize ))
 			{
 			ErrText_Ci = Lvm_pC->GetErrorText();
 			CmdLine_Ci = Lvm_pC->GetCmdLine();

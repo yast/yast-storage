@@ -76,7 +76,8 @@ class LvmAccess
 	bool CreateVg( const string& VgName_Cv, unsigned long PeSize_lv,
 	               bool NewMeta_bv, list<string>& Devices_Cv );
 	bool CreateLv( const string& LvName_Cv, const string& VgName_Cv,
-	               unsigned long Size_lv, unsigned long Stripe_lv );
+	               unsigned long Size_lv, unsigned long Stripe_lv,
+	               unsigned long StripeSize_lv );
 	bool ChangeLvSize( const string& LvName_Cv, unsigned long Size_lv );
 	bool DeleteLv( const string& LvName_Cv );
 	void UpdateDisk( list<PartInfo>& Part_Cv, const string& Disk_Cv );

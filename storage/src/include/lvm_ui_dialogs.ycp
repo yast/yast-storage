@@ -65,6 +65,7 @@ global define void handle_max( integer stripe, string max_text )
     old_size = kmgt_str_to_byte(curr_size);
     string  volume_name  = Lv["nr"]:"";
     integer stripes      = Lv["stripes"]:1;
+    integer stripesize   = Lv["stripesize"]:64;
 
     list stripes_poss = [
 			  `item(`id(1), "1",  stripes == 1 ),
@@ -76,6 +77,17 @@ global define void handle_max( integer stripe, string max_text )
 			  `item(`id(7), "7",  stripes == 7 ),
 			  `item(`id(8), "8",  stripes == 8 )
 			];
+
+    list stripe_size = [
+			  `item(`id(4),   "4",    stripesize == 4 ),
+			  `item(`id(8),   "8",    stripesize == 8 ),
+			  `item(`id(16),  "16",   stripesize == 16 ),
+			  `item(`id(32),  "32",   stripesize == 32 ),
+			  `item(`id(64),  "64",   stripesize == 64 ),
+			  `item(`id(128), "128",  stripesize == 128 ),
+			  `item(`id(256), "256",  stripesize == 256 ),
+			  `item(`id(512), "512",  stripesize == 512 ),
+                       ];
     
     string lv_size      = "";   
      
@@ -141,12 +153,16 @@ global define void handle_max( integer stripe, string max_text )
 				     )
 			      );
 	stripes_poss = [ `item(`id(1), "-", true) ];
+	stripe_size = [ `item(`id(1), "-", true) ];
 	}
     else
 	{
 	// internal error message 
 	heading = _("INTERNAL ERROR");
 	}
+
+    y2milestone( "is_create_mode %1 is_resize_mode %2", is_create_mode,
+                 is_resize_mode );
  
     UI::OpenDialog(
 	`opt(`decorated ),
@@ -177,6 +193,10 @@ global define void handle_max( integer stripe, string max_text )
 							   // button text
 							   _("Stri&pes"), stripes_poss )),
 					  `VStretch(),
+					  `Left(`ComboBox( `id("stripesize"), `opt(`hstretch,`notify),
+							   // button text
+							   _("Stripe &size"), stripe_size )),
+					  `VStretch(),
 					  `VSpacing(1),
 					  `ReplacePoint( `id(`mount_dlg_rp), 
 					                 MountDlg(Lv, []))
@@ -199,7 +219,9 @@ global define void handle_max( integer stripe, string max_text )
 
       // configure main dialog for the first call
 
-      UI::ChangeWidget( `id("stripes"), `Enabled, is_create_mode );
+      UI::ChangeWidget( `id("stripes"), `Enabled, !is_resize_mode );
+      UI::ChangeWidget( `id("stripesize"), `Enabled, 
+                        !is_resize_mode && stripes>1 );
       handle_max( stripes, max_text );
   
       ////////////////////////////////////////////////////////////////////
@@ -221,6 +243,8 @@ global define void handle_max( integer stripe, string max_text )
 	    if( c_ret == "stripes")
 		{
 		stripes = UI::QueryWidget(`id("stripes"), `Value);
+	        UI::ChangeWidget( `id("stripesize"), `Enabled, 
+				  !is_resize_mode && stripes>1 );
 		handle_max( stripes, max_text );
 		continue;
 		}
@@ -246,6 +270,7 @@ global define void handle_max( integer stripe, string max_text )
 		}
 
 	    stripes = UI::QueryWidget(`id("stripes"), `Value);
+	    stripesize = UI::QueryWidget(`id("stripesize"), `Value);
 	    lv_size = UI::QueryWidget(`id("size"),    `Value);
 	   
 	    y2debug("STRI ---- i%1i", stripes);
@@ -343,6 +368,10 @@ or cancel this dialog.
 	    /////////////////////////////////////////////////////////
 	    retval["changed_size"] = new_size!=old_size;
 	    retval["stripes"] = stripes;
+	    if( stripes>1 )
+		{
+		retval["stripesize"] = stripesize;
+		}
 	    retval["lv_size"] = new_size;
 	    retval["nr"] = volume_name;
 	    retval["device"] = Storage::GetDeviceName( "/dev/"+vgname, 
