@@ -117,11 +117,11 @@
     global define boolean contiguous_selection (list selection) ``{
 	boolean ret = true;
 	symbol  last_type = nil;
-	list    last_region = nil;
+	list<integer>    last_region = nil;
 
 	foreach (map pentry, selection, ``{
 	    if (!lookup (pentry, "create", false)) {
-		list region = lookup (pentry, "region", []);
+		list<integer> region = (list<integer>) lookup (pentry, "region", []);
 		symbol type = lookup (pentry, "type", `unknown);
 		if ((last_region != nil)
 		    && (end_of_region (last_region) != start_of_region (region)))
@@ -158,11 +158,11 @@ global define boolean ignored_partition( map disk, map part )
 
     // Return the region of the extended partition
 
-    global define list extended_region (list partitions) ``{
-	list ret = [ 0, 0 ];
+    global define list<integer> extended_region (list partitions) ``{
+	list<integer> ret = [ 0, 0 ];
 	foreach (map pentry, partitions, ``{
-	if (lookup (pentry, "type", `unknown) == `extended)
-	    ret = lookup (pentry, "region", []);
+	if (pentry["type"]:`unknown == `extended)
+	    ret = (list<integer>) (pentry["region"]:[]);
 	});
 	return ret;
     };
@@ -172,7 +172,7 @@ global define boolean ignored_partition( map disk, map part )
     // is not nil it is used to clip the region so that it is contained
     // entirely within it.
 
-global define list calculate_selected_region( list selection, list ext_region ) 
+global define list<integer> calculate_selected_region( list selection, list<integer> ext_region ) 
     ``{
     integer start = -1;
     integer end = 0;
@@ -214,7 +214,7 @@ global define boolean can_create_logical( list partitions )
     // Check whether the boot partition is located entrely below the bootable
     // cylinder limit
 
-global define boolean bootable(list region, integer bps) 
+global define boolean bootable(list<integer> region, integer bps) 
     ``{
     return( start_of_region(region) + size_to_units(size_of_boot,bps) < 
 		Partitions::BootCyl() );
@@ -412,8 +412,8 @@ global define integer check_win_nt_system( map disk )
     };
 
     // Find unused space at the end of the extended partition
-    global define list unused_extended_region (list partitions) ``{
-	list extended = extended_region (partitions);
+    global define list<integer> unused_extended_region (list partitions) ``{
+	list<integer> extended = extended_region (partitions);
 	list logicals = filter (map pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
 	integer end_of_logicals = 0;
 
@@ -429,8 +429,8 @@ global define integer check_win_nt_system( map disk )
 
 
     // Find unused space at the start of the extended partition
-    global define list unused_logical_region (list partitions) ``{
-	list extended = extended_region (partitions);
+    global define list<integer> unused_logical_region (list partitions) ``{
+	list<integer> extended = extended_region (partitions);
 	list logicals = filter (map pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
 	integer start_of_logicals = 0;
 
@@ -449,7 +449,7 @@ global define integer calculate_needed_swap ()
     return 1024*1024*Partitions::SwapSizeMb( 0 );
     };
 
-global define boolean need_boot_partititon( list region )
+global define boolean need_boot_partititon( list<integer> region )
     ``{
     return( Partitions::NeedBoot() || 
             (start_of_region(region)<Partitions::BootCyl() && 
