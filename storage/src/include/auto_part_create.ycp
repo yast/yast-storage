@@ -11,11 +11,7 @@
  *
  * used globals
  *
- * integer first_logical_nr
- *
- *
  * defined functions
-    define create_partitions (list partitions, list selected_region)
  */
 {
     textdomain "storage";
@@ -29,55 +25,56 @@
     // Each new entry is marked with "create":true. They key "mount"
     // contains the mount point or "swap" for the swap partition.
 
-global define create_partitions( string disk, list partitions, 
+global define create_partitions( map disk, list partitions, 
                                  list selected_region )
     ``{
     y2milestone ("disk:%1 partitions %2 selected_region %3)", disk, partitions,
                  selected_region);
+    y2milestone( "partition_type %1", partition_type );
     partitions = filter( `pentry, partitions, 
                          ``(pentry["type"]:`unknown != `free));
     partitions = renumber_logical_partitions (partitions);
     symbol ptype = `primary;
-    integer last_pnr = 0;
 
     boolean empty_disk = (partitions == []);
 
     map absd_partition = $["create":true, "format":true,
-			   "type": `primary, "fsid":Partitions::fsid_empty,
+			   "type": `primary, 
+			   "fsid":Partitions::fsid_empty,
 			   "nr":3,
 			   "region":full_region ];
 
+    if( selected_region != full_region && disk["max_primary"]:4 == 4)
+	{
+	ptype = `logical;
+	}
+
     // If any partitions are left to be preserved, create the new
     // partitions in an extended partition.
-
-    if (selected_region != full_region)
+    list used_primaries = 
+	maplist (`entry, 
+	    filter( `pentry, partitions,
+		    ``(!pentry["delete"]:false &&
+		       pentry["nr"]:0<disk["max_primary"]:4)),
+	    ``(entry["nr"]:0) );
+    if( partition_type == `ABSD || partition_type == `SBSD )
 	{
-	if (partition_type == `FAT)
-	    {
-	    ptype = `logical;
-	    }
-	else
-	    {
-	    // If we don't have a FAT partition_type get the
-	    // last used partition number
-
-	    list used_primaries =
-	      maplist (`pentry,
-		     filter (`pentry, partitions, ``(!lookup (pentry, "delete", false))),
-		     ``(lookup (pentry, "nr", 0)));
-
-	    integer unused_primary_pnr = 1;
-
-	    while (contains (used_primaries, unused_primary_pnr))
-		{
-		unused_primary_pnr = unused_primary_pnr + 1;
-		}
-
-	    last_pnr = unused_primary_pnr - 1;
-	    }
+	used_primaries = add( used_primaries, 3 );
 	}
 
     // Add the extended partition if necessary
+    list use_pnrs = [];
+    list poss_primary = [ 1, 2, 3, 4 ];
+    integer i = 5;
+    while( i<disk["max_primary"]:4 )
+	{
+	poss_primary = add( poss_primary, i );
+	i = i+1;
+	}
+    poss_primary = filter( `n, poss_primary, ``(!contains(used_primaries,n)));
+    poss_primary = sort(poss_primary);
+    y2milestone( "used_primaries %1 poss_primary %2", used_primaries, 
+		 poss_primary );
 
     if (ptype == `logical)
 	{
@@ -89,10 +86,7 @@ global define create_partitions( string disk, list partitions,
 				      ``(!lookup (pentry, "delete", false))),
 		     ``(lookup (pentry, "nr", 0)));
 
-	    integer unused_primary_pnr = 1;
-
-	    while (contains (used_primaries, unused_primary_pnr))
-		unused_primary_pnr = unused_primary_pnr + 1;
+	    integer unused_primary_pnr = poss_primary[0]:0;
 
 	    // create new extended partition
 	    // if it starts above cyl 1024, create it as fsid_extended_win
@@ -107,21 +101,28 @@ global define create_partitions( string disk, list partitions,
 			       "nr":unused_primary_pnr,
 			       "region":selected_region ]);
 
-	    last_pnr = max_primary;
+	    use_pnrs = [ 5, 6, 7 ];
 	    }
 	else
 	    {
 	    // Find the last used logical partition number.
 	    // We know that these partitions are numbered contiguously
-	    last_pnr = first_logical_nr - 1;
+	    integer last_pnr = 4;
 	    foreach (`pentry, partitions, ``{
 		if (!lookup (pentry, "delete", false)
 		    && (lookup (pentry, "type", `unknown) == `logical))
-		    last_pnr = lookup (pentry, "nr", 0);
+		    if( pentry["nr"]:0 > last_pnr )
+			last_pnr = pentry["nr"]:0;
 		});
+	    use_pnrs = [ last_pnr+1, last_pnr+2, last_pnr+3 ];
 	    }
 	} // ptyle == `logical
-    
+    else
+	{
+	use_pnrs = poss_primary;
+	}
+
+    y2milestone( "use_pnrs %1", use_pnrs );
 
     list boot_region = [ selected_region[0]:0, size_to_units( size_of_boot ) ];
     list swap_region = [ end_of_region( boot_region ), 
@@ -129,64 +130,35 @@ global define create_partitions( string disk, list partitions,
     list root_region = [ end_of_region( swap_region),
 			 end_of_region(selected_region) - 
 			     end_of_region(swap_region) ];
-    last_pnr = last_pnr + 1;
 
-    // skip #3 on bsd
+    // add /boot for all partitions
 
-    if ((partition_type == `ABSD || partition_type == `SBSD) && (last_pnr == 3))
-	{
-	last_pnr = last_pnr + 1;
-	}
-
-    // add /boot for FAT and SBSD partitions
-
-    if ((partition_type == `FAT) || (partition_type == `SBSD))
-	{
-	map boot_part = $[ "create":true, "format":true,
-			   "type": ptype, "fsid":Partitions::fsid_boot,
-			   "nr":last_pnr,
-			   "region":boot_region,
-			   "mount":"/boot",
-			   "used_fs":Partitions::default_boot_fs];
-	partitions = add (partitions, boot_part);
-	last_pnr = last_pnr + 1;
-	}
-
-    // skip #3 on bsd
-
-    if ((partition_type == `ABSD || partition_type == `SBSD) && (last_pnr == 3))
-	{
-        last_pnr = last_pnr + 1;
-	}
+    map boot_part = $[ "create":true, "format":true,
+		       "type": ptype, "fsid":Partitions::fsid_boot,
+		       "nr":use_pnrs[0]:0,
+		       "region":boot_region,
+		       "mount":"/boot",
+		       "used_fs":Partitions::default_boot_fs];
+    partitions = add (partitions, boot_part);
 
     partitions = add (partitions,
 		    $[ "create":true, "format":true,
 		       "type": ptype, "fsid":Partitions::fsid_swap,
-		       "nr":last_pnr,
+		       "nr":use_pnrs[1]:0,
 		       "region":swap_region,
 		       "mount":"swap" ]);
-    last_pnr = last_pnr + 1;
-
-    // skip #3 on bsd
-
-    if ((partition_type == `ABSD || partition_type == `SBSD) && (last_pnr == 3))
-	{
-        last_pnr = last_pnr + 1;
-	}
 
     partitions = add (partitions,
 		    $[ "create":true, "format":true,
 		       "type": ptype, "fsid":Partitions::fsid_native,
 		       "used_fs" : Partitions::default_fs,
-		       "nr":last_pnr,
+		       "nr":use_pnrs[2]:0,
 		       "region":root_region,
 		       "mount":"/" ]);
-    last_pnr = last_pnr + 1;
 
     // create #3 on bsd if needed
 
-    if( (partition_type == `ABSD || partition_type == `SBSD) && 
-        (last_pnr == 3) && empty_disk)
+    if( (partition_type==`ABSD || partition_type==`SBSD) && empty_disk)
 	{
 	partitions = add( partitions, absd_partition );
 	}

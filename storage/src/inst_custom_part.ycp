@@ -86,17 +86,6 @@ HINTS: Always use
   boolean button_adapt_mp	  = false;   // Should the "Adapt mount points from 
                                              // existing /etc/fstab" -Button be shown in Expert menu
   
-  list not_shown_partitions = [ 
-			"Apple_partition_map",
-			"Apple_Patches",
-			"Apple_Driver",
-			"Apple_Loader",
-			"Apple_Boot",
-			"Apple_Bootstrap",
-			"Apple_FWDriver",
-			"Apple_ProDOS" ];
-
-
    boolean test_mode          = Mode::test;
    string  boot_mode	      =	Boot::LoaderType;
    boolean immediate_prepdisk = Storage::immediate_prepdisk;
@@ -422,6 +411,8 @@ global define ToEndRegion(string start_cyl, string end_part, integer cyl_size )
               {
 	      logical_is_possible = false;
 	      extended_is_possible = false;
+	      no_logical_cause = `impossible;
+	      no_extended_cause = `impossible;
 	      }
 
           if( extended_exists )
@@ -538,6 +529,7 @@ define GetSlot( string dev, map disk )
 
     boolean slot_exist = false;
 
+    y2milestone( "global_cyl_list %1", global_cyl_list );
 
     if (size(global_cyl_list) == 0 )
 	  {
@@ -567,7 +559,8 @@ define GetSlot( string dev, map disk )
 		      curr_end   = select( global_cyl_list, 2*n, 0 );
 		  }
 
-		  if ( curr_start+1 != curr_end )
+		  y2milestone( "n curr_start %1 curr_end %2", curr_start, curr_end );
+		  if ( curr_start+1 < curr_end )
 		  {
 		      slot_exist = true;
 
@@ -749,7 +742,7 @@ define GetLogicalSlot( string dev, map disk )
 		  curr_end   = select( global_cyl_list, 2*n, 0 );
 	      }
 
-	      if ( curr_start+1 != curr_end )
+	      if ( curr_start+1 < curr_end )
 	      {
 		  slot_exist = true;
 
@@ -1007,11 +1000,10 @@ define FillPartitionList ()
 	     ``{
 	     // dont show "system partitions"
 	     string fstype = partition["fstype"]:"";
-	     list hit = filter(`v, not_shown_partitions, 
+	     list hit = filter(`v, Partitions::not_shown_partitions, 
 	                       ``(issubstring(fstype, v)) );
-	     if ( hit != [] ) continue;
 
-	     if ( !partition["delete"]:false || log_mode )
+	     if ( size(hit)==0 && !partition["delete"]:false || log_mode )
 		{
 		string id = Storage::GetSubDevKey( disk_dev_name, 
 		                                   partition["nr"]:0);
@@ -2150,6 +2142,9 @@ global define ChoosePart( string usage )
     string ext_line = "";
     string log_line = "";
 
+    y2milestone( "prim:%1 ext:%2 log:%3 (%4 %5 %6)", primary_is_possible,
+                 extended_is_possible, logical_is_possible, no_primary_cause,
+		 no_extended_cause, no_logical_cause );
 
     if( primary_is_possible )	
 	pri_line = _("Primary partition creation is possible\n");
@@ -2161,16 +2156,18 @@ global define ChoosePart( string usage )
     if( logical_is_possible ) 
 	log_line = _("Logical partition creation is possible\n");
     else
-        // example "No logical partition: No space left
-	log_line = _("No logical partition:  ") +
-	           FormatCauseLine( no_logical_cause ) +"\n" ;
+	if( no_logical_cause != `impossible )
+	    // example "No logical partition: No space left
+	    log_line = _("No logical partition:  ") +
+		       FormatCauseLine( no_logical_cause ) +"\n" ;
 
     if ( extended_is_possible )	  
 	ext_line = _("Extendend partition creation is possible\n");
     else
+	if( no_logical_cause != `impossible )
         // example "No extended partition: No space left
-	ext_line = _("No extended partition: ") + 
-	           FormatCauseLine( no_extended_cause ) +"\n";
+	    ext_line = _("No extended partition: ") + 
+		       FormatCauseLine( no_extended_cause ) +"\n";
 
     return ( pri_line + ext_line + log_line );
     };
@@ -2378,6 +2375,7 @@ global define ChoosePart( string usage )
 	    map     curr_disk   = Storage::GetMainDev( maindev );
 
 	    list possibilities = CheckCreatePossibilities( maindev, curr_disk );
+	    y2milestone( "possibilities %1", possibilities );
 
 	    boolean primary_is_possible  = select( possibilities, 0, false );
 	    boolean extended_is_possible = select( possibilities, 1, false );
@@ -2393,7 +2391,9 @@ global define ChoosePart( string usage )
 	    //////////////////////////////////////////////////////////
 	    // Test if there is space left on the device
 	    log_slot = GetLogicalSlot(maindev, curr_disk);
+	    y2milestone( "log_slot %1", log_slot );
 	    p_e_slot = GetSlot(maindev, curr_disk);
+	    y2milestone( "p_e_slot %1", p_e_slot );
 
 	    if ((log_slot == nil) && logical_is_possible ) no_logical_cause     = `no_space;
 	    if ((p_e_slot == nil) && primary_is_possible ) no_primary_cause     = `no_space;
@@ -2444,7 +2444,7 @@ global define ChoosePart( string usage )
 		// ------pel--------
 		string text = "";
 
-		if (  bsd_label )
+		if(  curr_disk["max_primary"]:4>4 )
 		{
 		    text = sformat( _("It is not possible to create a partition on %1 "), maindev);
 		}
@@ -2505,7 +2505,14 @@ global define ChoosePart( string usage )
 		    {
 			if ( !bsd_label )
 			{
-			    base = [1,2,3,4];
+			    base = [ 1, 2, 3, 4 ];
+			    integer i = 5;
+			    while( i<curr_disk["max_primary"]:4 )
+				{
+				base = add( base, i );
+				i = i+1;
+				}
+			    y2milestone( "base %1", base );
 			}
 			else
 			{
@@ -2527,8 +2534,9 @@ global define ChoosePart( string usage )
 
 		    list dev_nb = maplist( `part, filter( `pa, partitions, ``(lookup( pa, "delete", false) == false)), ``(lookup( part, "nr", 0) ));
 		    list result = filter( `base_nr, base, ``( find(`nr, dev_nb, ``(nr == base_nr)) == nil));
+		    result = sort( result );
 
-		    curr_nr = select( sort( result ), 0, 0 );
+		    curr_nr = result[0]:0;
 		}
 
 
