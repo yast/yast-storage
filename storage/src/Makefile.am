@@ -19,3 +19,5 @@ client_DATA =			\
 	inst_target_selection.ycp 
 
 EXTRA_DIST = $(client_DATA)
+
+include $(top_srcdir)/Makefile.am.common
