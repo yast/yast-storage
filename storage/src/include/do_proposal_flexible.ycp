@@ -85,9 +85,6 @@ define map do_flexible_disk( string dev, map disk )
     map ret = $[];
     ret["ok"] = false;
     map conf = read_partition_config( pinfo_name() );
-    symbol cur_mode = `free;
-    integer cur_weight = -100000;
-    map cur_gap = $[];
     map solutions = $[];
 
     if( size(conf)>0 && Storage::IsRealDisk( dev, disk ))
@@ -115,7 +112,6 @@ define map do_flexible_disk( string dev, map disk )
 
 define map do_proposal_flexible( map target )
     ``{
-    symbol cur_mode = `free;
     map ret = $[];
     ret["ok"] = false;
     map conf = read_partition_config( pinfo_name() );
@@ -247,10 +243,10 @@ define map do_proposal_flexible( map target )
 
 define map find_matching_disk( list disks, map target, map conf )
     ``{
-    integer cur_weight = -100000;
-    map cur_gap = $[];
     map solutions = $[];
 
+    cur_weight = -100000;
+    cur_gap = $[];
     foreach( string k, disks,
 	``{
 	map e = target[k]:$[];
@@ -381,7 +377,8 @@ define map process_partition_data( string dev, map solution )
 			r = distribute_space( rest, weight, nlist, 
 			                      solution["partitions"]:[] );
 			nlist = (list) eval(r["added"]:[]);
-			e["cylinders"] = e["cylinders"]:0 - r["diff"]:0;
+			solution["solution","gap",index,"cylinders"] = 
+			    e["cylinders"]:0 - r["diff"]:0;
 			}
 		    solution["solution","gap",index,"added"] = eval(nlist);
 		    y2milestone( "remove unneeded %2 %1", e["added"]:[],
@@ -407,10 +404,11 @@ define map process_partition_data( string dev, map solution )
 		r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], 
 		                      solution["partitions"]:[] );
 		solution["solution","gap",index,"added"] = eval(r["added"]:[]);
-		e["cylinders"] = e["cylinders"]:0 - r["diff"]:0;
+		solution["solution","gap",index,"cylinders"] = 
+		    e["cylinders"]:0 - r["diff"]:0;
 		y2milestone( "increase increasable p %1 cyl %2", 
 		             solution["solution","gap",index,"added"]:[],
-		             e["cylinders"]:0 );
+		             solution["solution","gap",index,"cylinders"]:0 );
 		}
 	    }
         index = index + 1;
@@ -505,7 +503,7 @@ define map process_partition_data( string dev, map solution )
 		    }
 		part["create"] = true;
 		part["nr"] = a[1]:0;
-		part["device"] = Storage::GetDeviceName( dev, part["nr"]:[] );
+		part["device"] = Storage::GetDeviceName( dev, part["nr"]:0 );
 		region[1] = a[2]:0;
 		part["region"] = eval(region);
 		region[0] = region[0]:0 + region[1]:0;
@@ -664,7 +662,7 @@ define map get_perfect_list( list ps, map g )
 	ret["solution"] = eval(cur_gap);
 	ret["partitions"] = eval(ps);
 	}
-    y2milestone( "ret weight %1", ret["weight"]:"impossible" );
+    y2milestone( "ret weight %1", ret["weight"]:-1000000 );
     y2milestone( "ret solution %1", ret["solution","gap"]:[] );
     return( ret );
     }
@@ -719,6 +717,8 @@ define void add_part_recursive( list ps, map g )
 		{
 		map ng = normalize_gaps(ps, llg);
 		integer val = do_weighting( ps, ng );
+		y2milestone( "val %1 cur_weight %2 size %3", val, cur_weight, 
+		             size(cur_gap));
 		if( val > cur_weight || size(cur_gap)==0 )
 		    {
 		    cur_weight = val;
@@ -733,7 +733,7 @@ define void add_part_recursive( list ps, map g )
 define map normalize_gaps( list ps, map g )
     ``{
     y2milestone( "gap %1", g );
-    integer index = 0;
+    integer gindex = 0;
     integer pindex = 0;
     foreach( map e, g["gap"]:[],
 	``{
@@ -749,14 +749,14 @@ define map normalize_gaps( list ps, map g )
 	    {
 	    integer rest = e["cylinders"]:0;
 	    integer needed = 0;
-	    integer index = 0;
+	    integer tidx = 0;
 	    foreach( list p, e["added"]:[],
 		``{
-		index = p[0]:0;
-		if( ps[index,"want_cyl"]:0 > ps[index,"cylinders"]:0 )
+		tidx = p[0]:0;
+		if( ps[tidx,"want_cyl"]:0 > ps[tidx,"cylinders"]:0 )
 		    {
-		    needed = needed + ps[index,"want_cyl"]:0 -
-		             ps[index,"cylinders"]:0;
+		    needed = needed + ps[tidx,"want_cyl"]:0 -
+		             ps[tidx,"cylinders"]:0;
 		    }
 		});
 	    y2milestone( "needed %1 rest %2", needed, rest );
@@ -779,14 +779,14 @@ define map normalize_gaps( list ps, map g )
 	        y2milestone( "tr %1", tr );
 		map r = $[];
 		r = distribute_space( rest, weight, tr, ps );
-		e["added"] = eval(r["added"]:[]);
-		e["cylinders"] = e["cylinders"]:0 - r["diff"]:0;
-		y2milestone( "partly satisfy %1 cyl %2", e["added"]:[], 
-			     e["cylinders"]:0 );
+		g["gap",gindex,"added"] = eval(r["added"]:[]);
+		g["gap",gindex,"cylinders"] = e["cylinders"]:0 - r["diff"]:0;
+		y2milestone( "partly satisfy %1 cyl %2", g["gap",gindex,"added"]:[],
+			     g["gap",gindex,"cylinders"]:0 );
 		}
 	    else
 		{
-		e["cylinders"] = e["cylinders"]:0 - needed;
+		g["gap",gindex,"cylinders"] = e["cylinders"]:0 - needed;
 		}
 
 	    pindex = 0;
@@ -794,23 +794,25 @@ define map normalize_gaps( list ps, map g )
 		``{
 		if( size(p)<3 )
 		    {
-		    index = p[0]:0;
-		    if( ps[index,"want_cyl"]:0 > ps[index,"cylinders"]:0 )
+		    tidx = p[0]:0;
+		    if( ps[tidx,"want_cyl"]:0 > ps[tidx,"cylinders"]:0 )
 			{
-			p = add( p, ps[index,"want_cyl"]:0 );
+			p = add( p, ps[tidx,"want_cyl"]:0 );
 			}
 		    else
 			{
-			p = add( p, ps[index,"cylinders"]:0 );
+			p = add( p, ps[tidx,"cylinders"]:0 );
 			}
-		    e["added",pindex] = p;
+		    g["gap",gindex,"added",pindex] = p;
 		    y2milestone( "satisfy p %1 cyl %2", p, e["cylinders"]:0 );
 		    }
 		pindex = pindex+1;
 		});
-	    y2milestone( "added %1", e["added"]:[] );
+	    y2milestone( "added %1", g["gap",gindex,"added"]:[] );
 	    }
+	gindex = gindex + 1;
 	});
+    gindex = 0;
     foreach( map e, g["gap"]:[],
 	``{
 	if( !e["exists"]:false && e["cylinders"]:0>0 )
@@ -822,13 +824,15 @@ define map normalize_gaps( list ps, map g )
 		map r = $[];
 		r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], 
 		                      ps );
-		e["added"] = eval(r["added"]:[]);
-		e["cylinders"] = e["cylinders"]:0 - r["diff"]:0;
-		y2milestone( "increase max p %1 cyl %2", e["added"]:[], 
-		             e["cylinders"]:0 );
+		g["gap",gindex,"added"] = eval(r["added"]:[]);
+		g["gap",gindex,"cylinders"] = e["cylinders"]:0 - r["diff"]:0;
+		y2milestone( "increase max p %1 cyl %2", g["gap",gindex,"added"]:[], 
+		             g["gap",gindex,"cylinders"]:0 );
 		}
 	    }
+	gindex = gindex + 1;
 	});
+    gindex = 0;
     foreach( map e, g["gap"]:[],
 	``{
 	if( !e["exists"]:false && e["cylinders"]:0>0 && 
@@ -837,11 +841,12 @@ define map normalize_gaps( list ps, map g )
 	    list weight = maplist( list l, e["added"]:[], ``(l[2]:0) );
 	    map r = $[];
 	    r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], ps );
-	    e["added"] = eval(r["added"]:[]);
-	    e["cylinders"] = e["cylinders"]:0 - r["diff"]:0;
-	    y2milestone( "close small gap p %1 cyl %2", e["added"]:[], 
-	                 e["cylinders"]:0 );
+	    g["gap",gindex,"added"] = eval(r["added"]:[]);
+	    g["gap",gindex,"cylinders"] = e["cylinders"]:0 - r["diff"]:0;
+	    y2milestone( "close small gap p %1 cyl %2", g["gap",gindex,"added"]:[], 
+	                 g["gap",gindex,"cylinders"]:0 );
 	    }
+	gindex = gindex + 1;
 	});
     y2milestone( "gap %1", g );
     return( g );
@@ -970,7 +975,7 @@ define integer do_weighting( list ps, map g )
 	    });
 	if( e["cylinders"]:0 > 0 )
 	    {
-	    ret = ret - (e["cylinders"]:0 * g["cyl_size"]:1) / 1024*1024*1024;
+	    ret = ret - (e["cylinders"]:0 * g["cyl_size"]:1) / (1024*1024*1024);
 	    }
 	});
     y2milestone( "ret %1", ret );
