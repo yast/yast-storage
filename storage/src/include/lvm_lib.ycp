@@ -32,7 +32,7 @@ textdomain "storage";
 // all can be done properly!!!!!!!
 //////////////////////////////////////////////////////////////////////
 
-define any c_and_p_ModifyTargets( map modify_targets, map targetMap, 
+define any c_and_p_ModifyTargets( map<any,map> modify_targets, map<string,map> targetMap, 
 					 boolean check_mode )
     ``{
     y2milestone(" CHECK do the work mod %1", check_mode);
@@ -42,7 +42,7 @@ define any c_and_p_ModifyTargets( map modify_targets, map targetMap,
 
     do
 	{
-	map  new_vgs_mods = filter(  any key, map mod, modify_targets,
+	map<any,map>  new_vgs_mods = filter(  any key, map mod, modify_targets,
 				     ``( mod["type"]:"" == "create_vg" &&
 					 size(mod["devices"]:[]) == 0 ));
     
@@ -63,13 +63,13 @@ define any c_and_p_ModifyTargets( map modify_targets, map targetMap,
 	    string vg = modify_targets[vg_nr,"vgname"]:"";
 	
 	    // look into execution stack
-	    map pvs_to_create =  filter( any key, map mod, modify_targets,
+	    map<any,map> pvs_to_create =  filter( any key, map mod, modify_targets,
 					 ``( mod["type"]:"" == "create_pv" &&
 					     mod["vgname"]:"" == vg ));
 
 	    // look into partition table
-	    list tp = get_possible_pvs( targetMap );
-	    list existing_pvs = filter( map part, tp,
+	    list<map> tp = get_possible_pvs( targetMap );
+	    list<map> existing_pvs = filter( map part, tp,
 					 ``( part["lvm_group"]:"" == vg ));
 
 	    if ( check_mode )
@@ -160,7 +160,7 @@ create at least one physical volume.
 // check if for every create_vg is at least one create_pv or an existing pv
 //////////////////////////////////////////////////////////////////////
 
-define symbol checkModifyTargets( map modify_targets, map targetMap )
+define symbol checkModifyTargets( map<any,map> modify_targets, map<string,map> targetMap )
     ``{
     return( (symbol)c_and_p_ModifyTargets( modify_targets, targetMap, true ));
     };
@@ -171,16 +171,16 @@ define symbol checkModifyTargets( map modify_targets, map targetMap )
 // or the create_vg contains already a device list
 //////////////////////////////////////////////////////////////////////
 
-define map processModifyTargets( map modify_targets, map targetMap )
+define map<any,map> processModifyTargets( map<any,map> modify_targets, map<string,map> targetMap )
     ``{
-    return( (map)c_and_p_ModifyTargets( modify_targets, targetMap, false ));
+    return( (map<any,map>)c_and_p_ModifyTargets( modify_targets, targetMap, false ));
     };
 
     
 //////////////////////////////////////////////////////////////////////
 // get a list of all volume groups in the targetMap
     
-define list get_vgs( map targetMap )
+define list get_vgs( map<string,map> targetMap )
     ``{
     list lvm_vg = [];
 	
@@ -195,10 +195,10 @@ define list get_vgs( map targetMap )
     return( lvm_vg );
     };
 
-define integer vg_size( list partitions, string current_vg )
+define integer vg_size( list<map> partitions, string current_vg )
     ``{
     integer sum_byte_vg = 0;
-    list parts = filter( map part, partitions,
+    list<map> parts = filter( map part, partitions,
 			 ``( part["lvm_group"]:"" == current_vg &&
                              !part["lvm_mp_pv"]:false ));
     foreach( map part, parts, 
@@ -296,7 +296,7 @@ define integer stripe_str_to_byte( string input )
 // Let the User create a new Volume group: open dialog ...
 // return: the changed targetMap and lvm_vgs  and cancelled 
 
-define map addVolumeGroup( map targetMap, list lvm_vgs, map modify_targets )
+define map addVolumeGroup( map<string,map> targetMap, list lvm_vgs, map<integer,map> modify_targets )
     ``{
     boolean cancelled   = true;
     string  current_vg  = "";
@@ -363,8 +363,8 @@ define map addVolumeGroup( map targetMap, list lvm_vgs, map modify_targets )
 // Remove the specified volume group  
 // return: the changed targetMap and modify_targets 
 
-define map removeVolumeGroup( string current_vg, map targetMap, 
-			      map modify_targets )
+define map removeVolumeGroup( string current_vg, map<string,map> targetMap, 
+			      map<integer,map> modify_targets )
     ``{
     string old_vg = "/dev/" + current_vg;
     map new = $[];
@@ -375,7 +375,7 @@ define map removeVolumeGroup( string current_vg, map targetMap,
 	    ``{
 	    if( lookup( p, "lvm_group", "" )==current_vg )
 		{
-		p = filter( string k1, any v1, p, ``(k1 != "lvm_group") );
+		p = filter( string k1, any v1, (map<string,any>)p, ``(k1 != "lvm_group") );
 		}
 	    npart = add( npart, p );
 	    });

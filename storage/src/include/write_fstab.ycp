@@ -187,7 +187,7 @@ define map onepartition2fstab (map part, integer& other_nr)
 
 // needs "map fstab" globally
 
-define void allpartitions2fstab( map & fstab, list partitions, integer& other_nr ) 
+define void allpartitions2fstab( map & fstab, list<map> partitions, integer& other_nr ) 
     ``{
     foreach (map partition, partitions, 
 	``{
@@ -264,18 +264,18 @@ define map onepartition2cryptotab( map part, integer loop_num )
     };
 
 
-define void write_cryptotab (map targets)
+define void write_cryptotab (map<string,map> targets)
     ``{
     map crtab = $[];
-    list dellines = [];
+    list<integer> dellines = [];
     list cryptotab = [];
-    list disks = sort( string a, string b, 
+    list<string> disks = sort( string a, string b, 
                        maplist( string k, map e, targets, ``(k)), 
                        ``(a!="/dev/loop"&&a!=b) );
 
     foreach( string targetdevice, disks,
 	``{
-	list partitions = targets[targetdevice,"partitions"]:[];
+	list<map> partitions = targets[targetdevice,"partitions"]:[];
 	foreach (map partition, partitions,
 	    ``{
 	    map cryptotabentry = onepartition2cryptotab( partition, 
@@ -286,19 +286,19 @@ define void write_cryptotab (map targets)
 		crtab[partition["mount"]:""] = cryptotabentry;
 		}
 	    });
-	list delpart = filter(map p, partitions, 
+	list<map> delpart = filter(map p, partitions, 
 			       ``( p["crtabline"]:0>0 &&
 				   ( p["delete"]:false ||
 				     !p["loop_fs"]:false ||
 				     p["noauto"]:false ||
 				     p["crypt"]:"none"=="none" ||
 				     size(p["mount"]:"")==0 )));
-	dellines = union( dellines, 
+	dellines = (list<integer>)union( dellines, 
 	                  maplist( map p, delpart, ``(p["crtabline"]:0 )));
 	});
 
     y2milestone( "crtab %1", crtab );
-    list crtablist = maplist( any k, any v, crtab, ``(v));
+    list<map> crtablist = (list<map>)maplist( any k, any v, crtab, ``(v));
 
     string tabpath = Storage::PathToDestdir( "/etc/cryptotab" );
     if( Installation::destdir != "/" )
@@ -369,24 +369,24 @@ define void write_cryptotab (map targets)
 // construct and write complete fstab
 // return: string foreign_primary
 //
-define void write_fstab( map & targetMap, map zipdrives, list cddevices )
+define void write_fstab( map<string,map> & targetMap, map zipdrives, list<map> cddevices )
     ``{
-    map tg = targetMap;
+    map<string,map> tg = targetMap;
     if( !Mode::initial || Mode::live_eval )
 	{
 	tg = Storage::AddFstabInfo( tg, true );
 	}
-    map fstab = $[];
-    list dellines = [];
+    map<string,map> fstab = $[];
+    list<integer> dellines = [];
     string dir = "";
 
     integer other_nr = 1;		// count other mounts
 
-    foreach (any tdevice, map tdata, tg,
+    foreach (string tdevice, map tdata, tg,
 	``{
-	list partitions = tdata["partitions"]:[];
+	list<map> partitions = tdata["partitions"]:[];
 	allpartitions2fstab (fstab, partitions, other_nr);
-	list delpart = filter( map p, partitions, 
+	list<map> delpart = filter( map p, partitions, 
 			       ``( p["fstabline"]:0>0 &&
 				   ( p["delete"]:false ||
 				     (p["loop_fs"]:false && 
@@ -395,11 +395,11 @@ define void write_fstab( map & targetMap, map zipdrives, list cddevices )
 				     size(p["mount"]:"")==0 )));
 	y2milestone( "partitions:%1", partitions );
 	y2milestone( "delpart:%1", delpart );
-	dellines = union( dellines, 
+	dellines = (list<integer>)union( dellines, 
 			  maplist( map p, delpart, ``(p["fstabline"]:0 )));
 	});
 
-    list fstablist = maplist (any k, any v, fstab, ``(v));
+    list<map> fstablist = maplist (string k, map v, fstab, ``(v));
     fstab = $[];
 
     if( Mode::initial )
@@ -426,12 +426,12 @@ define void write_fstab( map & targetMap, map zipdrives, list cddevices )
 	fstab["/dev/pts"] = $["spec":"devpts", "mount":"/dev/pts", 
 	                      "vfstype":"devpts", "mntops":"mode=0620,gid=5", 
 			      "freq":0, "passno":0];
-	fstablist = union( fstablist, maplist(any k, any v, fstab, ``(v)));
+	fstablist = (list<map>)union( fstablist, maplist(string k, map v, fstab, ``(v)));
 	fstab = $[];
 
 	y2milestone( "zipdrives=%1", zipdrives );
 	integer zipnum = 0;
-	foreach (string tdevice, any tdata, zipdrives, 
+	foreach (string tdevice, any tdata, (map<string,any>)zipdrives, 
 	    ``{
 	    string zfile = "/zip";
 	    if (zipnum > 0)
@@ -443,12 +443,12 @@ define void write_fstab( map & targetMap, map zipdrives, list cddevices )
 			     "freq":0, "passno":0];
 	    zipnum = zipnum + 1;
 	    });
-	fstablist = union( fstablist, maplist (any k, any v, fstab, ``(v)));
+	fstablist = (list<map>)union( fstablist, maplist (string k, map v, fstab, ``(v)));
 	fstab = $[];
 
 	y2milestone( "cddevices=%1", cddevices );
 
-	foreach (map cd, cddevices, ``{
+	foreach (map cd, (list<map>)cddevices, ``{
 	    y2milestone( "cd %1", cd );
 	    map ret = Storage::MakeCdromFstabEntry( cd );
 	    fstab[ret["mount"]:""] = ret;
@@ -456,7 +456,7 @@ define void write_fstab( map & targetMap, map zipdrives, list cddevices )
 	if( size(cddevices)>0 && !haskey( fstab, "/media/cdrom" ) )
 	    {
 	    map tm = $[];
-	    list names = StorageDevices::TypeNames;
+	    list<string> names = (list<string>)StorageDevices::TypeNames;
 	    foreach(string n, names, 
 		``{
 		string dir ="/media/" + n;
@@ -496,7 +496,7 @@ define void write_fstab( map & targetMap, map zipdrives, list cddevices )
 		y2milestone( "cdr entry %1", fstab["/media/cdrecorder"]:$[] );
 		}
 	    }
-	fstablist = union( fstablist, maplist (any k, any v, fstab, ``(v)));
+	fstablist = (list<map>)union( fstablist, maplist (string k, map v, fstab, ``(v)));
 	y2milestone( "fstablist %1", fstablist );
 	fstab = $[];
 
@@ -518,7 +518,7 @@ define void write_fstab( map & targetMap, map zipdrives, list cddevices )
 				  "freq":0, "passno":0 ];
 	    fdnum = fdnum + 1;
 	    });
-	fstablist = union( fstablist, maplist (any k, any v, fstab, ``(v)));
+	fstablist = (list<map>)union( fstablist, maplist (any k, any v, fstab, ``(v)));
 	fstab = $[];
 	}
 
@@ -529,7 +529,7 @@ define void write_fstab( map & targetMap, map zipdrives, list cddevices )
 	if( SCR::Read( .target.size, tabpath )>= 0 )
 	    SCR::Execute( .target.remove, tabpath );
 	}
-    fstab = Partitions::GetFstab( tabpath );
+    fstab = (map<string,map>)Partitions::GetFstab( tabpath );
     y2milestone( "live %1 tabpath %2", Mode::live_eval, tabpath );
 
     // fstab is sorted by mountpoint

@@ -41,9 +41,9 @@ define void handle_max( integer stripe, string max_text )
     UI::ChangeWidget(`id("max_text"), `Value, stripe==1?max_text:"" );
     }
     
-define map DlgCreateEditLogicaVolume( string create_or_edit, map Lv,
+define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 				      integer max_size, string vgname,
-				      list lvs, map file_systems,
+				      list lvs, map<symbol,map> file_systems,
 				      boolean installation, string dev,
 				      integer pesize )
 
@@ -233,7 +233,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map Lv,
       ////////////////////////////////////////////////////////////////////
       
       boolean input_is_ok = true;
-      map retval = (map)eval(Lv);
+      map<string,any> retval = eval(Lv);
 
       retval = HandlePartWidgetChanges( true, `ok, file_systems, Lv, retval );
 
@@ -383,7 +383,7 @@ or cancel this dialog.
  // Dialog "Create a Volume Group
  //////////////////////////////////////////////////////////////////////////////
 	 
-define map HandleEditLv( map targetMap, map modify_targets, string id )
+define map HandleEditLv( map<string,map> targetMap, map<integer,map> modify_targets, string id )
     ``{
     map ret = $[];
     string maindev = Storage::GetMainDevKey( id);
@@ -391,8 +391,8 @@ define map HandleEditLv( map targetMap, map modify_targets, string id )
     string device  = Storage::GetDeviceName( maindev, subdev );
     integer pesize = targetMap[maindev,"cyl_size"]:(4*1024*1024);
 
-    map fs = FileSystems::GetAllFileSystems(true, true);
-    map Lv = Storage::GetPartition( targetMap, device );
+    map<symbol,map> fs = FileSystems::GetAllFileSystems(true, true);
+    map<string,any> Lv = (map<string,any>)Storage::GetPartition( targetMap, device );
 
     // if Lv is a lvm partition
     if( size(Lv)>0 )
@@ -400,7 +400,7 @@ define map HandleEditLv( map targetMap, map modify_targets, string id )
 	string tmp_vg = substring( maindev, 5);
 	list size_list = 
 	    get_lv_size_info( targetMap,
-			      get_lvs_and_mounted_partitions( targetMap, false,
+			      (list<map>)get_lvs_and_mounted_partitions( targetMap, false,
 			                                      tmp_vg ), 
 			      tmp_vg );
 	integer max_size    = size_list[1]:0;
@@ -443,7 +443,7 @@ define map HandleEditLv( map targetMap, map modify_targets, string id )
     return( ret );
     }
 
-define map HandleRemoveLv( map targetMap, map modify_targets, string id )
+define map HandleRemoveLv( map<string,map> targetMap, map<integer,map> modify_targets, string id )
     ``{
     map ret = $[];
     string maindev = Storage::GetMainDevKey(id);
@@ -482,7 +482,7 @@ define map HandleRemoveLv( map targetMap, map modify_targets, string id )
     }
 
 
-define map HandleRemoveVg( map targetMap, map modify_targets, 
+define map HandleRemoveVg( map<string,map> targetMap, map<integer,map> modify_targets, 
 			   string current_vg )
     ``{
     map ret = $[];

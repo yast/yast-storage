@@ -195,7 +195,7 @@ define string ByteToHumanString ( integer number )
      *---------------------------------------------------------------------
      */
 
-define string TargetChangesToRichText( map targetMap, map modTg )
+define string TargetChangesToRichText( map<string,map> targetMap, map modTg )
     ``{
     if( targetMap == nil )
 	{
@@ -471,7 +471,7 @@ define string TargetChangesToRichText( map targetMap, map modTg )
 	});
 
 
-    foreach(any num, map entry, modTg, 
+    foreach(any num, map entry, (map<any,map>)modTg, 
 	``{
 	if( entry["type"]:"" == "remove_lv" )
 	    {
@@ -514,7 +514,7 @@ define string TargetChangesToRichText( map targetMap, map modTg )
 
     string ret = "";
 
-    list all = flatten( [ delete_lst, reuse_lst, resize_lst,
+    list<string> all = (list<string>)flatten( [ delete_lst, reuse_lst, resize_lst,
 			  create_lst, other_lst ] );
     if( size(all)>0 )
 	{
@@ -534,17 +534,17 @@ define string TargetChangesToRichText( map targetMap, map modTg )
      *---------------------------------------------------------------------
      */
 
-     define list notUsedMountpoints( map targetMap , list all_mountpoints )
+     define list<string> notUsedMountpoints( map<string,map> targetMap , list<string> all_mountpoints )
      ``{
 	 if( all_mountpoints == [] || all_mountpoints == nil  )
 	 {
-	     all_mountpoints =  FileSystems::suggest_m_points;
+	     all_mountpoints =  (list<string>)FileSystems::suggest_m_points;
 	 }
 
 
 	list mountpoints = maplist(any dev, map devmap, targetMap,
 			   ``{
-			       list not_del_part = filter(map part, devmap["partitions"]:[],
+			       list<map> not_del_part = filter(map part, devmap["partitions"]:[],
 							    ``( part["delete"]:false == false));
 
 			       return( maplist(map part, not_del_part, ``( part["mount"]:"") ));
@@ -554,7 +554,7 @@ define string TargetChangesToRichText( map targetMap, map modTg )
 	mountpoints = (list) flatten((list<list>)mountpoints);
 	mountpoints = union(mountpoints, []); // remove double entrys "" and swap
 
-	list not_used_mountpoints = filter( string mnt, all_mountpoints,
+	list<string> not_used_mountpoints = filter( string mnt, all_mountpoints,
 					    ``( !contains( mountpoints, mnt) ));
 
 	 return( not_used_mountpoints );
@@ -590,12 +590,12 @@ define string ByteToHumanStringWithZero ( integer number )
     // remove an entry from the execution stack "modify_targets"
     // renumber the rest of the entries
 
-    define map removeTargetModification( map modify_targets, integer num )
+    define map<integer,map> removeTargetModification( map<integer,map> modify_targets, integer num )
 	    ``{
 	// delete entry
-	modify_targets = filter(integer k, any v, modify_targets, ``(k != num ) );
+	modify_targets = filter(integer k, map v, modify_targets, ``(k != num ) );
 	// renumber 1 2 4 5 -> 1 2 3 4
-	modify_targets = mapmap(integer k, any v, modify_targets, ``{
+	modify_targets = mapmap(integer k, map v, modify_targets, ``{
 	    if ( k > num )
 		{
 	       return($[k-1: v]);
@@ -613,13 +613,13 @@ define string ByteToHumanStringWithZero ( integer number )
     //////////////////////////////////////////////////////////////////////
     // add a new entry into the execution stack "modify_targets"
 
-    define map addTargetModification( map modify_targets, map add_el )
+    define map<integer,map> addTargetModification( map<integer,map> modify_targets, map add_el )
     ``{
         boolean done = false;
 	y2milestone( "addTargetModification %1", add_el );
         if( add_el["type"]:"" == "remove_pv" )
 	    {
-	    map rem = (map) filter(integer k, map m, modify_targets,
+	    map<integer,map> rem = (map<integer,map>) filter(integer k, map m, modify_targets,
 	                      ``(m["type"]:""=="create_pv" &&
 				 m["device"]:""==add_el["device"]:"") );
 	    if( size(rem)>0 )
@@ -632,7 +632,7 @@ define string ByteToHumanStringWithZero ( integer number )
 	    }
 	else if( add_el["type"]:"" == "remove_lv" )
 	    {
-	    map rem = filter(integer k, map m, modify_targets,
+	    map<integer,map> rem = (map<integer,map>) filter(integer k, map m, modify_targets,
 	                      ``(m["type"]:""=="create_lv" &&
 			         m["vgname"]:""==add_el["vgname"]:"" &&
 				 m["name"]:""==add_el["name"]:"") );
@@ -656,7 +656,7 @@ define string ByteToHumanStringWithZero ( integer number )
 	    }
 	else if( add_el["type"]:"" == "resize_lv" )
 	    {
-	    map rem = filter(integer k,map m, modify_targets,
+	    map<integer,map> rem = filter(integer k,map m, modify_targets,
 	                      ``(m["type"]:""=="resize_lv" &&
 			         m["vgname"]:""==add_el["vgname"]:"" &&
 				 m["name"]:""==add_el["name"]:"") );
@@ -688,12 +688,12 @@ define string ByteToHumanStringWithZero ( integer number )
 
     define void changeExtendedIdTo15()
     ``{
-	map modify_targets = Storage::GetModifyTargets();
-	map targets        = Storage::GetTargetMap();
+	map<integer,map> modify_targets = (map<integer,map>)Storage::GetModifyTargets();
+	map<string,map> targets        = Storage::GetTargetMap();
 
 	foreach (string dev, map disk, targets,
 	``{
-	    list partitions = disk["partitions"]:[];
+	    list<map> partitions = disk["partitions"]:[];
 
 	    foreach (map partition, partitions,
 	    ``{
@@ -718,7 +718,7 @@ define string ByteToHumanStringWithZero ( integer number )
 
 
 
-define integer GetModifyIdx( map modify_targets, map new )
+define integer GetModifyIdx( map<integer,map> modify_targets, map new )
     ``{
     integer idx = -1;
     foreach(integer key, map entry, modify_targets,
@@ -762,7 +762,7 @@ define integer GetModifyIdx( map modify_targets, map new )
 
     define list convertFsOptionMapInList(map  partition ) ``{
 
-	map fs_options 	  = lookup( partition, "fs_options" , $[]);
+	map<any,map> fs_options	  = lookup( partition, "fs_options" , $[]);
 	list all_options  = [];
 
 	// do nothing
@@ -823,10 +823,10 @@ define integer GetModifyIdx( map modify_targets, map new )
      * @parm targetMap all targets
      * @return string next mountpoint
      **/
-define string GetMountPointProposal( map targetMap, 
+define string GetMountPointProposal( map<string,map> targetMap, 
                                      list not_supported_mount_points )
     ``{
-    list base = [ "/", "/usr", Partitions::BootMount(), "/var", "/opt", 
+    list<string> base = [ "/", "/usr", Partitions::BootMount(), "/var", "/opt", 
                   "/home" ];
     base      = filter( string mount_point, base, 
                         ``( !contains( not_supported_mount_points, 
@@ -835,7 +835,7 @@ define string GetMountPointProposal( map targetMap,
 	``{
 	boolean found = false;
 
-	foreach(any dev, map disk, targetMap, 
+	foreach(string dev, map disk, targetMap, 
 	    ``{
 	    map parti = (map) find(map part, disk["partitions"]:[], 
 	                      ``( part["mount"]:"" == point && 

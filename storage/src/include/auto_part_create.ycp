@@ -25,21 +25,21 @@
     // Each new entry is marked with "create":true. They key "mount"
     // contains the mount point or "swap" for the swap partition.
 
-define list create_partitions( map disk, list partitions,
+define list<map<string, any> > create_partitions( map disk, list<map<string, any> > partitions,
 			       list<integer> selected_region )
     ``{
     y2milestone ("disk:%1 partitions %2 selected_region %3)", disk, partitions,
                  selected_region);
     integer bpu = disk["cyl_size"]:1;
 
-    partitions = filter( map pentry, partitions, 
+    partitions = filter( map<string, any> pentry, partitions, 
                          ``(pentry["type"]:`unknown != `free));
     partitions = renumber_logical_partitions (partitions);
     symbol ptype = `primary;
 
     boolean empty_disk = (partitions == []);
 
-    map absd_partition = $["create":true, "format":true,
+    map<string, any> absd_partition = $["create":true, "format":true,
 			   "type": `primary, 
 			   "fsid":Partitions::fsid_empty,
 			   "nr":3,
@@ -53,8 +53,8 @@ define list create_partitions( map disk, list partitions,
     // If any partitions are left to be preserved, create the new
     // partitions in an extended partition.
     list used_primaries = 
-	maplist( map entry, 
-	    filter( map pentry, partitions,
+	maplist( map<string, any> entry, 
+	    filter( map<string, any> pentry, partitions,
 		    ``(!pentry["delete"]:false &&
 		       pentry["nr"]:0<disk["max_primary"]:4)),
 	    ``(entry["nr"]:0) );
@@ -65,7 +65,7 @@ define list create_partitions( map disk, list partitions,
 
     // Add the extended partition if necessary
     list use_pnrs = [];
-    list poss_primary = [ 1, 2, 3, 4 ];
+    list<integer> poss_primary = [ 1, 2, 3, 4 ];
     integer i = 5;
     while( i<disk["max_primary"]:4 )
 	{
@@ -83,7 +83,7 @@ define list create_partitions( map disk, list partitions,
 	    {
 	    // Find unused primary number
 	    list used_primaries =
-		maplist( map pentry, filter( map p, partitions,
+		maplist( map<string, any> pentry, filter( map<string, any> p, partitions,
 					     ``(!p["delete"]:false)),
 			 ``(pentry["nr"]:0));
 
@@ -106,7 +106,7 @@ define list create_partitions( map disk, list partitions,
 	    // Find the last used logical partition number.
 	    // We know that these partitions are numbered contiguously
 	    integer last_pnr = 4;
-	    foreach (map pentry, partitions, ``{
+	    foreach (map<string, any> pentry, partitions, ``{
 		if (!lookup (pentry, "delete", false)
 		    && (lookup (pentry, "type", `unknown) == `logical))
 		    if( pentry["nr"]:0 > last_pnr )
@@ -140,7 +140,7 @@ define list create_partitions( map disk, list partitions,
     if( boot_add>0 )
 	{
 	// add /boot for all partitions
-	map boot_part = $[ "create":true, "format":true,
+	map<string, any> boot_part = $[ "create":true, "format":true,
 			   "type": ptype, "fsid":Partitions::FsidBoot(),
 			   "fstype" : Partitions::FsIdToString( Partitions::FsidBoot() ),
 			   "nr":use_pnrs[0]:0,
@@ -159,7 +159,7 @@ define list create_partitions( map disk, list partitions,
 		       "region":swap_region,
 		       "mount":"swap" ]);
 
-    map p = $[ "create":true, "format":true,
+    map<string, any> p = $[ "create":true, "format":true,
 	       "type": ptype, "fsid":Partitions::fsid_native,
 	       "fstype" : Partitions::FsIdToString( Partitions::fsid_native ),
 	       "used_fs" : Partitions::default_fs,
@@ -178,7 +178,7 @@ define list create_partitions( map disk, list partitions,
     
     // Add flag whether using the entire disk
     Storage::SetWholeDisk( selected_region == full_region );
-    partitions = maplist( map part, partitions,
+    partitions = maplist( map<string, any> part, partitions,
 	``{
 	part["device"] = Storage::GetDeviceName( target_is, part["nr"]:0 );
 	return( part );

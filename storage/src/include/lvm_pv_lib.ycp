@@ -42,7 +42,7 @@
     //
     //  out: "10.6 GB"
      
-define any get_vg_size( list partition_list, string current_vg, symbol what )
+define any get_vg_size( list<map> partition_list, string current_vg, symbol what )
     ``{
     integer sum_byte = vg_size( partition_list, current_vg );
     if( what == `string )
@@ -64,7 +64,7 @@ define any get_vg_size( list partition_list, string current_vg, symbol what )
     // 	
     //////////////////////////////////////////////////////////////////////
 
-define map addPhysicalVolume( map modify_targets, map targetMap, string id, 
+define map addPhysicalVolume( map<integer,map> modify_targets, map<string,map> targetMap, string id, 
                               string current_vg )
     ``{
     string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
@@ -127,13 +127,13 @@ define map addPhysicalVolume( map modify_targets, map targetMap, string id,
     //
     //////////////////////////////////////////////////////////////////////
 
-define map removePhysicalVolume( map modify_targets, map targetMap, string id,
+define map removePhysicalVolume( map<integer,map> modify_targets, map<string,map> targetMap, string id,
                                  string current_vg )
     ``{
     string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
     string subdev  = Storage::GetSubDevIndex(id); // i.e. 1        for /dev/hda1
 
-    map partition  = Storage::GetPartition( targetMap, 
+    map<string,any> partition  = (map<string,any>)Storage::GetPartition( targetMap, 
                                             Storage::GetDeviceName(maindev, tointeger(subdev)) );
 
     if( partition["change_fsid"]:false )
@@ -148,7 +148,7 @@ define map removePhysicalVolume( map modify_targets, map targetMap, string id,
 
     partition = filter( string key, any val, partition, ``( key != "lvm_group" ));
 
-    targetMap = Storage::SetPartition( targetMap, partition );
+    targetMap = (map<string,map>)Storage::SetPartition( targetMap, partition );
 
     map new_remove_pv = $[
 			  "use_module" : "lvm_ll",
@@ -252,9 +252,9 @@ It does not belong to a volume group.
 // Get all partitions, we can probably use as physical volumes
 // Add needed information: devkey, is_lv, disksize 
 
-define list get_possible_pvs( map targetMap )
+define list<map> get_possible_pvs( map<string,map> targetMap )
     ``{
-    list ret = [];
+    list<map> ret = [];
 	
     //////////////////////////////////////////////////////////////////////
     // add the devicename i.e /dev/hda1 or /dev/system/usr to partition list
@@ -297,7 +297,7 @@ define list get_possible_pvs( map targetMap )
 	``{
 	if( !devmap["is_evms"]:false )
 	    {
-	    ret = merge( ret, 
+	    ret = (list<map>)merge( ret, 
 		       filter( map part, devmap["partitions"]:[],
 			       ``(( part["mount"]:"" == "" ||
 				    substring(part["mount"]:"", 0, 5) == "/data" )
@@ -339,7 +339,7 @@ define list get_possible_pvs( map targetMap )
     // 	`item(`id("/dev/hda2"), "/dev/hda2 ",   " 1G ",  " Linux ", " ")
     // ];
 
-define list get_pv_widget_table( list possPvList )
+define list get_pv_widget_table( list<map> possPvList )
     ``{
     list    ret = [];
 
@@ -375,7 +375,7 @@ define list get_pv_widget_table( list possPvList )
      * -> Existing LVM partition with volume group
      * -> size of volume group to small for all logical partition
      */
-define symbol check_pv_delete( map targetMap, string id, string current_vg ) 
+define symbol check_pv_delete( map<string,map> targetMap, string id, string current_vg ) 
     ``{
     string maindev = Storage::GetMainDevKey(id);  // i.e. /dev/hda for /dev/hda1
     string subdev  = Storage::GetSubDevIndex(id); // i.e. 1        for /dev/hda1
@@ -391,7 +391,7 @@ define symbol check_pv_delete( map targetMap, string id, string current_vg )
     y2debug( "vg_size : %1", vg_siz);
 
     //used size (sum logical partitions)
-    list parts = get_lvs_and_mounted_partitions( targetMap, false, current_vg );
+    list<map> parts = (list<map>) get_lvs_and_mounted_partitions( targetMap, false, current_vg );
     y2debug( "parts=%1 current_vg=%2", parts, current_vg );
 	    
     integer used_size = (integer)select( get_lv_size_info( targetMap, parts, current_vg ) , 0, 0);

@@ -36,7 +36,7 @@ define integer GetSwapSize( integer start_cyl, integer end_cyl,
     return( start_cyl + (swap_mb*1024*1024)/cyl_size );
     };
 
-define map HitToTargetMap( map targetMap, map hit )
+define map HitToTargetMap( map<string,map> targetMap, map<string,any> hit )
     ``{
     ////////////////////////////////////
     // 1. create boot partition if required
@@ -77,7 +77,7 @@ define map HitToTargetMap( map targetMap, map hit )
 
     
     map disk        = targetMap[slot_dev]:$[];
-    list partitions = disk["partitions"]:[];
+    list<map> partitions = disk["partitions"]:[];
 
     boolean need_boot_part = hit["need_boot"]:false;
     boolean need_extended  = hit["extd"]:false;
@@ -123,7 +123,7 @@ define map HitToTargetMap( map targetMap, map hit )
 	{
 	if( boot_slot_type == "win_resize")
 	    {
-	    partitions = resize_partition( partitions,  boot_slot_nr, 
+	    partitions = (list<map>)resize_partition( partitions,  boot_slot_nr, 
 	                                   boot_slot_win_length, 
 					   boot_slot_win_size, 
 					   boot_slot_win_length );
@@ -133,9 +133,9 @@ define map HitToTargetMap( map targetMap, map hit )
 	    {
 	    if( boot_slot_end_cyl > Partitions::BootCyl() )
 		{
-		partitions = delete_partition( partitions, boot_slot_nr );
+		partitions = (list<map>)delete_partition( partitions, boot_slot_nr );
 
-		partitions = create_partition( partitions, boot_slot_start_cyl,
+		partitions = (list<map>)create_partition( partitions, boot_slot_start_cyl,
 					       boot_slot_start_cyl+min_nb_boot_cyl-1,
 					       boot_slot_nr, 
 					       Partitions::BootMount(),
@@ -144,7 +144,7 @@ define map HitToTargetMap( map targetMap, map hit )
 		}
 	    else
 		{
-		partitions = reuse_partition( partitions, boot_slot_nr, 
+		partitions = (list<map>)reuse_partition( partitions, boot_slot_nr, 
 		                              Partitions::BootMount() );
 		}
 	    }
@@ -152,7 +152,7 @@ define map HitToTargetMap( map targetMap, map hit )
 	    {
 	    if( boot_slot_end_cyl < Partitions::BootCyl() )
 		{
-		partitions = create_partition( partitions, boot_slot_start_cyl,
+		partitions = (list<map>)create_partition( partitions, boot_slot_start_cyl,
 					       boot_slot_end_cyl, boot_nr,
 					       Partitions::BootMount(), 
 					       "no-extended",
@@ -160,7 +160,7 @@ define map HitToTargetMap( map targetMap, map hit )
 		}
 	    else
 		{
-		partitions = create_partition( partitions, boot_slot_start_cyl,
+		partitions = (list<map>)create_partition( partitions, boot_slot_start_cyl,
 					       boot_slot_start_cyl+min_nb_boot_cyl-1,
 					       boot_nr, Partitions::BootMount(),
 					       "no-extended",
@@ -179,16 +179,16 @@ define map HitToTargetMap( map targetMap, map hit )
     if( !boot_by_split && !root_by_split )
 	{
 	if( slot_type == "win_resize")     
-	    partitions = resize_partition( partitions, slot_nr, slot_win_length,
+	    partitions = (list<map>)resize_partition( partitions, slot_nr, slot_win_length,
 	                                   slot_win_size, slot_win_max_length );
 
 	if( slot_type == "linux" )
 	    {
-	    partitions = reuse_partition( partitions, slot_nr, "/" );
+	    partitions = (list<map>)reuse_partition( partitions, slot_nr, "/" );
 	    }
 	else
 	    {
-	    partitions = create_partition( partitions, slot_start_cyl,
+	    partitions = (list<map>)create_partition( partitions, slot_start_cyl,
 					   slot_end_cyl, nr, "/",
 					   "no-extended",
 					   disk["max_primary"]:4 );
@@ -207,17 +207,17 @@ define map HitToTargetMap( map targetMap, map hit )
 
 	if( slot_type == "win_resize")
 	    {
-	    partitions = resize_partition( partitions, slot_nr, slot_win_length,
+	    partitions = (list<map>)resize_partition( partitions, slot_nr, slot_win_length,
 	                                   slot_win_size, slot_win_max_length );
 	    }
 	if( slot_type == "linux" )
 	    {
-	    partitions = delete_partition( partitions, slot_nr );
+	    partitions = (list<map>)delete_partition( partitions, slot_nr );
 	    }
 
 	if( need_extended )
 	    {
-	    partitions = create_partition( partitions, slot_start_cyl,
+	    partitions = (list<map>)create_partition( partitions, slot_start_cyl,
 					   slot_end_cyl,
 					   slot_type == "linux" ? slot_nr: nr,
 					   "", "extended", 
@@ -243,7 +243,7 @@ define map HitToTargetMap( map targetMap, map hit )
 	    }
 	y2milestone( "rootnr:%1 boot_nr:%2", rootnr, boot_nr );
 
-	partitions = create_partition( partitions, slot_start_cyl,
+	partitions = (list<map>)create_partition( partitions, slot_start_cyl,
 				       slot_start_cyl + min_nb_boot_cyl-1,
 				       need_extended ? 6:boot_nr, 
 				       Partitions::BootMount(),
@@ -261,17 +261,17 @@ define map HitToTargetMap( map targetMap, map hit )
 		Partitions::minimal_needed_disksize))
 	    {
 	    // swap in extended
-	    partitions = create_partition( partitions, new_start_cyl, swap_end,
+	    partitions = (list<map>)create_partition( partitions, new_start_cyl, swap_end,
 					   rootnr, "swap", "no-extended",
 					   disk["max_primary"]:4 );
 
-	    partitions = create_partition( partitions, swap_end+1, slot_end_cyl,
+	    partitions = (list<map>)create_partition( partitions, swap_end+1, slot_end_cyl,
 					   rootnr+1, "/", "no-extended",
 					   disk["max_primary"]:4 );
 	    }
 	else
 	    {
-	    partitions = create_partition( partitions,
+	    partitions = (list<map>)create_partition( partitions,
 					   slot_start_cyl+min_nb_boot_cyl,
 					   slot_end_cyl, rootnr, "/",
 					   "no-extended", 
@@ -291,7 +291,7 @@ define map HitToTargetMap( map targetMap, map hit )
 	{
 	if( slot_type == "win_resize")
 	    {
-	    partitions = resize_partition( partitions, slot_nr, slot_win_length,
+	    partitions = (list<map>)resize_partition( partitions, slot_nr, slot_win_length,
 	                                   slot_win_size, slot_win_max_length );
 	    }
 
@@ -301,12 +301,12 @@ define map HitToTargetMap( map targetMap, map hit )
 	    // Do the rootsplit ...
 	    if( slot_type == "linux" )
 		{
-		partitions = delete_partition( partitions, slot_nr );
+		partitions = (list<map>)delete_partition( partitions, slot_nr );
 		}
 
 	    if( need_extended )
 		{
-		partitions = create_partition( partitions, slot_start_cyl,
+		partitions = (list<map>)create_partition( partitions, slot_start_cyl,
 					       slot_end_cyl,
 					       slot_type=="linux" ? slot_nr:nr,
 					       "", "extended", 
@@ -321,18 +321,18 @@ define map HitToTargetMap( map targetMap, map hit )
 		    Partitions::minimal_needed_disksize )
 		{
 		// swap
-		partitions = create_partition( partitions, slot_start_cyl,
+		partitions = (list<map>)create_partition( partitions, slot_start_cyl,
 					       swap_end, 5, "swap",
 					       "no-extended",
 					       disk["max_primary"]:4 );
-		partitions = create_partition( partitions, swap_end+1,
+		partitions = (list<map>)create_partition( partitions, swap_end+1,
 					       slot_end_cyl, 6, "/",
 					       "no-extended",
 					       disk["max_primary"]:4 );
 		}
 	    else
 		{
-		partitions = create_partition( partitions, slot_start_cyl,
+		partitions = (list<map>)create_partition( partitions, slot_start_cyl,
 					       slot_end_cyl, 5, "/",
 					       "no-extended", 
 					       disk["max_primary"]:4 );
@@ -345,11 +345,11 @@ define map HitToTargetMap( map targetMap, map hit )
 	    
 	    if( slot_type == "linux" )
 		{
-		partitions = reuse_partition( partitions, slot_nr, "/" );
+		partitions = (list<map>)reuse_partition( partitions, slot_nr, "/" );
 		}
 	    else
 		{
-		partitions = create_partition( partitions, slot_start_cyl,
+		partitions = (list<map>)create_partition( partitions, slot_start_cyl,
 					       slot_end_cyl, nr, "/",
 					       "no-extended", 
 					       disk["max_primary"]:4 );
@@ -359,7 +359,7 @@ define map HitToTargetMap( map targetMap, map hit )
 
     if( have_old_swap_part )
 	{
-	partitions = reuse_partition( partitions, swap_slot_nr, "swap" );
+	partitions = (list<map>)reuse_partition( partitions, swap_slot_nr, "swap" );
 	}
 
     if( hit["boot_r_slot"]:$[] != $[] && 
@@ -367,7 +367,7 @@ define map HitToTargetMap( map targetMap, map hit )
 	            ``(p["mount"]:""==Partitions::BootMount())))==0 )
 	{
 	map slot = hit["boot_r_slot"]:$[];
-	partitions = reuse_partition( partitions, slot["nr"]:0, 
+	partitions = (list<map>)reuse_partition( partitions, slot["nr"]:0, 
 	                              Partitions::BootMount() );
 	}
 
@@ -394,8 +394,8 @@ define map HitToTargetMap( map targetMap, map hit )
 		y2debug( "NEW: old_num:%1", old_num );
 		if( root["create"]:false == false )
 		    {
-		    partitions = delete_partition( partitions, old_num );
-		    partitions = create_partition( partitions, start, swap_end, 
+		    partitions = (list<map>)delete_partition( partitions, old_num );
+		    partitions = (list<map>)create_partition( partitions, start, swap_end, 
 						   old_num, "swap", 
 						   "no-extended", 
 						   disk["max_primary"]:4  );
@@ -405,12 +405,12 @@ define map HitToTargetMap( map targetMap, map hit )
 		    partitions = filter( map p, partitions,
 					 ``(!(p["nr"]:-1 == old_num &&
 					      p["delete"]:false==false)));
-		    partitions = create_partition( partitions, start, swap_end, 
+		    partitions = (list<map>)create_partition( partitions, start, swap_end, 
 						   old_num, "swap", 
 						   "no-extended", 
 						   disk["max_primary"]:4 );
 		    }
-		partitions = create_partition( partitions, swap_end+1, end, 
+		partitions = (list<map>)create_partition( partitions, swap_end+1, end, 
 					       add_slot_nr, "/", 
 					       "no-extended", 
 					       disk["max_primary"]:4  );
@@ -474,7 +474,7 @@ define map HitToTargetMap( map targetMap, map hit )
   //  >2        use swap
   //
   
-define map GetTheBestHit( list hitlist )
+define map<string,any> GetTheBestHit( list<map> hitlist )
     ``{
     ////////////////////////////////////
     // build a score
@@ -548,11 +548,11 @@ define map GetTheBestHit( list hitlist )
 
     if( size( hitlist ) > 0 )
 	{
-	return( hitlist[0]:$[] );
+	return(map<string,any>)( hitlist[0]:$[] );
 	}
     else
 	{
-	return( $[] );
+	return(map<string,any>)( $[] );
 	}
     };
 

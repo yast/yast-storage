@@ -26,7 +26,7 @@ import "Storage";
 import "Partitions";
 import "ProductFeatures";
 
-list    hitlist = [];
+list<map>    hitlist = [];
 boolean hiterror = false;
 integer min_nb_boot_cyl = 0;
 
@@ -50,9 +50,9 @@ define boolean ignore_disk( string dev, map entry )
     return( ret );
     };
   
-define map do_proposal_real( boolean need_boot, map targetMap )
+define map do_proposal_real( boolean need_boot, map<string,map> targetMap )
     ``{
-    map tmptargetMap = $[];
+    map<string,map> tmptargetMap = $[];
 
     y2milestone( "test with need_boot == %1", need_boot);
     
@@ -66,7 +66,7 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 	``{
 	y2milestone( "checking disk %1", dev );
 
-	list primary_possible = [1,2,3,4];
+	list<integer> primary_possible = [1,2,3,4];
 	boolean extended_allowed = true;
 	if( disk["max_primary"]:4 > 4 )
 	    {
@@ -100,20 +100,20 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 
 	y2milestone( "minimal_needed_cyl nb: %1", min_nb_boot_cyl );
 
-	list primary_list = 
+	list<map> primary_list = 
 	    filter( map part, disk["partitions"]:[],
 		    ``( part["type"]:`unknown == `primary  && 
 			!part["delete"]:false ));
-	list extended_list = 
+	list<map> extended_list = 
 	    filter( map part, disk["partitions"]:[],
 		    ``( part["type"]:`unknown == `extended && 
 			!part["delete"]:false ));
-	list logical_list = 
+	list<map> logical_list = 
 	    filter( map part, disk["partitions"]:[],
 		    ``( part["type"]:`unknown == `logical && 
 			!part["delete"]:false ));
 
-	list    pri_extd_list   = primary_list + extended_list;
+	list<map>    pri_extd_list   = primary_list + extended_list;
 	boolean i_have_extended = ( size(extended_list) > 0);
 	y2milestone( "i_have_extended %1, extended_list %2", i_have_extended, 
 		     extended_list );
@@ -185,9 +185,9 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 	//                     only for type == "win_resize"
 	//  ]
 
-	list primary_slots = GetSlots( pri_extd_list, 0, cyl_count-1, cyl_size,
+	list<map> primary_slots = GetSlots( pri_extd_list, 0, cyl_count-1, cyl_size,
 				       disk["readonly"]:false, dev );
-	list logical_slots = [];
+	list<map> logical_slots = [];
 
 	if( size(extended_list) >= 1 && extended_allowed )
 	    {
@@ -224,7 +224,7 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 		}));
 	    }
 
-	list base_slots = primary_slots + logical_slots;
+	list<map> base_slots = primary_slots + logical_slots;
 
 	integer i   = 0;
 	base_slots = maplist( map slot, base_slots, 
@@ -263,7 +263,7 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 	/////////////////////////////////////////////////////////
 	// is there a reusable swap slot?
 	  
-	list swap_slots_only = filter( map slot, base_slots, 
+	list<map> swap_slots_only = filter( map slot, base_slots, 
 				       ``( slot["type"]:"" == "swap" ));
 	swap_slots_only = sort(map p_x, map p_y, swap_slots_only, 
 			       ``(p_x["size"]:0 > p_y["size"]:0 ));
@@ -276,7 +276,7 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 	/////////////////////////////////////////////////////////
 	// is there a reusable boot slot?
 	  
-	list boot_slots_only = 
+	list<map> boot_slots_only = 
 	    filter( map slot, base_slots, 
 		    ``( slot["type"]:""=="linux" && 
 			slot["size"]:0>=8*1024*1024 && 
@@ -297,7 +297,7 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 	//              win HAS TO BE the LAST MODE! we made 
 	//              irreversible changes to slot-db
 
-	list modes = [ "use_free", "reuse", "use_win" ];
+	list<string> modes = [ "use_free", "reuse", "use_win" ];
 	if( disk["readonly"]:false )
 	    {
 	    modes = [ "reuse" ];
@@ -330,7 +330,7 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 	    if( mode == "use_win" )
 		{
 		boolean melted           = false;
-		list    new_base_slots   = [];
+		list<map>    new_base_slots   = [];
 		map     old_slot         = $[ "type":"other" ];
 		boolean first_slot       = true;
 		boolean melted_last_slot = false;
@@ -810,21 +810,21 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 	//  >2        use swap
 	//
 
-	map the_hit = GetTheBestHit( hitlist );
+	map<string,any> the_hit = GetTheBestHit( hitlist );
 
 	if ( Mode::test )
 	    {
 	    // OLNLY FOR DEBUG
 	    foreach( map hit, hitlist, ``{
 		y2debug( "OUT: ---------------- new hit-----------------");
-		map tmp_targetMap = filter( string key, map val, targetMap, ``(true));
-		TargetChangesToRichText( HitToTargetMap( tmp_targetMap, hit ), 
+		map<string,map> tmp_targetMap = filter( string key, map val, targetMap, ``(true));
+		TargetChangesToRichText( (map<string,map>)HitToTargetMap( tmp_targetMap, (map<string,any>)hit ), 
 		                         $[]);
 		});
 
-	    map tmp_targetMap = filter( map key, map val, targetMap, ``(true));
+	    map<string,map> tmp_targetMap = filter( string key, map val, targetMap, ``(true));
 	    y2debug( "OUT: ============== THE HIT =======================-");
-	    TargetChangesToRichText( HitToTargetMap( tmp_targetMap, the_hit ), 
+	    TargetChangesToRichText( (map<string,map>)HitToTargetMap( tmp_targetMap, the_hit ), 
 	                             $[]);
 	    y2debug( "OUT: ---------------------------");
 	    }
@@ -833,14 +833,14 @@ define map do_proposal_real( boolean need_boot, map targetMap )
 	/////////////////////////////////////////////////////////////////////
 	// next step to create the new target map from hit
 
-	tmptargetMap = HitToTargetMap( filter( string key, map val, targetMap, 
+	tmptargetMap = (map<string,map>)HitToTargetMap( filter( string key, map val, targetMap, 
 	                                       ``(true)), the_hit );
 	tmptargetMap = Storage::SpecialBootHandling(tmptargetMap);
 	}
     return( $[ "ok" : size(tmptargetMap)>0, "target" : tmptargetMap ] );
     }
   
-define map proposal_s390( map targetMap )
+define map proposal_s390( map<string,map> targetMap )
     ``{
     boolean found = false;
 //    foreach( string dev, map disk, targetMap, 
@@ -873,7 +873,7 @@ define map do_proposal()
                  Partitions::MinimalNeededBootsize(), 
 		 Partitions::DefaultBootFs() );
 
-    map target = (map) eval(Storage::GetTargetMap());
+    map<string,map> target = eval(Storage::GetTargetMap());
     //target = SCR::Read(.target.yast2, "test_target_map_ol.ycp");
     map ret = $[];
     if( Arch::s390 )

@@ -317,7 +317,7 @@ define symbol DoInputChecks( map entry, string query )
    */
 define map FileSystemOptions( map org_fs_options, map fs_define  ) 
     ``{
-    map fs_options     = (map)eval(org_fs_options);
+    map<any, map<string,any> > fs_options     = (map<any, map<string,any> >)eval(org_fs_options);
     term contents 	= `VBox(`VSpacing (1));
     string helptext   = "";
     
@@ -375,7 +375,7 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
 		    {
 		    any query = UI::QueryWidget( `id(entry[`query_key]:nil), 
 		                                 `Value );
-		    map fs_option = $[ "option_str"   : entry[`option_str]:"", 
+		    map<string,any> fs_option = $[ "option_str"   : entry[`option_str]:"", 
 				       "option_value" : query ];
 
 		    if( entry[`option_blank]:false )
@@ -384,7 +384,7 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
 			}
 
 
-		    if( !contains( ["auto", "none", "default"], query ))
+		    if( !contains( (list<any>)["auto", "none", "default"], query ))
 			{
 			ret = DoInputChecks( entry, (string)query );
 			}
@@ -410,7 +410,7 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
    * @parm old map with original partition
    * @parm new map with changes filled in
    */
-define map FstabOptions( map old, map new ) 
+define map<string,any> FstabOptions( map<string,any> old, map<string,any> new ) 
     ``{
     string helptext = "";
     term contents = `VBox();
@@ -454,7 +454,7 @@ makes sense when you activate the option for mounting by volume label.
 			   `VSpacing(1)
 		       ));
 	}
-    list opt_list = [];
+    list<map> opt_list = [];
     if( new["mount"]:"" != "swap" )
 	{
 	foreach( map entry, FileSystems::GetGeneralFstabOptions(),
@@ -736,9 +736,9 @@ is %1. Your volume label was truncated to this size.
    * @parm file_systems filesystem definitions
    * @return term the term contains a ComboBox with the different filesystems
    */
-define term FileSystemsComboBox( map new_val, map file_systems ) 
+define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems ) 
     ``{
-    map fs_sel = $[];
+    map<symbol,map> fs_sel = $[];
     list filesystems = [ ];
     boolean is_swap = new_val["fsid"]:0 == Partitions::fsid_swap;
 
@@ -802,7 +802,7 @@ define term FileSystemsComboBox( map new_val, map file_systems )
  * @parm file_systems filesystem definitions
  * @return term the term contains a ComboBox that allow the user to  edit the filesystem ID
  */
-define term FsidComboBox( map new_val, map file_systems  ) 
+define term FsidComboBox( map new_val, map<symbol, map> file_systems  ) 
     ``{
     list items = [];
     list added_items = [];
@@ -885,7 +885,7 @@ define term SizeDlg( map new_val , integer cyl_size , boolean edit_size )
 }
 
 
-define term FormatDlg( map new_val, map file_systems ) 
+define term FormatDlg( map new_val, map<symbol, map> file_systems ) 
     ``{
     y2debug( "FormatDlg val:%1", new_val );
 
@@ -1037,7 +1037,7 @@ define void ChangeExistingSymbolsState( list symbols , boolean what )
    * @parm file_systems filesystem definitions
    * @return map
    */
-define map GetFirstFilesystemDefinition( integer fsid, map file_systems )
+define map GetFirstFilesystemDefinition( integer fsid, map<symbol,map> file_systems )
     ``{
     map define_map  = filter( any key, map val, file_systems, 
                               ``(fsid == val[`fsid]:Partitions::fsid_native ));
@@ -1469,7 +1469,7 @@ Do you really want to do this now?
     
 define symbol ReallyInstPrepdisk( )
     ``{
-    map targetMap = Storage::GetTargetMap();
+    map<string,map> targetMap = Storage::GetTargetMap();
     map modTg = Storage::GetModifyTargets();
     symbol ret = `none;
     
@@ -1538,7 +1538,7 @@ define symbol ReallyInstPrepdisk( )
      * Check if at least on partition is mounted.
      * @return map targetMap
      */
-define map deleteAllDevPartitions( map targetMap, string del_dev, 
+define map deleteAllDevPartitions( map<string, map> targetMap, string del_dev, 
 				   boolean installation, boolean bsd_label )
     ``{
     map new_targetMap = targetMap;
@@ -1549,7 +1549,7 @@ define map deleteAllDevPartitions( map targetMap, string del_dev,
 
     if ( ! installation )
 	{
-	list mounts = 
+	list<map> mounts = 
 	    Partitions::mountedPartitionsOnDisk( del_dev, 
 						 Partitions::CurMounted() );
 
@@ -1596,7 +1596,7 @@ Choose Cancel unless you know exactly what you are doing.
 
 	    if( dev == del_dev )
 		{
-		list partitions = lookup( target, "partitions", [] );
+		list<map> partitions = lookup( target, "partitions", [] );
 		partitions      = filter( map part, partitions, 
 		                          ``( !part["delete"]:false ));
 
@@ -1654,7 +1654,7 @@ deleting the partition table.
 		    // delete all partition in targetMap and add dd string to targetMap
 
 		    // add delete -> true to all partitions
-		    list partitions = [];
+		    list<map> partitions = [];
 		    foreach( map part, target["partitions"]:[], 
 			``{
 			part       = add( part, "delete" , true);

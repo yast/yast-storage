@@ -90,7 +90,7 @@ global define string GetDeviceName( string disk, any partition )
     global boolean ZeroNewPartitions = false;
 
     map  StorageMap	= $[];
-    map  StorageMaps	= $[];
+    map<integer,map>  StorageMaps	= $[];
 
     /* stringkeys for access  to the Storage map */
     string lvm_view_all_mnt_key  	= "lvm_view_all_mnt";
@@ -232,7 +232,7 @@ global define map GetPartition( map tg, string device )
 
 
 /* set <part>, return changed map <tg> */
-global define map SetPartition( map tg, map part )
+global define map<string,map> SetPartition( map<string,map> tg, map part )
 	    ``{
     y2debug( "SetPartition part=%1", part );
     map tmp = GetDiskPartition( part["device"]:"" );
@@ -282,7 +282,7 @@ global define string GetLoopDev( integer start )
     return( loop_dev );
     };
 
-global define map InitialLoopMaindev()
+global define map<string,any> InitialLoopMaindev()
     ``{
     return( $[ "name"      : Partitions::loop_name,
 	       "cyl_count" : 1,          // not used
@@ -291,9 +291,9 @@ global define map InitialLoopMaindev()
 	     ] );
     }
 
-global define map InitialLoopEntry()
+global define map<string,any> InitialLoopEntry()
     ``{
-    map part = $[ "type"     : `loop,
+    map<string,any> part = $[ "type"     : `loop,
 		  "loop_fs"  : true,
 		  "fstype"   : Partitions::loop_name,
 		  "fsid"     : Partitions::fsid_native,
@@ -305,9 +305,9 @@ global define map InitialLoopEntry()
  /**
  *
  */
-global define map GetLvmMdSystemInfo( map targetMap )
+global define map<string,map> GetLvmMdSystemInfo( map<string,map> targetMap )
     ``{
-    map md = (map) SCR::Read (.md.config);
+    map<string,map> md = (map<string,map>) SCR::Read (.md.config);
     y2debug( "md %1", md );
     if( size(md)>0 )
 	{
@@ -352,7 +352,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
     foreach (string k, map v, md,
 	``{
 	integer dcnt = 0;
-	list devices = v["devices"]:[];
+	list<string> devices = v["devices"]:[];
 	integer spare = size(devices) - v["used_disks"]:size(devices);
 	foreach(string e, devices,
 	    ``{
@@ -364,7 +364,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    y2debug ("changed partition=%1", p);
 	    });
 	});
-    map lvm_vg = (map) SCR::Read (.lvm.vg);
+    map<string,map> lvm_vg = (map<string,map>) SCR::Read (.lvm.vg);
     y2debug( "lvm vg %1", lvm_vg );
     foreach (string k, map v, lvm_vg,
 	``{
@@ -396,7 +396,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	entry["partitions"] = partitions;
 	targetMap[key] = entry;
 	});
-    map lvm_pv = filter(any k, map v, (map) SCR::Read(.lvm.pv),
+    map<string,map> lvm_pv = filter(string k, map v, (map<string,map>) SCR::Read(.lvm.pv),
                          ``(size(v["vgname"]:"") > 0));
     y2debug( "lvm pv %1", lvm_pv );
     foreach(string k, map v, lvm_pv,
@@ -412,7 +412,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
     string evms_ag = "/usr/lib/YaST2/plugin/libpy2ag_evms.so.2";
     if( SCR::Read( .target.size, evms_ag )>=0 )
 	{
-	list cont = (list) SCR::Read (.evms.container);
+	list<map> cont = (list<map>) SCR::Read (.evms.container);
 	foreach( map e, cont, 
 	    ``{
 	    string key = "/dev/evms/" + e["name"]:"";
@@ -430,7 +430,7 @@ global define map GetLvmMdSystemInfo( map targetMap )
 	    targetMap[key] = entry;
 	    y2milestone ("e=%1 key:%2 map=%3", e, key, entry);
 	    });
-	list vol = (list) SCR::Read (.evms.volume);
+	list<map> vol = (list<map>) SCR::Read (.evms.volume);
 	foreach( map e, vol, 
 	    ``{
 	    integer pos = findlastof( e["device"]:"", "/" );
@@ -643,7 +643,7 @@ global define void SetMdOn( boolean on )
 /**
  * Reads LVM (vgscan ...) and MD data (/proc)
  */
-global define map ReadLvmMd( map targetMap )
+global define map<string,map> ReadLvmMd( map<string,map> targetMap )
     ``{
     SCR::UnmountAgent(.md);
     targetMap = GetLvmMdSystemInfo( targetMap );
@@ -658,11 +658,11 @@ global define map ReadLvmMd( map targetMap )
      * detect type of filesystems with partition id 0x83
      *
      */
-global define map GetFsysType( map target)
+global define map<string,map> GetFsysType( map<string,map> target)
     ``{
     foreach( string device, map disk, target,
 	``{
-	list partitions = disk["partitions"]:[];
+	list<map> partitions = disk["partitions"]:[];
 	list p_new = [];
 	foreach (map partition, partitions,
 	    ``{
@@ -707,7 +707,7 @@ global define list SwappingPartitions()``{
     }
 
 //  mark swap-partitions with pseudo Mountpoint swap in targetMap
-global define map AddSwapMp( map target )
+global define map<string,map> AddSwapMp( map<string,map> target )
     ``{
     list swaps = [];
     if( !Mode::initial )
@@ -732,7 +732,7 @@ global define map AddSwapMp( map target )
     return( target );
     }
 
-global define map AddWinInfo( map targets )
+global define map<string,map> AddWinInfo( map<string,map> targets )
     ``{
     y2milestone( "AddWinInfo called" );
     foreach(string disk, map data, targets,
@@ -864,7 +864,7 @@ global define list AddMountPointsForWinParts( list<map> partitions, boolean prim
     return new_partitions;
     };
 
-global define map AddMountPointsForWin( map targets )
+global define map<string,map> AddMountPointsForWin( map<string,map> targets )
     ``{
     y2milestone( "AddMountPointsForWin called" );
 
@@ -882,7 +882,7 @@ global define map AddMountPointsForWin( map targets )
     }
 
 //  add mount point for all mounted partitions
-global define map AddMountPointInfo( map target )
+global define map<string,map> AddMountPointInfo( map<string,map> target )
     ``{
     list<map> mounts = Partitions::CurMounted();
     foreach(string diskdev, map disk, target,
@@ -912,7 +912,7 @@ global define map AddMountPointInfo( map target )
 global define list FindFstabLines( map fstab, string mount, string device,
                                    string uuid, string label )
     ``{
-    list lines = [];
+    list<integer> lines = [];
     if( size(mount)>0 && mount != "swap" )
 	{
 	lines = AsciiFile::FindLineField( fstab, 1, mount );
@@ -925,14 +925,14 @@ global define list FindFstabLines( map fstab, string mount, string device,
 	{
 	string uuid = "UUID=" + uuid;
 	string label = "LABEL=" + label;
-	map tlines = AsciiFile::GetLines( fstab, lines );
-	map nlist = filter(integer num, map line, tlines,
+	map<integer,map> tlines = AsciiFile::GetLines( fstab, lines );
+	map<integer,map> nlist = filter(integer num, map line, tlines,
 			    ``( line["fields",0]:"" == device ||
 				line["fields",0]:"" == uuid ||
 				line["fields",0]:"" == label ));
 	if( size(nlist)>0 )
 	    {
-	    lines = maplist( integer num, list line, nlist, ``(num));
+	    lines = maplist( integer num, map line, nlist, ``(num));
 	    }
 	}
     y2milestone( "lines %1", lines );
@@ -940,7 +940,7 @@ global define list FindFstabLines( map fstab, string mount, string device,
     };
 
 //  add info gotten from /etc/fstab to targetMap
-global define map AddFstabInfo( map target, boolean lineno )
+global define map<string,map> AddFstabInfo( map<string,map> target, boolean lineno )
     ``{
     y2milestone( "lineno=%1", lineno );
     map fstab = Partitions::GetFstab( "/etc/fstab" );
@@ -959,7 +959,7 @@ global define map AddFstabInfo( map target, boolean lineno )
 		{
 		rem = [ "mountby", "fstopt" ];
 		}
-	    part = filter(string key, any val, part, ``(!contains( rem, key )));
+	    part = (map<string,any>)filter(string key, any val, (map<string,any>)part, ``(!contains( rem, key )));
 	    string mp = part["mount"]:"";
 	    if( size(part["ori_mount"]:"")>0 )
 		{
@@ -1026,19 +1026,19 @@ global define map AddFstabInfo( map target, boolean lineno )
 
     /*
      */
-global define map GetTargetMap()
+global define map<string,map<string, any> > GetTargetMap()
     ``{
-    map tmp = $[];
+    map<string,map> tmp = $[];
     boolean changed = false;
     if( !probe_done && !Mode::config )
 	{
 	y2milestone ("probing StorageDevices" );
-	tmp = StorageDevices::Probe(force_disk_probe);
+	tmp = (map<string,map>)StorageDevices::Probe(force_disk_probe);
 	force_disk_probe = false;
 	y2milestone ("probing done" );
 	if( size(tmp)>0 )
 	    {
-	    tmp = ReadLvmMd( tmp );
+	    tmp = (map<string,map>)ReadLvmMd( tmp );
 	    y2milestone ("lvm init done" );
 	    StorageMap[targets_key] = tmp;
 	    probe_done = true;
@@ -1179,7 +1179,7 @@ global define void SetModifyTargets( map modify_targets )``{
     StorageMap = add( StorageMap, modify_targets_key, modify_targets );
 };
 
-global define map ReReadTargetMap()
+global define map<string,map<string, any> > ReReadTargetMap()
     ``{
     y2milestone("start reread");
     probe_done = false;
@@ -1248,7 +1248,7 @@ global define void SetTargetMap( map targets )
 	  }
     };
 
-    global define map GetModifyTargets()``{
+    global define map<integer,any> GetModifyTargets()``{
 	return lookup(StorageMap, modify_targets_key , $[] );
     };
 
@@ -1274,10 +1274,10 @@ global define map GetMountPoints()
     ``{
     map mountPoints = $[];
     list swapPoints = [];
-    map tg = GetTargetMap();
+    map<string,map<string, any> > tg = GetTargetMap();
     foreach ( string targetdevice, map target, tg,
 	``{
-	list partitions = FilterDelete( target["partitions"]:[] );
+	list<map> partitions = FilterDelete( target["partitions"]:[] );
 	foreach (map partition, partitions,
 	    ``{
 	    string partitionName =
@@ -1419,8 +1419,8 @@ global define map GetMountPoints()
      * @param maindevkey
      * @return map
      */
-    global define map GetMainDev(string maindevkey )``{
-	map maindev = lookup( GetTargetMap(), maindevkey, $[] );
+    global define map<string, any> GetMainDev(string maindevkey )``{
+	map<string, any> maindev = lookup( GetTargetMap(), maindevkey, $[] );
 
 	if( maindev == $[] )
 	    {
@@ -1467,7 +1467,7 @@ global define list GetSubDevFilterList( string maindevkey, string what,
 
     if( maindevkey == "all" )
 	{
-	foreach( any maindevkey_inner, map maindev,GetTargetMap(),``{
+	foreach( any maindevkey_inner, map<string, any> maindev, GetTargetMap(),``{
 	        list part = maindev["partitions"]:[];
 		partitions = (list<map>)union( partitions, part );
 		});
@@ -1507,8 +1507,8 @@ global define list GetSubDevFilterList( string maindevkey, string what,
 
 
     global define map GetEntryForMountpoint( string mp ) ``{
-	list all_partitions = GetSubDevFilterList("all", "no_delete", "all" );
-        map partition = (map) find(map part, all_partitions,
+	list<map> all_partitions = (list<map>)GetSubDevFilterList("all", "no_delete", "all" );
+        map partition = find(map part, all_partitions,
 	                     ``( part["mount"]:"" == mp ));
         if( partition==nil || partition["mount"]:"" != mp )
 	  {
@@ -1599,7 +1599,7 @@ global define list GetSubDevFilterList( string maindevkey, string what,
 
 
     define integer FindLastRecordEntry() ``{
-	map all_record_entries = filter (integer key, map entry , StorageMaps, ``( entry[storage_type_key]:custom_key == record_key ));
+	map<integer,any> all_record_entries = (map<integer,any>)filter (integer key, map entry , StorageMaps, ``( entry[storage_type_key]:custom_key == record_key ));
 	list<integer> all_record_keys   = (list<integer>) maplist(integer key, any entry , all_record_entries,  ``(  key ));
 
 	if( size( all_record_entries ) > 0 )
@@ -1855,12 +1855,12 @@ global define list GetSubDevFilterList( string maindevkey, string what,
 /* partition_defines -> getIdMap
    if no subdev with the key subdevkey exists return $[]
  */
-global define map GetSubDev( string subdevkey )
+global define map<string,any> GetSubDev( string subdevkey )
     ``{
 
     list<map> partitions = (list<map>) GetMainDevParam( GetMainDevKey(subdevkey), "partitions", [] );
 
-    map part = find(map c_part, partitions,
+    map<string,any> part = (map<string,any>)find(map c_part, partitions,
 		     ``(sformat("%1",c_part["nr"]:(any)0) ==
 			    GetSubDevIndex( subdevkey ) &&
 			!c_part["delete"]:false ));
@@ -1995,7 +1995,7 @@ global define map GetSubDev( string subdevkey )
      * @param newmaindev map with the new maindev
      * @return boolean
      */
-    global define boolean AddMainDev(string maindevkey, map newmaindev )``{
+    global define boolean AddMainDev(string maindevkey, map<string, any> newmaindev )``{
 	if (! ExistsMainDevKeyEntry( maindevkey ) )
 	{
 	    SetTargetMap( add(GetTargetMap(), maindevkey, newmaindev ));
@@ -2014,7 +2014,7 @@ global define map GetSubDev( string subdevkey )
      * @param newmaindev map with modified maindev
      * @return boolean
      */
-    global define boolean SetMainDev(string maindevkey, map newmaindev )``{
+    global define boolean SetMainDev(string maindevkey, map<string, any> newmaindev )``{
 
 	if( ! ExistsMainDevKeyEntry( maindevkey ))
 	{
@@ -2081,18 +2081,18 @@ global define map GetSubDev( string subdevkey )
 
 
     global define boolean DelMainDevParam(string maindevkey, string paramkey )``{
-	map maindev = GetMainDev( maindevkey );
+	map<string,any> maindev = (map<string, any>)GetMainDev( maindevkey );
 
 	if( maindev == $[] )
 	    return false;
 
-	maindev     = filter( string key, any value, maindev, ``( key != paramkey ));
+	maindev     = (map<string,any>)filter( string key, any value, maindev, ``( key != paramkey ));
 	return SetMainDev( maindevkey, maindev );
     }
 
 
     global define boolean AddMainDevParam(string maindevkey, string paramkey, any newparam )``{
-	map maindev = GetMainDev( maindevkey );
+	map<string, any> maindev = GetMainDev( maindevkey );
 
 	if( maindev == $[] )
 	    return false;
@@ -2103,7 +2103,7 @@ global define map GetSubDev( string subdevkey )
 
 
     global define boolean SetMainDevParam(string maindevkey, string paramkey, any newparam )``{
-	map maindev = GetMainDev( maindevkey);
+	map<string, any> maindev = GetMainDev( maindevkey);
 
 	if( maindev == $[] )
 	    return false;
@@ -2117,9 +2117,9 @@ global define map GetSubDev( string subdevkey )
 
 
 
-global define map RemoveAllPartEntry( map tg, string skey, string value )
+global define map<string,map> RemoveAllPartEntry( map<string,map> tg, string skey, string value )
     ``{
-    map new_tg = tg;
+    map<string,map> new_tg = tg;
 
     foreach(string dev, map disk, tg,
 	``{
@@ -2129,7 +2129,7 @@ global define map RemoveAllPartEntry( map tg, string skey, string value )
 	    ``{
 	    if( partition[skey]:"" == value )
 		{
-		partition = filter(string key, any value_inner, partition, ``( key != skey));
+		partition = filter(string key, any value_inner, (map<string,any>)partition, ``( key != skey));
 		changed = true;
 		}
 	    new_partitions = add( new_partitions , partition);
@@ -2162,9 +2162,9 @@ global define boolean DelSubDev( string subdevkey )
     string  subdevindex 	= GetSubDevIndex( subdevkey );
     integer number     	= tointeger( subdevindex );
 
-    list curr_partitions 	= (list) GetMainDevParam( maindevkey, "partitions", []);
-    map curr_part 		= GetSubDev(subdevkey);
-    map curr_disk		= GetMainDev( maindevkey );
+    list<map> curr_partitions 	= (list<map>) GetMainDevParam( maindevkey, "partitions", []);
+    map<string, any> curr_part 	= GetSubDev(subdevkey);
+    map<string, any> curr_disk	= GetMainDev( maindevkey );
 
     // if it is an extended partition -> delete all logical!
     // -----------
@@ -2176,7 +2176,7 @@ global define boolean DelSubDev( string subdevkey )
 
     if( IsMainDevMd( maindevkey ))
 	{
-	map tg = GetTargetMap();
+	map<string, map> tg = (map <string, map>)GetTargetMap();
 	tg = RemoveAllPartEntry( tg, "raid_name", maindevkey+subdevindex );
 	SetTargetMap(tg);
 	}
@@ -2319,7 +2319,7 @@ global define map DelPartitionData( map tg, string device, string key)
 				   part["delete"]:false == false)), 0, $[] );
 	if( size(p)>0 )
 	    {
-	    p = filter(string k, any e, p, ``(k != key) );
+	    p = filter(string k, any e, (map<string,any>)p, ``(k != key) );
 	    r_part    = add( r_part, p );
 	    tg[disk,"partitions"] = r_part;
 	}
@@ -2332,7 +2332,7 @@ global define map DelPartitionData( map tg, string device, string key)
 global define boolean SetSubDev( string subdevkey, map newsubdev )
     ``{
     string maindevkey = GetMainDevKey( subdevkey );
-    list partitions = (list) GetMainDevParam( maindevkey, "partitions", [] );
+    list<map> partitions = (list<map>) GetMainDevParam( maindevkey, "partitions", [] );
 
     // and now delete the old partition number in curr_disk to replace it in the next step
     list r_part =
@@ -2393,7 +2393,7 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
 
 
     global define boolean DelSubDevParam(string subdevkey, string paramkey )``{
-	map subdev = GetSubDev( subdevkey );
+	map<string,any> subdev = GetSubDev( subdevkey );
 
 	if( subdev == $[] )
 	    return false;
@@ -2487,7 +2487,7 @@ global define boolean SetSubDev( string subdevkey, map newsubdev )
  **/
 global define void AddRaidSizeInfo()
     ``{
-    map targetMap = GetTargetMap();
+    map<string,map> targetMap = GetTargetMap();
 
     targetMap = mapmap(string dev, map devmap, targetMap,
 	``{
@@ -2629,7 +2629,7 @@ global define void SetWizardKey( string key )
    */
   global define void DelModify(integer number )``{
 
-      map modify_targets = GetModifyTargets();
+      map<integer,any> modify_targets = GetModifyTargets();
 
       // delete entry
       modify_targets = filter(integer k, any v, modify_targets, ``(k != number ) );
@@ -2790,7 +2790,7 @@ global define list GetPartitionList()``{
     foreach ( string dev, map disk, GetTargetMap(), ``{
         if( IsRealDisk( dev, disk ) )
 	    {
-	    list l = filter( map p, disk["partitions"]:[],
+	    list<map> l = filter( map p, disk["partitions"]:[],
 	                     ``(p["delete"]:false==false) );
 	    ret = union( ret, maplist( map p, l,
 				       ``(GetDeviceName(dev,p["nr"]:(any)0))));
@@ -2848,14 +2848,14 @@ global define string CheckSwapConflicts()``{
 	foreach ( string dev, map disk, GetTargetMap(), ``{
 	    if( IsRealDisk( dev, disk ) )
 		{
-		list l = filter(map p, disk["partitions"]:[],
+		list<map> l = filter(map p, disk["partitions"]:[],
 				``(p["delete"]:false==false) );
 		l = filter(map p, l, ``(p["mount"]:"" != "" ||
 				      p["raid_name"]:"" != "" ||
 				      p["lvm_group"]:"" != "") );
 		l = filter(map p, l, ``(p["mount"]:"" != "swap") );
-		l = maplist(map p, l, ``(GetDeviceName(dev,p["nr"]:(any)0)));
-		plist = union( plist, l );
+		list l1 = maplist(map p, l, ``(GetDeviceName(dev,p["nr"]:(any)0)));
+		plist = union( plist, l1 );
 		}
 	    });
 	y2milestone( "CheckSwapConflicts used %1", plist );
@@ -2872,9 +2872,9 @@ global define string CheckSwapConflicts()``{
     return( ret );
     }
 
-global define list GetWinPrimPartitions( map targets )
+global define list GetWinPrimPartitions( map<string,map> targets )
     ``{
-    list ret = [];
+    list<map> ret = [];
     map entry = $[];
     string text = "";
     integer num_dos = 0;
@@ -2981,8 +2981,8 @@ global define list<string> AddPackageList()
     list<string> pl = [];
     boolean mount_lvm = false;
     boolean need_evms = false;
-    map tg = GetTargetMap();
-    map tt = filter( string k, map e, tg, ``(e["is_lvm_vg"]:false &&
+    map<string,map> tg = GetTargetMap();
+    map<string,map> tt = filter( string k, map e, tg, ``(e["is_lvm_vg"]:false &&
 					     !e["delete"]:false));
     boolean have_lvm = size(tt)>0;
     if( have_lvm )
@@ -3029,7 +3029,7 @@ global define list GetForeignPrimary()
     list ret = [];
     if( Arch::i386 || Arch::ia64 || Arch::x86_64 )
 	{
-	map tg = filter(string k, map e, GetTargetMap(), ``(IsRealDisk(k,e)));
+	map<string,map> tg = filter(string k, map e, GetTargetMap(), ``(IsRealDisk(k,e)));
 	list<map> wd = (list<map>) flatten( (list<list>) maplist(string k, map e, tg, ``(e["partitions"]:[])));
 	wd = filter(map e, wd, ``(size(e["winfo"]:$[])>0));
 	y2milestone( "wd %1", wd );
@@ -3040,7 +3040,7 @@ global define list GetForeignPrimary()
 	    tg = AddWinInfo( tg );
 	    SetTargetMap( tg );
 	    }
-	foreach(map e, GetWinPrimPartitions( tg ),
+	foreach(map e, (list<map>)GetWinPrimPartitions( tg ),
 	    ``{
 	    ret = add( ret, sformat( "%1 %2", e["device"]:"", e["string"]:"" ));
 	    });
@@ -3123,12 +3123,12 @@ global define boolean CheckNextCreated( map disk, list region )
 
 global define void AdaptResize( string maindev, list region, integer schange )
     ``{
-    list partitions = (list) GetMainDevParam( maindev, "partitions", [] );
+    list<map> partitions = (list<map>) GetMainDevParam( maindev, "partitions", [] );
     integer cylinder = region[0]:0 + region[1]:0;
     boolean found = false;
     integer index = -1;
     integer e_idx = -1;
-    list idx_list = [];
+    list<integer> idx_list = [];
     map part = (map) find(map p, partitions,
                           ``(p["delete"]:false==false &&
 			     p["region",0]:0 == cylinder &&
@@ -3301,13 +3301,13 @@ global define map MakeCdromFstabEntry( map cd )
     return( entry );
     };
 
-global define void WriteFstab( map targetMap )
+global define void WriteFstab( map<string,map> targetMap )
     ``{
     y2milestone( "WriteFstab called" );
 
     include "partitioning/write_fstab.ycp";
 
-    map tg = (map)eval(targetMap);
+    map<string,map> tg = eval(targetMap);
     if( Mode::initial )
 	{
 	StorageDevices::MakeCDLinks();
@@ -3315,7 +3315,7 @@ global define void WriteFstab( map targetMap )
     write_fstab( tg, StorageDevices::ZipDrives, StorageDevices::cddrives );
     }
 
-global define map GetS390DeviceMap( map targetMap )
+global define map GetS390DeviceMap( map<string,map> targetMap )
     ``{
     integer num = 0;
     string alph = "abcdefghijklmnopqrstuvwxyz";
@@ -3325,7 +3325,7 @@ global define map GetS390DeviceMap( map targetMap )
     list<map> dasd = (list<map>) SCR::Read(.proc.dasddev);
 
     foreach( string key, map value, targetMap, ``{
-        list part = value["partitions"]:[];
+        list<map> part = value["partitions"]:[];
 	if( find( map p, part, ``( p["loop_fs"]:false ||
 				size(p["lvm_group"]:"")>0 ||
 				size(p["raid_name"]:"")>0 ||
@@ -3376,7 +3376,7 @@ global define string MapS390Device( string device, map device_map )
     return( ret );
     };
 
-global define map SpecialBootHandling( map tg )
+global define map<string,map> SpecialBootHandling( map<string,map> tg )
     ``{
     foreach( string dev, map disk, tg,
 	``{
@@ -3430,9 +3430,9 @@ global define map SpecialBootHandling( map tg )
     return( tg );
     }
 
-global define list AutodetectMultipathRaid( map tg )
+global define list<list<string> > AutodetectMultipathRaid( map<string,map> tg )
     ``{
-    list ret = [];
+    list<list<string> > ret = [];
     map<string, list> disks = (map<string, list>) $[];
     foreach(string dev, map disk, tg,
 	``{
@@ -3458,8 +3458,8 @@ global define list AutodetectMultipathRaid( map tg )
 	foreach(map p, tg[entry[0]:"","partitions"]:[],
 	    ``{
 	    boolean ok = true;
-	    list dl = [];
-	    foreach(string disk, entry,
+	    list<string> dl = [];
+	    foreach(string disk, (list<string>)entry,
 		``{
 		string dev = GetDeviceName( disk, p["nr"]:(any)0 );
 		map p1 = GetPartition( tg, dev );
@@ -3558,7 +3558,7 @@ global define boolean SetCryptLoop( map part )
 global define boolean DiskmapNeeded()
     ``{
     boolean ret = false;
-    map real_disks = filter( string k, map e, GetTargetMap(), ``(IsRealDisk( k, e )) );
+    map<string,map> real_disks = filter( string k, map e, GetTargetMap(), ``(IsRealDisk( k, e )) );
     list<string> disks = (list<string>) maplist( string k, map e, real_disks, ``(k));
     y2milestone( "disks %1", disks );
     boolean scsi_disk = false;
@@ -3617,7 +3617,7 @@ global define boolean UseLilo()
 global define void DestroyLvmOnAllDisks()
     ``{
     y2milestone( "DestroyLvmOnAllDisks called" );
-    map tg = GetTargetMap();
+    map<string,map> tg = GetTargetMap();
     SCR::Write( .lvm.deactivate, "" );
     foreach( any disk, map data, tg,
 	``{
@@ -3634,13 +3634,13 @@ global define void DestroyLvmOnAllDisks()
 	data["partitions"] =
 	    maplist( map p, data["partitions"]:[],
 		``{
-		p = filter( string k, any e, p,
+		p = filter( string k, any e, (map<string,any>)p,
 		            ``(k!="lvm_group" && k!="lvm_mp_pv" &&
 			       k!="lvm_size_bytes"));
 		return( p );
 		});
 	});
-    tg = filter( any k, map e, tg, ``( !e["is_lvm_vg"]:false ));
+    tg = filter( string k, map e, tg, ``( !e["is_lvm_vg"]:false ));
     SetTargetMap( tg );
     SCR::Write( .lvm.activate, "" );
     };
@@ -3648,7 +3648,7 @@ global define void DestroyLvmOnAllDisks()
 global define void DestroyMdOnAllDisks()
     ``{
     y2milestone( "DestroyMdOnAllDisks called" );
-    map tg = GetTargetMap();
+    map<string,map> tg = GetTargetMap();
     list raid_names = [];
     SCR::Write( .md.deactivate, "" );
     foreach( string disk, map data, tg,
@@ -3665,7 +3665,7 @@ global define void DestroyMdOnAllDisks()
 	    data["partitions"] =
 		maplist( map p, data["partitions"]:[],
 		    ``{
-		    p = filter( string k, any e, p, ``(k!="raid_name"));
+		    p = filter( string k, any e, (map<string,any>)p, ``(k!="raid_name"));
 		    return( p );
 		    });
 	    }
@@ -3677,7 +3677,7 @@ global define void DestroyMdOnAllDisks()
 	y2milestone( "executing cmd %1", cmd );
 	SCR::Execute(.target.bash, cmd );
 	}
-    tg = filter( string k, any e, tg, ``( k != "/dev/md" ));
+    tg = filter( string k, map e, tg, ``( k != "/dev/md" ));
     SetTargetMap( tg );
     SCR::Write( .md.activate, "" );
     };

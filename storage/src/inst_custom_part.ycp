@@ -395,15 +395,15 @@ define list CheckCreatePossibilities( string dev, map disk )
     boolean     extended_is_possible = false;
     boolean     logical_is_possible  = false;
 
-    list primary_list = 
+    list<map> primary_list = 
 	filter( map part, disk["partitions"]:[],
 		``( (part["type"]:`unknown == `primary) && 
 		    (!part["delete"]:false )));
-    list extended_list = 
+    list<map> extended_list = 
 	filter( map part, disk["partitions"]:[],
 		``( (part["type"]:`unknown == `extended) && 
 		    (!part["delete"]:false )));
-    list logical_list = 
+    list<map> logical_list = 
 	filter( map part, disk["partitions"]:[],
 		``( (part["type"]:`unknown == `logical) && 
 		    (!part["delete"]:false )));
@@ -526,7 +526,7 @@ define list CheckCreatePossibilities( string dev, map disk )
 define list GetSlot( string dev, map disk )
     ``{
     string type = substring(dev, 5, 2);
-    list global_list = filter( map part, disk["partitions"]:[], 
+    list<map> global_list = filter( map part, disk["partitions"]:[], 
                                ``( part["type"]:`unknown != `logical && 
 			           !part["delete"]:false ));
 
@@ -625,7 +625,7 @@ define integer TestSlot( integer slot_start_cyl, string dev, map disk,
 			 boolean bsd_label )
     ``{
     string type = substring(dev, 5, 2);
-    list global_list  = filter( map part, disk["partitions"]:[], 
+    list<map> global_list  = filter( map part, disk["partitions"]:[], 
                                 ``( part["type"]:`unknown != `logical && 
 				    !part["delete"]:false ));
 
@@ -710,7 +710,7 @@ define list GetLogicalSlot( string dev, map disk )
     ``{
     string type = substring(dev, 5, 2);
 
-    list global_list  = filter( map part, disk["partitions"]:[], 
+    list<map> global_list  = filter( map part, disk["partitions"]:[], 
                                 ``( part["type"]:`unknown == `logical && 
 				    !part["delete"]:false ));
     map	extended = (map)find( map part, disk["partitions"]:[], 
@@ -813,7 +813,7 @@ define integer TestLogicalSlot( integer slot_start_cyl, string dev, map disk)
     ``{
     string type = substring(dev, 5, 2);
 
-    list global_list = filter( map part, disk["partitions"]:[], 
+    list<map> global_list = filter( map part, disk["partitions"]:[], 
                                ``( part["type"]:`unknown == `logical && 
 			           !part["delete"]:false ));
     map extended = (map)find( map part, disk["partitions"]:[], 
@@ -929,8 +929,8 @@ define list FillPartitionList()
     ``{
      // fill in size_bytes for raid
      Storage::AddRaidSizeInfo();
-     map  targets 	= Storage::GetTargetMap();
-     list table_input 	= [];
+     map<string,map>  targets 	= Storage::GetTargetMap();
+     list<term> table_input 	= [];
      boolean log_mode 	= false;
 
      SCR::Write(.target.ycp,Storage::SaveDumpPath("targetMap_c"), targets );
@@ -979,7 +979,7 @@ define list FillPartitionList()
 	 // if LVM device get new size
 	 if( disk["is_lvm_vg"]:false )
 	     {	
-	     list parts = get_possible_pvs( targets );
+	     list<map> parts = get_possible_pvs( targets );
 	     dev_size = (string)get_vg_size( parts, substring(disk_dev_name, 5), 
 					     `string );
 	     dev_nb_cyl    = " -- ";
@@ -1010,7 +1010,7 @@ define list FillPartitionList()
 	 /////////////////////////////////////////////////////////////
 	 // Now we come to the partitions ...
 
-	 list partitions = disk["partitions"]:[];
+	 list<map> partitions = disk["partitions"]:[];
 
 	 foreach( map partition, partitions,
 	     ``{
@@ -1350,7 +1350,7 @@ Should YaST2 use the maximum allowed value?
  * @return map modified partition or nil by cancel
  */
 
-define map EditOrCreatePartDlg( map cur_val, map file_systems, 
+define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val, map<symbol,map> file_systems, 
 			        string title, string dev, map disk, 
 				boolean bsd_label, boolean edit_size, 
 				integer cyl_size, boolean installation )
@@ -1412,7 +1412,7 @@ define map EditOrCreatePartDlg( map cur_val, map file_systems,
 		);
 
 
-      map retval = (map)eval(cur_val);
+      map<string,any> retval = eval(cur_val);
       symbol ret = `ok;
 
       retval = HandlePartWidgetChanges( true, ret, file_systems, cur_val, 
@@ -1448,7 +1448,7 @@ define map EditOrCreatePartDlg( map cur_val, map file_systems,
 	    if( fs_id<256 )
 		{
 		retval["fstype"] = "";
-		foreach( string file_system_name, map file_system_map, file_systems, ``{
+		foreach( symbol file_system_name, map file_system_map, file_systems, ``{
 		     if( file_system_map[`fsid]:Partitions::fsid_native == 
 		         fs_id )
 			 retval["fstype"] = file_system_map[`fstype]:"";
@@ -2151,11 +2151,11 @@ fit into this new extended partition.
      *---------------------------------------------------------------------
      */
 
-define string ChooseDisk( map targetMap, string heading, symbol what )
+define string ChooseDisk( map<string,map> targetMap, string heading, symbol what )
     ``{
     // Header Choose disk dialog
     term diskgroup  = `VBox();
-    list disks      = [];
+    list<string> disks      = [];
     integer       n = 0;
     string txt = "";
 
@@ -2411,10 +2411,10 @@ define string FormatYouCannotCause( boolean primary_is_possible,
                Storage::GetTargetMap() );
 
     // delete pseudo partitions with `free from target_partitioner
-    map tg = Storage::GetTargetMap();
+    map<string,map> tg = Storage::GetTargetMap();
     foreach( string diskdev, map disk, tg,
 	``{
-	list partitions = filter( map part, disk["partitions"]:[], 
+	list<map> partitions = filter( map part, disk["partitions"]:[], 
 	                          ``(part["type"]:`unknown != `free) );
 	disk["partitions"] = partitions;
 	tg[diskdev] = disk;
@@ -2752,10 +2752,10 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
 	    if( create_type != `none )
 		{
-		list    partitions = lookup( curr_disk, "partitions", []);
-		integer curr_nr    = 0;
-		list    base       = [];
-		list    slot       = [];
+		list<map> partitions 	= lookup( curr_disk, "partitions", []);
+		integer curr_nr    	= 0;
+		list<integer>    base   = [];
+		list    slot       	= [];
 
 		// search for the first possible dev nr
 		if( create_type == `primary || create_type == `extended || 
@@ -2793,11 +2793,11 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    // dev_nb List of numbers of  extende an primary partitions
 		    // result: list of all free primaty|extended partition numbers
 
-		    list dev_nb = 
+		    list<integer> dev_nb = 
 			maplist( map part, filter( map pa, partitions, 
 			                        ``(!pa["delete"]:false)), 
 				 ``(part["nr"]:0) );
-		    list result = filter( integer base_nr, base, 
+		    list<integer> result = filter( integer base_nr, base, 
 		                          ``( find( integer nr, dev_nb, ``(nr == base_nr)) == nil));
 		    result = sort( result );
 
@@ -2818,7 +2818,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		// Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
 		if ( create_type == `logical )  titleC = sformat( _("%1 Create a logical partition on %2 %3"),   "", maindev, "" );
 
-		map new_val = $[
+		map<string,any> new_val = $[
 				"create"	: true,
 			    
 				"region" 	: [ slot[0]:0,
@@ -2831,13 +2831,13 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
 		if( create_type == `extended )
 		    {
-		    new_val = union( new_val , $[
+		    new_val = (map<string,any>)union( new_val , $[
 						 "fsid"	: Partitions::fsid_extended_win,
 						 "used_fs"	: `unknown,
 						 "fstype"   : "Extended"
 						 ]);
 
-		    new_val = CreateEditExtendedPartDlg(new_val,
+		    new_val = (map<string,any>)CreateEditExtendedPartDlg(new_val,
 							titleC,
 							maindev,
 							curr_disk,
@@ -2853,7 +2853,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 			{
 			used_fs = Partitions::DefaultBootFs();
 			}
-		    new_val = union( new_val , $[
+		    new_val = (map<string,any>)union( new_val , $[
 						 "format" 	: true,
 						 "fsid"	: Partitions::fsid_native,
 						 "mount"	: mount_point_proposal,
@@ -2919,15 +2919,15 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    }
 		else if( Storage::IsSubDevLv( id ) )
 		    {
-		    map tg =  Storage::GetTargetMap();
-		    map mt =  Storage::GetModifyTargets();
+		    map<string,map> tg =  Storage::GetTargetMap();
+		    map<integer,map> mt =  (map<integer,map>)Storage::GetModifyTargets();
 		    map ret = HandleEditLv( tg, mt, id );
 		    Storage::SetTargetMap( ret["targets"]:tg );
 		    Storage::SetModifyTargets( ret["modify_targets"]:mt );
 		    }
 		else if( maindevkey == "/dev/md" )
 		    {
-		    map part = Storage::GetSubDev( id );
+		    map<string,any> part = Storage::GetSubDev( id );
 		    part = RaidExpertDlg( `settings, "/dev/md" + subdevkey,
 					   part, Mode::initial,
 					   FileSystems::GetAllFileSystems(true,true),
@@ -2948,8 +2948,8 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    string subdevindex = Storage::GetSubDevIndex(id);
 		    integer number     = tointeger( subdevindex );
 		    string devStr      = Storage::GetDeviceName(maindevkey, number );
-		    map curr_disk      = Storage::GetMainDev( maindevkey );
-		    map curr_part      = Storage::GetSubDev( id );
+		    map<string,any> curr_disk      = Storage::GetMainDev( maindevkey );
+		    map<string,any> curr_part      = Storage::GetSubDev( id );
 
 		    
 		    /////////////////////////////////////////////////////
@@ -2966,13 +2966,13 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 			SCR::Write(.target.ycp, "/tmp/part", curr_disk["partitions"]:[] );
 			}
 
-		    list partitions_without_current = 
+		    list<map> partitions_without_current = 
 			filter( map p, curr_disk["partitions"]:[], 
 				``(p["nr"]:(any)0!=number && 
 				   !p["delete"]:false ));
-		    map disk_without_current = add( curr_disk, "partitions", 
+		    map<string,any> disk_without_current = add( curr_disk, "partitions", 
 						    partitions_without_current);
-		    map target_without_current = add( Storage::GetTargetMap(), 
+		    map<string,any> target_without_current = add( Storage::GetTargetMap(), 
 						      maindevkey, 
 						      disk_without_current );
 
@@ -3057,7 +3057,7 @@ WARNING: All data on this partition will be lost."));
 	    
 	    if( ! Storage::IsKeyKey(id)) continue;
 
-	    map tmap = Storage::GetTargetMap();
+	    map<string,map> tmap = Storage::GetTargetMap();
 	    if( tmap[maindevkey,"readonly"]:false )
 		{
 		Popup::Error( Partitions::RdonlyText( maindevkey, true ));
@@ -3073,8 +3073,8 @@ WARNING: All data on this partition will be lost."));
 		else if( Storage::IsMainDevVg(maindevkey ))
 		    {
 		    string current_vg = substring( maindevkey, 5 );
-		    map tg =  Storage::GetTargetMap();
-		    map mt =  Storage::GetModifyTargets();
+		    map<string,map> tg =  Storage::GetTargetMap();
+		    map<integer,map> mt = (map<integer,map>)Storage::GetModifyTargets();
 		    map ret = HandleRemoveVg( tg, mt, current_vg );
 		    Storage::SetTargetMap( ret["targets"]:tg );
 		    Storage::SetModifyTargets( ret["modify_targets"]:mt );
@@ -3095,8 +3095,8 @@ WARNING: All data on this partition will be lost."));
 		}
 	    else if( Storage::IsSubDevLv(id))
 		{
-		map tg =  Storage::GetTargetMap();
-		map mt =  Storage::GetModifyTargets();
+		map<string,map> tg =  Storage::GetTargetMap();
+		map<integer,map> mt =  (map<integer,map>)Storage::GetModifyTargets();
 		map ret = HandleRemoveLv( tg, mt, id );
 		Storage::SetTargetMap( ret["targets"]:tg );
 		Storage::SetModifyTargets( ret["modify_targets"]:mt );
@@ -3231,8 +3231,8 @@ on this partition does not support being resized.
                 }
 	    else if( Storage::IsSubDevLv(id))
 		{
-		map tg =  Storage::GetTargetMap();
-		map mt =  Storage::GetModifyTargets();
+		map<string,map> tg =  Storage::GetTargetMap();
+		map<integer,map> mt =  (map<integer,map>)Storage::GetModifyTargets();
 		map ret = HandleEditLv( tg, mt, id );
 		Storage::SetTargetMap( ret["targets"]:tg );
 		Storage::SetModifyTargets( ret["modify_targets"]:mt );
@@ -3439,18 +3439,18 @@ All data on this disk will be lost.
 
         if (ret == `adapt_mp && Mode::initial )
 	    {
-	    map od = Storage::GetOndiskTarget();
-	    list fstab = scanAndReadExistingFstab( od );
+	    map<string,map> od = (map<string,map>)Storage::GetOndiskTarget();
+	    list<list> fstab = scanAndReadExistingFstab( od );
 	    list ti = maplist( list e, fstab, 
-	                       ``(select(AddFstabToData( od, e),1,[])));
+	                       ``(select(AddFstabToData( od, (list<map>)e),1,[])));
 	    y2milestone( "ti %1", ti );
 
 	    integer idx = FstabAddDialog( ti );
 	    if( idx>=0 )
 		{
-		od = Storage::GetOndiskTarget();
+		od = (map<string,map>)Storage::GetOndiskTarget();
 		y2milestone( "use fstab idx %1", idx );
-		ti = AddFstabToData( od, fstab[idx]:[] );
+		ti = AddFstabToData( od, (list<map>)fstab[idx]:[] );
 		Storage::ResetOndiskTarget();
 		Storage::SetTargetMap( ti[0]:$[] );
 		}

@@ -55,12 +55,12 @@ HINTS: Always use
  *---------------------------------------------------------------------
  */
 
-define map change_boot_region( map targetMap, list new_region )
+define map<string,map> change_boot_region( map<string,map> targetMap, list new_region )
   ``{
   foreach( string disk, map diskinfo, targetMap,
       ``{
       list new_part_info = [];
-      list part_info     = diskinfo["partitions"]:[];
+      list<map> part_info     = diskinfo["partitions"]:[];
 
       foreach( map part, part_info,
 	  ``{
@@ -110,13 +110,13 @@ define integer get_max_cyl_for_4mb( integer cyl_size )
    };
 
 
-define boolean check_raid_possible( map targetMap )
+define boolean check_raid_possible( map<string,map> targetMap )
     ``{
     integer possible_parts_found = 0;
 
     foreach( string disk, map target, targetMap, 
 	``{
-	list partitions = lookup( target, "partitions", [] );
+	list<map> partitions = lookup( target, "partitions", [] );
 
 	possible_parts_found = possible_parts_found +
 	       size(filter( map part, partitions, 
@@ -145,13 +145,13 @@ click 'Create', select 'Do not format', and set the partition ID to 0xFD.
    }
 
 
-define boolean check_lvm_possible( map targetMap )
+define boolean check_lvm_possible( map<string,map> targetMap )
    ``{
    boolean possible_part_found = false;
 
    foreach( string disk, map target, targetMap, 
        ``{
-       list partitions = lookup( target, "partitions", [] );
+       list<map> partitions = lookup( target, "partitions", [] );
 
 
        if( size(filter( map part, partitions, 
@@ -193,7 +193,7 @@ click 'Create', select 'Do not format', and set the partition ID to 0x8e.
      * - check that all reiser Filesystems are bigger than 60MB
      */
 
-define list check_created_partiton_table( map targetMap, boolean setup_lvm,
+define list check_created_partiton_table( map<string,map> targetMap, boolean setup_lvm,
 					  boolean installation )
     ``{
     y2milestone( "now checking generated target map ...");
@@ -235,7 +235,7 @@ define list check_created_partiton_table( map targetMap, boolean setup_lvm,
 
     foreach( string disk, map diskinfo, targetMap,
         ``{
-	list part_info     = lookup( diskinfo, "partitions", [] );
+	list<map> part_info     = lookup( diskinfo, "partitions", [] );
 	boolean whole_disk = true;
 	integer cyl_size   = lookup( diskinfo, "cyl_size", 1000000);
 
@@ -918,12 +918,12 @@ define boolean check_extended_delete( string del_dev, map curr_disk,
 
     /////////////////////////////////////////////////
     // filter delete partitions
-    list partitions =  lookup( curr_disk, "partitions", [] );
+    list<map> partitions =  lookup( curr_disk, "partitions", [] );
     partitions = filter( map part, partitions, ``( !part["delete"]:false ));
 
     /////////////////////////////////////////////////
     // get logical partitions
-    list logical_parts = filter( map part, partitions, 
+    list<map> logical_parts = filter( map part, partitions, 
                                  ``( part["type"]:`primary == `logical));
     list logical_parts_names = [];
 
@@ -942,7 +942,7 @@ define boolean check_extended_delete( string del_dev, map curr_disk,
     // check mounted partitions
     if( !installation )
 	{
-	list mounts = Partitions::mountedPartitionsOnDisk( del_dev,
+	list<map> mounts = Partitions::mountedPartitionsOnDisk( del_dev,
 							   Partitions::CurMounted() );
 	mounts      = filter( map mount, mounts, ``( contains( logical_parts_names, lookup(mount, "spec", ""))));
 

@@ -55,7 +55,7 @@
   boolean crypt_ok         = true;
   boolean reboot_necessary = false;
 
-  map     modify_targets        = Storage::GetModifyTargets();
+  map<integer,map>     modify_targets        = (map<integer,map>)Storage::GetModifyTargets();
   boolean test_mode		= Mode::test;
   boolean immediate_prepdisk    = Storage::immediate_prepdisk;
   boolean this_is_for_real	= ! test_mode;
@@ -68,12 +68,12 @@
   list    remountPartitions     = [];
 
   // we need to deactivate these in case of error
-  list activatedswaps = [];
-  list activatedLoopDevices = [];
+  list<string> activatedswaps = [];
+  list<string> activatedLoopDevices = [];
 
 
     //switch swap off
-define void doswapoff(list activatedswaps)
+define void doswapoff(list<string> activatedswaps)
     ``{
     foreach (string swapdev, activatedswaps,
 	``{
@@ -89,7 +89,7 @@ define void doswapoff(list activatedswaps)
     };
 
 //detach loop devices
-define void losetup_d(list activatedLoopDevices)
+define void losetup_d(list<string> activatedLoopDevices)
     ``{
     foreach( string loopdev, activatedLoopDevices,
     ``{
@@ -113,7 +113,7 @@ define void restoretargetmap()
     map baktargets=$[];
     foreach ( string tdevice, map target, Storage::GetTargetMap(),
 	``{
-	list partitions = target["partitions"]:[];
+	list<map> partitions = target["partitions"]:[];
 	//map for partitions, referenced by number
 	map bakpartitionmap=$[];
 	foreach( map pentry, partitions,
@@ -138,23 +138,24 @@ define void restoretargetmap()
 		"used_fs": used_fs,
 		"crypt":cypher,
 		"format":format,
-		"region":region];
+		"region":region,
+	    ];
 	    bakpartitionmap[pentry["nr"]:0] = bakpentry;
 	    });
 	baktargets[ tdevice ] = $["partitions":bakpartitionmap];
 	});
 //      SCR::Write(.target.ycp, "/tmp/targetMap_orig", targets );
 //      SCR::Write(.target.ycp, "/tmp/targetMap_backup", baktargets );
-    map targets = Storage::ReReadTargetMap();
+    map<string,map> targets = Storage::ReReadTargetMap();
 //      SCR::Write(.target.ycp, "/tmp/targetMap_reread", targets );
 
     //see if theres info available in backupmap
     foreach (string tdevice, map target, targets,
 	``{
 	map bakpartitionmap = baktargets[tdevice, "partitions"]:$[];
-	list partitions = target["partitions"]:[];
+	list<map> partitions = target["partitions"]:[];
 
-	list newpartitions = [];
+	list<map> newpartitions = [];
 	boolean usebackup=true;
 	foreach( map pentry, partitions,
 	    ``{
@@ -301,7 +302,7 @@ define boolean HandleFormatPartition( map partition )
 		if( !format && !partition["delete"]:false )
 		    {
 		    partition = FileSystems::GetFsysInfos( partition );
-		    map tg = Storage::GetTargetMap();
+		    map<string,map> tg = Storage::GetTargetMap();
 		    tg = Storage::SetPartition( tg, partition );
 		    Storage::SetTargetMap( tg );
 		    y2milestone( "loop part info %1", partition );
@@ -347,7 +348,7 @@ define boolean HandleFormatPartition( map partition )
 		list options = [];
 		if( size(partition["format_opt"]:"")>0 )
 		    {
-		    list t = splitstring( partition["format_opt"]:"", " " );
+		    list<string> t = splitstring( partition["format_opt"]:"", " " );
 		    options = merge( options, 
 		                     filter( string e, t, ``(size(e)>0)));
 		    }
@@ -508,7 +509,7 @@ define map DetermineMountPoints(string disk, map target, map mp )
     return( mp );
     };
 
-define boolean DoMountList( map mp )
+define boolean DoMountList( map<string,list> mp )
     ``{
     boolean retry = false;
     boolean cancel = false;
@@ -632,15 +633,15 @@ define void DoUmountAndReset( list mounts )
   // 0.5 unmount all deleted or changed partitions ( only in running system )
   if( !installation )
       {
-      list mounts = Partitions::CurMounted();
-      list umounts = [];
-      list targetMounts = [];
+      list<map> mounts = Partitions::CurMounted();
+      list<map> umounts = [];
+      list<map> targetMounts = [];
 
       foreach( map mounted_partition, mounts, 
 	  ``{
 	  y2debug( "mounted partition map : %1", mounted_partition );
 
-	  map all_target_of_mounted_part = filter( string key, map target, Storage::GetTargetMap(), 
+	  map<string,map> all_target_of_mounted_part = filter( string key, map target, Storage::GetTargetMap(), 
 	                                           ``( issubstring( mounted_partition["spec"]:"", key ) ||
 						       issubstring( mounted_partition["loop_on"]:"", key )));
 	  y2debug( "all_target_of_mounted_part: %1 ", mounted_partition );
@@ -651,7 +652,7 @@ define void DoUmountAndReset( list mounts )
 		  select( maplist(any k, any v, all_target_of_mounted_part, ``(v) ), 0, $[] );
 
 	      y2debug( "target_of_mounted_part %1", select( maplist(any k, any v, all_target_of_mounted_part, ``(k) ), 0, "" ));
-	      list all_partitions = filter( map part,
+	      list<map> all_partitions = filter( map part,
 					    target_of_mounted_part["partitions"]:[],
 					    ``( issubstring( mounted_partition["spec"]:"", sformat( "%1", part["nr"]:(any)0 ) ) ||
 					        issubstring( mounted_partition["loop_on"]:"", sformat( "%1", part["nr"]:(any)0 ) )));
@@ -713,9 +714,9 @@ define void DoUmountAndReset( list mounts )
 
       foreach( string key, map val, Storage::GetTargetMap(), 
 	  ``{
-          list new = filter( map v, val["partitions"]:[], ``(v["mount"]:""!=""));
+          list<map> new = filter( map v, val["partitions"]:[], ``(v["mount"]:""!=""));
 	  y2milestone( "new:%1", new );
-	  targetMounts = union( targetMounts, new );
+	  targetMounts = (list<map>)union( targetMounts, new );
 	  });
 
       foreach( map val, targetMounts,
@@ -761,7 +762,7 @@ define void DoUmountAndReset( list mounts )
     boolean cancel = false;
     boolean retry = false;
     boolean reboot = false;
-    map tg = Storage::GetTargetMap();
+    map<string,map> tg = Storage::GetTargetMap();
     integer num_lvm_vg = size (filter (any dev, map disk, tg,
                                        ``(disk["is_lvm_vg"]:false)));
     boolean md_active = size(tg["/dev/md","partitions"]:[])>0;
@@ -778,11 +779,11 @@ define void DoUmountAndReset( list mounts )
 
 	  integer n = 0;
 	  boolean mod_ok = true;
-	  map mod = filter( integer num, map p, modify_targets,
+	  map<integer,map> mod = filter( integer num, map p, modify_targets,
 	                    ``(p["type"]:""=="remove_lv") );
 	  if( size(mod)>0 )
 	    {
-	    mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	    mod = mapmap( integer num, map p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	    y2milestone( "mod=%1", mod );
 	    mod_ok = target_modify( mod, installation );
 	    }
@@ -793,7 +794,7 @@ define void DoUmountAndReset( list mounts )
 	    if( size(mod)>0 )
 	      {
 	      n = 0;
-	      mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	      mod = mapmap( integer num, map p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	      y2milestone( "mod=%1", mod );
 	      mod_ok = HandleResizeLvm( Storage::GetTargetMap(), mod, true );
 	      }
@@ -806,7 +807,7 @@ define void DoUmountAndReset( list mounts )
 	    if( size(mod)>0 )
 	      {
 	      n = 0;
-	      mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	      mod = mapmap( integer num, map p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	      y2milestone( "mod=%1", mod );
 	      mod_ok = target_modify( mod, installation );
 	      }
@@ -840,12 +841,12 @@ damage to your file systems, it is safer to cancel and reboot.
 
     if( md_active )
 	{
-	list mr_list = [];
+	list<any> mr_list = [];
 	if( !Mode::initial )
 	    {
 	    mr_list = filter( map e, tg["/dev/md","partitions"]:[],
 	                           ``(size(e["mount"]:"")>0));
-	    mr_list = maplist( map e, mr_list, ``(e["device"]:"") );
+	    mr_list = maplist( map e, (list<map>)mr_list, ``(e["device"]:"") );
 	    }
 	y2milestone( "mr_list %1", mr_list );
 	SCR::Write( .md.deactivate, mr_list );
@@ -855,7 +856,7 @@ damage to your file systems, it is safer to cancel and reboot.
 
     // remember special devices for LILO
     string boot_device = "";
-    list   swap_devices = [];
+    list<list>   swap_devices = [];
     string root_device = "";
 
 
@@ -871,7 +872,7 @@ damage to your file systems, it is safer to cancel and reboot.
 	    };
 
 	// every disk
-	list partitions = target["partitions"]:[];
+	list<map> partitions = target["partitions"]:[];
 
 	y2debug("Target: %1", tdevice );
 
@@ -1177,11 +1178,11 @@ Please repeat the installation with another swap partition selected
     // 2a. Do any necessary RAID preparation
     if( this_is_for_real && md_active )
 	{
-        map tg = Storage::GetTargetMap();
+        map<string,map> tg = Storage::GetTargetMap();
 	y2milestone( "rd %1", tg["/dev/md","partitions"]:[] );
-	list rem_l = filter( map p, tg["/dev/md","partitions"]:[],
+	list<map> rem_l = filter( map p, tg["/dev/md","partitions"]:[],
 	                     ``( p["delete"]:false && !p["create"]:false ));
-	list add_l = filter( map p, tg["/dev/md","partitions"]:[],
+	list<map> add_l = filter( map p, tg["/dev/md","partitions"]:[],
 	                     ``( !p["delete"]:false && p["create"]:false ));
 	y2milestone( "rem %1", rem_l ); 
 	y2milestone( "add %1", add_l );
@@ -1250,11 +1251,11 @@ Please repeat the installation with another swap partition selected
 	{
 	retry=false;
 	integer n = 0;
-	map mod = filter( integer num, map p, modify_targets,
+	map<integer,map> mod = filter( integer num, map p, modify_targets,
 	                  ``(p["type"]:""!="remove_pv" &&
 			     p["type"]:""!="remove_lv" &&
 			     p["type"]:""!="remove_vg") );
-        mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
+        mod = mapmap( integer num, map p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	y2milestone( "mod=%1", mod );
 
 	boolean ret = target_modify( mod, installation );
@@ -1265,7 +1266,7 @@ Please repeat the installation with another swap partition selected
 	    if( size(mod)>0 )
 	      {
 	      n = 0;
-	      mod = mapmap( integer num, any p, mod, ``{ n=n+1; return( $[n: p] ); } );
+	      mod = mapmap( integer num, map p, mod, ``{ n=n+1; return( $[n: p] ); } );
 	      y2milestone( "mod=%1", mod );
 	      ret = HandleResizeLvm( Storage::GetTargetMap(), mod, false );
 	      }
@@ -1358,7 +1359,7 @@ damage to your file systems, it is safer to cancel and reboot.
              filter( string k, map e, Storage::GetTargetMap(), ``(k!="/dev/loop")),
 	``{
 	// every disk
-	list partitions = target["partitions"]:[];
+	list<map> partitions = target["partitions"]:[];
 	y2milestone( "tdevice %1", tdevice );
 	foreach(map partition, filter( map p, partitions, ``(!p["delete"]:false)),
 	    ``{
@@ -1387,13 +1388,13 @@ damage to your file systems, it is safer to cancel and reboot.
 
     // now select all native partitions with a mountpoint
     // and put them in a map. This ensures lexical ordering.
-    map mountPoints = $[];
+    map<string,list> mountPoints = $[];
     tg = Storage::GetTargetMap();
 
     foreach( string tdevice, map target, 
-             filter( string k, any e, tg, ``(k!="/dev/loop")),
+             filter( string k, map e, tg, ``(k!="/dev/loop")),
 	``{
-	mountPoints = DetermineMountPoints( tdevice, target, mountPoints );
+	mountPoints = (map<string,list>)DetermineMountPoints( tdevice, target, mountPoints );
 	}); // foreach (tdevice)
 
     y2milestone("MountPoints: %1",mountPoints);
@@ -1489,7 +1490,7 @@ damage to your file systems, it is safer to cancel and reboot.
 	    });
 	if( !cancel )
 	    {
-	    map loop_mp = DetermineMountPoints( "/dev/loop", loop, $[] );
+	    map<string,list> loop_mp = (map<string,list>)DetermineMountPoints( "/dev/loop", loop, $[] );
 	    cancel = !DoMountList( loop_mp );
 	    if( cancel )
 		{
@@ -1550,7 +1551,7 @@ damage to your file systems, it is safer to cancel and reboot.
 	    ``{
 	    if( !part["delete"]:false )
 		{
-		part = filter( string k, any v, part, ``(!contains( remove_keys, k )));
+		part = filter( string k, any v, (map<string,any>)part, ``(!contains( remove_keys, k )));
 		new = add( new, part );
 		}
 	    });

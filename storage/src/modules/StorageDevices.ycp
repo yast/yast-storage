@@ -41,7 +41,7 @@
      * @return map of $["device": $[..target..], ...] for each ZIP drive
      *
      */
-    global map ZipDrives = $[];
+    global map<string,any> ZipDrives = $[];
 
 
     /**
@@ -331,15 +331,13 @@ global define map fakeProbe ()
  */
 global define map Check4partitions( string diskdev, map disk, path diskpath )
     ``{
-    list partitions = [];
-
-    partitions = (list) SCR::Read( .disk+diskpath+.partitions,
+    list partitions_desc = (list) SCR::Read( .disk+diskpath+.partitions,
 				   Partitions::UseParted() );
-    if( is(partitions[0]:(any)"", string ) )
+    if( is(partitions_desc[0]:(any)"", string ) )
 	{
-	if( size(partitions[0]:"")>0 )
+	if( size(partitions_desc[0]:"")>0 )
 	    {
-	    disk["label"] = partitions[0]:"";
+	    disk["label"] = partitions_desc[0]:"";
 	    }
 	else
 	    {
@@ -355,19 +353,21 @@ global define map Check4partitions( string diskdev, map disk, path diskpath )
     y2milestone( "disk %1 label %2 max_primary:%3 max_logical:%4", 
                  diskdev, disk["label"]:"", disk["max_primary"]:0,
 		 disk["max_logical"]:0 );
-    partitions = remove( partitions, 0 );
+
+    // the list contains only maps now
+    list<map> partitions = (list<map>)remove( partitions_desc, 0 );
     partitions = maplist(map part, partitions,
 	``{
-	if( part["fsid"]:0 > 0 && (part["fsid"]:0<256||disk["label"]:""=="gpt"))
-	    {
-	    part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
-	    }
-	return( part );
+	    if( part["fsid"]:0 > 0 && (part["fsid"]:0<256||disk["label"]:""=="gpt"))
+		{
+		part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
+		}
+	    return( part );
 	});
     partitions = maplist(map p, partitions,
 	``{
-	p["device"] = GetDeviceName( diskdev, p["nr"]:(any)0 );
-	return( p );
+	    p["device"] = GetDeviceName( diskdev, p["nr"]:(any)0 );
+	    return( p );
 	});
     disk["partitions"] = partitions;
     return disk;
@@ -376,8 +376,8 @@ global define map Check4partitions( string diskdev, map disk, path diskpath )
 global define map CheckPartedValid( string ddevice, map disk, 
 				    list<map> partitions, list<map> ppart )
     ``{
-    map plist1 = $[];
-    map plist2 = $[];
+    map<integer,integer> plist1 = $[];
+    map<integer,integer> plist2 = $[];
     boolean ret = true;
     y2milestone( "target %1", disk );
     string regex = substring( ddevice, 5 )+"[p]*[0-9]+";
@@ -401,8 +401,8 @@ global define map CheckPartedValid( string ddevice, map disk,
     map ext = find(map p, partitions, ``(p["type"]:`unknown==`extended));
     if( ext != nil )
 	{
-	plist1 = filter(integer k, any e, plist1, ``(k!=ext["nr"]:0));
-	plist2 = filter(integer k, any e, plist2, ``(k!=ext["nr"]:0));
+	plist1 = filter(integer k, integer e, plist1, ``(k!=ext["nr"]:0));
+	plist2 = filter(integer k, integer e, plist2, ``(k!=ext["nr"]:0));
 	}
     y2milestone( "plist1 %1", plist1 );
     y2milestone( "plist2 %1", plist2 );
@@ -774,7 +774,7 @@ define map localProbe ()
 
     SCR::UnmountAgent(.disk);
 
-    ZipDrives = union (ZipDrives, findZIPs ());
+    ZipDrives = (map<string,any>)union (ZipDrives, findZIPs ());
 
     foreach(string k, any e, ZipDrives, 
 	``{

@@ -74,7 +74,7 @@ define integer end_of_region (list<integer> region) ``{
 
     // Return the number of primary partitions
 
-define integer num_primary (list partitions) ``{
+define integer num_primary (list<map> partitions) ``{
 	integer n = 0;
 
 	foreach (map pentry, partitions, ``{
@@ -114,7 +114,7 @@ define integer compute_max_primary (map disk) ``{
 
     // Return whether the list of selected partitions is contiguous.
 
-define boolean contiguous_selection (list selection) ``{
+define boolean contiguous_selection (list<map> selection) ``{
 	boolean ret = true;
 	symbol  last_type = nil;
 	list<integer>    last_region = nil;
@@ -138,7 +138,7 @@ define boolean contiguous_selection (list selection) ``{
 
     // Return true if an extended partition exists
 
-define boolean contains_extended (list partitions) ``{
+define boolean contains_extended (list<map> partitions) ``{
 	boolean ret = find( map p, partitions, 
 	                    ``(p["type"]:`unknown==`extended && 
 			       !p["delete"]:false)) != nil;
@@ -158,7 +158,7 @@ define boolean ignored_partition( map disk, map part )
 
     // Return the region of the extended partition
 
-define list<integer> extended_region (list partitions) ``{
+define list<integer> extended_region (list<map> partitions) ``{
 	list<integer> ret = [ 0, 0 ];
 	foreach (map pentry, partitions, ``{
 	if (pentry["type"]:`unknown == `extended)
@@ -204,7 +204,7 @@ define list<integer> calculate_selected_region( list selection,
     // Check whether three logical partitions can be created without
     // running past the kernel limit for the number of partitions
 
-define boolean can_create_logical( list partitions )
+define boolean can_create_logical( list<map> partitions )
     ``{
     list logicals = filter( map pentry, partitions,
 			    ``(lookup (pentry, "type", `unknown) == `logical));
@@ -249,7 +249,7 @@ define boolean is_ntfs_partition( map partition ) ``{
     // Input:  List of partition maps.
     // Return: Partition map if found or $[] if not.
     //
-define map get_last_used_partition( list partitions ) ``{
+define map get_last_used_partition( list<map> partitions ) ``{
 	map last_partition = $[];
 	integer minor = -1;
 
@@ -269,7 +269,7 @@ define map get_last_used_partition( list partitions ) ``{
     // Input:  List of partition maps
     // Return: resizeable partition map or $[] if none found
     //
-define map can_resize( list partitions ) ``{
+define map can_resize( list<map> partitions ) ``{
 	map last_used_partition = $[];
 	
 	if ( !Arch::i386 )
@@ -281,7 +281,7 @@ define map can_resize( list partitions ) ``{
 	// Filter out empty space that might exist behind valid partitions.
 	// This space would be there as a pseudo partition of type `free.
 	//
-	list partitions_local =
+	list<map> partitions_local =
 	    filter( map pentry, partitions, ``( lookup(pentry, "type", `dummy) != `free ));
 
 	last_used_partition = get_last_used_partition( partitions_local );
@@ -321,8 +321,8 @@ define integer check_win_nt_system( map disk )
     boolean go_on = true;
     integer local_ret = 0;
     boolean local_err = false;
-    list partitions = [];
-    list partitions_local = [];
+    list<map> partitions = [];
+    list<map> partitions_local = [];
     string fat_partition = "";
     
     partitions = disk["partitions"]:[];
@@ -397,10 +397,10 @@ define integer check_win_nt_system( map disk )
     // Renumber the logical partitions if some of them are deleted
     // The returned list is sorted by partition number instead of region
 
-define list renumber_logical_partitions (list partitions) ``{
-	partitions = sort (map a, map b, partitions, ``(lookup (a, "nr", 0) < lookup (b, "nr", 0)));
+define list<map<string, any> > renumber_logical_partitions (list<map<string, any> > partitions) ``{
+	partitions = sort (map<string, any> a, map<string, any> b, partitions, ``(lookup (a, "nr", 0) < lookup (b, "nr", 0)));
 	integer logicals_deleted = 0;
-	return maplist (map pentry, partitions, ``{
+	return maplist (map<string, any> pentry, partitions, ``{
 	    if (lookup (pentry, "type", `unknown) == `logical) {
 		if (lookup (pentry, "delete", false))
 		    logicals_deleted = logicals_deleted + 1;
@@ -413,7 +413,7 @@ define list renumber_logical_partitions (list partitions) ``{
     };
 
     // Find unused space at the end of the extended partition
-define list<integer> unused_extended_region (list partitions) ``{
+define list<integer> unused_extended_region (list<map> partitions) ``{
 	list<integer> extended = extended_region (partitions);
 	list logicals = filter (map pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
 	integer end_of_logicals = 0;
@@ -430,7 +430,7 @@ define list<integer> unused_extended_region (list partitions) ``{
 
 
     // Find unused space at the start of the extended partition
-define list<integer> unused_logical_region (list partitions) ``{
+define list<integer> unused_logical_region (list<map> partitions) ``{
 	list<integer> extended = extended_region (partitions);
 	list logicals = filter (map pentry, partitions, ``(lookup (pentry, "type", `unknown) == `logical));
 	integer start_of_logicals = 0;

@@ -55,7 +55,7 @@ define symbol AbortDialog()
 define boolean CheckRaidNumbers( string raidnr )
     ``{
     integer max_raid = 27;
-    list parts = get_possible_rds( Storage::GetTargetMap() );
+    list<map> parts = get_possible_rds( Storage::GetTargetMap() );
     string dev = sformat( "/dev/md%1", raidnr );
     parts = filter( map e, parts, ``(e["raid_name"]:""==dev));
     y2milestone( "size %1 parts %2", size(parts), parts );
@@ -82,7 +82,7 @@ define void InitMainDevRaid()
     if( !Storage::ExistsMainDevKeyEntry( "/dev/md" ))
 	{
 	// We have to create an "md" entry
-	map maindev   = $[ "name"       : Partitions::raid_name,
+	map<string,any> maindev   = $[ "name"       : Partitions::raid_name,
 			   "cyl_count" : 1,          // not used
 			   "cyl_size"  : 1024*1024,  // size in MB
 			   "partitions": [ ]
@@ -221,9 +221,9 @@ define symbol RaidMultipathAuto()
 
     // heading text
     string caption = _("RAID Wizard: Multipath Autodetection");
-    map tg = Storage::GetTargetMap();
-    list raids = tg["/dev/md","partitions"]:[];
-    list mp_raids = filter( map p, raids,
+    map<string,map> tg = Storage::GetTargetMap();
+    list<map> raids = tg["/dev/md","partitions"]:[];
+    list<map> mp_raids = filter( map p, raids,
                             ``(!p["delete"]:false && p["create"]:false && 
 			       p["raid_type"]:""=="multipath"));
     foreach( map p, mp_raids,
@@ -235,12 +235,12 @@ define symbol RaidMultipathAuto()
 		``{
 		if( pt["raid_name"]:""==p["device"]:"" )
 		    {
-		    pt = filter( string key, any value, pt, ``( key != "raid_name" ));
+		    pt = filter( string key, any value, (map<string,any>)pt, ``( key != "raid_name" ));
 		    if( pt["change_fsid"]:false )
 			{
 			pt["fsid"] = pt["ori_fsid"]:0;
 			pt["fstype"] = pt["ori_fstype"]:"";
-			pt = filter( string key, any value, pt,  
+			pt = filter( string key, any value, (map<string,any>)pt,  
 				      ``( key != "ori_fsid" && 
 				          key != "change_fsid" &&
 					  key != "ori_fstype" ));
@@ -256,12 +256,12 @@ define symbol RaidMultipathAuto()
 	{
 	tg["/dev/md","partitions"] = raids;
 	}
-    map at = $[];
+    map<integer,list<string> > at = $[];
     list raid_list = [];
     list raid_enab = [];
     integer raid_num = -1;
     integer i=0;
-    foreach( list entry, Storage::AutodetectMultipathRaid( tg ),
+    foreach(list<string> entry, Storage::AutodetectMultipathRaid( tg ),
 	``{
 	raid_num = tointeger(get_free_raid_nr( tg, raid_num+1 ));
 	raid_list = add( raid_list, raid_num );
@@ -387,7 +387,7 @@ define symbol RaidMultipathAuto()
 			        "create"	    : true,
 			        "used_fs"    : Partitions::default_fs	];
 		    map p = $[];
-		    foreach( string device, at[i]:[],
+		    foreach( string device, (list<string>)at[i]:[],
 			``{
 			p = Storage::GetPartition( tg, device );
 			p["raid_name"] = dev;
@@ -404,7 +404,7 @@ define symbol RaidMultipathAuto()
 				Partitions::FsIdToString(Partitions::fsid_raid);
 			    }
 			y2debug( "p1 %1", p );
-			tg = Storage::SetPartition( tg, p );
+			tg = (map<string,map>)Storage::SetPartition( tg, p );
 			});
 
 		    integer mdsize = raid_size_byte(tg,rp);
@@ -412,7 +412,7 @@ define symbol RaidMultipathAuto()
 		    rp["region",1] = mdsize / (1024*1024);
 		    md_part = add( md_part, rp );
 		    y2milestone( "enabled %1 num:%2 entry:%3", i, 
-		                 raid_list[i]:255, at[i]:$[] );
+		                 raid_list[i]:255, at[i]:[] );
 		    y2milestone( "rp %1", rp );
 		    }
 		i = i+1;
@@ -718,9 +718,9 @@ compatibility with older RAID software</p>
  *  raidExpertDlg dialog
  *  edit expert options
  */
-define map RaidExpertDlg( symbol what, string device, map cur_raid,
-			  boolean installation, map file_systems,
-			  boolean edit_raid_type, map targetMap )
+define map<string,any> RaidExpertDlg( symbol what, string device, map<string,any> cur_raid,
+			  boolean installation, map<symbol,map> file_systems,
+			  boolean edit_raid_type, map<string,map> targetMap )
     ``{
     string raid_type = cur_raid["raid_type"]:"";
     // heading text
@@ -804,7 +804,7 @@ define map RaidExpertDlg( symbol what, string device, map cur_raid,
                        created && raid_type!="multipath" );
      UI::ChangeWidget( `id(`persist), `Enabled, created );
 
-     map retval = (map)eval(cur_raid);
+     map<string,any> retval = eval(cur_raid);
      symbol ret = `ok;
 
      retval = HandlePartWidgetChanges( true, ret, file_systems, cur_raid, retval );
@@ -897,7 +897,7 @@ define symbol RaidDevices( symbol what )
     Storage::CreateTargetBackup("raid");
    
     string subdevraidkey = Storage::GetWizardKey();
-    map subdevraid = Storage::GetSubDev( subdevraidkey );
+    map<string,any> subdevraid = Storage::GetSubDev( subdevraidkey );
     boolean changed = false;
 
     /* e.g.: subdevraidindex = 1; */
@@ -914,7 +914,7 @@ define symbol RaidDevices( symbol what )
 	caption   = _("RAID settings");
 	}
 
-    list    parts 	   =  []; 
+    list<map> parts 	   =  []; 
     list    table 	   =  [];
 
     Wizard::SetContentsButtons( caption,
@@ -1016,13 +1016,13 @@ define symbol RaidDevices( symbol what )
 	    if( ! check_raid_possible( Storage::GetTargetMap() ))
 		continue;
 
-	    list old = maplist( map e,
-	                        (list)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
+	    list<integer> old = maplist( map e,
+	                        (list<map>)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
 				``(e["nr"]:-1));
 
 	    ChooseRaidType( `settings );    
-	    list new = maplist( map e,
-	                        (list)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
+	    list<integer> new = maplist( map e,
+	                        (list<map>)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
 				``(e["nr"]:-1));
 	    integer new_num = -1;
 	    foreach( integer e, new,
@@ -1135,7 +1135,7 @@ define symbol RaidDevices( symbol what )
 	    {
 	    ///////////////////////////////////////////////////////
 	    // check if enough disks are attached to the raid
-	    list parts = (list)Storage::GetMainDevParam( "/dev/md", 
+	    list<map> parts = (list<map>)Storage::GetMainDevParam( "/dev/md", 
 	                                                 "partitions", [] );
 	    
 	    foreach( map part,  parts,
@@ -1200,7 +1200,7 @@ Continue?
     if( ret == `next && what == `settings )
 	{
 	// fix the raid size in all raid devices
-	map target = Storage::GetMainDev( "/dev/md" );
+	map<string,any> target = Storage::GetMainDev( "/dev/md" );
 	
 	foreach( map part, target["partitions"]:[],
 		 ``({
@@ -1228,8 +1228,8 @@ Continue?
  */
 define symbol RaidExpertWizard()
     ``{
-    string  subdevkey     = Storage::GetWizardKey();
-    map     subdev        = Storage::GetSubDev( subdevkey );
+    string  subdevkey     	= Storage::GetWizardKey();
+    map<string,any> subdev      = Storage::GetSubDev( subdevkey );
  
     subdev = RaidExpertDlg( `wizard, subdev["raid_name"]:"", subdev, 
                             Mode::initial,
