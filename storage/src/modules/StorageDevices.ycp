@@ -32,6 +32,8 @@
 
     include "ui/common_functions.ycp";
 
+    boolean disks_valid = false;
+
     /**
      * @return map of $["device": $[..target..], ...] for each ZIP drive
      *
@@ -606,11 +608,11 @@ global define list GetS390Partitions( string ddev, map target, list ppart )
 */
 global define map Probe (boolean force_reset)
     ``{
-    y2milestone( "force_reset:%1", force_reset );
+    y2milestone( "force_reset:%1 disks_valid:%2", force_reset, disks_valid );
     if( force_reset )
 	targetMap = $[];
 
-    if (targetMap == $[])
+    if( targetMap==$[] && disks_valid )
 	{
 	targetMap = localProbe();
 	}
@@ -754,7 +756,7 @@ global define map CheckPartedValid( string ddevice, map disk,
     map plist2 = $[];
     boolean ret = true;
     y2milestone( "target %1", disk );
-    string regex = substring( ddevice, 5 )+"[0-9]+";
+    string regex = substring( ddevice, 5 )+"[p]*[0-9]+";
     y2milestone( "ddevice %1 regex %2", ddevice, regex );
     list ps = filter( `p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
     y2milestone( "ps %1", ps );
@@ -881,6 +883,12 @@ global define list Check4partitions (string diskdev, map disk, path diskpath)
     return partitions;
     };
 
+global define void InitDone()
+    ``{
+    disks_valid = true;
+    y2milestone( "called disks_valid %1", disks_valid );
+    }
+
 /**
 * Constructor
 */
@@ -888,7 +896,10 @@ global define list Check4partitions (string diskdev, map disk, path diskpath)
 global define void StorageDevices ()
     ``{
     if (!Mode::initial && !Mode::config)
+	{
 	FullProbe ();
+	disks_valid = true;
+	}
     return;
     }
 }

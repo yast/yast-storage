@@ -20,8 +20,8 @@
     import "ModuleLoading";
     import "HwStatus";
     import "Initrd";
-
-    import "Wizard";
+    import "Storage";
+    import "StorageDevices";
 
     textdomain "storage";
 
@@ -264,11 +264,11 @@ define void parportInitialize ()
 }
 
 // start a controller (by loading its module)
-// return true if successfull
-// return false if failed
+// return true if all necessary modules were actually loaded
+// return false if loading failed or was not necessary at all
 
 define boolean startController (map controller)
-``{
+    ``{
     // check module information
     // skip controller if no module info available
 
@@ -276,7 +276,7 @@ define boolean startController (map controller)
     string module_id = controller["unique_key"]:"";
 
     if (size (module_drivers) == 0)
-	return true;
+	return false;
 
     // get list of modules from /proc/modules
     map loaded_modules = SCR::Read(.proc.modules);		
@@ -286,25 +286,25 @@ define boolean startController (map controller)
 
     boolean already_active = false;
     foreach (`modulemap, module_drivers,
-    ``{
+	``{
 	if (modulemap["active"]:true)
-	{
+	    {
 	    already_active = true;
-	}
+	    }
 	else if (size (loaded_modules[modulemap["modules",0]:""]:$[]) > 0)
-	{
+	    {
 	    already_active = true;
-	}
-    });
+	    }
+	});
 
     // save unique key for HwStatus::Set()
     string unique_key = controller["unique_key"]:"";
 
     if (already_active)
-    {
+	{
 	HwStatus::Set (unique_key, `yes);
-	return true;
-    }
+	return false;
+	}
 
     boolean stop_loading = false;
     boolean one_module_failed = false;
@@ -313,64 +313,67 @@ define boolean startController (map controller)
     // break after first successful load
     //   no need to check "active", already done before !
     foreach (`modulemap, module_drivers,
-    ``{
+	``{
 	y2milestone ("modulemap: %1", modulemap);
 	boolean module_modprobe = modulemap["modprobe"]:false;
 
 	boolean all_modules_loaded = true;
 
 	if (!stop_loading)
-	{
+	    {
 	    foreach (`module_entry, modulemap["modules"]:[],
-	    ``{
+		``{
 		string module_name = module_entry[0]:"";
 		string module_args = module_entry[1]:"";
 
 		// remember postinstall modules
 
-		if (contains (postinstall_names, module_name))
-		{
+		if( contains( postinstall_names, module_name) )
+		    {
 		    y2milestone("name: %1 args: %2", module_name, module_args);
 
-		    list vendor_device = prepare_vendor_device_info (controller);
+		    list vendor_device = prepare_vendor_device_info(controller);
 
 		    // save data for parportInitialize
-		    postinstall_info = add (postinstall_info,
-					    [module_modprobe, module_name, module_args,
-					     vendor_device[0]:"", vendor_device[1]:""]);
-		}
+		    postinstall_info = 
+			add( postinstall_info,
+			     [module_modprobe, module_name, module_args,
+			      vendor_device[0]:"", vendor_device[1]:""]);
+		    }
 		else
-		{
-		    // load module if not yet loaded
-		    if (!contains (moduleNames, module_name))
 		    {
+		    // load module if not yet loaded
+		    if( !contains (moduleNames, module_name) )
+			{
 			symbol load_result = `ok;
-			if (Mode::manual)
-			{
-			    list vendor_device = ModuleLoading::prepareVendorDeviceInfo (controller);
-			    load_result = ModuleLoading::Load (module_name, module_args,
-							 vendor_device[0]:"",
-							 vendor_device[1]:"",
-							 true,
-							 module_modprobe);
-			}
+			if( Mode::manual )
+			    {
+			    list vendor_device = 
+				ModuleLoading::prepareVendorDeviceInfo(controller);
+			    load_result = 
+				ModuleLoading::Load( module_name, module_args,
+						     vendor_device[0]:"",
+						     vendor_device[1]:"", true,
+						     module_modprobe );
+			    }
 			else
-			{
-			    load_result = ModuleLoading::Load (module_name, module_args,
-							 "", "",
-							 false, module_modprobe);
-			}
+			    {
+			    load_result = 
+				ModuleLoading::Load( module_name, module_args,
+						     "", "", false, 
+						     module_modprobe );
+			    }
 
 			if (load_result == `fail)
-			{
+			    {
 			    all_modules_loaded = false;
-			}
+			    }
 			else if (load_result == `dont)
-			{
+			    {
 			    all_modules_loaded = true;
-			}
+			    }
 			else		// load ok
-			{
+			    {
 			    // save data for modules.conf writing
 			    moduleNames = add (moduleNames, module_name);
 			    moduleArgs  = add (moduleArgs, module_args);
@@ -378,37 +381,34 @@ define boolean startController (map controller)
 
 			    // put them into initrd
 			    Initrd::AddModule (module_name, module_args);
-			}
-
-		    } // not yet loaded
-
-		} // not postinstall
+			    }
+			} // not yet loaded
+		    } // not postinstall
 
 		// break out of module load loop if one module failed
 
 		if (!all_modules_loaded)
-		{
+		    {
 		    one_module_failed = true;
-		}
+		    }
+		}); // foreach module of current driver info
 
-	    }); // foreach module of current driver info
-
-	} // stop_loading
+	    } // stop_loading
 
 	// break out of driver load loop if all modules of
 	//   the current driver loaded successfully
 
 	if (all_modules_loaded)
-	{
+	    {
 	    stop_loading = true;
-	}
+	    }
 
-    });  // foreach driver
+	});  // foreach driver
 
     HwStatus::Set (unique_key, one_module_failed?`no:`yes);
 
     return (!one_module_failed);
-}
+    }
 
 
 // local function to go through list of resources (list of maps)
@@ -436,7 +436,7 @@ define boolean anyActive (list resources)
  */
 
 global define void Initialize ()
-``{
+    ``{
     moduleNames = [];
     moduleArgs = [];
     map controller = $[];
@@ -447,8 +447,9 @@ global define void Initialize ()
 
     // loop through all controller descriptions from hwprobe
 
-    while (cindex < size (controllers))	// use while(), continue not allowed in foreach()
-    {
+    // use while(), continue not allowed in foreach()
+    while( cindex < size(controllers) )
+	{
 	controller = controllers[cindex]:$[];
 
 	cindex = cindex + 1;
@@ -457,17 +458,15 @@ global define void Initialize ()
 	// the controller is disabled in BIOS
 	// this is done by checking for an active IO or memory resource
 
-	if (! (anyActive (controller["resource", "io"]:[])
-	       || anyActive (controller["resource", "mem"]:[])))
-	{
+	if( !(anyActive (controller["resource", "io"]:[]) || 
+	      anyActive (controller["resource", "mem"]:[])))
+	    {
 	    // continue if disabled in BIOS
 	    continue;
-	}
+	    }
 
-	if (!startController (controller))
-	    break;
-
-    } // while (controller)
+	startController(controller);
+	} // while (controller)
 
 
     parportInitialize ();
@@ -487,7 +486,8 @@ global define void Initialize ()
 
     Hotplug::StartStorage();
 
-    y2milestone("all controllers initialized");
+    y2milestone("all controllers initialized" );
+    StorageDevices::InitDone();
 
     return;
 

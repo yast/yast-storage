@@ -93,17 +93,20 @@ global define map GetTargetMap()
     ``{
     map tmp = $[];
     boolean changed = false;
-    if( size(StorageMap[targets_key]:$[])==0 || (!probe_done && !Mode::config))
+    if( !probe_done && !Mode::config )
 	{
 	y2milestone ("probing StorageDevices" );
 	tmp = StorageDevices::Probe(false);
 	y2milestone ("probing done" );
-	tmp = ReadLvmMd( tmp );
-	y2milestone ("lvm init done" );
-	StorageMap[targets_key] = tmp;
-	probe_done = true;
-	lvm_initialized = true;
-	changed = true;
+	if( size(tmp)>0 )
+	    {
+	    tmp = ReadLvmMd( tmp );
+	    y2milestone ("lvm init done" );
+	    StorageMap[targets_key] = tmp;
+	    probe_done = true;
+	    lvm_initialized = true;
+	    changed = true;
+	    }
 	}
     if( changed )
 	{
@@ -508,18 +511,19 @@ global define map ReReadTargetMap()
     return GetTargetMap();
     };
 
-    global define void SetTargetMap( map targets )``{
-	if( StorageMap["targets"]:$[] != targets )
-	    {
-	    integer change_time = time();
-	    y2milestone( "SetTargetMap changed time %1", change_time );
-	    StorageMap["targets"] = targets;
-	    StorageMap["targets_time"] = change_time;
-	    }
-	else
-	    {
-	    y2milestone( "SetTargetMap unchanged" );
-	    }
+global define void SetTargetMap( map targets )
+    ``{
+    if( StorageMap["targets"]:$[] != targets )
+	{
+	integer change_time = time();
+	y2milestone( "SetTargetMap changed time %1", change_time );
+	StorageMap["targets"] = targets;
+	StorageMap["targets_time"] = change_time;
+	}
+    else
+	{
+	y2milestone( "SetTargetMap unchanged" );
+	}
     };
 
     global define integer GetTargetChangeTime() ``{
@@ -739,8 +743,8 @@ global define GetMountPoints()
   /**
    *	
    */
-  global define string GetDeviceName( string disk, any partition ) ``{
-
+global define string GetDeviceName( string disk, any partition ) 
+    ``{
       string ret = disk;
 
       if( is( partition, integer ) )
@@ -758,7 +762,6 @@ global define GetMountPoints()
           {
   	  ret = ret + "/" + partition;
 	  }
-
       return( ret );
   };
 
@@ -785,6 +788,10 @@ global define map GetDiskPartition( string device )
     else if( find( device, "/dev/md" )==0 )
       {
       dlen = 7;
+      }
+    else if( find( device, "/dev/loop" )==0 )
+      {
+      dlen = 9;
       }
     else if( find( device, "/dev/i2o/hd" )==0 )
       {
@@ -1543,8 +1550,6 @@ global define map GetDiskPartition( string device )
     
     /* SubDev defines  ------------------------------------------------------------------ */
     define list FilterDelete( list partitions ) ``{
-	y2milestone("FilterDelete called. Please use this define only for output. Dont't put back the return value to Storage");
-
 	return filter( `c_part, partitions ,
 			      ``( lookup(c_part, "delete", false) != true));
     }
@@ -2180,18 +2185,17 @@ global define list GetRootInitrdModules()
    
 
 
-   /* Contain the current key ( subdevkey ) for all wizards */
-    string WizardKey = "";
+/* Contain the current key ( subdevkey ) for all wizards */
+string WizardKey = "";
 
-    global define void GetWizardKey()``{
-
+global define void GetWizardKey()
+    ``{
 	y2debug( " Return wizard key %1", WizardKey);
 	return WizardKey;
-	
     };
-    
-    global define void SetWizardKey( string key )``{
 
+global define void SetWizardKey( string key )
+    ``{
 	if( IsKeyKey(key))
 	{
 	    y2debug(" Set WizardKey %1", WizardKey);
@@ -2403,7 +2407,7 @@ global define integer ZeroDevice(string del_device)
 global define list GetPartitionList()``{
     list ret = [];
     foreach ( string dev, map disk, GetTargetMap(), ``{
-        if( !disk["is_lvm_vg"]:false && dev != "/dev/md" )
+        if( IsRealDisk( dev, disk ) )
 	    {
 	    list l = filter( map `p, disk["partitions"]:[], 
 	                     ``(p["delete"]:false==false) );
@@ -2419,7 +2423,7 @@ global define list GetPartitionList()``{
 global define list GetOtherLinuxPartitions()``{
     list ret = [];
     foreach ( string dev, map disk, GetTargetMap(), ``{
-        if( !disk["is_lvm_vg"]:false && dev != "/dev/md" )
+        if( IsRealDisk( dev, disk ) )
 	    {
 	    list l = filter( map `p, disk["partitions"]:[], 
 	                     ``(!p["delete"]:false && 
@@ -2470,7 +2474,7 @@ global define string CheckSwapConflicts()``{
 	{
 	list plist = [];
 	foreach ( string dev, map disk, GetTargetMap(), ``{
-	    if( !disk["is_lvm_vg"]:false && dev != "/dev/md" )
+	    if( IsRealDisk( dev, disk ) )
 		{
 		list l = filter( `p, disk["partitions"]:[], 
 				``(p["delete"]:false==false) );
@@ -3260,11 +3264,16 @@ global define boolean SetCryptLoop( map part )
     return( crypt_ok );
     }
 
+global define boolean IsRealDisk( string disk, map entry )
+    ``{
+    return( disk != "/dev/md" && disk != "/dev/loop" && 
+            !entry["is_lvm_vg"]:false );
+    }
+
 global define boolean DiskmapNeeded()
     ``{
     boolean ret = false;
-    map real_disks = filter( `k, `e, GetTargetMap(), 
-                             ``(k!="/dev/md" && !e["is_lvm_vg"]:false ));
+    map real_disks = filter( `k, `e, GetTargetMap(), ``(IsRealDisk( k, e )) );
     list disks = maplist( `k, `e, real_disks, ``(k));
     y2milestone( "disks %1", disks );
     boolean scsi_disk = false;
