@@ -814,7 +814,7 @@ bool EvmsAccess::CreateCo( const string& Container_Cv, unsigned long PeSize_lv,
 	{
 	int count = Devices_Cv.size();
 	input = (handle_array_t*)malloc( sizeof(handle_array_t)+
-	                                 sizeof(object_handle_t)*(count-1) );
+	                                 sizeof(object_handle_t)*count );
 	if( input == NULL )
 	    {
 	    Error_C = "out of memory";
@@ -871,7 +871,7 @@ bool EvmsAccess::CreateCo( const string& Container_Cv, unsigned long PeSize_lv,
 	{
 	int count = 2;
 	option = (option_array_t*) malloc( sizeof(option_array_t)+
-	                                   (count-1)*sizeof(key_value_pair_t));
+	                                   count*sizeof(key_value_pair_t));
 	if( option == NULL )
 	    {
 	    Error_C = "out of memory";
@@ -945,22 +945,34 @@ bool EvmsAccess::CreateLv( const string& LvName_Cv, const string& Container_Cv,
 	{
 	Error_C = "unknown container type" + Container_Cv;
 	}
-    handle_array_t reg;
-    reg.count = 1;
-    reg.handle[0] = 0;
+    handle_array_t* reg = NULL;
+    if( Error_C.size()==0 )
+	{
+	reg = (handle_array_t*)malloc( sizeof(handle_array_t)+
+	                               sizeof(object_handle_t) );
+	if( reg == NULL )
+	    {
+	    Error_C = "out of memory";
+	    }
+	else
+	    {
+	    reg->count = 1;
+	    reg->handle[0] = 0;
+	    }
+	}
     if( Error_C.size()==0 )
 	{
 	string name = Container_Cv + "/Freespace";
 	int ret = evms_get_object_handle_for_name( REGION, 
 	                                           (char *)name.c_str(),
-						   &reg.handle[0] );
+						   &reg->handle[0] );
 	if( ret )
 	    {
 	    Error_C = "could not find object " + name;
 	    y2milestone( "ret %s", evms_strerror(ret) );
 	    }
 	y2milestone( "ret %d handle for %s is %u", ret, name.c_str(),
-	             reg.handle[0] );
+	             reg->handle[0] );
 	}
     plugin_handle_t lvm = 0;
     if( Error_C.size()==0 )
@@ -982,7 +994,7 @@ bool EvmsAccess::CreateLv( const string& LvName_Cv, const string& Container_Cv,
 		count++;
 	    }
 	option = (option_array_t*) malloc( sizeof(option_array_t)+
-	                                   (count-1)*sizeof(key_value_pair_t));
+	                                   count*sizeof(key_value_pair_t));
 	if( option == NULL )
 	    {
 	    Error_C = "out of memory";
@@ -1021,7 +1033,7 @@ bool EvmsAccess::CreateLv( const string& LvName_Cv, const string& Container_Cv,
     handle_array_t* output = NULL;
     if( Error_C.size()==0 )
 	{
-	ret = evms_create( lvm, &reg, option, &output );
+	ret = evms_create( lvm, reg, option, &output );
 	if( ret )
 	    {
 	    y2milestone( "evms_create ret %d", ret );
@@ -1052,6 +1064,8 @@ bool EvmsAccess::CreateLv( const string& LvName_Cv, const string& Container_Cv,
 	{
 	y2milestone( "OK" );
 	}
+    if( reg )
+	free( reg );
     return( Error_C.size()==0 );
     }
 
@@ -1107,26 +1121,38 @@ bool EvmsAccess::DeleteLv( const string& LvName_Cv, const string& Container_Cv )
 	{
 	Error_C = "unknown container type" + Container_Cv;
 	}
-    handle_array_t reg;
-    reg.count = 1;
-    reg.handle[0] = 0;
+    handle_array_t* reg = NULL;
+    if( Error_C.size()==0 )
+	{
+	reg = (handle_array_t*)malloc( sizeof(handle_array_t)+
+	                               sizeof(object_handle_t) );
+	if( reg == NULL )
+	    {
+	    Error_C = "out of memory";
+	    }
+	else
+	    {
+	    reg->count = 1;
+	    reg->handle[0] = 0;
+	    }
+	}
     if( Error_C.size()==0 )
 	{
 	string name = Container_Cv + "/" + LvName_Cv;
 	int ret = evms_get_object_handle_for_name( REGION, 
 	                                           (char *)name.c_str(),
-						   &reg.handle[0] );
+						   &reg->handle[0] );
 	if( ret )
 	    {
 	    Error_C = "could not find object " + name;
 	    y2milestone( "ret %s", evms_strerror(ret) );
 	    }
 	y2milestone( "ret %d handle for %s is %u", ret, name.c_str(),
-	             reg.handle[0] );
+	             reg->handle[0] );
 	}
     if( Error_C.size()==0 )
 	{
-	object_handle_t use = FindUsingVolume( reg.handle[0] );
+	object_handle_t use = FindUsingVolume( reg->handle[0] );
 	if( use != 0 )
 	    {
 	    ret = evms_delete(use);
@@ -1139,7 +1165,7 @@ bool EvmsAccess::DeleteLv( const string& LvName_Cv, const string& Container_Cv )
 	    }
 	if( Error_C.size()==0 )
 	    {
-	    ret = evms_delete( reg.handle[0] );
+	    ret = evms_delete( reg->handle[0] );
 	    if( ret )
 		{
 		y2milestone( "evms_delete ret %d", ret );
@@ -1160,6 +1186,8 @@ bool EvmsAccess::DeleteLv( const string& LvName_Cv, const string& Container_Cv )
 	{
 	y2milestone( "OK" );
 	}
+    if( reg )
+	free( reg );
     return( Error_C.size()==0 );
     }
 
@@ -1213,26 +1241,28 @@ bool EvmsAccess::ExtendCo( const string& Container_Cv, const string& PvName_Cv )
 	    Error_C = "could not find container " + Container_Cv;
 	    }
 	}
-    plugin_handle_t lvm = 0;
+    handle_array_t* reg = NULL;
     if( Error_C.size()==0 )
 	{
-	lvm = GetLvmPlugin();
-	if( lvm == 0 )
+	reg = (handle_array_t*)malloc( sizeof(handle_array_t)+
+	                               sizeof(object_handle_t) );
+	if( reg == NULL )
 	    {
-	    Error_C = "could not find lvm plugin";
+	    Error_C = "out of memory";
+	    }
+	else
+	    {
+	    reg->count = 1;
+	    reg->handle[0] = region;
 	    }
 	}
     if( Error_C.size()==0 && Co_p )
 	{
-#if 0
-	// FIXME for EVMS 2.5.x
-	ret = evms_transfer( region, lvm, Co_p->Id(), NULL );
-#endif
-	ret = -1;
+	ret = evms_expand( Co_p->Id(), reg, NULL );
 	if( ret )
 	    {
-	    Error_C = "could not transfer " + PvName_Cv + " to container " + 
-	              Container_Cv;
+	    Error_C = "could not expand container " + Container_Cv + " by " + 
+		      PvName_Cv;
 	    y2milestone( "ret %s", evms_strerror(ret) );
 	    }
 	}
@@ -1248,6 +1278,8 @@ bool EvmsAccess::ExtendCo( const string& Container_Cv, const string& PvName_Cv )
 	{
 	y2milestone( "OK" );
 	}
+    if( reg )
+	free( reg );
     return( Error_C.size()==0 );
     }
 
@@ -1278,19 +1310,6 @@ bool EvmsAccess::ShrinkCo( const string& Container_Cv, const string& PvName_Cv )
 	y2milestone( "ret %d handle for %s is %d", ret, PvName_Cv.c_str(), 
 	             region );
 	}
-    if( Error_C.size()==0 )
-	{
-#if 0
-	// FIXME for EVMS 2.5.x
-	if( evms_can_remove_from_container( region ) )
-#endif
-	if( false )
-
-	    {
-	    Error_C = "could not remove " + PvName_Cv + "  from container " + 
-	              Container_Cv;
-	    }
-	}
     const EvmsContainerObject* Co_p = NULL;
     if( Error_C.size()==0 )
 	{
@@ -1300,22 +1319,24 @@ bool EvmsAccess::ShrinkCo( const string& Container_Cv, const string& PvName_Cv )
 	    Error_C = "could not find container " + Container_Cv;
 	    }
 	}
-    plugin_handle_t lvm = 0;
+    handle_array_t* reg = NULL;
     if( Error_C.size()==0 )
 	{
-	lvm = GetLvmPlugin();
-	if( lvm == 0 )
+	reg = (handle_array_t*)malloc( sizeof(handle_array_t)+
+	                               sizeof(object_handle_t) );
+	if( reg == NULL )
 	    {
-	    Error_C = "could not find lvm plugin";
+	    Error_C = "out of memory";
+	    }
+	else
+	    {
+	    reg->count = 1;
+	    reg->handle[0] = region;
 	    }
 	}
     if( Error_C.size()==0 && Co_p )
 	{
-#if 0
-	// FIXME for EVMS 2.5.x
-	ret = evms_transfer( region, 0, 0, NULL );
-#endif
-	ret = -1;
+	ret = evms_shrink( Co_p->Id(), reg, NULL );
 	if( ret )
 	    {
 	    Error_C = "could not transfer " + PvName_Cv + " out of container " +
@@ -1347,6 +1368,8 @@ bool EvmsAccess::ShrinkCo( const string& Container_Cv, const string& PvName_Cv )
 	{
 	y2milestone( "OK" );
 	}
+    if( reg )
+	free( reg );
     return( Error_C.size()==0 );
     }
 
