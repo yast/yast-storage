@@ -1,6 +1,4 @@
 #include <dlfcn.h>
-#include <iostream>
-#include <sstream>
 #include <iterator>
 #include <string.h>
 
@@ -416,10 +414,12 @@ void EvmsVolumeObject::AddRelation( EvmsAccess* Acc )
 	    {
 	    consumes = Acc->AddObject( sinfo_p->object );
 	    }
+#if 0
 	if( sinfo_p->associated_volume>0 )
 	    {
 	    assc = Acc->AddObject( sinfo_p->associated_volume );
 	    }
+#endif
 	}
     }
 
@@ -1224,7 +1224,11 @@ bool EvmsAccess::ExtendCo( const string& Container_Cv, const string& PvName_Cv )
 	}
     if( Error_C.size()==0 && Co_p )
 	{
+#if 0
+	// FIXME for EVMS 2.5.x
 	ret = evms_transfer( region, lvm, Co_p->Id(), NULL );
+#endif
+	ret = -1;
 	if( ret )
 	    {
 	    Error_C = "could not transfer " + PvName_Cv + " to container " + 
@@ -1276,7 +1280,12 @@ bool EvmsAccess::ShrinkCo( const string& Container_Cv, const string& PvName_Cv )
 	}
     if( Error_C.size()==0 )
 	{
+#if 0
+	// FIXME for EVMS 2.5.x
 	if( evms_can_remove_from_container( region ) )
+#endif
+	if( false )
+
 	    {
 	    Error_C = "could not remove " + PvName_Cv + "  from container " + 
 	              Container_Cv;
@@ -1302,7 +1311,11 @@ bool EvmsAccess::ShrinkCo( const string& Container_Cv, const string& PvName_Cv )
 	}
     if( Error_C.size()==0 && Co_p )
 	{
+#if 0
+	// FIXME for EVMS 2.5.x
 	ret = evms_transfer( region, 0, 0, NULL );
+#endif
+	ret = -1;
 	if( ret )
 	    {
 	    Error_C = "could not transfer " + PvName_Cv + " out of container " +

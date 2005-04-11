@@ -1,7 +1,6 @@
 #ifndef EVMS_ACCESS_H
 #define EVMS_ACCESS_H
 
-#include <iostream>
 #include <list>
 
 extern "C"

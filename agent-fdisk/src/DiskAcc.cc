@@ -10,7 +10,6 @@
 #include <unistd.h>
 #include <sys/mount.h>         /* for BLKGETSIZE */
 #include <linux/hdreg.h>       /* for HDIO_GETGEO */
-#include <linux/fs.h>          /* for BLKGETSIZE64 */
 
 #include <ycp/y2log.h>
 #include "AppUtil.h"
