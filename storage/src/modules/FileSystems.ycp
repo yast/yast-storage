@@ -75,10 +75,10 @@ define map FstabDefaultMap =
        "usb":    $[ "spec":"usbfs", "mount":"/proc/bus/usb", "vfstype":"usbfs", 
                     "mntops":"noauto", "freq":0, "passno":0 ],
        "cdrom":  $[ "spec":"", "mount":"", "vfstype":"subfs", 
-                    "mntops":"fs=cdfss,ro,procuid,nosuid,nodev,exec", 
+                    "mntops":"noauto,fs=cdfss,ro,procuid,nosuid,nodev,exec", 
 		    "freq":0, "passno":0 ],
        "floppy": $[ "spec":"", "mount":"", "vfstype":"subfs", 
-                    "mntops":"fs=floppyfss,procuid,nodev,nosuid,sync", 
+                    "mntops":"noauto,fs=floppyfss,procuid,nodev,nosuid,sync", 
 		    "freq":0, "passno":0 ],
        "zip":    $[ "spec":"", "mount":"", "vfstype":"auto", 
                     "mntops":"noauto,user", "freq":0, "passno":0 ]
@@ -90,7 +90,7 @@ define map FstabDefaultMap =
 		   `xfs		: true,
 		   `ext2        : true,
 		   `ext3        : true,
-		   `jfs    	: true,
+		   `jfs    	: false,
 		   `fat16  	: true,
 		   `fat32  	: true,
 		   `xxefi  	: false,
@@ -808,7 +808,6 @@ global define void FileSystems()
 	}
     if( Arch::ppc () )
 	{
-	support[`xfs] = false;
 	support[`fat16] = Arch::board_chrp ();
 	support[`fat32] = Arch::board_chrp ();
 	support[`xbootdisk] = true;
@@ -1096,6 +1095,90 @@ global define symbol DetectFs( string current_dev )
     y2milestone( "DetectFs %1: %2", current_dev, return_value );
     return( return_value );
     };
+
+global define string GetLosetupCmd( map loop, string tmpf )
+    ``{
+    list noext = [ "twofish", "twofishSL92", "none" ];
+    string encr = loop["encryption"]:"twofish";
+    string cmd = sformat( "/sbin/losetup -e %1", encr );
+    # XXX: This could be done better
+    if ( encr == "twofishSL92" )
+       {
+       cmd = "rmmod twofish cryptoloop; modprobe loop_fish2; /sbin/losetup -e twofishSL92";
+       }
+    else if( encr == "twofish" )
+       {
+       cmd = "rmmod twofish cryptoloop; modprobe loop_fish2; /sbin/losetup -e twofish";
+       }
+    else 
+       {
+       cmd = "rmmod loop_fish2; modprobe twofish; modprobe cryptoloop; /sbin/losetup -e twofish256";
+       }
+    if( !contains( noext, encr ) && size(loop["phash"]:"")>0 )
+        {
+        cmd = cmd + " -H " + loop["phash"]:"";
+        }
+    if( !contains( noext, encr ) && size(loop["itercountk"]:"")>0 )
+        {
+        cmd = cmd + " -C " + loop["itercountk"]:"";
+        }
+    cmd = cmd + " " + loop["loop_dev"]:"" + " " + loop["partitionName"]:"" +
+          " -p0 < " + tmpf;
+    y2milestone( "GetLosetupCmd %1", cmd );
+    return( cmd );
+    }
+
+global define string DetectLoopEncryption( map loop, string pwdfile )
+    ``{
+    list<string> try_order = [ "twofish", "twofishSL92", "twofish256" ];
+    integer try = 0;
+    string mp = sformat( "%1_mp", pwdfile );
+    boolean ret = (boolean)SCR::Execute( .target.mkdir, mp, 0700 );
+    y2milestone( "DetectLoopEncryption mkdir:%1 r:%2", mp, ret );
+    string cmd = "";
+    map r = $[];
+    symbol fs = `unknown;
+    do
+	{
+	fs = `unknown;
+	cmd = sformat( "losetup -d %1", loop["loop_dev"]:"" );
+	r = (map)SCR::Execute( .target.bash_output, cmd );
+	y2milestone( "DetectLoopEncryption cmd:%1 r:%2", cmd, r );
+	loop["encryption"] = try_order[try]:"twofish";
+	cmd = GetLosetupCmd( loop, pwdfile );
+	r = (map)SCR::Execute( .target.bash_output, cmd );
+	y2milestone( "DetectLoopEncryption cmd:%1 r:%2", cmd, r );
+	if( r["exit"]:1==0 )
+	    fs = FileSystems::DetectFs( loop["loop_dev"]:"" );
+	if( fs != `unknown )
+	    {
+	    cmd = sformat( "mount -oro %1 %2 %3", GetMountOption(fs), 
+	                   loop["loop_dev"]:"", mp );
+	    r = (map)SCR::Execute( .target.bash_output, cmd );
+	    y2milestone( "DetectLoopEncryption cmd:%1 r:%2", cmd, r );
+	    if( r["exit"]:1!=0 )
+		fs = `unknown;
+	    cmd = sformat( "umount %1", loop["loop_dev"]:"" );
+	    r = (map)SCR::Execute( .target.bash_output, cmd );
+	    y2milestone( "DetectLoopEncryption cmd:%1 r:%2", cmd, r );
+	    }
+	if( fs==`unknown )
+	    try = try+1;
+	}
+    while( fs==`unknown && try<size(try_order) );
+    cmd = sformat( "rmdir %1", mp );
+    r = (map)SCR::Execute( .target.bash_output, cmd );
+    y2milestone( "DetectLoopEncryption cmd:%1 r:%2", cmd, r );
+    if( fs==`unknown )
+	{
+	cmd = sformat( "losetup -d %1", loop["loop_dev"]:"" );
+	map r = (map)SCR::Execute( .target.bash_output, cmd );
+	y2milestone( "DetectLoopEncryption cmd:%1 r:%2", cmd, r );
+	}
+    y2milestone( "DetectLoopEncryption ret:%1", try_order[try]:"" );
+    return( try_order[try]:"" );
+    }
+
 
 global define map GetUuidVolume( string dev, symbol fs )
     ``{

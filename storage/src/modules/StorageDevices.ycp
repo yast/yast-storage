@@ -37,6 +37,7 @@
     textdomain "storage";
 
 
+
     boolean disks_valid = false;
 
     /**
@@ -482,7 +483,7 @@ global define map CheckPartedValid( string ddevice, map disk,
     list<map> ps = filter( map p, ppart, ``(regexpmatch( p["name"]:"", regex) ));
     y2milestone( "CheckPartedValid ps %1", ps );
     integer cyl_blocks = disk["cyl_size"]:1000000 / 1024;
-    list bsd_part = [ Partitions::fsid_freebsd, Partitions::fsid_openbsd ];
+    list bsd_part = [ Partitions::fsid_freebsd, Partitions::fsid_openbsd, Partitions::fsid_beos, Partitions::fsid_solaris ];
     boolean openbsd = find(map e,partitions, 
                             ``(contains(bsd_part,e["fsid"]:0)))!=nil;
     y2milestone( "CheckPartedValid openbsd %1", openbsd );
@@ -751,7 +752,7 @@ define map localProbe ()
 	    }
 	else
 	    {
-	    dname = dname + _("Disk");
+	    dname = dname + "Disk";
 	    }
 	dname = dname + ", ";
 
@@ -855,7 +856,7 @@ define map localProbe ()
 	// ------------------------------------------------------
 	// construct full target name
 
-	dname = dname + String::FormatSize(cyl_count * cyl_size) + ", " + ddevice + ", ";
+	dname = dname + Partitions::ByteToHumanString(cyl_count * cyl_size) + ", " + ddevice + ", ";
 
 	string dinfo = disk["vendor"]:"";
 //	target["vendor"]:dinfo;
@@ -1025,7 +1026,7 @@ define string UdevBusEntry( string bus )
 
 define string UdevPlaceEntry( string place )
     ``{
-    return( sformat( "PLACE=\"%1\",", place ));
+    return( sformat( "ID=\"%1\",", place ));
     }
 
 global define string UdevSylinkEntry( list<string> links )
@@ -1055,7 +1056,7 @@ global define map<integer,map> GetSysfsCdrom()
 global define string MakeUdevRulesLine( map drive )
     ``{
     y2milestone( "MakeUdevRulesLine %1", drive );
-    string line = sformat( "%1 %2 PROGRAM=\"/bin/sed -n 's/[[:blank:]]*%%k//p' /proc/sys/dev/cdrom/info\", RESULT=\"drive name:\", %3",
+    string line = sformat( "%1 %2 SYSFS{removable}=\"1\", %3",
                            UdevBusEntry(drive["bus_hwcfg"]:""), 
 			   UdevPlaceEntry(drive["sysfs_bus_id"]:""),
 			   UdevSylinkEntry(drive["udev_links"]:[]) );
