@@ -2,7 +2,9 @@
 # Files being accessed using "import" should be installed to
 #
 
-YCPCFLAGS = -I . -I include
+YCPCFLAGS = -I . -I include -M ../../../libstorage/bindings/ycp
+
+YCPC_LD_LIBRARY_PATH = ../../../libstorage/src/.libs
 
 yncludedir = @yncludedir@/storage
 
