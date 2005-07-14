@@ -33,25 +33,21 @@ map<string,string> params_orig = $[];
 define string HelpText()
     ``{
     // help text
-    return( _("<p>This module configures the disk controllers that are accessed by a
-kernel module.</p>
-<p>The table on top contains the controllers to configure. If
-there is more than one controller, switch between controllers
-by clicking a line in the table.</p>
-<p>Influence the order in which modules are loaded with the
-buttons to the right of the table.</p>
-<p>The next line contains the name of the kernel module for the selected 
-controller. There are controllers where more than one alternative kernel
-module can be used. If there is more than one module, you can switch 
-between these modules.</p>
-<p>The next line displays whether the module is currently loaded.</p>
-<p>Next, there is a check box in which to determine if the module should be
- loaded at system boot (in initrd).</p>
-<p>The text edit field may contain module parameters with which the module
-is loaded. These fields can stay empty for most modules.</p>
-<p>Last follows a button with which to try loading the selected module
-with the given parameters. It is <b>strongly</b> recommended to try that
-if you changed module parameters and plan to use your module in initrd.</p>
+    return( _("<p><big><b>Disk Controller Configuration</b></big></p>
+<p>Here, configure disk controllers by modifying the corresponding kernel module.</p>
+<p>The table at top contains the controllers to configure. If
+there is more than one controller, select the controller
+by clicking a line in the table.  The order in the table determines 
+the order in which kernel modules are loaded.  Use <b>Move Up</b> and 
+<b>Move Down</b> to change the order.
+</p>
+<p><b>Module to Use</b> selects the kernel module to use for the current controller.  Alternative modules are available for some controllers.</p>
+<p>The module status is shown in <b>Module Currently Loaded</b>.  
+With <b>Load Module in initrd</b> set whether the module should be
+loaded during boot.</p>
+<p>For <b>Module Parameters</b>, enter any parameters for the module.  
+This is often not needed.</p>
+<p><b>Test Loading of Module</b> tests whether the module can be loaded with the specified parameters.  This test is recommended if you have made changes.</p>
 "));
     }
 
@@ -59,14 +55,14 @@ define term ModComboBox( list modules )
     ``{
     return( `ComboBox( `id(`module), `opt(`editable,`notify), 
 		       // label text
-                       _("&Module to use:"), modules ));
+                       _("&Module to Use"), modules ));
     };
 
 define term InitCheckBox( boolean val )
     ``{
     return( `CheckBox( `id(`initrd), `opt(`notify),
-		       // button text
-		       _("&Load module in initrd"), val ));
+		       // button text, initrd should be left as-is
+		       _("&Load Module in initrd"), val ));
     };
 
 define void SetModule( map cont )
@@ -227,13 +223,13 @@ define boolean TestLoad( map cont )
 	    map ret = (map)SCR::Execute( .target.bash_output, cmd );
 	    if( ret["exit"]:1 == 1)
 		{
-		// error popup text
+		// error popup text; stderr=standard error
 		string text = sformat( _("
 Error loading module.
-Executed cmd was:
+Executed command was:
     %1
 
-Stderr was:
+stderr was:
 %2
 "), cmd, ret["stderr"]:"" );
 		Popup::Error( text );
@@ -242,8 +238,8 @@ Stderr was:
 	    });
 	if( ok )
 	    {
-	    // popup text
-	    Popup::Message( sformat(_("Module \"%1\" successfully loaded"),
+	    // popup text, %1=module name
+	    Popup::Message( sformat(_("Module %1 loaded successfully."),
 	                              m["modules",0,0]:"" ));
 	    }
 	}
@@ -399,8 +395,8 @@ Stderr was:
 	                                            ModComboBox( [] ) )),
 			 `HWeight(60, `HStretch()) )),
 	    `VSpacing(1),
-	    // label text
-	    `Left(`HBox( `Label( _("Module currently loaded:")), `HSpacing(2),
+	    // provides Yes or No status info 
+	    `Left(`HBox( `Label( _("Module Currently Loaded:")), `HSpacing(2),
 			 // label text
 		         `Label( `id(`loaded), _("Yes") ))),
 	    `VSpacing(1),
@@ -410,19 +406,19 @@ Stderr was:
 	    `Left(`TextEntry( `id(`param), _("Module &Parameters"), "abdef" )),
 	    `VSpacing(1),
 	    // button text
-	    `PushButton( `id(`test_load), _("&Test loading of module")),
+	    `PushButton( `id(`test_load), _("&Test Loading of Module")),
 	    `VSpacing(2) 
 	    );
 
     if( size(dev)==0 )
 	{
 	// popup text
-	Popup::Message( _("No configurable controller found") );
+	Popup::Message( _("No configurable controller found.") );
 	UI::CloseDialog();
 	return `cancel;
 	}
     // heading text
-    Wizard::SetContents( _("Disk controller configuration"), dialog,
+    Wizard::SetContents( _("Disk Controller Configuration"), dialog,
 			 HelpText(), true, true );
     Wizard::SetDesktopIcon("controller");
 
@@ -589,8 +585,8 @@ Stderr was:
 		{
 		SCR::Write( .sysconfig.kernel.INITRD_MODULES, newinit );
 		SCR::Write( .sysconfig.kernel, nil );
-		// popup text
-		UI::OpenDialog( `VBox( `Label( _("Executing mkinitrd") ) ) );
+		// busy popup text, mkinitrd is a case-sensitive command
+		UI::OpenDialog( `Label( _("Executing mkinitrd...") ) );
 		integer exit = (integer)SCR::Execute( .target.bash, "/sbin/mkinitrd" );
 		UI::CloseDialog();
 		y2milestone( "exit /sbin/mkinitrd %1", exit );
@@ -598,7 +594,7 @@ Stderr was:
 		    {
 		    // popup text
 		    Popup::Error( _("Executing mkinitrd failed.
-Try executing /sbin/mkinitrd manually and look at the error messages.
+Try executing /sbin/mkinitrd manually and checking the error messages.
 "));
 		    }
 		else

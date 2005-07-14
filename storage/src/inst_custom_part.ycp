@@ -28,14 +28,6 @@
 
  $Id$
 
-HINTS: Always use
-         lookup( part, "delete", false)
-         lookup( part, "create", false)
-       instead of
-         lookup( part, "delete")
-         lookup( part, "create")
-       cause delete, create are not always set to  false
-
 */
 {
   textdomain "storage";
@@ -108,7 +100,6 @@ HINTS: Always use
    boolean test_mode          = Mode::test ();
    string  boot_mode	      =	"fritz";
    /* FIXME string  boot_mode	      =	Bootloader::getLoaderType ();*/
-   boolean immediate_prepdisk = Storage::immediate_prepdisk;
    string  focusline          = "";
 
    integer last_sel_disk = 0;
@@ -396,16 +387,13 @@ define list CheckCreatePossibilities( string dev, map disk )
 
     list<map> primary_list = 
 	filter( map part, disk["partitions"]:[],
-		``( (part["type"]:`unknown == `primary) && 
-		    (!part["delete"]:false )));
+		``( part["type"]:`unknown == `primary ));
     list<map> extended_list = 
 	filter( map part, disk["partitions"]:[],
-		``( (part["type"]:`unknown == `extended) && 
-		    (!part["delete"]:false )));
+		``( part["type"]:`unknown == `extended));
     list<map> logical_list = 
 	filter( map part, disk["partitions"]:[],
-		``( (part["type"]:`unknown == `logical) && 
-		    (!part["delete"]:false )));
+		``( part["type"]:`unknown == `logical));
 
     if( (size(extended_list) + size(primary_list)) < disk["max_primary"]:4 )
 	{
@@ -527,8 +515,7 @@ define list GetSlot( string dev, map disk )
     ``{
     string type = substring(dev, 5, 2);
     list<map> global_list = filter( map part, disk["partitions"]:[], 
-                               ``( part["type"]:`unknown != `logical && 
-			           !part["delete"]:false ));
+				    ``( part["type"]:`unknown != `logical ));
 
     if( bsd_label )
 	{
@@ -626,8 +613,7 @@ define integer TestSlot( integer slot_start_cyl, string dev, map disk,
     ``{
     string type = substring(dev, 5, 2);
     list<map> global_list  = filter( map part, disk["partitions"]:[], 
-                                ``( part["type"]:`unknown != `logical && 
-				    !part["delete"]:false ));
+				     ``( part["type"]:`unknown != `logical ));
 
     if( bsd_label )
 	{
@@ -711,11 +697,9 @@ define list GetLogicalSlot( string dev, map disk )
     string type = substring(dev, 5, 2);
 
     list<map> global_list  = filter( map part, disk["partitions"]:[], 
-                                ``( part["type"]:`unknown == `logical && 
-				    !part["delete"]:false ));
+				     ``( part["type"]:`unknown == `logical ));
     map	extended = (map)find( map part, disk["partitions"]:[], 
-			      ``( part["type"]:`unknown == `extended  && 
-				  !part["delete"]:false ));
+			      ``( part["type"]:`unknown == `extended ));
 
     //////////////////////////////////
     if (extended == nil)
@@ -814,11 +798,9 @@ define integer TestLogicalSlot( integer slot_start_cyl, string dev, map disk)
     string type = substring(dev, 5, 2);
 
     list<map> global_list = filter( map part, disk["partitions"]:[], 
-                               ``( part["type"]:`unknown == `logical && 
-			           !part["delete"]:false ));
+                               ``( part["type"]:`unknown == `logical ));
     map extended = (map)find( map part, disk["partitions"]:[], 
-                              ``( part["type"]:`unknown == `extended && 
-			          !part["delete"]:false ));
+                              ``( part["type"]:`unknown == `extended ));
 
     list global_cyl_list = 
 	sort(flatten(maplist( map part, global_list, 
@@ -925,24 +907,33 @@ define string to4string( integer nb )
      *----------------------------------------------------------------------
      */
 
-define list FillPartitionList()
+define list FillPartitionList(map<string,map> targets)
     ``{
-     // fill in size_bytes for raid
-     Storage::AddRaidSizeInfo();
-     map<string,map>  targets 	= Storage::GetTargetMap();
      list<term> table_input 	= [];
      boolean log_mode 	= false;
 
+    // order should be md, then loop, then LVM, then EVMS
+    map disk_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_LOOP : 2, `CT_LVM : 3, 
+                        `CT_EVMS : 4, `CT_DM : 5 ];
+    list<string> keys = maplist( string dev, map disk, targets,
+				 ``{return(dev);} );
+    keys = sort( string a, string b, keys, 
+	``{
+	integer oa = disk_order[targets[a,"type"]:`CT_UNKNOWN]:6;
+	integer ob = disk_order[targets[b,"type"]:`CT_UNKNOWN]:6;
+	return( (oa==ob) ? (a<b) : (oa<ob) );
+	});
+
      SCR::Write(.target.ycp,Storage::SaveDumpPath("targetMap_c"), targets );
-     foreach( string disk_dev_name, map disk, targets,
+    foreach( string dev, keys,
 	 ``{
-	 boolean real_disk = Storage::IsRealDisk( disk_dev_name, disk );
-	 boolean evms_vol  = find( disk_dev_name, "/dev/evms" )==0;
+	map disk = targets[dev]:$[];
+	boolean real_disk = Storage::IsRealDisk( disk );
 	 integer cyl_count     = disk["cyl_count"]:0;
 	 integer cyl_size      = disk["cyl_size"]:1000000;
 	 string  vendor        = disk["vendor"]:"";
 	 string  model         = disk["model"]:"";
-	 string  dev_size      = ByteToHumanString(cyl_count * cyl_size);
+	string  dev_size      = ByteToHumanString(disk["size_k"]:0*1024);
 	 string  dev_start_cyl = to4string(0);
 	 string  dev_nb_cyl    = to4string(cyl_count-1);
 	       
@@ -956,43 +947,43 @@ define list FillPartitionList()
 	     {
 	     if (disk["bus"]:"" == "RAID")
 		 {
-		 vendor = "RAID "+disk_dev_name;
+		vendor = "RAID "+dev;
 		 }
-	     else if( disk["is_lvm_vg"]:false )
+	    else if( disk["type"]:`CT_UNKNOWN==`CT_LVM )
 		 {
 		 vendor = "LVM" + (disk["lvm2"]:false ? "2 " : "  ") +
-		          substring( disk_dev_name, 5 );
+			 disk["name"]:"";
+		}
+	    else if( disk["type"]:`CT_UNKNOWN==`CT_EVMS )
+		{
+		vendor = "EVMS " + disk["name"]:"";
 		 }
 	     else
 		 // label text
-		 vendor = sformat( _("DISK %1"), substring( disk_dev_name, 5 ));
+		vendor = sformat( _("DISK %1"), substring( dev, 5 ));
 	     }
 
-	 boolean id_sw_raid_dev = (disk_dev_name == "/dev/md");
+	boolean id_sw_raid_dev = (dev == "/dev/md");
 
 	 /////////////////////////////////////////////////////////////
 	 // Insert line for the entire disk into selection box widget
 	 // Look, if for the architecture disk, and Cylinder are shown
 	       
-
-	 /////////////////////////////////////////////////////////////
-	 // if LVM device get new size
-	 if( disk["is_lvm_vg"]:false )
+	if( !real_disk )
 	     {	
-	     list<map> parts = get_possible_pvs( targets );
-	     dev_size = (string)get_vg_size( parts, substring(disk_dev_name, 5), 
-					     `string );
 	     dev_nb_cyl    = " -- ";
 	     dev_start_cyl = " -- ";
 	     }
 	       
 	 if( show_disk && 
-	     (real_disk || 
-		 (disk["is_lvm_vg"]:false&&!disk["delete"]:false)) )
+	    (disk["type"]:`CT_UNKNOWN==`CT_DISK ||
+	     disk["type"]:`CT_UNKNOWN==`CT_LVM ||
+	     (disk["type"]:`CT_UNKNOWN==`CT_EVMS && size(disk["name"]:"")>0 &&
+	      !haskey( targets, "/dev/"+substring( disk["name"]:"", find( disk["name"]:"", "/")+1 )) )))
 	     {
-	     term a = `item(`id(disk_dev_name));
+	    term a = `item(`id(dev));
 
-	     if( showT_dev )    a = add(a, disk_dev_name );
+	    if( showT_dev )    a = add(a, dev );
 	     if( showT_id )     a = add(a, sformat( " (%1)", 
 						    disk["bios_id"]:"" ) );
 	     if( showT_size )   a = add(a, dev_size );
@@ -1016,13 +1007,9 @@ define list FillPartitionList()
 	     ``{
 	     // dont show "system partitions"
 	     string fstype = partition["fstype"]:"";
-	     boolean hide = partition["delete"]:false;
+	    boolean hide = false;
 	     if( size(filter( string v, Partitions::not_shown_partitions,
 			      ``(issubstring(fstype, v)) ))>0 )
-		 {
-		 hide = true;
-		 }
-	     if( disk["is_lvm_vg"]:false && disk["delete"]:false )
 		 {
 		 hide = true;
 		 }
@@ -1042,16 +1029,10 @@ define list FillPartitionList()
 		 }
 	     if( !hide || log_mode )
 		 {
-		 string id = Storage::GetSubDevKey( disk_dev_name, 
-						    partition["nr"]:(any)0);
-
-		 //////////////////////////////////////////////////////////
-		 // Format Devicename:
-
-		 string   part_dev_name   = "";
 		 string   part_id         = "";
 
-		 part_dev_name = partition["device"]:"";
+		string part_dev_name = partition["device"]:"";
+		string id = part_dev_name;
 
 		 ////////////////////////////////////////////////////////////
 		 // Format other Colums:
@@ -1060,20 +1041,20 @@ define list FillPartitionList()
 		 integer  nb_cyl          = partition["region",1]:0;
 		 symbol   type            = partition["type"]:`unknown;
 		 boolean  format          = partition["format"]:false;
-		 boolean  crypt_fs        = partition["loop_fs"]:false && partition["crypt"]:"" != "none";
+		boolean  crypt_fs        = partition["enc_type"]:`none != `none;
 		 symbol   used_fs         = partition["used_fs"]:`unknown;
 		 string   mount_point     = partition["mount"]:"";
 		 string   filesystem_name = "";
-		 string   used_by   	  = partition["raid_name"]:"";
+		string   used_by   	  = partition["used_by"]:"";
 		 string   label           = partition["label"]:"";
 
-		 if( size( partition["lvm_group"]:"")>0 )
+		if( partition["used_by_type"]:`UB_NONE == `UB_LVM )
 		     {
-		     used_by = "LVM " + partition["lvm_group"]:"";
+		    used_by = "LVM " + used_by;
 		     }
-		 else if( size( partition["evms_vol"]:"")>0 )
+		else if( partition["used_by_type"]:`UB_NONE == `UB_EVMS )
 		     {
-		     used_by = "EVMS " + partition["evms_vol"]:"";
+		    used_by = "EVMS " + used_by;
 		     }
 
 		 filesystem_name = partition["fstype"]:"";
@@ -1088,36 +1069,8 @@ define list FillPartitionList()
 		 if ( format ) format_flag = "F";
 		 if ( crypt_fs ) format_flag = "C" + format_flag;
 
-		 if( log_mode )
-		     {
-		     string       ori_str = "";
-		     boolean del = partition["delete"]:false;
-		     boolean cre = partition["create"]:false;
-		     integer ori = partition["ori_nr"]:0;
-		     if ( del == nil)    format_flag = format_flag + " dn";
-		     if ( del == true )  format_flag = format_flag + " dT";
-		     if ( del == false ) format_flag = format_flag + " dF";
-		     if ( cre == nil)    format_flag = format_flag + " cn";
-		     if ( cre == true )  format_flag = format_flag + " cT";
-		     if ( cre == false ) format_flag = format_flag + " cF";
-		     if ( ori == nil)    
-			 ori_str = " o- ";
-		     else 		   
-			 ori_str = sformat( " o%1 ", ori );
-		     format_flag = format_flag + ori_str;
-		     }
-
-		 string bytes_of_part = "";
-
-		 if( id_sw_raid_dev )
-		     {
-		     bytes_of_part = raid_size_str( targets, partition);
-		     y2debug( "--RAID: %1 -- %2", id_sw_raid_dev, bytes_of_part);
-		     }
-		 else
-		     {
-		     bytes_of_part = ByteToHumanString( nb_cyl * cyl_size);
-		     }
+		string bytes_of_part = 
+		    ByteToHumanString( partition["size_k"]:0*1024 );
 
 		 /////////////////////////////////////////////////////
 		 // Insert line for this partition into selection box widget
@@ -1135,7 +1088,7 @@ define list FillPartitionList()
 		     {
 		     string tmp = mount_point;
 		     if( partition["noauto"]:false && 
-			 !partition["active"]:false )
+			partition["inactive"]:false )
 			 {
 			 tmp = tmp + " *";
 			 }
@@ -1168,72 +1121,7 @@ define list FillPartitionList()
 	     });
          });
 
-    // order should be md, then loop, then LVM, then EVMS
-    map disk_order = $[ "/dev/md" : 0, "/dev/loop" : 1, "/dev/evms" : 3 ];
-    integer num1 = -1;
-    integer num2 = -1;
-
-    return sort( term lineA, term lineB, table_input, ``(
-	{
-	boolean ret = false;
-	map disk1 = Storage::GetDiskPartition( lineA[1]:"" );
-	map disk2 = Storage::GetDiskPartition( lineB[1]:"" );
-
-	//y2milestone( "FillPartitionList disk1 %1 disk2 %2", disk1, disk2 );
-
-	ret = disk1["disk"]:"" < disk2["disk"]:"";
-
-	boolean normal1 = Storage::IsRealDisk( disk1["disk"]:"", 
-	                                       targets[disk1["disk"]:""]:$[] );
-	boolean normal2 = Storage::IsRealDisk( disk2["disk"]:"", 
-	                                       targets[disk2["disk"]:""]:$[] );
-	//y2milestone( "FillPartitionList normal1 %1 normal2 %2", normal1, normal2 );
-
-	if( normal1 != normal2 )
-	    {
-	    ret = normal1;
-	    }
-	else if( disk1["disk"]:"" == disk2["disk"]:"" )
-	    {
-	    if( (is( disk1["nr"]:(any)0, string ) &&
-	         is( disk2["nr"]:(any)0, string )) ||
-	        (is( disk1["nr"]:(any)0, integer ) &&
-	         is( disk2["nr"]:(any)0, integer )))
-		{
-		ret = disk1["nr"]:(any)0 < disk2["nr"]:(any)0;
-		}
-	    else
-		{
-		ret = is( disk1["nr"]:(any)0, string );
-		}
-	    }
-	else
-	    {
-	    string d1 = disk1["disk"]:"";
-	    string d2 = disk2["disk"]:"";
-	    if( find( d1, "/dev/evms/" ) == 0 )
-		{
-		d1 = "/dev/evms";
-		}
-	    if( find( d2, "/dev/evms/" ) == 0 )
-		{
-		d2 = "/dev/evms";
-		}
-	    num1 = disk_order[d1]:2;
-	    num2 = disk_order[d2]:2;
-	    //y2milestone( "num1 %1 num2 %2", num1, num2 );
-	    if( num1!=num2 )
-		{
-		ret = num1 < num2;
-		}
-	    else
-		{
-		ret = disk1["disk"]:"" < disk2["disk"]:"";
-		}
-	    }
-	//y2milestone( "FillPartitionList ret %1", ret );
-	return ret;
-	}));
+    return( table_input );
     };
 
 /*-------------------------------------------------------------------
@@ -1273,8 +1161,8 @@ define list TestStartEndCyl( string str_start_cyl, string str_end_part,
 	{
 	input = `error;
 	// error popup text
-	Popup::Error(_("Wrong input for the start of the partition. 
-Enter the start cylinder (e.g., 77).
+	Popup::Error(_("Invalid input for the start of the partition. 
+Enter the start cylinder, for example, 77.
 "));
 	}
     else
@@ -1290,7 +1178,7 @@ Enter the start cylinder (e.g., 77).
 	if (max_end_cyl == nil)
 	    {
 	    // error popup text
-	    Popup::Error(_("You entered an invalid value. Please try again."));
+	    Popup::Error(_("The value entered is invalid. Try again."));
 	    input = `error;
 	    }
 
@@ -1303,8 +1191,8 @@ Enter the start cylinder (e.g., 77).
 		// error popup text
 		Popup::Error(_("The value for the partition end is invalid.
 
-Enter the end cylinder number (e.g., 77), an offset (e.g., +122),
-or specify the size of the partition directly (e.g., +100M or 1.8GB )
+Enter the end cylinder number (such as 77), an offset (like +122),
+or the size of the partition (for example, +100M or 1.8GB )
 "));
 		}
 	    else
@@ -1322,12 +1210,12 @@ or specify the size of the partition directly (e.g., +100M or 1.8GB )
 		    // error popup text, %1, %2, %3 is replaced by numeric value
 		    string text = sformat( _("
 The value of the end cylinder %1 was not valid. 
-Value must be between %2 and %3.
+The value must be between %2 and %3.
 
-YaST2 can automatically use the maximum allowed value
-or select \"No\" and enter a correct value yourself.
+Use the maximum allowed value
+or select No and enter a correct value yourself.
 
-Should YaST2 use the maximum allowed value? 
+Use the maximum allowed value? 
 "),
                                           int_end_cyl, int_start_cyl, 
 					  max_end_cyl );
@@ -1388,8 +1276,9 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
     ``{
     boolean create = cur_val["create"]:false;
     string dev = cur_val["device"]:"";
+    y2milestone( "EditOrCreatePartDlg cur_val:%1", cur_val );
 
-    string helptextCR = getEditOrCreateHelptext( cur_val, true );
+    string helptextCR = getEditOrCreateHelptext( cur_val, !create );
 
     //////////////////////////////////////////////////////////////////////
     // Now create "main" dialog with all elements needed
@@ -1442,8 +1331,7 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
 			)
 		);
 
-
-      map<string,any> retval = eval(cur_val);
+    map<string,any> retval = cur_val;
       symbol ret = `ok;
 
       retval = HandlePartWidgetChanges( true, ret, file_systems, cur_val, 
@@ -1454,7 +1342,7 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
 	 ////////////////////////////////////////////////////////////
 	 // Check the User input
 	 ret = (symbol)UI::UserInput();
-	 y2milestone( "UserInput ret:%1", ret );
+       y2milestone( "EditOrCreatePartDlg UserInput ret:%1", ret );
 
 	 if ( ret != `cancel )
 	    {
@@ -1542,20 +1430,20 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
 	     //////////////////////////////////////////////////////////////
 	     //  user changed fsid of existing partition
 	     symbol par_type = cur_val["type"]:`empty;
-	     y2milestone( "par_type %1", par_type );
+	   y2milestone( "EditOrCreatePartDlg par_type %1", par_type );
 	     if( retval["fsid"]:0 != cur_val["fsid"]:0 &&
 		 (par_type==`primary||par_type==`logical||par_type==`extended)&&
 		 !haskey( cur_val, "change_fsid") && 
 		 !retval["create"]:false )
 		 {
+		   //rwalter: note changes here
 		 // popup text
-		 boolean ok = Popup::YesNo(_("WARNING:
+	       boolean ok = Popup::ContinueCancel(_("
 You have changed the FSID of an existing partition.
 In some cases, this could have serious consequences, especially
 if you change the FSID of a partition belonging to a different
 operating system. Only proceed if you know exactly
 what you are doing.
-Do you really want to change the FSID?
 "));
 
 		 if (! ok )
@@ -1593,11 +1481,10 @@ Do you really want to change the FSID?
 	     if( !installation && !arePartitionsEqual( cur_val, retval ) && 
 	         !create )
 		 {
-		 string mounts = 
-		     Partitions::MountedOn( dev, Partitions::CurMounted() );
+	       string mounts = Storage::DeviceMounted( dev );
 		 if( mounts != "" ) 
 		     {
-		     if( ! UseChangedPartitionContinueCancelPopup()) 
+		   if( !UseChangedPartitionContinueCancelPopup() ) 
 			 {
 			 ret = `cancel;
 			 }
@@ -1606,8 +1493,7 @@ Do you really want to change the FSID?
 	     }     
 	 } until (  ret == `ok  || ret == `cancel );
 
-
-      y2milestone( "ret:%1 retval=%2", ret, retval );
+    y2milestone( "EditOrCreatePartDlg ret:%1 retval=%2", ret, retval );
       
       UI::CloseDialog();
 
@@ -1657,15 +1543,14 @@ define map ResizePartDlg( map cur_val, string device, map disk, map possible )
 
     if( !swap && !cur_val["format"]:false )
 	{
-	df = FileSystems::GetFreeSpace( device, 0, cur_val["used_fs"]:`none, 
-	                                true );
+	df = Storage::GetFreeSpace( device, 0, cur_val["used_fs"]:`none, true );
 	if( size(df)==0 )
 	    {
 	    y2error( "failed GetFreeSpace %1 fs:%2", device, 
 		     cur_val["used_fs"]:`none );
 	    string tmp = sformat( 
-_("It is not possible to resize partition %1 
-because the file system could not be mounted
+_("Partition %1 cannot be resized 
+because the file system could not be mounted.
 "), device );
 	    Popup::Error( tmp );
 	    return( nil );
@@ -1717,28 +1602,28 @@ because the file system could not be mounted
     if( win )
 	{
 	// label text %1 is replaced by a number
-	bargraph_label_used  = _("Windows\nused\n%1 ") + unit;
+	bargraph_label_used  = _("Windows\nUsed\n%1 ") + unit;
 	// label text %1 is replaced by a number
-	bargraph_label_free  = _("Windows\nfree\n%1 ") + unit;
+	bargraph_label_free  = _("Windows\nFree\n%1 ") + unit;
 	// label text %1 is replaced by a number
-	bargraph_label_new   = _("Linux\nsize\n%1 ") + unit;
+	bargraph_label_new   = _("Linux\nSize\n%1 ") + unit;
 	}
     else
 	{
 	// label text %1 is replaced by a number
-	bargraph_label_used  = _("Space\nused\n%1 ") + unit;
+	bargraph_label_used  = _("Space\nUsed\n%1 ") + unit;
 	if( swap )
 	    {
 	    // label text %1 is replaced by a number
-	    bargraph_label_free  = _("Swap\nspace\n%1 ") + unit;
+	    bargraph_label_free  = _("Swap\nSpace\n%1 ") + unit;
 	    }
 	else
 	    {
 	    // label text %1 is replaced by a number
-	    bargraph_label_free  = _("Space\nfree\n%1 ") + unit;
+	    bargraph_label_free  = _("Space\nFree\n%1 ") + unit;
 	    }
 	// label text, %1 is replaced by a number 
-	bargraph_label_new   = _("Unused\ndisk\n%1 ") + unit;
+	bargraph_label_new   = _("Unused\nDisk\n%1 ") + unit;
 	}
 
     // Labels for input fields. "%1" will be replaced with the current unit (MB)
@@ -1747,23 +1632,23 @@ because the file system could not be mounted
     if( win )
 	{
 	// label text, %1 is replaced by a unit value ("MB")
-	field_label_free = sformat( _("Windows free (%1)"), unit);
+	field_label_free = sformat( _("Windows Free (%1)"), unit);
 	// label text, %1 is replaced by a unit value ("MB")
-	field_label_new  = sformat( _("Linux size (%1)"), unit);
+	field_label_new  = sformat( _("Linux Size (%1)"), unit);
 	}
     else
 	{
 	// label text, %1 is replaced by a unit value ("MB")
-	field_label_new  = sformat( _("Unused disk (%1)"), unit);
+	field_label_new  = sformat( _("Unused Disk (%1)"), unit);
 	if( swap )
 	    {
 	    // label text, %1 is replaced by a unit value ("MB")
-	    field_label_free = sformat( _("Swap space (%1) "), unit);
+	    field_label_free = sformat( _("Swap Space (%1) "), unit);
 	    }
 	else
 	    {
 	    // label text, %1 is replaced by a unit value ("MB")
-	    field_label_free = sformat( _("Space free (%1)"), unit);
+	    field_label_free = sformat( _("Space Free (%1)"), unit);
 	    }
 	}
 
@@ -1788,6 +1673,7 @@ because the file system could not be mounted
     if( cur_val["used_fs"]:`none == `ntfs && 
         not_shrink_free > df["free"]:0/factor/5 )
         {
+	    //Message text.  %1 and %2 are numbers. %3 is the unit.
 	string ptext = sformat( _("Your NTFS file system has %1 %3 free space available. Due to limitations in
 the NTFS resizer, the file system can only be shrunk by up to %2 %3.
 To be able to shrink the file system more, boot your Windows
@@ -1824,14 +1710,16 @@ the used blocks of the file system towards the start of the partition.
     // Help text for partition resizing - 
     // common part for both graphical mode (with bar graphs) 
     // and non-graphical mode (text only).
+    // %1 is OS label, such as Windows
     string helptext = sformat( _("<p>
 Choose the new size for your %1 partition.
 </p>"), windows );
 
     // help text (common to both modes), continued
+    // %1 is OS label, such as Windows
     helptext = helptext + sformat( _("
 <p>
-The actual resizing will be performed only after you confirm all your
+The actual resizing is performed only after you confirm all your
 settings in the last installation dialog. Until then, your %1
 partition will remain untouched.
 </p>"), windows );
@@ -1853,8 +1741,8 @@ size of the partition.
 	helptext = helptext + _("
 <p>
 The upper bar graph displays the current situation.
-The lower bar graph displays the situation after the installation -- after
-the partition resize.
+The lower bar graph displays the situation after the installation (after
+the partition resize).
 </p>");
 	// help text (graphical mode), continued
 	helptext = helptext + _("
@@ -1890,12 +1778,12 @@ input field to adjust the suggested value.
 			      `VStretch(),
 			      `VSpacing(1),
 			      // Headline above bar graph that displays current partition size
-			      `Left( `Label( _("Now:")) ),
+			      `Left( `Label( _("Now")) ),
 			      graph,
 			      `VSpacing(1),
 			      `VStretch(),
 			      // Headline above bar graph that displays future partitions
-			      `Left( `Label( _("After installation:") ) ),
+			      `Left( `Label( _("After Installation") ) ),
 			      `PartitionSplitter( `id(`linux_size), 
 						  used, free+av_space,
 						  shrink_size+av_space, new_min, min_free,
@@ -1917,6 +1805,7 @@ input field to adjust the suggested value.
 	simple_ui = true;
 	// help text, continued - non-graphical mode only
 	// this help text will be appended to the help text common to both modes.
+	//%1 is OS label, such as Windows
 	helptext = helptext + sformat( _("
 <p>Enter a value for the size to which to shrink the %1 partition.
 </p>"), windows );
@@ -1925,7 +1814,7 @@ input field to adjust the suggested value.
 	if( win )
 	    {
 	    // Label text
-	    used_label = _("Windows used");
+	    used_label = _("Windows Used");
 	    }
 	else
 	    {
@@ -1933,6 +1822,7 @@ input field to adjust the suggested value.
 	    used_label = _("Used");
 	    }
 	// help text (non-graphical mode), continued
+	//%1 is label text, such as Used. %2 is OS, such as Windows.
 	helptext = helptext + sformat(_("
 <p>
 <b>%1<b> is the size of the used part of your %2 partition.
@@ -1953,19 +1843,19 @@ of the partition.
 			  `VBox(
 			    `HBox(
 				// Label for used part of the partition in non-graphical mode
-				`HWeight(3, `Right(`Label(used_label+": "))),
+				`HWeight(3, `Right(`Label(used_label))),
 				`HWeight(2, `Label(`opt(`outputField), sformat("%1", used ))),
 				`HWeight(3, `Left(`Label( unit )))),
 			    `VSpacing(0.5),
 			    `HBox(
 				// Label for free part of the partition in non-graphical mode
-				`HWeight(3, `Right(`Label(_("Free: ")))),
+				`HWeight(3, `Right(`Label(_("Free")))),
 				`HWeight(2, `Label(`opt(`outputField), sformat("%1", free ))), 
 				`HWeight(3, `Left(`Label( unit )))),
 			    `VSpacing(0.5),
 			    `HBox(
 				 // Edit field label for linux partition size in non-graphical mode
-				`HWeight(3, `Right(`Bottom(`Label(_("New Size:"))))),
+				`HWeight(3, `Right(`Bottom(`Label(_("New Size"))))),
 				`HWeight(2, `IntField( `id(`linux_size), "", 
 						       used+min_free, used+free+av_space,
 						       used+free-shrink_size)),
@@ -2102,7 +1992,7 @@ define map CreateEditExtendedPartDlg( map new_val, string title, string dev,
 			       `HWeight(50,`RichText( helptextCR )),
 			       /// right side
 			       // popup create partition: frame description Start/End Cylinder
-			       `HWeight( 40,   SizeDlg( new_val , cyl_size, true) )
+			       `HWeight( 40, SizeDlg( new_val, cyl_size, true) )
 			       ),
 			 `VSpacing(0.5),
 			 `HBox(
@@ -2167,7 +2057,7 @@ define map CreateEditExtendedPartDlg( map new_val, string title, string dev,
 	{
 	// warning popup text
         Popup::Warning(_("You have changed the start or end cylinders.
-Make sure all logical partitions 
+Make sure that all logical partitions 
 fit into this new extended partition.
 "));
 	}
@@ -2204,7 +2094,7 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 
     foreach( string dev, map disk, targetMap, 
 	``{
-        if( Storage::IsRealDisk( dev, disk ) )
+        if( Storage::IsRealDisk( disk ) )
 	  {
 	  txt = sformat( "&%1: %2", n+1, dev );
 	  diskgroup = add( diskgroup, `Left( `RadioButton( `id(dev), txt, 
@@ -2271,7 +2161,7 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 		}
 	    foreach( string dev, map disk, 
 	             filter( string d, map e, targetMap, 
-		             ``(Storage::IsRealDisk(d,e)) ),
+		             ``(Storage::IsRealDisk(e)) ),
 		``{
 		if( dev==r )
 		    {
@@ -2295,7 +2185,7 @@ define term RaidButton( integer num )
     list item_list = [];
     item_list = add( item_list,
 		     // menue entry text
-		     `item( `id(`raid_wizard), _("&Create RAID ..") ));
+		     `item( `id(`raid_wizard), _("&Create RAID...") ));
     if( num>0 )
 	item_list = add( item_list,
 			  // menu entry text
@@ -2331,23 +2221,23 @@ define symbol ChoosePart( string usage )
       ``{
       term PL = `VBox(
 		  // button text
-		  `Left( `RadioButton( `id(`primary ), _("&Primary partition"), true )),
+		  `Left( `RadioButton( `id(`primary ), _("&Primary Partition"), true )),
 		  // button text
-		  `Left( `RadioButton( `id(`logical ), _("&Logical partition"), false ))
+		  `Left( `RadioButton( `id(`logical ), _("&Logical Partition"), false ))
 		     );
       term PE = `VBox(
 		  // button text
-		  `Left( `RadioButton( `id(`primary ), _("&Primary partition"), true )),
+		  `Left( `RadioButton( `id(`primary ), _("&Primary Partition"), true )),
 		  // button text
-		  `Left( `RadioButton( `id(`extended ), _("&Extended partition"), false ))
+		  `Left( `RadioButton( `id(`extended ), _("&Extended Partition"), false ))
 		     );
       term PEL = `VBox(
 		  // button text
-		  `Left( `RadioButton( `id(`primary ), _("&Primary partition"), true )),
+		  `Left( `RadioButton( `id(`primary ), _("&Primary Partition"), true )),
 		  // button text
-		  `Left( `RadioButton( `id(`logical ), _("&Logical partition"), false )),
+		  `Left( `RadioButton( `id(`logical ), _("&Logical Partition"), false )),
 		  // button text
-		  `Left( `RadioButton( `id(`extended ), _("&Extended partition"), false ))
+		  `Left( `RadioButton( `id(`extended ), _("&Extended Partition"), false ))
 		      );
 
       term                 current = PEL;        // default
@@ -2356,7 +2246,7 @@ define symbol ChoosePart( string usage )
 
       UI::OpenDialog( `opt(`decorated ), 
 		      // heading in a popup dialog
-                      `VBox(`Heading(_("Which type of partition do you want to create?") ),
+                      `VBox(`Heading(_("Partition Type") ),
 		            `VSpacing(0.5),
 			    `RadioButtonGroup( `id(`choosePL), current ),
 			    `VSpacing(0.5),
@@ -2393,22 +2283,22 @@ define symbol ChoosePart( string usage )
 define string FormatCauseLine( symbol cause )
     ``{
     if( cause == `no_ext )   
-	// popup text
+	// complete sentence, appended after other complete sentences.
 	return( _("No extended partition exists."));
     if( cause == `dev_full ) 
-	// popup text
+	// complete sentence, appended after other complete sentences.
 	return( _("There are already four primary and extended partitions."));
     if( cause == `no_extsp ) 
-	// popup text
+	// complete sentence, appended after other complete sentences.
 	return( _("No space is left in the extended partition."));
     if( cause == `to_many )  
-	// popup text
+	// complete sentence, appended after other complete sentences.
 	return( _("Too many logical drives already exist."));
     if ( cause == `no_space ) 
-	// popup text
-	return( _("No space remaining."));
+	// complete sentence, appended after other complete sentences.
+	return( _("No space remains."));
     if ( cause == `already )  
-	// popup text
+	// complete sentence, appended after other complete sentences.
 	return( _("An extended partition already exists."));
     return( "---" );
     };
@@ -2435,32 +2325,29 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		 no_extended_cause, no_logical_cause );
 
     if( primary_is_possible )	
-	// popup text
-	pri_line = _("Primary partition creation is possible\n");
+	// complete sentence. gets combined with other sentences.
+	pri_line = _("A primary partition can be created.\n");
     else
-	// label text
-	// example "No primary partition: No space left"
-	pri_line = _("No primary partition:  ") + 
+	// complete sentence. gets combined with other sentences.
+	pri_line = _("A primary partition cannot be created.") + 
 	           FormatCauseLine( no_primary_cause ) + "\n";
 
     if( logical_is_possible ) 
-	// popup text
-	log_line = _("Logical partition creation is possible\n");
+	// complete sentence. gets combined with other sentences.
+	log_line = _("A logical partition can be created.\n");
     else
 	if( no_logical_cause != `impossible )
-	    // label text
-	    // example "No logical partition: No space left
-	    log_line = _("No logical partition:  ") +
+	    // complete sentence. gets combined with other sentences.
+	    log_line = _("A logical partition cannot be created.") +
 		       FormatCauseLine( no_logical_cause ) +"\n" ;
 
     if ( extended_is_possible )	  
-	// popup text
-	ext_line = _("Extendend partition creation is possible\n");
+	// complete sentence. gets combined with other sentences.
+	ext_line = _("An extended partition can be created.\n");
     else
 	if( no_logical_cause != `impossible )
-	    // label text
-	    // example "No extended partition: No space left
-	    ext_line = _("No extended partition: ") + 
+	    // complete sentence. gets combined with other sentences.
+	    ext_line = _("An extended partition cannot be created.") + 
 		       FormatCauseLine( no_extended_cause ) +"\n";
 
     return ( pri_line + ext_line + log_line );
@@ -2473,27 +2360,16 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
     symbol ret = nil;
 
-    Storage::SetLvmUse( true );
-    
     y2milestone( "Custom partitioner started" );
+    Storage::SetWizardKey("");
 
     SCR::Write(.target.ycp, Storage::SaveDumpPath("targetMap_s"), 
                Storage::GetTargetMap() );
 
-    // delete pseudo partitions with `free from target_partitioner
     map<string,map> tg = Storage::GetTargetMap();
-    foreach( string diskdev, map disk, tg,
-	``{
-	list<map> partitions = filter( map part, disk["partitions"]:[], 
-	                          ``(part["type"]:`unknown != `free) );
-	disk["partitions"] = partitions;
-	tg[diskdev] = disk;
-	});
-    Storage::SetTargetMap( tg );
+    list table_list = FillPartitionList(tg);
 
-    list table_list = FillPartitionList();
-
-    if( size(Storage::GetTargetBackup("custom_part"))==0 )
+    if( !Storage::CheckBackupState("custom_part") )
 	{
 	Storage::CreateTargetBackup("custom_part");
 	}
@@ -2506,7 +2382,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
     // Column header
     if ( showT_dev )    header = add( header, _("Device"));
     // Column header
-    if ( showT_id )     header = add( header, _("Id"));
+    if ( showT_id )     header = add( header, _("ID"));
     // Column header: centered / minimum = 11 characters /
     // fill with space if needed
     if ( showT_size )   header = add( header, `Right(_("     Size   ")));
@@ -2523,7 +2399,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
     // Column header: minimum = 4 characters   fill with space if needed
     if ( showT_cyl )    header = add( header, `Right(_("End ")));
     // Column header 
-    if ( showT_Used )   header = add( header, `Left(_("Used by")));
+    if ( showT_Used )   header = add( header, `Left(_("Used By")));
     // Column header 
     if ( showT_Label )  header = add( header, `Left(_("Label")));
 
@@ -2534,16 +2410,23 @@ define string FormatYouCannotCause( boolean primary_is_possible,
     term buttonline_a = `HBox();
 
     // main dialog: Button Create partition
-    if ( button_create ) buttonline_a = add( buttonline_a, `PushButton(`id(`create), _("&Create")) );
+    if( button_create ) 
+	buttonline_a = add( buttonline_a, 
+	                    `PushButton(`id(`create), _("&Create")) );
                                                            
     // main dialog: Button Edit partition
-    if ( button_edit   ) buttonline_a = add( buttonline_a, `PushButton(`id(`edit),   _("&Edit"))   );
+    if( button_edit ) 
+	buttonline_a = add( buttonline_a, `PushButton(`id(`edit), _("&Edit")));
 
     // main dialog: Button Delete partition
-    if ( button_delete ) buttonline_a = add( buttonline_a, `PushButton(`id(`delete), _("&Delete")) );
+    if( button_delete ) 
+	buttonline_a = add( buttonline_a,
+	                    `PushButton(`id(`delete), _("&Delete")) );
 
     // main dialog: Button Resize partition
-    if ( button_resize ) buttonline_a = add( buttonline_a, `PushButton(`id(`resize), _("Re&size")) );
+    if( button_resize ) 
+	buttonline_a = add( buttonline_a, 
+	                    `PushButton(`id(`resize), _("Re&size")) );
 
 
     
@@ -2552,19 +2435,19 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 	expert_item_list = 
 	    add( expert_item_list , 
 	         // menu entry text
-		 `item( `id (`reread),  _("&Reread partition table")));
+		 `item( `id (`reread),  _("&Reread Partition Table")));
     if( button_adapt_mp ) 
 	expert_item_list = 
 	    add( expert_item_list, 
 		 `item( `id (`adapt_mp), 
 			// menu entry text
-		        _("&Import mount points from existing /etc/fstab")));
+		        _("&Import Mount Points from Existing /etc/fstab")));
     if ( button_delete_parttable ) 
 	expert_item_list = 
 	    add( expert_item_list,  
 		 `item( `id (`delete_parttable),
 			// menu entry text
-		        _("Delete partition &table and disk label")));
+		        _("Delete Partition &Table and Disk Label")));
     if( Arch::s390 () )
 	{
 	expert_item_list = 
@@ -2573,6 +2456,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 			// menu entry text
 		        _("Execute dasd&fmt on the DASD Device")));
 	buttonline_a = add( buttonline_a, `PushButton(`id(`dasdfmt), 
+						      //button text using case-senstive command name.  dasdfmt should not normally be translated.
 	                    _("dasd&fmt")) );
 	}
 
@@ -2653,7 +2537,8 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
     repeat
         {
-        table_list = FillPartitionList();
+	map<string,map> tg =  Storage::GetTargetMap();
+        table_list = FillPartitionList(tg);
         UI::ChangeWidget(`id(`table), `Items, table_list);
 
 	///////////////////////////////////////////////////////
@@ -2663,6 +2548,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 	if( show_disk )
 	    {
 	    UI::SetFocus( `id(`table));
+	    focusline = Storage::GetLastUsed();
 	    y2milestone( "focusline %1", focusline );
 	    if( size(focusline)>0 )
 	        {
@@ -2680,22 +2566,21 @@ define string FormatYouCannotCause( boolean primary_is_possible,
         /////////////////////////////////////////////////////////////
         if( ret == `create)
 	    {
-            string maindev = 
-	       ChooseDisk(Storage::GetTargetMap(), 
+            string ddev = ChooseDisk( tg,
 			  // popup text 
-	                  _("On which disk would you like to create the partition?"),
+				      _("Disk to Partition"),
 			  `create  );
 
-	    if( maindev == nil )
+	    if( ddev == nil )
 		{
 		ret = `again;
 		continue;
 		}
 
 	    symbol  create_type = `none;
-	    map     curr_disk   = Storage::GetMainDev( maindev );
+	    map disk = tg[ddev]:$[];
 
-	    list possibilities = CheckCreatePossibilities( maindev, curr_disk );
+	    list possibilities = CheckCreatePossibilities( ddev, disk );
 	    y2milestone( "possibilities %1", possibilities );
 
 	    boolean primary_is_possible  = possibilities[0]:false;
@@ -2711,9 +2596,9 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
 	    //////////////////////////////////////////////////////////
 	    // Test if there is space left on the device
-	    log_slot = GetLogicalSlot(maindev, curr_disk);
+	    log_slot = GetLogicalSlot(ddev, disk);
 	    y2milestone( "log_slot %1", log_slot );
-	    p_e_slot = GetSlot(maindev, curr_disk);
+	    p_e_slot = GetSlot(ddev, disk);
 	    y2milestone( "p_e_slot %1", p_e_slot );
 
 	    if ((log_slot == nil) && logical_is_possible ) 
@@ -2772,19 +2657,19 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		// ------pel--------
 		string text = "";
 
-		if( curr_disk["label"]:"msdos" != "msdos" )
+		if( disk["label"]:"msdos" != "msdos" )
 		    {
 		    // popup text , %1 is replaced by a disk name e.g. /dev/hda
-		    text = sformat( _("It is not possible to create a partition on %1 "), maindev);
+		    text = sformat( _("It is not possible to create a partition on %1."), ddev);
 		    }
 		else
 		    {
 		    // popup text , %1 is replaced by a disk name e.g. /dev/hda
 		    // %2 is replaced by an explanation
-		    text = sformat( _("It is not possible to create a partition on %1
+		    text = sformat( _("It is not possible to create a partition on %1.
 
 %2
-"), maindev,
+"), ddev,
 				    FormatYouCannotCause( primary_is_possible,
 				                          extended_is_possible,
 							  logical_is_possible,
@@ -2813,7 +2698,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 	    else if ( primary_is_possible  && extended_is_possible )
 		{
 		//------PE----------
-		create_type = ChoosePart("PE");   // maindev
+		create_type = ChoosePart("PE");   // ddev
 		}
 	    else if ( primary_is_possible  && logical_is_possible )
 		{
@@ -2828,66 +2713,23 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
 	    if( create_type != `none )
 		{
-		list<map> partitions 	= curr_disk["partitions"]:[];
-		integer curr_nr    	= 0;
-		list<integer>    base   = [];
-		list    slot       	= [];
-
-		// search for the first possible dev nr
-		if( create_type == `primary || create_type == `extended || 
-		    create_type == `logical )
-		    {
-		    integer i = 1;
-		    integer mx = curr_disk["max_primary"]:4;
-		    slot = p_e_slot;
-		    if( create_type == `logical )
-			{
-			i = 5;
-			mx = curr_disk["max_logical"]:63;
-			slot = log_slot;
-			}
-		    while( i<=mx )
-			{
-			base = add( base, i );
-			i = i+1;
-			}
-		    if( bsd_label )
-			{
-			base = filter( integer p, base, ``(p!=3));
-			}
-		    y2milestone( "base %1", base );
-
-		    //----------------------------------------------------------
-		    // dev_nb List of numbers of  extende an primary partitions
-		    // result: list of all free primaty|extended partition numbers
-
-		    list<integer> dev_nb = 
-			maplist( map part, 
-			         filter( map pa, partitions, 
-					         ``(!pa["delete"]:false)), 
-				 ``(part["nr"]:0) );
-		    list<integer> result = 
-			filter( integer base_nr, base, 
-				``( find( integer nr, dev_nb, 
-				          ``(nr == base_nr)) == nil));
-		    result = sort( result );
-
-		    curr_nr = result[0]:0;
-		    }
-
+		list slot = (create_type!=`logical)?p_e_slot:log_slot;
+		y2milestone( "slot:%1", slot );
+		map r = Storage::NextPartition( disk["device"]:"", 
+		                                create_type );
+		integer curr_nr = r["nr"]:0;
 
 		//---------------------------------------------------
 		// Present the Create-Popups ...
 		//---------------------------------------------------
 
 		string titleC = "";
-		// %1 and %3 are not neccecary anymore, dur to the translation, i have not changed it.
-		// Popup Create Partition: Description of partition %1 and %3 are free space,  %2 is for example "/dev/hda3"
-		if ( create_type == `primary )  titleC = sformat( _("%1 Create a primary partition on %2 %3"),   "", maindev, "" );
-		// Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
-		if ( create_type == `extended ) titleC = sformat( _("%1 Create an extended partition on %2 %3"), "", maindev, "" );
-		// Popup Create Partition: Description of partition %1 and %3 are many spaces,  %2 is for example "/dev/hda3"
-		if ( create_type == `logical )  titleC = sformat( _("%1 Create a logical partition on %2 %3"),   "", maindev, "" );
+		// Popup Create Partition: Description of partition %1 is for example "/dev/hda"
+		if ( create_type == `primary )  titleC = sformat( _(" Create a Primary Partition on %1 "), ddev );
+		// Popup Create Partition: Description of partition %1 is for example "/dev/hda"
+		if ( create_type == `extended ) titleC = sformat( _(" Create an Extended Partition on %1 "), ddev );
+		// Popup Create Partition: Description of partition %1 is for example "/dev/hda"
+		if ( create_type == `logical )  titleC = sformat( _(" Create a Logical Partition on %1 "), ddev );
 
 		map<string,any> new_val = 
 		    $[
@@ -2895,7 +2737,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    "region" : [ slot[0]:0, slot[1]:0 - slot[0]:0+1 ],
 		    "type"   : create_type,
 		    "nr"     : curr_nr,
-		    "device" : Storage::GetDeviceName( maindev, curr_nr )
+		    "device" : r["device"]:"" 
 		    ];
 
 
@@ -2905,15 +2747,14 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 			$[
 			"fsid"    : Partitions::fsid_extended_win,
 			"used_fs" : `unknown,
-			"fstype"  : "Extended"
 			 ]);
 
 		    new_val = 
 			(map<string,any>)CreateEditExtendedPartDlg( new_val,
 								    titleC,
-								    maindev,
-								    curr_disk,
-								    curr_disk["cyl_size"]:1000000,
+								    ddev,
+								    disk,
+								    disk["cyl_size"]:1000000,
 								    false,
 								    bsd_label );
 		    }
@@ -2935,7 +2776,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 			    "used_fs": used_fs,
 			     ]);
 
-		    if( Mode::repair () )
+		    if( Mode::repair() )
 			{
 			new_val["format"] = false;
 			new_val["mount" ] = "";
@@ -2943,20 +2784,23 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    
 		    new_val = EditOrCreatePartDlg( new_val,
 						   FileSystems::GetAllFileSystems(true, true ),
-						   titleC,
-						   curr_disk,
-						   bsd_label,
-						   edit_cylinder,
-						   curr_disk["cyl_size"]:1000000,
-						   Stage::initial ()
-						 );
+						   titleC, disk,
+						   bsd_label, edit_cylinder,
+						   disk["cyl_size"]:1000000,
+						   Stage::initial() );
 		    }
 
 		if (new_val != nil)
 		    {
 		    // set focus to new partition
-		    focusline = Storage::GetSubDevKey( maindev, curr_nr );
-		    Storage::AddSubDev( focusline, new_val );
+		    focusline = new_val["device"]:"";
+		    Storage::CreatePartition( disk["device"]:"", 
+					      new_val["device"]:"",
+		                              new_val["type"]:`primary,
+		                              new_val["fsid"]:Partitions::fsid_native,
+					      new_val["region",0]:0,
+					      new_val["region",1]:0 );
+		    Storage::ChangeVolumeProperties( new_val );
 		    }
 		}
 	    }
@@ -2967,117 +2811,90 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
         if( ret == `edit || ret == `table )
 	    {
-	    any w_id = UI::QueryWidget(`id(`table), `CurrentItem);
+	    map<string,any> part = $[];
+	    string id = "";
+	    id = (string)UI::QueryWidget(`id(`table), `CurrentItem);
 
 	    // notify a line is selected
-            if( w_id != nil )
+            if( id != nil )
 		{
-		string id = (string)w_id;
-		focusline = (string)w_id;
-		string maindevkey = Storage::GetMainDevKey(id); 
-		string subdevkey = Storage::GetSubDevIndex(id); 
-		y2milestone( "Chosen: %1 maindev: %2 subdev:\"%3\"", id, 
-		             maindevkey, subdevkey );
+		focusline = id;
+		if( !haskey( tg, id ) )
+		    part = Storage::GetPartition( tg, id );
             
-		if( maindevkey == id )
+		y2milestone( "current partition %1", part );
+
+		if( size(part)==0 )
 		    {
-		    if( (boolean)Storage::GetMainDevParam( id, "is_lvm_vg", false) )
+		    if( tg[id,"type"]:`CT_UNKNOWN == `CT_LVM )
 			{
 			ret = `lvm;
 			}
 		    else
 			{
-			TargetAllocationDlg(Storage::GetTargetMap()[id]:$[], id );
+			TargetAllocationDlg(tg[id]:$[], id );
 			}
 		    }
-		else if( Storage::IsSubDevLv( id ) )
+		else if( part["type"]:`unknown == `lvm )
 		    {
-		    map<string,map> tg =  Storage::GetTargetMap();
-		    map<integer,map> mt =  (map<integer,map>)Storage::GetModifyTargets();
-		    map ret = HandleEditLv( tg, mt, id );
-		    Storage::SetTargetMap( ret["targets"]:tg );
-		    Storage::SetModifyTargets( ret["modify_targets"]:mt );
-		    }
-		else if( maindevkey == "/dev/md" )
-		    {
-		    map<string,any> part = Storage::GetSubDev( id );
-		    part = RaidExpertDlg( `settings, "/dev/md" + subdevkey,
-					   part, Stage::initial (),
-					   FileSystems::GetAllFileSystems(true,true),
-					   false, Storage::GetTargetMap());
-		    if( part!=nil && size(part)>0 )
-			{
-			Storage::SetSubDev( id, part );
+		    HandleEditLv( tg, id );
 			}
-		    }
-		else if( find( maindevkey, "/dev/evms" )==0 )
+		else if( part["type"]:`unknown == `sw_raid )
 		    {
-		    string dev = maindevkey+"/"+subdevkey;
-		    map ad = edit_evms_volume( dev, Storage::GetTargetMap() );
+		    RaidExpertDlg( `settings, id, part, 
+				   FileSystems::GetAllFileSystems(true,true),
+				   false, tg );
+		    }
+		else if( part["type"]:`unknown == `evms )
+		    {
+		    map ad = edit_evms_volume( id, tg );
 		    // has the user cancelled the dialog?
 		    if( ad["ok"]:false && size( ad["targets"]:$[] )>0 )
 			{
 			Storage::SetTargetMap( ad["targets"]:$[] );
 			}
 		    }
-		else if( maindevkey == "/dev/loop" )
+		else if( part["type"]:`unknown == `loop )
 		    {
 		    ret = `loop_edit;
 		    }
 		else
 		    {
 		    map new_val 	   = $[];
-		    
-		    string subdevindex = Storage::GetSubDevIndex(id);
-		    integer number     = tointeger( subdevindex );
-		    map<string,any> curr_disk      = Storage::GetMainDev( maindevkey );
-		    map<string,any> curr_part      = Storage::GetSubDev( id );
-
-		    
+		    map<string,any> disk = Storage::GetDisk( tg, id );
 		    /////////////////////////////////////////////////////
 		    // check if the partition can be deleted
 		    
-		    if( check_partition_edit( curr_part, bsd_label) != `edit )
+		    if( !check_device_edit( part, bsd_label))
 			{
 			ret = `again;
 			continue;
 			}
 		    
-		    if( test_mode )
-			{
-			y2debug("List: %1 %2", curr_disk["partitions"]:[], number);
-			}
-
 		    list<map> partitions_without_current = 
-			filter( map p, curr_disk["partitions"]:[], 
-				``(p["nr"]:(any)0!=number && 
-				   !p["delete"]:false ));
-		    map<string,any> disk_without_current = add( curr_disk, "partitions", 
-						    partitions_without_current);
-		    map<string,any> target_without_current = add( Storage::GetTargetMap(), 
-						      maindevkey, 
-						      disk_without_current );
+			filter( map p, disk["partitions"]:[], 
+				``(p["nr"]:(any)0!=part["nr"]:(any)0 ));
 
+		    map<string,any> disk_without_current = 
+			add( disk, "partitions", partitions_without_current);
 		    //////////////////////////////////////
 		    // There are three different Editors:
 		    // - "normal"
 		    // - extended
 		    // - already existing
 		    
-		    y2debug( "current partition %1", curr_part );
-
-		    if( Storage::IsSubDevExtended( id )  )
+		    if( part["type"]:`primary == `extended )
 			{
-			if( curr_part["create"]:false )
+			if( part["create"]:false )
 			    {
 			    // header of the dialog edit a partition
 			    string title = _("Edit an Extended Partition") + 
-			                   " " + curr_part["device"]:"";
-			    new_val = CreateEditExtendedPartDlg( curr_part,
+			                   " " + part["device"]:"";
+			    new_val = CreateEditExtendedPartDlg( part,
 								 title,
-								 curr_part["device"]:"",
+								 part["device"]:"",
 								 disk_without_current,
-								     curr_disk["cyl_size"]:1000000,
+								 disk["cyl_size"]:1000000,
 								 true,
 								 bsd_label
 							       );
@@ -3088,44 +2905,52 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 			    Popup::Error( _("An already-existing extended partition cannot be changed.
 Delete this partition then create a new one using 
 the new parameters.
-WARNING: All data on this partition will be lost."));
+All data on this partition will be lost if you delete it."));
 			    new_val = nil;
 			    }
 			}
 		    else
 			{
 			string title = "";
-			if( !curr_part["create"]:false )
+			if( !part["create"]:false )
 			    {
-			    // header of the dialog edit a partition
-			    title = _("Edit Existing Partition");
+			    // header of the dialog to edit a partition %1 is replaced by device name (e.g. /dev/hda1)
+			    title = sformat( _("Edit Existing Partition %1"),
+			                     part["device"]:"" );
 			    }
 			else
 			    {
-			    // header of the Dialog edit a partition
-			    title = _("Edit partition ");
+			    // header of the dialog to edit a partition %1 is replaced by device name (e.g. /dev/hda1)
+
+			    title = sformat( _("Edit Partition %1"),
+			                     part["device"]:"" );
 			    }
-			title = title + curr_part["device"]:"";
 
 			new_val = 
-			    EditOrCreatePartDlg( curr_part,
+			    EditOrCreatePartDlg( part,
 						 FileSystems::GetAllFileSystems(true, true) ,
 						 title, 
 						 disk_without_current,
 						 bsd_label, edit_cylinder,
-						 curr_disk["cyl_size"]:1000000,
-						 Stage::initial () );
+						 disk["cyl_size"]:1000000,
+						 Stage::initial() );
 			}
 		    if( new_val != nil && size(new_val)>0 )   // not canceld    
 			{ 
-			Storage::SetSubDev( id, new_val );
+			if( new_val["create"]:false )
+			    Storage::UpdatePartition( new_val["device"]:"",
+						      new_val["region",0]:0,
+						      new_val["region",1]:0 );
+			Storage::SetPartitionId( new_val["device"]:"", 
+			                         new_val["fsid"]:Partitions::fsid_native );
+			Storage::ChangeVolumeProperties( new_val );
 			}	
 		    }
 	        }
 	    else
 	        {
                 // popup text
-                Popup::Message(_("To edit a partition, please select one in the main dialog.") );
+                Popup::Message(_("Select the partition to edit in the main dialog.") );
 	        }
 	    }
 
@@ -3134,62 +2959,47 @@ WARNING: All data on this partition will be lost."));
         /////////////////////////////////////////////////////////////
         if (ret == `delete)
 	    {
+	    map<string,any> part = $[];
 	    string id = (string)UI::QueryWidget( `id(`table), `CurrentItem);
-	    string maindevkey = Storage::GetMainDevKey(id);
-	    string subdevkey = Storage::GetSubDevIndex(id); 
+	    map<string,any> disk = Storage::GetDisk( tg, id );
 	    
-	    if( ! Storage::IsKeyKey(id))
+	    if( !haskey( tg, id ) )
+		part = Storage::GetPartition( tg, id );
+	    if( !haskey( tg, id ) && size(part)==0 )
 	    {
 		ret = `again;
 		continue;
 	    }
 
-	    map<string,map> tmap = Storage::GetTargetMap();
-	    if( tmap[maindevkey,"readonly"]:false )
+	    if( tg[id,"readonly"]:false )
 		{
-		Popup::Error( Partitions::RdonlyText( maindevkey, true ));
+		Popup::Error( Partitions::RdonlyText( id, true ));
 		ret = `again;
 		continue;
 		}
 	 
-	    if( maindevkey == id )
+	    if( haskey( tg, id ) )
 		{
-		if( Storage::IsMainDevMd(maindevkey))
+		if( tg[id,"type"]:`CT_UNKNOWN == `CT_MD )
 		    {	
 		    ret = `again;
 		    continue;
 		    }
-		else if( Storage::IsMainDevVg(maindevkey ))
+		else if( tg[id,"type"]:`CT_UNKNOWN == `CT_LVM )
 		    {
-		    string current_vg = substring( maindevkey, 5 );
-		    map<string,map> tg =  Storage::GetTargetMap();
-		    map<integer,map> mt = (map<integer,map>)Storage::GetModifyTargets();
-		    map ret = HandleRemoveVg( tg, mt, current_vg );
-		    Storage::SetTargetMap( ret["targets"]:tg );
-		    Storage::SetModifyTargets( ret["modify_targets"]:mt );
+		    string current_vg = substring( tg[id,"device"]:"", 5 );
+		    HandleRemoveVg( tg, current_vg );
 		    }
-                // popup text %1 is replaced by a disk name e.g. /dev/hda
-		else if( Popup::YesNo ( sformat(_("Do you really want to delete all partitions on %1?"), id )))
+                // YesNo popup text %1 is replaced by a disk name e.g. /dev/hda
+		else if( Popup::YesNo ( sformat(_("Really delete all partitions on %1?"), id )))
 		    {
 		    focusline = id;
-		    map new_targetMap = deleteAllDevPartitions( tmap,
-								id,
-								Stage::initial (),
-								bsd_label );
-		    y2milestone( "new_targetMap %1", new_targetMap );
-		    if( new_targetMap != nil && size(new_targetMap)>0 )
-			{
-			Storage::SetTargetMap( new_targetMap );
+		    deleteAllDevPartitions( disk, Stage::initial(), bsd_label );
 			}
 		    }
-		}
-	    else if( Storage::IsSubDevLv(id))
+	    else if( part["type"]:`unknown==`lvm )
 		{
-		map<string,map> tg =  Storage::GetTargetMap();
-		map<integer,map> mt =  (map<integer,map>)Storage::GetModifyTargets();
-		map ret = HandleRemoveLv( tg, mt, id );
-		Storage::SetTargetMap( ret["targets"]:tg );
-		Storage::SetModifyTargets( ret["modify_targets"]:mt );
+		HandleRemoveLv( tg, id );
 		} 
             else
 		{
@@ -3201,79 +3011,57 @@ WARNING: All data on this partition will be lost."));
 		// with "delete = true"
 		
 		focusline          	= id;
-		string  subdevindex	= Storage::GetSubDevIndex(id);
-		map curr_disk  		= Storage::GetMainDev( maindevkey );
-		map curr_part 		= Storage::GetSubDev( id );
 
-		y2milestone( "delete main %1 part %2 subdevindex %3", 
-		             maindevkey, curr_part, subdevindex );
+		y2milestone( "delete part %1", part );
 		/////////////////////////////////////////////////////
 		// check if the partition can be deleted
 		
-		symbol ret_delete = check_partition_delete( curr_disk, 
-							    curr_part, 
-							    bsd_label,
-							    true,  // bsd_check
-							    true,  // lvm_check
-							    true ,
-							    Stage::initial () ); 
-
-
-		if( ret_delete == `immediate_prepdisk )
-		    {
-		    immediate_prepdisk = true;
-		    }
-
-		else if ( ret_delete == `no_delete )
+		if( part["type"]:`primary == `extended &&
+		    !check_extended_delete( disk, Stage::initial() ))
 		    {
 		    ret = `again;
 		    continue;
 		    }
-
-		if( Storage::IsSubDevExtended( id ) )
-		    {
-		    if( !check_extended_delete( maindevkey, curr_disk, 
-		                                Stage::initial () ) )
+		if( part["type"]:`primary != `extended &&
+		    !check_device_delete( part, bsd_label, Stage::initial()))
 			{
 			ret = `again;
 			continue;
 			}
-		    }
 
 		/////////////////////////////////////////////////////
 		// now delete partition!!
 		
-                // popup text, %1 is replaced by a device name e.g. /dev/hda1
-		if( Popup::YesNo( sformat(_("Do you really want to delete partition %1?"), 
-		                            curr_part["device"]:"" )))
+                // YesNo popup text, %1 is replaced by a device name e.g. /dev/hda1
+		if( Popup::YesNo( sformat(_("Really delete device %1?"),
+		                            part["device"]:"" )))
 		    {
-		    if( maindevkey == "/dev/loop" && size(curr_part["fpath"]:"")>0 )
-			{
-			if( Mode::normal () && 
+		    if( find( id, "/dev/loop")==0 && size(part["fpath"]:"")>0 &&
+			Mode::normal() && 
+			// YesNo popup.  %1 is path to a file
 			    Popup::YesNo( sformat(_("\nShould the loop file %1 also be removed?
-"), curr_part["fpath"]:"" )))
+"), part["fpath"]:"" )))
 			    {
-			    map<string,map> tg =  Storage::GetTargetMap();
-			    tg = Storage::SetPartitionData( tg, 
-			                                    curr_part["device"]:"",
-							    "fpath_remove", 
-							    true );
-			    Storage::SetTargetMap( tg );
+			Storage::DeleteLoop( disk["device"]:"",
+			                     part["fpath"]:"", true );
 			    }
+		    else
+			{
+			Storage::DeleteDevice( disk["device"]:"", 
+					       part["device"]:"" );
 			}
-		    Storage::DelSubDev( id );
-		    focusline = Storage::GetIdSmaller( maindevkey, 
-		                                       tointeger(subdevindex));
+		    focusline = Storage::GetIdSmaller( disk["device"]:"", 
+		                                       part["nr"]:0 );
 		    }
-		if( maindevkey == "/dev/md" )
+		if( find( id, "/dev/md" )==0  )
 		    {
-		    map raid = Storage::GetMainDev( maindevkey );
+		    map raid = Storage::GetDisk( Storage::GetTargetMap(), id );
 		    UI::ReplaceWidget( `id(`raid_button),
 				       RaidButton(size(raid["partitions"]:[])) );
 		    }
-		if( maindevkey == "/dev/loop" )
+		else if( find( id, "/dev/loop" )==0  )
 		    {
-		    map dev = Storage::GetMainDev( maindevkey );
+		    map dev = Storage::GetDisk( Storage::GetTargetMap(), id );
 		    UI::ReplaceWidget( `id(`loop_button),
 				       LoopButton(size(dev["partitions"]:[])) );
 		    }
@@ -3287,97 +3075,83 @@ WARNING: All data on this partition will be lost."));
         if (ret == `resize)
 	    {
 	    string id = (string)UI::QueryWidget(`id(`table), `CurrentItem);
-	    string maindevkey 	= Storage::GetMainDevKey( id);
-	    map curr_part 	= Storage::GetSubDev( id );
-	    map curr_disk  	= Storage::GetMainDev( maindevkey );
 	    focusline = id;
+	    map part = $[];
+	    map disk = Storage::GetDisk( tg, id );
+	    if( !haskey( tg, id ) )
+		part = Storage::GetPartition( tg, id );
 
-	    map tmap = Storage::GetTargetMap();
-	    if( tmap[maindevkey,"readonly"]:false )
+	    if( tg[id,"readonly"]:false )
 		{
-		Popup::Error( Partitions::RdonlyText( maindevkey, true ));
+		Popup::Error( Partitions::RdonlyText( id, true ));
 		ret = `again;
 		continue;
 		}
 	 
-	    y2milestone( "disk=%1", curr_disk );
-	    y2milestone( "RESIZE id=%1 maindev=%2 part=%3", 
-	                 id, maindevkey, curr_part );
-	    map possible = Storage::IsResizable( curr_part );
-	    if( id == maindevkey || 
-	        size( curr_part["lvm_group"]:"") > 0 ||
-	        size( curr_part["raid_name"]:"") > 0 ||
-	        find( curr_part["device"]:"", "/dev/md" )==0 )
+	    y2milestone( "disk=%1", disk );
+	    y2milestone( "RESIZE id=%1 part=%2", id, part );
+	    map possible = Storage::IsResizable( part );
+	    if( size(part)==0 ||
+		part["used_by_type"]:`UB_NONE == `UB_LVM ||
+		part["used_by_type"]:`UB_NONE == `UB_MD ||
+	        part["type"]:`unknown == `sw_raid ||
+	        part["type"]:`unknown == `loop ||
+	        part["type"]:`unknown == `dm )
 		{
                 // popup text
 		Popup::Message(_("
 You cannot resize a disk device, an LVM volume group, an LVM physical volume,
-or an MD Device.
+or an MD device.
 "));
 		}
-	    else if( !curr_part["format"]:false &&
+	    else if( !part["format"]:false &&
 	        !possible["extend"]:false && !possible["shrink"]:false )
 		{
                 // popup text
 		Popup::Message(_("
 You cannot resize the selected partition because the file system
-on this partition does not support being resized.
+on this partition does not support resizing.
 "));
                 }
-	    else if( Storage::IsSubDevLv(id))
+	    else if( part["type"]:`unknown == `lvm )
 		{
-		map<string,map> tg =  Storage::GetTargetMap();
-		map<integer,map> mt =  (map<integer,map>)Storage::GetModifyTargets();
-		map ret = HandleEditLv( tg, mt, id );
-		Storage::SetTargetMap( ret["targets"]:tg );
-		Storage::SetModifyTargets( ret["modify_targets"]:mt );
-		}
-	    else if( curr_part["create"]:false )
-		{
-                // popup text
-		Popup::Message(_("
-You cannot resize the selected partition because this partition 
-does not exist on your disk right now. It will be created 
-by YaST2 later.
-
-To change the size of this partition, use \"Edit\" instead 
-of \"Resize\".
-"));
+		HandleEditLv( tg, id );
 		}
 	    else
 		{
-		map new_val = (map)eval(curr_part);
-		if( Mode::normal () && new_val["used_fs"]:`none == `ntfs )
+		map new_val = part;
+		if( Mode::normal() && new_val["used_fs"]:`none == `ntfs )
 		    {
 		    Package::InstallAll( ["ntfsprogs"] );
 		    }
 		string dev = new_val["device"]:"";
-		if( new_val["ori_nr"]:0 > 0 && new_val["ori_nr"]:0 != new_val["nr"]:0 )
+		if( new_val["ori_nr"]:0 > 0 && 
+		    new_val["ori_nr"]:0 != new_val["nr"]:0 )
 		    {
-		    dev = Storage::GetDeviceName( maindevkey, new_val["ori_nr"]:0 );
+		    dev = Storage::GetDeviceName( disk["device"]:"", new_val["ori_nr"]:0 );
 		    }
-		new_val = ResizePartDlg( new_val, dev, curr_disk, possible );
+		new_val = ResizePartDlg( new_val, dev, disk, possible );
 		if( new_val != nil )
 		    {
-		    integer size_change = curr_part["region",1]:0 -
+		    integer size_change = part["region",1]:0 -
 			                  new_val["region",1]:0;
-		    y2milestone( "region old=%1 new:%2", curr_part["region"]:[],
+		    y2milestone( "region old=%1 new:%2", part["region"]:[],
 		                 new_val["region"]:[] );
 		    y2milestone( "size_change=%1", size_change );
 		    if( size_change != 0 &&
-		        Storage::CheckNextCreated( curr_disk, 
-			                           curr_part["region"]:[0,0] ))
+		        Storage::CheckNextCreated( disk, 
+			                           part["region"]:[0,0] ))
 			{
 			if( size_change < 0 )
 			    {
 			    // popup text
 			    Popup::Message( _("
-You decreased the size available for Linux parititons. 
+You decreased the size available for Linux partitions. 
 Linux partition sizes have been adapted accordingly.
 Check the new sizes in the partition list.
 "));
-                            Storage::AdaptResize( maindevkey, 
-			                          curr_part["region"]:[0,0],
+                            Storage::AdaptResize( disk["device"]:"", 
+			                          part["region"]:[0,0],
 						  size_change );
 			    }
 			// popup text
@@ -3387,8 +3161,8 @@ Should the newly-created partition be automatically increased to use the
 freed disk space?
 ")) )
 			    {
-                            Storage::AdaptResize( maindevkey, 
-			                          curr_part["region"]:[0,0],
+                            Storage::AdaptResize( disk["device"]:"", 
+			                          part["region"]:[0,0],
 						  size_change );
 			    }
 			}
@@ -3405,45 +3179,32 @@ freed disk space?
 	
         if( ret == `delete_parttable )
 	    {
-	    tg = Storage::GetTargetMap();
-	    string maindev = ChooseDisk( tg,
+	    string ddev = ChooseDisk( tg,
 	                                 // heading text
-	                                 _("Delete partition table:"),
-					 `delete );
-
+	                              _("Delete Partition Table"), `delete );
 	    // not cancel
-	    if( maindev != nil )
-		{
-		if( DDZeroPartitionTable(maindev))
+	    if( ddev != nil )
 		    {		    
-		    tg[maindev,"readonly"] = false;
-		    Storage::SetTargetMap(tg);
-		    // now reread partion table -> ret == `reread 
-		    ask_reread = false;
-		    ret = `reread;
-		    }
+		DDZeroPartitionTable(ddev);
 		}
 	    }
 
 	if( Arch::s390 () && ret==`dasdfmt )
 	    {
 	    string id = (string)UI::QueryWidget(`id(`table), `CurrentItem);
-	    string maindevkey 	= Storage::GetMainDevKey(id);
-	    map tg = Storage::GetTargetMap();
-	    map disk = tg[maindevkey]:$[];
+	    map disk = tg[id]:$[];
 
-	    y2milestone( "dasdfmt disk:%1", maindevkey );
+	    y2milestone( "dasdfmt disk:%1", id );
 
-	    if( Storage::IsKeyMainDevKey(id) && 
-	        find( maindevkey, "/dev/dasd")==0 )
+	    if( haskey( tg, id ) && find( id, "/dev/dasd")==0 )
 		{
 		if( !disk["dasdfmt"]:false)
 		    {
 		    // popup text %1 is replaced by a dasd name e.g. /dev/dasda
 		    boolean yn = Popup::YesNo(sformat(
-_("Really execute dasdfmt on disk %1?
-All data on this disk will be lost.
-"),maindevkey));
+_("Running dasdfmt deletes all data on the disk.
+Really execute dasdfmt on disk %1?
+"),id));
 		    y2milestone( "yn=%1", yn );
 		    if( yn )
 			{
@@ -3456,20 +3217,19 @@ All data on this disk will be lost.
 			    return(p);
 			    });
 			list pn = 
-			    StorageDevices::GetS390Partitions( maindevkey,
-							       disk, [] );
+			    StorageDevices::GetS390Partitions( id, disk, [] );
 			pl = (list<map>)union( pl, pn );
 			disk["partitions"] = pl;
-			tg[maindevkey] = disk;
+			tg[id] = disk;
 			Storage::SetTargetMap( tg );
 			}
 		    }
 		else
 		    {
-		    Popup::Message( _("Flag to run dasdfmt for the disk removed.
+		    Popup::Message( _("The disk is no longer marked for dasdfmt.
 
-Partitions currently present on this disk are displayed
-again.
+Partitions currently present on this disk are again 
+displayed.
 ") );
 		    disk["dasdfmt"] = false;
 		    list<map> pl = filter( map p, disk["partitions"]:[],
@@ -3480,7 +3240,7 @@ again.
 			return(p);
 			});
 		    disk["partitions"] = pl;
-		    tg[maindevkey] = disk;
+		    tg[id] = disk;
 		    Storage::SetTargetMap( tg );
 		    }
 		}
@@ -3488,7 +3248,7 @@ again.
 		{
 		// popup text 
 		Popup::Error( _("No DASD disk selected.
-Select the DASD disk for which dasdfmt should be executed."));
+Select the DASD disk on which dasdfmt should be executed."));
 		}
 	    }
 
@@ -3503,7 +3263,7 @@ Select the DASD disk for which dasdfmt should be executed."));
 
 	    if( ask_reread ) 
 		// popup text
-		ret2 = Popup::YesNo(_("Do you really want to reread the partition table?\nAll current changes made in this dialog will be lost!")); 
+		ret2 = Popup::YesNo(_("Rereading the partition table cancels all current changes. Really reread the partition table?")); 
 
 	    if( ret2 )
 		{
@@ -3518,7 +3278,7 @@ Select the DASD disk for which dasdfmt should be executed."));
 	
         if( ret == `raid_wizard )
 	    {
-	    if( !check_raid_possible( Storage::GetTargetMap() ))
+	    if( !check_raid_possible( tg ))
 	        {
 		ret = `again;
 		continue;
@@ -3531,7 +3291,7 @@ Select the DASD disk for which dasdfmt should be executed."));
 	    Storage::SetWizardKey( id );
 	    if( ret == `loop_edit )
 		{
-		if( Storage::GetMainDevKey(id) != "/dev/loop" )
+		if( find( id, "/dev/loop" )!= 0 )
 		    {
 		    // popup text
 		    Popup::Message( _("Select a loop device entry.") );
@@ -3542,7 +3302,7 @@ Select the DASD disk for which dasdfmt should be executed."));
 	    LoopSetup( ret==`loop_edit );
 	    if( ret==`loop_create )
 		{
-		map dev = Storage::GetMainDev( "/dev/loop" );
+		map dev = Storage::GetDisk( tg, "/dev/loop" );
 		UI::ReplaceWidget( `id(`loop_button),
 				   LoopButton(size(dev["partitions"]:[])) );
 		}
@@ -3554,7 +3314,7 @@ Select the DASD disk for which dasdfmt should be executed."));
 	
         if (ret == `lvm)
 	    {
-	    if( ! check_lvm_possible( Storage::GetTargetMap() ) )
+	    if( !check_lvm_possible( tg ) )
 		{
 		ret = `again;
 		continue;
@@ -3569,7 +3329,7 @@ Select the DASD disk for which dasdfmt should be executed."));
         // Adapt mount points from existing /etc/fstab
         /////////////////////////////////////////////////////////////
 
-        if (ret == `adapt_mp && Stage::initial () )
+        if (ret == `adapt_mp && Stage::initial() )
 	    {
 	    map<string,map> od = (map<string,map>)Storage::GetOndiskTarget();
 	    list<list> fstab = scanAndReadExistingFstab( od );
@@ -3600,19 +3360,17 @@ Select the DASD disk for which dasdfmt should be executed."));
 
 	    if( ret == `raid_wizard || ret == `raid_settings )
 		{
+		if( Storage::CheckBackupState("raid"))
 		Storage::DisposeTargetBackup("raid");
 		}
 
 	    if( ret == `back )
 		{
-		boolean changed = Storage::GetTargetBackup("custom_part") !=
-		                  Storage::GetTargetMap();
-		y2milestone( "CheckBack ret=%1 changed=%2", ret, changed );
-		if( changed )
+		if( !Storage::EqualBackupStates( "custom_part", "", true ))
 		    {
 		    // popup text %1 will be replaces with button text
 		    string txt = sformat( _("You have changed the partitioning.
-These changes are lost if you exit the main dialog with \"%1\".
+These changes are lost if you exit the main dialog with %1.
 Really quit the main dialog?
 "), 
                                           deletechars(back_label,"&") );
@@ -3624,23 +3382,20 @@ Really quit the main dialog?
 		}
 	    if( ret == `next )
 		{
-		boolean changed = Storage::GetTargetBackup("custom_part") !=
-				  Storage::GetTargetMap();
+		boolean changed = 
+		    !Storage::EqualBackupStates( "custom_part", "", true );
 		y2milestone( "CheckNext ret=%1 changed=%2", ret, changed );
 		if( changed )
 		    {
 		    Storage::SetPartMode( "CUSTOM" );
 		    }
 		}
-	    if ( ret == `next && !immediate_prepdisk )
+	    if ( ret == `next )
 		{
-		list retval = check_created_partiton_table( Storage::GetTargetMap() , true, Stage::initial () );
+		list retval = check_created_partiton_table( Storage::GetTargetMap(), true, Stage::initial() );
 		Storage::SetTargetMap( retval[0]:$[] );
 	        doagain = retval[1]:`next;
 		}
-
-	    // write partition information
-	    Storage::immediate_prepdisk = immediate_prepdisk;
 
 	    if( (ret==`back || ret==`next) && doagain!=`again )
 		{
@@ -3659,7 +3414,9 @@ Really quit the main dialog?
 		}
 	    }
 
-	y2milestone( "end main loop ret %1", ret );
+	Storage::SetLastUsed( focusline );
+
+	y2milestone( "end main loop ret %1 focusline %2", ret, focusline );
         } until (ret == `next || ret == `back || ret == `cancel ||
 	         ret == `raid_wizard || ret == `raid_settings || 
 	         ret == `evms || 

@@ -38,7 +38,7 @@ define list<list> findExistingFstab( map<string,map> targetMap, string search_po
     /////////////////////////////////////////////////////////////////
     // foreach partition on each target
     list<list>    fstab = [];
-    list    skip_fs = [ `unknown, `swap, `fat32, `fat16, `ntfs ];
+    list    skip_fs = [ `unknown, `swap, `vfat, `ntfs ];
 
     if( Stage::initial () )
 	Storage::SetMdOn( true );
@@ -128,13 +128,10 @@ define list<list> scanAndReadExistingFstab( map<string,map> targetMap )
      * @parm part2 partition 2
      * @return boolean
      */
-define boolean arePartitionsEqual( map part1, map part2 )``{
-
+define boolean arePartitionsEqual( map part1, map part2 )
+    ``{
 	if( part1["create"]:false )
 	    return true;
-
-	y2debug("part1 : %1", part1);
-	y2debug("part2 : %1", part2);
 
 	// -> not all keys
 	if( part1["nr"]:0 	       == part2["nr"]:0 &&
@@ -143,12 +140,10 @@ define boolean arePartitionsEqual( map part1, map part2 )``{
 	    part1["create"]:false      == part2["create"]:false &&
 	    part1["format"]:false      == part2["format"]:false &&
 	    part1["used_fs"]:`unknown  == part2["used_fs"]:`unknown &&
-	    part1["loop_fs"]:false     == part2["loop_fs"]:false &&
-	    part1["crypt"]:""          == part2["crypt"]:"" &&
+	part1["enc_type"]:`none    == part2["enc_type"]:`none &&
 	    part1["fstab_mnt"]:`device == part2["fstab_mnt"]:`device &&
 	    part1["label"]:""          == part2["label"]:"" &&
-	    part1["mount"]:""          == part2["mount"]:""
-	  )
+	part1["mount"]:""          == part2["mount"]:"" )
 	{
 	    return true;
 	}
@@ -160,11 +155,11 @@ define boolean arePartitionsEqual( map part1, map part2 )``{
    * @param mount mount point
    * @return boolean
    */
-define boolean check_lvm_mount_points( string mount ) ``{
-
+define boolean check_lvm_mount_points( string mount ) 
+    ``{
        list not_allowed_lvm_mount_points  = [ Partitions::BootMount() ];
        y2milestone( " check lvm mount");
-       if( contains(  not_allowed_lvm_mount_points , mount ))
+    if( contains( not_allowed_lvm_mount_points, mount ))
        {
            // error popup text
 	   Popup::Error(sformat(_("You cannot use the mount point \"%1\" for LVM.\n"), Partitions::BootMount()));
@@ -262,7 +257,7 @@ define boolean check_unique_label( map<string,map> targetMap, map part )
     // check if the label is already in use
     foreach( string disk, map diskinfo, targetMap, ``{
 	foreach( map p, diskinfo["partitions"]:[], ``{
-	    if ( !p["delete"]:false && p["device"]:"" != part["device"]:"" )
+	    if ( p["device"]:"" != part["device"]:"" )
 		{
 		// all valid partitions
 		if ( p["label"]:"" == part["label"]:"" ) unique = false;
@@ -313,8 +308,7 @@ define boolean check_mount_point( map<string,map> targetMap, string dev, map par
 	// check if the mount point is already in use
 	foreach( string disk, map diskinfo, targetMap, ``{
 	    foreach( map part, diskinfo["partitions"]:[], ``{
-		if ( !part["delete"]:false &&
-		     Storage::GetDeviceName( disk, part["nr"]:(any)0 ) != dev )
+		if( part["device"]:"" != dev )
 		    {
 		    // all valid partitions
 		    if ( part["mount"]:"" == mount )   allowed = false;
@@ -328,7 +322,7 @@ define boolean check_mount_point( map<string,map> targetMap, string dev, map par
 	    Popup::Error(_("This mount point is already in use. Select a different one."));
 	    }
 	// check if a dos filesystem is used for system purposes
-	else if( (used_fs == `fat16 || used_fs == `fat32) &&
+	else if( used_fs == `vfat &&
 		 (mount == "/" || mount == "/usr" || mount == "/opt" ||
 		  mount == "/var" || mount == "/home"))
 	    {
@@ -423,7 +417,7 @@ Use JFS on larger partitions.
      **/
 define map CheckOkMount( string dev, map old, map<string,any> new )
     ``{
-    y2milestone( "old:%1 new:%2", old, new );
+    y2milestone( "CheckOkMount old:%1 new:%2", old, new );
     map ret = $[];
     ret["ok"] = true;
     new["mount"] = UI::QueryWidget(`id(`mount_point), `Value);
@@ -467,12 +461,6 @@ define map CheckOkMount( string dev, map old, map<string,any> new )
 		}
 	    }
 	}
-    if( !new["format"]:false && !new["create"]:false &&
-        old["mount"]:"" != new["mount"]:"" && ret["ok"]:false )
-	{
-	if( !haskey( new, "ori_mount" ) )
-	    new["ori_mount"] = old["mount"]:"";
-	}
     if( !new["format"]:false )
 	{
 	new = filter(string key, any value, new, ``( key != "fs_options"));
@@ -497,25 +485,20 @@ define map CheckCryptOk( map new )
 	{
 	crypt_fs = (boolean)UI::QueryWidget(`id(`crypt_fs), `Value );
 	}
-    new["loop_fs"] = crypt_fs || new["type"]:`none==`loop;
     if( crypt_fs )
-	{
-	new["crypt"] = new["format"]:false?"twofish256":"twofish";
-	if( new["format"]:false && new["noauto"]:false )
-	    {
-	    new["phash"] = "sha512";
-	    new["itercountk"] = "100";
-	    }
-	}
-    if( crypt_fs && size(new["crypt_key"]:"")==0 && 
+	new["enc_type"] = new["format"]:false?`twofish:`twofish_old;
+    else
+	new["enc_type"] = `none;
+    if( crypt_fs && 
+        size(Storage::GetCryptPwd( new["device"]:"create_loop" ))==0 &&
         (!new["noauto"]:false||new["format"]:false) )
 	{
 	string fs_passwd = DlgCreateCryptFs( new["format"]:false?8:5 );
 	// Ask the user for a password for cryptofs, else set crypto to nil??
 	if( fs_passwd != nil && size(fs_passwd)>0 )
 	    {
-	    string crypt_key = Storage::AddCryptToClassified( fs_passwd );
-	    new["crypt_key"] = crypt_key;
+	    string dev = new["device"]:"create_loop";
+	    ret["ok"] = Storage::SetCryptPwd( dev, fs_passwd );
 	    }
 	else
 	    {
@@ -532,7 +515,8 @@ define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map f
     list<string> not_used_mp = [];
     symbol used_fs = new["used_fs"]:`unknown;
     map selected_fs = file_systems[used_fs]:$[];
-    y2milestone( "init:%1 used_fs:%2 new:%3", init, used_fs, new );
+    y2milestone( "HandleFsChanged init:%1 used_fs:%2 new:%3", 
+                 init, used_fs, new );
 
     if( UI::WidgetExists( `id(`crypt_fs) ))
 	{
@@ -541,7 +525,7 @@ define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map f
 	UI::ChangeWidget( `id(`crypt_fs), `Enabled, cr );
 	if( !cr )
 	    {
-	    y2milestone( "crypt set to false" );
+	    y2milestone( "HandleFsChanged crypt set to false" );
 	    UI::ChangeWidget(`id(`crypt_fs), `Value, false );
 	    }
 	}
@@ -605,7 +589,7 @@ define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map f
 	    new["label"] = "";
 	    }
 	}
-    y2debug( "HandleFsChanged new %1", new );
+    y2milestone( "HandleFsChanged new %1", new );
     return( new );
     };
 
@@ -615,7 +599,8 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 						map<string,any> old, 
 						map<string,any> new )
     ``{
-    y2milestone( "init:%1 ret:%2 new:%3", init, ret, new );
+    y2milestone( "HandlePartWidgetChanges init:%1 ret:%2 new:%3", 
+                 init, ret, new );
     symbol used_fs = new["used_fs"]:`unknown;
     map selected_fs = file_systems[used_fs]:$[];
     /////////////////////////////////////////////////////////
@@ -674,7 +659,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 		}
 	    map selected_fs = file_systems[dfs]:$[];
 	    new["used_fs"] = dfs;
-	    y2milestone( "used_fs %1", dfs );
+	    y2milestone( "HandlePartWidgetChanges used_fs %1", dfs );
 	    if( new["used_fs"]:`unknown != old["used_fs"]:`unknown )
 		new = HandleFsChanged( init, new, file_systems );
 	    if( format )
@@ -728,9 +713,10 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	    {
 	    new_fs = new["detected_fs"]:`none;
 	    }
-	y2milestone( "new_fs %1", UI::QueryWidget(`id(`fs), `Value) );
-	y2milestone( "ret==fs init=%1 used_fs:%2 new_fs:%3", init, used_fs,
-	             new_fs );
+	y2milestone( "HandlePartWidgetChanges new_fs %1", 
+	             UI::QueryWidget(`id(`fs), `Value) );
+	y2milestone( "HandlePartWidgetChanges init=%1 used_fs:%2 new_fs:%3", 
+	             init, used_fs, new_fs );
 	if( init || used_fs != new_fs )
 	    {
 	    used_fs = new_fs;
@@ -767,12 +753,14 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	{
 	////////////////////////////////////////////////
 	// modify map new
-	string fs_string = (string)UI::QueryWidget(`id(`fsid_point ), `Value);
+	string fs_string = (string)UI::QueryWidget(`id(`fsid_point), `Value);
+	y2milestone("HandlePartWidgetChanges fs_string:%1", fs_string );
 	fs_string        = substring( fs_string, 0, 5  );
 	integer fs_int   = tointeger( fs_string );
 	integer old_id   = new["fsid"]:0;
 
-	y2milestone( "fs_int:%1 old_id:%2", fs_int, old_id );
+	y2milestone( "HandlePartWidgetChanges fs_int:%1 old_id:%2", 
+	             fs_int, old_id );
 
 	if( fs_int != old_id )
 	    {
@@ -833,7 +821,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
     if( ret == `crypt_fs )
 	{
 	boolean val = (boolean)UI::QueryWidget( `id(`crypt_fs), `Value );
-	new["crypt"] = val?(new["format"]:false?"twofish256":"twofish"):"none";
+	new["enc_type"] = val?(new["format"]:false?`twofish:`twofish_old):`none;
 	}
     if( ret == `fs_options )
 	{
@@ -846,9 +834,8 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
         UI::ChangeWidget(`id(`fstab_options), `Enabled, false);
         UI::ChangeWidget(`id(`crypt_fs) ,     `Enabled, false);
         }
-    
-    y2debug( "HandlePartWidgetChanges old:%1", old );
-    y2debug( "HandlePartWidgetChanges new:%1", new );
+    y2milestone( "HandlePartWidgetChanges old:%1", old );
+    y2milestone( "HandlePartWidgetChanges new:%1", new );
     return( new );
     };
 
@@ -892,10 +879,6 @@ define list AddFstabToData( map<string,map> targetMap, list<map> fstab )
 	    ``{
 	    map new_partition = partition;
 
-	    /////////////////////////////////////////////////////////
-	    // if the partition is not to delete
-	    if( !partition["delete"]:false )
-		{
 		foreach( map fstab_entry, fstab,
 		    ``{
 		    string dev_fstab   = fstab_entry["spec"]:"";
@@ -939,7 +922,6 @@ define list AddFstabToData( map<string,map> targetMap, list<map> fstab )
 			table_input["tbl"] = add( table_input["tbl"]:[], a );
 			}
 		    });
-		}
 	    new_partitions = add( new_partitions, new_partition);
 	    });
 	target["partitions"] = new_partitions;
@@ -999,14 +981,19 @@ define boolean CheckResizePossible( boolean ask, boolean lvm, integer resize,
 
     y2milestone( "CheckResizePossible resize %1 ask %2 lvm %3 fsys %4 mount %5",
                  resize, ask, lvm, fsys, mount );
-    if( size(mount)>0 && !Stage::initial () && resize < 0 && 
+    if( size(mount)>0 && !Stage::initial() && resize < 0 && 
         !poss["mount_shrink"]:false && poss["shrink"]:false )
         {
 	FsysCannotResizeMountPopup( lvm, mount );
 	ret = false;
 	}
-    else if( size(mount)>0 && !Stage::initial () && resize > 0 && 
+    else if( size(mount)>0 && !Stage::initial() && resize > 0 && 
              !poss["mount_extend"]:false && poss["extend"]:false )
+        {
+	FsysCannotResizeMountPopup( lvm, mount );
+	ret = false;
+	}
+    else if( size(mount)>0 && !Stage::initial() && resize != 0 && !lvm )
         {
 	FsysCannotResizeMountPopup( lvm, mount );
 	ret = false;

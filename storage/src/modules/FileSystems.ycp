@@ -81,6 +81,8 @@ define map FstabDefaultMap =
                     "mntops":"noauto,fs=floppyfss,procuid,nodev,nosuid,sync", 
 		    "freq":0, "passno":0 ],
        "zip":    $[ "spec":"", "mount":"", "vfstype":"auto", 
+                    "mntops":"noauto,user", "freq":0, "passno":0 ],
+       "data":   $[ "spec":"", "mount":"", "vfstype":"auto", 
                     "mntops":"noauto,user", "freq":0, "passno":0 ]
      ];
 
@@ -91,8 +93,7 @@ define map FstabDefaultMap =
 		   `ext2        : true,
 		   `ext3        : true,
 		   `jfs    	: false,
-		   `fat16  	: true,
-		   `fat32  	: true,
+		   `vfat  	: true,
 		   `xxefi  	: false,
 		   `xbootdisk  	: false,
 		   `xbootfat  	: false,
@@ -135,10 +136,7 @@ define map FstabDefaultMap =
 				   ],
 		   `jfs    	: $[
 				   ],
-		   `fat16  	: $[ "shrink":true,
-				     "parted" : true,
-				   ],
-		   `fat32  	: $[ "shrink":true,
+		   `vfat  	: $[ "shrink":true,
 				     "parted" : true,
 				   ],
 		   `ntfs  	: $[ "extend":true,
@@ -167,8 +165,7 @@ define map FstabDefaultMap =
 		 `reiser : "reiserfs",
 		 `xfs    : "xfs",
 		 `jfs    : "jfs",
-		 `fat16  : "vfat",
-		 `fat32  : "vfat" ];
+		 `vfat   : "vfat" ];
     };
   */
 
@@ -340,7 +337,7 @@ This codepage is used for converting to shortname characters on FAT file systems
 	 ]
       ];
 
-  list< map<symbol, any> > fat32_options =
+  list< map<symbol, any> > vfat_options =
       [
        $[
 	 // label text
@@ -581,7 +578,7 @@ This option specifies the inode size of the file system.</p>\n")
 				    `fst_options  	: ext2_fst_options,
 				    `options  		: ext2_options,
 		      ],
-		      `fat32	: $[
+		      `vfat	: $[
 				    `name 		: "FAT",
 				    `fsid 		: 12,
 				    `alt_fsid           : [ 12, 0x103 ],
@@ -595,7 +592,7 @@ This option specifies the inode size of the file system.</p>\n")
 				    `makefstype		: "fat32",
 				    `needed_modules	: [ "fat", "vfat" ],
 				    `fst_options  	: fat_fst_options,
-				    `options 		: fat32_options
+				    `options 		: vfat_options
 
 		      ],
 		      `reiser 	: $[
@@ -803,21 +800,18 @@ global define void FileSystems()
     ``{
     if( Arch::sparc64 () || Arch::sparc32 () )
 	{
-        support[`fat16] = false;
-        support[`fat32] = false;
+        support[`vfat] = false;
 	}
     if( Arch::ppc () )
 	{
-	support[`fat16] = Arch::board_chrp ();
-	support[`fat32] = Arch::board_chrp ();
+	support[`vfat] = Arch::board_chrp ();
 	support[`xbootdisk] = true;
 	support[`xbootfat] = Arch::board_chrp ();
 	}
     if( Arch::s390 () )
 	{
 	support[`xfs] = false;
-	support[`fat16] = false;
-	support[`fat32] = false;
+	support[`vfat] = false;
 	}
     if( Arch::ia64 () )
 	{
@@ -833,6 +827,11 @@ global define void FileSystems()
 	support[`hfs] = true;
 	}
     y2milestone( "support %1", support );
+    suggest_m_points = [ "/home", "/srv", "/tmp", "/local", ""];
+    if( Stage::initial() )
+	suggest_m_points = (list<string>)union( system_m_points, 
+	                                        suggest_m_points );
+    y2milestone( "suggest_m_points:%1", suggest_m_points );
     }
 
 
@@ -903,7 +902,7 @@ global define void FileSystems()
       string ret        = fsmap[`mount_string ]:"";
       if( size(ret)==0 )
 	  {
-	  if( used_fs == `fat32 || used_fs == `fat16 )
+	  if( used_fs == `vfat )
 	      {
 	      ret = "vfat";
 	      }
@@ -1077,7 +1076,7 @@ global define symbol DetectFs( string current_dev )
     }
 	else if( type == "vfat" || type == "fat" )
 	  {
-	  return_value = `fat32;
+	  return_value = `vfat;
 	  }
 	else if( type == "ntfs" )
 	  {
@@ -1180,172 +1179,6 @@ global define string DetectLoopEncryption( map loop, string pwdfile )
     }
 
 
-global define map GetUuidVolume( string dev, symbol fs )
-    ``{
-    map ret = $[];
-    string val = "";
-    string cmd = "";
-    string search = "";
-    map cmd_ret = $[];
-    integer pos = 0;
-    if( fs == `ext2 || fs == `ext3 )
-	{
-	cmd = sformat( "/sbin/tune2fs -l %1", dev );
-	y2debug( "executing cmd %1", cmd );
-	cmd_ret = (map) SCR::Execute(.target.bash_output, cmd);
-	val = cmd_ret["stdout"]:"";
-	search = "UUID:";
-	pos = find( val, search );
-	if( pos != -1 )
-	    {
-	    val = substring( val, pos+size(search) );
-	    pos = findfirstof( val, "\n" );
-	    if( pos != nil )
-		{
-		val = substring( val, 0, pos );
-		}
-	    val = deletechars( val, " \n\t" );
-	    if( size(val)>0 )
-		{
-		ret["uuid"] = val;
-		}
-	    }
-	val = cmd_ret["stdout"]:"";
-	search = "volume name:";
-	pos = find( val, search );
-	if( pos != -1 )
-	    {
-	    val = substring( val, pos+12 );
-	    pos = findfirstof( val, "\n" );
-	    if( pos != nil )
-		{
-		val = substring( val, 0, pos );
-		}
-	    val = deletechars( val, " \n\t" );
-	    if( size(val)>0 && val != "<none>" )
-		{
-		ret["label"] = val;
-		}
-	    }
-	}
-    else if( fs == `reiser )
-	{
-	cmd = sformat( "/sbin/debugreiserfs %1 2>&1", dev );
-	y2milestone( "executing cmd %1", cmd );
-	cmd_ret = (map) SCR::Execute(.target.bash_output, cmd);
-	y2milestone( "output %1", cmd_ret["stdout"]:"" );
-	val = cmd_ret["stdout"]:"";
-	search = "UUID:";
-	pos = find( val, search );
-	if( pos != -1 )
-	    {
-	    val = substring( val, pos+size(search) );
-	    pos = findfirstof( val, "\n" );
-	    if( pos != nil )
-		{
-		val = substring( val, 0, pos );
-		}
-	    val = deletechars( val, " \n\t" );
-	    if( size(val)>0 )
-		{
-		ret["uuid"] = val;
-		}
-	    }
-	val = cmd_ret["stdout"]:"";
-	search = "LABEL:";
-	pos = find( val, search );
-	if( pos != -1 )
-	    {
-	    val = substring( val, pos+size(search) );
-	    pos = findfirstof( val, "\n" );
-	    if( pos != nil )
-		{
-		val = substring( val, 0, pos );
-		}
-	    val = deletechars( val, " \n\t" );
-	    if( size(val)>0 )
-		{
-		ret["label"] = val;
-		}
-	    }
-	}
-    else if( fs == `xfs )
-	{
-	cmd = sformat( "/usr/sbin/xfs_admin -l -u %1", dev );
-	y2debug( "executing cmd %1", cmd );
-	cmd_ret = (map) SCR::Execute(.target.bash_output, cmd);
-	val = cmd_ret["stdout"]:"";
-	search = "uuid =";
-	pos = find( val, search );
-	if( pos != -1 )
-	    {
-	    val = substring( val, pos+size(search) );
-	    pos = findfirstof( val, "\n" );
-	    if( pos != nil )
-		{
-		val = substring( val, 0, pos );
-		}
-	    val = deletechars( val, " \n\t" );
-	    if( size(val)>0 )
-		{
-		ret["uuid"] = val;
-		}
-	    }
-	val = cmd_ret["stdout"]:"";
-	search = "label =";
-	pos = find( val, search );
-	if( pos != -1 )
-	    {
-	    val = substring( val, pos+size(search) );
-	    pos = findfirstof( val, "\n" );
-	    if( pos != nil )
-		{
-		val = substring( val, 0, pos );
-		}
-	    val = deletechars( val, " \"\n\t" );
-	    if( size(val)>0 )
-		{
-		ret["label"] = val;
-		}
-	    }
-	}
-    y2milestone( "GetUuidVolume dev:%1 fs:%2 ret:%3", dev, fs, ret );
-    return( ret );
-    }
-
-
-
-global define map GetFsysInfos( map part )
-    ``{
-    string dev = part["device"]:"";
-    y2milestone( "device:%1", dev );
-    if( size(part["loop_dev"]:"")>0 )
-      {
-	dev = part["loop_dev"]:"";
-	y2milestone( "device:%1", dev );
-      }
-    part["detected_fs"] = DetectFs( dev );
-    if( part["detected_fs"]:`unknown != `unknown )
-      {
-	part["used_fs"] = part["detected_fs"]:`unknown;
-      }
-    if( part["detected_fs"]:`unknown != `unknown &&
-        part["detected_fs"]:`unknown != `swap )
-      {
-	map info = GetUuidVolume( dev, part["detected_fs"]:`unknown );
-	if( size(info["uuid"]:"")>0 )
-      {
-	    part["uuid"] = info["uuid"]:"";
-      }
-	if( size(info["label"]:"")>0 )
-      {
-	    part["label"] = info["label"]:"";
-      }
-      }
-    y2milestone( "ret part:%1", part );
-    return( part );
-    }
-
 global define symbol FsToSymbol( string type )
     ``{
     symbol return_value = `none;
@@ -1371,7 +1204,7 @@ global define symbol FsToSymbol( string type )
 	  }
     else if( type == "vfat" || regexpmatch( type, "fat.*" ))
 	  {
-	  return_value = `fat32;
+	  return_value = `vfat;
 	  }
 	else if( type == "ntfs" )
 	  {
@@ -1439,216 +1272,6 @@ global define void DoChangedFsDefaults( map part )
 	}
     };
 
-//////////////////////////////////////////////////////////////////////////
-// mount partition and look how much free space is available
-// size: size of partition
-//////////////////////////////////////////////////////////////////////////
-
-global define map GetFreeSpace( string device, integer testsize,
-                                symbol used_fs, boolean verbose )
-    ``{
-    integer used = 0;
-    integer free = 0;
-    boolean win_disk = false;
-    boolean mounted = false;
-    string mount_point = (string) SCR::Read (.target.tmpdir) + "/gfs_mnt";
-
-    if( !Stage::initial () )
-	{
-	map mounts = find( map e, Partitions::CurMounted(), 
-	                   ``(e["spec"]:""==device ));
-	y2milestone( "mounts %1", mounts );
-        if( size(mounts["file"]:"")>0 )
-	    {
-	    mount_point = mounts["file"]:"";
-	    mounted = true;
-	    }
-	}
-    y2milestone( "GetFreeSpace mount_point %1 mounted %2 verbose %3", 
-                 mount_point, mounted, verbose );
-
-    if( !mounted )
-	{
-	SCR::Execute (.target.mkdir, mount_point, 0755);
-	LoadModule( used_fs );
-	}
-    if ( Mode::test () )
-	{
-	integer wf =  tointeger(tofloat(testsize) * 0.6);
-	integer wu =  tointeger(tofloat(testsize) * 0.4);
-	integer ls =  tointeger(tofloat(testsize) * 0.5);
-	return( $[ "free"  : wf, "used"    : wu,
-		   "linux_size"  : ls, "new_size": (wu + wf - ls) ] );
-	}
-
-    if( !mounted )
-	{
-	string mount_type = GetMountString( used_fs, "");
-	if (mount_type != "")
-	    {
-	    mount_type = "-r -t " + mount_type;
-	    }
-
-	// mount the partition to execute some checks
-	//
-	y2milestone( "mount %1 used_fs %2 type %3", device, used_fs, 
-	             mount_type );
-	boolean mount_ret = (boolean) SCR::Execute(.target.mount, [device, mount_point],
-					 mount_type );
-
-	if ( !mount_ret)
-	    {
-	    y2error( "Current device <%1> could not be mounted. Canceled", device );
-	    return( $[] );	// abort installation
-	    }
-	else {
-	    y2milestone( "Current device <%1> mounted on <%2>", device, 
-			 mount_point );
-        }
-	}
-
-    // get usage information for the partition via df
-    //
-    list<map> df_result = (list<map>) SCR::Read(.run.df);
-    if( used_fs==`fat32 || used_fs==`fat16 || used_fs==`ntfs )
-	{
-	list chkf = ["boot.ini", "msdos.sys", "io.sys", "config.sys",
-	             "MSDOS.SYS", "IO.SYS" ];
-	integer num = 0;
-	while( !win_disk && num<size(chkf) )
-	    {
-	    win_disk = SCR::Read( .target.size, 
-	                          mount_point + "/" + chkf[num]:"XX" ) >= 0;
-	    num = num+1;
-	    }
-	}
-
-    if( !mounted )
-	{
-	SCR::Execute(.target.umount, mount_point);
-	}
-
-    y2debug( ".run.df: %1", df_result );
-
-    // filter out headline and other invalid entries
-    df_result = filter(map part, df_result, ``( part["spec"]:""==device ) );
-    y2milestone( "df_result %1", df_result );
-
-    // get the usage values
-    //
-    used = tointeger( df_result[0,"used"]:"-1" );
-    free = tointeger( df_result[0,"free"]:"-1" );
-
-    if( used != -1 && free != -1 )
-	{
-	used = used * 1024;	// Byte
-	free = free * 1024;	// Byte
-	y2milestone( ".run.df: used: <%1> free:<%2>", used, free );
-	}
-    else
-	{
-	free = 0;
-	}
-
-    integer df_free = free;
-    if( used_fs == `ntfs )
-	{
-	string cmd = sformat("ntfsresize -f -i %1", device );
-	y2milestone( "Executing cmd:%1", cmd );
-	map bcall = (map) SCR::Execute( .target.bash_output, cmd, 
-					$[ "LC_MESSAGES" :"POSIX"] );
-	y2milestone( "Executing ret:%1", bcall );
-	free = 0;
-	if( bcall["exit"]:1 == 0 )
-	    {
-	    string line = find(string l, splitstring( bcall["stdout"]:"", "\n" ),
-	                        ``( find(l, " might resize at ")>0 ));
-	    y2milestone( "line %1", line );
-	    if( line != nil )
-		{
-		line = substring( line, find(line, " at ")+4 );
-		line = substring( line, 0, findfirstnotof( line, "0123456789" ));
-		free = used + df_free - (tointeger( line ) + 1024*1024);
-		y2milestone( "line \"%1\" free %2", line, free );
-		}
-	    }
-	else if( verbose )
-	    {
-	    string tmp = _("Resize Not Possible:") + "\n\n";
-	    tmp = tmp + bcall["stdout"]:"" + bcall["stderr"]:"";
-	    Popup::Error( tmp );
-	    }
-	}
-
-    integer linux_size = 0;
-    integer min_linux_size = 0;
-    integer add_free = df_free - free;
-
-    if( free < 300000000 )
-	{
-	linux_size = 0;
-	min_linux_size = 0;
-	}
-    else if( free < 600000000 )
-	{
-	linux_size = free;
-	if( add_free < 75000000 )
-	    {
-	    linux_size = linux_size - 75000000 + add_free;
-	    }
-	min_linux_size = linux_size;
-	}
-    else if ( free < 1000000000 )
-	{
-	linux_size = free;
-	if( add_free < 200000000 )
-	    {
-	    linux_size = linux_size - 200000000 + add_free;
-	    }
-	min_linux_size = 300000000;
-	}
-    else if ( free < 2000000000 )
-	{
-	linux_size = free;
-	if( add_free < 300000000 )
-	    {
-	    linux_size = linux_size - 300000000 + add_free;
-	    }
-	min_linux_size = 500000000;
-	}
-    else if ( free < 3000000000 )
-	{
-	linux_size = free;
-	if( add_free < 800000000 )
-	    {
-	    linux_size = linux_size - 800000000 + add_free;
-	    }
-	min_linux_size = 500000000;
-	}
-    else
-	{
-	linux_size = free;
-	if( add_free < free/3 )
-	    {
-	    linux_size = linux_size - free/3 + add_free;
-	    }
-	min_linux_size = 500000000;
-	}
-
-    integer new_size = used + add_free + free - linux_size;
-
-    map ret = $[ "free": (free>0?free:0),
-		 "df_free" : df_free,
-		 "used":used,
-		 "win_disk":win_disk,
-		 "linux_size":linux_size,
-		 "max_win_size":used + free + add_free - min_linux_size,
-		 "ntfs" : (used_fs == `ntfs),
-		 "new_size":new_size ];
-    y2milestone( "ret %1", ret );
-    return( ret );
-    };
-
 global define boolean IsCryptMp( string mount, boolean prefix )
     ``{
     boolean ret = contains( crypt_m_points, mount );
@@ -1675,6 +1298,7 @@ global define boolean IsSystemMp( string mount, boolean prefix )
 	    ret = ret || find( mount, s + "/" )==0;
 	    });
 	}
+    if( size(mount)>0 )
     y2milestone( "IsSystemMp mount:%1 prefix:%2 ret:%3", mount, prefix, ret );
     return( ret );
     };

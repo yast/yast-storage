@@ -38,7 +38,7 @@ include "partitioning/do_proposal_flexible.ycp";
 
 define boolean ignore_disk( string dev, map entry, boolean soft )
     ``{
-    boolean ret = !Storage::IsRealDisk( dev, entry );
+    boolean ret = !Storage::IsRealDisk( entry );
     if( Arch::board_iseries () && find( dev, "/dev/sd" )==0 )
 	{
 	ret = true;
@@ -108,16 +108,13 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap,
 
 	list<map> primary_list = 
 	    filter( map part, disk["partitions"]:[],
-		    ``( part["type"]:`unknown == `primary  && 
-			!part["delete"]:false ));
+		    ``( part["type"]:`unknown == `primary ));
 	list<map> extended_list = 
 	    filter( map part, disk["partitions"]:[],
-		    ``( part["type"]:`unknown == `extended && 
-			!part["delete"]:false ));
+		    ``( part["type"]:`unknown == `extended ));
 	list<map> logical_list = 
 	    filter( map part, disk["partitions"]:[],
-		    ``( part["type"]:`unknown == `logical && 
-			!part["delete"]:false ));
+		    ``( part["type"]:`unknown == `logical ));
 
 	list<map>    pri_extd_list   = primary_list + extended_list;
 	boolean i_have_extended = ( size(extended_list) > 0);
@@ -827,24 +824,6 @@ define map do_proposal_real( boolean need_boot, map<string,map> targetMap,
 
 	map<string,any> the_hit = GetTheBestHit( hitlist );
 
-	if ( Mode::test () )
-	    {
-	    // OLNLY FOR DEBUG
-	    foreach( map hit, hitlist, ``{
-		y2debug( "OUT: ---------------- new hit-----------------");
-		map<string,map> tmp_targetMap = filter( string key, map val, targetMap, ``(true));
-		TargetChangesToRichText( (map<string,map>)HitToTargetMap( tmp_targetMap, (map<string,any>)hit ), 
-		                         $[]);
-		});
-
-	    map<string,map> tmp_targetMap = filter( string key, map val, targetMap, ``(true));
-	    y2debug( "OUT: ============== THE HIT =======================-");
-	    TargetChangesToRichText( (map<string,map>)HitToTargetMap( tmp_targetMap, the_hit ), 
-	                             $[]);
-	    y2debug( "OUT: ---------------------------");
-	    }
-
-
 	/////////////////////////////////////////////////////////////////////
 	// next step to create the new target map from hit
 
@@ -888,7 +867,7 @@ define map do_proposal()
                  Partitions::MinimalNeededBootsize(), 
 		 Partitions::DefaultBootFs() );
 
-    map<string,map> target = eval(Storage::GetTargetMap());
+    map<string,map> target = Storage::AddWinInfo(Storage::GetTargetMap());
     //target = SCR::Read(.target.yast2, "test_target_map_ol.ycp");
     map ret = $[];
     if( Arch::s390 () )

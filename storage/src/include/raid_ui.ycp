@@ -45,13 +45,13 @@ define symbol AbortDialog()
     }
 
 
-define boolean CheckRaidNumbers( string raidnr )
+define boolean CheckRaidNumbers( integer raidnr )
     ``{
     integer max_raid = 27;
     list<map> parts = get_possible_rds( Storage::GetTargetMap() );
-    string dev = sformat( "/dev/md%1", raidnr );
-    parts = filter( map e, parts, ``(e["raid_name"]:""==dev));
-    y2milestone( "size %1 parts %2", size(parts), parts );
+    string dev = sformat("md%1", raidnr);
+    parts = filter( map e, parts, ``(e["used_by"]:""==dev));
+    y2milestone( "CheckRaidNumbers size %1 parts %2", size(parts), parts );
     if( size(parts) >= max_raid )
 	{
 	// popup text
@@ -64,27 +64,6 @@ handled by the current version of software raid.
 	}
     return( size(parts) < max_raid );
     }
-
-
-/**
- * Initialize RAID creation.
- * @return boolean
- */
-define void InitMainDevRaid()
-    ``{
-    if( !Storage::ExistsMainDevKeyEntry( "/dev/md" ))
-	{
-	// We have to create an "md" entry
-	map<string,any> maindev   = $[ "name"       : Partitions::raid_name,
-			   "cyl_count" : 1,          // not used
-			   "cyl_size"  : 1024*1024,  // size in MB
-			   "partitions": [ ]
-			 ];
-
-	Storage::AddMainDev("/dev/md", maindev );
-	//Storage::DebugStorage();
-	}
-    };
 
 
 /**
@@ -167,7 +146,7 @@ define term get_choose_raid_type_contents( string raid, symbol what )
 		    `HSquash(
 			`VBox(
 			    `Left(`RadioButton(`id("raid0"), str_text,
-					       raid=="raid0"||raid=="linear")),
+					       raid=="raid0")),
 			    `VSpacing (1),
 			    `Left(`RadioButton(`id("raid1"), mir_text,
 					       raid=="raid1")),
@@ -217,7 +196,7 @@ define symbol RaidMultipathAuto()
     map<string,map> tg = Storage::GetTargetMap();
     list<map> raids = tg["/dev/md","partitions"]:[];
     list<map> mp_raids = filter( map p, raids,
-                            ``(!p["delete"]:false && p["create"]:false && 
+                            ``(p["create"]:false && 
 			       p["raid_type"]:""=="multipath"));
     foreach( map p, mp_raids,
 	``{
@@ -226,9 +205,10 @@ define symbol RaidMultipathAuto()
 	    list new_part = [];
 	    foreach( map pt, disk["partitions"]:[],
 		``{
-		if( pt["raid_name"]:""==p["device"]:"" )
+		if( pt["used_by"]:""==substring(p["device"]:"",5) )
 		    {
-		    pt = filter( string key, any value, (map<string,any>)pt, ``( key != "raid_name" ));
+		    pt = filter( string k, any value, (map<string,any>)pt, 
+		                 ``( k != "used_by" && k != "used_by_type" ));
 		    if( pt["change_fsid"]:false )
 			{
 			pt["fsid"] = pt["ori_fsid"]:0;
@@ -256,7 +236,7 @@ define symbol RaidMultipathAuto()
     integer i=0;
     foreach(list<string> entry, Storage::AutodetectMultipathRaid( tg ),
 	``{
-	raid_num = tointeger(get_free_raid_nr( tg, raid_num+1 ));
+	raid_num = get_free_raid_nr( tg, raid_num+1 );
 	raid_list = add( raid_list, raid_num );
 	raid_enab = add( raid_enab, true );
 	string dev = Storage::GetDeviceName( "/dev/md", raid_num );
@@ -367,23 +347,21 @@ define symbol RaidMultipathAuto()
 		{
 		if( raid_enab[i]:false )
 		    {
-		    string dev = Storage::GetDeviceName( "/dev/md", 
-		                                         raid_list[i]:255 );
+		    string dev = sformat( "/dev/md%1", raid_list[i]:255 );
 		    map rp = $[ "nr"         : raid_list[i]:255,
 			        "device"     : dev,
 			        "raid_type"  : "multipath",
 			        "type"       : `sw_raid,
 			        "fsid"       : Partitions::fsid_native,
-			        "region"     : [0, 1], // dummy
-			        "fstype"     : Partitions::raid_name,
-			        "persistent_superblock"  : true,
+			        "size_k"     : 0, // dummy
 			        "create"	    : true,
 			        "used_fs"    : Partitions::default_fs	];
 		    map p = $[];
 		    foreach( string device, (list<string>)at[i]:[],
 			``{
 			p = Storage::GetPartition( tg, device );
-			p["raid_name"] = dev;
+			p["used_by_type"] = `UB_MD;
+			p["used_by"] = substring(dev,5);
 			if( p["fsid"]:0 != Partitions::fsid_raid )
 			    {
 			    if( !p["change_fsid"]:false )
@@ -400,9 +378,9 @@ define symbol RaidMultipathAuto()
 			tg = (map<string,map>)Storage::SetPartition( tg, p );
 			});
 
-		    integer mdsize = raid_size_byte(tg,rp);
+		    integer mdsize = raid_size_byte(rp);
 		    y2milestone( "mdsize=%1", mdsize );
-		    rp["region",1] = mdsize / (1024*1024);
+		    rp["size_k"] = mdsize / 1024;
 		    md_part = add( md_part, rp );
 		    y2milestone( "enabled %1 num:%2 entry:%3", i, 
 		                 raid_list[i]:255, at[i]:[] );
@@ -412,7 +390,6 @@ define symbol RaidMultipathAuto()
 		}
 	    if( size(md_part)>0 )
 		{
-		InitMainDevRaid();
 		tg = Storage::GetTargetMap();
 		tg["/dev/md","partitions"] = 
 		    merge( tg["/dev/md","partitions"]:[], md_part );
@@ -432,29 +409,29 @@ define symbol RaidMultipathAuto()
  */
 define symbol ChooseRaidType(symbol  what)
     ``{
-    string  subdevindex   = "0";
+    integer  raidnr = 0;
+    map raidp = $[];
 
     Storage::CreateTargetBackup("raid");
    
-    y2milestone( "what:%1", what );
-    if( Storage::ExistsMainDevKeyEntry("/dev/md") )
+    y2milestone( "ChooseRaidType what:%1", what );
+
+    map<string,map> tg = Storage::GetTargetMap();
+    string rdev = Storage::GetWizardKey();
+    if( size(rdev)==0 )
 	{
-	subdevindex = get_free_raid_nr( Storage::GetTargetMap(), 0 );
-	if( what == `settings )
-	    Storage::SetWizardKey(Storage::GetSubDevKey("/dev/md", 
-	                                                subdevindex) );
+	raidnr = get_free_raid_nr( tg, 0 );
+	rdev = sformat( "/dev/md%1", raidnr );
+	Storage::SetWizardKey(rdev);
 	}
     else
 	{
-	InitMainDevRaid();
+	raidp = Storage::GetPartition( tg, rdev );
+	raidnr = raidp["nr"]:0;
 	}
     
-    Storage::SetWizardKey(Storage::GetSubDevKey("/dev/md", subdevindex) );
-  
-    map subdevraid = Storage::GetSubDev( Storage::GetWizardKey() );
-
-    y2milestone( "Choose the raid type; subdevindex=%1 ", subdevindex );
-
+    y2milestone( "ChooseRaidType raidp raidp=%1", raidp );
+    y2milestone( "ChooseRaidType nr=%1 dev:%2", raidnr, rdev );
     
     /////////////////////////////////////////////////////////////////
     // Choose Raid Type ...
@@ -463,12 +440,11 @@ define symbol ChooseRaidType(symbol  what)
     // heading text
     string caption = _("RAID Wizard: Step 1.");
     term contents = 
-	get_choose_raid_type_contents(subdevraid["raid_type"]:"raid1", what );
+	get_choose_raid_type_contents(raidp["raid_type"]:"raid1", what );
 
     if( what == `wizard )
 	{
-	Wizard::SetContentsButtons(caption,
-				   contents,
+	Wizard::SetContentsButtons(caption, contents,
 				   ChooseRaidTypeHelp(),
 				   Label::BackButton(),
 				   Label::NextButton());
@@ -499,7 +475,12 @@ define symbol ChooseRaidType(symbol  what)
 	y2error( " Error what in ChooseRaidType must be symbol `wizard or `settings");
 	}
 
-    symbol ret = (symbol)UI::UserInput();
+    boolean new_raid = size(raidp)==0;
+    symbol ret = `none;
+    y2milestone( "ChooseRaidType new_raid:%1", new_raid );
+    do
+	{
+	ret = (symbol)UI::UserInput();
 
     if( contains( [ `next, `ok, `accept ], ret ))
 	{
@@ -507,50 +488,53 @@ define symbol ChooseRaidType(symbol  what)
 	//   Create initial raid datastructure, which comes to 
 	//   /dev/md[partitions]
 
-	string subdevtype = (string) UI::QueryWidget( `id("raid_type"), 
+	    string raidtype = (string)UI::QueryWidget( `id("raid_type"), 
 	                                              `CurrentButton );
+	    y2milestone( "ChooseRaidType raidtype:%1", raidtype );
 
-	string chunk_size = "4";
+	    integer chunk_size = 4;
 
-	if ( subdevtype == "raid5" ) chunk_size = "128";
-	if ( subdevtype == "raid0" ) chunk_size = "32";
+	    if( raidtype == "raid5" ) chunk_size = 128;
+	    if( raidtype == "raid0" ) chunk_size = 32;
 
-	if( subdevraid == $[] || what == `settings )
+	    if( raidp == $[] || what == `settings )
 	    {
-	    string mprop = GetMountPointProposal( Storage::GetTargetMap(), [] );
+		string mprop = GetMountPointProposal( tg, [] );
 	    symbol used_fs = Partitions::default_fs;
 	    if( mprop == Partitions::BootMount() )
 		{
 		used_fs = Partitions::DefaultBootFs();
 		}
-	    subdevraid = $[ "nr" 	 : tointeger(subdevindex),
-			    "device"     : Storage::GetDeviceName( "/dev/md", tointeger(subdevindex) ),
-			    "raid_type"  : subdevtype,
-			    "type"       : `sw_raid,
-			    "fsid"       : Partitions::fsid_native,
-			    "region"	 : [0, 1], // dummy
-			    "fstype"     : Partitions::raid_name,
-			    "chunk_size" : chunk_size,
-			    "persistent_superblock" : true,
-			    "create"	 : true,
+		Storage::CreateMd( raidnr, raidtype );
+		raidp = $[ "device"   : rdev,
 			    "format"	 : true,
 			    "mount"      : mprop,
-			    "used_fs"    : used_fs
-			  ];
+			   "used_fs"  : used_fs ];
+		Storage::ChangeVolumeProperties( raidp );
+		raidp = Storage::GetPartition( Storage::GetTargetMap(), rdev );
+		y2milestone( "ChooseRaidType raidp:%1", raidp );
 	    }
 	else
-	    {
-	    subdevraid = add( subdevraid, "raid_type", subdevtype );
-	    subdevraid = add( subdevraid, "chunk_size", chunk_size );
+		Storage::ChangeMdType( raidnr, raidtype );
+	    Storage::ChangeMdChunk( raidnr, chunk_size );
+	    ret = `next;
 	    }
-
-        if( subdevtype == "raid5" ) 
-	    subdevraid["parity_algorithm"] = "left-symmetric";
-
-        Storage::SetSubDev( Storage::GetWizardKey() , subdevraid );
-        //Storage::DebugStorage();
-	ret = `next;
+	else if( ret == `back && what==`wizard && !new_raid )
+	    {
+	    // popup text %1 will be replaces with button text
+	    string txt = sformat( _(
+"These changes to your raid setup done so far will be 
+lost if you exit the dialog with \"%1\".
+Continue?
+"), 
+				  deletechars(Label::BackButton(),"&") );
+	    if( !Popup::ContinueCancel( txt ))
+	    {
+		ret = `again;
+	    }
         }
+	}
+    while( !contains( [`next, `back ], ret ));
 
     if( what == `settings)
 	{
@@ -559,10 +543,21 @@ define symbol ChooseRaidType(symbol  what)
 
     if( ret == `back && what==`wizard )
 	{
-	// Go back to last save settings in Storage  
-	Storage::RestoreTargetBackup("raid");
+	y2milestone( "ChooseRaidType raidp:%1", raidp );
+	if( raidp["create"]:false )
+	    {
+	    string md = sformat( "md%1", raidp["nr"]:0 );
+	    list<map> parts = filter( map p, all_raid_partitions(tg),
+	                              ``(p["used_by"]:""==md));
+	    foreach( map p, parts,
+		``{
+		Storage::UnchangePartitionId( p["device"]:"" );
+		});
+	    y2milestone( "ChooseRaidType parts:%1", parts );
+	    Storage::DeleteDevice( "/dev/md", raidp["device"]:"" );
 	}
-    y2milestone( "ret %1", ret );
+	}
+    y2milestone( "ChooseRaidType ret %1", ret );
     return ret;
     }
 
@@ -612,8 +607,7 @@ remove it and create it again.
  * partition add partition widget table.
  * @return term
  */
-define term get_raid_devices_content( symbol what, 
-                                             string current_raid_text, 
+define term get_raid_devices_content( symbol what, string current_raid_text, 
 					     list all_raids, string size_md )
     ``{
     term top = `HBox(
@@ -704,14 +698,6 @@ of data that can be written to the devices. A reasonable chunk size for RAID 5 i
 Left-symmetric is the one that offers maximum performance on typical disks with rotating platters.</p>
 ");
 
-    // help text
-    helptext_edit_raid = helptext_edit_raid + _("<p><b>Persistent superblock:</b><br>
-The persistent superblock is mandatory if you want autodetection of your
-RAID devices at system boot. It also adds rescue options. 
-The only known reason to disable it is for
-compatibility with older RAID software</p>
-");
-
     return helptext_edit_raid;
     };
 
@@ -719,14 +705,15 @@ compatibility with older RAID software</p>
  *  raidExpertDlg dialog
  *  edit expert options
  */
-define map<string,any> RaidExpertDlg( symbol what, string device, map<string,any> cur_raid,
-			  boolean installation, map<symbol,map> file_systems,
-			  boolean edit_raid_type, map<string,map> targetMap )
+define map<string,any> 
+RaidExpertDlg( symbol what, string device, map<string,any> cur_raid,
+	       map<symbol,map> file_systems, boolean edit_raid_type, 
+	       map<string,map> targetMap )
     ``{
-    string raid_type = cur_raid["raid_type"]:"";
+    string raid_type = cur_raid["raid_type"]:"raid1";
     // heading text
     string caption   = sformat(_("Raid settings %1"), device );
-    boolean created  = IsRaidCreated( device, what );
+    boolean created  = cur_raid["create"]:false;
     
     term contents = `HBox(
 			   FormatDlg( cur_raid, file_systems ),
@@ -799,11 +786,10 @@ define map<string,any> RaidExpertDlg( symbol what, string device, map<string,any
      ChangeExistingSymbolsState( [`raid_combo], false);
 
      UI::ChangeWidget( `id(`raid_combo), `Value, raid_type );
-     UI::ChangeWidget( `id(`chunk_size), `Value, cur_raid["chunk_size"]:"4" );
+     UI::ChangeWidget( `id(`chunk_size), `Value, cur_raid["chunk_size"]:4 );
      UI::ChangeWidget( `id(`parity), `Enabled, created && raid_type=="raid5" );
      UI::ChangeWidget( `id(`chunk_size), `Enabled, 
                        created && raid_type!="multipath" );
-     UI::ChangeWidget( `id(`persist), `Enabled, created );
 
      map<string,any> retval = eval(cur_raid);
      symbol ret = `ok;
@@ -826,10 +812,8 @@ define map<string,any> RaidExpertDlg( symbol what, string device, map<string,any
 		     UI::QueryWidget(`id(`raid_combo), `Value);
 
 	     retval["chunk_size"] = UI::QueryWidget(`id(`chunk_size), `Value);
-	     retval["persistent_superblock"] = 
-		 UI::QueryWidget(`id(`persist), `Value);
-	     retval["parity_algorithm"] = 
-		 UI::QueryWidget(`id(`parity), `Value);
+	     retval["parity_algorithm"] = UI::QueryWidget(`id(`parity), `Value);
+	     y2milestone( "RaidExpertDlg retval:%1", retval );
 	     }
 
 	 if( ret == `raid_combo )
@@ -842,8 +826,7 @@ define map<string,any> RaidExpertDlg( symbol what, string device, map<string,any
 
 	 if( ret == `ok || ret == `next )
 	     {
-	     string dev = Storage::GetDeviceName( "/dev/md", retval["nr"]:0 );
-	     map ret_mp = CheckOkMount( dev, cur_raid, retval );
+	     map ret_mp = CheckOkMount( retval["device"]:"", cur_raid, retval );
 	     retval = ret_mp["map"]:$[];
 	     if( !ret_mp["ok"]:false )
 		{
@@ -861,6 +844,7 @@ define map<string,any> RaidExpertDlg( symbol what, string device, map<string,any
 	     else
 		{
 		retval = ret_mp["map"]:$[];
+		y2milestone( "RaidExpertDlg retval:%1", retval );
 		}
 	     }
 
@@ -878,11 +862,20 @@ define map<string,any> RaidExpertDlg( symbol what, string device, map<string,any
 	 UI::CloseDialog();
 	 }
 
-     if ( ret == `ok  || ret == `next  || ret == `back )
+     if( ret == `ok  || ret == `next  || ret == `back )
 	 {
+	 y2milestone( "RaidExpertDlg retval:%1", retval );
+	 Storage::ChangeVolumeProperties( retval );
+	 if( edit_raid_type && haskey( retval, "raid_type" ))
+	    Storage::ChangeMdType( retval["nr"]:0, retval["raid_type"]:"raid1" );
+	 if( haskey( retval, "chunk_size" ))
+	     Storage::ChangeMdChunk( retval["nr"]:0, retval["chunk_size"]:4 );
+	 if( retval["raid_type"]:"raid1"=="raid5" && 
+	     haskey( retval, "parity_algorithm" ))
+	     Storage::ChangeMdParity( retval["nr"]:0, 
+	                              retval["parity_algorithm"]:"" );
 	 return retval;
 	 }
-
     return cur_raid;
     }
 
@@ -896,22 +889,22 @@ define map<string,any> RaidExpertDlg( symbol what, string device, map<string,any
  */
 define symbol RaidDevices( symbol what )
     ``{
-    y2milestone( "what %1", what );
-    /* get the current raid e.g.: 1//dev/md */
-
+    y2milestone( "RaidDevices what %1", what );
     Storage::CreateTargetBackup("raid");
    
-    string subdevraidkey = Storage::GetWizardKey();
-    map<string,any> subdevraid = Storage::GetSubDev( subdevraidkey );
-    boolean changed = false;
+    string raiddev = Storage::GetWizardKey();
+    y2milestone( "RaidDevices Current raid; raiddev=%1", raiddev );
+    map<string,map> tg = Storage::GetTargetMap();
+    map<string,any> raidp = Storage::GetPartition( tg, raiddev );
+    y2milestone( "RaidDevices raidp=%1", raidp );
 
     /* e.g.: subdevraidindex = 1; */
-    string subdevraidindex = sformat( "%1", subdevraid["nr"]:255 );
+    integer raidnr = raidp["nr"]:0;
     // heading text
     string caption = _("RAID Wizard Step 2:");
 
     /* key for subdev that can assigned to a raid */
-    string subdevpartkey = "";
+    string pdevice = "";
 
     if( what == `settings )
 	{
@@ -925,8 +918,8 @@ define symbol RaidDevices( symbol what )
     Wizard::SetContentsButtons( caption,
 				get_raid_devices_content(what,
 							 // label text
-							 sformat(_("Current RAID: /dev/md%1"), subdevraidindex),
-							 get_raid_devices(subdevraid["nr"]:0),
+							 sformat(_("Current RAID: /dev/md%1"), raidnr),
+							 get_raid_devices(tg,raidp["nr"]:0),
 							 ""
 							 ),
 				RaidDevicesHelp(),
@@ -940,40 +933,34 @@ define symbol RaidDevices( symbol what )
   
     symbol ret = `start;
 
+    tg = Storage::GetTargetMap();
     repeat
 	{
 	//////////////////////////////////////////////////////////
 	// Raid ComboBox 
 	if( what == `settings )
 	    {
-	    subdevraidkey = (string)UI::QueryWidget(`id(`raids), `Value );
-	    y2milestone( "Selected Raid in ComboBox; subdevraidkey=%1 ", 
-	                 subdevraidkey );
-
-	    if( Storage::IsKeyKey( subdevraidkey))
-		{
-		subdevraidindex	= Storage::GetSubDevIndex( subdevraidkey );
-		subdevraid = Storage::GetSubDev( subdevraidkey );
+	    raiddev = (string)UI::QueryWidget(`id(`raids), `Value );
+	    y2milestone( "RaidDevices Selected Raid in ComboBox; raiddev=%1", 
+	                 raiddev );
+	    raidp = Storage::GetPartition( tg, raiddev );
+	    raidnr = raidp["nr"]:255;
 		}
-	    }
-	y2milestone( "Current raid; subdevraidkey=%1", subdevraidkey );
-	y2milestone( "ret %1", ret );
+	y2milestone( "RaidDevices Current raid; raiddev=%1", raiddev );
+	y2milestone( "RaidDevices ret %1", ret );
 
 	///////////////////////////////////////////////////////////
 	// Update raid widget table
 	if( ret != `raids || ret == `start )
 	    {
-	    parts  = get_possible_rds( Storage::GetTargetMap() );
-	    y2milestone( " parts %1", parts );
-	    
-	    parts = filter( map part, parts, ``( size(part["lvm_group"]:"")==0 ));
-
+	    parts  = get_possible_rds( tg );
 	    if( what == `wizard )
+		{
 		parts = filter( map part, parts, 
-		                ``( part["raid_name"]:"" == 
-				        "/dev/md"+subdevraidindex ||
-				    part["raid_name"]:"" == ""  ));
-
+		                ``( part["used_by"]:"" == sformat("md%1",raidnr) ||
+				    size(part["used_by"]:"")==0 ));
+		}
+	    y2milestone( "RaidDevices parts %1", parts );
 
 	    /////////////////////////////////////////////////////////////////
 	    // Show the current state:
@@ -982,91 +969,61 @@ define symbol RaidDevices( symbol what )
 	    UI::ChangeWidget( `id(`raid_table), `Items, table);
 	    }
 
-	/////////////////////////////////////////////////////////////////
-	// update size 
-	string type = subdevraid["raid_type"]:"";
-	if( what == `settings )
-	    {
-	    type = subdevraid["raid_type"]:"";
-	    }
-	
-	UI::ChangeWidget( `id(`raid_size), `Value, 
-	                  ByteToHumanStringWithZero( get_raid_size_byte( parts, subdevraidindex, type )));
+	UI::ChangeWidget( `id(`raid_size), `Value, raid_size_str( raidp ));
 
-	if( subdevpartkey != "" && (ret == `raid_add || ret == `raid_remove) )
+	if( pdevice != "" && (ret == `raid_add || ret == `raid_remove) )
 	    {
-	    UI::ChangeWidget( `id(`raid_table), `CurrentItem, subdevpartkey);
+	    UI::ChangeWidget( `id(`raid_table), `CurrentItem, pdevice);
 	    }
 
 
 	/////////////////////////////////////////////////////////////////
 	// Wait for User input
 	ret = (symbol)UI::UserInput();
-	y2milestone( "ret %1", ret );
+	y2milestone( "RaidDevices ret %1", ret );
 
 	/////////////////////////////////////////////////////////////////
-	// Edit raid (1//dev/md) settings - not in wizard
-	if( ret == `md_raid_edit && Storage::IsKeyKey( subdevraidkey )  )
+	// Edit raid settings - not in wizard
+	if( ret == `md_raid_edit )
 	    {
-	    subdevraid = RaidExpertDlg( `settings, "/dev/md" + subdevraidindex,
-				        subdevraid, Stage::initial (),
+	    RaidExpertDlg( `settings, raiddev, raidp, 
 					FileSystems::GetAllFileSystems(true,true),
-					false, Storage::GetTargetMap());
-	    
-	    Storage::SetSubDev( subdevraidkey, subdevraid );
+			   false, tg );
+	    tg = Storage::GetTargetMap();
+	    raidp = Storage::GetPartition( tg, raiddev );
 	    }
 
 	/////////////////////////////////////////////////////////////////
 	// Add a new raid 
 	if( ret == `md_raid_add  )
 	    {
-	    if( ! check_raid_possible( Storage::GetTargetMap() ))
+	    if( !check_raid_possible( tg ))
 	    {
 		ret = `again;
 		continue;
 	    }
 
-	    list<integer> old = 
-		maplist( map e,
-			 filter( map p,
-				 (list<map>)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
-				 ``(!p["delete"]:false)),
-			 ``(e["nr"]:-1));
-
 	    ChooseRaidType( `settings );    
-	    list<integer> new = 
-		maplist( map e,
-			 filter( map p,
-	                         (list<map>)Storage::GetMainDevParam( "/dev/md", "partitions", [] ),
-				 ``(!p["delete"]:false)),
-			 ``(e["nr"]:-1));
-	    integer new_num = -1;
-	    foreach( integer e, new,
-		``{
-		if( new_num==-1 && !contains( old, e ) )
-		    {
-		    new_num = e;
-		    }
-		});
-	    if( new_num!=-1 )
+	    tg = Storage::GetTargetMap();
+	    y2milestone( "RaidDevices new raid:%1", Storage::GetWizardKey() );
+	    if( Storage::GetWizardKey()!=raiddev )
 		{
-		string newkey = sformat( "%1//dev/md", new_num );
-		UI::ChangeWidget( `id(`raids), `Value, newkey );
-		subdevraid = Storage::GetSubDev( newkey );
-		changed = true;
+		raiddev = Storage::GetWizardKey();
+		y2milestone( "RaidDevices new raid:%1", raiddev );
+		UI::ChangeWidget( `id(`raids), `Value, raiddev );
+		raidp = Storage::GetPartition( tg, raiddev );
 		}
-	    y2milestone( "old %1 new %2 new_num:%3", old, new, new_num );
 	    }
 
 	/////////////////////////////////////////////////////////////////
 	// Remove a new raid (2//dev/md ) - not in wizard  
-	if( ret == `md_raid_remove  && Storage::IsKeyKey( subdevraidkey ))
+	if( ret == `md_raid_remove )
 	    {
 	    // popup text
-	    if ( Popup::YesNo ( sformat(_("Do you really want to delete partition %1?"), "/dev/md"+subdevraidindex )))
+	    if ( Popup::YesNo ( sformat(_("Do you really want to delete partition %1?"), "/dev/md"+raidnr )))
 		{
-		Storage::DelSubDev( subdevraidkey );
-		changed = true;
+		Storage::DeleteDevice( "/dev/md", raiddev );
+		tg = Storage::GetTargetMap();
 		}
 	    }
 
@@ -1074,26 +1031,17 @@ define symbol RaidDevices( symbol what )
 	// Update Raid ComboBox - not in wizard
 	if( ret == `md_raid_add || ret == `md_raid_remove )
 	    {
-	    new_raid_list( get_raid_devices( subdevraid["nr"]:0 ));
-	    subdevraidkey = (string)UI::QueryWidget(`id(`raids), `Value );
-	    y2milestone( "subdevraidkey %1", subdevraidkey );
-	    subdevraidindex = Storage::GetSubDevIndex( subdevraidkey );
-	    changed = true;
+	    new_raid_list( get_raid_devices( tg, raidp["nr"]:0 ));
+	    raiddev = (string)UI::QueryWidget(`id(`raids), `Value );
+	    y2milestone( "RaidDevices raiddev %1", raiddev );
+	    raidp = Storage::GetPartition( tg, raiddev );
+	    raidnr = raidp["nr"]:0;
 	    }
 	
 	if( ret == `raid_table )
 	    {
-	    subdevpartkey = (string)UI::QueryWidget( `id(`raid_table), 
-	                                             `CurrentItem );
-
-	    if( isItemRd(subdevpartkey) && Storage::IsKeyKey(subdevraidkey) )
-		{
-		ret = `raid_remove;
-		}
-	    else
-		{
-		ret = `raid_add;
-		}
+	    pdevice = (string)UI::QueryWidget( `id(`raid_table), `CurrentItem );
+	    ret = isItemRd(tg,pdevice) ? `raid_remove : `raid_add;
 	    }
 
 	/////////////////////////////////////////////////////////////
@@ -1101,22 +1049,21 @@ define symbol RaidDevices( symbol what )
 	// to 1//dev/md
 	if( ret == `raid_add )
 	    {
-	    subdevpartkey = (string)UI::QueryWidget( `id(`raid_table), 
-	                                             `CurrentItem );
+	    pdevice = (string)UI::QueryWidget( `id(`raid_table), `CurrentItem );
 
-	    if( CheckItemIsNotRaid( subdevpartkey ) && 
-	        Storage::IsKeyKey( subdevraidkey ) &&
-		CheckRaidNumbers( subdevraidindex ) )
+	    if( CheckItemIsNotRaid( tg, pdevice ) && 
+		CheckRaidNumbers( raidnr ) )
 		{
-		string device = "/dev/md"+subdevraidindex;
-		if( IsRaidCreated( device, what )) // Popup!
+		if( raidp["create"]:false )
 		    {
-		    addRaid( subdevpartkey, subdevraidindex );
-		    changed = true;
+		    Storage::SetPartitionId( pdevice, Partitions::fsid_raid );
+		    Storage::ExtendMd( raidnr, pdevice );
+		    tg = Storage::GetTargetMap();
+		    raidp = Storage::GetPartition( tg, raiddev );
 		    }
 		else
 		    {
-		    CannotEditExistingRaid( device );
+		    CannotEditExistingRaid( raiddev );
 		    ret = `again;
 		    }
 		}
@@ -1127,20 +1074,20 @@ define symbol RaidDevices( symbol what )
 	// Delete a new physical volume e.g. remove 1//dev/hda from 1//dev/md
 	if( ret == `raid_remove )
 	    {
-	    subdevpartkey = (string)UI::QueryWidget(`id(`raid_table), `CurrentItem);
+	    pdevice = (string)UI::QueryWidget(`id(`raid_table), `CurrentItem);
 
-	    if( CheckItemIsRaid( subdevpartkey) && subdevraidindex != "" && 
-	        subdevraidindex != nil )
+	    if( CheckItemIsRaid( tg, pdevice) )
 		{
-		string device = "/dev/md"+subdevraidindex;
-		if( IsRaidCreated( device, what )) // Popup!
+		if( raidp["create"]:false )
 		    {
-		    removeRaid( subdevpartkey, subdevraidindex, what );
-		    changed = true;
+		    Storage::UnchangePartitionId( pdevice );
+		    Storage::ShrinkMd( raidnr, pdevice );
+		    tg = Storage::GetTargetMap();
+		    raidp = Storage::GetPartition( tg, raiddev );
 		    }
 		else
 		    {
-		    CannotEditExistingRaid( device );
+		    CannotEditExistingRaid( raiddev );
 		    ret = `again;
 		    }
 		}
@@ -1151,90 +1098,57 @@ define symbol RaidDevices( symbol what )
 	    {
 	    ///////////////////////////////////////////////////////
 	    // check if enough disks are attached to the raid
-	    list<map> parts = (list<map>)Storage::GetMainDevParam( "/dev/md", 
-	                                                 "partitions", [] );
-	    
+	    list<map> parts = (list<map>)Storage::GetDisk( tg, "/dev/md" )["partitions"]:[];
 	    foreach( map part,  parts,
 		``{
-		if( !part["delete"]:false && part["create"]:false )
+		if( part["create"]:false )
 		    {
 		    string raid_type = part["raid_type"]:"raid1";
 		    integer nr_of_parts = 
-			getNrOfParts( Storage::GetTargetMap(), 
-			              sformat("%1", part["nr"]:0) );
-		    string raid = "/dev/md" + sformat("%1", part["nr"]:0 );
-
-		    if( raid_type == "raid0" && (nr_of_parts < 2))
+			getNrOfParts( tg, sformat("%1", part["nr"]:0) );
+		    string raid = part["device"]:"";
+		    boolean ok = Storage::CheckMd(part["nr"]:0)==0;
+		    if( !ok )
+			{
+			string txt = "";
+			if( raid_type=="raid0" ) 
 			{
 			// Error popup text
-			Popup::Error(sformat(_("For RAID 0, add at least two partitions to %1."),  raid ));
-			ret = `again;
+			    txt = sformat(_("For RAID 0, add at least two partitions to %1."),  raid );
 			}
-
-		    if( raid_type == "raid1" && (nr_of_parts < 2))
+			else if( raid_type=="raid1" )
 			{
 			// Error popup text
-			Popup::Error(sformat(_("For RAID 1, add at least two partitions to %1."), raid ));
-			ret = `again;
+			    txt = sformat(_("For RAID 1, add at least two partitions to %1."), raid );
 			}
-
-		    if( raid_type == "raid5" && (nr_of_parts < 3))
+			else if( raid_type == "raid5" )
 			{
 			// Error popup text
-			Popup::Error(sformat(_("For RAID 5, add at least three partitions to %1."), raid));
-			ret = `again;
+			    txt = sformat(_("For RAID 5, add at least three partitions to %1."), raid);
 			}
-		    if( raid_type == "multipath" && (nr_of_parts < 2))
+			else if( raid_type == "raid6" )
 			{
 			// Error popup text
-			Popup::Error(sformat(_("For Multipath raid, add at least two partitions to %1."), raid));
-			ret = `again;
-			}
-		    }
-		});
+			    txt = sformat(_("For RAID 6, add at least four partitions to %1."), raid);
 	    }
-	if( ret == `back )
+			else if( raid_type == "raid10" )
 	    {
-	    if( changed )
-		{
-		// popup text %1 will be replaces with button text
-		string txt = sformat( _("You have changed the partitioning.
-These changes will be lost if you exit the dialog with \"%1\".
-Continue?
-"), 
-				      deletechars(Label::BackButton(),"&") );
-		if( !Popup::ContinueCancel( txt ))
+			    // Error popup text
+			    txt = sformat(_("For RAID 10, add at least two partitions to %1."), raid);
+			    }
+			else if( raid_type == "multipath" )
 		    { 
-		    ret = `again;
+			    // Error popup text
+			    txt = sformat(_("For Multipath raid, add at least two partitions to %1."), raid);
 		    }
+			Popup::Error(txt);
+			ret = `again;
 		}
 	    }
-
-	} until (ret == `next || ret == `back || ret == `cancel || ret == `abort );
-
-
-    if( ret == `next && what == `settings )
-	{
-	// fix the raid size in all raid devices
-	map<string,any> target = Storage::GetMainDev( "/dev/md" );
-
-	target["partitions"] = maplist( map part, target["partitions"]:[],
-	    ``({
-	    integer len = raid_size_byte( Storage::GetTargetMap(), part);
-	    part["region"] = [0, len / (1024 * 1024)];
-	    y2milestone( "region = %1", part["region"]:[] );
-	    return( part );
-	    }));
-
-	Storage::SetMainDev("/dev/md", target );
-	Storage::Commit();
+		});
 	}
-    else if( ret == `back )
-	{
-	// Go back to last save settings in Storage  
-	Storage::RestoreTargetBackup("raid");
 	}
-
+    until( ret == `next || ret == `back || ret == `cancel || ret == `abort );
     return ret;
     }
 
@@ -1245,28 +1159,16 @@ Continue?
  */
 define symbol RaidExpertWizard()
     ``{
-    string  subdevkey     	= Storage::GetWizardKey();
-    map<string,any> subdev      = Storage::GetSubDev( subdevkey );
+    string raiddev = Storage::GetWizardKey();
+    map<string,map> tg = Storage::GetTargetMap();
+    map<string,any> raidp = Storage::GetPartition( tg, raiddev );
  
-    subdev = RaidExpertDlg( `wizard, subdev["raid_name"]:"", subdev, 
-                            Stage::initial (),
+    raidp = RaidExpertDlg( `wizard, raidp["used_by"]:"", raidp, 
 			    FileSystems::GetAllFileSystems(true, true),
-			    false, Storage::GetTargetMap() );
+			   false, tg );
 
-    symbol ret = subdev["symbol"]:`next;
-    // remove symbol key from new_raid
-    subdev = filter( string key, any value, subdev, ``( key != "symbol" ));
-
-    if( ret == `next || ret == `back )
-	{
-	/////////////////////////////////////////////////
-	// fill in the new size of the raid:
-	subdev["region"] = [0, raid_size_byte( Storage::GetTargetMap(),subdev ) / (1024 * 1024)];
-	y2milestone( "subdevkey %1 subdev %2", subdevkey, subdev );
-
-	Storage::SetSubDev( subdevkey, subdev );
-	Storage::Commit();
-	}
+    symbol ret = raidp["symbol"]:`next;
+    y2milestone( "RaidExpertWizard ret:%1", ret );
     return  ret;
     }
 

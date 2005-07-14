@@ -40,12 +40,10 @@ define list resize_partition( list<map> partitions, integer nr,
     ``{
 
     map win_part = filter( map c_part, partitions,
-			   ``(c_part["prop_reuse_nr"]:-1==nr &&
-			      !c_part["delete"]:false))[0]:$[];
+			   ``(c_part["prop_reuse_nr"]:-1==nr))[0]:$[];
 
     list other_parts = filter( map c_part, partitions,
-			       ``( c_part["prop_reuse_nr"]:-1!=nr ||
-			           c_part["delete"]:false ));
+			       ``( c_part["prop_reuse_nr"]:-1!=nr));
 
     list region = win_part["region"]:[];
 
@@ -171,12 +169,10 @@ define list delete_partition( list<map> partitions, integer nr )
 define list reuse_partition( list<map> partitions, integer nr, string mount )
   ``{
       map part = filter( map c_part, partitions,
-			 ``( c_part["prop_reuse_nr"]:-1 == nr &&
-			     !c_part["delete"]:false))[0]:$[];
+			 ``( c_part["prop_reuse_nr"]:-1 == nr))[0]:$[];
 
       list other_parts = filter( map c_part, partitions,
-				 ``( c_part["prop_reuse_nr"]:-1 != nr ||
-				     c_part["delete"]:false));
+				 ``( c_part["prop_reuse_nr"]:-1 != nr));
 
       ////////////////////////////////////////////////
       // suggest the default filesystem,
@@ -287,9 +283,7 @@ define list create_partition( list<map>    partitions, integer start_cyl,
 			 41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,
 			 58,59,60,61,62,63,64];
 
-	    list<integer> dev_nb = maplist( map part, 
-	                           filter( map pa, partitions, 
-				           ``(!pa["delete"]:false )), 
+	    list<integer> dev_nb = maplist( map part, partitions, 
 				   ``(part["nr"]:0 ));
 	    list result = filter( integer base_nr, base, 
 	                          ``( find( integer nr, dev_nb, 
@@ -447,20 +441,19 @@ define void AddHit( string mode, map slot, string type, map boot_slot,
 
 define void DumpPartitionList ( map<string,map> targets)
     ``{
-	foreach ( string disk_dev_name, map disk, targets, ``{
+    foreach( string disk_dev_name, map disk, targets, 
+	``{
 	    integer cyl_count  = disk["cyl_count"]:0;
 	    integer cyl_size   = disk["cyl_size"]:1000000;
-	    string  vendor     = disk["vendor"]:"";
-	    string  model      = disk["model"]:"";
 
 	    y2debug( "OUT: %1 has %2cyl, cylsize: %3 KB", disk_dev_name, cyl_count,  cyl_size/1000 );
 
-	    if ( !disk["is_lvm_vg"]:false && find( disk_dev_name, "/dev/evms" )!=0 )
+	if( disk["type"]:`CT_UNKNOWN!=`CT_LVM && 
+	    disk["type"]:`CT_UNKNOWN!=`CT_EVMS )
 		{
-		foreach ( map partition, disk["partitions"]:[], ``{
+	    foreach( map partition, disk["partitions"]:[], 
+		``{
 		    string fstype = partition["fstype"]:"";
-		    if ( !partition["delete"]:false )
-			{
 			string id = "";
 			if( partition["nr"]:0 < 10 )
 			    {
@@ -470,7 +463,6 @@ define void DumpPartitionList ( map<string,map> targets)
 			    {
 			    id = sformat( "%2.%1", disk_dev_name, partition["nr"]:0);
 			    }
-
 			string   part_dev_name   = "";
 			string   part_id         = "";
 
@@ -493,8 +485,7 @@ define void DumpPartitionList ( map<string,map> targets)
 			integer  nb_cyl          = partition["region",1]:0;
 			symbol   type            = partition["type"]:`unknown;
 			boolean  format          = partition["format"]:false;
-			boolean  crypt_fs        = partition["loop_fs"]:false &&
-			                           partition["crypt"]:""!="none";
+		boolean  crypt_fs        = partition["enc_type"]:`none!=`none;
 			symbol   used_fs         = partition["used_fs"]:`unknown;
 			string   mount_point     = partition["mount"]:"";
 			string   filesystem_name = "";
@@ -513,8 +504,7 @@ define void DumpPartitionList ( map<string,map> targets)
 			string sta_str = ToLen(4, sformat("%1", start_cyl));
 			string end_str = ToLen(4, sformat("%1", start_cyl + nb_cyl - 1) );
 			y2debug( "OUT: %1 %2 %3 %4 %5", part_dev_name, part_id, bytes_of_part, sta_str, end_str);
-		    }}
-			  );
+		});
 	    }
 	});
     };
