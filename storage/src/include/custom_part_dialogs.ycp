@@ -422,7 +422,7 @@ define map<string,any> FstabOptions( map<string,any> old, map<string,any> new )
     term contents = `VBox();
     term emptyterm = `Empty();
     
-    if( !new["loop_fs"]:false && new["mount"]:"" != "swap" )
+    if( new["enc_type"]:`none==`none && new["mount"]:"" != "swap" )
 	{
 	// help text, richtext format
 	helptext = helptext + _("<p><b>Mount in /etc/fstab by:</b>
@@ -542,8 +542,7 @@ makes sense when you activate the option for mounting by volume label.
     y2milestone( "key=%1 val:%2", opt_list[size(opt_list)-1,`query_key]:"",
                  mergestring( opt_lstr, "," ) );
     string arb_opt = mergestring( opt_lstr, "," );
-    if( new["loop_fs"]:false && !new["noauto"]:false && 
-        new["crypt"]:"none"!="none" )
+    if( !new["noauto"]:false && new["enc_type"]:`none!=`none )
 	{
 	arb_opt = FileSystems::RemoveCryptOpts( arb_opt );
 	}
@@ -579,25 +578,26 @@ makes sense when you activate the option for mounting by volume label.
 			    )
 			)
 		  );
-
     if( UI::WidgetExists( `id(`mt_group) ))
 	{
+	list no_mountby_type = [ `loop, `sw_raid ];
 	UI::ChangeWidget( `id(`mt_group), `CurrentButton, 
 	                  new["mountby"]:`device );
 	UI::ChangeWidget( `id(`label), `Enabled, 
 			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
-			      !new["loop_fs"]:false );
+			  new["enc_type"]:`none==`none &&
+			  !contains( no_mountby_type, new["type"]:`primary ) );
 	UI::ChangeWidget( `id(`uuid), `Enabled, 
 			  (new["format"]:false || size(new["uuid"]:"")>0) &&
 			      FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
-			      !new["loop_fs"]:false );
+			  !contains( no_mountby_type, new["type"]:`primary ) );
 	}
 
     if( UI::WidgetExists( `id(`vol_label) ))
 	{
 	UI::ChangeWidget( `id(`vol_label), `Enabled, 
 			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
-			      !new["loop_fs"]:false );
+			  new["enc_type"]:`none==`none );
 	UI::ChangeWidget( `id(`vol_label), `ValidChars, 
 			  FileSystems::nchars + "-._:/" );
 	UI::ChangeWidget( `id(`vol_label), `Value, new["label"]:"" );
@@ -608,7 +608,7 @@ makes sense when you activate the option for mounting by volume label.
     if( UI::WidgetExists( `id("opt_user") ))
 	{
 	UI::ChangeWidget( `id("opt_user"), `Enabled, 
-			  new["crypt"]:"none"=="none" || new["noauto"]:false );
+			  new["enc_type"]:`none==`none || new["noauto"]:false );
 	}
     foreach( any key, any value, old_state,
 	``{
@@ -626,7 +626,7 @@ makes sense when you activate the option for mounting by volume label.
 		{
 		boolean val = (boolean)UI::QueryWidget( `id("opt_noauto" ), `Value );
 		UI::ChangeWidget( `id("opt_user"), `Enabled, 
-		                  new["crypt"]:"none"=="none" || val );
+		                  new["enc_type"]:`none==`none || val );
 		}
 	    }
 	if( ret == `ok )
@@ -801,7 +801,7 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
     term CryptWidget = `Empty();
     if( !Arch::s390 () )
 	{
-	boolean cr = new_val["loop_fs"]:false && new_val["crypt"]:""!="none";
+	boolean cr = new_val["enc_type"]:`none != `none;
 	CryptWidget = `VBox( `VSpacing(0.7),
 	                     `Left(`CheckBox(`id(`crypt_fs), `opt(`notify),
 					    // button text 
@@ -864,7 +864,7 @@ define term FsidComboBox( map new_val, map<symbol, map> file_systems  )
  * @return term the term contains two TextEntries or to Labels with the start and the end cylinder of
  * the partition in new_val
  */
-define term SizeDlg( map new_val , integer cyl_size , boolean edit_size ) 
+define term SizeDlg( map new_val, integer cyl_size, boolean edit_size ) 
     ``{
     string start_cyl = sformat( "%1", new_val["region",0]:0 );
     string end_part  = sformat( "%1", (integer)(new_val["region",0]:0) +
@@ -958,10 +958,9 @@ define term FormatDlg( map new_val, map<symbol, map> file_systems )
 
 define term RaidOptionsDlg( map new_val, boolean edit_raid_type )
     ``{
-    string chunk_size = new_val["chunk_size"]:"";
-    string parity_algorithm = new_val["parity_algorithm"]:"";
-    boolean persistent_superblock = new_val["persistent_superblock"]:true;
-    string raid_type = new_val["raid_type"]:"";
+    integer chunk_size = new_val["chunk_size"]:0;
+    string parity_algorithm = new_val["parity_algorithm"]:"left_asymmetric";
+    string raid_type = new_val["raid_type"]:"raid1";
     term editRaid = `VSpacing(1);
 
     // 4KB .. 4096KB
@@ -969,9 +968,9 @@ define term RaidOptionsDlg( map new_val, boolean edit_raid_type )
     integer  i          = 4;
     while(  i <= 4096 )
 	{
-        string chunk_item = sformat( "%1", i);
+        integer chunk_item = i;
         chunk_list = add( chunk_list, 
-	                  `item(`id(chunk_item), chunk_item, 
+	                  `item(`id(chunk_item), tostring(chunk_item), 
 			        chunk_size==chunk_item ));
         i = i*2;
         }
@@ -984,11 +983,11 @@ define term RaidOptionsDlg( map new_val, boolean edit_raid_type )
 			                   `opt(`notify, `hstretch ), 
 					   // button text
 					   _("RAID T&ype"),
-				    [ `item(`id("raid_0"), "raid_0", 
+				    [ `item(`id("raid0"), "raid0", 
 				            "raid0"==raid_type ),
-				      `item(`id("raid_1"), "raid_1", 
+				      `item(`id("raid1"), "raid1", 
 				            "raid1"==raid_type ),
-				      `item(`id("raid_5"), "raid_5",
+				      `item(`id("raid5"), "raid5",
 				            "raid5"==raid_type ),
 				      `item(`id("multipath"), "multipath",
 				            "multipath"==raid_type )
@@ -1005,15 +1004,11 @@ define term RaidOptionsDlg( map new_val, boolean edit_raid_type )
 		 `VSpacing (),
 		 // Raid combobox description (don't translate to much ..)       
 		 `Left (`ComboBox ( `id(`parity),`opt(`hstretch ), _("Parity &algorithm (only for RAID 5)"),
-				    [ `item(`id("left-asymmetric"),  "left-asymmetric",  "left-asymmetric"  == parity_algorithm ),
-				    `item(`id("left-symmetric"),   "left-symmetric",   "left-symmetric"   == parity_algorithm ),
-				    `item(`id("right-asymmetric"), "right-asymmetric", "right-asymmetric" == parity_algorithm ),
-				    `item(`id("right-symmetric"),  "right-symmetric",  "right-symmetric"  == parity_algorithm )
+				    [ `item(`id("left_asymmetric"),  "left-asymmetric",  "left_asymmetric" == parity_algorithm ),
+				    `item(`id("left_symmetric"),   "left-symmetric",   "left_symmetric" == parity_algorithm ),
+				    `item(`id("right_asymmetric"), "right-asymmetric", "right_asymmetric" == parity_algorithm ),
+				    `item(`id("right_symmetric"),  "right-symmetric",  "right_symmetric" == parity_algorithm )
 				    ])),
-		 `VSpacing (),
-				
-		 // Raid checkbox option (don't translate to much ..)       
-		 `Left (`CheckBox (`id (`persist), _("Persistent s&uperblock"), persistent_superblock)),
 		 `VSpacing ()
 		 ));	
 
@@ -1085,7 +1080,7 @@ define term MountDlg( map new_val, list mountpoints )
 	mountpoints = [ "/", "/usr", Partitions::BootMount(), "/var", "/home",
 	                "/opt" , ""];
 
-    if( !contains( mountpoints, "" ) && !new_val["loop_fs"]:false )
+    if( !contains( mountpoints, "" ) && new_val["enc_type"]:`none==`none )
 	mountpoints = add( mountpoints , "");
     string mount = new_val["mount"]:"";
 
@@ -1213,6 +1208,7 @@ Only fat, ext2, ext3, xfs, and reiser allow extending a file system."));
 
 define void FsysCannotResizeMountPopup( boolean lvm, string mount )
     ``{
+    // %1 is either replaced by "logical volume" or by "partition"
     string txt = sformat( _("
 The %1 is currently mounted on %2.
 It is not possible to resize the file system while it is mounted.
@@ -1362,7 +1358,7 @@ define term TargetShowBarGraph( map target, string dev )
     
     foreach( map part, target["partitions"]:[],
 	``{
-	if( part["type"]:`primary != `extended && !part["delete"]:false )
+	if( part["type"]:`primary != `extended )
 	    {
 	    integer part_size =  part["region",1]:0;
 	    string  part_size_str = "";
@@ -1449,41 +1445,12 @@ define boolean DDZeroPartitionTable( string del_dev )
 If you delete the partition table and disk label of
 device %1, data on this device will be lost.
 
-Really do this now?
+Really do this?
 "), del_dev)))
 	{
-	UI::OpenDialog(`opt(`decorated, `warncolor),
-			`HBox(
-			      `HSpacing(1),
-			      `VBox(
-				    `VSpacing(0.2),
-				     // popup text
-				    `Heading(_("Warning:
-
-Do you really want to do this now?
-") ),
-				    `HBox(
-					  // button text
-					  `PushButton(`id(`yes),  _("&Yes, delete the partition table now.")),
-					  `HStretch(),
-					  // no, don't go on, i just changed my mind
-					  `PushButton(`opt(`default), Label::NoButton() )
-					  ),
-				    `VSpacing(0.2)
-				    ),
-			      `HSpacing(1)
-			      )
-		       );
-
-	symbol ret = (symbol)UI::UserInput();
-	UI::CloseDialog();
-	
-	if( !Mode::test () && ret == `yes )
-	    {
-	    Storage::ZeroDevice(del_dev);			   
+	Storage::DeletePartitionTable(del_dev);			   
 	    return true;
 	    }	    
-	}
     return false;
     };
 
@@ -1491,17 +1458,11 @@ Do you really want to do this now?
 define symbol ReallyInstPrepdisk( )
     ``{
     map<string,map> targetMap = Storage::GetTargetMap();
-    map modTg = Storage::GetModifyTargets();
     symbol ret = `none;
     
-    string doto = TargetChangesToRichText(targetMap, modTg);
+    string doto = Storage::ChangeText();
+    y2milestone( "ReallyInstPrepdisk doto:%1", doto );
     term dlg = `Empty();
-    if( size(doto) == 0 && size(modTg)>0 )
-	{
-	// popup text
-	doto = _("Perform LVM configuration changes");
-	}
-    y2milestone( "doto:%1", doto );
     if( size(doto) == 0 )
 	{
 	// popup text
@@ -1552,28 +1513,26 @@ define symbol ReallyInstPrepdisk( )
     };
 
 
-    /**
+/**
      * Delete all partition in targetMap from the device "del_dev" and return
      * a new targetMap.
      * Check if LVM partition exists on the device.
      * Check if at least on partition is mounted.
      * @return map targetMap
      */
-define map deleteAllDevPartitions( map<string, map> targetMap, string del_dev, 
+define boolean deleteAllDevPartitions( map<string, any> disk, 
 				   boolean installation, boolean bsd_label )
     ``{
-    map new_targetMap = targetMap;
     boolean go_on     = true;
+    string del_dev = disk["device"]:"";
+    y2milestone( "deleteAllDevPartitions disk:%1", remove( disk, "partitions" ));
 
     /////////////////////////////////////////////////////////////////
     // check mount points if not installation
 
-    if ( ! installation )
+    if( !installation )
 	{
-	list<map> mounts = 
-	    Partitions::mountedPartitionsOnDisk( del_dev, 
-						 Partitions::CurMounted() );
-
+	list<map> mounts = Storage::mountedPartitionsOnDisk( del_dev );
 	if( size( mounts ) != 0 )
 	    {
 	    /////////////////////////////////////////////////////////
@@ -1582,15 +1541,10 @@ define map deleteAllDevPartitions( map<string, map> targetMap, string del_dev,
 	    string mounted_parts  = "";
 	    foreach( map mount, mounts, 
 		``{
-		//The selected device contains partitions which are currently mounted:
-		//           /dev/hda1 on /
-		//           /dev/hdd1 on /usr
-		//   ....
+		//  %1 is replaced by device name, %1 by directory e.g /dev/hdd1 on /usr
 		mounted_parts = mounted_parts + 
-		                sformat("%1 on %2",
-				        mount["spec"]:"", 
-					mount["file"]:"") +
-				"\n";
+		                sformat("%1 on %2", mount["device"]:"", 
+					mount["mount"]:"") + "\n";
 		});
 
 	    // popup text, %1 is replaced by device name
@@ -1607,40 +1561,15 @@ Choose Cancel unless you know exactly what you are doing.
 	    }
 	}
 
-
     if( go_on )
 	{
-	foreach( string dev, map target, targetMap, 
-	    ``{
-	    /////////////////////////////////////////////////////////
-	    // find device
+	list<map> partitions = disk["partitions"]:[];
 
-	    if( dev == del_dev )
-		{
-		list<map> partitions = target["partitions"]:[];
-		partitions      = filter( map part, partitions, 
-		                          ``( !part["delete"]:false ));
+	symbol used = check_devices_used( partitions );
 
-		map part_nr_3_bsd_check = (map)find( map part, partitions, 
-						     ``( part["nr"]:0 == 3));
-		
-		symbol ret_delete = 
-		    check_partition_delete( target, part_nr_3_bsd_check, 
-		                            bsd_label, true, false, false,
-					    true ); // raid_check
+	go_on = used == `UB_NONE;
 
-		if( ret_delete == `no_delete )
-		    {
-		    go_on = false;
-		    }
-
-		if( partitions != []  && go_on )
-		    {
-
-		    /////////////////////////////////////////////////
-		    // check LVM partitions
-
-		    if( size(filter( map part, partitions, ``( part["lvm_group"]:"" != "" ))) != 0)
+	if( used == `UB_LVM )
 			{
 			// popup text, Do not translate LVM.
 			Popup::Message(_("
@@ -1649,14 +1578,8 @@ assigned to a volume group. Remove all
 partitions from their respective volume groups
 before deleting the partition table.
 "));
-			go_on = false;
 			}
-
-
-		    /////////////////////////////////////////////////
-		    // check RAID partitions
-
-		    if( size(filter( map part, partitions, ``( part["raid_name"]:"" != "" ))) != 0)
+	else if( used == `UB_MD )
 			{
 			// popup text, Do not translate RAID.
 			Popup::Message(_("
@@ -1665,38 +1588,43 @@ that is part of a RAID system. Unassign the
 partitions from their respective RAID systems before
 deleting the partition table.
 "));
-			go_on = false;
 			}
-		    
+	else if( used == `UB_EVMS )
+	    {
+	    // popup text, Do not translate EVMS.
+	    Popup::Message(_("
+The selected device contains at least one partition
+that is used by a EVMS device. Delete the EVMS device
+before deleting the partition table.
+"));
 		    }
+	else if( used != `UB_NONE )
+	    {
+	    // popup text
+	    Popup::Message(_("
+The selected device contains at least one partition
+that is used by another volume. Delete the using volume
+before deleting the partition table.
+"));
+	    }
+
 		if( go_on )
 		    {
 		    /////////////////////////////////////////////////
-		    // delete all partition in targetMap and add dd string to targetMap
-
-		    // add delete -> true to all partitions
-		    list<map> partitions = [];
-		    foreach( map part, target["partitions"]:[], 
+	    // delete all partitions of disk
+	    // logical partitions get removed when extended is deleted
+	    foreach( map part, partitions,
 			``{
-			part       = add( part, "delete" , true);
-			partitions = add( partitions , part);
-			});
-
-		    partitions = filter( map parti, partitions,
-					 ``( !parti["create"]:false ));
-		    
-		    target        = add( target, "partitions", partitions );
-		    new_targetMap = add( new_targetMap , dev, target );
-		    }
+		if( part["nr"]:0 <= disk["max_primary"]:4 )
+		    {
+		    go_on = go_on && 
+		            Storage::DeleteDevice( del_dev, part["device"]:"" );
 		}
 	    });
 	}
-
-    if( go_on )
-	{
-	return new_targetMap;
 	}
-    return($[]);
+    y2milestone( "deleteAllDevPartitions ret:%1", go_on );
+    return(go_on);
     };
 
   

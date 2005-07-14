@@ -128,14 +128,14 @@ define map<string,any> LoopExpertDlg( boolean edit, map<string,any> part, map<sy
 
     ////////////////////////////////////////////////////////////////
     // configure main dialog for the first call
-    string lsize = ByteToHumanStringWithZero(part["region",1]:0*1024*1024);
+    string lsize = ByteToHumanStringWithZero(part["size_k"]:0*1024);
 
     UI::ChangeWidget( `id(`loop_path), `Value, part["fpath"]:"" );
     UI::ChangeWidget( `id(`loop_path), `ValidChars, 
                       FileSystems::nchars + "-._:/" );
-    UI::ChangeWidget( `id(`loop_create), `Value, part["create"]:false );
+    UI::ChangeWidget( `id(`loop_create), `Value, part["create_file"]:false );
     UI::ChangeWidget( `id(`loop_size), `Value, lsize );
-    UI::ChangeWidget( `id(`loop_size), `Enabled, part["create"]:false );
+    UI::ChangeWidget( `id(`loop_size), `Enabled, part["create_file"]:false );
     UI::ChangeWidget( `id(`crypt_fs), `Enabled, true );
 
     map<string,any> retval = eval(part);
@@ -146,7 +146,7 @@ define map<string,any> LoopExpertDlg( boolean edit, map<string,any> part, map<sy
     repeat
 	{
 	ret = (symbol)UI::UserInput();
-	y2milestone( "DlgLoop %1", ret);
+	y2milestone( "LoopExpertDlg %1", ret);
 
 	////////////////////////////////////////////////////////////
 	if( ret != `cancel )
@@ -157,10 +157,10 @@ define map<string,any> LoopExpertDlg( boolean edit, map<string,any> part, map<sy
 
 	if( ret == `loop_create )
 	    {
-	    retval["create"] = UI::QueryWidget( `id(`loop_create), `Value );
+	    retval["create_file"] = UI::QueryWidget( `id(`loop_create), `Value );
 	    UI::ChangeWidget( `id(`loop_size), `Enabled, 
-			      retval["create"]:false );
-	    if( retval["create"]:false )
+			      retval["create_file"]:false );
+	    if( retval["create_file"]:false )
 		{
 		retval["format"] = true;
 		UI::ChangeWidget( `id(`format), `Value, true );
@@ -170,13 +170,13 @@ define map<string,any> LoopExpertDlg( boolean edit, map<string,any> part, map<sy
 	if( ret == `ok )
 	    {
 	    retval["fpath"] = UI::QueryWidget(`id(`loop_path), `Value);
-	    retval["create"] = UI::QueryWidget(`id(`loop_create), `Value);
+	    retval["create_file"] = UI::QueryWidget(`id(`loop_create), `Value);
 
 	    lsize = (string)UI::QueryWidget(`id(`loop_size), `Value);
 	    integer nsize = kmgt_str_to_byte( lsize );
-	    retval["region",1] = nsize/(1024*1024);
-	    y2milestone( "size:%1 num:%2", lsize, nsize );
-	    y2milestone( "retval:%1", retval );
+	    retval["size_k"] = nsize/1024;
+	    y2milestone( "LoopExpertDlg size:%1 num:%2", lsize, nsize );
+	    y2milestone( "LoopExpertDlg retval:%1", retval );
 	    if( !check_max_size( nsize, 0 ) )
 		{
 		ret = `again;
@@ -193,7 +193,7 @@ Use an absolute path name.
 		continue;
 		}
 
-	    if( Mode::normal () && !retval["create"]:false &&
+	    if( Mode::normal () && !retval["create_file"]:false &&
 	        SCR::Read( .target.size, retval["fpath"]:"" )<=0 )
 		{
 		// popup text
@@ -204,7 +204,7 @@ the create flag."), retval["fpath"]:" " ));
 		continue;
 		}
 
-	    if( !retval["format"]:false && retval["create"]:false )
+	    if( !retval["format"]:false && retval["create_file"]:false )
 		{
 		// popup text
 		Popup::Error( _("You chose to create the crypt file, but did not specify 
@@ -218,7 +218,7 @@ Also check the format option.
 
 	    map ret_mp = CheckOkMount( part["device"]:"", part, retval );
 	    retval = ret_mp["map"]:$[];
-	    y2milestone( "ret_mp %1 part %2", ret_mp, part );
+	    y2milestone( "LoopExpertDlg ret_mp %1 part %2", ret_mp, part );
 	    if( !ret_mp["ok"]:false )
 	       {
 	        if( ret_mp["field"]:`none != `none )
@@ -249,7 +249,7 @@ Also check the format option.
 		 ret == `back || ret == `abort );
 
     retval["symbol"] = ret;
-    y2milestone( "ret:%1 retval=%2", ret, retval );
+    y2milestone( "LoopExpertDlg ret:%1 retval=%2", ret, retval );
     UI::CloseDialog();
     return retval;
     }
@@ -264,41 +264,23 @@ define symbol LoopSetup( boolean edit )
     ``{
     string id = Storage::GetWizardKey();
     string key = "/dev/loop";
-    y2milestone( "edit %1 id %2", edit, id );
-    map<string,any> part = Storage::InitialLoopEntry();
+    y2milestone( "LoopSetup edit %1 id %2", edit, id );
+    map<string,any> part = $[];
     map<string,map> tg = Storage::GetTargetMap();
     if( edit )
 	{
-	part = Storage::GetSubDev( id );
+	part = Storage::GetPartition( tg, id );
 	}
     else
 	{
-	integer n = 0;
-	list nlist = maplist( map p, tg[key,"partitions"]:[], ``(p["nr"]:(any)0));
-	while( n<size(nlist) && contains( nlist, n) )
-	    {
-	    n = n+1;
-	    }
-	if( Mode::normal () )
-	    {
-	    part["device"] = Storage::GetLoopDev(n);
-	    map d = Storage::GetDiskPartition( part["device"]:"" );
-	    part["nr"] = d["nr"]:(any)0;
-	    }
-	else
-	    {
-	    part["nr"] = n;
-	    part["device"] = Storage::GetDeviceName( key, part["nr"]:(any)0 );
-	    }
+	part["type"] = `loop;
 	part["format"] = true;
-	part["crypt"] = "twofish256";
-	part["create"] = true;
-	part["region",1] = 50;
+	part["enc_type"] = `twofish;
+	part["size_k"] = 50*1024;
 	part["used_fs"] = `ext3;
 	}
-    y2milestone( "part %1", part );
+    y2milestone( "LoopSetup part %1", part );
 
-    y2milestone( "fs %1", FileSystems::GetAllFileSystems(false, false) );
     part = LoopExpertDlg( edit, part, (map <symbol, map>)
                           filter( any k, map e, 
 			          FileSystems::GetAllFileSystems(false, false),
@@ -310,17 +292,18 @@ define symbol LoopSetup( boolean edit )
 
     if( ret == `ok )
 	{
-	if( size(tg[key]:$[]) == 0 )
+	if( !edit )
 	    {
-	    tg[key] = Storage::InitialLoopMaindev();
+	    string dev = Storage::CreateLoop( part["fpath"]:"", 
+	                                      part["create_file"]:false,
+					      part["size_k"]:0, 
+					      part["mount"]:"" );
+	    part["device"] = dev;
 	    }
-	tg = Storage::SetPartition( tg, part );
-	Storage::SetTargetMap( tg );
+	Storage::ChangeVolumeProperties( part );
 	}
-    y2milestone( "ret = %1", ret );
+    y2milestone( "LoopSetup  ret = %1", ret );
     return  ret;
     }
-
-
 
 }

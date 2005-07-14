@@ -25,11 +25,6 @@
     import "Wizard";
     import "Storage";
 
-    boolean test_mode	= Mode::test (); 
-    boolean demo_mode	= Mode::test ();
-
-    y2debug( "mode: %1", test_mode );
-
     //////////////////////////////////////////////////////
     // look what inst_part_propose has said:
 
@@ -47,124 +42,14 @@
 	return `cancel;
     }
 
-    /*
-     *----------------------------------------------------------------------
-     * CheckPartitionTableSanity
-     *
-     * - if an extended partition exists:
-     *   check, if there are n logical drives, whether they start from xxx5
-     *   up to xxx5 + xxx(n-1)
-     *----------------------------------------------------------------------
-     *
-     */
-    
-define boolean CheckPartitionTableSanity( map<string,map> targetMap )
-    ``{
-    boolean     logical_drive_is_missing = false;
-    boolean     too_many_primary         = false;
-    boolean     logical_without_extended = false;
-    string      ldim_dev                 = "";
-    string      err_dev                  = "";
-    
-    foreach(string dev, map disk, targetMap,
-	``{
-	string type = substring(dev, 5, 2);
-	
-	boolean extended_exists      = false;
-	
-	list<map> primary_list = 
-	    filter( map part, disk["partitions"]:[],
-		    ``( (part["type"]:`unknown == `primary) && 
-		        !part["delete"]:false ));
-	list<map> extended_list = 
-	    filter( map part, disk["partitions"]:[],
-		    ``( (part["type"]:`unknown == `extended) && 
-		        !part["delete"]:false ));
-	list<map> logical_list = 
-	    filter( map part, disk["partitions"]:[],
-		    ``( (part["type"]:`unknown == `logical) && 
-		        !part["delete"]:false ));
-
-	integer maximal_primaries = disk["max_primary"]:4;
-	if( (size(extended_list) + size(primary_list)) > maximal_primaries )
-	    {
-	    too_many_primary = true;
-	    err_dev          = dev;
-	    y2error("Error Sanity: Extended List %1", extended_list ); 
-	    y2error("Error Sanity: Primary List %1",  primary_list ); 
-	    }
-
-	if( (size(extended_list) == 0)  && (size(logical_list) != 0) )
-	    {
-	    logical_without_extended = true;
-	    err_dev                  = dev;
-	    y2error("Error Sanity: Extended List %1", extended_list ); 
-	    y2error("Error Sanity: Primary List %1",  primary_list ); 
-	    }
-
-	// this will only trigger for FAT partitions
-	if( size(extended_list) > 0 )
-	    {
-	    integer nb_logical_drives  = size( logical_list );
-	    list lst_logical_drives = 
-		maplist( map part, logical_list, ``(part["nr"]:0));
-
-	    integer n = 5;
-
-	    // example:
-	    // - hda5 an hda6 ->  nb_logical_drives = 2
-	    // - while( n <= 6 )  # 4 + nb_logical_drives)
-	    //   - check
-	    
-	    while( n <= ( 4 + nb_logical_drives ))
-		{
-		if( contains( lst_logical_drives, n ))
-		    {
-		    // To make the new interpreter happy
-		    n = n + 0;
-		    }
-		else
-		    {
-		    // Oops
-		    logical_drive_is_missing = true;
-		    ldim_dev                 = dev;
-		    y2error("Error Sanity: Extended List %1 %2", lst_logical_drives, n ); 
-		    }
-		       
-		n = n + 1;
-		}
-	    }
-	});
-
-    return( true );
-    };
-
 /////////////////////////////////////////////////////////////////////
 // MAIN:
 /////////////////////////////////////////////////////////////////////
 
     map<string,map> targetMap = Storage::GetTargetMap();
 
-    if( test_mode && (size(targetMap) == 0) ) 
-        {
-	if( demo_mode ) 
-	    {
-	    y2warning("***** Demo mode active - using fake demo values *****");
-	    targetMap = (map<string,map>)SCR::Read(.target.yast2, "demo_target_map.ycp");
-	    }
-	else 
-	    {// ! demo_mode
-	    y2warning("***** Test mode active - using fake values *****");
-	    targetMap = (map<string,map>)SCR::Read(.target.yast2, "test_target_map.ycp");
-	    }
-	Storage::SetTargetMap( targetMap );
-	}
-    
     // Check the partition table for correctness
   
-    boolean targetMap_isSane = CheckPartitionTableSanity( targetMap );
-    if ( !targetMap_isSane ) return `back;
-
     term contents = `Dummy();
 
     boolean custom_val = (Storage::GetPartMode() == "CUSTOM");
@@ -172,10 +57,6 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 
     if( size(targetMap) > 0) 
 	{
-	if (test_mode) 
-	    y2milestone( "found targetMap\n%1\n target_is '%2'", targetMap, 
-	                 Storage::GetPartDisk());
-
 	// loop over targetMap and build radio buttons for selection
 	// dont use foreach here since we need a counter (as a shortcut)
 	// anyway
@@ -183,7 +64,7 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 	term buttonbox = `VBox();
 
 	integer dskcnt = size( filter( string d, map e, targetMap,
-	                               ``(Storage::IsRealDisk( d, e ))));
+	                               ``(Storage::IsRealDisk( e ))));
 	y2milestone( "dskcnt %1", dskcnt );
 
 	if( dskcnt>10 )
@@ -192,7 +73,7 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 	    list disklist = [];
 	    foreach( string tname, map tdata, targetMap, 
 		``{
-		if( Storage::IsRealDisk( tname, tdata ))
+		if( Storage::IsRealDisk( tdata ))
 		    {
 		    disklist = add( disklist, 
 				    `item(`id(tname), 
@@ -210,7 +91,7 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 	    integer i = 1;
 	    foreach( string tname, map tdata, targetMap, 
 		``{
-		if( Storage::IsRealDisk( tname, tdata ))
+		if( Storage::IsRealDisk( tdata ))
 		    {
 		    string tlinename = tdata["name"]:"?";
 		    string tline = "&" + i + ":    " + tlinename;
@@ -230,7 +111,7 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 	buttonbox = 
 	    add(buttonbox, `Left(`RadioButton(`id("CUSTOM"), `opt(`notify),
 	                         // label text
-				 _("&Custom partitioning -- for experts"),
+				 _("&Custom Partitioning (for experts)"),
 				 custom_val )));
     
 	// This dialog selects the target disk for the installation.
@@ -238,7 +119,7 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 	// installation target
 
 	                   // heading text
-	contents = `Frame( _("Choose a hard disk"),
+	contents = `Frame( _("Hard Disk"),
 			   `RadioButtonGroup(`id(`options),
 					     `VBox( `VSpacing(0.4),
 						    `HSquash(buttonbox),
@@ -249,11 +130,10 @@ define boolean CheckPartitionTableSanity( map<string,map> targetMap )
 	}
     else 
 	{
-	if (test_mode) y2milestone("NO targetMap");
+	y2milestone("NO targetMap");
 	// normally the target is located on hard disks. Here no hard disks 
-	// can be found. YaST2 cannot install - now the fallback YaST must be 
-	// used
-	contents = `Label (_("No disks found, please use the update CD for installation."));
+	// can be found. YaST2 cannot install. Update CD might have newer drivers.
+	contents = `Label (_("No disks found. Try using the update CD, if available, for installation."));
 	}
 
 
@@ -275,16 +155,15 @@ You may select later which part of the disk is used for &product;.
     // help part 3 of 3
     helptext = helptext + _("
 <p>
-The <b>custom partitioning</b> option for experts allows full
+The <b>Custom Partitioning</b> option for experts allows full
 control over partitioning the hard disks and assigning
 partitions to mount points when installing &product;.
-<br>
 </p>
 ");
 
 
     // first step of hd prepare, select a single disk or "expert" partitioning
-    Wizard::SetContents( _("Preparing Hard Disk -- Step 1"),
+    Wizard::SetContents( _("Preparing Hard Disk: Step 1"),
 			 contents, helptext, (boolean)WFM::Args(0), 
 			 (boolean)WFM::Args(1));
     if ( Stage::initial () )
@@ -347,7 +226,7 @@ partitions to mount points when installing &product;.
 		    option = disk;
 		else
 		    {
-		    // there is a selection from that one option has to be 
+		    // there is a selection from which one option must be 
 		    // chosen - at the moment no option is chosen
 		    Popup::Message(_("Select one of the options to continue."));
 		    sym = `again;
@@ -368,9 +247,7 @@ partitions to mount points when installing &product;.
 		    Storage::DisposeTargetBackup("disk");
 		    Storage::CreateTargetBackup("disk");
 		    Storage::ResetOndiskTarget();
-		    map<string,map> tg = Storage::GetTargetMap();
-		    tg = Storage::AddMountPointsForWin(tg);
-		    Storage::SetTargetMap( tg );
+		    Storage::AddMountPointsForWin(Storage::GetTargetMap());
 		    Storage::SetPartDisk( (string)option );
 		    Storage::SetCustomDisplay( false );
 		    Storage::SetDoResize( "NO" );
@@ -380,7 +257,6 @@ partitions to mount points when installing &product;.
 		{
 		y2milestone( "PartMode %1 %2", Storage::GetPartMode(), 
 			     Storage::GetPartDisk() );
-		Storage::DisposeTargetBackup("disk");
 		Storage::CreateTargetBackup("disk");
 		if( Storage::GetPartMode() != "USE_DISK" )
 		    {

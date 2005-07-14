@@ -68,7 +68,7 @@ define boolean CheckItemIsNotMounted( string id )
 	    y2milestone( "mounts line=%1", line );
 	    line = substring( line, 0, findfirstof( line, " " ) );
 	    y2milestone( "mounts line=%1", line );
-	    // popup text
+	    // popup text, %1 is device name.  %2 is mount point.
 	    Popup::Message(sformat(_("Device %1 is already mounted at %2.  
 A mounted file system cannot be added to a volume group."),
 		 device, line ));
@@ -85,7 +85,6 @@ A mounted file system cannot be added to a volume group."),
    
 
     boolean test_mode        = Mode::test ();
-    map<integer,map> modify_targets   = $[];
     boolean view_all_mnts    = Storage::GetLvmViewAllMnt();
     map<string,map> targetMap = Storage::GetTargetMap();
 
@@ -113,15 +112,14 @@ A mounted file system cannot be added to a volume group."),
     if( size( lvm_vgs ) == 0 )
 	{
 	map vg = DlgCreateVolumeGroup( lvm_vgs );
-	map addVG = addVolumeGroup( vg, targetMap, lvm_vgs, modify_targets );
+	map addVG = addVolumeGroup( vg, targetMap, lvm_vgs );
 	
 	// has the user cancelled the dialog? 
 	if( !addVG["cancelled"]:false )
 	    {
-	    targetMap       = addVG["targets"]:$[];
-	    lvm_vgs         = addVG["lvm_vgs"]:[];
-	    current_vg      = addVG["current_vg"]:"";
-	    modify_targets  = addVG["modify_targets"]:$[];
+	    targetMap = Storage::GetTargetMap();
+	    lvm_vgs = get_vgs( targetMap );
+	    current_vg = addVG["vg"]:"";
 	    }
 	else
 	    {
@@ -154,8 +152,6 @@ A mounted file system cannot be added to a volume group."),
     list    size_list   = [];
     string  vg_size_str = "";
 
-    Storage::SetModifyTargets( modify_targets );
-    
     repeat
 	{
         /////////////////////////////////////////////////////////////////
@@ -175,7 +171,8 @@ A mounted file system cannot be added to a volume group."),
 	if( ti != nil )
 	    UI::ChangeWidget( `id(`lv_table), `CurrentItem, ti );
 
-	string vg_size_str = (string)get_vg_size( parts_pv, current_vg, `string );
+	integer s = targetMap["/dev/"+current_vg,"size_k"]:0*1024;
+	string vg_size_str = ByteToHumanStringWithZero( s );
 	y2debug( "**** %1", vg_size_str );
 	UI::ChangeWidget( `id(`pv_size), `Value, vg_size_str);
 
@@ -186,10 +183,7 @@ A mounted file system cannot be added to a volume group."),
 	/////////////////////////////////////////////////////////////////
 	// Size for BarGraph
 
-	parts_lv = get_lvs_and_mounted_partitions( targetMap, false, 
-	                                           current_vg );
-	y2debug( "parts_lv=%1 current_vg=%2", parts_lv, current_vg );
-	size_list = get_lv_size_info( targetMap,  parts_lv, current_vg );
+	size_list = get_lv_size_info( targetMap,  current_vg );
 	max_size  = size_list[1]:0;
 	used_size = size_list[0]:0;
 	y2debug( "list=%3, max_size=%1 used_size=%2", max_size, used_size, 
@@ -251,15 +245,15 @@ A mounted file system cannot be added to a volume group."),
         if( ret == `vg_add_vg )
 	    {
 	    map vg = DlgCreateVolumeGroup( lvm_vgs );
-            map addVG = addVolumeGroup( vg, targetMap, lvm_vgs, modify_targets );
+            map addVG = addVolumeGroup( vg, targetMap, lvm_vgs );
 
             // has the user cancelled the dialog?
             if( !addVG["cancelled"]:false )
 		{
-                targetMap       = addVG["targets"]:$[];
-		modify_targets  = addVG["modify_targets"]:$[];
-		lvm_vgs         = addVG["lvm_vgs"]:[];
-		current_vg      = addVG["current_vg"]:"none";
+		targetMap = Storage::GetTargetMap();
+		lvm_vgs = get_vgs( targetMap );
+		current_vg = addVG["vg"]:"";
+		y2milestone( "new current_vg %1", current_vg );
 		}
 	    }
 
@@ -270,14 +264,11 @@ A mounted file system cannot be added to a volume group."),
 	
 	if( ret == `vg_remove_vg && current_vg != nil )
 	    {
-	    map r = HandleRemoveVg( targetMap, modify_targets, current_vg );
-	    if( size(r)>0 )
+	    if( HandleRemoveVg( targetMap, current_vg ))
 		{
-		targetMap       = r["targets"]:targetMap;
-		modify_targets  = r["modify_targets"]:modify_targets;
+		targetMap = Storage::GetTargetMap();
 		lvm_vgs         = get_vgs( targetMap );
 		current_vg = lvm_vgs[0]:"";
-		// Display current vg:
 		new_vg_list( lvm_vgs );
 		UI::ChangeWidget( `id(`vg), `Value, current_vg);
 		y2milestone( " current_vg %1" , current_vg );
@@ -298,15 +289,8 @@ A mounted file system cannot be added to a volume group."),
 	    if( id!=nil && CheckItemIsNotPv(targetMap,id) && 
 	        CheckItemIsNotMounted(id) )
 		{
-		map addPV = addPhysicalVolume( modify_targets, targetMap, 
-		                               id,  current_vg );
-            
-		// has an error occured
-		if( !addPV["error"]:false )
-		    {
-		    targetMap      = addPV["targets"]:$[];
-		    modify_targets  = addPV["modify_targets"]:$[];
-		    }
+		addPhysicalVolume( targetMap, id, current_vg );
+		targetMap = Storage::GetTargetMap();
 		}
 	    }
 
@@ -320,24 +304,15 @@ A mounted file system cannot be added to a volume group."),
 	    
 	    if( id!=nil && CheckItemIsPv(targetMap,id) )
 		{
-		map ttt = Storage::IdFromTarget( targetMap, id );
-	        string vg = ttt["lvm_group"]:"";
-
-		if( check_pv_delete( targetMap, id, vg ) == `nodelete )
+		string vg = Storage::GetPartition( targetMap, id )["used_by"]:"";
+		if( !check_pv_delete( targetMap, id, vg ) )
 		    {
 		    ret = `again;
 		    continue;
 		    }
 
-		map deletePV = removePhysicalVolume( modify_targets, targetMap,
-		                                     id, vg );
-            
-		// has an error occured
-		if( !deletePV["error"]:false )
-		    {
-		    targetMap      = deletePV["targets"]:$[];
-		    modify_targets  = deletePV["modify_targets"]:$[];
-		    }
+		removePhysicalVolume( targetMap, id, vg );
+		targetMap = Storage::GetTargetMap();
 		}
 	    }
 
@@ -350,8 +325,9 @@ A mounted file system cannot be added to a volume group."),
 	    {
 	    if( max_size<pesize )
 		{
-		// popup text
-		Popup::Message(sformat(_("There is no available space in the current volume group %1"), current_vg ));
+		//rwalter: add example VG for translators
+		// popup text, %1 is volume group, such as ???
+		Popup::Message(sformat(_("No space available in the current volume group %1."), current_vg ));
 		}
 	    else
 		{
@@ -373,24 +349,17 @@ A mounted file system cannot be added to a volume group."),
 		    Lv["lv_size"] = max_size/pesize*pesize;
 		    }
 
-		map createLv = DlgCreateEditLogicaVolume( "create",
-					       Lv,
-					       max_size,
-					       current_vg,
+		map createLv = DlgCreateEditLogicaVolume( `create, Lv,
+							  max_size, current_vg,
 					       get_lv_names(targetMap,current_vg),
 					       FileSystems::GetAllFileSystems(true,true),
-					       false,
-					       "", pesize
-					       );
+							  "", pesize );
 		
 		// has an error occured
 		if( size(createLv)>0 )
 		    {
-		    map ret = addLogicalVolume( createLv, modify_targets, 
-		                                targetMap, current_vg );
-		    
-		    targetMap      = ret["targets"]:targetMap;
-		    modify_targets = ret["modify_targets"]:modify_targets;
+		    addLogicalVolume( createLv, current_vg );
+		    targetMap = Storage::GetTargetMap();
 		    }
 		}
 	    }
@@ -415,9 +384,8 @@ Select the device to edit.
 		}
 	    else
 		{
-		map ret = HandleEditLv( targetMap, modify_targets, id );
-		targetMap = ret["targets"]:targetMap;
-		modify_targets = ret["modify_targets"]:modify_targets;
+		HandleEditLv( targetMap, id );
+		targetMap = Storage::GetTargetMap();
 		}
 	    }
 
@@ -437,16 +405,15 @@ Select the device to remove.
 		}
 	    else
 		{
-		map ret = HandleRemoveLv( targetMap, modify_targets, id );
-		targetMap = ret["targets"]:targetMap;
-		modify_targets = ret["modify_targets"]:modify_targets;
+		HandleRemoveLv( targetMap, id );
+		targetMap = Storage::GetTargetMap();
 		}
 	    }
 
 	if( ret == `help )
 	    {
 	    // LVM Helptext headline
-	    Popup::LongText( _("LVM Help"), `RichText( getLvmHelptext()), 
+	    Popup::LongText( _("LVM Configuration"), `RichText( getLvmHelptext()), 
 	                       70, 20 );
 	    }
 	
@@ -457,30 +424,12 @@ Select the device to remove.
 	if( ret == `finish || ret == `apply )
 	    {
 	    y2milestone( "END___ %1", ret);
-	    // due to lvm tools, we need a already created pv before
-	    // creating a vg so we patch the execution stack
-
-	    any check_ret = checkModifyTargets( modify_targets, targetMap );
-	    y2milestone( "ENDx___ %1", ret);
-
-	    if( check_ret == `next )
-		{
-	        y2milestone( "END__ %1", ret);
-	        map procMod = processModifyTargets( modify_targets, targetMap );
-
-	        targetMap       = procMod["targets"]:targetMap;
-	        modify_targets  = procMod["modify_targets"]:modify_targets;
-		
-	        Storage::SetModifyTargets( modify_targets);
-	        Storage::SetTargetMap( targetMap );
 	        Storage::SetLvmViewAllMnt( view_all_mnts );
 		}
-	    }
 
 	} until (ret == `finish || ret == `apply || ret == `abort);
 
     y2milestone( "END_ %1", ret);
-    y2milestone( "modify_targets=%1", modify_targets );
 	
     return ret;
 }

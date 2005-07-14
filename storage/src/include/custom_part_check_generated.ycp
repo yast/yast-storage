@@ -26,14 +26,6 @@
 
  $Id$
 
-HINTS: Always use
-         lookup( part, "delete", false)
-         lookup( part, "create", false)
-       instead of
-         lookup( part, "delete")
-         lookup( part, "create")
-       cause delete, create are not always set to false
-
 */
 {
   import "Arch";
@@ -68,8 +60,7 @@ define map<string,map> change_boot_region( map<string,map> targetMap, list new_r
 	  ``{
 	  map new_part = part;
 
-	  if( !part["delete"]:false &&
-	      part["fsid"]:0 == Partitions::fsid_prep_chrp_boot )
+	  if( part["fsid"]:0 == Partitions::fsid_prep_chrp_boot )
 	      {
 	      new_part["region"] = new_region;
 	      }
@@ -82,78 +73,6 @@ define map<string,map> change_boot_region( map<string,map> targetMap, list new_r
   return( targetMap );
   };
 
-
-define boolean check_raid_possible( map<string,map> targetMap )
-    ``{
-    integer possible_parts_found = 0;
-
-    foreach( string disk, map target, targetMap, 
-	``{
-	list<map> partitions = target["partitions"]:[];
-
-	possible_parts_found = possible_parts_found +
-	       size(filter( map part, partitions, 
-			    ``( part["lvm_group"]:"" == ""    &&
-				!part["delete"]:false &&
-				!part["format"]:false &&
-				( part["mount"]:"" == "" ||
-				  substring(part["mount"]:"", 0, 5) == "/data" )  &&
-			        part["raid_name"]:"" == "" &&
-			        (part["fsid"]:0 == Partitions::fsid_native ||
-				 part["fsid"]:0 == Partitions::fsid_raid))));
-       });
-
-   if(  possible_parts_found < 2 )
-       {
-       // Translators: the text 'do not format' must match the label in the corresponding popup!
-       Popup::Message(_("To use RAID, at least two partitions of type 0xFD (or 0x83)
-are required. Change your partition table accordingly.
-In most cases, this can be done in the following way:
-click 'Create', select 'Do not format', and set the partition ID to 0xFD.
-"));
-
-       return false;
-       }
-   return true;
-   }
-
-
-define boolean check_lvm_possible( map<string,map> targetMap )
-   ``{
-   boolean possible_part_found = false;
-
-   foreach( string disk, map target, targetMap, 
-       ``{
-       list<map> partitions = target["partitions"]:[];
-
-
-       if( size(filter( map part, partitions, 
-                        ``(part["raid_name"]:"" == "" &&
-			   !part["delete"]:false && !part["format"]:false &&
-			   (part["mount"]:""  == "" ||
-			    substring(part["mount"]:"", 0, 5) == "/data" )  &&
-			   ( part["fsid"]:0 == Partitions::fsid_native ||
-			     part["fsid"]:0 == Partitions::fsid_lvm )))) > 0)
-	   {
-	   possible_part_found = true;
-	   }
-       });
-
-   if( !possible_part_found )
-       {
-       // Translators: the text 'do not format' must match the label in the corresponding popup!
-       Popup::Message(_("To use LVM, at least one partition of type 0x8e (or 0x83)
-is required. Change your partition table accordingly.
-In most cases, this can be done in the following way:
-click 'Create', select 'Do not format', and set the partition ID to 0x8e.
-"));
-       }
-   else if( Mode::normal () )
-       {
-       possible_part_found = Package::InstallAll( ["lvm2"] );
-       }
-   return possible_part_found;
-   }
 
     /*---------------------------------------------------------------------
      * Checks the generated partition table.  (adds whole_disk - flags to the table)
@@ -234,9 +153,6 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 
 
 	foreach( map part, part_info, ``{
-
-	    if( !part["delete"]:false )
-		{
 		// All valid partitions ...
 		integer fsid       = part["fsid"]:0;
 		string  mountpoint = part["mount"]:"";
@@ -290,7 +206,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		//
 		//////////////////////////////////////////////////////////////
 
-		if ( mountpoint == "/" )
+	    if( mountpoint == "/" )
 		{
 		    if( diskinfo["label"]:"" == "gpt" )
 			{
@@ -298,9 +214,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 			}
 		    root_found = true;
 		    root_end   = part["region",0]:0 + part["region",1]:1-1;
-		    if( size(part["raid_type"]:"")>0 ||
-		        part["type"]:`unknown==`lvm || 
-			part["type"]:`unknown==`evms )
+		if( !contains( [ `primary, `logical ], part["type"]:`unknown ))
 		      {
 		      // root_end does not have anything to do with physical cylinders
 		      root_end = 0;
@@ -308,11 +222,11 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		    root_fs = part["used_fs"]:`unknown;
 		    root_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;   // 1GB/cylinder size
 
-		    if ( id_sw_raid_dev ) root_raid = true;
-		    if( !boot_raid ) raid_type = part["raid_type"]:"unknown";
+		if ( part["type"]:`unknown==`sw_raid ) root_raid = true;
+		if( !boot_raid ) raid_type = part["raid_type"]:"";
 		    if ( part["type"]:`unknown==`lvm ) root_lvm = true;
 		}
-		else if ( mountpoint == Partitions::BootMount() )
+	    else if( mountpoint == Partitions::BootMount() )
 		{
 		    if( diskinfo["label"]:"" == "gpt" )
 			{
@@ -328,7 +242,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		    boot_cyl_for_gb = 1073741824 / boot_cyl_size;
 		    boot_size       = boot_cyl_size * boot_cyl_nb;
 		    if ( id_sw_raid_dev ) boot_raid = true;
-		    raid_type = part["raid_type"]:"unknown";
+		raid_type = part["raid_type"]:"";
 		}
 		else if ( mountpoint == "" )
 		{
@@ -362,8 +276,8 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 
 		    // first partition of a sparc system shouldn't be a swap
 		    // parition
-
-		    if( Arch::sparc () && part["nr"]:0 == 1 )
+		if( Arch::sparc() && part["type"]:`unknown==`primary && 
+		    part["nr"]:0 == 1 )
 			{
 			sparc_first_is_swap = true;
 			sparc_first_dev     = disk;
@@ -372,25 +286,20 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 
 
 		// check if a fat filesystem  is greater than 2 GB
-		if( (part["used_fs"]:`unknown==`fat32 ||
-		     part["used_fs"]:`unknown==`fat16) && part["format"]:false )
+	    if( part["used_fs"]:`unknown==`vfat && part["format"]:false )
 		{
 		    // uses a mountpoint like /usr / /var /home /opt with fat
-		    if( ! fat_system_mount )
-		    {
-			if( mountpoint == "/usr"  || mountpoint == "/"     ||
-			    mountpoint == "/home" || mountpoint == "/var"  ||
-			    mountpoint == "/opt"  )
+		if( !fat_system_mount &&
+		    contains( [ "/usr", "/", "/home", "/var", "/opt" ],
+		              mountpoint ))
 			{
 			    fat_system_mount = true;
 			}
 		    }
 
-		}
-
 		//    | NOT
 		//    v
-		if (  ! ( fsid==Partitions::fsid_native ||
+	    if(  ! ( fsid==Partitions::fsid_native ||
 			  fsid==Partitions::fsid_swap ||
 			  fsid==Partitions::fsid_extended ||
 			  fsid==Partitions::fsid_extended_win ||
@@ -406,16 +315,14 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		    partition_mounted_but_not_formated = true;
 		    }
 
-	    }
 	});
 
-	whole_disk = whole_disk || diskinfo["is_lvm_vg"]:false ||
-	                           diskinfo["is_evms"]:false;
+	whole_disk = whole_disk || diskinfo["type"]:`CT_UNKNOWN==`CT_LVM ||
+	                           diskinfo["type"]:`CT_UNKNOWN==`CT_EVMS;
 	diskinfo  = add( diskinfo, "whole_disk", whole_disk );
 	all_whole_disk = all_whole_disk && whole_disk;
 	targetMap = add( targetMap, disk, diskinfo );
-
-    } );
+	});
 
     y2milestone( "root_found:%1 boot_found %2 root_raid %3 boot_raid %4 raid_type:%5", 
 	         root_found, boot_found, root_raid, boot_raid, raid_type );
@@ -423,7 +330,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 
       Storage::SetWholeDisk( all_whole_disk );
 
-      if ( (axp_start_Cr_failure && installation) || show_all_popups )
+      if( (axp_start_Cr_failure && installation) || show_all_popups )
       {
           // popup text %2 is a disk name e.g. /dev/hda %1 is a number
 	  Popup::Error( sformat(_("\
@@ -620,7 +527,7 @@ Change this?
 	// iSeries has no problems with this configuration
 	// an initrd will be created and you can boot from a kernel slot
     if ( installation && !Arch::board_iseries () &&
-         ((((root_raid && !boot_found) || boot_raid) && raid_type!="raid1") || show_all_popups) && 
+         ((((root_raid && !boot_found) || boot_raid) && raid_type!="raid1" ) || show_all_popups) && 
 	 AutoinstStorage::BootRaidWarning)
 	{
 	    // popup text
@@ -659,8 +566,7 @@ Change this?
 	}
 
 
-    if( (Arch::ia64 () && installation &&
-         (!boot_found || (boot_fs != `fat16 && boot_fs != `fat32))) ||
+    if( (Arch::ia64 () && installation && (!boot_found || boot_fs != `vfat)) ||
         show_all_popups )
 	{
 	// popup text
@@ -767,93 +673,128 @@ Do you want to change your setup?
 
 
 
+define symbol check_devices_used( list<map> partitions )
+    {
+    symbol ret = `UB_NONE;
+    /////////////////////////////////////////////////////////////////////////
+    // check LVM partitions
+    if( size(filter( map p, partitions, 
+                     ``( p["used_by_type"]:`UB_NONE==`UB_LVM))) != 0)
+	ret = `UB_LVM;
+    else if( size(filter( map p, partitions, 
+			  ``( p["used_by_type"]:`UB_NONE==`UB_MD))) != 0)
+	ret = `UB_MD;
+    else if( size(filter( map p, partitions, 
+			  ``( p["used_by_type"]:`UB_NONE==`UB_EVMS))) != 0)
+	ret = `UB_EVMS;
+    else if( size(filter( map p, partitions, 
+			  ``( p["used_by_type"]:`UB_NONE==`UB_DM))) != 0)
+	ret = `UB_DM;
+    return( ret );
+    }
 
 
-define symbol check_partition_edit( map curr_part, boolean bsd_label )
+
+define boolean check_device_edit( map curr_part, boolean bsd_label )
     ``{
     ///////////////////////////////////////////////////////
     // with a BSD-Disklabel partition 3 is always an additional entry
     // which describes the disk and should not be edited
 
-    if( bsd_label && ( curr_part["nr"]:0 == 3 ) )
+    if( bsd_label && curr_part["type"]:`unknown==`primary && 
+	curr_part["nr"]:0==3 )
 	{
 	// popup text
 	Popup::Message(_("Partition 3 \"Entire Disk\" is not changeable"));
-	return `no_edit;
+	return false;
 	}
 
-    if( curr_part["raid_name"]:"" != "")
-	{
-	// popup text %1 is replaced by a raid name e.g. /dev/md0
-	Popup::Message(sformat(_("The selected partition belongs to the RAID (%1).
-Please remove it from the RAID before you edit it."),curr_part["raid_name"]:""));
-	return `no_edit;
-	}
+    symbol used = check_devices_used( [ curr_part ] );
 
-    if( curr_part["lvm_group"]:"" != "")
+    if( used == `UB_MD)
 	{
-	// popup text %1 is replaced by a name
-	Popup::Message(sformat(_("The selected partition belongs to a volume group (%1).
-Please remove it from the volume group before you edit it."),curr_part["lvm_group"]:"" ));
-	return `no_edit;
+	// popup text %1 is replaced by a raid name e.g. md0
+	Popup::Message(sformat(_("The selected device belongs to the RAID (%1).
+Please remove it from the RAID before you edit it."),curr_part["used_by"]:""));
+	return false;
 	}
-    return `edit;
+    else if( used == `UB_LVM )
+	{
+	// popup text %1 is replaced by a name e.g. system
+	Popup::Message(sformat(_("The selected device belongs to a volume group (%1).
+Please remove it from the volume group before you edit it."),curr_part["used_by"]:"" ));
+	}
+    else if( used == `UB_EVMS )
+	{
+	// popup text %1 is replaced by a name e.g. system
+	Popup::Message(sformat(_("The selected device is used by EVMS volume (%1).
+Please remove the EVMS volume before you edit it."), curr_part["used_by"]:"" ));
+	}
+    else if( used != `UB_NONE )
+	{
+	// popup text %1 is replaced by a name e.g. system
+	Popup::Message(sformat(_("The selected device is used by volume (%1).
+Please remove the volume before you edit it."), curr_part["used_by"]:"" ));
+	}
+    return( used==`UB_NONE );
     }
 
-
-
-
-
-define symbol check_partition_delete( map curr_disk, map curr_part, 
-				      boolean bsd_label, boolean c_bsd,
-				      boolean c_lvm, boolean c_raid, 
+define boolean check_device_delete( map curr_part, boolean bsd_label, 
 				      boolean installation )
     ``{
     string part_name = curr_part["device"]:"";
 
-    if( c_bsd )
+    if( bsd_label )
 	{
 	///////////////////////////////////////////////////////
 	// with BSD-Disklabel partition 3 is always an additionl entry,
 	// which describes the disk and should not be edited
 
-	if( bsd_label && curr_part["nr"]:0==3 )
+	if( bsd_label && curr_part["type"]:`unknown==`primary && 
+	    curr_part["nr"]:0==3 )
 	    {
 	    // popup text
 	    Popup::Message(_("Partition 3 \"Entire Disk\" is not changeable"));
-	    return `no_delete;
+	    return false;
 	    }
 	}
 
-    if( c_lvm )
+    symbol used = check_devices_used( [ curr_part ] );
+
+    if( used != `UB_NONE )
 	{
-	if( curr_part["lvm_group"]:"" != "" )
+	if( used == `UB_LVM)
 	    {
-	    // popup text %2 is a partition name, %1 is the volume group name
-	    Popup::Error(sformat(_("The partition (%2) belongs to a volume group (%1).
-Please remove it from the volume group before you delete it."),curr_part["lvm_group"]:"" , part_name) );
-	    return  `no_delete;
+	    // popup text %2 is a device name, %1 is the volume group name
+	    Popup::Error(sformat(_("The device (%2) belongs to a volume group (%1).
+Please remove it from the volume group before you delete it."),curr_part["used_by"]:"" , part_name) );
 	    }
+
+	if( used == `UB_MD)
+	    {
+	    // popup text %2 is a device name, %1 is the raid name
+	    Popup::Message(sformat(_("The device (%2) belongs to the RAID (%1).
+Please remove it from the RAID before you delete it."), curr_part["used_by"]:"", part_name ));
 	}
 
-    if( c_raid )
+	else if( used == `UB_EVMS)
 	{
-	////////////////////////////////////////////////////////////////////////////////////
-	//  check raid
-	if( curr_part["raid_name"]:"" != "")
-	    {
-	    // popup text %2 is a partition name, %1 is the raid name
-	    Popup::Message(sformat(_("The partition (%2) belongs to the RAID (%1).
-Please remove it from the RAID before you delete it."), curr_part["raid_name"]:"", part_name ));
-	    return `no_delete;
+	    // popup text %2 is a device name, %1 is the EVMS name
+	    Popup::Message(sformat(_("The device (%2) is used by EVMS object (%1).
+Please remove the EVMS object before you delete it."), curr_part["used_by"]:"", part_name ));
 	    }
-
+	else
+	    {
+	    // popup text %2 is a device name, %1 is the EVMS name
+	    Popup::Message(sformat(_("The device (%2) is used by %1.
+Please remove %1 before you delete it."), curr_part["used_by"]:"", part_name ));
+	    }
+	return false;
 	}
 
     if( !installation )
 	{
-	string mounts =  Partitions::MountedOn( part_name,
-						Partitions::CurMounted() );
+	string mounts = Storage::DeviceMounted( part_name );
 	if( mounts != "" )
 	    {
 	    // popup text %1 is directory name
@@ -867,20 +808,20 @@ If you proceed, YaST2 will try unmounting before deleting it.
 "), mounts );
 
 
-	    if( ! Popup::ContinueCancel(message))
+	    if( !Popup::ContinueCancel(message))
 		{
-		return  `no_delete;
+		return false;
 		}
 	    else
 		{
 		symbol ret = `none;
 		do
 		    {
-		    if( SCR::Execute(.target.bash, "/bin/umount " + part_name )!=0)
+		    if( !Storage::Umount( part_name ) )
 			{
 			// popup text %1 is directory name
 			message = sformat(_("Unmount of %1 failed.
-Remove partition anyway?
+Remove device anyway?
 "), mounts );
 			ret = Popup::AnyQuestion3( Label::WarningMsg(), message,
 						     Label::YesButton(),
@@ -892,53 +833,42 @@ Remove partition anyway?
 		    }
 		while( ret == `retry );
 		if( ret == `no )
-		    return `no_delete;
+		    return false;
 		}
 	    }
 	}
-
-    return `delete;
+    return true;
     };
 
 
-
-
-
-define boolean check_extended_delete( string del_dev, map curr_disk, 
-				      boolean installation ) 
+define boolean check_extended_delete( map curr_disk, boolean installation ) 
     ``{
-
     /////////////////////////////////////////////////
     // filter delete partitions
     list<map> partitions =  curr_disk["partitions"]:[];
-    partitions = filter( map part, partitions, ``( !part["delete"]:false ));
+    string del_dev = curr_disk["device"]:"";
 
     /////////////////////////////////////////////////
     // get logical partitions
     list<map> logical_parts = filter( map part, partitions, 
                                  ``( part["type"]:`primary == `logical));
+    y2milestone( "check_extended_delete logical_parts %1", logical_parts );
     list logical_parts_names = [];
-
-    foreach( map logical_part, logical_parts , 
-	``{
-	logical_parts_names =
-		add( logical_parts_names,
-		     Storage::GetDeviceName( del_dev, logical_part["nr"]:0));
-	});
+    logical_parts_names = maplist( map p, logical_parts, ``(p["device"]:"") );
+    y2milestone( "check_extended_delete logical_parts_names %1", 
+                 logical_parts_names );
 
     if( logical_parts_names == [] )
 	return true;
-
 
     /////////////////////////////////////////////////
     // check mounted partitions
     if( !installation )
 	{
-	list<map> mounts = Partitions::mountedPartitionsOnDisk( del_dev,
-							   Partitions::CurMounted() );
-	mounts      = filter( map mount, mounts, ``( contains( logical_parts_names, mount["spec"]:"")));
-
-	if ( size( mounts ) != 0 )
+	list<map> mounts = Storage::mountedPartitionsOnDisk( del_dev );
+	mounts = filter( map mount, mounts, 
+	                 ``( contains( logical_parts_names, mount["device"]:"")));
+	if( size( mounts ) != 0 )
 	    {
 	    /////////////////////////////////////////////////////////////////////////////////////////
 	    // mount points found
@@ -946,11 +876,10 @@ define boolean check_extended_delete( string del_dev, map curr_disk,
 	    string mounted_parts  = "";
 	    foreach( map mount, mounts , ``{
 
-		//The selected extended partition contains partitions which are currently mounted:
-		//           /dev/hda1 on /
-		//           /dev/hdd1 on /usr
-		//   ....
-		mounted_parts = mounted_parts + sformat("%1 on %2",mount["spec"]:"", mount["file"]:"") + "\n";
+		//  %1 is replaced by device name, %1 by directory e.g /dev/hdd1 on /usr
+		mounted_parts = mounted_parts + 
+		                sformat( "%1 on %2", mount["spec"]:"", 
+					 mount["file"]:"") + "\n";
 	    });
 
 	    // popup text
@@ -967,11 +896,9 @@ Please choose Cancel unless you know exactly what you are doing.
 	    }
 	}
 
+    symbol used = check_devices_used( logical_parts );
 
-    /////////////////////////////////////////////////////////////////////////////////////////
-    // check LVM partitions
-
-    if( size(filter( map part, logical_parts , ``( part["lvm_group"]:"" != "" ))) != 0)
+    if( used == `UB_LVM )
 	{
 	// popup text, Do not translate LVM.
 	Popup::Message(_("
@@ -980,26 +907,36 @@ assigned to a volume group. Remove all
 partitions from their respective volume groups
 before deleting the extended partition.
 "));
-	return false;
 	}
-
-
-    /////////////////////////////////////////////////////////////////////////////////////////
-    // check RAID partitions
-
-    if( size(filter( map part, logical_parts, ``( part["raid_name"]:"" != "" ))) != 0)
+    else if( used == `UB_MD )
 	{
-	// popup text, Do not translate LVM.
+	// popup text, Do not translate RAID.
 	Popup::Message(_("
 The selected extended partition contains at least one partition
 that is part of a RAID system. Unassign the
 partitions from their respective RAID systems before
 deleting the extended partition.
 "));
-	return false;
 	}
-
-    return true;
+    else if( used == `UB_EVMS )
+	{
+	// popup text, Do not translate EVMS.
+	Popup::Message(_("
+The selected extended partition contains at least one partition
+that is used by a EVMS volume. Remove the EVMS volume
+before deleting the extended partition.
+"));
+	}
+    else if( used != `UB_NONE )
+	{
+	// popup text, Do not translate RAID.
+	Popup::Message(_("
+The selected extended partition contains at least one partition
+that is in use. Remove the using volume before
+deleting the extended partition.
+"));
+	}
+    return( used==`UB_NONE );
     };
 }
 

@@ -11,7 +11,6 @@
 #include "FdiskAgent.h"
 #include "LvmAgent.h"
 #include "MdAgent.h"
-#include "EvmsAgent.h"
 
 typedef Y2AgentComp <FdiskAgent> Y2FdiskAgentComp;
 
@@ -24,8 +23,4 @@ Y2CCAgentComp <Y2LvmAgentComp> g_y2ccag_lvm ("ag_lvm");
 typedef Y2AgentComp <MdAgent> Y2MdAgentComp;
 
 Y2CCAgentComp <Y2MdAgentComp> g_y2ccag_md ("ag_md");
-
-typedef Y2AgentComp <EvmsAgent> Y2EvmsAgentComp;
-
-Y2CCAgentComp <Y2EvmsAgentComp> g_y2ccag_evms ("ag_evms");
 

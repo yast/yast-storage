@@ -41,21 +41,20 @@ define void handle_max( integer stripe, string max_text )
     UI::ChangeWidget(`id("max_text"), `Value, stripe==1?max_text:"" );
     }
     
-define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
+define map DlgCreateEditLogicaVolume( symbol create_or_edit, map<string,any> Lv,
 				      integer max_size, string vgname,
 				      list lvs, map<symbol,map> file_systems,
-				      boolean installation, string dev,
-				      integer pesize )
+				      string dev, integer pesize )
 
     ``{
-    y2milestone( "dev=%1 pesize=%2 max_size=%3", dev, pesize, max_size );
+    y2milestone( "DlgCreateEditLogicaVolume %4 dev=%1 pesize=%2 max_size=%3", 
+                 dev, pesize, max_size, create_or_edit );
 
-    integer new_size     = Lv["region",1]:0 * pesize;
-    y2milestone( "new_size %1", new_size );
-    integer old_size     = Lv["ori_length"]:new_size;
+    integer new_size     = Lv["size_k"]:0 * 1024;
+    integer old_size     = new_size;
     string  curr_size    = ByteToHumanStringWithZero(new_size);
     old_size = kmgt_str_to_byte(curr_size);
-    string  volume_name  = Lv["nr"]:"";
+    string  volume_name  = Lv["name"]:"";
     integer stripes      = Lv["stripes"]:1;
     integer stripesize   = Lv["stripesize"]:64;
 
@@ -93,7 +92,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
     string size_txt = sformat(_("&Size: (e.g., %1 %2)"), 
 			      ByteToHumanStringWithZero(4196*1024*1024),
 			      ByteToHumanStringWithZero(210*1024*1024));
-    if( create_or_edit != "create" )
+    if( create_or_edit != `create )
 	{
 	max_size = max_size+new_size;
 	y2milestone( "new max_size=%1", max_size );
@@ -104,7 +103,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 			      ByteToHumanStringWithZero(max_size));
 
 
-    if( create_or_edit == "create" )
+    if( create_or_edit == `create )
         {
 	// popup heading 
 	heading        = _("Create Logical Volume");
@@ -117,7 +116,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 				`Left(`Label(_("(e.g. var, opt)")))
 			      );
 	}
-    else if ( create_or_edit == "edit" )
+    else if( create_or_edit == `edit )
         {
 	// popup heading 
 	heading = _("Edit Logical Volume");
@@ -131,7 +130,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 				      `HStretch()
 				     ));
 	}
-    else if ( create_or_edit == "resize" )
+    else if( create_or_edit == `resize )
 	{
 	// popup heading 
 	heading = _("Edit Logical Volume");
@@ -145,8 +144,6 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 				      `HStretch()
 				     )
 			      );
-	stripes_poss = [ `item(`id(1), "-", true) ];
-	stripe_size = [ `item(`id(1), "-", true) ];
 	}
     else
 	{
@@ -279,7 +276,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 		{
 		new_size = kmgt_str_to_byte(lv_size);
 		
-		if ( !check_max_size(new_size, max_size) )
+	    if( !check_max_size(new_size, max_size) )
 		    {
 		    input_is_ok = false;
 		    c_ret = `again;
@@ -307,7 +304,7 @@ define map DlgCreateEditLogicaVolume( string create_or_edit, map<string,any> Lv,
 			}
 		    }
 
-		if ( is_create_mode )
+	    if( is_create_mode )
 		    {
 		    if( !icheck_volume_name(volume_name) )
 			{
@@ -357,33 +354,24 @@ or cancel this dialog.
 		}
 
 	    /////////////////////////////////////////////////////////
-	    retval["changed_size"] = new_size!=old_size;
 	    retval["stripes"] = stripes;
 	    if( stripes>1 )
 		{
 		retval["stripesize"] = stripesize;
 		}
-	    retval["nr"] = volume_name;
-	    retval["device"] = Storage::GetDeviceName( "/dev/"+vgname, 
-	                                               volume_name );
+	retval["name"] = volume_name;
+	retval["device"] = "/dev/"+vgname+"/"+volume_name;
 	    if( new_size!=old_size )
 		{
-		retval["region"] = [0, (new_size+pesize-1)/pesize ];
-		retval["lv_size"] = retval["region",1]:0 * pesize;
-		retval["size_byte"] = retval["region",1]:0 * pesize;
-		if( is_resize_mode && !haskey( retval, "ori_length"))
-		    {
-		    retval["ori_length"] = old_size;
+	    retval["size_k"] = (new_size+1023)/1024;
 		    }
-		}
-	    
       } until ( (c_ret==`ok&&input_is_ok) || c_ret == `cancel );
 
       UI::CloseDialog();
       
       y2milestone( "retval=%1", retval );
       
-      if (c_ret != `cancel && input_is_ok )
+    if( c_ret != `cancel && input_is_ok )
       {
 	  return( retval );
       }
@@ -399,55 +387,28 @@ or cancel this dialog.
  // Dialog "Create a Volume Group
  //////////////////////////////////////////////////////////////////////////////
 	 
-define map HandleEditLv( map<string,map> targetMap, map<integer,map> modify_targets, string id )
+define boolean HandleEditLv( map<string,map> targetMap, string device )
     ``{
-    map ret = $[];
-    string maindev = Storage::GetMainDevKey( id);
-    string subdev  = Storage::GetSubDevIndex( id );
-    string device  = Storage::GetDeviceName( maindev, subdev );
-    integer pesize = targetMap[maindev,"cyl_size"]:(4*1024*1024);
+    boolean ret = false;
+    map disk = Storage::GetDisk( targetMap, device );
+    integer pesize = disk["cyl_size"]:(4*1024*1024);
 
     map<symbol,map> fs = FileSystems::GetAllFileSystems(true, true);
-    map<string,any> Lv = (map<string,any>)Storage::GetPartition( targetMap, device );
+    map<string,any> Lv = Storage::GetPartition( targetMap, device );
 
     // if Lv is a lvm partition
     if( size(Lv)>0 )
 	{
-	string tmp_vg = substring( maindev, 5);
-	list size_list = 
-	    get_lv_size_info( targetMap,
-			      get_lvs_and_mounted_partitions( targetMap, false,
-			                                      tmp_vg ), 
-			      tmp_vg );
+	string tmp_vg = disk["name"]:"";
+	list size_list = get_lv_size_info( targetMap, tmp_vg );
 	integer max_size    = size_list[1]:0;
-	integer used_size   = size_list[0]:0;
-
-	if( Lv["create"]:false )
-	    {
-	    map createLv = DlgCreateEditLogicaVolume( "edit", Lv, max_size,
-						      tmp_vg, [], fs,
-						      Stage::initial (), device,
-						      pesize );
-
+	symbol what = (Lv["create"]:false)?`edit:`resize;
+	map createLv = DlgCreateEditLogicaVolume( what, Lv, max_size, tmp_vg,
+	                                          [], fs, device, pesize );
 	    // has an error occured
-	    if ( size(createLv)>0 )
+	if( size(createLv)>0 )
 		{
-		ret = editLogicalVolume( createLv, modify_targets, targetMap, 
-		                         tmp_vg );
-		}
-	    }
-	else
-	    {
-	    map createLv = DlgCreateEditLogicaVolume( "resize", Lv, max_size,
-						      tmp_vg, [], fs,
-						      Stage::initial (), device,
-						      pesize );
-	    // has an error occured
-	    if ( size(createLv)>0 )
-		{
-		ret = resizeLogicalVolume( createLv, modify_targets, targetMap,
-					   tmp_vg );
-		}
+	    ret = editLogicalVolume( createLv, tmp_vg );
 	    }
 	}
     else
@@ -459,14 +420,11 @@ define map HandleEditLv( map<string,map> targetMap, map<integer,map> modify_targ
     return( ret );
     }
 
-define map HandleRemoveLv( map<string,map> targetMap, map<integer,map> modify_targets, string id )
+define boolean HandleRemoveLv( map<string,map> targetMap, string id )
     ``{
-    map ret = $[];
-    string maindev = Storage::GetMainDevKey(id);
-    string subdev  = Storage::GetSubDevIndex(id );
-    string tmp_vg =  substring( maindev, 5);
-    string device = Storage::GetDeviceName(maindev, subdev);
-    map Lv = Storage::GetPartition( targetMap, device );
+    boolean ret = false;
+    map disk = Storage::GetDisk( targetMap, id );
+    map Lv = Storage::GetPartition( targetMap, id );
     if( size(Lv)==0 || Lv==nil )
 	{
 	// Popup text
@@ -475,33 +433,21 @@ define map HandleRemoveLv( map<string,map> targetMap, map<integer,map> modify_ta
     else
 	{
 	// Popup text
-	string message = sformat( _("Remove the logical volume %1?"), 
-	                          device );
+	string message = sformat( _("Remove the logical volume %1?"), id );
 
 	if( Popup::YesNo( message ))
 	    {
-	    y2debug( "Lv:  %1", Lv);
-	    y2debug( "modify_targets:  %1", modify_targets );
-	    y2debug( "targetMap: %1", targetMap);
-	    y2debug( "vgname:  %1", tmp_vg );
-	    map deleteLV = removeLogicalVolume( Lv, modify_targets, targetMap,
-	                                        tmp_vg );
-
-	    // has an error occured
-	    if( !deleteLV["error"]:false )
-		{
-		ret = (map)eval(deleteLV);
-		}
+	    ret = removeLogicalVolume( disk["device"]:"", id );
 	    }
 	}
+    y2milestone( "HandleRemoveLv ret:%1", ret );
     return( ret );
     }
 
 
-define map HandleRemoveVg( map<string,map> targetMap, map<integer,map> modify_targets, 
-			   string current_vg )
+define boolean HandleRemoveVg( map<string,map> targetMap, string current_vg )
     ``{
-    map ret = $[];
+    boolean ret = false;
     integer count = size(get_lv_names(targetMap, current_vg));
     if( count > 0 )
 	{
@@ -517,8 +463,7 @@ remove the volume group.
 	// popup text
 	if( Popup::ContinueCancel( sformat( _("Really remove the volume group \"%1\"?"), current_vg)))
 	    {
-	    y2milestone( " remove " );
-	    ret = removeVolumeGroup( current_vg, targetMap, modify_targets );
+	    ret = removeVolumeGroup( current_vg );
 	    }
 	}
     return( ret );
@@ -529,7 +474,7 @@ define map DlgCreateVolumeGroup( list vgm_list )
     string vgname = "";
     string pesize = "";
     boolean old_metadata = false;
-    boolean lvm2 = SCR::Read(.lvm.version) == 2;
+    boolean lvm2 = true;
 
     y2milestone( "lvm2 %1", lvm2 );
 
@@ -631,10 +576,7 @@ or cancel this dialog.
     if (ret == `ok )
 	{
 	map ret = $[ "vgname" : vgname, "pesize" : pesize_str_to_byte (pesize) ];
-	if( lvm2 )
-	    {
 	    ret["lvm2"] = !old_metadata;
-	    }
 	return( ret );
 	}
     else
