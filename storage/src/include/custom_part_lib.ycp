@@ -130,24 +130,24 @@ define list<list> scanAndReadExistingFstab( map<string,map> targetMap )
      */
 define boolean arePartitionsEqual( map part1, map part2 )
     ``{
-	if( part1["create"]:false )
-	    return true;
+    if( part1["create"]:false )
+	return true;
 
-	// -> not all keys
-	if( part1["nr"]:0 	       == part2["nr"]:0 &&
-	    part1["fsid"]:0 	       == part2["fsid"]:0 &&
-	    part1["region"]:[] 	       == part2["region"]:[] &&
-	    part1["create"]:false      == part2["create"]:false &&
-	    part1["format"]:false      == part2["format"]:false &&
-	    part1["used_fs"]:`unknown  == part2["used_fs"]:`unknown &&
+    // -> not all keys
+    if( part1["nr"]:0 	       == part2["nr"]:0 &&
+	part1["fsid"]:0 	       == part2["fsid"]:0 &&
+	part1["region"]:[] 	       == part2["region"]:[] &&
+	part1["create"]:false      == part2["create"]:false &&
+	part1["format"]:false      == part2["format"]:false &&
+	part1["used_fs"]:`unknown  == part2["used_fs"]:`unknown &&
 	part1["enc_type"]:`none    == part2["enc_type"]:`none &&
-	    part1["fstab_mnt"]:`device == part2["fstab_mnt"]:`device &&
-	    part1["label"]:""          == part2["label"]:"" &&
+	part1["fstab_mnt"]:`device == part2["fstab_mnt"]:`device &&
+	part1["label"]:""          == part2["label"]:"" &&
 	part1["mount"]:""          == part2["mount"]:"" )
 	{
-	    return true;
+	return true;
 	}
-	return false;
+    return false;
     }
 
   /**
@@ -157,17 +157,17 @@ define boolean arePartitionsEqual( map part1, map part2 )
    */
 define boolean check_lvm_mount_points( string mount ) 
     ``{
-       list not_allowed_lvm_mount_points  = [ Partitions::BootMount() ];
-       y2milestone( " check lvm mount");
+    list not_allowed_lvm_mount_points  = [ Partitions::BootMount() ];
+    y2milestone( " check lvm mount");
     if( contains( not_allowed_lvm_mount_points, mount ))
-       {
-           // error popup text
-	   Popup::Error(sformat(_("You cannot use the mount point \"%1\" for LVM.\n"), Partitions::BootMount()));
+        {
+        // error popup text
+	Popup::Error(sformat(_("You cannot use the mount point \"%1\" for LVM.\n"), Partitions::BootMount()));
 
 	    return false;
 	}
-	return true;
-   };
+    return true;
+    };
 
 
   /**
@@ -303,7 +303,7 @@ define boolean check_mount_point( map<string,map> targetMap, string dev, map par
 	[ "/proc", "/dev", "/mnt", "/var/adm/mnt", "/lost+found", "/lib", 
 	  "/bin", "/etc", "/sbin" ];
 
-    if ( mount != ""  && mount != "swap"  )
+    if ( mount != "" && mount != "swap"  )
 	{
 	// check if the mount point is already in use
 	foreach( string disk, map diskinfo, targetMap, ``{
@@ -311,7 +311,7 @@ define boolean check_mount_point( map<string,map> targetMap, string dev, map par
 		if( part["device"]:"" != dev )
 		    {
 		    // all valid partitions
-		    if ( part["mount"]:"" == mount )   allowed = false;
+		    if ( part["mount"]:"" == mount ) allowed = false;
 		    }
 		});
 	    });
@@ -879,49 +879,49 @@ define list AddFstabToData( map<string,map> targetMap, list<map> fstab )
 	    ``{
 	    map new_partition = partition;
 
-		foreach( map fstab_entry, fstab,
-		    ``{
-		    string dev_fstab   = fstab_entry["spec"]:"";
-		    string mount_fstab = fstab_entry["file"]:"";
-		    boolean found = false;
+	    foreach( map fstab_entry, fstab,
+		``{
+		string dev_fstab   = fstab_entry["spec"]:"";
+		string mount_fstab = fstab_entry["file"]:"";
+		boolean found = false;
 
-		    if( size(fstab_entry["label"]:"")>0 && 
-		        partition["label"]:"" == fstab_entry["label"]:"" )
+		if( size(fstab_entry["label"]:"")>0 && 
+		    partition["label"]:"" == fstab_entry["label"]:"" )
+		    {
+		    found = true;
+		    new_partition["mountby"] = `label;
+		    }
+		if( size(fstab_entry["uuid"]:"")>0 && 
+		    partition["uuid"]:"" == fstab_entry["uuid"]:"" )
+		    {
+		    found = true;
+		    new_partition["mountby"] = `uuid;
+		    }
+		else if( dev_fstab == partition["device"]:"" )
+		    {
+		    found = true;
+		    }
+		if( found )
+		    {
+		    new_partition["mount"] = mount_fstab;
+		    if( size(fstab_entry["mntops"]:"")>0 &&
+			fstab_entry["mntops"]:"" != "default" )
 			{
-			found = true;
-			new_partition["mountby"] = `label;
+			new_partition["fstopt"] = fstab_entry["mntops"]:"";
 			}
-		    if( size(fstab_entry["uuid"]:"")>0 && 
-		        partition["uuid"]:"" == fstab_entry["uuid"]:"" )
-			{
-			found = true;
-			new_partition["mountby"] = `uuid;
-			}
-		    else if( dev_fstab == partition["device"]:"" )
-			{
-			found = true;
-			}
-		    if( found )
-			{
-			new_partition["mount"] = mount_fstab;
-			if( size(fstab_entry["mntops"]:"")>0 &&
-			    fstab_entry["mntops"]:"" != "default" )
-			    {
-			    new_partition["fstopt"] = fstab_entry["mntops"]:"";
-			    }
 
-			/////////////////////////////////////////////
-			// entries for table
-			term a = `item(`id(dev_fstab));
-			a = add( a, dev_fstab );
-			a = add( a, mount_fstab );
-			if( mount_fstab=="/" )
-			    {
-			    table_input["root"] = dev_fstab;
-			    }
-			table_input["tbl"] = add( table_input["tbl"]:[], a );
+		    /////////////////////////////////////////////
+		    // entries for table
+		    term a = `item(`id(dev_fstab));
+		    a = add( a, dev_fstab );
+		    a = add( a, mount_fstab );
+		    if( mount_fstab=="/" )
+			{
+			table_input["root"] = dev_fstab;
 			}
-		    });
+		    table_input["tbl"] = add( table_input["tbl"]:[], a );
+		    }
+		});
 	    new_partitions = add( new_partitions, new_partition);
 	    });
 	target["partitions"] = new_partitions;
