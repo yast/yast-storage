@@ -153,167 +153,167 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 
 
 	foreach( map part, part_info, ``{
-		// All valid partitions ...
-		integer fsid       = part["fsid"]:0;
-		string  mountpoint = part["mount"]:"";
-		boolean is_mounted = size(mountpoint)>0;
+	    // All valid partitions ...
+	    integer fsid       = part["fsid"]:0;
+	    string  mountpoint = part["mount"]:"";
+	    boolean is_mounted = size(mountpoint)>0;
 
-		//////////////////////////////////////////////////////////////
-		// axp+aboot (bsd-label): look for first cylinders of disk
-		// see comment above
-		//////////////////////////////////////////////////////////////
+	    //////////////////////////////////////////////////////////////
+	    // axp+aboot (bsd-label): look for first cylinders of disk
+	    // see comment above
+	    //////////////////////////////////////////////////////////////
 
-		if ( (curr_boot_mode == "aboot") &&
-		     part["region",0]:0 <= nth_cyl && part["nr"]:0 != 3 )
+	    if ( (curr_boot_mode == "aboot") &&
+		 part["region",0]:0 <= nth_cyl && part["nr"]:0 != 3 )
+	    {
+		axp_start_dev          = disk;
+		axp_start_nth          = nth_cyl;
+		y2error("WWWWWWWWWWWWWWW1 %1", nth_cyl );
+
+		if ( part["create"]:false )
 		{
-		    axp_start_dev          = disk;
-		    axp_start_nth          = nth_cyl;
-		    y2error("WWWWWWWWWWWWWWW1 %1", nth_cyl );
-
-		    if ( part["create"]:false )
-		    {
-			y2error("WWWWWWWWWWWWWWW2 %1", nth_cyl );
-			axp_start_Cr_failure = true;
-		    }
-		    else
-		    {
-			y2error("WWWWWWWWWWWWWWW3 %1", nth_cyl );
-			axp_start_Ex_failure = true;
-		    }
+		    y2error("WWWWWWWWWWWWWWW2 %1", nth_cyl );
+		    axp_start_Cr_failure = true;
 		}
-
-		//////////////////////////////////////////////////////////////
-		// check for xfs: its experimental
-		//////////////////////////////////////////////////////////////
-		if ( part["used_fs"]:`unknown == `xfs &&
-		     part["format"]:false )
+		else
 		{
-		    xfs_found = true;
+		    y2error("WWWWWWWWWWWWWWW3 %1", nth_cyl );
+		    axp_start_Ex_failure = true;
 		}
+	    }
 
-		//////////////////////////////////////////////////////////////
-		// check for jfs: in ppc its experimental
-		//////////////////////////////////////////////////////////////
-		if ( Arch::ppc () && part["used_fs"]:`unknown == `jfs &&
-		     part["format"]:false )
-		{
-		    jfs_found = true;
-		}
+	    //////////////////////////////////////////////////////////////
+	    // check for xfs: its experimental
+	    //////////////////////////////////////////////////////////////
+	    if ( part["used_fs"]:`unknown == `xfs &&
+		 part["format"]:false )
+	    {
+		xfs_found = true;
+	    }
+
+	    //////////////////////////////////////////////////////////////
+	    // check for jfs: in ppc its experimental
+	    //////////////////////////////////////////////////////////////
+	    if ( Arch::ppc () && part["used_fs"]:`unknown == `jfs &&
+		 part["format"]:false )
+	    {
+		jfs_found = true;
+	    }
 
 
-		//////////////////////////////////////////////////////////////
-		// look for root and boot
-		//
-		//////////////////////////////////////////////////////////////
+	    //////////////////////////////////////////////////////////////
+	    // look for root and boot
+	    //
+	    //////////////////////////////////////////////////////////////
 
 	    if( mountpoint == "/" )
 		{
-		    if( diskinfo["label"]:"" == "gpt" )
-			{
-			gpt_warning = true;
-			}
-		    root_found = true;
-		    root_end   = part["region",0]:0 + part["region",1]:1-1;
+		if( diskinfo["label"]:"" == "gpt" )
+		    {
+		    gpt_warning = true;
+		    }
+		root_found = true;
+		root_end   = part["region",0]:0 + part["region",1]:1-1;
 		if( !contains( [ `primary, `logical ], part["type"]:`unknown ))
-		      {
-		      // root_end does not have anything to do with physical cylinders
-		      root_end = 0;
-		      }
-		    root_fs = part["used_fs"]:`unknown;
-		    root_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;   // 1GB/cylinder size
+		    {
+		    // root_end does not have anything to do with physical cylinders
+		    root_end = 0;
+		    }
+		root_fs = part["used_fs"]:`unknown;
+		root_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;   // 1GB/cylinder size
 
 		if ( part["type"]:`unknown==`sw_raid ) root_raid = true;
 		if( !boot_raid ) raid_type = part["raid_type"]:"";
-		    if ( part["type"]:`unknown==`lvm ) root_lvm = true;
+		if ( part["type"]:`unknown==`lvm ) root_lvm = true;
 		}
 	    else if( mountpoint == Partitions::BootMount() )
 		{
-		    if( diskinfo["label"]:"" == "gpt" )
-			{
-			gpt_warning = true;
-			}
-		    boot_found      = true;
-		    boot_start_cyl  = part["region",0]:0;
-		    boot_cyl_nb     = part["region",1]:0;
-		    boot_end        = part["region",0]:0 + part["region",1]:1-1;
-		    boot_fs         = part["used_fs"]:`unknown;
-		    boot_cyl_size   = diskinfo["cyl_size"]:1000000;
-		    // 1GB/cylinder size
-		    boot_cyl_for_gb = 1073741824 / boot_cyl_size;
-		    boot_size       = boot_cyl_size * boot_cyl_nb;
-		    if ( id_sw_raid_dev ) boot_raid = true;
+		if( diskinfo["label"]:"" == "gpt" )
+		    {
+		    gpt_warning = true;
+		    }
+		boot_found      = true;
+		boot_start_cyl  = part["region",0]:0;
+		boot_cyl_nb     = part["region",1]:0;
+		boot_end        = part["region",0]:0 + part["region",1]:1-1;
+		boot_fs         = part["used_fs"]:`unknown;
+		boot_cyl_size   = diskinfo["cyl_size"]:1000000;
+		// 1GB/cylinder size
+		boot_cyl_for_gb = 1073741824 / boot_cyl_size;
+		boot_size       = boot_cyl_size * boot_cyl_nb;
+		if ( id_sw_raid_dev ) boot_raid = true;
 		raid_type = part["raid_type"]:"";
 		}
-		else if ( mountpoint == "" )
+	    else if ( mountpoint == "" )
 		{
-		    if( Partitions::PrepBoot() &&
-			fsid == Partitions::fsid_prep_chrp_boot )
+		if( Partitions::PrepBoot() &&
+		    fsid == Partitions::fsid_prep_chrp_boot )
 		    {
-			boot_found      = true;
-			boot_end        = part["region",0]:0 + part["region",1]:1-1;
-			boot_cyl_nb     = part["region",1]:0;
-			boot_fs         = part["used_fs"]:`unknown;
-			boot_cyl_size   = diskinfo["cyl_size"]:1000000;
-			boot_cyl_for_gb = 1073741824 / boot_cyl_size;
-			boot_size       = boot_cyl_size * boot_cyl_nb;
-			boot_start_cyl  = part["region",0]:0;
+		    boot_found      = true;
+		    boot_end        = part["region",0]:0 + part["region",1]:1-1;
+		    boot_cyl_nb     = part["region",1]:0;
+		    boot_fs         = part["used_fs"]:`unknown;
+		    boot_cyl_size   = diskinfo["cyl_size"]:1000000;
+		    boot_cyl_for_gb = 1073741824 / boot_cyl_size;
+		    boot_size       = boot_cyl_size * boot_cyl_nb;
+		    boot_start_cyl  = part["region",0]:0;
 		    }
 		}
 
 
-		//////////////////////////////////////////////////////////////
-		// look for swap partition and check:
-		// - is there any
-		// - on sparc: is first partition a swap partition
-		//
-		// check only "swap" not fsid cause for example on pdisk fsid = 0
-		//
-		//////////////////////////////////////////////////////////////
+	    //////////////////////////////////////////////////////////////
+	    // look for swap partition and check:
+	    // - is there any
+	    // - on sparc: is first partition a swap partition
+	    //
+	    // check only "swap" not fsid cause for example on pdisk fsid = 0
+	    //
+	    //////////////////////////////////////////////////////////////
 
-		if( mountpoint == "swap" )
-		    {
-		    have_swap = true;
+	    if( mountpoint == "swap" )
+		{
+		have_swap = true;
 
-		    // first partition of a sparc system shouldn't be a swap
-		    // parition
+		// first partition of a sparc system shouldn't be a swap
+		// parition
 		if( Arch::sparc() && part["type"]:`unknown==`primary && 
 		    part["nr"]:0 == 1 )
-			{
-			sparc_first_is_swap = true;
-			sparc_first_dev     = disk;
-			}
+		    {
+		    sparc_first_is_swap = true;
+		    sparc_first_dev     = disk;
 		    }
+		}
 
 
-		// check if a fat filesystem  is greater than 2 GB
+	    // check if a fat filesystem  is greater than 2 GB
 	    if( part["used_fs"]:`unknown==`vfat && part["format"]:false )
 		{
-		    // uses a mountpoint like /usr / /var /home /opt with fat
+		// uses a mountpoint like /usr / /var /home /opt with fat
 		if( !fat_system_mount &&
 		    contains( [ "/usr", "/", "/home", "/var", "/opt" ],
 		              mountpoint ))
-			{
-			    fat_system_mount = true;
-			}
+		    {
+		    fat_system_mount = true;
 		    }
-
-		//    | NOT
-		//    v
-	    if(  ! ( fsid==Partitions::fsid_native ||
-			  fsid==Partitions::fsid_swap ||
-			  fsid==Partitions::fsid_extended ||
-			  fsid==Partitions::fsid_extended_win ||
-			  fsid==Partitions::fsid_raid ||
-			  fsid==Partitions::fsid_lvm ) )
-		{
-		    whole_disk = false;
 		}
 
-		if( !part["format"]:false &&
-		    FileSystems::IsSystemMp( part["mount"]:"", false ) )
-		    {
-		    partition_mounted_but_not_formated = true;
-		    }
+	    //   | NOT
+	    //   v
+	    if(  ! ( fsid==Partitions::fsid_native ||
+		     fsid==Partitions::fsid_swap ||
+		     fsid==Partitions::fsid_extended ||
+		     fsid==Partitions::fsid_extended_win ||
+		     fsid==Partitions::fsid_raid ||
+		     fsid==Partitions::fsid_lvm ) )
+		{
+		whole_disk = false;
+		}
+
+	    if( !part["format"]:false &&
+		FileSystems::IsSystemMp( part["mount"]:"", false ) )
+		{
+		partition_mounted_but_not_formated = true;
+		}
 
 	});
 
@@ -331,7 +331,7 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
       Storage::SetWholeDisk( all_whole_disk );
 
       if( (axp_start_Cr_failure && installation) || show_all_popups )
-      {
+	  {
           // popup text %2 is a disk name e.g. /dev/hda %1 is a number
 	  Popup::Error( sformat(_("\
 You have created a partition at the beginning of the disk %2.
@@ -340,12 +340,12 @@ Change the start cylinder of your partition to cylinder %1
 or delete this partition"), axp_start_nth +1, axp_start_dev ));
 
 	  retval = `again;
-      }
+	  }
 
 
 
       if ( ( axp_start_Ex_failure && installation ) || show_all_popups )
-      {
+	  {
           // popup text %2 is a disk name e.g. /dev/hda %1 is a number
 	  boolean ret = Popup::YesNo( sformat(_("You have a partition at the beginning of disk %2.
 This is not compatible with the bootloader.
@@ -356,10 +356,10 @@ Do you want to change your partitioning?
 "), axp_start_nth +1, axp_start_dev ) );
 
 	  if (ret == true) retval = `again;
-      }
+	  }
 
       if ( ( !Arch::ia64 () && installation && gpt_warning) || show_all_popups )
-      {
+	  {
           // popup text %2 is a disk name e.g. /dev/hda %1 is a number
 	  boolean ret = Popup::YesNo( sformat(_("The disk label type on your system disk is GPT.
 Linux can handle a GPT partition table fine, but most BIOS
@@ -369,15 +369,15 @@ disk label from a disk, use the menu entry
 
 Change your partitioning?
 "),
-	deletechars( _("Delete partition &table and disk label"), "&"),
-	deletechars( _("E&xpert.."), "&") ) );
+	  deletechars( _("Delete partition &table and disk label"), "&"),
+	  deletechars( _("E&xpert.."), "&") ) );
 
 	  if (ret == true) retval = `again;
-      }
+	  }
 
 
     if (( !root_found  && installation ) || show_all_popups  )
-    {
+	{
           // popup text
 	Popup::Error(_("
 YaST2 needs a root partition to install.
@@ -385,12 +385,12 @@ Assign the root mount point \"/\" to a partition.
 "));
 
 	retval = `again;
-    }
+	}
 
 
 
     if( fat_system_mount || show_all_popups )
-    {
+	{
         // popup text
 	Popup::Error(_("You tried to mount a fat partition to
 one of the following mount points: / /usr /home /opt /var.
@@ -398,12 +398,12 @@ Use a Linux file system, such as ext2 or reiserfs, for these mount points.
 "));
 
 	retval = `again;
-    }
+	}
 
     if( (boot_found) && installation || show_all_popups )
-    {
-	if ( boot_end >= Partitions::BootCyl() || show_all_popups )
 	{
+	if ( boot_end >= Partitions::BootCyl() || show_all_popups )
+	    {
 	    // popup text %1 is a number
 	    boolean ret = Popup::YesNo(sformat(_("Warning:
 Your boot partition ends above cylinder %1.
@@ -416,12 +416,12 @@ Change this?
 "),Partitions::BootCyl(),Product::name));
 
 	    if ( ret ) retval = `again;
-	}
+	    }
 
 
 	// not substring sparc!
 	if ( ( Arch::sparc32 () && boot_end >= boot_cyl_for_gb ) || show_all_popups )
-	{
+	    {
 	    // popup text
 	    boolean ret = Popup::YesNo(sformat(_("Warning:
 With the current setup, your %1
@@ -434,11 +434,11 @@ Change this?
 
 
 	    if (ret == true) retval = `again;
-	}
+	    }
 
 
 	if ( (boot_size < 12*1024*1024 && boot_size_check) || show_all_popups )
-	{
+	    {
 	    // popup text
 	    boolean ret = Popup::YesNo(_("Warning:
 Your boot partition is less than 12MB.
@@ -448,18 +448,18 @@ Do you want to do this?
 "));
 
 	    if (ret == true) retval = `again;
+	    }
 	}
-    }
 
     ///////////////////////////// NO BOOT ///////////////////////////
 
     if( (! boot_found && installation ) || show_all_popups )
-    {
+	{
 
 	// iSeries does not really need a boot partition
 	// a bootable binary will be written to a kernel slot in /proc
 	if( (Partitions::PrepBoot() && ! Arch::board_iseries ()) || show_all_popups )
-	{
+	    {
 	    // popup text
 	    // If the user chooses 'no' here, the system will not be able to
 	    // boot from the hard drive!
@@ -474,12 +474,12 @@ Do you want to change your setup?
 
 	    if (ret == true)  retval = `again;
 
-	}
+	    }
 
 
 	// no boot but root
 	if( (root_end >= Partitions::BootCyl() || show_all_popups) && AutoinstStorage::BootCylWarning )
-	{
+	    {
 	    // popup text
 	    boolean ret = Popup::YesNo(sformat(_("Warning: According to your setup, you intend to
 boot your machine from the root partition (/), which, unfortunately,
@@ -492,10 +492,10 @@ Change this?
 "), Partitions::BootCyl(),Product::name));
 
 	    if (ret == true)  retval = `again;
-	}
+	    }
 
 	if ( (Arch::sparc32 () && root_end >= root_cyl_for_gb) || show_all_popups )
-	{
+	    {
 	    // popup text
 	    boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %1
 installation might not be directly bootable, because
@@ -506,10 +506,10 @@ Change this?
 "),Product::name));
 
 	    if (ret == true) retval = `again;
-	}
+	    }
 
 	if ( (Arch::sparc () && root_fs != `ext2) || show_all_popups )
-	{
+	    {
 	    // popup text
 	    boolean ret = Popup::YesNo(sformat(
 _("Warning: With your current setup, your %1
@@ -521,15 +521,15 @@ Change this?
 "),Product::name));
 
 	    if (ret == true) retval = `again;
+	    }
 	}
-    }
 
 	// iSeries has no problems with this configuration
 	// an initrd will be created and you can boot from a kernel slot
     if ( installation && !Arch::board_iseries () &&
          ((((root_raid && !boot_found) || boot_raid) && raid_type!="raid1" ) || show_all_popups) && 
 	 AutoinstStorage::BootRaidWarning)
-	{
+	    {
 	    // popup text
 	    boolean ret = Popup::YesNo(sformat(
 _("Warning: With your current setup, your %1
@@ -541,14 +541,14 @@ Change this?
 "),Product::name));
 
 	    if (ret == true) retval = `again;
-	}
+	    }
 
 	// iSeries has no problems with this configuration
 	// an initrd will be created and you can boot from a kernel slot
     if ( installation && !Arch::board_iseries () &&
 	 ((root_lvm && !boot_found) || show_all_popups ) &&
 	 AutoinstStorage::BootLVMWarning )
-	{
+	    {
 	    // popup text
 	    boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %1 installation
 will encounter problems when booting, because you have no \"boot\"
@@ -563,7 +563,7 @@ Change this?
 "),Product::name));
 
 	    if (ret == true) retval = `again;
-	}
+	    }
 
 
     if( (Arch::ia64 () && installation && (!boot_found || boot_fs != `vfat)) ||
@@ -586,7 +586,7 @@ Change this?
 	}
 
     if ( (!have_swap && Stage::initial ()) || show_all_popups )
-    {
+	{
 	// popup text
 	boolean ret = Popup::YesNo(_("
 You have not assigned a swap partition. There is nothing wrong with that, but
@@ -600,10 +600,10 @@ Do you want to change this?
 "));
 
 	if (ret == true) retval = `again;
-    }
+	}
 
     if ( sparc_first_is_swap || show_all_popups )
-    {
+	{
 	// popup message
 	Popup::Error(  sformat(_("
 Your swap partition is the first partition of %1.
@@ -611,7 +611,7 @@ It is strongly recommended to change this, because
 the disk label will be deleted.
 "), sparc_first_dev ));
 	retval = `again;
-    }
+	}
 
     if( (partition_mounted_but_not_formated && installation) || show_all_popups )
 	{
@@ -740,7 +740,7 @@ Please remove the volume before you edit it."), curr_part["used_by"]:"" ));
     }
 
 define boolean check_device_delete( map curr_part, boolean bsd_label, 
-				      boolean installation )
+                                    boolean installation )
     ``{
     string part_name = curr_part["device"]:"";
 
@@ -775,10 +775,10 @@ Please remove it from the volume group before you delete it."),curr_part["used_b
 	    // popup text %2 is a device name, %1 is the raid name
 	    Popup::Message(sformat(_("The device (%2) belongs to the RAID (%1).
 Please remove it from the RAID before you delete it."), curr_part["used_by"]:"", part_name ));
-	}
+	    }
 
 	else if( used == `UB_EVMS)
-	{
+	    {
 	    // popup text %2 is a device name, %1 is the EVMS name
 	    Popup::Message(sformat(_("The device (%2) is used by EVMS object (%1).
 Please remove the EVMS object before you delete it."), curr_part["used_by"]:"", part_name ));
@@ -824,11 +824,11 @@ If you proceed, YaST2 will try unmounting before deleting it.
 Remove device anyway?
 "), mounts );
 			ret = Popup::AnyQuestion3( Label::WarningMsg(), message,
-						     Label::YesButton(),
-						     Label::NoButton(),
-						     // button text
-						     _("&Retry umount"),
-						     `focus_yes );
+						   Label::YesButton(),
+						   Label::NoButton(),
+						   // button text
+						   _("&Retry umount"),
+						   `focus_yes );
 			}
 		    }
 		while( ret == `retry );
@@ -851,7 +851,7 @@ define boolean check_extended_delete( map curr_disk, boolean installation )
     /////////////////////////////////////////////////
     // get logical partitions
     list<map> logical_parts = filter( map part, partitions, 
-                                 ``( part["type"]:`primary == `logical));
+				      ``( part["type"]:`primary == `logical));
     y2milestone( "check_extended_delete logical_parts %1", logical_parts );
     list logical_parts_names = [];
     logical_parts_names = maplist( map p, logical_parts, ``(p["device"]:"") );

@@ -207,178 +207,178 @@ define map DlgCreateEditLogicaVolume( symbol create_or_edit, map<string,any> Lv,
 	       )));
 
 
-      // configure main dialog for the first call
+    // configure main dialog for the first call
 
-      if( is_create_mode )
-	  {
-	  UI::ChangeWidget( `id("volume_name"), `ValidChars, 
-			    FileSystems::nchars + "-._:" );
-	  }
-      UI::ChangeWidget( `id("stripes"), `Enabled, !is_resize_mode );
-      UI::ChangeWidget( `id("stripesize"), `Enabled, 
-                        !is_resize_mode && stripes>1 );
-      handle_max( stripes, max_text );
+    if( is_create_mode )
+	{
+	UI::ChangeWidget( `id("volume_name"), `ValidChars, 
+			  FileSystems::nchars + "-._:" );
+	}
+    UI::ChangeWidget( `id("stripes"), `Enabled, !is_resize_mode );
+    UI::ChangeWidget( `id("stripesize"), `Enabled, 
+		      !is_resize_mode && stripes>1 );
+    handle_max( stripes, max_text );
   
-      ////////////////////////////////////////////////////////////////////
-      // User mainloop for dialog
-      ////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////
+    // User mainloop for dialog
+    ////////////////////////////////////////////////////////////////////
       
-      boolean input_is_ok = true;
-      map<string,any> retval = eval(Lv);
+    boolean input_is_ok = true;
+    map<string,any> retval = eval(Lv);
 
-      retval = HandlePartWidgetChanges( true, `ok, file_systems, Lv, retval );
+    retval = HandlePartWidgetChanges( true, `ok, file_systems, Lv, retval );
 
-      repeat
-      {
-	    input_is_ok  = true;
-	    
-	    c_ret = UI::UserInput();
+    repeat
+	{
+	input_is_ok  = true;
+	  
+	c_ret = UI::UserInput();
 
-	    /////////////////////////////////////////////////////////
-	    if( c_ret == "stripes")
-		{
-		stripes = (integer)UI::QueryWidget(`id("stripes"), `Value);
-	        UI::ChangeWidget( `id("stripesize"), `Enabled, 
-				  !is_resize_mode && stripes>1 );
-		handle_max( stripes, max_text );
-		c_ret = `again;
-		continue;
-		}
-
-	    /////////////////////////////////////////////////////////
-	    // stripes
-	    if( c_ret == "max_size")
-		{
-		UI::ChangeWidget(`id("size"), `Value, ByteToHumanStringWithZero(max_size));
-		c_ret = `again;
-		continue;
-		}
-
-	    if( c_ret != `cancel )
-		{
-		retval = HandlePartWidgetChanges( false, c_ret, file_systems,
-		                                  Lv, retval );
-		}
-	    
-	    if( is_create_mode ) 
-		{
-		volume_name = (string)UI::QueryWidget( `id("volume_name"), 
-		                                       `Value );
-		volume_name = deletechars( volume_name, " \t" );
-		}
-
+	/////////////////////////////////////////////////////////
+	if( c_ret == "stripes")
+	    {
 	    stripes = (integer)UI::QueryWidget(`id("stripes"), `Value);
-	    stripesize = (integer)UI::QueryWidget(`id("stripesize"), `Value);
-	    lv_size = (string)UI::QueryWidget(`id("size"),    `Value);
-	   
-	    y2debug("STRI ---- i%1i", stripes);
-	    if( c_ret==`ok )
-		{
-		new_size = kmgt_str_to_byte(lv_size);
-		
+	    UI::ChangeWidget( `id("stripesize"), `Enabled, 
+			      !is_resize_mode && stripes>1 );
+	    handle_max( stripes, max_text );
+	    c_ret = `again;
+	    continue;
+	    }
+
+	/////////////////////////////////////////////////////////
+	// stripes
+	if( c_ret == "max_size")
+	    {
+	    UI::ChangeWidget(`id("size"), `Value, ByteToHumanStringWithZero(max_size));
+	    c_ret = `again;
+	    continue;
+	    }
+
+	if( c_ret != `cancel )
+	    {
+	    retval = HandlePartWidgetChanges( false, c_ret, file_systems,
+					      Lv, retval );
+	    }
+	  
+	if( is_create_mode ) 
+	    {
+	    volume_name = (string)UI::QueryWidget( `id("volume_name"), 
+						   `Value );
+	    volume_name = deletechars( volume_name, " \t" );
+	    }
+
+	stripes = (integer)UI::QueryWidget(`id("stripes"), `Value);
+	stripesize = (integer)UI::QueryWidget(`id("stripesize"), `Value);
+	lv_size = (string)UI::QueryWidget(`id("size"), `Value);
+	 
+	y2debug("STRI ---- i%1i", stripes);
+	if( c_ret==`ok )
+	    {
+	    new_size = kmgt_str_to_byte(lv_size);
+	    
 	    if( !check_max_size(new_size, max_size) )
+		{
+		input_is_ok = false;
+		c_ret = `again;
+		continue;
+		}
+	    y2milestone( "new_size %1 old_size %2", new_size, old_size );
+
+	    if( !check_ok_fssize(new_size, retval) )
+		{
+		input_is_ok = false;
+		c_ret = `again;
+		continue;
+		}
+
+	    if( is_resize_mode && !retval["format"]:false && 
+		new_size!=old_size )
+		{
+		if( !CheckResizePossible( true, true, new_size-old_size,
+					  retval["used_fs"]:`unknown,
+					  retval["mount"]:"" ))
 		    {
-		    input_is_ok = false;
+		    UI::ChangeWidget(`id("size"), `Value, curr_size );
 		    c_ret = `again;
 		    continue;
 		    }
-		y2milestone( "new_size %1 old_size %2", new_size, old_size );
-
-		if( !check_ok_fssize(new_size, retval) )
-		    {
-		    input_is_ok = false;
-		    c_ret = `again;
-		    continue;
-		    }
-
-		if( is_resize_mode && !retval["format"]:false && 
-		    new_size!=old_size )
-		    {
-		    if( !CheckResizePossible( true, true, new_size-old_size,
-		                              retval["used_fs"]:`unknown,
-		                              retval["mount"]:"" ))
-			{
-			UI::ChangeWidget(`id("size"), `Value, curr_size );
-			c_ret = `again;
-			continue;
-			}
-		    }
+		}
 
 	    if( is_create_mode )
+		{
+		if( !icheck_volume_name(volume_name) )
 		    {
-		    if( !icheck_volume_name(volume_name) )
+		    input_is_ok = false;
+		    // error popup text
+		    // xgettext:no-c-format
+		    Popup::Error(_("Check your volume name. 
+Use names like \"opt\" or \"var\" ...
+Do not use ;/\`',!\"%#"));
+		    UI::SetFocus(`id("volume_name"));
+		    c_ret = `again;
+		    continue;
+		    }
+		else 
+		    {
+		    if( contains( lvs, volume_name ) )
 			{
 			input_is_ok = false;
 			// error popup text
-			// xgettext:no-c-format
-			Popup::Error(_("Check your volume name. 
-Use names like \"opt\" or \"var\" ...
-Do not use ;/\`',!\"%#"));
+			Popup::Error(sformat(_("A logical volume named \"%1\" already exists
+in volume group \"%2\". Choose another name
+or cancel this dialog.
+"), volume_name, vgname ));
 			UI::SetFocus(`id("volume_name"));
 			c_ret = `again;
 			continue;
 			}
-		    else 
-			{
-			if( contains( lvs, volume_name ) )
-			    {
-			    input_is_ok = false;
-			    // error popup text
-			    Popup::Error(sformat(_("A logical volume named \"%1\" already exists
-in volume group \"%2\". Choose another name
-or cancel this dialog.
-"), volume_name, vgname ));
-			    UI::SetFocus(`id("volume_name"));
-			    c_ret = `again;
-			    continue;
-			    }
-			}   
-		    }
-
-		map ret_mp = CheckOkMount( dev, Lv, retval );
-		retval = ret_mp["map"]:$[];
-		if( !ret_mp["ok"]:false )
-		    {
-		    if( ret_mp["field"]:`none != `none )
-			UI::SetFocus(`id( ret_mp["field"]:`none ));
-		    input_is_ok = false;
-		    c_ret = `again;
-		    continue;
-		    }
-
-		ret_mp = CheckCryptOk( retval );
-		if( !ret_mp["ok"]:false )
-		    input_is_ok = false;
-		else
-		    retval = ret_mp["map"]:$[];
+		    }   
 		}
 
-	    /////////////////////////////////////////////////////////
-	    retval["stripes"] = stripes;
-	    if( stripes>1 )
+	    map ret_mp = CheckOkMount( dev, Lv, retval );
+	    retval = ret_mp["map"]:$[];
+	    if( !ret_mp["ok"]:false )
 		{
-		retval["stripesize"] = stripesize;
+		if( ret_mp["field"]:`none != `none )
+		    UI::SetFocus(`id( ret_mp["field"]:`none ));
+		input_is_ok = false;
+		c_ret = `again;
+		continue;
 		}
+
+	    ret_mp = CheckCryptOk( retval );
+	    if( !ret_mp["ok"]:false )
+		input_is_ok = false;
+	    else
+		retval = ret_mp["map"]:$[];
+	    }
+
+	/////////////////////////////////////////////////////////
+	retval["stripes"] = stripes;
+	if( stripes>1 )
+	    {
+	    retval["stripesize"] = stripesize;
+	    }
 	retval["name"] = volume_name;
 	retval["device"] = "/dev/"+vgname+"/"+volume_name;
-	    if( new_size!=old_size )
-		{
+	if( new_size!=old_size )
+	    {
 	    retval["size_k"] = (new_size+1023)/1024;
-		    }
-      } until ( (c_ret==`ok&&input_is_ok) || c_ret == `cancel );
+	    }
+	} until ( (c_ret==`ok&&input_is_ok) || c_ret == `cancel );
 
-      UI::CloseDialog();
+    UI::CloseDialog();
       
-      y2milestone( "retval=%1", retval );
+    y2milestone( "retval=%1", retval );
       
     if( c_ret != `cancel && input_is_ok )
-      {
-	  return( retval );
-      }
-      else
-      {
-	  return( nil );
-      }
+	{
+	return( retval );
+	}
+    else
+	{
+	return( nil );
+	}
     };
     
 
@@ -405,9 +405,9 @@ define boolean HandleEditLv( map<string,map> targetMap, string device )
 	symbol what = (Lv["create"]:false)?`edit:`resize;
 	map createLv = DlgCreateEditLogicaVolume( what, Lv, max_size, tmp_vg,
 	                                          [], fs, device, pesize );
-	    // has an error occured
+	// has an error occured
 	if( size(createLv)>0 )
-		{
+	    {
 	    ret = editLogicalVolume( createLv, tmp_vg );
 	    }
 	}
@@ -576,7 +576,7 @@ or cancel this dialog.
     if (ret == `ok )
 	{
 	map ret = $[ "vgname" : vgname, "pesize" : pesize_str_to_byte (pesize) ];
-	    ret["lvm2"] = !old_metadata;
+	ret["lvm2"] = !old_metadata;
 	return( ret );
 	}
     else
