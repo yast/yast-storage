@@ -1667,100 +1667,6 @@ global define void Storage()
 
    */
 
-
-
-    /*
-     * @param key maindevkey or subdevkey e.g.:  "/dev/hda" or  "1//dev/hda"
-     * @return boolean
-     */
-    global define boolean IsKeyMainDevKey(string key )``{
-	if(  substring( key, 0, 1) == "/" )
-	    return true;
-	return false;
-
-	/* TODO regexpmatch dont't work at the moment */
-	//return regexpmatch( key, "/dev/.*" );
-    }
-
-    /* key - maindevkey - subdevkey defines */
-
-    /*
-     * Build a subdevkey with a maindevkey and a subdevindex.
-     * subdevkey = subdevkey + "/" + maindevkey
-     * @param maindevkey e.g.: /dev/hda
-     * @param subdevkey e.g.: 1, "usr" ..
-     * @return string "1//dev/hda" or "usr//dev/system" or "" by error
-     */
-    global define string GetSubDevKey(string maindevkey, any subdevindex )``{
-	if( ! IsKeyMainDevKey( maindevkey ) )
-	{
-	    return "";
-	}
-
-	return sformat("%1/%2",subdevindex, maindevkey);
-    }
-
-
-    /*
-     * Find a subdevkey in a key and return the subdevkey is one found else return nil.
-     * @param key e.g.: "1//dev/hda" or "usr//dev/system" ..
-     * @return string e.g.: "1" or "usr" ..
-     */
-    global define string GetSubDevIndex( string key )``{
-
-	integer column = findfirstof( key, "/" );
-
-	if ( column != nil )
-	{
-	    return( substring( key, 0, column));
-	}
-	else
-	{
-	    return( nil );
-	}
-    }
-
-
-    /*
-     * @param key maindevkey or subdevkey e.g.:  "/dev/hda" or  "1//dev/hda"
-     * @return string maindev e.g.: "/dev/hda" or "/dev/system"
-     */
-    global define string GetMainDevKey( string key )``{
-
-	if( IsKeyMainDevKey( key ) )
-	    return key;
-
-	integer column = findfirstof( key, "/" );
-
-	if ( column != nil )
-	{
-	    return( substring( key, column+1));
-	}
-	else
-	{
-	    return( nil );
-	}
-    }
-
-
-
-
-
-    /*
-     * @param key maindevkey or subdevkey e.g.:  "/dev/hda" or  "1//dev/hda"
-     * @return boolean
-     */
-    global define boolean IsKeySubDevKey(string key)``{
-
-	if(  substring( key, 0, 1) != "/" )
-	    return true;
-	return false;
-
-	/* TODO regexpmatch don't work at the moment */
-	//return regexpmatch( key, ".*//dev/.*"  );
-    }
-
-
     /* MainDev defines ------------------------------------------------------------------
     /* partition_defines -> isDisk */
     /* partition_defines -> isRaid */
@@ -1771,12 +1677,6 @@ global define void Storage()
 
 
 
-
-
-    global define boolean DelMainDev(string maindevkey )``{
-
-	return false;
-    }
 
 
 global define map<string,map> RemoveAllPartEntry( map<string,map> tg, string skey, string value )
@@ -2883,9 +2783,9 @@ GetIdSmaller( string disk, integer delim )
     string ret = disk;
     map<string,map> tg = GetTargetMap();
     list<map> ps = filter( map p, tg[disk,"partitions"]:[], ``(p["nr"]:0<delim));
-    ps = sort( map a, map b, ps, ``(a["nr"]:(any)0>b["nr"]:(any)0));
+    ps = sort( map a, map b, ps, ``(a["nr"]:0>b["nr"]:0));
     if( size(ps)>0 )
-	ret = GetSubDevKey( disk, ps[0,"nr"]:(any)0 );
+	ret = ps[0,"device"]:"";
     y2milestone( "GetIdSmaller disk:%1 delim:%2 ret:%3",
                  disk, delim, ret );
     return( ret );
@@ -4454,94 +4354,9 @@ global define boolean CheckForMdRootFs()
     return ret;
     };
 
-/**
- * Return a map that contains the maindev for maindevkey.
- * @param maindevkey
- * @return map
- */
-global define map<string, any> GetMainDev(string maindevkey )``{
-    map<string, any> maindev = (map<string, any>)GetTargetMap()[maindevkey]:$[];
-
-    if( maindev == $[] )
-	{
-	y2milestone("GetMainDev return empty map $[] (default value)");
-	y2milestone("No maindev with key %1 in Storage found.", maindevkey );
-	}
-    return maindev;
-    }
-
-global define any GetMainDevParam( string maindevkey, string paramkey, 
-                                   any defaultv )
-    ``{
-    any param =  GetMainDev( maindevkey )[paramkey]:defaultv;
-
-    return param;
-    }
-
-/**
- * Return true if Storage contains a maindev with the key "maindevkey".
- * @return boolean
- * @param maindevkey
- *
- */
-global define boolean ExistsMainDevKeyEntry( string maindevkey )
-    ``{
-    if( GetMainDev( maindevkey) != $[] )
-	return true;
-    return false;
-    }
-
-/**
- * Modify a maindev in Storage.
- * @param maindevkey describe the maindev
- * @param newmaindev map with modified maindev
- * @return boolean
- */
-global define boolean SetMainDev( string maindevkey, map<string, any> newmaindev )
-    ``{
-    if( ! ExistsMainDevKeyEntry( maindevkey ))
-	{
-	return false;
-	}
-    else
-	{
-	map<string,map> new_targetMap =  
-	    add( GetTargetMap(), maindevkey, newmaindev );
-	SetTargetMap( new_targetMap );
-	return true;
-	}
-    }
-
-global define boolean SetMainDevParam(string maindevkey, string paramkey, any newparam )
-    ``{
-    map<string, any> maindev = GetMainDev( maindevkey);
-
-    if( maindev == $[] )
-	return false;
-
-    maindev     = add( maindev, paramkey, newparam );
-    return SetMainDev( maindevkey, maindev );
-    }
-
-/* replace SubDev entry with newsubdev */
-global define boolean SetSubDev( string subdevkey, map newsubdev )
-    ``{
-    string maindevkey = GetMainDevKey( subdevkey );
-    list<map> partitions = (list<map>) GetMainDevParam( maindevkey, "partitions", [] );
-
-    // and now delete the old partition number in curr_disk to replace it in the next step
-    list r_part =
-	filter(map c_part, partitions ,
-		``(sformat("%1", c_part["nr"]:(any)0) != GetSubDevIndex( subdevkey)));
-
-    // netxt step: insert changed partition
-    r_part    = add( r_part,   newsubdev );
-    return SetMainDevParam( maindevkey, "partitions", r_part );
-    }
-
 global define void AdaptResize( string maindev, list region, integer schange )
     ``{
-    map tg = GetTargetMap();
+    map<string,map> tg = GetTargetMap();
     list<map> partitions = tg[maindev,"partitions"]:[];
     integer cylinder = region[0]:0 + region[1]:0;
     boolean found = false;
@@ -4577,7 +4392,7 @@ global define void AdaptResize( string maindev, list region, integer schange )
 		    p["type"]:`primary != `extended )
 		    {
 		    found = true;
-		    part = (map)eval(p);
+		    part = p;
 		    }
 		else if( !found )
 		    {
@@ -4596,17 +4411,17 @@ global define void AdaptResize( string maindev, list region, integer schange )
 	while( pnew != nil &&
 	       (part["mount"]:"" == Partitions::BootMount() ||
 	        part["fsid"]:0==Partitions::fsid_swap ||
-	        part["region",1]:0 < (schange<0?(-1*schange):schange)) )
+		part["region",1]:0 < (schange<0?(-1*schange):schange)) )
 	    {
 	    y2milestone( "AdaptResize pnew:%1", pnew );
-	    part = (map)eval(pnew);
+	    part = pnew;
 	    idx_list = add( idx_list, index );
+	    y2milestone( "AdaptResize index:%1 idx_list:%2", index, idx_list );
 	    found = false;
 	    index = 0;
 	    foreach(map p, partitions, ``{
 	        y2milestone( "found:%1 index:%2 p=%3", found, index, p );
-		if( p["delete"]:false == false &&
-		    p["nr"]:(any)0 == pnew["nr"]:(any)0 )
+		if( p["nr"]:0 == pnew["nr"]:0 )
 		    {
 		    found = true;
 		    }
@@ -4621,12 +4436,21 @@ global define void AdaptResize( string maindev, list region, integer schange )
 				   p["create"]:false ));
 	    }
 	y2milestone( "AdaptResize idx:%1 list:%2", index, idx_list );
+
+	foreach(integer num, idx_list, ``{
+	    partitions[num,"region",0] = partitions[num,"region",0]:0 - schange;
+	    UpdatePartition( partitions[num,"device"]:"", partitions[num,"region",0]:0,
+			     partitions[num,"region",1]:1 );
+	    });
 	partitions[index,"region",0] = partitions[index,"region",0]:0 - schange;
 	partitions[index,"region",1] = partitions[index,"region",1]:0 + schange;
 	if( partitions[index,"region",1]:0 <= 0 )
 	    {
 	    partitions[index,"region",1] = 1;
 	    }
+	y2milestone( "AdaptResize increase p:%1", partitions[index]:$[] );
+	UpdatePartition( partitions[index,"device"]:"", partitions[index,"region",0]:0,
+	                 partitions[index,"region",1]:1 );
 	if( e_idx>=0 )
 	    {
 	    partitions[e_idx,"region",0] = partitions[e_idx,"region",0]:0 - schange;
@@ -4635,17 +4459,15 @@ global define void AdaptResize( string maindev, list region, integer schange )
 		{
 		partitions[e_idx,"region",1] = 1;
 		}
+	    UpdatePartition( partitions[e_idx,"device"]:"", partitions[e_idx,"region",0]:0,
+			     partitions[e_idx,"region",1]:1 );
 	    }
-
-	foreach(integer num, idx_list, ``{
-	    partitions[num,"region",0] = partitions[num,"region",0]:0 - schange;
-	    });
 	}
     else
 	{
 	y2error( "AdaptResize this should not happen %1", partitions );
 	}
-    SetMainDevParam( maindev, "partitions", partitions );
+    y2milestone( "AdaptResize partitions:%1", partitions );
     y2milestone( "AdaptResize maindev:%1 region:%2 change:%3", maindev,
                  region, schange );
     }
