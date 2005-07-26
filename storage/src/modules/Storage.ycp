@@ -1328,12 +1328,19 @@ global define map<string,map> GetTargetMap();
 
 global define map GetOndiskTarget()
     {
+    list keys = [ "mount", "enc_type", "mountby", "fstopt", "used_fs", "format" ];
     map<string,map> ret = GetTargetMap();
     foreach( string d, map disk, ret,
 	``{
 	list<map> pl = 
-	    maplist( map p, disk["partitions"]:[],
-		     ``( haskey(p,"mount") ? remove(p,"mount") : p ));
+	    maplist( map<string,any> p, disk["partitions"]:[],
+		     ``( filter( string k, any e, p, ``(!contains(keys,k)))));
+	pl = maplist( map p, pl,
+		      ``({ 
+		      if( p["detected_fs"]:`unknown!=`unknown )
+			  p["used_fs"] = p["detected_fs"]:`unknown; 
+		      return(p);
+		      }));
 	ret[d,"partitions"] = pl;
 	});
     return( ret );
@@ -2671,6 +2678,26 @@ global boolean Mount( string dev, string mp )
     {
     boolean ret = LibStorage::StorageInterface::mountDevice( sint, dev, mp );
     y2milestone( "Mount %1 to %2 ret %3", dev, mp, ret );
+    return( ret );
+    }
+
+global list ReadFstab( string dir )
+    {
+    list ret = [];
+    list<any> vinfos = [];
+    boolean r = LibStorage::StorageInterface::readFstab( sint, dir, vinfos );
+    if( !r )
+	y2error( "ReadFstab sint dir %1 ret %2", dir, r );
+    else
+	{
+	foreach( any info, vinfos, 
+	    ``{
+	    map p = $[];
+	    p = volumeMap( info, p );
+	    ret = add( ret, p );
+	    });
+	}
+    y2milestone( "ReadFstab from %1 ret %2", dir, ret );
     return( ret );
     }
 
