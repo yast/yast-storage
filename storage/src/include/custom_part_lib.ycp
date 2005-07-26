@@ -40,57 +40,36 @@ define list<list> findExistingFstab( map<string,map> targetMap, string search_po
     list<list>    fstab = [];
     list    skip_fs = [ `unknown, `swap, `vfat, `ntfs ];
 
-    if( Stage::initial () )
-	Storage::SetMdOn( true );
-
     foreach( string dev, map disk, targetMap, 
 	``{
-	foreach( map partition, filter( map p, disk["partitions"]:[], 
-	                             ``(!contains( skip_fs, p["detected_fs"]:`unknown) )),
+	foreach( map part, 
+	         filter( map p, disk["partitions"]:[], 
+				``(!contains( skip_fs, p["detected_fs"]:`unknown) )),
 	    ``{
-	    symbol fs = partition["detected_fs"]:`ext2;
 	    /////////////////////////////////////////////////////
 	    // try to mount
-
-	    FileSystems::LoadModule( fs );
-	    string cmd = sformat( "/bin/mount %1 %2 %3 2>&1", 
-	                          FileSystems::GetMountOption( fs ),
-				  partition["device"]:"", search_point );
-	    y2milestone( "cmd %1", cmd );
-	    map bc = (map)SCR::Execute(.target.bash_output, cmd );
-	    y2milestone( "%1", bc );
-	    boolean mount_success = bc["exit"]:1 == 0;
+	    boolean mount_success = Storage::Mount( part["device"]:"",
+	                                            search_point );
 
 	    if( mount_success &&
 		SCR::Read(.target.size, search_point+"/etc/fstab") > 0 )
 		{
-		if( SCR::Read(.target.size, "/etc/fstab") > 0 )
-		    SCR::Execute(.target.unlink, "/etc/fstab" );
-		cmd = "/bin/cp " + Installation::scr_destdir + "/etc/fstab /etc";
-		y2milestone( "cmd %1", cmd );
-		if( SCR::Execute(.target.bash, cmd ) == 0)
+		list tmp = Storage::ReadFstab( search_point+"/etc" );
+		y2milestone( "findExistingFstab fstab %1", tmp );
+		if( size(tmp)>0 )
 		    {
-		    SCR::UnmountAgent(.etc.fstab);
-		    list tmp = (list)SCR::Read( .etc.fstab );
-		    y2milestone( "fstab %1", tmp );
-		    if( size(tmp)>0 )
-			{
-			fstab = add( fstab, tmp );
-			}
+		    fstab = add( fstab, tmp );
 		    }
 		}
 
 	    /////////////////////////////////////////////////////
 	    // unmount
-
 	    if( mount_success )
-		SCR::Execute(.target.bash, "/bin/umount " + search_point );
+		Storage::Umount( part["device"]:"" );
 	    });
 	});
-    if( Stage::initial () )
-	Storage::SetMdOn( false );
-    y2milestone( "count_fstab_found %1", size(fstab) );
-    y2milestone( "fstab %1", fstab );
+    y2milestone( "findExistingFstab count_fstab_found %1", size(fstab) );
+    y2milestone( "findExistingFstab fstab %1", fstab );
     return fstab;
     };
 
@@ -493,7 +472,7 @@ define map CheckCryptOk( map new )
         size(Storage::GetCryptPwd( new["device"]:"create_loop" ))==0 &&
         (!new["noauto"]:false||new["format"]:false) )
 	{
-	string fs_passwd = DlgCreateCryptFs( new["format"]:false?8:5 );
+	string fs_passwd = DlgCreateCryptFs( new["device"]:"", new["format"]:false?8:5 );
 	// Ask the user for a password for cryptofs, else set crypto to nil??
 	if( fs_passwd != nil && size(fs_passwd)>0 )
 	    {
@@ -851,24 +830,9 @@ define list AddFstabToData( map<string,map> targetMap, list<map> fstab )
     if( fstab == nil )
 	return [targetMap] ;
 
-    fstab = maplist( map e, fstab,
-	``{
-	string name = e["spec"]:"";
-	integer pos = findlastof( name, "=" );
-	if( find( name, "LABEL" )==0 && pos>0 )
-	    {
-	    e["label"] = substring( name, pos+1 );
-	    }
-	else if( find( name, "UUID" )==0 && pos>0 )
-	    {
-	    e["uuid"] = substring( name, pos+1 );
-	    }
-	return( e );
-	});
-
     y2milestone( "AddFstabToData fstab = %1", fstab );
 
-    map new_targetMap = (map)eval( targetMap );
+    map new_targetMap = targetMap;
     map table_input = $["tbl":[]];
 
     foreach( string dev, map disk, targetMap,
@@ -881,34 +845,26 @@ define list AddFstabToData( map<string,map> targetMap, list<map> fstab )
 
 	    foreach( map fstab_entry, fstab,
 		``{
-		string dev_fstab   = fstab_entry["spec"]:"";
-		string mount_fstab = fstab_entry["file"]:"";
+		string dev_fstab   = fstab_entry["device"]:"";
+		string mount_fstab = fstab_entry["mount"]:"";
 		boolean found = false;
 
-		if( size(fstab_entry["label"]:"")>0 && 
-		    partition["label"]:"" == fstab_entry["label"]:"" )
-		    {
-		    found = true;
-		    new_partition["mountby"] = `label;
-		    }
-		if( size(fstab_entry["uuid"]:"")>0 && 
-		    partition["uuid"]:"" == fstab_entry["uuid"]:"" )
-		    {
-		    found = true;
-		    new_partition["mountby"] = `uuid;
-		    }
-		else if( dev_fstab == partition["device"]:"" )
+		if( dev_fstab == partition["device"]:"" )
 		    {
 		    found = true;
 		    }
 		if( found )
 		    {
 		    new_partition["mount"] = mount_fstab;
-		    if( size(fstab_entry["mntops"]:"")>0 &&
-			fstab_entry["mntops"]:"" != "default" )
+		    if( size(fstab_entry["fstopt"]:"")>0 &&
+			fstab_entry["fstopt"]:"" != "default" )
 			{
-			new_partition["fstopt"] = fstab_entry["mntops"]:"";
+			new_partition["fstopt"] = fstab_entry["fstopt"]:"";
 			}
+		    if( fstab_entry["mountby"]:`device != `device )
+			new_partition["mountby"] = fstab_entry["mountby"]:`device;
+		    if( fstab_entry["enc_type"]:`none != `none )
+			new_partition["enc_type"] = fstab_entry["enc_type"]:`none;
 
 		    /////////////////////////////////////////////
 		    // entries for table
