@@ -363,8 +363,10 @@ define boolean check_ok_fssize( integer siz, map part )
     boolean ret = true;
     if( part["format"]:false )
 	{
-	y2milestone( "check_ok_fssize size:%1", siz );
-	if( part["used_fs"]:`ext2==`reiser && siz<60000000 )
+	symbol fs = part["used_fs"]:`unknown;
+	integer min_size = FileSystems::MinFsSizeK( fs ) * 1024;
+	y2milestone( "check_ok_fssize fs:%1 size:%2", fs, min_size );
+	if( fs==`reiser && siz<min_size )
 	    {
 	    // popup text
 	    Popup::Warning(_("Your partition is too small to use ReiserFS.
@@ -374,13 +376,21 @@ Use ReiserFS on larger partitions.
 "));
 	    ret = false;
 	    }
-	if( part["used_fs"]:`ext2==`jfs && siz<32000000 )
+	else if( fs==`jfs && siz<min_size )
 	    {
 	    Popup::Warning(_("Your partition is too small to use JFS.
 JFS is a journaling file system that requires
 at least 16 MB space for the journal alone.
 Use JFS on larger partitions.
 "));
+	    ret = false;
+	    }
+	else if( fs!=`unknown && siz<min_size )
+	    {
+	    // warning message, %1 is replaced by fs name (e.g. Ext3)
+	    // %2 is prelaced by a size (e.g. 10 MB)
+	    Popup::Warning(sformat(_("Your partition is too small to use %1.
+Minimal size for this fs is %2"), FileSystems::GetName(fs,""), ByteToHumanStringWithZero(min_size) ));
 	    ret = false;
 	    }
 	}

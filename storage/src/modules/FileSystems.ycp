@@ -21,8 +21,35 @@
   import "Mode";
   import "Stage";
 
+  import "LibStorage";
+  import "LibStorage::StorageInterface";
+  import "LibStorage::FsCapabilities";
 
+map<string,any> conv_fs =
+    $[ "def_sym" : `unknown,
+       "def_int" : LibStorage::FSUNKNOWN(),
+       "m" : $[ LibStorage::REISERFS() : `reiser,
+                LibStorage::EXT2() : `ext2,
+                LibStorage::EXT3() : `ext3,
+                LibStorage::VFAT() : `vfat,
+                LibStorage::XFS() : `xfs,
+                LibStorage::JFS() : `jfs,
+                LibStorage::NTFS() : `ntfs,
+                LibStorage::SWAP() : `swap,
+                LibStorage::FSNONE() : `none
+              ]
+     ];
 
+integer fromSymbol( map<string,any> conv, symbol val )
+    {
+    integer ret = conv["def_int"]:-1;
+    foreach( integer i, symbol s, conv["m"]:$[],
+        ``{
+        if( s==val )
+            ret = i;
+        });
+    return( ret );
+    }
 
   global list<string> system_m_points = [ "/", Partitions::BootMount(), "/usr",
                                           "/var", "/opt" ];
@@ -136,8 +163,7 @@ define map FstabDefaultMap =
 				   ],
 		   `jfs    	: $[
 				   ],
-		   `vfat  	: $[ "shrink":true,
-				     "parted" : true,
+		   `vfat  	: $[ "shrink":true
 				   ],
 		   `ntfs  	: $[ "extend":true,
 		                     "shrink":true
@@ -834,6 +860,49 @@ global define void FileSystems()
     y2milestone( "suggest_m_points:%1", suggest_m_points );
     }
 
+global define void InitSlib( any sint )
+    {
+    boolean bval = false;
+    integer val = 0;
+    foreach( symbol fs, map<string,any> cap, capabilities,
+	``{
+	integer id = fromSymbol( conv_fs, fs );
+	any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	boolean ret = LibStorage::StorageInterface::getFsCapabilities( sint, id, fsinfo );
+	if( !ret )
+	    y2error( "InitSlib fs:%1 id:%2 ret:%3", fs, id, ret );
+	else
+	    {
+	    cap = $[];
+	    bval = LibStorage::FsCapabilities::swig_isExtendable_get(fsinfo);
+	    if( bval )
+		cap["extend"] = true;
+	    bval = LibStorage::FsCapabilities::swig_isReduceable_get(fsinfo);
+	    if( bval )
+		cap["shrink"] = true;
+	    bval = LibStorage::FsCapabilities::swig_isExtendableWhileMounted_get(fsinfo);
+	    if( bval )
+		cap["mount_extend"] = true;
+	    bval = LibStorage::FsCapabilities::swig_isReduceableWhileMounted_get(fsinfo);
+	    if( bval )
+		cap["mount_shrink"] = true;
+	    bval = LibStorage::FsCapabilities::swig_supportsUuid_get(fsinfo);
+	    if( bval )
+		cap["uuid"] = true;
+	    bval = LibStorage::FsCapabilities::swig_supportsLabel_get(fsinfo);
+	    if( bval )
+		cap["label"] = true;
+	    bval = LibStorage::FsCapabilities::swig_labelWhileMounted_get(fsinfo);
+	    if( bval )
+		cap["set_label_mount"] = true;
+	    if( cap["label"]:false )
+		cap["label_length"] = LibStorage::FsCapabilities::swig_labelLength_get(fsinfo);
+	    cap["min_fs_k"] = LibStorage::FsCapabilities::swig_minimalFsSizeK_get(fsinfo);
+	    capabilities[fs] = cap;
+	    }
+	});
+    }
+
 
   global define boolean IsSupported( symbol used_fs)``{
       return support[ used_fs ]:false;
@@ -969,6 +1038,15 @@ global define boolean LoadModule( symbol used_fs )
     return load_success;
     };
 
+global define integer MinFsSizeK( symbol fsys )
+    ``{
+    map<string,any> cap = capabilities[`unknown]:$[];
+    cap = capabilities[fsys]:cap;
+    integer ret = cap["min_fs_k"]:0;
+    y2milestone( "MinFsSizeK fsys:%1 ret:%2", fsys, ret );
+    return( ret );
+    }
+
 global define boolean MountUuid( symbol fsys )
     ``{
     map<string,any> cap = capabilities[`unknown]:$[];
@@ -1014,7 +1092,6 @@ global define map IsResizable( symbol fsys )
     ret["shrink"] = cap["shrink"]:false;
     ret["mount_extend"] = cap["mount_extend"]:false;
     ret["mount_shrink"] = cap["mount_shrink"]:false;
-    ret["parted"] = cap["parted"]:false;
     y2milestone( "IsResizable fsys:%1 ret:%2", fsys, ret );
     return( ret );
     };
