@@ -882,6 +882,12 @@ map volumeMap( any vinfo, map p )
 	{
 	p["enc_type"] = toSymbol( conv_encryption, t );
 	}
+    tbool = LibStorage::VolumeInfo::swig_resize_get(vinfo);
+    if( tbool )
+	{
+	p["resize"] = true;
+	p["orig_size_k"] = LibStorage::VolumeInfo::swig_OrigSizeK_get(vinfo);
+	}
     y2milestone( "volumeMap vinfo:%1 p:%2", vinfo, p );
     return( p );
     }
@@ -2026,6 +2032,22 @@ The crypt password provided could be incorrect.
 "), ret ));
 	    LibStorage::StorageInterface::forgetCryptPassword( sint, dev );
 	    }
+	else
+	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+	}
+    if( ret==0 && 
+        ((part["resize"]:false && part["region",1]:0 != curr["region",1]:0) ||
+	 (part["resize"]:false != curr["resize"]:false)) )
+	{
+	changed = true;
+	string d = part["device"]:"";
+	integer i = part["region",1]:0;
+	if( part["resize"]:false )
+	    ret = LibStorage::StorageInterface::resizePartition( sint, d, part["region",1]:0 );
+	else
+	    ret = LibStorage::StorageInterface::forgetResizeVolume( sint, d );
+	if( ret<0 )
+	    y2error( "ChangeVolumeProperties sint ret %1", ret );
 	else
 	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
 	}
@@ -3255,13 +3277,13 @@ global define map IsResizable( map part )
         (part["type"]:`none==`lvm || Partitions::IsResizable( part["fsid"]:0 )))
 	{
 	if( part["fsid"]:0==Partitions::fsid_swap )
-		{
+	    {
 	    ret = FileSystems::IsResizable(`swap);
-		}
+	    }
 	else
-		{
+	    {
 	    ret = FileSystems::IsResizable(part["used_fs"]:`unknown);
-		}
+	    }
 	}
     y2milestone( "IsResizable part:%1 ret:%2", part, ret );
     return( ret );
@@ -3272,9 +3294,9 @@ global define integer FreeCylAfter( map disk, map partition )
     integer ret = 0;
     integer next_used_cyl = disk["cyl_count"]:0;
     integer cylinder = partition["region",0]:0;
-    if( haskey( partition, "ori_length" ))
+    if( haskey( partition, "orig_size_k" ))
 	{
-        cylinder = cylinder + partition["ori_length"]:0;
+        cylinder = cylinder + partition["orig_size_k"]:0*1024/disk["cyl_size"]:1;
         }
     else
 	{
