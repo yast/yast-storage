@@ -1527,7 +1527,7 @@ define map ResizePartDlg( map cur_val, string device, map disk, map possible )
 	{
 	cyl_after = Storage::FreeCylAfter( disk, cur_val );
 	}
-    integer av_space = cyl_after*cyl_size / (1024*1024);
+    integer av_space = cyl_after*cyl_size;
 
     y2milestone( "ResizePartDlg dev:%1 cyl:%2 map:%3 win:%4 swap:%5",
 		 device, cyl_size, cur_val, win, swap );
@@ -1559,9 +1559,9 @@ because the file system could not be mounted.
     else
 	{
 	df["used"] = 0;
-	if( haskey( cur_val, "ori_length" ) && cur_val["resize"]:false )
+	if( haskey( cur_val, "orig_size_k" ) && cur_val["resize"]:false )
 	    {
-	    df["df_free"] = cur_val["ori_length"]:0 * cyl_size;
+	    df["df_free"] = cur_val["orig_size_k"]:0 * 1024;
 	    }
 	else
 	    {
@@ -1573,19 +1573,17 @@ because the file system could not be mounted.
     // label text
     string  unit = _("MB");
     integer factor = 1024*1024;
-    integer afactor = 1;
 
     if( df["df_free"]:0 > 15*1024*factor )
 	{
 	factor = factor * 1024;
-	afactor = 1024;
 	unit = _("GB");
 	}
-    y2milestone( "ResizePartDlg factor:%1 afactor:%2", factor, afactor );
+    y2milestone( "ResizePartDlg factor:%1", factor );
 
     if( haskey( cur_val, "win_max_length" ) && cur_val["resize"]:false )
 	{
-	new_min = cur_val["ori_length"]:0 - cur_val["win_max_length"]:0; 
+	new_min = cur_val["orig_size_k"]:0*1024/cyl_size - cur_val["win_max_length"]:0; 
 	new_min = new_min*cyl_size / factor;
 	}
 
@@ -1667,7 +1665,7 @@ because the file system could not be mounted.
 	}
     else
 	{
-	min_free = (afactor==1)?5:1;
+	min_free = (factor==1024*1024)?5:1;
 	}
 
     if( cur_val["used_fs"]:`none == `ntfs && 
@@ -1683,19 +1681,19 @@ the used blocks of the file system towards the start of the partition.
                                 free, df["free"]:0/factor, unit );
         Popup::Message( ptext );
 	}
-    if( haskey( cur_val, "new_size" ) && cur_val["resize"]:false )
+    if( haskey( cur_val, "orig_size_k" ) && cur_val["resize"]:false )
 	{
 	shrink_size = (df["used"]:0+df["df_free"]:0)/factor -
-		      cur_val["new_size"]:0/afactor;
-	y2milestone( "ResizePartDlg new_size:%1 shrink_size:%2", 
-	             cur_val["new_size"]:0, shrink_size );
+		      cur_val["region",1]:0*cyl_size/factor;
+	y2milestone( "ResizePartDlg new_size_k:%1 shrink_size:%2", 
+	             cur_val["region,1"]:0*cyl_size/factor, shrink_size );
 	if( shrink_size>df["free"]:0/factor )
 	    {
 	    shrink_size = df["free"]:0/factor;
 	    }
 	y2milestone( "ResizePartDlg shrink_size:%1", shrink_size );
 	}
-    av_space = av_space/afactor;
+    av_space = av_space/factor;
 
     y2milestone( "ResizePartDlg min_free:%1 free:%2 used:%3 shrink_size:%4 unit:%5", 
                  min_free, free, used, shrink_size, unit );
@@ -1888,7 +1886,7 @@ of the partition.
 	    if( simple_ui )
 		UI::ChangeWidget( `id(`linux_size), `Value,  used+free );
 	    else
-	    UI::ChangeWidget( `id(`linux_size), `Value,  av_space );
+		UI::ChangeWidget( `id(`linux_size), `Value,  av_space );
 	    }
 
 	if( ret == `ok )
@@ -1913,31 +1911,22 @@ of the partition.
 	        (simple_ui && shrink_size != used+free) )
 		{
 		retval["resize"] = true;
-		retval["new_size"] = new_size*afactor;
-		if( !haskey( retval, "ori_length" ))
-		    {
-		    integer ori_length = retval["region",1]:0;
-		    retval["ori_length"] = ori_length;
-		    }
 		list new_reg = [ retval["region",0]:0, 
-				 PartedSizeToCly( (tofloat(retval["new_size"]:0)*1024.0*1024.0),
-						  cyl_size ) ];
+				 PartedSizeToCly( (tofloat(new_size*factor)), cyl_size ) ];
 		retval["region"] = new_reg;
 		}
 	    else
 		{
 		retval["resize"] = false;
-		if( haskey( retval, "ori_length" ))
-		    {
-		    list new_reg = [ retval["region",0]:0, 
-				     retval["ori_length"]:0 ];
-		    retval["region"] = new_reg;
-		    }
 		}
 	    }
 	if( ret == `ok && !cur_val["format"]:false && retval["resize"]:false )
 	    {
-	    integer diff = retval["region",1]:0 - retval["ori_length"]:0;
+	    integer diff = 0;
+	    if( haskey( retval, "orig_size_k" ))
+		diff = retval["region",1]:0 - retval["orig_size_k"]:0*1024/cyl_size;
+	    else
+		diff = retval["region",1]:0 - cur_val["region",1]:0;
 	    y2milestone( "ResizePartDlg diff %1", diff );
 	    if( !CheckResizePossible( false, false, diff,
 				      cur_val["used_fs"]:`unknown,
