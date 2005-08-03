@@ -241,7 +241,6 @@ global define string GetDeviceName( string disk, any partition )
     string storage_doc_key		= "storage_doc";
     symbol record_key			= `record;
     symbol custom_key			= `custom;
-    boolean lvm_initialized             = false;
     boolean probe_done             	= false;
     symbol  exit_key               	= `next;
     string  last_used              	= "";
@@ -1634,7 +1633,6 @@ global define void Storage()
 	Storage::SetPartMode( "CUSTOM" );
 	Storage::SetPartProposalActive( false  );
 	}
-    lvm_initialized = false;
     LibStorage::initDefaultLogger ();
     sint = createInterface();
     if( Stage::initial() )
@@ -2519,7 +2517,6 @@ global define map<string,map> GetTargetMap()
 	if( size(tmp)>0 )
 	    {
 	    probe_done = true;
-	    lvm_initialized = true;
 	    changed = true;
 	    foreach( string dev, map disk, tmp,
 		``{
@@ -2662,10 +2659,10 @@ global define map<string,map> ReReadTargetMap()
     ``{
     y2milestone("start reread");
     probe_done = false;
-    lvm_initialized = false;
-    if( sint != nil )
-	LibStorage::destroyStorageInterface (sint);
-    sint = createInterface();
+    if( sint == nil )
+	sint = createInterface();
+    else
+	LibStorage::StorageInterface::rescanEverything( sint );
     conts = getContainers();
     force_disk_probe = true;
     return GetTargetMap();
