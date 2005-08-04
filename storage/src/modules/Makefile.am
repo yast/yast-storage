@@ -5,6 +5,7 @@
 YCPCFLAGS = -I . -I include -M ../../../libstorage/bindings/ycp
 
 YCPC_LD_LIBRARY_PATH = ../../../libstorage/src/.libs
+YCPC_Y2DIR = ../../../libstorage/src/.libs
 
 yncludedir = @yncludedir@/storage
 
