@@ -25,7 +25,7 @@
     // Each new entry is marked with "create":true. They key "mount"
     // contains the mount point or "swap" for the swap partition.
 
-define list<map<string, any> > 
+define list<map<string, any> >
 create_partitions( map disk, list<map<string, any> > partitions,
 		   list<integer> selected_region )
     ``{
@@ -33,7 +33,7 @@ create_partitions( map disk, list<map<string, any> > partitions,
                  disk, partitions, selected_region );
     integer bpu = disk["cyl_size"]:1;
 
-    partitions = filter( map<string, any> pentry, partitions, 
+    partitions = filter( map<string, any> pentry, partitions,
                          ``(pentry["type"]:`unknown != `free));
     partitions = renumber_logical_partitions (partitions);
     symbol ptype = `primary;
@@ -41,7 +41,7 @@ create_partitions( map disk, list<map<string, any> > partitions,
     boolean empty_disk = (partitions == []);
 
     map<string, any> absd_partition = $["create":true, "format":true,
-			   "type": `primary, 
+			   "type": `primary,
 			   "fsid":Partitions::fsid_empty,
 			   "nr":3,
 			   "region":full_region ];
@@ -53,8 +53,8 @@ create_partitions( map disk, list<map<string, any> > partitions,
 
     // If any partitions are left to be preserved, create the new
     // partitions in an extended partition.
-    list used_primaries = 
-	maplist( map<string, any> entry, 
+    list used_primaries =
+	maplist( map<string, any> entry,
 	    filter( map<string, any> pentry, partitions,
 		    ``(!pentry["delete"]:false &&
 		       pentry["nr"]:0<disk["max_primary"]:4)),
@@ -73,10 +73,10 @@ create_partitions( map disk, list<map<string, any> > partitions,
 	poss_primary = add( poss_primary, i );
 	i = i+1;
 	}
-    poss_primary = filter( integer n, poss_primary, 
+    poss_primary = filter( integer n, poss_primary,
                            ``(!contains(used_primaries,n)));
     poss_primary = sort(poss_primary);
-    y2milestone( "create_partitions used_primaries %1 poss_primary %2", 
+    y2milestone( "create_partitions used_primaries %1 poss_primary %2",
                  used_primaries, poss_primary );
 
     if (ptype == `logical)
@@ -108,7 +108,7 @@ create_partitions( map disk, list<map<string, any> > partitions,
 	    // Find the last used logical partition number.
 	    // We know that these partitions are numbered contiguously
 	    integer last_pnr = 4;
-	    foreach (map<string, any> pentry, partitions, 
+	    foreach (map<string, any> pentry, partitions,
 		``{
 		if( !pentry["delete"]:false &&
 		    pentry["type"]:`unknown == `logical &&
@@ -127,17 +127,17 @@ create_partitions( map disk, list<map<string, any> > partitions,
 
     integer boot_add = 1;
 
-    list<integer> boot_region = [ selected_region[0]:0, 
+    list<integer> boot_region = [ selected_region[0]:0,
                          size_to_units( size_of_boot, bpu ) ];
     if( !need_boot_partititon(selected_region) )
 	{
 	boot_region[1] = 0;
 	boot_add = 0;
 	}
-    list<integer> swap_region = [ end_of_region( boot_region ), 
+    list<integer> swap_region = [ end_of_region( boot_region ),
                          size_to_units( 1024*1024*Partitions::SwapSizeMb(size_of_region(selected_region,bpu)/1024/1024), bpu ) ];
     list<integer> root_region = [ end_of_region(swap_region),
-			 end_of_region(selected_region) - 
+			 end_of_region(selected_region) -
 			     end_of_region(swap_region) ];
 
     if( boot_add>0 )
@@ -158,6 +158,7 @@ create_partitions( map disk, list<map<string, any> > partitions,
 		    $[ "create":true, "format":true,
 		       "type": ptype, "fsid":Partitions::fsid_swap,
 		       "fstype" : Partitions::FsIdToString( Partitions::fsid_swap ),
+		       "used_fs" : `swap,
 		       "nr":use_pnrs[0+boot_add]:0,
 		       "region":swap_region,
 		       "mount":"swap" ]);
@@ -178,7 +179,7 @@ create_partitions( map disk, list<map<string, any> > partitions,
 	{
 	partitions = add( partitions, absd_partition );
 	}
-    
+
     // Add flag whether using the entire disk
     Storage::SetWholeDisk( selected_region == full_region );
     partitions = maplist( map<string, any> part, partitions,
