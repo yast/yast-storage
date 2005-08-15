@@ -38,11 +38,11 @@
 
   include "partitioning/signatures.ycp";
 
-  
-define string DlgCreateCryptFs( string device, integer minpwlen )
+
+define string DlgCreateCryptFs( string device, integer minpwlen, boolean format )
   ``{
-    string helptext = GetCreateCryptFsHelptext(minpwlen);
-    y2milestone( "DlgCreateCryptFs minpwlen:%1", minpwlen );
+    string helptext = GetCreateCryptFsHelptext(minpwlen, format);
+    y2milestone( "DlgCreateCryptFs minpwlen:%1 format:%2", minpwlen, format );
 
     // heading text
     string h = _("Enter your password for the encrypted file system");
@@ -69,13 +69,13 @@ define string DlgCreateCryptFs( string device, integer minpwlen )
 						// label text
 						`Label(_("Don't forget what you enter here!")),
 						`VSpacing(),
-	 
+
 						`Left(`Password(`id("pw1"),
 						 // Label: get password for user root
 						 // Please use newline if label is longer than 40 characters
 								_("&Enter a password for your file system:"), "")),
 						`VSpacing(0.5),
-						    
+
 						`Left(`Password(`id("pw2"),
 						 // Label: get same password again for verification
 						 // Please use newline if label is longer than 40 characters
@@ -99,23 +99,23 @@ define string DlgCreateCryptFs( string device, integer minpwlen )
       boolean input_is_ok = false;
       string pw1 	  = "";
       string pw2 	  = "";
-	  
+
       repeat
       {
 	  // Clear password fields on every round.
 	  UI::ChangeWidget(`id("pw1"), `Value, "");
 	  UI::ChangeWidget(`id("pw2"), `Value, "");
-      
+
 	  UI::SetFocus(`id("pw1"));
-	  
+
 	  ret = (string) UI::UserInput();
 
-      
+
 	  if (ret != "cancel")
 	  {
 	      pw1 = (string)UI::QueryWidget(`id("pw1"), `Value);
 	      pw2 = (string)UI::QueryWidget(`id("pw2"), `Value);
-	  
+
 	      if ( pw1 != pw2 )
 	      {
 		  // popup text
@@ -170,16 +170,16 @@ Please try again."));
 // Dialog Password for Crypted FS Update
 //////////////////////////////////////////////////////////////////////////////
 
-  
+
 define string DlgUpdateCryptFs( string device, string mount )
     ``{
     string helptext = GetUpdateCryptFsHelptext();
 
 // translator comment: %1 is the device name, %2 is a directory
 //            example: "...password for device /dev/hda6 mounted on /var"
-    string enter = sformat(_("You have to enter your crypt password for 
+    string enter = sformat(_("You have to enter your crypt password for
 device %1 mounted on %2"),device,mount);
-	     
+
     UI::OpenDialog(
 	     `opt(`decorated ),
 	     `HBox(
@@ -199,13 +199,13 @@ device %1 mounted on %2"),device,mount);
 						// advise user to remember his new password
 						`Label(enter),
 						`VSpacing(),
-	 
+
 						`Left(`Password(`id("pw1"),
 						 // Label: get password for user root
 						 // Please use newline if label is longer than 40 characters
 								_("&Enter a password for your file system:"), "")),
 						`VSpacing(0.5),
-						
+
 						`Left(`Password(`id("pw2"),
 						 // Label: get same password again for verification
 						 // Please use newline if label is longer than 40 characters
@@ -229,23 +229,23 @@ device %1 mounted on %2"),device,mount);
       boolean input_is_ok = false;
       string pw1 	  = "";
       string pw2 	  = "";
-	  
+
       repeat
       {
 	  // Clear password fields on every round.
 	  UI::ChangeWidget(`id("pw1"), `Value, "");
 	  UI::ChangeWidget(`id("pw2"), `Value, "");
-      
+
 	  UI::SetFocus(`id("pw1"));
-	  
+
 	  ret = (string)UI::UserInput();
 
-      
+
 	  if (ret != "cancel")
 	  {
 	      pw1 = (string)UI::QueryWidget(`id("pw1"), `Value);
 	      pw2 = (string)UI::QueryWidget(`id("pw2"), `Value);
-	  
+
 	      if ( pw1 != pw2 )
 	      {
 		  // popup text
@@ -267,7 +267,7 @@ Try again.
       } until ( input_is_ok || ret == "cancel" );
 
       UI::CloseDialog();
-		       
+
       if (ret != "cancel")
       {
 	  return( pw1 );
@@ -276,7 +276,7 @@ Try again.
       {
 	  return( "" );
       }
-	      
+
   }
 
 define symbol DoInputChecks( map entry, string query )
@@ -319,13 +319,13 @@ define symbol DoInputChecks( map entry, string query )
    * @parm new_val map that contains a partition
    * @parm file_systems filesystem definitions
    */
-define map FileSystemOptions( map org_fs_options, map fs_define  ) 
+define map FileSystemOptions( map org_fs_options, map fs_define  )
     ``{
     map<any, map<string,any> > fs_options     = (map<any, map<string,any> >)eval(org_fs_options);
     term contents 	= `VBox(`VSpacing (1));
     string helptext   = "";
-    
-    foreach( map option, fs_define[`options]:[],  
+
+    foreach( map option, fs_define[`options]:[],
 	``{
 	term emptyterm = `Empty();
 	contents = add( contents, option[`widget]:emptyterm);
@@ -333,11 +333,11 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
 	if( add_help != "")
 	    helptext = helptext + add_help ;
 	});
- 
-    UI::OpenDialog( `opt(`decorated), 
+
+    UI::OpenDialog( `opt(`decorated),
 		    `HBox(
 			`HWeight(4, `RichText( helptext )),
-			`HWeight(7, 
+			`HWeight(7,
 			    `VBox(
 				`HSpacing(50),
 				// heading text
@@ -357,33 +357,33 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
 							    `opt(`default),
 							    Label::OKButton())),
 					`Bottom(
-					  `PushButton(`id(`cancel), 
+					  `PushButton(`id(`cancel),
 						      Label::CancelButton())))
 					))));
 
-    foreach(any query_key, map<string, any> option_map, fs_options , 
+    foreach(any query_key, map<string, any> option_map, fs_options ,
 	``{
-	UI::ChangeWidget( `id(query_key), `Value, 
+	UI::ChangeWidget( `id(query_key), `Value,
 			  option_map["option_value"]:"" );
 	});
 
-	    
+
     symbol ret = `ok;
     repeat
 	{
 	ret = (symbol)UI::UserInput();
 	if( ret == `ok )
 	    {
-	    foreach( map entry, fs_define[`options]:[],  
+	    foreach( map entry, fs_define[`options]:[],
 		``{
 		y2milestone( "FileSystemOptions entry %1", entry );
 		if( ret != `error )
 		    {
-		    any query = UI::QueryWidget( `id(entry[`query_key]:nil), 
+		    any query = UI::QueryWidget( `id(entry[`query_key]:nil),
 		                                 `Value );
 		    y2milestone( "FileSystemOptions query %1", query );
-		    map<string,any> fs_option = 
-			$[ "option_str"   : entry[`option_str]:"", 
+		    map<string,any> fs_option =
+			$[ "option_str"   : entry[`option_str]:"",
 			   "option_value" : query ];
 		    y2milestone( "FileSystemOptions fs_option %1", fs_option );
 
@@ -393,8 +393,8 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
 			}
 
 
-		    if( is( query, string) && 
-		        !contains( (list<any>)["auto", "none", "default"], 
+		    if( is( query, string) &&
+		        !contains( (list<any>)["auto", "none", "default"],
 			           query ))
 			{
 			ret = DoInputChecks( entry, (string)query );
@@ -422,19 +422,19 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
    * @parm old map with original partition
    * @parm new map with changes filled in
    */
-define map<string,any> FstabOptions( map<string,any> old, map<string,any> new ) 
+define map<string,any> FstabOptions( map<string,any> old, map<string,any> new )
     ``{
     string helptext = "";
     term contents = `VBox();
     term emptyterm = `Empty();
-    
+
     if( new["enc_type"]:`none==`none && new["mount"]:"" != "swap" )
 	{
 	// help text, richtext format
 	helptext = helptext + _("<p><b>Mount in /etc/fstab by:</b>
 Normally, a file system to mount is identified in /etc/fstab
 by the device name. This identification can be changed so the file system to mount
-is found by searching for a UUID or a volume label. Not all file systems can be 
+is found by searching for a UUID or a volume label. Not all file systems can be
 mounted by UUID or a volume label. If an option is disabled, it is not possible.
 ");
 
@@ -445,10 +445,10 @@ makes sense when you activate the option for mounting by volume label.
 ");
 
 	contents = add( contents,
-			`VBox(  
-			    `RadioButtonGroup( 
+			`VBox(
+			    `RadioButtonGroup(
 				`id(`mt_group),
-				`VBox( 
+				`VBox(
 				     // label text
 				    `Left( `Label(_("Mount in /etc/fstab by"))),
 				    `Left( `RadioButton( `id(`device),
@@ -460,7 +460,7 @@ makes sense when you activate the option for mounting by volume label.
 				    `Left( `RadioButton( `id(`uuid), "U&UID" ))
 				     )
 				),
-			   `TextEntry( `id(`vol_label), `opt(`hstretch), 
+			   `TextEntry( `id(`vol_label), `opt(`hstretch),
 				       // label text
 				       _("Volume &Label")),
 			   `VSpacing(1)
@@ -472,7 +472,7 @@ makes sense when you activate the option for mounting by volume label.
 	foreach( map entry, FileSystems::GetGeneralFstabOptions(),
 	    ``{
 	    opt_list = add( opt_list, entry );
-	   
+
 	    contents = add( contents, entry[`widget]:emptyterm );
 	    helptext = helptext + entry[`help_text]:"";
 	    });
@@ -523,10 +523,10 @@ makes sense when you activate the option for mounting by volume label.
 	    integer pos = 0;
 	    while( pos < size(opt_lstr) )
 		{
-		if( size(opt[`str_scan]:"")>0 && 
+		if( size(opt[`str_scan]:"")>0 &&
 		    regexpmatch( opt_lstr[pos]:"", opt[`str_scan]:"" ))
 		    {
-		    value = regexpsub( opt_lstr[pos]:"", 
+		    value = regexpsub( opt_lstr[pos]:"",
 		                       opt[`str_scan]:"", "\\1" );
 		    opt_lstr[pos] = "";
 		    }
@@ -556,10 +556,10 @@ makes sense when you activate the option for mounting by volume label.
     old_state[opt_list[size(opt_list)-1,`query_key]:""] = arb_opt;
     y2milestone( "old_state=%1", old_state );
 
-    UI::OpenDialog( `opt(`decorated), 
+    UI::OpenDialog( `opt(`decorated),
                     `HBox(
 			`HWeight(4, `RichText( helptext )),
-			`HWeight(7, 
+			`HWeight(7,
 			    `VBox(
 				`HSpacing(50),
 			        // heading text
@@ -577,7 +577,7 @@ makes sense when you activate the option for mounting by volume label.
 				    `Bottom(`PushButton(`id(`ok),
 							`opt(`default),
 							Label::OKButton())),
-				    `Bottom(`PushButton(`id(`cancel), 
+				    `Bottom(`PushButton(`id(`cancel),
 				                        Label::CancelButton()))
 				    )
 				)
@@ -587,13 +587,13 @@ makes sense when you activate the option for mounting by volume label.
     if( UI::WidgetExists( `id(`mt_group) ))
 	{
 	list no_mountby_type = [ `loop, `sw_raid ];
-	UI::ChangeWidget( `id(`mt_group), `CurrentButton, 
+	UI::ChangeWidget( `id(`mt_group), `CurrentButton,
 	                  new["mountby"]:`device );
-	UI::ChangeWidget( `id(`label), `Enabled, 
+	UI::ChangeWidget( `id(`label), `Enabled,
 			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
 			  new["enc_type"]:`none==`none &&
 			  !contains( no_mountby_type, new["type"]:`primary ) );
-	UI::ChangeWidget( `id(`uuid), `Enabled, 
+	UI::ChangeWidget( `id(`uuid), `Enabled,
 			  (new["format"]:false || size(new["uuid"]:"")>0) &&
 			  FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
 			  !contains( no_mountby_type, new["type"]:`primary ) );
@@ -601,10 +601,10 @@ makes sense when you activate the option for mounting by volume label.
 
     if( UI::WidgetExists( `id(`vol_label) ))
 	{
-	UI::ChangeWidget( `id(`vol_label), `Enabled, 
+	UI::ChangeWidget( `id(`vol_label), `Enabled,
 			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
 			  new["enc_type"]:`none==`none );
-	UI::ChangeWidget( `id(`vol_label), `ValidChars, 
+	UI::ChangeWidget( `id(`vol_label), `ValidChars,
 			  FileSystems::nchars + "-._:/" );
 	UI::ChangeWidget( `id(`vol_label), `Value, new["label"]:"" );
 	}
@@ -613,7 +613,7 @@ makes sense when you activate the option for mounting by volume label.
     y2milestone( "new=%1", new );
     if( UI::WidgetExists( `id("opt_user") ))
 	{
-	UI::ChangeWidget( `id("opt_user"), `Enabled, 
+	UI::ChangeWidget( `id("opt_user"), `Enabled,
 			  new["enc_type"]:`none==`none || new["noauto"]:false );
 	}
     foreach( any key, any value, old_state,
@@ -631,7 +631,7 @@ makes sense when you activate the option for mounting by volume label.
 	    if( UI::WidgetExists( `id("opt_user") ))
 		{
 		boolean val = (boolean)UI::QueryWidget( `id("opt_noauto" ), `Value );
-		UI::ChangeWidget( `id("opt_user"), `Enabled, 
+		UI::ChangeWidget( `id("opt_user"), `Enabled,
 		                  new["enc_type"]:`none==`none || val );
 		}
 	    }
@@ -639,7 +639,7 @@ makes sense when you activate the option for mounting by volume label.
 	    {
 	    if( UI::WidgetExists( `id(`mt_group) ))
 		{
-		new["mountby"] = UI::QueryWidget( `id(`mt_group), 
+		new["mountby"] = UI::QueryWidget( `id(`mt_group),
 		                                  `CurrentButton );
 		if( !new["format"]:false && !new["create"]:false &&
 		    new["mountby"]:`device != old["mountby"]:`device )
@@ -650,14 +650,14 @@ makes sense when you activate the option for mounting by volume label.
 		new["label"] = UI::QueryWidget( `id(`vol_label), `Value );
 		if( new["label"]:"" != old["label"]:"" )
 		    {
-		    integer max_len = 
+		    integer max_len =
 			FileSystems::LabelLength( new["used_fs"]:`unknown );
 		    if( size(new["label"]:"") > max_len )
 			{
 			new["label"] = substring( new["label"]:"", 0, max_len );
 			// popup text %1 is a number
 			Popup::Error( sformat(_("
-Maximum volume label length for the selected file system 
+Maximum volume label length for the selected file system
 is %1. Your volume label was truncated to this size.
 "), max_len ));
 
@@ -671,15 +671,15 @@ is %1. Your volume label was truncated to this size.
 		if( new["mountby"]:`device == `label && size(new["label"]:"")==0 )
 		    {
 		    ret = `again;
-		    // popup text 
+		    // popup text
 		    Popup::Error( _("Provide a volume label to mount by label."));
 		    continue;
 		    }
-		if( new["mountby"]:`device == `label && 
+		if( new["mountby"]:`device == `label &&
 		    !check_unique_label( Storage::GetTargetMap(), new ))
 		    {
 		    ret = `again;
-		    // popup text 
+		    // popup text
 		    Popup::Error( _("This volume label is already in use. Select a different one."));
 		    continue;
 		    }
@@ -691,10 +691,10 @@ is %1. Your volume label was truncated to this size.
 	    map new_state = $[];
 	    string text = "";
 	    string new_fstopt = "";
-	    foreach( map entry, opt_list, 
+	    foreach( map entry, opt_list,
 		``{
 		text = "";
-		any value = UI::QueryWidget( `id(entry[`query_key]:""), 
+		any value = UI::QueryWidget( `id(entry[`query_key]:""),
 		                             `Value );
 		new_state[entry[`query_key]:""] = value;
 		if( entry[`type]:`text == `boolean )
@@ -753,7 +753,7 @@ is %1. Your volume label was truncated to this size.
 	} until ( ret == `ok || ret == `cancel );
 
     UI::CloseDialog();
-    y2milestone( "fstopt %1 mountby:%2 label:%3", new["fstopt"]:"", 
+    y2milestone( "fstopt %1 mountby:%2 label:%3", new["fstopt"]:"",
                  new["mountby"]:`device, new["label"]:"" );
     return( new );
     };
@@ -765,14 +765,14 @@ is %1. Your volume label was truncated to this size.
    * @parm file_systems filesystem definitions
    * @return term the term contains a ComboBox with the different filesystems
    */
-define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems ) 
+define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
     ``{
     map<symbol,map> fs_sel = $[];
     list filesystems = [ ];
     boolean is_swap = new_val["fsid"]:0 == Partitions::fsid_swap;
 
     y2debug( "new=%1 swap=%2", new_val, is_swap );
-    foreach( symbol file_system_name, map file_system_map, file_systems, 
+    foreach( symbol file_system_name, map file_system_map, file_systems,
 	``{
 	if( file_system_map[`supports_format]:false )
 	    {
@@ -781,7 +781,7 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
 	    if( is_swap )
 		fs_sel[file_system_name,"selected"] = file_system_name == `swap;
 	    else
-		fs_sel[file_system_name,"selected"] = 
+		fs_sel[file_system_name,"selected"] =
 		    new_val["used_fs"]:`reiser == file_system_name;
 	    }
 	});
@@ -791,16 +791,16 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
 	{
 	fs_sel[`reiser,"selected"] = true;
 	}
-    foreach( symbol fs_type, map entry, fs_sel, 
+    foreach( symbol fs_type, map entry, fs_sel,
 	``{
 	if( fs_type != `swap )
-	    filesystems = add( filesystems, 
+	    filesystems = add( filesystems,
 		`item(`id(fs_type), entry["text"]:"Ext2", entry["selected"]:false ));
 	});
     if( haskey( fs_sel, `swap ))
 	{
-	filesystems = add( filesystems, 
-	    `item( `id(`swap), fs_sel[`swap,"text"]:"Swap", 
+	filesystems = add( filesystems,
+	    `item( `id(`swap), fs_sel[`swap,"text"]:"Swap",
 		    fs_sel[`swap,"selected"]:false ));
 	}
 
@@ -810,17 +810,17 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
 	boolean cr = new_val["enc_type"]:`none != `none;
 	CryptWidget = `VBox( `VSpacing(0.7),
 	                     `Left(`CheckBox(`id(`crypt_fs), `opt(`notify),
-					    // button text 
+					    // button text
 			                     _("&Encrypt file system"), cr )));
 	}
 
-    return `VBox( 
-               `ReplacePoint( `id(`type_dlg_rp), 
-			      `ComboBox(`id(`fs), `opt(`hstretch, `notify), 
-					// label text 
+    return `VBox(
+               `ReplacePoint( `id(`type_dlg_rp),
+			      `ComboBox(`id(`fs), `opt(`hstretch, `notify),
+					// label text
 					_("File &system"), filesystems )),
-			      `PushButton( `id(`fs_options ),`opt(`hstretch), 
-					   // button text 
+			      `PushButton( `id(`fs_options ),`opt(`hstretch),
+					   // button text
 					   _("O&ptions") ),
 			      CryptWidget );
     }
@@ -831,18 +831,18 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
  * @parm file_systems filesystem definitions
  * @return term the term contains a ComboBox that allow the user to  edit the filesystem ID
  */
-define term FsidComboBox( map new_val, map<symbol, map> file_systems  ) 
+define term FsidComboBox( map new_val, map<symbol, map> file_systems  )
     ``{
     list items = [];
     list added_items = [];
     list added_fsids = [];
-    foreach( any fs_name, map fs_map, file_systems, 
+    foreach( any fs_name, map fs_map, file_systems,
 	``{
 	string fsid_item =  fs_map[`fsid_item]:" ";
 	if( !contains( added_items, fsid_item ))
 	    {
-	    items = add( items, 
-		`item( `id(fsid_item), fsid_item, 
+	    items = add( items,
+		`item( `id(fsid_item), fsid_item,
 			fs_map[`fsid]:0 == new_val["fsid"]:0));
 	    added_fsids = add( added_fsids, fs_map[`fsid]:0 );
 	    added_items = add( added_items, fsid_item );
@@ -857,8 +857,8 @@ define term FsidComboBox( map new_val, map<symbol, map> file_systems  )
 	items = add( items, `item( `id(part_id), part_id, true ));
 	}
 
-    return( `ComboBox(`id(`fsid_point), `opt(`notify,`editable, `hstretch), 
-	    // label text 
+    return( `ComboBox(`id(`fsid_point), `opt(`notify,`editable, `hstretch),
+	    // label text
 	    _("File system &ID:"), items ));
     };
 
@@ -866,11 +866,11 @@ define term FsidComboBox( map new_val, map<symbol, map> file_systems  )
 /**
  * Dialogpart: Size Dialog
  * @parm new_val map that contains a partition
- * @parm edit_size flag 
+ * @parm edit_size flag
  * @return term the term contains two TextEntries or to Labels with the start and the end cylinder of
  * the partition in new_val
  */
-define term SizeDlg( map new_val, integer cyl_size, boolean edit_size ) 
+define term SizeDlg( map new_val, integer cyl_size, boolean edit_size )
     ``{
     string start_cyl = sformat( "%1", new_val["region",0]:0 );
     string end_part  = sformat( "%1", (integer)(new_val["region",0]:0) +
@@ -881,11 +881,11 @@ define term SizeDlg( map new_val, integer cyl_size, boolean edit_size )
 
 
     if( new_val["create"]:false && edit_size )
-    {		
-	// label text 
+    {
+	// label text
 	return `Frame ( _("Size"),
 		`VBox(
-		    // label text 
+		    // label text
 		    `Left(`Label(_("Cylinder size: ")+ str_cyl_size + " M" )),
 		    `VSpacing(0.5),
 		    // label text
@@ -898,8 +898,8 @@ define term SizeDlg( map new_val, integer cyl_size, boolean edit_size )
     }
     else
     {
-	return ( 
-		`HBox(      
+	return (
+		`HBox(
 		    // label text
 		    `Left(`Label( _("Type of partition: ")
 			    // label text
@@ -914,7 +914,7 @@ define term SizeDlg( map new_val, integer cyl_size, boolean edit_size )
 }
 
 
-define term FormatDlg( map new_val, map<symbol, map> file_systems ) 
+define term FormatDlg( map new_val, map<symbol, map> file_systems )
     ``{
     y2debug( "FormatDlg val:%1", new_val );
 
@@ -925,13 +925,13 @@ define term FormatDlg( map new_val, map<symbol, map> file_systems )
 	new_val["type"]:`primary != `evms &&
 	new_val["type"]:`primary != `loop && !Partitions::no_fsid_menu )
 	{
-	fsid = `VBox( 
+	fsid = `VBox(
 		`HBox( `HSpacing(2),
-		    `ReplacePoint( `id(`fsid_dlg_rp),  
+		    `ReplacePoint( `id(`fsid_dlg_rp),
 			FsidComboBox( new_val, file_systems ))
 		    ),
 		`VSpacing(0.5),
-		`VStretch() 
+		`VStretch()
 		);
 	}
     else
@@ -960,7 +960,7 @@ define term FormatDlg( map new_val, map<symbol, map> file_systems )
 
     }
 
-  
+
 
 define term RaidOptionsDlg( map new_val, boolean edit_raid_type )
     ``{
@@ -975,23 +975,23 @@ define term RaidOptionsDlg( map new_val, boolean edit_raid_type )
     while(  i <= 4096 )
 	{
         integer chunk_item = i;
-        chunk_list = add( chunk_list, 
-	                  `item(`id(chunk_item), tostring(chunk_item), 
+        chunk_list = add( chunk_list,
+	                  `item(`id(chunk_item), tostring(chunk_item),
 			        chunk_size==chunk_item ));
         i = i*2;
         }
-    
+
     if( edit_raid_type )
 	{
 	editRaid = `VBox(
 			 `VSpacing(),
-			 `Left (`ComboBox( `id(`raid_combo), 
-			                   `opt(`notify, `hstretch ), 
+			 `Left (`ComboBox( `id(`raid_combo),
+			                   `opt(`notify, `hstretch ),
 					   // button text
 					   _("RAID T&ype"),
-				    [ `item(`id("raid0"), "raid0", 
+				    [ `item(`id("raid0"), "raid0",
 				            "raid0"==raid_type ),
-				      `item(`id("raid1"), "raid1", 
+				      `item(`id("raid1"), "raid1",
 				            "raid1"==raid_type ),
 				      `item(`id("raid5"), "raid5",
 				            "raid5"==raid_type ),
@@ -1001,14 +1001,14 @@ define term RaidOptionsDlg( map new_val, boolean edit_raid_type )
 			 `VSpacing()
 			);
 	}
-  
+
     return `VSquash(
 		    `VBox(
 		 editRaid,
-		 // Raid combobox description (don't translate to much ..)       
+		 // Raid combobox description (don't translate to much ..)
 		 `Left (`ComboBox ( `id(`chunk_size),`opt(`hstretch ), _("Chunk s&ize in KB"), chunk_list )),
 		 `VSpacing (),
-		 // Raid combobox description (don't translate to much ..)       
+		 // Raid combobox description (don't translate to much ..)
 		 `Left (`ComboBox ( `id(`parity),`opt(`hstretch ), _("Parity &algorithm (only for RAID 5)"),
 				    [ `item(`id("left_asymmetric"),  "left-asymmetric",  "left_asymmetric" == parity_algorithm ),
 				    `item(`id("left_symmetric"),   "left-symmetric",   "left_symmetric" == parity_algorithm ),
@@ -1016,19 +1016,19 @@ define term RaidOptionsDlg( map new_val, boolean edit_raid_type )
 				    `item(`id("right_symmetric"),  "right-symmetric",  "right_symmetric" == parity_algorithm )
 				    ])),
 		 `VSpacing ()
-		 ));	
+		 ));
 
     }
 
 define term LoopOptionsDlg()
     ``{
-    term widget = 
+    term widget =
 	`VSquash(
 	    `VBox(
 		 `VSpacing(),
 		 `Left( `TextEntry( `id(`loop_path), `opt(`notify),
 				   // label text
-		                    _("P&ath Name of File"))), 
+		                    _("P&ath Name of File"))),
 		 `VSpacing(1),
 		 `Left( `CheckBox( `id(`loop_create), `opt(`notify),
 				   // button text
@@ -1037,25 +1037,25 @@ define term LoopOptionsDlg()
 				   // label text
 		                    _("Si&ze of Loop File"))),
 		 `VSpacing()
-		 ));	
+		 ));
 
     return widget;
     }
-  
+
   /**
    * Change the state of all symbol from the list symbols
    * @parm symbols all symbols
    * @parm what true or false
    * @return nil
    */
-define void ChangeExistingSymbolsState( list symbols , boolean what ) 
+define void ChangeExistingSymbolsState( list symbols , boolean what )
     ``{
     foreach( any sym, symbols, ``{
 	  UI::ChangeWidget(`id(sym), `Enabled, what );
       });
     }
-  
- 
+
+
   /**
    * Return a map with the filesystem definitions for the map new_val
    * @parm new_val map that contains a partition
@@ -1064,23 +1064,23 @@ define void ChangeExistingSymbolsState( list symbols , boolean what )
    */
 define map GetFirstFilesystemDefinition( integer fsid, map<symbol,map> file_systems )
     ``{
-    map<symbol,map> define_map  = filter( symbol key, map val, file_systems, 
+    map<symbol,map> define_map  = filter( symbol key, map val, file_systems,
                               ``(fsid == val[`fsid]:Partitions::fsid_native ));
     list<map> define_list = maplist( symbol k, map v , define_map, ``( v ));
-    if( size( define_list ) == 0) 
+    if( size( define_list ) == 0)
 	return $[];
-    else 
+    else
 	return define_list[0]:$[];
     }
-  
-  
+
+
   /**
-   * Dialogpart: Mount part	
+   * Dialogpart: Mount part
    * @parm new_val map that contains a partition
    * @parm file_systems filesystem definitions
    * @return term ComboBox with all mountpoints
    */
-define term MountDlg( map new_val, list mountpoints ) 
+define term MountDlg( map new_val, list mountpoints )
     ``{
     if( mountpoints == nil  )
 	mountpoints = [ "/", "/usr", Partitions::BootMount(), "/var", "/home",
@@ -1092,13 +1092,13 @@ define term MountDlg( map new_val, list mountpoints )
 
     if( !contains( mountpoints, mount ))
 	mountpoints = union( [mount], mountpoints);
-    
-    term dlg = `VBox(  
-		   `PushButton( `id(`fstab_options), `opt(`hstretch), 
+
+    term dlg = `VBox(
+		   `PushButton( `id(`fstab_options), `opt(`hstretch),
 			        // button text
 				_("Fs&tab Options")),
 		   `VSpacing(1),
-		   `ComboBox(`id(`mount_point), `opt(`editable, `hstretch), 
+		   `ComboBox(`id(`mount_point), `opt(`editable, `hstretch),
 			     // label text
 			     _("&Mount Point"), mountpoints  )
 		   );
@@ -1108,7 +1108,7 @@ define term MountDlg( map new_val, list mountpoints )
 
 
 
-  
+
 define boolean UseChangedPartitionContinueCancelPopup()
     ``{
     // popup text
@@ -1118,16 +1118,16 @@ mounted. In some cases, this can damage your Linux installation.
 
 Proceed only if you know what you are doing. If you are unsure,
 press Cancel.
-    
+
 ")))
 	return true;
 
      return false;
      };
-  
+
 define boolean ModifyPartitionInSystemWarningPopup( string part, string mount )
     ``{
-      
+
     // popup text %1 is a partition name, %2 a dirctory
     string warning = sformat(_("
 The selected partition (%1) is currently mounted on %2.
@@ -1166,7 +1166,7 @@ Only fat, ext2, ext3, and reiser allow shrinking of a file system."));
     if( ask )
 	{
 	txt = txt + "\n";
-	txt = txt + AddLvm( lvm, 
+	txt = txt + AddLvm( lvm,
 			    // Popup text
 			    // %1 is either replaced by "logical volume" or by "partition"
 	                    _("You risk losing data if you shrink this %1."));
@@ -1220,7 +1220,7 @@ The %1 is currently mounted on %2.
 It is not possible to resize the file system while it is mounted.
 
 Unmount the file system and retry resizing.
-"), 
+"),
                           AddLvm( lvm, "%1"), mount );
     Popup::Error( txt );
     }
@@ -1240,7 +1240,7 @@ Shrink the file system now?")));
     }
 
 
-/** 
+/**
   * Scan exiting partitions for fstab files and if one found read the mountpoints
   * from the fstab file and build a new targetMap.
   * Ask the user if he like to use the new or old targetMap
@@ -1253,17 +1253,17 @@ Shrink the file system now?")));
   *---------------------------------------------------------------------
   */
 define integer FstabAddDialog( list table_input )
-    ``{  
+    ``{
     if( table_input == [] || table_input == nil )
 	{
-	// popup text 
+	// popup text
 	Popup::Message(_("No previous system with mount points was detected."));
 	return -1;
 	}
-	
-    // heading text 
+
+    // heading text
     term header = `header( _("Device      "),  _("Mount       "));
-	    
+
     // help text, richtext format
     string help_text = _("<P><B><BIG>Attention:</BIG></B><BR>YaST2 has scanned your hard disks and found an old Linux system
 with mount points. On the right, see a list with the mount points found. </P>
@@ -1279,7 +1279,7 @@ _("<P>To ignore these mount points, <BR> press <B>No</B>.</P>");
 	    `VBox( `HSpacing(20), `RichText(help_text)),
 	    `VBox( `VSpacing(1),
 		   `ReplacePoint( `id(`heading), `Empty() ),
-		   `HBox(  
+		   `HBox(
 		       `HSpacing(3.0),
 		       `VSpacing(8),
 		       `VBox( `VSpacing(1),
@@ -1287,11 +1287,11 @@ _("<P>To ignore these mount points, <BR> press <B>No</B>.</P>");
 			    ),
 		       `HSpacing(3.0)
 		       ),
-					
+
 		   `VSpacing(1),
 		   // popup text
 		   `Heading(_("Would you like to use these mount points
-for your new installation?")),	
+for your new installation?")),
 		   `VSpacing(1),
 		   `ReplacePoint( `id(`bbox), `Empty() )
 		 ))
@@ -1302,7 +1302,7 @@ for your new installation?")),
     repeat
 	{
 	// popup text %1 is replaced by a device name (e.g. /dev/hda1)
-	string tmp = sformat( 
+	string tmp = sformat(
 _("A previous system with the following mount points was detected:
 /etc/fstab found on %1"), table_input[idx,"root"]:"/dev/emil" );
 	UI::ReplaceWidget( `id(`heading), `Heading( tmp ) );
@@ -1318,17 +1318,17 @@ _("A previous system with the following mount points was detected:
 	    bbox = add( bbox, `HSpacing(5) );
 	    if( idx>0 )
 		{
-		bbox = add( bbox, 
+		bbox = add( bbox,
 		            `PushButton( `id(`show_p), _("Show &Previous") ));
 		}
 	    if( idx<size(table_input)-1 )
 		{
-		bbox = add( bbox, 
+		bbox = add( bbox,
 		            `PushButton( `id(`show_n), _("Show &Next") ));
 		}
 	    }
 	UI::ReplaceWidget( `id(`bbox), bbox );
-		      
+
 	userinput = (symbol)UI::UserInput();
 
 	if( userinput == `show_n )
@@ -1358,10 +1358,10 @@ define term TargetShowBarGraph( map target, string dev )
     integer cyl_count    = target["cyl_count"]:1;
     integer min_size     = tointeger( cyl_count / 8 );
 
-    
+
     y2milestone( " target %1" ,target );
     y2milestone( " parts %1", target["partitions"]:[] );
-    
+
     foreach( map part, target["partitions"]:[],
 	``{
 	if( part["type"]:`primary != `extended )
@@ -1374,7 +1374,7 @@ define term TargetShowBarGraph( map target, string dev )
 	    sum_used        = sum_used + part_size;
 	    if( part_size < min_size )
 		part_size = min_size;
-      
+
 	    partitions_size = add( partitions_size , part_size);
 
 	    string part_text =  part["mount"]:"";
@@ -1382,8 +1382,8 @@ define term TargetShowBarGraph( map target, string dev )
 	    if( part_text  == "" || part_text == nil )
 		part_text = dev + sformat("%1", part["nr"]:(any)0);
 
-	    part_text = part_text + "\n" + part_size_str; 
-	    
+	    part_text = part_text + "\n" + part_size_str;
+
 	    partitions_text = add( partitions_text, part_text );
 	    }
 	});
@@ -1404,13 +1404,13 @@ define term TargetShowBarGraph( map target, string dev )
 	y2milestone(" partitions_size : %1", partitions_size);
 	y2milestone(" partitions_text : %1", partitions_text);
 	}
-		    
+
     return `BarGraph(`opt(`vstretch), partitions_size , partitions_text );
     };
 
 
-    
-define boolean TargetAllocationDlg( map target, string dev) 
+
+define boolean TargetAllocationDlg( map target, string dev)
     ``{
     if( ! UI::HasSpecialWidget(`BarGraph) )
 	{
@@ -1419,7 +1419,7 @@ define boolean TargetAllocationDlg( map target, string dev)
 	}
     else
 	{
-	UI::OpenDialog(`opt(`decorated ),     
+	UI::OpenDialog(`opt(`decorated ),
 		       `VBox(
 			     `VSpacing(1),
 			     `Left( `Heading( dev + ":")),
@@ -1441,7 +1441,7 @@ define boolean TargetAllocationDlg( map target, string dev)
     return true;
     };
 
-    
+
 
 
 define boolean DDZeroPartitionTable( string del_dev )
@@ -1454,18 +1454,18 @@ device %1, data on this device will be lost.
 Really do this?
 "), del_dev)))
 	{
-	Storage::DeletePartitionTable(del_dev);			   
+	Storage::DeletePartitionTable(del_dev);
 	return true;
 	}
     return false;
     };
 
-    
+
 define symbol ReallyInstPrepdisk( )
     ``{
     map<string,map> targetMap = Storage::GetTargetMap();
     symbol ret = `none;
-    
+
     string doto = Storage::ChangeText();
     y2milestone( "ReallyInstPrepdisk doto:%1", doto );
     term dlg = `Empty();
@@ -1486,16 +1486,16 @@ define symbol ReallyInstPrepdisk( )
 	UI::OpenDialog(`opt(`decorated, `warncolor),
 		       `HBox(
 			     `HSpacing(1),
-			     `VBox( 
+			     `VBox(
 				   dlg,
 				   `VSpacing(1),
 				   // popup text
 				   `Heading(_(" Do you really want to execute these changes?")),
-				   `VSpacing(1),   
-				   
+				   `VSpacing(1),
+
 				   `HBox(
 					 // all right, start installation *now*
-				       
+
 					 `PushButton(`id(`back), Label::CancelButton()),
 					 `HStretch(),
 					 // button text
@@ -1514,7 +1514,7 @@ define symbol ReallyInstPrepdisk( )
 	}
 
     y2milestone( "ReallyInstPrepdisk ret=%1", ret );
-	
+
     return ret;
     };
 
@@ -1526,7 +1526,7 @@ define symbol ReallyInstPrepdisk( )
  * Check if at least on partition is mounted.
  * @return map targetMap
  */
-define boolean deleteAllDevPartitions( map<string, any> disk, 
+define boolean deleteAllDevPartitions( map<string, any> disk,
                                        boolean installation, boolean bsd_label )
     ``{
     boolean go_on     = true;
@@ -1545,11 +1545,11 @@ define boolean deleteAllDevPartitions( map<string, any> disk,
 	    // mount points found
 
 	    string mounted_parts  = "";
-	    foreach( map mount, mounts, 
+	    foreach( map mount, mounts,
 		``{
 		//  %1 is replaced by device name, %1 by directory e.g /dev/hdd1 on /usr
-		mounted_parts = mounted_parts + 
-		                sformat("%1 on %2", mount["device"]:"", 
+		mounted_parts = mounted_parts +
+		                sformat("%1 on %2", mount["device"]:"",
 					mount["mount"]:"") + "\n";
 		});
 
@@ -1623,7 +1623,7 @@ before deleting the partition table.
 		``{
 		if( part["nr"]:0 <= disk["max_primary"]:4 )
 		    {
-		    go_on = go_on && 
+		    go_on = go_on &&
 		            Storage::DeleteDevice( del_dev, part["device"]:"" );
 		    }
 		});
@@ -1633,5 +1633,5 @@ before deleting the partition table.
     return(go_on);
     };
 
-  
+
 }
