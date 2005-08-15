@@ -40,10 +40,10 @@ define list<list> findExistingFstab( map<string,map> targetMap, string search_po
     list<list>    fstab = [];
     list    skip_fs = [ `unknown, `swap, `vfat, `ntfs ];
 
-    foreach( string dev, map disk, targetMap, 
+    foreach( string dev, map disk, targetMap,
 	``{
-	foreach( map part, 
-	         filter( map p, disk["partitions"]:[], 
+	foreach( map part,
+	         filter( map p, disk["partitions"]:[],
 				``(!contains( skip_fs, p["detected_fs"]:`unknown) )),
 	    ``{
 	    /////////////////////////////////////////////////////
@@ -134,7 +134,7 @@ define boolean arePartitionsEqual( map part1, map part2 )
    * @param mount mount point
    * @return boolean
    */
-define boolean check_lvm_mount_points( string mount ) 
+define boolean check_lvm_mount_points( string mount )
     ``{
     list not_allowed_lvm_mount_points  = [ Partitions::BootMount() ];
     y2milestone( " check lvm mount");
@@ -159,7 +159,7 @@ define boolean check_raid_mount_points( string mount )
 	list not_allowed_raid_mount_points  = [ ];
 	if( Arch::ppc () || Arch::s390 () || Arch::ia64 () || Arch::sparc () )
 	    {
-	    not_allowed_raid_mount_points = 
+	    not_allowed_raid_mount_points =
 		add( not_allowed_raid_mount_points, Partitions::BootMount() );
 	    }
 	y2milestone( " check raid mount");
@@ -187,11 +187,11 @@ define boolean check_noauto_mount( string mount )
 	{
         // error popup text
 	ret = Popup::YesNo(
-_("You have selected not to mount automatically at start-up a file system  
+_("You have selected not to mount automatically at start-up a file system
 that may contain files that the system needs to work properly.
 
 This might lead to trouble.
- 
+
 Really do this?
 "));
 	y2milestone( "ret %1", ret );
@@ -207,14 +207,14 @@ Really do this?
    **/
 define boolean check_crypt_fs_mount_points( string mount, boolean crypt_fs )
     ``{
-    if( crypt_fs && 
+    if( crypt_fs &&
         (FileSystems::IsCryptMp( mount, false ) || mount=="swap" ))
 	{
         // error popup text
 	Popup::Error(
-_("You have assigned a crypted file system to a partition 
-with one of the following mount points: \"/\", \"/usr\", \"/boot\", 
-\"swap\".  This is not possible. Change the mount point or use a 
+_("You have assigned a crypted file system to a partition
+with one of the following mount points: \"/\", \"/usr\", \"/boot\",
+\"swap\".  This is not possible. Change the mount point or use a
 non-loopbacked file system.
 "));
 	    return false;
@@ -278,8 +278,8 @@ define boolean check_mount_point( map<string,map> targetMap, string dev, map par
     symbol used_fs = part["used_fs"]:`unknown;
 
     boolean allowed = true;
-    list not_allowed_system_mount_points  = 
-	[ "/proc", "/dev", "/mnt", "/var/adm/mnt", "/lost+found", "/lib", 
+    list not_allowed_system_mount_points  =
+	[ "/proc", "/dev", "/mnt", "/var/adm/mnt", "/lost+found", "/lib",
 	  "/bin", "/etc", "/sbin" ];
 
     if ( mount != "" && mount != "swap"  )
@@ -479,11 +479,11 @@ define map CheckCryptOk( map new )
 	new["enc_type"] = new["format"]:false?`twofish:`twofish_old;
     else
 	new["enc_type"] = `none;
-    if( crypt_fs && 
+    if( crypt_fs &&
         size(Storage::GetCryptPwd( new["device"]:"create_loop" ))==0 &&
         (!new["noauto"]:false||new["format"]:false) )
 	{
-	string fs_passwd = DlgCreateCryptFs( new["device"]:"", new["format"]:false?8:5 );
+	string fs_passwd = DlgCreateCryptFs( new["device"]:"", new["format"]:false?8:5, new["format"]:false );
 	// Ask the user for a password for cryptofs, else set crypto to nil??
 	if( fs_passwd != nil && size(fs_passwd)>0 )
 	    {
@@ -505,7 +505,7 @@ define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map f
     list<string> not_used_mp = [];
     symbol used_fs = new["used_fs"]:`unknown;
     map selected_fs = file_systems[used_fs]:$[];
-    y2milestone( "HandleFsChanged init:%1 used_fs:%2 new:%3", 
+    y2milestone( "HandleFsChanged init:%1 used_fs:%2 new:%3",
                  init, used_fs, new );
 
     if( UI::WidgetExists( `id(`crypt_fs) ))
@@ -537,13 +537,13 @@ define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map f
 				selected_fs[`mountpoints]:[] );
 	if( new["type"]:`primary == `lvm || new["type"]:`primary == `sw_raid )
 	    {
-	    not_used_mp = filter( string mp, not_used_mp, 
+	    not_used_mp = filter( string mp, not_used_mp,
 	                          ``( mp != Partitions::BootMount() ));
 	    }
 	else if( new["type"]:`primary == `loop )
 	    {
-	    not_used_mp = 
-		filter( string mp, not_used_mp, 
+	    not_used_mp =
+		filter( string mp, not_used_mp,
 			``(!contains( FileSystems::system_m_points, mp)));
 	    }
 	if(mount == "swap")
@@ -584,12 +584,12 @@ define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map f
     };
 
 
-define map<string,any> HandlePartWidgetChanges( boolean init, any ret, 
-                                                map file_systems, 
-						map<string,any> old, 
+define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
+                                                map file_systems,
+						map<string,any> old,
 						map<string,any> new )
     ``{
-    y2milestone( "HandlePartWidgetChanges init:%1 ret:%2 new:%3", 
+    y2milestone( "HandlePartWidgetChanges init:%1 ret:%2 new:%3",
                  init, ret, new );
     symbol used_fs = new["used_fs"]:`unknown;
     map selected_fs = file_systems[used_fs]:$[];
@@ -604,7 +604,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	}
     if( init || ret == `format_true || ret == `format_false )
 	{
-	boolean format = UI::QueryWidget(`id(`format), `CurrentButton) == 
+	boolean format = UI::QueryWidget(`id(`format), `CurrentButton) ==
 	                 `format_true;
 
 	boolean old_format = new["format"]:false;
@@ -620,7 +620,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 			  format && selected_fs[`options]:[] != [] );
 	if( UI::WidgetExists( `id(`crypt_fs) ))
 	    {
-	    UI::ChangeWidget( `id(`crypt_fs), `Enabled, 
+	    UI::ChangeWidget( `id(`crypt_fs), `Enabled,
 			      selected_fs[`crypt]:true );
 	    }
 	if( UI::WidgetExists( `id(`fsid_point) ))
@@ -670,7 +670,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	    if( UI::WidgetExists( `id(`fsid_point) ))
 		{
 		if( size(selected_fs)>0 &&
-		    new["fsid"]:0 != selected_fs[`fsid]:0 && 
+		    new["fsid"]:0 != selected_fs[`fsid]:0 &&
 		    !contains( selected_fs[`alt_fsid]:[], new["fsid"]:0 ))
 		    {
 		    UI::ChangeWidget( `id(`fsid_point), `Value,
@@ -703,9 +703,9 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	    {
 	    new_fs = new["detected_fs"]:`none;
 	    }
-	y2milestone( "HandlePartWidgetChanges new_fs %1", 
+	y2milestone( "HandlePartWidgetChanges new_fs %1",
 	             UI::QueryWidget(`id(`fs), `Value) );
-	y2milestone( "HandlePartWidgetChanges init=%1 used_fs:%2 new_fs:%3", 
+	y2milestone( "HandlePartWidgetChanges init=%1 used_fs:%2 new_fs:%3",
 	             init, used_fs, new_fs );
 	if( init || used_fs != new_fs )
 	    {
@@ -749,7 +749,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	integer fs_int   = tointeger( fs_string );
 	integer old_id   = new["fsid"]:0;
 
-	y2milestone( "HandlePartWidgetChanges fs_int:%1 old_id:%2", 
+	y2milestone( "HandlePartWidgetChanges fs_int:%1 old_id:%2",
 	             fs_int, old_id );
 
 	if( fs_int != old_id )
@@ -912,7 +912,7 @@ define boolean check_max_size( integer byte_size, integer max_size )
     ``{
     y2milestone( "icheck_lv_size byte_size=%1 max_size=%2", byte_size,
                  max_size );
-   
+
     if( byte_size == 0 )
         {
 	if( max_size>0 )
@@ -940,7 +940,7 @@ Enter a size from 1M to %1."),
     return( true );
     };
 
-define boolean CheckResizePossible( boolean ask, boolean lvm, integer resize, 
+define boolean CheckResizePossible( boolean ask, boolean lvm, integer resize,
                                     symbol fsys, string mount )
     ``{
     map poss = FileSystems::IsResizable( fsys );
@@ -948,13 +948,13 @@ define boolean CheckResizePossible( boolean ask, boolean lvm, integer resize,
 
     y2milestone( "CheckResizePossible resize %1 ask %2 lvm %3 fsys %4 mount %5",
                  resize, ask, lvm, fsys, mount );
-    if( size(mount)>0 && !Stage::initial() && resize < 0 && 
+    if( size(mount)>0 && !Stage::initial() && resize < 0 &&
         !poss["mount_shrink"]:false && poss["shrink"]:false )
         {
 	FsysCannotResizeMountPopup( lvm, mount );
 	ret = false;
 	}
-    else if( size(mount)>0 && !Stage::initial() && resize > 0 && 
+    else if( size(mount)>0 && !Stage::initial() && resize > 0 &&
              !poss["mount_extend"]:false && poss["extend"]:false )
         {
 	FsysCannotResizeMountPopup( lvm, mount );
