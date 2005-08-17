@@ -887,6 +887,9 @@ map volumeMap( any vinfo, map p )
 	p["resize"] = true;
 	p["orig_size_k"] = LibStorage::VolumeInfo::swig_OrigSizeK_get(vinfo);
 	}
+    tmp = LibStorage::VolumeInfo::swig_loop_get(vinfo);
+    if( size(tmp)>0 )
+	p["loop"] = tmp;
     return( p );
     }
 
@@ -1915,6 +1918,26 @@ global boolean ResizeVolume( string device, string disk, integer new_size )
     return( ret==0 );
     }
 
+global boolean SetCrypt( string device, boolean crpt, boolean format )
+    {
+    y2milestone( "SetCrypt device:%1 val:%2 format:%3", device, crpt, format );
+    integer ret = LibStorage::StorageInterface::setCrypt( sint, device, crpt );
+    if( ret<0 )
+	{
+	y2error( "SetCrypt sint ret %1", ret );
+	if( !format && crpt )
+	    Popup::Error( sformat(_("Could not set encryption.
+System error code is %1.
+
+The crypt password provided could be incorrect.
+"), ret ));
+	LibStorage::StorageInterface::forgetCryptPassword( sint, device );
+	}
+    else
+	y2milestone( "SetCrypt sint ret:%1", ret );
+    return( ret==0 );
+    }
+
 global boolean ChangeVolumeProperties( map part )
     {
     integer ret = 0;
@@ -2018,21 +2041,7 @@ global boolean ChangeVolumeProperties( map part )
     if( ret==0 && part["enc_type"]:`none != curr["enc_type"]:`none )
 	{
 	changed = true;
-	tmp = fromSymbol(conv_encryption,part["enc_type"]:`none);
-	ret = LibStorage::StorageInterface::setCrypt( sint, dev, part["enc_type"]:`none!=`none  );
-	if( ret<0 )
-	    {
-	    y2error( "ChangeVolumeProperties sint ret %1", ret );
-	    if( !part["format"]:false && part["enc_type"]:`none!=`none )
-		Popup::Error( sformat(_("Could not set encryption.
-System error code is %1.
-
-The crypt password provided could be incorrect.
-"), ret ));
-	    LibStorage::StorageInterface::forgetCryptPassword( sint, dev );
-	    }
-	else
-	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+	SetCrypt( dev, part["enc_type"]:`none!=`none, part["format"]:false );
 	}
     if( ret==0 &&
         ((part["resize"]:false && part["region",1]:0 != curr["region",1]:0) ||
@@ -2301,7 +2310,7 @@ global string GetCryptPwd( string device )
 
 global boolean SetCryptPwd( string device, string pwd )
     {
-    y2milestone( "SetCryptKey device:%1", device );
+    y2milestone( "SetCryptPwd device:%1", device );
     integer ret = LibStorage::StorageInterface::setCryptPassword( sint, device,
                                                                   pwd );
     y2milestone( "SetCryptPwd sint ret %1", ret );
@@ -2309,10 +2318,8 @@ global boolean SetCryptPwd( string device, string pwd )
 	ClassifiedSettings[device] = pwd;
     else if( ret<0 )
 	y2error( "SetCryptPwd sint ret %1", ret );
-    y2milestone( "ClassifiedSettings %1", ClassifiedSettings );
     return( ret==0 );
     }
-
 
 /**
  * Delete the partition table and disk label of device
@@ -3680,30 +3687,58 @@ global define boolean PerformLosetup( map& loop, boolean format )
     ``{
     boolean crypt_ok = false;
     string pwd = loop["passwd"]:"";
-    loop = (map)filter( string k, any val, (map<string,any>)loop, ``(k!="passwd"));
-    y2milestone( "PerformLosetup format %1 loop %2", format, loop );
-
-    string tmpf = SaveDumpPath( "tmpf" );
-    y2milestone( "PerformLosetup tmpf %1", tmpf );
-    SCR::Write( .target.string, tmpf, pwd );
-
-    string cmd = FileSystems::GetLosetupCmd( loop, tmpf );
-    map r = (map)SCR::Execute( .target.bash_output, cmd );
-    y2milestone( "PerformLosetup r %1", r );
-    crypt_ok = r["exit"]:1 == 0;
-    if( crypt_ok && !format && find( loop["encryption"]:"", "twofish")==0 )
+    string device = loop["partitionName"]:"";
+    string mdir = Storage::SaveDumpPath("tmp_mp" );
+    y2milestone( "PerformLosetup mdir:%1", mdir );
+    if( (integer)SCR::Read(.target.size, mdir ) >= 0 )
 	{
-	string enc = FileSystems::DetectLoopEncryption( loop, tmpf );
-	y2milestone( "PerformLosetup enc %1", enc );
-	if( size(enc)>0 )
-	    {
-	    loop["encryption"] = enc;
-	    crypt_ok = true;
-	    }
+	SCR::Execute(.target.bash, "rm -f " + mdir );
 	}
-    SCR::Execute( .target.remove, tmpf );
+    SCR::Execute(.target.mkdir, mdir );
+    crypt_ok = Storage::SetCryptPwd( device, pwd ) && 
+               Storage::SetCrypt( device, true, false ) &&
+	       Storage::Mount( device, mdir );
+    if( crypt_ok )
+	{
+	any vinfo = LibStorage::VolumeInfo::new("LibStorage::VolumeInfo");
+	integer ret = LibStorage::StorageInterface::getVolume( sint, device, 
+	                                                       vinfo );
+	if( ret!=0 )
+	    {
+	    y2error( "PerformLosetup device:%1 not found (ret:%2)", device, ret );
+	    crypt_ok = false;
+	    }
+	else
+	    {
+	    map curr = $[];
+	    curr = volumeMap( vinfo, curr );
+	    loop["loop_dev"] = curr["loop"]:"";
+	    y2milestone( "PerformLosetup loop:%1", loop["loop_dev"]:"" );
+	    }
+	SCR::Execute(.target.bash, "umount " + mdir );
+	}
     y2milestone( "PerformLosetup ret %1", crypt_ok );
     return( crypt_ok );
+    }
+
+global define symbol DetectFs( string device ) 
+    ``{
+    symbol ret = `unknown;
+    y2milestone( "DetectFs:%1", device );
+    any vinfo = LibStorage::VolumeInfo::new("LibStorage::VolumeInfo");
+    integer r = LibStorage::StorageInterface::getVolume( sint, device, vinfo );
+    if( r!=0 )
+	{
+	y2error( "DetectFs device:%1 not found (ret:%2)", device, r );
+	}
+    else
+	{
+	map curr = $[];
+	curr = volumeMap( vinfo, curr );
+	ret = curr["detected_fs"]:`unknown;
+	}
+    y2milestone( "DetectFs ret %1", ret );
+    return( ret );
     }
 
 global define boolean DiskmapNeeded()
