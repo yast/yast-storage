@@ -114,9 +114,6 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
     boolean xfs_found            = false;
     symbol  root_fs              = `unknown;
     symbol  boot_fs              = `unknown;
-    integer boot_cyl_nb          = 0;
-    integer boot_start_cyl       = 0;
-    integer boot_cyl_size        = 0;
     integer boot_size            = 0;
     boolean boot_size_check      = !(Arch::board_chrp () || Arch::board_prep () || Arch::board_iseries ());
     integer root_cyl_for_gb      = 0;
@@ -233,14 +230,19 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		    gpt_warning = true;
 		    }
 		boot_found      = true;
-		boot_start_cyl  = part["region",0]:0;
-		boot_cyl_nb     = part["region",1]:0;
-		boot_end        = part["region",0]:0 + part["region",1]:1-1;
-		boot_fs         = part["used_fs"]:`unknown;
-		boot_cyl_size   = diskinfo["cyl_size"]:1000000;
-		// 1GB/cylinder size
-		boot_cyl_for_gb = 1073741824 / boot_cyl_size;
-		boot_size       = boot_cyl_size * boot_cyl_nb;
+		if( diskinfo["type"]:`CT_UNKNONW==`CT_DISK )
+		    {
+		    boot_end = part["region",0]:0 + part["region",1]:1-1;
+		    // 1GB/cylinder size
+		    boot_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;
+		    }
+		else
+		    {
+		    boot_end = 0;
+		    boot_cyl_for_gb = 0;
+		    }
+		boot_fs = part["used_fs"]:`unknown;
+		boot_size = part["size_k"]:0*1024;
 		if ( id_sw_raid_dev ) boot_raid = true;
 		raid_type = part["raid_type"]:"";
 		}
@@ -251,12 +253,9 @@ define list check_created_partiton_table( map<string,map> targetMap, boolean set
 		    {
 		    boot_found      = true;
 		    boot_end        = part["region",0]:0 + part["region",1]:1-1;
-		    boot_cyl_nb     = part["region",1]:0;
 		    boot_fs         = part["used_fs"]:`unknown;
-		    boot_cyl_size   = diskinfo["cyl_size"]:1000000;
-		    boot_cyl_for_gb = 1073741824 / boot_cyl_size;
-		    boot_size       = boot_cyl_size * boot_cyl_nb;
-		    boot_start_cyl  = part["region",0]:0;
+		    boot_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;
+		    boot_size = part["size_k"]:0*1024;
 		    }
 		}
 
@@ -402,7 +401,7 @@ Use a Linux file system, such as ext2 or reiserfs, for these mount points.
 
     if( (boot_found) && installation || show_all_popups )
 	{
-	if ( boot_end >= Partitions::BootCyl() || show_all_popups )
+	if( boot_end >= Partitions::BootCyl() || show_all_popups )
 	    {
 	    // popup text %1 is a number
 	    boolean ret = Popup::YesNo(sformat(_("Warning:
