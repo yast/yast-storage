@@ -88,21 +88,6 @@ map<string,any> conv_ptype =
 	      ]
      ];
 
-map<string,any> conv_fs =
-    $[ "def_sym" : `unknown,
-       "def_int" : LibStorage::FSUNKNOWN(),
-       "m" : $[ LibStorage::REISERFS() : `reiser,
-                LibStorage::EXT2() : `ext2,
-                LibStorage::EXT3() : `ext3,
-                LibStorage::VFAT() : `vfat,
-                LibStorage::XFS() : `xfs,
-                LibStorage::JFS() : `jfs,
-                LibStorage::NTFS() : `ntfs,
-                LibStorage::SWAP() : `swap,
-                LibStorage::FSNONE() : `none
-	      ]
-     ];
-
 map<string,any> conv_mountby =
     $[ "def_sym" : `device,
        "def_int" : LibStorage::MOUNTBY_DEVICE(),
@@ -831,7 +816,7 @@ map volumeMap( any vinfo, map p )
     p["size_k"] = LibStorage::VolumeInfo::swig_sizeK_get(vinfo);
     p["name"] = LibStorage::VolumeInfo::swig_name_get(vinfo);
     integer t = LibStorage::VolumeInfo::swig_fs_get(vinfo);
-    symbol fs = toSymbol( conv_fs, t );
+    symbol fs = toSymbol( FileSystems::conv_fs, t );
     p["detected_fs"] = fs;
     if( fs != `unknown )
 	p["used_fs"] = fs;
@@ -992,7 +977,7 @@ map getContainerInfo( map c )
 	    ret = LibStorage::StorageInterface::getEvmsCoInfo( sint, n, infos );
 	    if( ret==0 )
 		{
-		c["create"] = LibStorage::LvmVgInfo::swig_create_get(infos);
+		c["create"] = LibStorage::EvmsCoInfo::swig_create_get(infos);
 		c["size_k"] = LibStorage::EvmsCoInfo::swig_sizeK_get(infos);
 		c["cyl_size"] = 1024*LibStorage::EvmsCoInfo::swig_peSize_get(infos);
 		c["pesize"] = 1024*LibStorage::EvmsCoInfo::swig_peSize_get(infos);
@@ -1882,7 +1867,7 @@ global boolean SetPartitionFormat( string device, boolean format, symbol fs )
     y2milestone( "SetPartitionFormat device:%1 format:%2 fs:%3", device,
                  format, fs );
     integer ret = 0;
-    integer tmp = fromSymbol( conv_fs, fs );
+    integer tmp = fromSymbol( FileSystems::conv_fs, fs );
     y2milestone( "SetPartitionFormat fs:%1", tmp );
     ret = LibStorage::StorageInterface::changeFormatVolume( sint, device,
                                                             format, tmp );
@@ -1978,7 +1963,7 @@ global boolean ChangeVolumeProperties( map part )
          part["used_fs"]:`none != curr["used_fs"]:`none) )
 	{
 	changed = true;
-	tmp = fromSymbol(conv_fs,part["used_fs"]:`none);
+	tmp = fromSymbol(FileSystems::conv_fs,part["used_fs"]:`none);
 	y2milestone( "ChangeVolumeProperties fs:%1 symbol:%2", tmp, part["used_fs"]:`none );
 	ret = LibStorage::StorageInterface::changeFormatVolume( sint, dev,
 								part["format"]:false,
