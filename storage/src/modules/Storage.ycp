@@ -3105,7 +3105,8 @@ global define string CheckSwapConflicts()``{
     return( ret );
     }
 
-global define list GetWinPrimPartitions( map<string,map> targets )
+global define list GetPrimPartitions( map<string,map> targets, 
+                                      boolean foreign_os )
     ``{
     list<map> ret = [];
     map entry = $[];
@@ -3143,7 +3144,7 @@ global define list GetWinPrimPartitions( map<string,map> targets )
 			text = win_text;
 			}
 		    }
-		else if( part["fsid"]:0 == 0x12 )
+		else if( part["fsid"]:0 == 0x12 && !foreign_os )
 		    {
 		    text = "Vendor diagnostic";
 		    }
@@ -3153,7 +3154,7 @@ global define list GetWinPrimPartitions( map<string,map> targets )
 		    num_os2 = num_os2+1;
 		    }
 		else if( part["fsid"]:0 == Partitions::fsid_native &&
-		         size(part["mount"]:"")==0 )
+		         size(part["mount"]:"")==0 && !foreign_os )
 		    {
 		    text = linux_text;
 		    num_linux = num_linux+1;
@@ -3168,8 +3169,8 @@ global define list GetWinPrimPartitions( map<string,map> targets )
 		}
 	    });
 	});
-    y2milestone( "GetWinPrimPartitions num_linux %1 num_win %2 num_dos %3 num_os2 %4",
-                 num_linux, num_win, num_dos, num_os2 );
+    y2milestone( "GetPrimPartitions foreign_os:%5 num_linux %1 num_win %2 num_dos %3 num_os2 %4",
+                 num_linux, num_win, num_dos, num_os2, foreign_os );
     integer num = 1;
     if( num_linux>1 )
 	{
@@ -3222,6 +3223,13 @@ global define list GetWinPrimPartitions( map<string,map> targets )
 	    return( entry );
 	    });
 	}
+    y2milestone( "GetPrimPartitions ret %1", ret );
+    return( ret );
+    }
+
+global define list GetWinPrimPartitions( map<string,map> targets )
+    ``{
+    list ret = GetPrimPartitions( targets, true );
     y2milestone( "GetWinPrimPartitions ret %1", ret );
     return( ret );
     }
@@ -3279,7 +3287,7 @@ global define list GetForeignPrimary()
     list ret = [];
     if( Arch::i386 () || Arch::ia64 () || Arch::x86_64 () )
 	{
-	foreach(map e, (list<map>)GetWinPrimPartitions( GetTargetMap() ),
+	foreach(map e, (list<map>)GetPrimPartitions( GetTargetMap(), false ),
 	    ``{
 	    ret = add( ret, sformat( "%1 %2", e["device"]:"", e["string"]:"" ));
 	    });
