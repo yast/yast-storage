@@ -313,8 +313,8 @@ define boolean startController (map controller)
 		ModToInitrdLx = add( ModToInitrdLx, 
 		                     [ modulemap["modules",0,0]:"",
 				       modulemap["modules",0,1]:"" ] );
-		y2milestone( "ModToInitrdLx %1", ModToInitrdLx );
-		y2milestone( "ModToInitrd %1", ModToInitrd );
+		y2milestone( "startController ModToInitrdLx %1", ModToInitrdLx );
+		y2milestone( "startController ModToInitrd %1", ModToInitrd );
 		}
 	    }
 	});
@@ -336,7 +336,7 @@ define boolean startController (map controller)
     //   no need to check "active", already done before !
     foreach (map modulemap, module_drivers,
 	``{
-	y2milestone ("modulemap: %1", modulemap);
+	y2milestone ("startController modulemap: %1", modulemap);
 	boolean module_modprobe = modulemap["modprobe"]:false;
 
 	boolean all_modules_loaded = true;
@@ -352,7 +352,7 @@ define boolean startController (map controller)
 
 		if( contains( postinstall_names, module_name) )
 		    {
-		    y2milestone("name: %1 args: %2", module_name, module_args);
+		    y2milestone("startController name: %1 args: %2", module_name, module_args);
 
 		    list vendor_device = 
 			ModuleLoading::prepareVendorDeviceInfo(controller);
@@ -386,7 +386,7 @@ define boolean startController (map controller)
 						     "", "", false, 
 						     module_modprobe );
 			    }
-			y2milestone( "load_result %1", load_result );
+			y2milestone( "startController load_result %1", load_result );
 
 			if (load_result == `fail)
 			    {
@@ -403,13 +403,13 @@ define boolean startController (map controller)
 			    moduleArgs  = add (moduleArgs, module_args);
 			    moduleIDs  = add (moduleIDs, module_id);
 
-			    y2milestone( "moduleNames %1", moduleNames );
-			    y2milestone( "moduleArgs %1", moduleArgs );
-			    y2milestone( "moduleIDs %1", moduleIDs );
+			    y2milestone( "startController moduleNames %1", moduleNames );
+			    y2milestone( "startController moduleArgs %1", moduleArgs );
+			    y2milestone( "startController moduleIDs %1", moduleIDs );
 			    ModToInitrd = add( ModToInitrd, [ module_name,
 			                                      module_args ] );
-			    y2milestone( "ModToInitrd %1", ModToInitrd );
-			    y2milestone( "ModToInitrdLx %1", ModToInitrdLx );
+			    y2milestone( "startController ModToInitrd %1", ModToInitrd );
+			    y2milestone( "startController ModToInitrdLx %1", ModToInitrdLx );
 			    }
 			} // not yet loaded
 		    } // not postinstall
@@ -504,11 +504,12 @@ global define void Initialize ()
     map controller = $[];
     integer cindex = 0;
     list ioresources = [];
+    boolean module_loaded = false;
 
     ModToInitrd = [];
     ModToInitrdLx = [];
 
-    y2milestone("controllers: %1", controllers);
+    y2milestone("Initialize controllers: %1", controllers);
 
     // loop through all controller descriptions from hwprobe
 
@@ -516,7 +517,7 @@ global define void Initialize ()
     while( !Arch::s390 () && cindex < size(controllers) )
 	{
 	controller = controllers[cindex]:$[];
-	y2milestone( "controller %1", controller );
+	y2milestone( "Initialize controller %1", controller );
 
 	cindex = cindex + 1;
 
@@ -530,16 +531,18 @@ global define void Initialize ()
 	    if( !(anyActive (controller["resource", "io"]:[])
 		  ||  anyActive (controller["resource", "mem"]:[])))
 	    {
-		y2milestone( "controller %1 disabled in BIOS", 
-	        		controller["device"]:"" );
+		y2milestone( "Initialize controller %1 disabled in BIOS", 
+			     controller["device"]:"" );
+
 		// continue if disabled in BIOS
 		continue;
 	    }
 	}
 
-	startController(controller);
+	module_loaded = startController(controller) || module_loaded;
 	} // while (controller)
 
+    y2milestone( "Initialize module_loaded %1", module_loaded );
     y2milestone( "Initialize ModToInitrdLx %1 ModToInitrd %2 ", ModToInitrdLx,
                  ModToInitrd );
     ModToInitrd = (list<list>)union( ModToInitrdLx, ModToInitrd );
@@ -586,12 +589,12 @@ global define void Initialize ()
 	UI::CloseDialog();
 	WFM::call( "s390-disk-controller" );
 	string cmd = "/sbin/dasd_reload";
-	y2milestone( "cmd %1 ret %2", cmd,
+	y2milestone( "Initialize cmd %1 ret %2", cmd,
 	             SCR::Execute( .target.bash_output, cmd ));
 	UI::OpenDialog( `Empty() );
 	}
 
-    y2milestone( "postinstall_info %1", postinstall_info );
+    y2milestone( "Initialize postinstall_info %1", postinstall_info );
 
     parportInitialize ();
 
@@ -607,8 +610,10 @@ global define void Initialize ()
 
     StartHotplugStorage();
 
-    y2milestone("all controllers initialized" );
+    y2milestone("Initialize all controllers initialized" );
     StorageDevices::InitDone();
+    if( module_loaded )
+	Storage::ReReadTargetMap();
 
     return;
 
