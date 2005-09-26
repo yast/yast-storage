@@ -195,13 +195,12 @@ define boolean CDROMRead ()
 	map cd = StorageDevices::GetCdromEntry( entry["dev_name"]:"" );
         cd = union( cd, entry );
 	y2milestone( "CDROMRead entry %1 is %2", entry["dev_name"]:"", cd );
-	map config = (map)SCR::Read(.probe.status, entry["unique_key"]:"");
-	cd["configured"] = config["configured"]:`no == `yes;
 	cd["changed"] = false;
 	string device = cd["dev_name"]:(entry["dev_name"]:"");
 	cd["device"] = device;
-	list<string> links = [];
+	list<string> links = cd["udev_links"]:[];
 	list<integer> idx = StorageDevices::FindUdevRulesLine( sysfs, cd );
+	y2milestone( "CDROMRead links:%1 idx:%2", links, idx );
         if( size(idx)>0 )
 	    {
 	    map l = AsciiFile::GetLine( sysfs, idx[0]:0 );
@@ -242,6 +241,21 @@ define boolean CDROMRead ()
 	y2milestone( "CDROMRead %1", cd );
 	return( cd );
 	});
+
+    tmp = maplist( map entry, tmp,
+	``{
+	y2milestone( "CDROMRead entry %1", entry["dev_name"]:"" );
+	map config = (map)SCR::Read(.probe.status, entry["unique_key"]:"");
+	y2milestone( "CDROMRead config %1", config );
+	if( config["available"]:`no == `yes )
+	    entry["configured"] = config["configured"]:`no == `yes;
+	else
+	    entry = $[];
+	y2milestone( "CDROMRead entry %1", entry );
+	return( entry );
+	});
+
+    tmp = filter( map entry, tmp, ``(size(entry)>0) );
 
     tmp = sort( map a, map b, tmp,
 	``{
