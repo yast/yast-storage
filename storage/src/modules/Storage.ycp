@@ -281,7 +281,7 @@ global define map GetDiskPartition( string device )
     else if( find( device, "/dev/dasd" )==0 )
 	{
 	dlen = size(device);
-	if( findfirstof( device, "0123456789" )>0 )
+	if( findfirstof( device, "0123456789" )!=nil )
 	    {
 	    dlen = dlen-1;
 	    }
@@ -897,6 +897,7 @@ map getContainerInfo( map c )
 	    c["label"] = LibStorage::DiskInfo::swig_disklabel_get(infos);
 	    c["max_logical"] = LibStorage::DiskInfo::swig_maxLogical_get(infos);
 	    c["max_primary"] = LibStorage::DiskInfo::swig_maxPrimary_get(infos);
+	    c["dasdfmt"] = LibStorage::DiskInfo::swig_initDisk_get(infos);
 	    }
 	else
 	    y2warning( "disk \"%1\" ret:%2", c["device"]:"", ret );
@@ -1103,7 +1104,7 @@ map toDiskMap( map disk, map cinfo )
     {
     list<string> l = [ "size_k", "cyl_size", "cyl_count", "label",
 		       "max_logical", "max_primary", "type",
-		       "used_by_type", "used_by", "partitions" ];
+		       "used_by_type", "used_by", "partitions", "dasdfmt" ];
     foreach( string s, l,
 	``{
 	if( haskey( cinfo, s ) )
@@ -2315,8 +2316,8 @@ global boolean SetCryptPwd( string device, string pwd )
 
 /**
  * Delete the partition table and disk label of device
- * @param string the device to be deleted
- * @return integer
+ * @param string the disk to deleted the partition table from
+ * @return boolean 
  */
 global define boolean DeletePartitionTable(string disk)
     ``{
@@ -2330,6 +2331,36 @@ global define boolean DeletePartitionTable(string disk)
 	y2error( "DeletePartitionTable sint ret %1", ret );
     UpdateTargetMapDisk( disk );
     return( ret==0 );
+    }
+
+/**
+ * Set the flag if a disk needs to be initialized
+ * @param string the disk to be changed
+ * @return boolean 
+ */
+global define boolean InitializeDisk(string disk, boolean value)
+    ``{
+    boolean rbool = true;
+    y2milestone( "InitializeDisk %1 value %2", disk, value );
+    integer ret =
+	LibStorage::StorageInterface::initializeDisk( sint, disk, value );
+    if( ret<0 )
+	{
+	y2error( "InitializeDisk sint ret %1", ret );
+	rbool = false;
+	}
+    if( rbool && value )
+	{
+	map<string,any> d = GetDisk( GetTargetMap(), disk );
+	y2milestone( "d:%1", d );
+	rbool = CreatePartition( disk, disk+"1", `primary, 
+	                         Partitions::fsid_native, 
+				 0, d["cyl_count"]:1 );
+	if( !rbool )
+	    y2error( "InitializeDisk create failed" );
+	}
+    UpdateTargetMapDisk( disk );
+    return( rbool );
     }
 
 global define boolean CreateAny( symbol ctype, map d, map& p )
