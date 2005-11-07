@@ -34,11 +34,26 @@
 
     map<string,map> targetMap    = Storage::GetTargetMap();
     string no_container = "-none-";
+
+    y2milestone( "evms:%1", targetMap["/dev/evms","partitions"]:[] );
+    y2milestone( "evms co:%1", size(filter(string k, map e, targetMap,
+				    ``(e["is_container"]:false))));
+
+    if( size(targetMap["/dev/evms","partitions"]:[])==0 &&
+        size(filter(string k, map e, targetMap,
+	            ``(e["is_container"]:false)))==0)
+	{
+	Storage::ActivateEvms();
+	targetMap = Storage::GetTargetMap();
+	y2milestone( "evms:%1", targetMap["/dev/evms","partitions"]:[] );
+	y2milestone( "evms co:%1", size(filter(string k, map e, targetMap,
+					``(e["is_container"]:false))));
+	}
     
     list evms_cont = get_containers( targetMap, no_container );
     list table = [];
 
-    string  current_co   = evms_cont[0]:"";
+    string  current_co = evms_cont[0]:"";
 
     term dlg = 
 	`HBox( 
@@ -122,6 +137,7 @@
     new_co_list( evms_cont );
     UI::ChangeWidget( `id(`cont), `Value, current_co );
     map co = get_co_map( current_co, targetMap );
+    y2milestone( "current_co:%1 co:%2", current_co, co );
     new_co_size( co );
     
     
@@ -132,12 +148,12 @@
     string id  =  "";
     symbol ret = `next;
     boolean changed = false;
-
+    Storage::CreateTargetBackup("evms");
     repeat
 	{
 	/////////////////////////////////////////////////////////////////
 	// Show the current state:
-	table 	 = get_evms_volumes( targetMap );
+	table = get_evms_volumes( targetMap );
 	UI::ChangeWidget( `id(`evms_table), `Items, table);
 
         UI::SetFocus(`id(`evms_table));
@@ -170,14 +186,12 @@
 
         if( ret == `add_container )
 	    {
-            map ad = add_evms_container( targetMap, 
-	                                 evms_cont[0]:""==no_container );
-
+            map ad = add_evms_container( targetMap );
+	    targetMap = Storage::GetTargetMap();
             // has the user cancelled the dialog?
             if( ad["ok"]:false )
 		{
 		changed = true;
-                targetMap = ad["targets"]:$[];
 		evms_cont = get_containers( targetMap, no_container );
 		new_co_list( evms_cont );
 		current_co = ad["name"]:"";
@@ -186,15 +200,18 @@
 		new_co_size( co );
 		}
 	    }
-	else if( ret == `edit_container )
+	else if( ret == `edit_container && current_co!=no_container )
 	    {
             map ad = edit_evms_container( targetMap, current_co );
-
+	    targetMap = Storage::GetTargetMap();
             // has the user cancelled the dialog?
             if( ad["ok"]:false )
 		{
 		changed = true;
-                targetMap = ad["targets"]:$[];
+		evms_cont = get_containers( targetMap, no_container );
+		new_co_list( evms_cont );
+		current_co = ad["name"]:"";
+		UI::ChangeWidget( `id(`cont), `Value, current_co );
 		co = get_co_map( current_co, targetMap );
 		new_co_size( co );
 		}
@@ -210,7 +227,7 @@
 	    if( ad["ok"]:false )
 		{
 		changed = true;
-                targetMap = ad["targets"]:$[];
+                targetMap = Storage::GetTargetMap();
 		evms_cont = get_containers( targetMap, no_container );
 		new_co_list( evms_cont );
 		current_co = evms_cont[0]:"";
@@ -226,7 +243,7 @@
             // has the user cancelled the dialog?
             if( ad["ok"]:false )
 		{
-                targetMap = ad["targets"]:$[];
+                targetMap = Storage::GetTargetMap();
 		co = get_co_map( current_co, targetMap );
 		changed = true;
 		new_co_size( co );
@@ -235,13 +252,12 @@
 	else if( ret == `evms_edit )
 	    {
 	    id = (string)UI::QueryWidget(`id(`evms_table), `CurrentItem);
-
             map ad = edit_evms_volume( id, targetMap );
 
             // has the user cancelled the dialog?
             if( ad["ok"]:false )
 		{
-                targetMap = ad["targets"]:$[];
+                targetMap = Storage::GetTargetMap();
 		co = get_co_map( current_co, targetMap );
 		changed = true;
 		new_co_size( co );
@@ -250,13 +266,12 @@
 	else if( ret == `evms_delete )
 	    {
 	    id = (string)UI::QueryWidget(`id(`evms_table), `CurrentItem);
-
             map ad = delete_evms_volume( id, targetMap );
 
             // has the user cancelled the dialog?
             if( ad["ok"]:false )
 		{
-                targetMap = ad["targets"]:$[];
+                targetMap = Storage::GetTargetMap();
 		co = get_co_map( current_co, targetMap );
 		changed = true;
 		new_co_size( co );
@@ -267,11 +282,6 @@
 	// Finish this step
 	////////////////////////////////////////
 	
-	if( ret == `next )
-	    {
-	    Storage::SetTargetMap( targetMap );
-	    }
-
 	if( ret == `back || ret == `cancel || ret == `abort )
 	    {
 	    if( changed )
@@ -285,11 +295,17 @@ Continue?
 		    {
 		    ret = `again;
 		    }
+		else
+		    {
+		    Storage::RestoreTargetBackup("evms");
+		    }
 		}
 	    }
 
-    } until (ret == `next || ret == `back || ret == `cancel || ret == `abort );
-    
+	} 
+    until (ret == `next || ret == `back || ret == `cancel || ret == `abort );
+
+    Storage::DisposeTargetBackup("evms");
     return ret;
 }
 
