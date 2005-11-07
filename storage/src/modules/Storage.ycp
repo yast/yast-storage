@@ -1109,6 +1109,8 @@ map toDiskMap( map disk, map cinfo )
 	``{
 	if( haskey( cinfo, s ) )
 	    disk[s] = cinfo[s]:(any)0;
+	else if( haskey( disk, s ))
+	    disk = remove( disk, s );
 	});
     return( disk );
     }
@@ -1131,7 +1133,9 @@ list<map> getContainers()
 	    c["used_by_type"] = toSymbol( conv_usedby, t );
 	    c["used_by"] = LibStorage::ContainerInfo::swig_usedByName_get(info);
 	    }
-	c["readonly"] = LibStorage::ContainerInfo::swig_readonly_get(info);
+	boolean b = LibStorage::ContainerInfo::swig_readonly_get(info);
+	if( b )
+	    c["readonly"] = true;
 	ret = add( ret, c );
 	});
     y2milestone( "getContainers ret:%1", ret );
@@ -1828,7 +1832,7 @@ global boolean CreatePartition( string disk, string device, symbol ptype,
     if( ret<0 )
 	y2error( "CreatePartition ret %1", ret );
     y2milestone( "CreatePartition sint ret:%1", ret );
-    UpdateTargetMapDisk( disk );
+    UpdateTargetMap();
     return( ret==0 );
     }
 
@@ -2154,6 +2158,123 @@ global boolean DeleteEvmsCo( string name )
     return( ret==0 );
     }
 
+global string EvmsShortName( string lname )
+    {
+    string sname = lname;
+    if( find( sname, "/" )>=0 )
+	sname = substring( sname, find( sname, "/" )+1 );
+    return( sname );
+    }
+
+global boolean ActivateEvms()
+    {
+    integer ret = 0;
+    ret = LibStorage::StorageInterface::evmsActivate( sint );
+    if( ret<0 )
+	y2error( "activateEvms sint ret %1", ret );
+    UpdateTargetMap();
+    return( ret==0 );
+    }
+
+global boolean CreateEvmsCo( string name, integer pesize, boolean lvm2 )
+    {
+    y2milestone( "CreateEvmsCo name:%1 pesize:%2 lvm2:%3", name, pesize, lvm2 );
+    string sname = EvmsShortName( name );
+    y2milestone( "CreateEvmsCo sname:%1", sname );
+    list<string> devs = [];
+    integer ret = 0;
+    ret = LibStorage::StorageInterface::createEvmsContainer( sint, sname, 
+                                                             pesize/1024,
+							     !lvm2, devs );
+    if( ret<0 )
+	y2error( "CreateEvmsCo sint ret %1", ret );
+    UpdateTargetMap();
+    return( ret==0 );
+    }
+
+global boolean ModifyEvmsCo( string old_name, string new_name, integer pesize, 
+                             boolean lvm2 )
+    {
+    y2milestone( "ModifyEvmsCo old name:%1 new name:%2 pesize:%3 lvm2:%4", 
+                 old_name, new_name, pesize, lvm2 );
+    string sname = EvmsShortName( old_name );
+    y2milestone( "CreateEvmsCo sname:%1", sname );
+    list<string> devs = [];
+    integer ret = 0;
+    ret = LibStorage::StorageInterface::modifyEvmsContainer( sint, sname, 
+                                                             new_name,
+							     pesize/1024, 
+							     !lvm2 );
+    if( ret<0 )
+	y2error( "ModifyEvmsCo sint ret %1", ret );
+    UpdateTargetMap();
+    return( ret==0 );
+    }
+
+global boolean ExtendEvmsCo( string name, string device )
+    {
+    y2milestone( "ExtendEvmsCo name:%1 device:%2", name, device );
+    integer ret = 0;
+    string sname = EvmsShortName( name );
+    y2milestone( "ExtendEvmsCo sname:%1", sname );
+    list<string> devs = [ device ];
+    ret = LibStorage::StorageInterface::extendEvmsContainer( sint, sname, 
+                                                             devs );
+    if( ret<0 )
+	y2error( "ExtendEvmsCo sint ret %1", ret );
+    UpdateTargetMap();
+    return( ret==0 );
+    }
+
+global boolean ReduceEvmsCo( string name, string device )
+    {
+    y2milestone( "ReduceEvmsCo name:%1 device:%2", name, device );
+    integer ret = 0;
+    string sname = EvmsShortName( name );
+    y2milestone( "ReduceEvmsCo sname:%1", sname );
+    list<string> devs = [ device ];
+    ret = LibStorage::StorageInterface::shrinkEvmsContainer( sint, sname, 
+                                                             devs );
+    if( ret<0 )
+	y2error( "ReduceEvmsCo sint ret %1", ret );
+    UpdateTargetMap();
+    return( ret==0 );
+    }
+
+global boolean CreateEvmsVolume( string coname, string lvname, integer sizeK,
+				 integer stripe )
+    {
+    y2milestone( "CreateEvmsVolume vg:%1 name:%2 sizeK:%3 stripe:%4", coname,
+                 lvname, sizeK, stripe );
+    integer ret = 0;
+    string dummy = "";
+    string sname = EvmsShortName( coname );
+    y2milestone( "CreateEvmsVolume sname:%1", sname );
+    ret = LibStorage::StorageInterface::createEvmsVolume( sint, sname, lvname,
+                                                          (sizeK+1023)/1024, 
+							  stripe, dummy );
+    if( ret<0 )
+	y2error( "CreateEvmsVolume sint ret %1", ret );
+    UpdateTargetMapDisk( "/dev/evms/"+coname );
+    return( ret==0 );
+    }
+
+global boolean ChangeEvmsStripeSize( string coname, string name,
+				     integer stripeSize )
+    {
+    y2milestone( "ChangeEvmsStripeSize co:%1 name:%2 stripeSize:%3", coname,
+                 name, stripeSize );
+    integer ret = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::changeEvmsStripeSize( sint, coname,
+							      name,
+							      stripeSize );
+    if( ret<0 )
+	y2error( "ChangeEvmsStripeSize sint ret %1", ret );
+    UpdateTargetMapDisk( "/dev/evms/"+coname );
+    return( ret==0 );
+    }
+
 global boolean CreateMd( integer nr, string type )
     {
     y2milestone( "CreateMd nr:%1 type:%2", nr, type );
@@ -2400,8 +2521,16 @@ global define boolean CreateAny( symbol ctype, map d, map& p )
 	                                 p["stripesize"]:0 );
 	    }
 	}
-    /* FIXME Evms
-    else if( ctype == `CT_EVMS ) */
+    else if( ctype == `CT_EVMS ) 
+	{
+	ret = Storage::CreateEvmsVolume( d["name"]:"", p["name"]:"", 
+	                                 p["size_k"]:0, p["stripes"]:1 );
+	if( ret && p["stripes"]:1>1 && p["stripesize"]:0>0 )
+	    {
+	    Storage::ChangeEvmsStripeSize( d["name"]:"", p["name"]:"",
+					   p["stripesize"]:0 );
+	    }
+	}
     y2milestone( "CreateAny ret:%1", ret );
     return( ret );
     }
@@ -2558,6 +2687,8 @@ global define map<string,map> GetTargetMap()
 		if( haskey( disk, "dname" ))
 		    disk = remove( disk, "dname" );
 		tmp[dev] = disk;
+		if( disk["dasdfmt"]:false )
+		    Storage::InitializeDisk( dev, true );
 		});
 	    foreach( map c, conts,
 		``{
@@ -2672,10 +2803,16 @@ global define void SetTargetMap( map<string,map> target )
 		foreach( string d, ls,
 			 ``{Storage::ExtendLvmVg( target[k,"name"]:"", d );});
 		}
-	    /* FIXME Evms
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
+		{
 		CreateEvmsCo( target[k,"name"]:"", target[k,"pesize"]:0,
-		              target[k,"lvm2"]:true ); */
+		              target[k,"lvm2"]:true );
+		list<string> ls =
+		    (list<string>)union( target[k,"devices"]:[],
+				         target[k,"devices_add"]:[] );
+		foreach( string d, ls,
+			 ``{Storage::ExtendEvmsCo( target[k,"name"]:"", d );});
+		}
 	    }
 	list<map> dps = filter( map p, target[k,"partitions"]:[],
 	                        ``(!p["delete"]:false) );

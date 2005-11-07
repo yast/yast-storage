@@ -97,6 +97,7 @@
   boolean button_adapt_mp	  = false;   // Should the "Adapt mount points from
                                              // existing /etc/fstab" -Button be shown in Expert menu
 
+   y2milestone( "EVMS:%1", ProductFeatures::GetBooleanFeature ("partitioning", "evms_config") );
    boolean test_mode          = Mode::test ();
    string  boot_mode	      =	"fritz";
    /* FIXME string  boot_mode	      =	Bootloader::getLoaderType ();*/
@@ -979,7 +980,8 @@ define list FillPartitionList(map<string,map> targets)
 	    (disk["type"]:`CT_UNKNOWN==`CT_DISK ||
 	     disk["type"]:`CT_UNKNOWN==`CT_LVM ||
 	     (disk["type"]:`CT_UNKNOWN==`CT_EVMS && size(disk["name"]:"")>0 &&
-	      !haskey( targets, "/dev/"+substring( disk["name"]:"", find( disk["name"]:"", "/")+1 )) )))
+	      (!haskey( targets, "/dev/"+substring( disk["name"]:"", find( disk["name"]:"", "/")+1 ))||
+	       disk["create"]:false))))
 	    {
 	    term a = `item(`id(dev));
 
@@ -1015,17 +1017,25 @@ define list FillPartitionList(map<string,map> targets)
 		}
 	    if( !hide && find( partition["device"]:"", "/dev/evms/" )==0 )
 		{
+		y2milestone( "evms p: %1", partition );
 		string d1 = "/dev/" + substring( partition["device"]:"", 10 );
+		y2milestone( "evms d1:%1", d1 );
 		if( find( d1, "/lvm/" )>0 )
 		    {
 		    d1 = "/dev/" + substring( d1, 9 );
 		    }
+		else if( find( d1, "/lvm2/" )>0 )
+		    {
+		    d1 = "/dev/" + substring( d1, 10 );
+		    }
 		hide = size(partition["mount"]:"")==0;
 		if( hide )
 		    {
-		    hide = size(Storage::GetPartition( targets, d1 ))>0 ||
+		    y2milestone( "evms p: %1", Storage::GetPartition( targets, d1 ));
+		    hide = size(Storage::GetPartition( targets, d1 ))>0 &&
 			   !partition["evms_native"]:false;
 		    }
+		y2milestone( "evms d1:%1 hide:%2", d1, hide );
 		}
 	    if( !hide || log_mode )
 		{
