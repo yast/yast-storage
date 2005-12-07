@@ -73,8 +73,11 @@
   boolean showT_format 		  = true;      // show format flag
   boolean showT_fs 		  = true;      // show filesystem
   boolean showT_mount 		  = true;      // show mountpoint
+  boolean showT_mby               = true;      // show mount by
   boolean showT_Used		  = true;      // show using entity
   boolean showT_Label             = true;      // show assigned label
+  boolean showT_p_id		  = true;      // show persistent id
+  boolean showT_p_path            = true;      // show persistent path
 
   boolean show_disk               = true;
   boolean edit_cylinder           = true;
@@ -937,6 +940,8 @@ define list FillPartitionList(map<string,map> targets)
 	string  dev_size      = ByteToHumanString(disk["size_k"]:0*1024);
 	string  dev_start_cyl = to4string(0);
 	string  dev_nb_cyl    = to4string(cyl_count-1);
+	string  p_id          = disk["p_id"]:"";
+	string  p_path        = disk["p_path"]:"";
 
 	if ( (model != "") && (vendor != "") )
 	    vendor = vendor + "-" + model;
@@ -992,10 +997,13 @@ define list FillPartitionList(map<string,map> targets)
 	    if( showT_format ) a = add(a, (disk["dasdfmt"]:false)?"X":" " );
 	    if( showT_fs )     a = add(a, vendor);
 	    if( showT_mount )  a = add(a, "" );
+	    if( showT_mby )    a = add(a, "");
 	    if( showT_cyl )    a = add(a, dev_start_cyl );
 	    if( showT_cyl )    a = add(a, dev_nb_cyl );
 	    if( showT_Used )   a = add(a, "");
-	    if( showT_Label  ) a = add(a, "");
+	    if( showT_Label )  a = add(a, "");
+	    if( showT_p_id )   a = add(a, p_id);
+	    if( showT_p_path ) a = add(a, p_path);
 
 	    table_input = add( table_input, a );
 	    }
@@ -1054,9 +1062,12 @@ define list FillPartitionList(map<string,map> targets)
 		boolean  crypt_fs        = partition["enc_type"]:`none != `none;
 		symbol   used_fs         = partition["used_fs"]:`unknown;
 		string   mount_point     = partition["mount"]:"";
+		symbol   mount_by        = partition["mountby"]:`device;
 		string   filesystem_name = "";
-		string   used_by   	  = partition["used_by"]:"";
+		string   used_by   	 = partition["used_by"]:"";
 		string   label           = partition["label"]:"";
+		string   p_id            = partition["p_id"]:"";
+		string   p_path          = partition["p_path"]:"";
 
 		if( partition["used_by_type"]:`UB_NONE == `UB_LVM )
 		    {
@@ -1104,6 +1115,17 @@ define list FillPartitionList(map<string,map> targets)
 			}
 		    a = add(a, tmp );
 		    }
+		if( showT_mby )
+		    {
+		    if (size (mount_point) > 0)
+			{
+			map tmp = $[ `device : "K", `uuid : "U", `label : "L",
+				     `id : "I", `path : "P" ];
+			a = add(a, tmp[mount_by]:"");
+			}
+		    else
+			a = add(a, "");
+		    }
 		if( showT_cyl )
 		    {
 		    if( real_disk )
@@ -1120,6 +1142,8 @@ define list FillPartitionList(map<string,map> targets)
 		    }
 		if( showT_Used )   a = add(a, used_by);
 		if( showT_Label )  a = add(a, label);
+		if( showT_p_id )   a = add(a, p_id);
+		if( showT_p_path ) a = add(a, p_path);
 
 		table_input = add( table_input, a );
 		}
@@ -1331,7 +1355,7 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
 				       `VSpacing(1),
 				       `VStretch(),
 				       `HBox(
-					     `PushButton(`id(`ok), `opt(`default),  Label::OKButton()   ),
+					     `PushButton(`id(`ok), `opt(`default),  Label::OKButton() ),
 					     `PushButton(`id(`cancel),  Label::CancelButton() )
 					     )
 				       )
@@ -2393,6 +2417,8 @@ define string FormatYouCannotCause( boolean primary_is_possible,
     // Column header: centered / minimum = 7 characters /
     // fill with space if needed
     if ( showT_mount )  header = add( header, _(" Mount "));
+    // Column header
+    if ( showT_mby )    header = add( header, _("Mount By"));
     // Column header: minimum = 5 characters   fill with space if needed
     if ( showT_cyl )    header = add( header, `Right(_("Start")));
     // Column header: minimum = 4 characters   fill with space if needed
@@ -2401,6 +2427,10 @@ define string FormatYouCannotCause( boolean primary_is_possible,
     if ( showT_Used )   header = add( header, `Left(_("Used By")));
     // Column header
     if ( showT_Label )  header = add( header, `Left(_("Label")));
+    // Column header
+    if ( showT_p_id )   header = add( header, `Left(_("Device Id")));
+    // Column header
+    if ( showT_p_path ) header = add( header, `Left(_("Device Path")));
 
     /////////////////////////////////////////////////////////////////
     //    MAIN LAYOUT
@@ -3390,7 +3420,7 @@ Really quit the main dialog?
 	    if ( ret == `next )
 		{
 		list retval = check_created_partition_table( Storage::GetTargetMap(), true,
-		                                            Stage::initial()&&!Mode::repair() );
+							     Stage::initial()&&!Mode::repair() );
 		Storage::SetTargetMap( retval[0]:$[] );
 	        doagain = retval[1]:`next;
 		}
