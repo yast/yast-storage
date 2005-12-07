@@ -91,7 +91,9 @@ map<string,any> conv_mountby =
     $[ "def_sym" : `device,
        "def_int" : LibStorage::MOUNTBY_DEVICE(),
        "m" : $[ LibStorage::MOUNTBY_UUID() : `uuid,
-                LibStorage::MOUNTBY_LABEL() : `label
+                LibStorage::MOUNTBY_LABEL() : `label,
+		LibStorage::MOUNTBY_ID() : `id,
+		LibStorage::MOUNTBY_PATH() : `path
 	      ]
      ];
 
@@ -750,6 +752,14 @@ global define map<string,map> AddFstabInfo( map<string,map> target, boolean line
 			{
 			part["mountby"] = `label;
 			}
+		    else if( find(entry["fields",0]:"", "/dev/disk/by-id/") > -1 )
+		        {
+			part["mountby"] = `id;
+			}
+		    else if( find(entry["fields",0]:"", "/dev/disk/by-path/") > -1 )
+		        {
+			part["mountby"] = `path;
+			}
 		    }
 		}
 	    lines = AsciiFile::FindLineField( crtab, 2, mp );
@@ -838,6 +848,12 @@ map volumeMap( any vinfo, map p )
 	    p["mountby"] = toSymbol( conv_mountby, t );
 	    }
 	}
+    tmp = LibStorage::VolumeInfo::swig_pId_get(vinfo);
+    if( size(tmp)>0 )
+	p["p_id"] = tmp;
+    tmp = LibStorage::VolumeInfo::swig_pPath_get(vinfo);
+    if( size(tmp)>0 )
+	p["p_path"] = tmp;
     t = LibStorage::VolumeInfo::swig_usedBy_get(vinfo);
     if( t!=LibStorage::UB_NONE() )
 	{
@@ -1104,7 +1120,8 @@ map toDiskMap( map disk, map cinfo )
     {
     list<string> l = [ "size_k", "cyl_size", "cyl_count", "label",
 		       "max_logical", "max_primary", "type", "readonly",
-		       "used_by_type", "used_by", "partitions", "dasdfmt" ];
+		       "used_by_type", "used_by", "partitions", "dasdfmt",
+		       "p_id", "p_path" ];
     foreach( string s, l,
 	``{
 	if( haskey( cinfo, s ) )
@@ -1125,6 +1142,8 @@ list<map> getContainers()
 	map c = $[];
 	c["name"] = LibStorage::ContainerInfo::swig_name_get(info);
 	c["device"] = LibStorage::ContainerInfo::swig_device_get(info);
+	c["p_id"] = LibStorage::ContainerInfo::swig_pId_get(info);
+	c["p_path"] = LibStorage::ContainerInfo::swig_pPath_get(info);
 	integer t = LibStorage::ContainerInfo::swig_type_get(info);
 	c["type"] = toSymbol( conv_ctype, t );
 	t = LibStorage::ContainerInfo::swig_usedBy_get(info);
@@ -2183,7 +2202,7 @@ global boolean CreateEvmsCo( string name, integer pesize, boolean lvm2 )
     y2milestone( "CreateEvmsCo sname:%1", sname );
     list<string> devs = [];
     integer ret = 0;
-    ret = LibStorage::StorageInterface::createEvmsContainer( sint, sname, 
+    ret = LibStorage::StorageInterface::createEvmsContainer( sint, sname,
                                                              pesize/1024,
 							     !lvm2, devs );
     if( ret<0 )
@@ -2192,18 +2211,18 @@ global boolean CreateEvmsCo( string name, integer pesize, boolean lvm2 )
     return( ret==0 );
     }
 
-global boolean ModifyEvmsCo( string old_name, string new_name, integer pesize, 
+global boolean ModifyEvmsCo( string old_name, string new_name, integer pesize,
                              boolean lvm2 )
     {
-    y2milestone( "ModifyEvmsCo old name:%1 new name:%2 pesize:%3 lvm2:%4", 
+    y2milestone( "ModifyEvmsCo old name:%1 new name:%2 pesize:%3 lvm2:%4",
                  old_name, new_name, pesize, lvm2 );
     string sname = EvmsShortName( old_name );
     y2milestone( "CreateEvmsCo sname:%1", sname );
     list<string> devs = [];
     integer ret = 0;
-    ret = LibStorage::StorageInterface::modifyEvmsContainer( sint, sname, 
+    ret = LibStorage::StorageInterface::modifyEvmsContainer( sint, sname,
                                                              new_name,
-							     pesize/1024, 
+							     pesize/1024,
 							     !lvm2 );
     if( ret<0 )
 	y2error( "ModifyEvmsCo sint ret %1", ret );
@@ -2218,7 +2237,7 @@ global boolean ExtendEvmsCo( string name, string device )
     string sname = EvmsShortName( name );
     y2milestone( "ExtendEvmsCo sname:%1", sname );
     list<string> devs = [ device ];
-    ret = LibStorage::StorageInterface::extendEvmsContainer( sint, sname, 
+    ret = LibStorage::StorageInterface::extendEvmsContainer( sint, sname,
                                                              devs );
     if( ret<0 )
 	y2error( "ExtendEvmsCo sint ret %1", ret );
@@ -2233,7 +2252,7 @@ global boolean ReduceEvmsCo( string name, string device )
     string sname = EvmsShortName( name );
     y2milestone( "ReduceEvmsCo sname:%1", sname );
     list<string> devs = [ device ];
-    ret = LibStorage::StorageInterface::shrinkEvmsContainer( sint, sname, 
+    ret = LibStorage::StorageInterface::shrinkEvmsContainer( sint, sname,
                                                              devs );
     if( ret<0 )
 	y2error( "ReduceEvmsCo sint ret %1", ret );
@@ -2251,7 +2270,7 @@ global boolean CreateEvmsVolume( string coname, string lvname, integer sizeK,
     string sname = EvmsShortName( coname );
     y2milestone( "CreateEvmsVolume sname:%1", sname );
     ret = LibStorage::StorageInterface::createEvmsVolume( sint, sname, lvname,
-                                                          (sizeK+1023)/1024, 
+                                                          (sizeK+1023)/1024,
 							  stripe, dummy );
     if( ret<0 )
 	y2error( "CreateEvmsVolume sint ret %1", ret );
@@ -2434,7 +2453,7 @@ global boolean SetCryptPwd( string device, string pwd )
 /**
  * Delete the partition table and disk label of device
  * @param string the disk to deleted the partition table from
- * @return boolean 
+ * @return boolean
  */
 global define boolean DeletePartitionTable(string disk)
     ``{
@@ -2453,7 +2472,7 @@ global define boolean DeletePartitionTable(string disk)
 /**
  * Set the flag if a disk needs to be initialized
  * @param string the disk to be changed
- * @return boolean 
+ * @return boolean
  */
 global define boolean InitializeDisk(string disk, boolean value)
     ``{
@@ -2470,8 +2489,8 @@ global define boolean InitializeDisk(string disk, boolean value)
 	{
 	map<string,any> d = GetDisk( GetTargetMap(), disk );
 	y2milestone( "d:%1", d );
-	rbool = CreatePartition( disk, disk+"1", `primary, 
-	                         Partitions::fsid_native, 
+	rbool = CreatePartition( disk, disk+"1", `primary,
+	                         Partitions::fsid_native,
 				 0, d["cyl_count"]:1 );
 	if( !rbool )
 	    y2error( "InitializeDisk create failed" );
@@ -2521,9 +2540,9 @@ global define boolean CreateAny( symbol ctype, map d, map& p )
 	                                 p["stripesize"]:0 );
 	    }
 	}
-    else if( ctype == `CT_EVMS ) 
+    else if( ctype == `CT_EVMS )
 	{
-	ret = Storage::CreateEvmsVolume( d["name"]:"", p["name"]:"", 
+	ret = Storage::CreateEvmsVolume( d["name"]:"", p["name"]:"",
 	                                 p["size_k"]:0, p["stripes"]:1 );
 	if( ret && p["stripes"]:1>1 && p["stripesize"]:0>0 )
 	    {
@@ -3267,7 +3286,7 @@ global define string CheckSwapConflicts()``{
     return( ret );
     }
 
-global define list GetPrimPartitions( map<string,map> targets, 
+global define list GetPrimPartitions( map<string,map> targets,
                                       boolean foreign_os )
     ``{
     list<map> ret = [];
@@ -4838,7 +4857,7 @@ global define map onepartition2fstab (map part, integer& other_nr)
 	    y2milestone( "TT add MountPoint %1", mount_point );
 	    }
 	}
-    else if( (Arch::i386()||Arch::ia64()||Arch::x86_64()) && 
+    else if( (Arch::i386()||Arch::ia64()||Arch::x86_64()) &&
              size(mount_point)>0 &&
              (used_fs==`vfat || used_fs==`ntfs) &&
              (contains(union(union(Partitions::fsid_dostypes,
