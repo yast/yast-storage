@@ -848,12 +848,6 @@ map volumeMap( any vinfo, map p )
 	    p["mountby"] = toSymbol( conv_mountby, t );
 	    }
 	}
-    tmp = LibStorage::VolumeInfo::swig_pId_get(vinfo);
-    if( size(tmp)>0 )
-	p["p_id"] = tmp;
-    tmp = LibStorage::VolumeInfo::swig_pPath_get(vinfo);
-    if( size(tmp)>0 )
-	p["p_path"] = tmp;
     t = LibStorage::VolumeInfo::swig_usedBy_get(vinfo);
     if( t!=LibStorage::UB_NONE() )
 	{
@@ -914,6 +908,12 @@ map getContainerInfo( map c )
 	    c["max_logical"] = LibStorage::DiskInfo::swig_maxLogical_get(infos);
 	    c["max_primary"] = LibStorage::DiskInfo::swig_maxPrimary_get(infos);
 	    c["dasdfmt"] = LibStorage::DiskInfo::swig_initDisk_get(infos);
+	    string tmp = LibStorage::DiskInfo::swig_udevId_get(infos);
+	    if( size(tmp)>0 )
+		c["udev_id"] = tmp;
+	    tmp = LibStorage::DiskInfo::swig_udevPath_get(infos);
+	    if( size(tmp)>0 )
+		c["udev_path"] = tmp;
 	    }
 	else
 	    y2warning( "disk \"%1\" ret:%2", c["device"]:"", ret );
@@ -935,6 +935,12 @@ map getContainerInfo( map c )
 	    boolean boot = LibStorage::PartitionInfo::swig_boot_get(info);
 	    if( boot )
 		p["boot"] = true;
+	    tmp = LibStorage::PartitionInfo::swig_udevId_get(info);
+	    if( size(tmp)>0 )
+		p["udev_id"] = tmp;
+	    tmp = LibStorage::PartitionInfo::swig_udevPath_get(info);
+	    if( size(tmp)>0 )
+		p["udev_path"] = tmp;
 	    c["partitions"] = add( c["partitions"]:[], p );
 	    });
 	pinfos = [];
@@ -1121,7 +1127,7 @@ map toDiskMap( map disk, map cinfo )
     list<string> l = [ "size_k", "cyl_size", "cyl_count", "label",
 		       "max_logical", "max_primary", "type", "readonly",
 		       "used_by_type", "used_by", "partitions", "dasdfmt",
-		       "p_id", "p_path" ];
+		       "udev_id", "udev_path" ];
     foreach( string s, l,
 	``{
 	if( haskey( cinfo, s ) )
@@ -1142,8 +1148,6 @@ list<map> getContainers()
 	map c = $[];
 	c["name"] = LibStorage::ContainerInfo::swig_name_get(info);
 	c["device"] = LibStorage::ContainerInfo::swig_device_get(info);
-	c["p_id"] = LibStorage::ContainerInfo::swig_pId_get(info);
-	c["p_path"] = LibStorage::ContainerInfo::swig_pPath_get(info);
 	integer t = LibStorage::ContainerInfo::swig_type_get(info);
 	c["type"] = toSymbol( conv_ctype, t );
 	t = LibStorage::ContainerInfo::swig_usedBy_get(info);
@@ -2583,6 +2587,7 @@ define void AddMountPointsForWinParts( list<map> partitions, boolean primary,
 
 	if( !haskey( partition, "mount") &&
 	    ((partnum<=max_prim)==primary) &&
+	    foreign_nr < 24 &&
 	    Partitions::IsDosWinNtPartition(fsid) &&
 	    contains( [`vfat, `ntfs], partition["used_fs"]:`none ))
 	    {
