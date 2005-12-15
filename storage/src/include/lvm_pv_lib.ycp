@@ -85,8 +85,13 @@ its logical volumes first.
 
 define boolean isItemPv( map<string,map> tg, string id )
     ``{
-    map part = Storage::GetPartition( tg, id );
-    return( part["used_by_type"]:`UB_NONE == `UB_LVM );
+    map part = $[];
+    if( haskey( tg, id ))
+	part = tg[id]:$[];
+    else
+	part = Storage::GetPartition( tg, id );
+    return( part["used_by_type"]:`UB_NONE == `UB_LVM ||
+            part["used_by_type"]:`UB_NONE == `UB_EVMS );
     };
 
 
@@ -122,8 +127,6 @@ then add it to the new group.
     return( false );
     };
 
-
-    
     //////////////////////////////////////////////////////////////////////
     // belongs the the partition "id" already to a volume group?
     // if NO: popup a proper Message and return(false)
@@ -153,8 +156,7 @@ It does not belong to a volume group.
 	}
     return( false );
     };
-    
-    
+
 
 /////////////////////////////////////////////////////////////////
 // Get all partitions, we can probably use as physical volumes
@@ -170,15 +172,11 @@ define list<map> get_possible_pvs( map<string,map> targetMap )
     
     targetMap = mapmap( string dev, map devmap, targetMap,
 	``{
-	boolean is_lvm_vg  = devmap["type"]:`CT_UNKNOWN==`CT_LVM;
-	integer cyl_size   = devmap["cyl_size"]:1000000;
-					    
 	list partitions = maplist( map part, devmap["partitions"]:[],
 	    ``{
 	    part["maindev"] = dev;
 	    return( part );
 	    });
-		
 	return( $[ dev: add(devmap, "partitions", partitions) ] );
 	});
 
@@ -189,26 +187,40 @@ define list<map> get_possible_pvs( map<string,map> targetMap )
     // no mountpoint
     // id 0x83 or 0x8e or 0xfe
 
-    list types_no = [ `lvm, `evms, `dm ];
+    list types_no = [ `lvm, `evms, `dm, `extended ];
     list fsids = [ Partitions::fsid_lvm, Partitions::fsid_raid,
 		   Partitions::fsid_native ];
-    list ubs = [ `UB_NONE, `UB_LVM ];
+    list ubs = [ `UB_NONE, `UB_LVM, `UB_EVMS ];
 
     foreach( string dev, map devmap, targetMap,
 	``{
 	y2milestone( "get_possible_pvs parts:%1", devmap["partitions"]:[] );
-	y2milestone( "get_possible_pvs filter:%1", filter( map part, devmap["partitions"]:[],
-	                           ``( size(part["mount"]:"")==0 &&
-				                                  !contains( types_no, part["type"]:`primary ) &&
-								                                 contains( ubs, part["used_by_type"]:`UB_NONE ) &&
-												                                contains( fsids, part["fsid"]:0 ))));
-	ret = (list<map>)merge( ret, 
-		   filter( map part, devmap["partitions"]:[],
-			   ``( size(part["mount"]:"")==0 &&
-			       !contains( types_no, part["type"]:`primary ) &&
-			       contains( ubs, part["used_by_type"]:`UB_NONE ) &&
-			       (part["type"]:`primary==`sw_raid||
-			        contains( fsids, part["fsid"]:0 )))));
+	list<map> parts = 
+	    filter( map part, devmap["partitions"]:[],
+		    ``( size(part["mount"]:"")==0 &&
+			!contains( types_no, part["type"]:`primary ) &&
+			contains( ubs, part["used_by_type"]:`UB_NONE ) &&
+			(part["type"]:`primary==`sw_raid||
+			contains( fsids, part["fsid"]:0 ))));
+	y2milestone( "get_possible_pvs filter:%1", parts );
+	if( size(parts)==0 && devmap["type"]:`CT_UNKNOWN==`CT_DISK &&
+	    contains( ubs, devmap["used_by_type"]:`UB_NONE ))
+	    {
+	    map p = $[ "device":dev, "maindev":dev, 
+	               "size_k":devmap["size_k"]:0 ];
+	    if( devmap["used_by_type"]:`UB_NONE != `UB_NONE )
+		{
+		p["used_by_type"] = devmap["used_by_type"]:`UB_NONE;
+		p["used_by"] = devmap["used_by"]:"";
+		}
+	    parts = [ p ];
+	    }
+	ret = (list<map>)merge( ret, parts );
+	});
+    ret = maplist( map p, ret,
+	``{
+	p["used_by"] = lvmVg( p["used_by"]:"" );
+	return( p );
 	});
     y2milestone( "get_possible_pvs ret %1", ret );
     return( ret );

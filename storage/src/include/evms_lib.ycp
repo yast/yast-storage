@@ -702,27 +702,6 @@ define list get_evms_volumes( map<string,map> tg )
 	    foreach( map p, e["partitions"]:[], ``(y2milestone( "get_evms_volumes p:%1", p )));
 	    }
 	});
-    /*
-    foreach( string k, map e, tg,
-	``{
-	if( find( k, "/dev/evms" )!=0 && Storage::IsRealDisk( e ))
-	    {
-	    string ek = "/dev/evms" + substring( k, 4 );
-	    if( find( string k, tmp, ``(k==ek) )==nil )
-		{
-		if( size( filter( map p, e["partitions"]:[],
-		                  ``(p["create"]:false && 
-			             p["type"]:`primary != `extended &&
-				     size(p["mount"]:"")==0 && 
-				     p["used_by_type"]:`UB_NONE==`UB_NONE)))>0 )
-		    {
-		    y2milestone( "get_evms_volumes adding create %1", ek );
-		    tmp = add( tmp, ek );
-		    }
-		}
-	    }
-	});
-    */
     list<string> keys = sort( tmp );
     tmp = [];
     foreach( string k, map e, tg,
@@ -741,26 +720,12 @@ define list get_evms_volumes( map<string,map> tg )
 	list<map> pa = 
 	    filter( map p, tg[k,"partitions"]:[], 
 		    ``(p["used_by_type"]:`UB_NONE==`UB_NONE));
+	pa = filter( map p, pa, 
+	    ``{
+	    string ndev = "/dev/" + substring( p["device"]:"", 10 );
+	    return( !Storage::IsRealDisk( tg[ndev]:$[] ));
+	    });
 	pa = filter_deleted_parts( tg, pa );
-	if( size(k)>10 )
-	    {
-	    string ndev = "/dev/" + substring( k, 10 );
-	    y2milestone( "get_evms_volumes ndev %1", ndev );
-	    if( Storage::IsRealDisk( tg[ndev]:$[] ))
-		{
-		list<map> pc = filter( map p, tg[ndev,"partitions"]:[],
-				       ``(p["create"]:false && 
-					  p["type"]:`primary != `extended &&
-					  size(p["mount"]:"")==0 &&
-					  p["used_by_type"]:`UB_NONE==`UB_NONE));
-		pc = maplist( map p, pc,
-		    ``{
-		    p["device"] = k + sformat( "%1", p["nr"]:0 );
-		    return( p );
-		    });
-		pa = (list<map>)merge( pa, pc );
-		}
-	    }
 	parts = 
 	    (list<map>)merge( parts, 
 	                      sort( map x, map y, pa,

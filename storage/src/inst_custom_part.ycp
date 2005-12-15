@@ -888,6 +888,17 @@ define string to4string( integer nb )
     return( sformat( "%1", nb ));
     };
 
+define string usedByString( symbol ub_type, string used_by )
+    {
+    string ret = "";
+    if( ub_type == `UB_LVM )
+	ret = "LVM " + used_by;
+    else if( ub_type == `UB_EVMS )
+	ret = "EVMS " + used_by;
+    else if( ub_type != `UN_NONE )
+	ret = used_by;
+    return( ret );
+    }
 
     /*---------------------------------------------------------------------
      * Fill the selection box with ID 'selbox_id' inside widget tree
@@ -988,6 +999,7 @@ define list FillPartitionList(map<string,map> targets)
 	      (!haskey( targets, "/dev/"+substring( disk["name"]:"", find( disk["name"]:"", "/")+1 ))||
 	       disk["create"]:false))))
 	    {
+	    y2milestone( "disk:%1", disk );
 	    term a = `item(`id(dev));
 
 	    if( showT_dev )    a = add(a, dev );
@@ -1000,7 +1012,8 @@ define list FillPartitionList(map<string,map> targets)
 	    if( showT_mby )    a = add(a, "");
 	    if( showT_cyl )    a = add(a, dev_start_cyl );
 	    if( showT_cyl )    a = add(a, dev_nb_cyl );
-	    if( showT_Used )   a = add(a, "");
+	    if( showT_Used )   a = add(a, usedByString( disk["used_by_type"]:`UB_NONE,
+							disk["used_by"]:"" ));
 	    if( showT_Label )  a = add(a, "");
 	    if( showT_udev_id )   a = add(a, udev_id);
 	    if( showT_udev_path ) a = add(a, udev_path);
@@ -1040,7 +1053,8 @@ define list FillPartitionList(map<string,map> targets)
 		if( hide )
 		    {
 		    y2milestone( "evms p: %1", Storage::GetPartition( targets, d1 ));
-		    hide = size(Storage::GetPartition( targets, d1 ))>0 &&
+		    hide = (size(Storage::GetPartition( targets, d1 ))>0||
+		            targets[d1,"type"]:`CT_UNKNOWN==`CT_DISK) &&
 			   !partition["evms_native"]:false;
 		    }
 		y2milestone( "evms d1:%1 hide:%2", d1, hide );
@@ -1064,19 +1078,13 @@ define list FillPartitionList(map<string,map> targets)
 		string   mount_point     = partition["mount"]:"";
 		symbol   mount_by        = partition["mountby"]:`device;
 		string   filesystem_name = "";
-		string   used_by   	 = partition["used_by"]:"";
 		string   label           = partition["label"]:"";
 		string   udev_id         = partition["udev_id"]:"";
 		string   udev_path       = partition["udev_path"]:"";
 
-		if( partition["used_by_type"]:`UB_NONE == `UB_LVM )
-		    {
-		    used_by = "LVM " + used_by;
-		    }
-		else if( partition["used_by_type"]:`UB_NONE == `UB_EVMS )
-		    {
-		    used_by = "EVMS " + used_by;
-		    }
+		string used_by = 
+		    usedByString( partition["used_by_type"]:`UB_NONE,
+				  partition["used_by"]:"" );
 
 		filesystem_name = partition["fstype"]:"";
 
@@ -1108,7 +1116,7 @@ define list FillPartitionList(map<string,map> targets)
 		if( showT_mount )
 		    {
 		    string tmp = mount_point;
-		    if( partition["inactive"]:false )
+		    if( Mode::normal() && partition["inactive"]:false )
 			{
 			tmp = tmp + " *";
 			}
