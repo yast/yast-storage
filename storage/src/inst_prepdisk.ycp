@@ -90,26 +90,11 @@ performs various checks. </p>");
 
   MakefsDialog();
 
-  map<string,map> tg = Storage::GetTargetMap();
-  integer num_lvm_vg = size( filter( string dev, map disk, tg,
-                                     ``(disk["type"]:`CT_UNKNOWN==`CT_LVM)));
-  boolean md_active = size(tg["/dev/md","partitions"]:[])>0;
-  integer num_evms = 0;
-
-  foreach( string dev, map disk, tg,
-      ``{
-      if( find( dev, "/dev/evms" )==0 )
-	  {
-	  num_evms = num_evms + size(filter( map p, disk["partitions"]:[],
-					     ``(size(p["mount"]:"")>0)));
-	  }
-      });
-  y2milestone( "num_evms %1 num_lvm_vg %2 md_active %3", num_evms, num_lvm_vg,
-               md_active );
   y2milestone( "installation=%1", Stage::initial() );
   symbol ret_val = `next;
 
   integer ret = Storage::CommitChanges();
+  y2milestone( "CommitChanges ret %1", ret );
   if( ret!=0 )
       {
       string txt = sformat(_(
@@ -125,19 +110,6 @@ System error code was: %1
 	  }
       Popup::Error( txt );
       ret_val = `abort;
-      }
-
-  if( Storage::CheckForLvmRootFs() && num_lvm_vg>1 )
-      {
-      map part = Storage::GetEntryForMountpoint( "/" );
-      map tmp = Storage::GetDiskPartition( part["device"]:"" );
-      string vg_root = substring( tmp["disk"]:"", 5 );
-      if( size(vg_root)>0 )
-	  {
-	  SCR::Write( .lvm.deactivate, "" );
-	  SCR::Write( .lvm.activate, vg_root );
-	  SCR::Write( .lvm.activate, "" );
-	  }
       }
 
   //mount proc and usbfs during installation
