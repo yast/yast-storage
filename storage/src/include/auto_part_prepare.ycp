@@ -17,34 +17,33 @@ import "Storage";
 import "Partitions";
 import "Mode";
 
-define list<map<string, any> > prepare_partitions( map target, list<map<string, any> > partitions )
+define list<map> prepare_partitions( map target, list<map> partitions )
     ``{
     // --------------------------------------------------------------
     // The size of a unit (eg. one cylinder)
     integer  bytes_per_unit = target["cyl_size"]:1;
-    y2debug("bytes_per_unit: %1", bytes_per_unit);
-
     // The size of the disk in units
     integer disk_size = target["cyl_count"]:1;
-    y2debug("disk_size: %1", disk_size);
-    
+    y2milestone( "prepare_partitions bytes_per_unit: %1 disk_size:%2", 
+                 bytes_per_unit, disk_size );
+
     size_of_boot = Partitions::MinimalNeededBootsize();
 
     // The minimum size needed to install a minimal system
-    minimal_size = 160 * 1024 * 1024 + size_of_boot + size_of_swap;
+    minimal_size = 400 * 1024 * 1024 + size_of_boot + size_of_swap;
 
     // The minimum size needed to install a default system
-    integer required_size = 950 * 1024 * 1024 + size_of_boot + size_of_swap;
+    integer required_size = 1500 * 1024 * 1024 + size_of_boot + size_of_swap;
 
     // filter out all "create" paritions, they will be re-created at exit
     //   (this ensures a 'clean' partition list if this dialogue is re-entered
 
-    partitions = filter (map<string, any> pentry, partitions, ``(!pentry["create"]:false));
+    partitions = filter (map pentry, partitions, ``(!pentry["create"]:false));
 
     // reset all "delete" paritions, they will be re-created at exit
     //   (this ensures a 'clean' partition list if this dialogue is re-entered
 
-    partitions = maplist (map<string, any> pentry, partitions, ``(add (pentry, "delete", false)));
+    partitions = maplist (map pentry, partitions, ``(add (pentry, "delete", false)));
 
     // The region that describes the full disk
     full_region = [ 0, disk_size ];
@@ -54,7 +53,7 @@ define list<map<string, any> > prepare_partitions( map target, list<map<string, 
     //-------------------------------------------------------------------------
 
     // First sort the partitions on the starting cylinder
-    partitions = sort( map<string, any> p1, map<string, any> p2, partitions,
+    partitions = sort( map p1, map p2, partitions,
 		       ``(start_of_region (p1["region"]:[])
 			  < start_of_region(p2["region"]:[])));
 
@@ -91,7 +90,7 @@ define list<map<string, any> > prepare_partitions( map target, list<map<string, 
     if( !can_do_auto && !contains_extended (partitions) && 
 	num_primary(partitions) != max_primary ) 
 	{
-	map<string, any> last_partition = partitions[size(partitions)-1]:$[];
+	map last_partition = partitions[size(partitions)-1]:$[];
 	if( ignored_partition( target, last_partition ))
 	    last_partition = partitions[size(partitions)-2]:$[];
 	list<integer> last_region = last_partition["region"]:[];
@@ -114,9 +113,9 @@ define list<map<string, any> > prepare_partitions( map target, list<map<string, 
 
     // first the mid-disk holes
 
-    partitions = flatten( maplist( map<string, any> pentry, partitions, 
+    partitions = flatten( maplist( map pentry, partitions, 
 	``{
-	list<map <string, any> > ret = [];
+	list<map> ret = [];
 	list<integer> region = pentry["region"]:[];
 
 	if( !ignored_partition( target, pentry ) &&
@@ -151,7 +150,6 @@ define list<map<string, any> > prepare_partitions( map target, list<map<string, 
 	}
 
     // now the partitions list spans the whole disk
-    if (Mode::test ()) y2milestone("all partitions: %1", partitions);
 
     //-------------------------------------------------------------------------
     // Create a checkbox for every real (primary or logical) partition
@@ -160,13 +158,19 @@ define list<map<string, any> > prepare_partitions( map target, list<map<string, 
     // give each partition a unique id
 
     integer ui_id = 0;
-    partitions = maplist (map<string, any> pentry, partitions, 
+    partitions = maplist (map p, partitions, 
 	``{
 	ui_id = ui_id + 1;
-	return add (pentry, "ui_id", ui_id);
+	p["ui_id"] = ui_id;
+	if( p["type"]:`unknown == `free )
+	    p["size_k"] = size_of_region( p["region"]:[0,0], bytes_per_unit )/1024;
+	if( haskey(p,"mount"))
+	    p = remove( p, "mount" );
+	return( p );
 	});
 
-    y2milestone( "unused_region %1", unused_region );
+    // now the partitions list spans the whole disk
+    y2milestone("prepare_partitions partitions: %1", partitions);
 
     return partitions;
     };
