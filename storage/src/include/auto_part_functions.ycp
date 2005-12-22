@@ -247,55 +247,56 @@ define boolean is_ntfs_partition( map partition ) ``{
     // Input:  List of partition maps.
     // Return: Partition map if found or $[] if not.
     //
-define map get_last_used_partition( list<map> partitions ) ``{
-	map last_partition = $[];
-	integer minor = -1;
+define map get_last_used_partition( list<map> partitions ) 
+    ``{
+    map last_partition = $[];
+    integer minor = -1;
 
-	y2milestone( "get_last_used_partition p:%1", partitions );
+    y2milestone( "get_last_used_partition p:%1", partitions );
 
-	foreach( map partition, partitions, 
-	    ``{
-	    if ( partition["nr"]:-1 > minor )
-		{
-		minor = partition["nr"]:-1;
-		last_partition = partition;
-		}
-	    });
-	y2milestone( "get_last_used_partition ret %1", last_partition );
-
-	return last_partition;
+    foreach( map partition, partitions, 
+	``{
+	if ( partition["nr"]:-1 > minor )
+	    {
+	    minor = partition["nr"]:-1;
+	    last_partition = partition;
+	    }
+	});
+    y2milestone( "get_last_used_partition ret %1", last_partition );
+    return last_partition;
     }
 
     
-    // Check whether the partition list has a resizable partition as the highest partition.
-    // Input:  List of partition maps
-    // Return: resizeable partition map or $[] if none found
-    //
-define map can_resize( list<map> partitions ) ``{
-	map last_used_partition = $[];
+// Check whether the partition list has a resizable partition as the highest partition.
+// Input:  List of partition maps
+// Return: resizeable partition map or $[] if none found
+//
+define map can_resize( list<map> partitions ) 
+    ``{
+    map last_used_partition = $[];
 	
-	if ( !Arch::i386 () )
+    if( !Arch::i386 () )
 	{
-	    y2warning( "Wrong architecture - can't resize partitions" );
-	    return $[];	// for now
+	y2warning( "Wrong architecture - can't resize partitions" );
+	return $[];	// for now
 	}
 
-	// Filter out empty space that might exist behind valid partitions.
-	// This space would be there as a pseudo partition of type `free.
-	//
-	list<map> partitions_local =
-	    filter( map pentry, partitions, ``( pentry["type"]:`dummy != `free ));
+    // Filter out empty space that might exist behind valid partitions.
+    // This space would be there as a pseudo partition of type `free.
+    //
+    list<map> partitions_local =
+	filter( map pentry, partitions, ``( pentry["type"]:`dummy != `free ));
 
-	last_used_partition = get_last_used_partition( partitions_local );
+    last_used_partition = get_last_used_partition( partitions_local );
 	
-	if ( last_used_partition == $[] ) return $[];	// no last resizeable partition found
+    if ( last_used_partition == $[] ) return $[];	// no last resizeable partition found
 	    
-	// Check for supported filesystem types.
-        //	
-	if ( is_fat_partition( last_used_partition ) )
-	    return last_used_partition;
-	else
-	    return $[];
+    // Check for supported filesystem types.
+    //	
+    if( is_fat_partition( last_used_partition ) )
+	return last_used_partition;
+    else
+	return $[];
     }
 
     
@@ -399,10 +400,10 @@ define integer check_win_nt_system( map disk )
     // Renumber the logical partitions if some of them are deleted
     // The returned list is sorted by partition number instead of region
 
-define list<map<string, any> > renumber_logical_partitions (list<map<string, any> > partitions) ``{
-	partitions = sort (map<string, any> a, map<string, any> b, partitions, ``(a["nr"]:0 < b["nr"]:0));
+define list<map> renumber_logical_partitions (list<map> partitions) ``{
+	partitions = sort (map a, map b, partitions, ``(a["nr"]:0 < b["nr"]:0));
 	integer logicals_deleted = 0;
-	return maplist (map<string, any> pentry, partitions, ``{
+	return maplist (map pentry, partitions, ``{
 	    if (pentry["type"]:`unknown == `logical) {
 		if (pentry["delete"]:false)
 		    logicals_deleted = logicals_deleted + 1;
@@ -451,12 +452,5 @@ define integer calculate_needed_swap ()
     ``{
     return 1024*1024*Partitions::SwapSizeMb( 0 );
     };
-
-define boolean need_boot_partititon( list<integer> region )
-    ``{
-    return( Partitions::NeedBoot() || 
-            (start_of_region(region)<Partitions::BootCyl() && 
-	     end_of_region(region)>=Partitions::BootCyl()));
-    }
 
 }

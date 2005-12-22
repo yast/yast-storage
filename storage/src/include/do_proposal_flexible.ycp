@@ -62,10 +62,10 @@ define map try_add_boot( map conf, map disk )
 		     ``(e["mount"]:""==Partitions::BootMount()))) > 0;
     boolean root = size(filter( map e, conf["partitions"]:[], 
 				``(e["mount"]:""=="/"))) > 0;
-    map tc = (map) eval(conf);
+    map tc = conf;
+    y2milestone( "try_add_boot boot %1 root %2", boot, root );
     if( !boot && root &&
-	(disk["cyl_count"]:0 > Partitions::BootCyl() ||
-	 Arch::ia64 () || Arch::ppc () || Arch::sparc ()) )
+	(disk["cyl_count"]:0 > Partitions::BootCyl() || Partitions::NeedBoot()))
 	{
 	map pb = $[];
 	pb["mount"] = Partitions::BootMount();
@@ -75,14 +75,19 @@ define map try_add_boot( map conf, map disk )
 	pb["auto_added"] = true;
 	pb["max_cyl"] = Partitions::BootCyl();
 	tc["partitions"] = add( tc["partitions"]:[], pb );
-	y2milestone( "boot added automagically pb %1", pb );
+	y2milestone( "try_add_boot disk_cyl %1 boot_cyl %2 need_boot %3", 
+	             disk["cyl_count"]:0, Partitions::BootCyl(), 
+		     Partitions::NeedBoot() );
+	y2milestone( "try_add_boot boot added automagically pb %1", pb );
 	}
     return( tc );
     }
 
-define map do_flexible_disk( string dev, map disk )
+define map do_flexible_disk( map disk )
     ``{
-    y2milestone( "dev %1", dev );
+    string dev = disk["device"]:"";
+    y2milestone( "do_flexible_disk dev %1", dev );
+    y2milestone( "do_flexible_disk parts %1", disk["partitions"]:[] );
     map ret = $[];
     ret["ok"] = false;
     map conf = read_partition_config( pinfo_name() );
@@ -90,7 +95,7 @@ define map do_flexible_disk( string dev, map disk )
 
     if( size(conf)>0 && Storage::IsRealDisk( disk ))
 	{
-	y2milestone( "processing disk %1", dev );
+	y2milestone( "do_flexible_disk processing disk %1", dev );
 	map tc = try_add_boot( conf, disk );
 	cur_mode = `free;
 	map gap = get_gap_info( disk, false );
@@ -103,10 +108,43 @@ define map do_flexible_disk( string dev, map disk )
 	    ret["disk"] = process_partition_data( dev, sol );
 	    }
 	}
-    y2milestone( "ret %1", ret["ok"]:false );
+    y2milestone( "do_flexible_disk ret %1", ret["ok"]:false );
     if( ret["ok"]:false )
 	{
-	y2milestone( "disk %1", ret["disk"]:[] );
+	y2milestone( "do_flexible_disk disk %1", ret["disk"]:$[] );
+	}
+    return( ret );
+    }
+
+define map do_flexible_disk_conf( map disk, map conf )
+    ``{
+    string dev = disk["device"]:"";
+    y2milestone( "do_flexible_disk_conf dev %1", dev );
+    y2milestone( "do_flexible_disk_conf parts %1", disk["partitions"]:[] );
+    y2milestone( "do_flexible_disk_conf conf %1", conf );
+    map ret = $[];
+    ret["ok"] = false;
+    map solutions = $[];
+
+    if( size(conf)>0 && Storage::IsRealDisk( disk ))
+	{
+	y2milestone( "do_flexible_disk_conf processing disk %1", dev );
+	map tc = try_add_boot( conf, disk );
+	cur_mode = `free;
+	map gap = get_gap_info( disk, false );
+	tc = add_cylinder_info( tc, gap );
+	map sol = get_perfect_list( tc["partitions"]:[], gap );
+	if( size(sol)>0 )
+	    {
+	    sol["disk"] = eval(disk);
+	    ret["ok"] = true;
+	    ret["disk"] = process_partition_data( dev, sol );
+	    }
+	}
+    y2milestone( "do_flexible_disk_conf ret %1", ret["ok"]:false );
+    if( ret["ok"]:false )
+	{
+	y2milestone( "do_flexible_disk_conf disk %1", ret["disk"]:$[] );
 	}
     return( ret );
     }
@@ -117,7 +155,8 @@ define map do_proposal_flexible( map<string,map> target )
     map ret = $[];
     ret["ok"] = false;
     map conf = $[];
-    if (ProductFeatures::GetBooleanFeature ("partitioning", "use_flexible_partitioning"))
+    if( ProductFeatures::GetBooleanFeature( "partitioning", 
+                                            "use_flexible_partitioning"))
         conf = read_partition_xml_config();
     else
         conf = read_partition_config( pinfo_name() );
@@ -374,7 +413,7 @@ define map process_partition_data( string dev, map solution )
 		    Partitions::BootMount() )
 		    {
 		    integer rest = a[2]:0;
-		    y2milestone( "remove unneeded %3 %1 cyl %2", 
+		    y2milestone( "process_partition_data remove unneeded %3 %1 cyl %2", 
 		                 e["added"]:[], rest, Partitions::BootMount() );
 		    list<list> nlist = filter( list l, e["added"]:[], ``(l[0]:0!=pindex));
 		    if( size(nlist)>0 && !e["exists"]:false )
@@ -388,38 +427,12 @@ define map process_partition_data( string dev, map solution )
 			    e["cylinders"]:0 - r["diff"]:0;
 			}
 		    solution["solution","gap",index,"added"] = eval(nlist);
-		    y2milestone( "remove unneeded %2 %1", e["added"]:[],
-		                 Partitions::BootMount() );
 		    }
 		pindex = pindex+1;
 		});
 	    index = index + 1;
 	    });
 	}
-    index = 0;
-    foreach( map e, solution["solution","gap"]:[],
-	``{
-	if( !e["exists"]:false && e["cylinders"]:0>0 )
-	    {
-	    integer increase = 0;
-	    list<integer> weight = 
-		maplist( list l, e["added"]:[], 
-			 ``(solution["partitions",l[0]:0,"increasable"]:false ? 1 : 0) );
-	    if( find( integer l, weight, ``(l>0) ) != nil ) 
-		{
-		map r = $[];
-		r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], 
-		                      solution["partitions"]:[] );
-		solution["solution","gap",index,"added"] = eval(r["added"]:[]);
-		solution["solution","gap",index,"cylinders"] = 
-		    e["cylinders"]:0 - r["diff"]:0;
-		y2milestone( "increase increasable p %1 cyl %2", 
-		             solution["solution","gap",index,"added"]:[],
-		             solution["solution","gap",index,"cylinders"]:0 );
-		}
-	    }
-        index = index + 1;
-	});
     foreach( map e, solution["solution","gap"]:[],
 	``{
 	if( e["exists"]:false )
@@ -469,7 +482,7 @@ define map process_partition_data( string dev, map solution )
 			p["fsid"] = fsid;
 			}
 		    disk["partitions",index] = p;
-		    y2milestone( "reuse auto partition %1", p );
+		    y2milestone( "process_partition_data reuse auto partition %1", p );
 		    }
 		index = index + 1;
 		});
@@ -487,7 +500,8 @@ define map process_partition_data( string dev, map solution )
 		part["type"] = `extended;
 		part["fsid"] = Partitions::fsid_extended_win;
 		part["fstype"] = Partitions::FsIdToString( part["fsid"]:0 );
-		y2milestone( "extended auto partition %1", part );
+		part["size_k"] = region[1]:0 * disk["cyl_size"]:0 / 1024;
+		y2milestone( "process_partition_data extended auto partition %1", part );
 		partitions = add( partitions, eval(part));
 		}
 	    foreach( list a, e["added"]:[],
@@ -508,8 +522,8 @@ define map process_partition_data( string dev, map solution )
 			{
 			part["format"] = false;
 			}
-		    y2milestone( "partition id %1 format %2 part %3", fsid, 
-		                 part["format"]:false, 
+		    y2milestone( "process_partition_data partition id %1 format %2 part %3", 
+		                 fsid, part["format"]:false, 
 				 solution["partitions",pindex]:$[] );
 		    }
 		part["create"] = true;
@@ -518,6 +532,7 @@ define map process_partition_data( string dev, map solution )
 		region[1] = a[2]:0;
 		part["region"] = eval(region);
 		region[0] = region[0]:0 + region[1]:0;
+		part["size_k"] = region[1]:0 * disk["cyl_size"]:0 / 1024;
 		part["type"] = `primary;
 		if( e["extended"]:false )
 		    {
@@ -547,14 +562,14 @@ define map process_partition_data( string dev, map solution )
 		    }
 		part["fsid"] = fsid;
 		part["fstype"] = Partitions::FsIdToString( fsid );
-		y2milestone( "auto partition %1", part );
+		y2milestone( "process_partition_data auto partition %1", part );
 		partitions = add( partitions, eval(part));
 		});
 	    partitions = sort( map a, map b, partitions, ``(a["nr"]:0<b["nr"]:0));
 	    }
 	});
     disk["partitions"] = union( disk["partitions"]:[], partitions );
-    y2milestone( "disk %1", disk );
+    y2milestone( "process_partition_data disk %1", disk );
     return( disk );
     }
 
@@ -612,9 +627,9 @@ define map add_cylinder_info( map conf, map gap )
 		}
 	    p["want_cyl"] = cyl;
 	    }
-	if( p["max"]:0 > 0 )
+	if( p["maxsize"]:0 > 0 )
 	    {
-	    integer cyl = (p["max"]:0+cyl_size-1) / cyl_size;
+	    integer cyl = (p["maxsize"]:0+cyl_size-1) / cyl_size;
 	    p["size_max_cyl"] = cyl;
 	    if( p["want_cyl"]:0 > cyl )
 		{
@@ -747,12 +762,12 @@ define void add_part_recursive( list ps, map g )
 
 define map normalize_gaps( list ps, map g )
     ``{
-    y2milestone( "gap %1", g );
+    y2milestone( "normalize_gaps gap %1", g );
     integer gindex = 0;
     integer pindex = 0;
     foreach( map e, g["gap"]:[],
 	``{
-	y2milestone( "e %1", e );
+	y2milestone( "normalize_gaps e %1", e );
 	if( e["exists"]:false )
 	    {
 	    if( size(e["added"]:[])>0 && size(e["added",0]:[])==2 )
@@ -774,7 +789,7 @@ define map normalize_gaps( list ps, map g )
 		             ps[tidx,"cylinders"]:0;
 		    }
 		});
-	    y2milestone( "needed %1 rest %2", needed, rest );
+	    y2milestone( "normalize_gaps needed %1 rest %2", needed, rest );
 	    if( needed > rest )
 		{
                 list tr = [];
@@ -791,12 +806,13 @@ define map normalize_gaps( list ps, map g )
 			     tr = add( tr, l );
 			     return( d>0 ? d : 0 );
 			     }));
-	        y2milestone( "tr %1", tr );
+	        y2milestone( "normalize_gaps tr %1", tr );
 		map r = $[];
 		r = distribute_space( rest, weight, tr, ps );
 		g["gap",gindex,"added"] = eval(r["added"]:[]);
 		g["gap",gindex,"cylinders"] = e["cylinders"]:0 - r["diff"]:0;
-		y2milestone( "partly satisfy %1 cyl %2", g["gap",gindex,"added"]:[],
+		y2milestone( "normalize_gaps partly satisfy %1 cyl %2", 
+		             g["gap",gindex,"added"]:[],
 			     g["gap",gindex,"cylinders"]:0 );
 		}
 	    else
@@ -819,11 +835,13 @@ define map normalize_gaps( list ps, map g )
 			p = add( p, ps[tidx,"cylinders"]:0 );
 			}
 		    g["gap",gindex,"added",pindex] = p;
-		    y2milestone( "satisfy p %1 cyl %2", p, e["cylinders"]:0 );
+		    y2milestone( "normalize_gaps satisfy p %1 cyl %2", p, 
+		                 e["cylinders"]:0 );
 		    }
 		pindex = pindex+1;
 		});
-	    y2milestone( "added %1", g["gap",gindex,"added"]:[] );
+	    y2milestone( "normalize_gaps added %1", 
+	                 g["gap",gindex,"added"]:[] );
 	    }
 	gindex = gindex + 1;
 	});
@@ -841,7 +859,8 @@ define map normalize_gaps( list ps, map g )
 		                      ps );
 		g["gap",gindex,"added"] = eval(r["added"]:[]);
 		g["gap",gindex,"cylinders"] = e["cylinders"]:0 - r["diff"]:0;
-		y2milestone( "increase max p %1 cyl %2", g["gap",gindex,"added"]:[], 
+		y2milestone( "normalize_gaps increase max p %1 cyl %2", 
+		             g["gap",gindex,"added"]:[], 
 		             g["gap",gindex,"cylinders"]:0 );
 		}
 	    }
@@ -858,12 +877,48 @@ define map normalize_gaps( list ps, map g )
 	    r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], ps );
 	    g["gap",gindex,"added"] = eval(r["added"]:[]);
 	    g["gap",gindex,"cylinders"] = e["cylinders"]:0 - r["diff"]:0;
-	    y2milestone( "close small gap p %1 cyl %2", g["gap",gindex,"added"]:[], 
+	    y2milestone( "normalize_gaps close small gap p %1 cyl %2", 
+	                 g["gap",gindex,"added"]:[], 
 	                 g["gap",gindex,"cylinders"]:0 );
 	    }
 	gindex = gindex + 1;
 	});
-    y2milestone( "gap %1", g );
+    gindex = 0;
+    foreach( map e, g["gap"]:[],
+	``{
+	if( !e["exists"]:false && e["cylinders"]:0>0 )
+	    {
+	    list<integer> weight = 
+		maplist( list l, e["added"]:[], 
+			 ``(ps[l[0]:0,"increasable"]:false ? 1 : 0) );
+	    if( find( integer l, weight, ``(l>0) ) != nil ) 
+		{
+		map r = $[];
+		r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], 
+		                      ps );
+		g["gap",gindex,"added"] = eval(r["added"]:[]);
+		g["gap",gindex,"cylinders"] = e["cylinders"]:0 - r["diff"]:0;
+		y2milestone( "normalize_gaps increase increasable p %1 cyl %2", 
+		             g["gap",gindex,"added"]:[],
+		             g["gap",gindex,"cylinders"]:0 );
+		}
+	    }
+        gindex = gindex + 1;
+	});
+    gindex = 0;
+    foreach( map e, g["gap"]:[],
+	``{
+	if( !e["exists"]:false && e["extended"]:false && e["created"]:0 > 0 &&
+	    size(e["added"]:[])==1 && e["cylinders"]:0==0 )
+	    {
+	    g["gap",gindex,"extended"] = false;
+	    g["gap",gindex,"added",0,1] = e["created"]:0;
+	    y2milestone( "normalize_gaps changed extended %1", 
+	                 g["gap",gindex]:$[] );
+	    }
+	gindex = gindex + 1;
+	});
+    y2milestone( "normalize_gaps gap %1", g );
     return( g );
     };
 
@@ -873,7 +928,8 @@ define map distribute_space( integer rest, list weights, list added, list ps )
     integer sum = 0;
     integer index = 0;
     integer pindex = 0;
-    y2milestone( "rest %1 weights %2 added %3", rest, weights, added );
+    y2milestone( "distribute_space rest %1 weights %2 added %3", rest, 
+                 weights, added );
     foreach( list p, (list<list>)added,
 	``{
 	pindex = p[0]:0;
@@ -885,7 +941,7 @@ define map distribute_space( integer rest, list weights, list added, list ps )
 	index = index+1;
 	});
     index = 0;
-    y2milestone( "sum %1 rest %2 added %3", sum, rest, added );
+    y2milestone( "distribute_space sum %1 rest %2 added %3", sum, rest, added );
     foreach( list p, (list<list>)added,
 	``{
 	pindex = p[0]:0;
@@ -895,7 +951,6 @@ define map distribute_space( integer rest, list weights, list added, list ps )
 	    {
 	    integer diff = ((rest*weights[index]:0) + sum/2) / sum;
 	    if( ps[pindex,"size_max_cyl"]:0>0 && 
-	        !ps[pindex,"increasable"]:false &&
 	        diff > ps[pindex,"size_max_cyl"]:0-p[2]:0 )
 		{
 		diff = ps[pindex,"size_max_cyl"]:0-p[2]:0;
@@ -904,25 +959,22 @@ define map distribute_space( integer rest, list weights, list added, list ps )
 	    rest = rest - diff;
 	    added[index,2] = added[index,2]:0 + diff;
 	    diff_sum = diff_sum + diff;
-	    y2milestone( "sum %1 rest %2 diff %3 added %4", sum, rest, diff, 
-	                 added[index]:[] );
+	    y2milestone( "distribute_space sum %1 rest %2 diff %3 added %4", 
+	                 sum, rest, diff, added[index]:[] );
 	    }
 	index = index+1;
 	});
     map ret = $[ "added":added, "diff" : diff_sum ];
-    y2milestone( "ret %1", ret );
+    y2milestone( "distribute_space ret %1", ret );
     return( ret );
     }
 
 define integer do_weighting( list ps, map g )
     ``{
-    y2milestone( "gap %1", g["gap"]:[] );
+    y2milestone( "do_weighting gap %1", g["gap"]:[] );
     integer ret = 0;
     integer index = 0;
-    if( cur_mode == `free )
-	{
-	ret = 0;
-	}
+    integer diff = 0;
     if( cur_mode == `reuse )
 	{
 	ret = ret - 100;
@@ -935,31 +987,34 @@ define integer do_weighting( list ps, map g )
 	{
 	ret = ret - 1000000;
 	}
-    y2milestone( "after mode ret %1", ret );
+    y2milestone( "do_weighting after mode ret %1", ret );
     foreach( map e, g["gap"]:[],
 	``{
-	y2milestone( "added %1", e["added"]:[] );
+	y2milestone( "do_weighting e %1", e );
 	if( !e["exists"]:false && e["cylinders"]:0 > 0 )
 	    {
-	    ret = ret - 5;
+	    diff = -5;
 	    if( e["cylinders"]:0 < g["disk_cyl"]:0/20 )
 		{
-		ret = ret - 10;
+		diff = diff - 10;
 		}
+	    ret = ret + diff;
+	    y2milestone( "do_weighting after gaps diff %1 ret %2", diff, ret );
 	    }
-	y2milestone( "after gaps %1", ret );
 	foreach( list p, e["added"]:[], 
 	    ``{
 	    index = p[0]:0;
 	    if( e["exists"]:false && ps[index,"mount"]:""=="swap" && 
 	        e["swap"]:false )
 		{
-		ret = ret + 100;
-		y2milestone( "after swap reuse %1", ret );
+		diff = 100;
+		ret = ret + diff;
+		y2milestone( "do_weighting after swap reuse diff %1 ret %2", 
+		             diff, ret );
 		}
 	    if( ps[index,"want_cyl"]:0>0 )
 		{
-		integer diff = ps[index,"want_cyl"]:0 - p[2]:0;
+		diff = ps[index,"want_cyl"]:0 - p[2]:0;
 		integer normdiff = diff * 100 / p[2]:0;
 		if( diff < 0 )
 		    {
@@ -969,31 +1024,40 @@ define integer do_weighting( list ps, map g )
 		    {
 		    normdiff = normdiff / 10;
 		    }
-		ret = ret - normdiff;
-		ret = ret + ps[index,"want_cyl"]:0*g["cyl_size"]:1 / 
-		            (100 * 1024 * 1024);
-		y2milestone( "after pct parts %1", ret );
+		diff = ps[index,"want_cyl"]:0*g["cyl_size"]:1 / (100*1024*1024) -
+		       normdiff;
+		ret = ret + diff;
+		y2milestone( "do_weighting after pct parts diff %1 ret %2", 
+		             diff, ret );
 		}
 	    if( ps[index,"size"]:0==0 )
 		{
-		ret = ret + p[2]:0 * g["cyl_size"]:1 / (50 * 1024 * 1024);
-		y2milestone( "after maximizes parts %1", ret );
+		diff = p[2]:0 * g["cyl_size"]:1 / (50 * 1024 * 1024);
+		ret = ret + diff;
+		y2milestone( "do_weighting after maximizes parts diff %1 ret %2", 
+		             diff, ret );
 		}
 	    if( ps[index,"size_max_cyl"]:0 > 0 && 
 		ps[index,"size_max_cyl"]:0 < p[2]:0 )
 		{
-		integer diff = p[2]:0 - ps[index,"size_max_cyl"]:0;
+		diff = p[2]:0 - ps[index,"size_max_cyl"]:0;
 		integer normdiff = diff * 100 / ps[index,"size_max_cyl"]:0;
 		ret = ret - normdiff;
-		y2milestone( "after maximal size %1", ret );
+		y2milestone( "do_weighting after maximal size diff %1 ret %2", 
+		             -normdiff, ret );
 		}
 	    });
-	if( e["cylinders"]:0 > 0 )
+	if( size(e["added"]:[])>0 && e["cylinders"]:0 > 0 )
 	    {
-	    ret = ret - (e["cylinders"]:0 * g["cyl_size"]:1) / (1024*1024*1024);
+	    integer diff = (e["cylinders"]:0 * g["cyl_size"]:1) / (1024*1024*1024);
+	    ret = ret - diff;
+	    y2milestone( "do_weighting after gap size diff %1 ret %2", -diff, ret );
 	    }
+	if( e["extended"]:false )
+	    ret = ret-1;
+	y2milestone( "do_weighting %1", ret );
 	});
-    y2milestone( "ret %1", ret );
+    y2milestone( "do_weighting ret %1", ret );
     return( ret );
     };
 
@@ -1060,7 +1124,7 @@ define map try_resize_windows( map disk )
     };
 
 define list<map> get_gaps( integer start, integer end, list<map> part, 
-		      boolean add_exist_linux )
+			   boolean add_exist_linux )
     ``{
     y2milestone( "start %1 end %2 add_exist %3", start, end, add_exist_linux );
     list<map> ret = [];
@@ -1106,9 +1170,10 @@ define map get_gap_info( map disk, boolean add_exist_linux )
     ``{
     map ret = $[];
     list<map> gap = [];
-    list<map> plist = disk["partitions"]:[];
+    list<map> plist = filter( map p, disk["partitions"]:[], 
+                              ``(!p["delete"]:false) );
     plist = sort( map a, map b, plist, ``(a["region",0]:0<b["region",0]:0) );
-    list exist_pnr = sort( maplist( map e, plist, ``(e["nr"]:0) ));
+    list<integer> exist_pnr = sort( maplist( map e, plist, ``(e["nr"]:0) ));
     integer max_prim = Partitions::MaxPrimary(disk["label"]:"msdos");
     boolean has_ext = Partitions::HasExtended( disk["label"]:"msdos" );
     if( has_ext )
@@ -1177,22 +1242,14 @@ define map get_gap_info( map disk, boolean add_exist_linux )
 	{
 	ext_pnr = filter( integer i, ext_pnr, ``(i<=max_logical));
 	}
-    if( !ret["extended_possible"]:false )
+    if( !has_ext )
 	{
-	if( !has_ext )
-	    {
-	    ext_pnr = [];
-	    }
-	else
-	    {
-	    integer maxext = exist_pnr[size(exist_pnr)-1]:4;
-	    pnr = 5;
-	    while( pnr<=maxext )
-		{
-		ext_pnr = remove( ext_pnr, 0 );
-		pnr = pnr+1;
-		}
-	    }
+	ext_pnr = [];
+	}
+    else
+	{
+	integer maxlog = size(filter( integer i, exist_pnr, ``(i>max_pnr))) + 4;
+	ext_pnr = filter( integer i, ext_pnr, ``(i>maxlog));
 	}
     ret["ext_pnr"] = ext_pnr;
     ret["gap"] = gap;
@@ -1504,7 +1561,7 @@ define map read_partition_config( string fpath )
 		}
 	    else if( key == "maxsize" )
 		{
-		part["max"] = kmgt_str_to_byte( par );
+		part[key] = kmgt_str_to_byte( par );
 		}
 	    else if( key == "sizepct" )
 		{
@@ -1573,6 +1630,188 @@ define map read_partition_config( string fpath )
 	}
     y2milestone( "conf %1", conf );
     return( conf );
+    }
+
+map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
+    {
+    map ret = $[];
+    y2milestone( "can_swap_reuse disk %1 partitions %2", disk, partitions );
+    list<map> swaps = filter( map p, partitions,
+			      ``(p["type"]:`unknown!=`free &&
+				 !p["delete"]:false &&
+				 p["detected_fs"]:`unknown==`swap));
+    swaps = sort( map a, map b, swaps,
+		  ``(a["size_k"]:0>b["size_k"]:0));
+    y2milestone( "can_swap_reuse swaps %1", swaps );
+    if( swaps[0,"size_k"]:0 >= 256*1024 )
+	{
+	ret["partitions"] = 
+	    maplist( map p, partitions,
+		     ``{
+		     if( !p["delete"]:false &&
+			 p["device"]:""==swaps[0,"device"]:"" )
+			 p["mount"] = "swap";
+		     return( p );
+		     });
+	}
+//  else if( false )  FIXME only for testing!!!!!!!!!!!
+    else 
+	{
+	swaps = [];
+	map<string,map> tg = filter( string k, map d, tgmap,
+				     ``(Storage::IsRealDisk(d)));
+	if( haskey( tg, disk ))
+	    tg = remove( tg, disk );
+	y2milestone( "can_swap_reuse tg wo %1", tg );
+	foreach( string dev, map disk, tg,
+	    ``{
+	    list sw = filter( map p, disk["partitions"]:[],
+			      ``(p["type"]:`unknown!=`extended &&
+				 !p["delete"]:false &&
+				 p["detected_fs"]:`unknown==`swap));
+	    y2milestone( "can_swap_reuse disk %1 sw %2", dev, sw );
+	    swaps = (list<map>)union( swaps, sw );
+	    });
+	swaps = sort( map a, map b, swaps,
+		      ``(a["size_k"]:0>b["size_k"]:0));
+	y2milestone( "can_swap_reuse swaps %1", swaps );
+	if( swaps[0,"size_k"]:0 >= 256*1024 )
+	    {
+	    ret["targets"] = Storage::SetPartitionData( tgmap, 
+	                                                swaps[0,"device"]:"",
+						        "mount", "swap" );
+	    }
+	}
+    y2milestone( "can_swap_reuse ret %1", ret );
+    return( ret );
+    }
+
+integer get_avail_size_mb( list<map> parts )
+    {
+    integer ret = 0;
+    foreach( map pp, filter( map p, parts, ``(p["delete"]:false &&
+					      p["type"]:`unknown!=`extended)),
+	     ``{
+	     ret = ret + pp["size_k"]:0/1024;
+	     });
+    y2milestone( "get_avail_size_mb ret %1", ret );
+    return( ret );
+    }
+
+list get_swap_sizes( integer space )
+    {
+    list l = [ Partitions::SwapSizeMb(0), Partitions::SwapSizeMb(space) ];
+    y2milestone( "get_swap_sizes space %1 ret %2", space, l );
+    return( l );
+    }
+
+map get_config_options()
+    {
+    map ret = $[];
+    ret["home"] = ProductFeatures::GetBooleanFeature( "partitioning",
+						      "try_separate_home" );
+    ret["root_percent"] = 
+	tointeger(ProductFeatures::GetStringFeature( "partitioning",
+						     "root_space_percent"));
+    if( ret["root_percent"]:0 == nil || ret["root_percent"]:0 <= 0 )
+	ret["root_percent"] = 40;
+    ret["home_limit"] = 
+	kmgt_str_to_byte(ProductFeatures::GetStringFeature( "partitioning",
+							    "limit_try_home")) /
+	(1024*1024);
+    if( ret["home_limit"]:0 <= 0 )
+	ret["home_limit"] = 5*1024;
+    ret["root_base"] = 
+	kmgt_str_to_byte(ProductFeatures::GetStringFeature( "partitioning",
+							    "root_base_size")) /
+	(1024*1024);
+    if( ret["root_base"]:0 <= 0 )
+	ret["root_base"] = 3*1024;
+    ret["root_max"] = 
+	kmgt_str_to_byte(ProductFeatures::GetStringFeature( "partitioning",
+							    "root_max_size")) /
+	(1024*1024);
+    if( ret["root_max"]:0 <= 0 )
+	ret["root_max"] = 10*1024;
+    y2milestone( "get_config_options ret %1", ret );
+    return( ret );
+    }
+
+list<map> get_proposal( boolean have_swap, map disk )
+    {
+    list<map> ret = [];
+    y2milestone( "get_proposal have_swap:%1 disk %2", have_swap, disk );
+    map root = $[ "mount" : "/", "increasable" : true,
+                  "fsys" : Partitions::default_fs, "size" : 0 ];
+    map opts = get_config_options();
+    map conf = $[ "partitions" : [] ];
+    list swap_sizes = [];
+    integer avail_size = get_avail_size_mb(disk["partitions"]:[]);
+    if( !have_swap )
+	{
+	swap_sizes = get_swap_sizes( avail_size );
+	map swap = $[ "mount" : "swap", "increasable" : true, "fsys" : `swap,
+		      "maxsize" : 2*1024*1024*1024,
+		      "size"  : swap_sizes[0]:256*1024*1024 ];
+	conf["partitions"] = add( conf["partitions"]:[], swap );
+	}
+    conf["partitions"] = add( conf["partitions"]:[], root );
+    map old_root = $[];
+    if( opts["home"]:false && opts["home_limit"]:0 < avail_size )
+	{
+	map home = $[ "mount" : "/home", "increasable" : true, 
+	              "fsys" : Partitions::default_fs, "size" : 0, 
+		      "pct" : 100-opts["root_percent"]:40 ];
+	conf["partitions"] = maplist( map p, conf["partitions"]:[],
+				      ``{
+				      if( p["mount"]:""=="/" )
+					  {
+					  old_root = p;
+					  p["pct"] = opts["root_percent"]:40;
+					  p["maxsize"] = opts["root_max"]:0*1024*1024;
+					  p["size"] = opts["root_base"]:0*1024*1024;
+					  }
+				      return( p );
+				      });
+	conf["partitions"] = add( conf["partitions"]:[], home );
+	}
+    map ps1 = do_flexible_disk_conf( disk, conf );
+    if( size(old_root)>0 && !ps1["ok"]:false )
+	{
+	conf["partitions"] = 
+	    filter( map p, conf["partitions"]:[],
+		    ``(p["mount"]:""!="/home" && p["mount"]:""!="/"));
+	conf["partitions"] = add( conf["partitions"]:[], old_root );
+	ps1 = do_flexible_disk_conf( disk, conf );
+	}
+    if( !have_swap )
+	{
+	integer diff = swap_sizes[0]:256 - swap_sizes[1]:256;
+	if( diff<0 )
+	    diff = -diff;
+	y2milestone( "get_proposal diff:%1 ps1 ok:%2", diff, ps1["ok"]:false );
+	if( (!ps1["ok"]:false && diff>0) || diff>100 )
+	    {
+	    conf["partitions",0,"size"] = swap_sizes[1]:256*1024*1024;
+	    map ps2 = do_flexible_disk_conf( disk, conf );
+	    y2milestone( "get_proposal ps2 ok:%1", ps2["ok"]:false );
+	    if( ps2["ok"]:false )
+		{
+		map rp1 = find( map p, ps1["disk","partitions"]:[], 
+				``(!p["delete"]:false && p["mount"]:""=="/"));
+		map rp2 = find( map p, ps2["disk","partitions"]:[], 
+				``(!p["delete"]:false && p["mount"]:""=="/"));
+		y2milestone( "get_proposal rp1:%1", rp1 );
+		y2milestone( "get_proposal rp2:%1", rp2 );
+		if( rp1==nil || (rp2!=nil && rp2["size_k"]:0>rp1["size_k"]:0 ))
+		    ps1 = ps2;
+		}
+	    }
+	}
+    if( ps1["ok"]:false )
+	ret = ps1["disk","partitions"]:[];
+    y2milestone( "get_proposal ret:%1", ret );
+    return( ret );
     }
 
 }
