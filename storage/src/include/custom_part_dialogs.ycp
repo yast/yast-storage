@@ -296,8 +296,9 @@ define symbol DoInputChecks( map entry, string query )
     string valid_chars = entry[`valid_chars]:"";
     integer str_length = entry[`str_length]:0;
 
-    if( between != [] )
+    if( between != [] && (size(query)>0 || !entry[`empty_allowed]:false))
 	{
+	y2milestone( "DoInputChecks entry:%1 query:\"%2\"", entry, query );
 	if( between[0]:0 > tointeger(query)  ||
 	    ( (between[1]:0 != -1) && (between[1]:0 < tointeger(query) ) ) )
 	    {
@@ -306,7 +307,7 @@ define symbol DoInputChecks( map entry, string query )
 	    }
 	}
 
-    if( valid_chars != ""  && ret != `error )
+    if( valid_chars != "" && size(query)>0 && ret != `error )
 	{
 	if( nil != findfirstnotof( query, valid_chars ))
 	    {
@@ -320,7 +321,7 @@ define symbol DoInputChecks( map entry, string query )
 	Popup::Error(entry[`error_text]:"");
 	ret = `error;
 	}
-    y2milestone( "value %1 ret %2", query, ret );
+    y2milestone( "DoInputChecks value %1 ret %2", query, ret );
     return( ret );
     }
 
@@ -509,7 +510,7 @@ makes sense when you activate the option for mounting by volume label.
     helptext = helptext + entry[`help_text]:"";
 
     string fstopt = deletechars( new["fstopt"]:"", " \t" );
-    if( fstopt == "default" )
+    if( fstopt == "defaults" )
 	fstopt = "";
 
     list<string> opt_lstr = splitstring( fstopt, "," );
@@ -563,7 +564,8 @@ makes sense when you activate the option for mounting by volume label.
 	    }
 	pos = pos - 1;
 	};
-    y2milestone( "key=%1 val:%2", opt_list[size(opt_list)-1,`query_key]:"",
+    y2milestone( "FstabOptions key=%1 val:%2", 
+                 opt_list[size(opt_list)-1,`query_key]:"",
                  mergestring( opt_lstr, "," ) );
     string arb_opt = mergestring( opt_lstr, "," );
     if( !new["noauto"]:false && new["enc_type"]:`none!=`none )
@@ -572,7 +574,7 @@ makes sense when you activate the option for mounting by volume label.
 	}
 
     old_state[opt_list[size(opt_list)-1,`query_key]:""] = arb_opt;
-    y2milestone( "old_state=%1", old_state );
+    y2milestone( "FstabOptions old_state=%1", old_state );
 
     UI::OpenDialog( `opt(`decorated),
                     `HBox(
@@ -630,8 +632,9 @@ makes sense when you activate the option for mounting by volume label.
 	UI::ChangeWidget( `id(`vol_label), `Value, new["label"]:"" );
 	}
 
-    y2milestone( "Exists opt_user %1", UI::WidgetExists( `id("opt_user")));
-    y2milestone( "new=%1", new );
+    y2milestone( "FstabOptions Exists opt_user %1", 
+                 UI::WidgetExists( `id("opt_user")));
+    y2milestone( "FstabOptions new=%1", new );
     if( UI::WidgetExists( `id("opt_user") ))
 	{
 	UI::ChangeWidget( `id("opt_user"), `Enabled,
@@ -646,7 +649,7 @@ makes sense when you activate the option for mounting by volume label.
     repeat
 	{
 	ret = UI::UserInput();
-	y2milestone( "ret %1", ret );
+	y2milestone( "FstabOptions ret %1", ret );
 	if( ret == "opt_noauto" )
 	    {
 	    if( UI::WidgetExists( `id("opt_user") ))
@@ -753,9 +756,9 @@ is %1. Your volume label was truncated to this size.
 		    new_fstopt = new_fstopt + text;
 		    }
 		});
-	    y2milestone( "new_state=%1", new_state );
-	    y2milestone( "old_fstopt=%1 new_fstopt=%2", old["fstopt"]:"",
-	                 new_fstopt );
+	    y2milestone( "FstabOptions new_state=%1", new_state );
+	    y2milestone( "FstabOptions old_fstopt=%1 new_fstopt=%2", 
+	                 old["fstopt"]:"", new_fstopt );
 	    if( old_state!=new_state && old["fstopt"]:"" != new_fstopt )
 		{
 		if( !new["format"]:false && !new["create"]:false &&
@@ -774,8 +777,9 @@ is %1. Your volume label was truncated to this size.
 	} until ( ret == `ok || ret == `cancel );
 
     UI::CloseDialog();
-    y2milestone( "fstopt %1 mountby:%2 label:%3", new["fstopt"]:"",
-                 new["mountby"]:`device, new["label"]:"" );
+    y2milestone( "FstabOptions fstopt %1 mountby:%2 label:%3", 
+                 new["fstopt"]:"", new["mountby"]:`device, 
+		 new["label"]:"" );
     return( new );
     };
 
