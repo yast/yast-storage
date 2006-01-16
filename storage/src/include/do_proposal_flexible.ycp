@@ -95,6 +95,7 @@ define map try_add_boot( map conf, map disk )
 	pb["id"] = Partitions::FsidBoot();
 	pb["auto_added"] = true;
 	pb["max_cyl"] = Partitions::BootCyl();
+	pb["primary"] = Partitions::BootPrimary();
 	tc["partitions"] = add( tc["partitions"]:[], pb );
 	y2milestone( "try_add_boot disk_cyl %1 boot_cyl %2 need_boot %3", 
 	             disk["cyl_count"]:0, Partitions::BootCyl(), 
@@ -787,6 +788,7 @@ define void add_part_recursive( list ps, map g )
 	y2milestone( "add_part_recursive e %1", e );
 	if( (!haskey( part, "max_cyl" ) || part["max_cyl"]:0 >= e["end"]:0) &&
 	    part["cylinders"]:0 <= e["cylinders"]:0 &&
+	    (!e["extended"]:false || !part["primary"]:false) &&
 	    (!e["extended"]:false && size(lg["free_pnr"]:[])>0 ||
 	      e["extended"]:false && size(lg["ext_pnr"]:[])>0))
 	    {
@@ -1767,18 +1769,20 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
     return( ret );
     }
 
-list can_boot_reuse( string disk, list<map> partitions )
+list can_boot_reuse( string disk, integer max_prim, list<map> partitions )
     {
     list ret = [];
     if( Partitions::NeedBoot() )
 	{
-	y2milestone( "can_boot_reuse disk %1 partitions %2", disk, partitions );
+	y2milestone( "can_boot_reuse disk %1 max_prim %2 partitions %3", 
+	             disk, max_prim, partitions );
 	map boot = find( map p, partitions,
 			 ``(!p["delete"]:false &&
 			    (p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
 			    (p["fsid"]:0 == Partitions::FsidBoot() && 
 			     p["size_k"]:0<300*1024)||
 			    (p["fsid"]:0 == Partitions::fsid_prep_chrp_boot &&
+			     p["nr"]:0 <= max_prim &&
 			     Partitions::PrepBoot())));
 	if( boot != nil )
 	    {
@@ -1790,8 +1794,8 @@ list can_boot_reuse( string disk, list<map> partitions )
 			   return( p );
 			   });
 	    }
+	y2milestone( "can_boot_reuse ret %1", ret );
 	}
-    y2milestone( "can_boot_reuse ret %1", ret );
     return( ret );
     }
 
@@ -1955,12 +1959,32 @@ integer get_mb_sol( map sol, string mp )
     return( pa!=nil ? pa["size_k"]:0/1024 : 0 );
     }
 
+list special_boot_proposal_prepare( list<map> partitions )
+    {
+    list ret = partitions;
+    if( Partitions::PrepBoot() )
+	{
+	ret = maplist( map p, partitions,
+		       ``{
+		       if( size(p["mount"]:"")==0 &&
+		           (p["fsid"]:0 == 0x06 || p["fsid"]:0 == 0x41) )
+			   p["delete"] = true;
+		       return( p );
+		       });
+	y2milestone( "special_boot_proposal_prepare part:%1", partitions );
+	y2milestone( "special_boot_proposal_prepare  ret:%1", ret );
+	}
+    return( ret );
+    }
+
 map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
     {
     list linux_pid = [ Partitions::fsid_native, Partitions::fsid_swap,
                        Partitions::fsid_lvm, Partitions::fsid_raid ];
     foreach( string s, ddev,
 	``{
+	tg[s,"partitions"] = 
+	    special_boot_proposal_prepare( tg[s,"partitions"]:[] );
 	tg[s,"partitions"] = 
 	    maplist( map p, tg[s,"partitions"]:[],
 		``{
@@ -1969,7 +1993,8 @@ map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
 		    (p["fsid"]:0 == Partitions::FsidBoot() && 
 		     p["size_k"]:0<300*1024)||
 		    (Partitions::PrepBoot() && 
-		     p["fsid"]:0 == Partitions::fsid_prep_chrp_boot))
+		     (p["fsid"]:0 == Partitions::fsid_prep_chrp_boot||
+		      p["fsid"]:0 == 0x06)))
 		    p["linux"] = true;
 		else
 		    p["linux"] = false;
@@ -2128,7 +2153,8 @@ map get_inst_proposal( map<string,map> target )
 	    ``{
 	    map disk = target[s]:$[];
 	    map conf = $[ "partitions" : [] ];
-	    list p = can_boot_reuse( s, target[s,"partitions"]:[] );
+	    list p = can_boot_reuse( s, target[s,"max_primary"]:4,
+	                             target[s,"partitions"]:[] );
 	    boolean have_boot = size(p)>0;
 	    if( have_boot )
 	        target[s,"partitions"] = p;
