@@ -21,6 +21,7 @@
 textdomain "storage";
 
 import "FileSystems";
+import "Partitions";
 import "Storage";
 import "ProductFeatures";
 
@@ -44,6 +45,26 @@ symbol cur_mode = `free;
 integer cur_weight = -10000;
 map cur_gap = $[];
 
+define boolean ignore_disk( string dev, map entry, boolean soft )
+    ``{
+    boolean ret = !Storage::IsRealDisk( entry );
+    if( Arch::board_iseries () && find( dev, "/dev/sd" )==0 )
+	{
+	ret = true;
+	}
+    if( soft && entry["softraiddisk"]:false )
+	{
+	ret = true;
+	}
+    if( soft )
+	ret = ret || entry["used_by_type"]:`UB_NONE != `UB_NONE;
+    if( ret )
+	{
+	y2milestone( "ignoring disk %1 soft %2", dev, soft );
+	}
+    return( ret );
+    };
+  
 define string pinfo_name()
     ``{
     return( "/part.info" );
@@ -98,6 +119,7 @@ define map do_flexible_disk( map disk )
 	y2milestone( "do_flexible_disk processing disk %1", dev );
 	map tc = try_add_boot( conf, disk );
 	cur_mode = `free;
+	cur_gap = $[];
 	map gap = get_gap_info( disk, false );
 	tc = add_cylinder_info( tc, gap );
 	map sol = get_perfect_list( tc["partitions"]:[], gap );
@@ -106,20 +128,27 @@ define map do_flexible_disk( map disk )
 	    sol["disk"] = eval(disk);
 	    ret["ok"] = true;
 	    ret["disk"] = process_partition_data( dev, sol );
+	    ret["weight"] = sol["weight"]:-1;
 	    }
 	}
     y2milestone( "do_flexible_disk ret %1", ret["ok"]:false );
     if( ret["ok"]:false )
 	{
+	y2milestone( "do_flexible_disk weight %1", ret["weight"]:-2 );
 	y2milestone( "do_flexible_disk disk %1", ret["disk"]:$[] );
 	}
     return( ret );
     }
 
-define map do_flexible_disk_conf( map disk, map conf )
+define map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
+                                  boolean reuse )
     ``{
     string dev = disk["device"]:"";
-    y2milestone( "do_flexible_disk_conf dev %1", dev );
+    y2milestone( "do_flexible_disk_conf dev %1 ignore_boot %2 reuse %3", 
+                 dev, ignore_boot, reuse );
+    map conf = co;
+    if( !ignore_boot )
+	conf = try_add_boot( conf, disk );
     y2milestone( "do_flexible_disk_conf parts %1", disk["partitions"]:[] );
     y2milestone( "do_flexible_disk_conf conf %1", conf );
     map ret = $[];
@@ -130,8 +159,9 @@ define map do_flexible_disk_conf( map disk, map conf )
 	{
 	y2milestone( "do_flexible_disk_conf processing disk %1", dev );
 	map tc = try_add_boot( conf, disk );
-	cur_mode = `free;
-	map gap = get_gap_info( disk, false );
+	cur_mode = reuse?`reuse:`free;
+	cur_gap = $[];
+	map gap = get_gap_info( disk, reuse );
 	tc = add_cylinder_info( tc, gap );
 	map sol = get_perfect_list( tc["partitions"]:[], gap );
 	if( size(sol)>0 )
@@ -139,35 +169,64 @@ define map do_flexible_disk_conf( map disk, map conf )
 	    sol["disk"] = eval(disk);
 	    ret["ok"] = true;
 	    ret["disk"] = process_partition_data( dev, sol );
+	    ret["weight"] = sol["weight"]:-1;
 	    }
 	}
     y2milestone( "do_flexible_disk_conf ret %1", ret["ok"]:false );
     if( ret["ok"]:false )
 	{
-	y2milestone( "do_flexible_disk_conf disk %1", ret["disk"]:$[] );
+	y2milestone( "do_flexible_disk_conf weight %1", ret["weight"]:-2 );
+	y2milestone( "do_flexible_disk_conf parts %1", ret["disk","partitions"]:[] );
 	}
     return( ret );
     }
 
+define list<string> restrict_disk_names( list<string> disks )
+    {
+    list<string> ddev = disks;
+    list<string> d1 = filter( string s, ddev, ``(find(s,"/dev/hd")==0));
+    ddev = filter( string s, ddev, ``(find(s,"/dev/hd")!=0));
+    if( size(d1)>2 )
+	{
+	integer count=1;
+	d1 = maplist( string s, d1, 
+	    ``{
+	    return( (count<=2)?s:"" );
+	    count=count+1;
+	    });
+	d1 = filter( string s, d1, ``(size(s)>0));
+	}
+    d1 = (list<string>)merge( d1, filter( string s, ddev, 
+                                          ``(find(s,"/dev/sd")==0)));
+    ddev = filter( string s, ddev, ``(find(s,"/dev/sd")!=0));
+    ddev = (list<string>)merge( d1, ddev );
+    if( size(ddev)>4 )
+	{
+	integer count=1;
+	ddev = maplist( string s, ddev, 
+	    ``{
+	    return( (count<=4)?s:"" );
+	    count=count+1;
+	    });
+	ddev = filter( string s, ddev, ``(size(s)>0));
+	}
+    y2milestone( "restrict_disk_names: ret %1", ddev );
+    return( ddev );
+    }
 
-define map do_proposal_flexible( map<string,map> target )
-    ``{
+define map do_pflex( map<string,map> target, map conf )
+    {
     map ret = $[];
     ret["ok"] = false;
-    map conf = $[];
-    if( ProductFeatures::GetBooleanFeature( "partitioning", 
-                                            "use_flexible_partitioning"))
-        conf = read_partition_xml_config();
-    else
-        conf = read_partition_config( pinfo_name() );
     list<map> solutions = [];
-
+    cur_mode = `free;
     if( size(conf)>0 )
 	{
 	list<string> ddev = maplist( string k, map e, 
 	                     filter( string l, map f, target, 
-			             ``(Storage::IsRealDisk( f ))), ``(k));
-	y2milestone( "ddev %1", ddev );
+			             ``(!ignore_disk(l,f,false))), ``(k));
+	ddev = sort( ddev );
+	y2milestone( "do_pflex ddev %1", ddev );
 	map tc = $[];
 	map<integer,any> dtmp = $[];
 	foreach( map p, conf["partitions"]:[], 
@@ -182,9 +241,9 @@ define map do_proposal_flexible( map<string,map> target )
 		dtmp[dprio] = [ p ];
 		}
 	    });
-	y2milestone( "dlist %1", dtmp );
+	y2milestone( "do_pflex dlist %1", dtmp );
 	list dlist = maplist( integer k, any e, dtmp, ``(e) );
-	y2milestone( "dlist %1", dlist );
+	y2milestone( "do_pflex dlist %1", dlist );
 	if( size(dlist)>size(ddev) )
 	    {
 	    integer idx = size(ddev);
@@ -198,7 +257,7 @@ define map do_proposal_flexible( map<string,map> target )
 		{
 		dlist = remove( dlist, size(ddev) );
 		}
-	    y2milestone( "dlist %1", dlist );
+	    y2milestone( "do_pflex dlist %1", dlist );
 	    }
 	list save_dlist = (list) eval(dlist);
 	repeat
@@ -208,24 +267,24 @@ define map do_proposal_flexible( map<string,map> target )
 		{
 		list<string> td = eval(ddev);
 		integer idx = 0;
-		y2milestone( "start while count %1", count );
+		y2milestone( "do_pflex start while count %1", count );
 		while( idx<size(dlist) && count<size(dlist) )
 		    {
-		    y2milestone( "in while idx %1", idx );
+		    y2milestone( "do_pflex in while idx %1", idx );
 		    tc = (map) eval(conf);
 		    tc["partitions"] = eval( dlist[idx]:[] );
 		    map md = find_matching_disk( td, target, tc );
-		    y2milestone( "size(md) %1", size(md) );
+		    y2milestone( "do_pflex size(md) %1", size(md) );
 		    if( size(md)>0 )
 			{
 			solutions = add( solutions, md );
 			td = filter( string e, td, ``(e!=md["device"]:""));
-			y2milestone( "new td %1", td );
+			y2milestone( "do_pflex new td %1", td );
 			idx = idx+1;
 			}
 		    else
 			{
-			y2milestone( "no solution" );
+			y2milestone( "do_pflex no solution" );
 			idx = size(dlist);
 			td = eval(ddev);
 			solutions = [];
@@ -235,7 +294,7 @@ define map do_proposal_flexible( map<string,map> target )
 			    list tfi = dlist[0]:[];
 			    dlist = remove( dlist, 0 );
 			    dlist = add( dlist, tfi );
-			    y2milestone( "new rotated dlist %1", dlist );
+			    y2milestone( "do_pflex new rot dlist %1", dlist );
 			    }
 			}
 		    }
@@ -247,7 +306,8 @@ define map do_proposal_flexible( map<string,map> target )
 		dlist[size(dlist)-2] = union( dlist[size(dlist)-2]:[],
 					      dlist[size(dlist)-1]:[] );
 		dlist = remove( dlist, size(dlist)-1 );
-		y2milestone( "new truncated dlist %1", dlist );
+		y2milestone( "do_pflex new truncated dlist %1",
+		             dlist );
 		save_dlist = (list)eval(dlist);
 		}
 	    }
@@ -258,7 +318,7 @@ define map do_proposal_flexible( map<string,map> target )
 	     size(conf["keep_partition_num"]:[])>0 ||
 	     !conf["prefer_remove"]:false))
 	    {
-	    y2milestone( "desperate mode" );
+	    y2milestone( "do_pflex desperate mode" );
 	    tc = (map) eval(conf);
 	    cur_mode = `desparate;
 	    tc["keep_partition_fsys"] = [];
@@ -277,7 +337,8 @@ define map do_proposal_flexible( map<string,map> target )
 		``{
 		string disk = e["device"]:"";
 		target[disk] = process_partition_data( disk, e );
-		y2milestone( "solution disk %1 %2", disk, target[disk]:$[] );
+		y2milestone( "do_pflex solution disk %1 %2", 
+		             disk, target[disk]:$[] );
 		});
 	    ret["ok"] = true;
 	    target = Storage::SpecialBootHandling( target );
@@ -285,6 +346,19 @@ define map do_proposal_flexible( map<string,map> target )
 	    }
 	}
     return( ret );
+    }
+
+
+define map do_proposal_flexible( map<string,map> target )
+    ``{
+    map conf = $[];
+    if( ProductFeatures::GetBooleanFeature( "partitioning", 
+                                            "use_flexible_partitioning"))
+        conf = read_partition_xml_config();
+    else
+        conf = read_partition_config( pinfo_name() );
+
+    return( do_pflex( target, conf ) );
     }
 
 define map find_matching_disk( list<string> disks, map target, map conf )
@@ -296,10 +370,11 @@ define map find_matching_disk( list<string> disks, map target, map conf )
     foreach( string k, disks,
 	``{
 	map e = target[k]:$[];
-	y2milestone( "processing disk %1", k );
-	y2milestone( "parts %1", conf["partitions"]:[] );
+	y2milestone( "find_matching_disk processing disk %1", k );
+	y2milestone( "find_matching_disk parts %1", conf["partitions"]:[] );
 	map tc = try_add_boot( conf, e );
-	cur_mode = `free;
+	if( cur_mode != `desparate )
+	    cur_mode = `free;
 	if( !tc["prefer_remove"]:false )
 	    {
 	    map gap = get_gap_info( e, false );
@@ -321,15 +396,14 @@ define map find_matching_disk( list<string> disks, map target, map conf )
 		     (haskey( l, "weight" ) && 
 		      l["weigth"]:0 > solutions[k,"weigth"]:0 )))
 		    {
-		    y2milestone( "solution reuse existing" );
+		    y2milestone( "find_matching_disk solution reuse existing" );
 		    solutions[k] = eval(l);
 		    solutions[k,"disk"] = eval(e);
 		    }
 		}
 	    cur_mode = `resize;
 	    map rw = try_resize_windows( e );
-	    if( size( filter( map p, rw["partitions"]:[],
-			      ``(haskey(p, "winfo")) ))>0 )
+	    if( find( map p, rw["partitions"]:[], ``(p["resize"]:false))!=nil )
 		{
 		egap = get_gap_info( rw, true );
 		tc = add_cylinder_info( tc, egap );
@@ -339,7 +413,7 @@ define map find_matching_disk( list<string> disks, map target, map conf )
 		     (haskey( l, "weight" ) && 
 		      l["weigth"]:0 > solutions[k,"weigth"]:0 )))
 		    {
-		    y2milestone( "solution resizing windows" );
+		    y2milestone( "find_matching_disk solution resizing windows" );
 		    solutions[k] = eval(l);
 		    solutions[k,"disk"] = eval(rw);
 		    }
@@ -347,7 +421,6 @@ define map find_matching_disk( list<string> disks, map target, map conf )
 	    }
 	else
 	    {
-	    cur_mode = `free;
 	    map rp = remove_possible_partitions( e, tc );
 	    map gap = get_gap_info( rp, false );
 	    tc = add_cylinder_info( tc, gap );
@@ -364,12 +437,13 @@ define map find_matching_disk( list<string> disks, map target, map conf )
 	{
 	foreach( string k, map e, solutions,
 	    ``{
-	    y2milestone( "disk %1 weight %2", k, e["weight"]:0 );
+	    y2milestone( "find_matching_disk disk %1 weight %2", 
+	                 k, e["weight"]:0 );
 	    });
 	list<string> disks = maplist( string k, map e, solutions, ``(k) );
 	disks = sort( string a, string b, disks, 
 		      ``(solutions[a,"weight"]:0>solutions[b,"weight"]:0));
-	y2milestone( "sorted disks %1", disks );
+	y2milestone( "find_matching_disk sorted disks %1", disks );
 	ret = solutions[disks[0]:""]:$[];
 	ret["device"] = disks[0]:"";
 	}
@@ -585,7 +659,7 @@ define map add_cylinder_info( map conf, map gap )
 	      else
 		  return( a["size"]:0 > b["size"]:0 );
 	      }));
-    y2milestone( "parts %1", conf["partitions"]:[] );
+    y2milestone( "add_cylinder_info parts %1", conf["partitions"]:[] );
     integer sum = 0;
     conf["partitions"] = maplist( map p, conf["partitions"]:[],
 	``{
@@ -597,8 +671,8 @@ define map add_cylinder_info( map conf, map gap )
 	    }
 	return( p );
 	});
-    y2milestone( "sum %1", sum );
-    y2milestone( "parts %1", conf["partitions"]:[] );
+    y2milestone( "add_cylinder_info sum %1", sum );
+    y2milestone( "add_cylinder_info parts %1", conf["partitions"]:[] );
     if( sum>100 )
 	{
 	integer rest = sum - 100;
@@ -638,14 +712,14 @@ define map add_cylinder_info( map conf, map gap )
 	    }
 	return( p );
 	});
-    y2milestone( "parts %1", conf["partitions"]:[] );
+    y2milestone( "add_cylinder_info parts %1", conf["partitions"]:[] );
     return( conf );
     }
 
 define map get_perfect_list( list ps, map g )
     ``{
-    y2milestone( "ps %1", ps );
-    y2milestone( "gap %1", g );
+    y2milestone( "get_perfect_list ps %1", ps );
+    y2milestone( "get_perfect_list gap %1", g );
     if( size(g["gap"]:[])>0 &&
         ((g["extended_possible"]:false && 
 	    size(g["free_pnr"]:[])>0 &&
@@ -664,7 +738,7 @@ define map get_perfect_list( list ps, map g )
 	list lp = (list) eval(ps);
 	if( g["extended_possible"]:false && size(ps)+1>=size(g["free_pnr"]:[]))
 	    {
-	    y2milestone( "creating extended" );
+	    y2milestone( "get_perfect_list creating extended" );
 	    integer index = 0;
 	    foreach( map e, lg["gap"]:[], 
 		``{
@@ -681,7 +755,7 @@ define map get_perfect_list( list ps, map g )
 	    }
 	else
 	    {
-	    y2milestone( "not creating extended" );
+	    y2milestone( "get_perfect_list not creating extended" );
 	    add_part_recursive( ps, lg );
 	    }
 	}
@@ -692,26 +766,26 @@ define map get_perfect_list( list ps, map g )
 	ret["solution"] = eval(cur_gap);
 	ret["partitions"] = eval(ps);
 	}
-    y2milestone( "ret weight %1", ret["weight"]:-1000000 );
-    y2milestone( "ret solution %1", ret["solution","gap"]:[] );
+    y2milestone( "get_perfect_list ret weight %1", ret["weight"]:-1000000 );
+    y2milestone( "get_perfect_list ret solution %1", ret["solution","gap"]:[] );
     return( ret );
     }
 
 define void add_part_recursive( list ps, map g )
     ``{
-    y2milestone( "pindex %1", g["procpart"]:0 );
-    y2milestone( "ps %1", ps );
-    y2milestone( "gap %1", g );
+    y2milestone( "add_part_recursive pindex %1", g["procpart"]:0 );
+    y2milestone( "add_part_recursive ps %1", ps );
+    y2milestone( "add_part_recursive gap %1", g );
     map lg = (map) eval(g);
     integer gindex = 0;
     integer pindex = lg["procpart"]:0;
     map part = ps[pindex]:$[];
     lg["procpart"] = pindex + 1;
-    y2milestone( "p %1", part );
+    y2milestone( "add_part_recursive p %1", part );
     foreach( map e, lg["gap"]:[], 
 	``{
-	y2milestone( "e %1", e );
-	if( part["max_cyl"]:0 <= e["end"]:0 &&
+	y2milestone( "add_part_recursive e %1", e );
+	if( (!haskey( part, "max_cyl" ) || part["max_cyl"]:0 >= e["end"]:0) &&
 	    part["cylinders"]:0 <= e["cylinders"]:0 &&
 	    (!e["extended"]:false && size(lg["free_pnr"]:[])>0 ||
 	      e["extended"]:false && size(lg["ext_pnr"]:[])>0))
@@ -747,8 +821,8 @@ define void add_part_recursive( list ps, map g )
 		{
 		map ng = normalize_gaps(ps, llg);
 		integer val = do_weighting( ps, ng );
-		y2milestone( "val %1 cur_weight %2 size %3", val, cur_weight, 
-		             size(cur_gap));
+		y2milestone( "add_part_recursive val %1 cur_weight %2 size %3", 
+		             val, cur_weight, size(cur_gap));
 		if( val > cur_weight || size(cur_gap)==0 )
 		    {
 		    cur_weight = val;
@@ -1061,15 +1135,35 @@ define integer do_weighting( list ps, map g )
     return( ret );
     };
 
+define list<map> try_remove_sole_extended( list<map> parts )
+    {
+    list<map> ret = parts;
+    if( find( map p, ret,
+	      ``(p["type"]:`unknown==`extended &&
+		 !p["delete"]:false))!=nil &&
+	find( map p, ret,
+	      ``(p["type"]:`unknown==`logical &&
+		 !p["delete"]:false))==nil )
+	{
+	ret = maplist( map p, ret,
+	    ``{
+	    if( p["type"]:`unknown == `extended )
+		p["delete"] = true;
+	    return( p );
+	    });
+	y2milestone( "try_remove_sole_extended delete extended p:%1", ret );
+	}
+    return( ret );
+    }
+
 define map remove_possible_partitions( map disk, map conf )
     ``{
-    list nodelpart = [ 0x12, 0xde, 257 ];
     map ret = (map)eval(disk);
     ret["partitions"] = maplist( map p, ret["partitions"]:[],
 	``{
 	integer fsid = p["fsid"]:0;
 	if( (conf["remove_special_partitions"]:false ||
-		!contains( nodelpart, fsid ) ) &&
+		!contains( Partitions::do_not_delete, fsid ) ) &&
 	    p["type"]:`primary != `extended &&
 	    !contains( conf["keep_partition_num"]:[], p["nr"]:0 ) &&
 	    !contains( conf["keep_partition_id"]:[], fsid ) &&
@@ -1079,21 +1173,7 @@ define map remove_possible_partitions( map disk, map conf )
 	    }
 	return( p );
 	});
-    integer max_prim = Partitions::MaxPrimary(disk["label"]:"msdos");
-    if( size( filter( map p, ret["partitions"]:[], 
-		      ``(p["type"]:`primary == `extended)))>0 &&
-	size( filter( map p, ret["partitions"]:[], 
-		      ``(p["nr"]:0>max_prim )))==0 )
-	{
-	ret["partitions"] = maplist( map p, ret["partitions"]:[],
-	    ``{
-	    if( p["type"]:`primary == `extended )
-		{
-		p["delete"] = true;
-		}
-	    return( p );
-	    });
-	}
+    ret["partitions"] = try_remove_sole_extended( ret["partitions"]:[] );
     return( ret );
     };
 
@@ -1106,15 +1186,17 @@ define map try_resize_windows( map disk )
     ret["partitions"] = maplist( map p, ret["partitions"]:[],
 	``{
 	integer fsid = p["fsid"]:0;
-	if( Partitions::IsDosPartition( fsid ) ) 
+	if( Partitions::IsDosWinNtPartition( fsid ) ) 
 	    {
-	    integer psize = (p["region",0]:0 + p["region",1]:1 - 1) * cyl_size;
-	    win = Storage::GetFreeSpace( p["device"]:"", psize, `vfat, false );
+	    win = p["winfo"]:$[];
 	    y2milestone( "win=%1", win );
-	    if( win != nil && psize > 300*1024*1024 )
+	    if( win != nil && p["size_k"]:0 > 1024*1024 )
 		{
 		p["winfo"] = win;
+		p["resize"] = true;
 		p["region",1] = (win["new_size"]:0 + cyl_size - 1) / cyl_size;
+		p["win_max_length"] = 
+		    (win["max_win_size"]:0 + cyl_size - 1) / cyl_size;
 		y2milestone( "win part %1", p );
 		}
 	    }
@@ -1126,7 +1208,8 @@ define map try_resize_windows( map disk )
 define list<map> get_gaps( integer start, integer end, list<map> part, 
 			   boolean add_exist_linux )
     ``{
-    y2milestone( "start %1 end %2 add_exist %3", start, end, add_exist_linux );
+    y2milestone( "get_gaps start %1 end %2 add_exist %3", start, end, 
+                 add_exist_linux );
     list<map> ret = [];
     map entry = $[];
     foreach( map p, part, 
@@ -1134,14 +1217,14 @@ define list<map> get_gaps( integer start, integer end, list<map> part,
 	integer s = p["region",0]:0;
 	integer e = s + p["region",1]:1 - 1;
 	entry = $[];
-	y2milestone( "start %1 s %2 e %3", start, s, e );
+	y2milestone( "get_gaps start %1 s %2 e %3", start, s, e );
 	if( start < s )
 	    {
 	    entry["start"] = start;
 	    entry["end"] = s-1;
 	    ret = add( ret, eval(entry) );
 	    }
-	if( add_exist_linux && 
+	if( add_exist_linux && size(p["mount"]:"")==0 &&
 	    (p["fsid"]:0==Partitions::fsid_native || 
 	     p["fsid"]:0==Partitions::fsid_swap) )
 	    {
@@ -1161,7 +1244,7 @@ define list<map> get_gaps( integer start, integer end, list<map> part,
 	entry["end"] = end;
 	ret = add( ret, entry );
 	}
-    y2milestone( "ret %1", ret );
+    y2milestone( "get_gaps ret %1", ret );
     return( ret );
     }
 
@@ -1224,7 +1307,7 @@ define map get_gap_info( map disk, boolean add_exist_linux )
     integer max_pnr = max_prim;
     integer pnr = 1;
     list free_pnr = [];
-    y2milestone( "exist_pnr %1", exist_pnr );
+    y2milestone( "get_gap_info exist_pnr %1", exist_pnr );
     while( pnr<=max_pnr )
 	{
 	if( !contains( exist_pnr, pnr ) )
@@ -1253,7 +1336,7 @@ define map get_gap_info( map disk, boolean add_exist_linux )
 	}
     ret["ext_pnr"] = ext_pnr;
     ret["gap"] = gap;
-    y2milestone( "ret %1", ret );
+    y2milestone( "get_gap_info ret %1", ret );
     return( ret );
     }
 
@@ -1640,8 +1723,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 			      ``(p["type"]:`unknown!=`free &&
 				 !p["delete"]:false &&
 				 p["detected_fs"]:`unknown==`swap));
-    swaps = sort( map a, map b, swaps,
-		  ``(a["size_k"]:0>b["size_k"]:0));
+    swaps = sort( map a, map b, swaps, ``(a["size_k"]:0>b["size_k"]:0));
     y2milestone( "can_swap_reuse swaps %1", swaps );
     if( swaps[0,"size_k"]:0 >= 256*1024 )
 	{
@@ -1672,8 +1754,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 	    y2milestone( "can_swap_reuse disk %1 sw %2", dev, sw );
 	    swaps = (list<map>)union( swaps, sw );
 	    });
-	swaps = sort( map a, map b, swaps,
-		      ``(a["size_k"]:0>b["size_k"]:0));
+	swaps = sort( map a, map b, swaps, ``(a["size_k"]:0>b["size_k"]:0));
 	y2milestone( "can_swap_reuse swaps %1", swaps );
 	if( swaps[0,"size_k"]:0 >= 256*1024 )
 	    {
@@ -1683,6 +1764,34 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 	    }
 	}
     y2milestone( "can_swap_reuse ret %1", ret );
+    return( ret );
+    }
+
+list can_boot_reuse( string disk, list<map> partitions )
+    {
+    list ret = [];
+    if( Partitions::NeedBoot() )
+	{
+	y2milestone( "can_boot_reuse disk %1 partitions %2", disk, partitions );
+	map boot = find( map p, partitions,
+			 ``(!p["delete"]:false &&
+			    (p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
+			    (p["fsid"]:0 == Partitions::FsidBoot() && 
+			     p["size_k"]:0<300*1024)||
+			    (p["fsid"]:0 == Partitions::fsid_prep_chrp_boot &&
+			     Partitions::PrepBoot())));
+	if( boot != nil )
+	    {
+	    ret = maplist( map p, partitions,
+			   ``{
+			   if( !p["delete"]:false &&
+			       p["device"]:""==boot["device"]:"" )
+			       p["mount"] = Partitions::BootMount();
+			   return( p );
+			   });
+	    }
+	}
+    y2milestone( "can_boot_reuse ret %1", ret );
     return( ret );
     }
 
@@ -1775,14 +1884,14 @@ list<map> get_proposal( boolean have_swap, map disk )
 				      });
 	conf["partitions"] = add( conf["partitions"]:[], home );
 	}
-    map ps1 = do_flexible_disk_conf( disk, conf );
+    map ps1 = do_flexible_disk_conf( disk, conf, false, false );
     if( size(old_root)>0 && !ps1["ok"]:false )
 	{
 	conf["partitions"] = 
 	    filter( map p, conf["partitions"]:[],
 		    ``(p["mount"]:""!="/home" && p["mount"]:""!="/"));
 	conf["partitions"] = add( conf["partitions"]:[], old_root );
-	ps1 = do_flexible_disk_conf( disk, conf );
+	ps1 = do_flexible_disk_conf( disk, conf, false, false );
 	}
     if( !have_swap )
 	{
@@ -1793,7 +1902,7 @@ list<map> get_proposal( boolean have_swap, map disk )
 	if( (!ps1["ok"]:false && diff>0) || diff>100 )
 	    {
 	    conf["partitions",0,"size"] = swap_sizes[1]:256*1024*1024;
-	    map ps2 = do_flexible_disk_conf( disk, conf );
+	    map ps2 = do_flexible_disk_conf( disk, conf, false, false );
 	    y2milestone( "get_proposal ps2 ok:%1", ps2["ok"]:false );
 	    if( ps2["ok"]:false )
 		{
@@ -1811,6 +1920,367 @@ list<map> get_proposal( boolean have_swap, map disk )
     if( ps1["ok"]:false )
 	ret = ps1["disk","partitions"]:[];
     y2milestone( "get_proposal ret:%1", ret );
+    return( ret );
+    }
+
+integer get_usable_size_mb( map disk, boolean reuse_linux )
+    {
+    integer ret = 0;
+    integer cyl_size = disk["cyl_size"]:0;
+    integer disk_cyl = disk["cyl_count"]:0;
+    list<map> partitions = filter( map p, disk["partitions"]:[], 
+				   ``(!p["create"]:false));
+    partitions = sort( map p1, map p2, partitions,
+                           ``(p1["region",0]:0 < p2["region",0]:0));
+    integer last_end = 0;
+    foreach( map p, partitions,
+	``{
+	if( p["region",0]:0>last_end )
+	    ret = ret + (p["region",0]:0-last_end) * cyl_size;
+	if( p["delete"]:false || (reuse_linux && p["linux"]:false))
+	    ret = ret + p["size_k"]:0 * 1024;
+	last_end = p["region",0]:0;
+	if( p["type"]:`unknown != `extended )
+	    last_end = last_end + p["region",1]:0;
+	});
+    if( last_end < disk_cyl )
+	ret = ret + (disk_cyl-last_end) * cyl_size;
+    ret = ret / (1024*1024);
+    return( ret );
+    }
+
+integer get_mb_sol( map sol, string mp )
+    {
+    map pa = find( map p, sol["disk","partitions"]:[], ``(p["mount"]:""==mp));
+    return( pa!=nil ? pa["size_k"]:0/1024 : 0 );
+    }
+
+map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
+    {
+    list linux_pid = [ Partitions::fsid_native, Partitions::fsid_swap,
+                       Partitions::fsid_lvm, Partitions::fsid_raid ];
+    foreach( string s, ddev,
+	``{
+	tg[s,"partitions"] = 
+	    maplist( map p, tg[s,"partitions"]:[],
+		``{
+		if( contains( linux_pid, p["fsid"]:0 ) ||
+		    (p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
+		    (p["fsid"]:0 == Partitions::FsidBoot() && 
+		     p["size_k"]:0<300*1024)||
+		    (Partitions::PrepBoot() && 
+		     p["fsid"]:0 == Partitions::fsid_prep_chrp_boot))
+		    p["linux"] = true;
+		else
+		    p["linux"] = false;
+		return( p );
+		});
+	});
+    return( tg );
+    }
+
+list<string> get_disk_try_list( map<string,map> tg, boolean soft )
+    {
+    list<string> ret = [];
+    ret = maplist( string k, map e, 
+		   filter( string l, map f, tg, 
+			   ``(!ignore_disk(l,f,soft))), ``(k));
+    ret = sort( ret );
+    if( size(ret)>4 )
+	{
+	ret = restrict_disk_names( ret );
+	}
+    y2milestone( "get_disk_try_list soft:%1 ret:%2", soft, ret );
+    return( ret );
+    }
+
+map get_inst_proposal( map<string,map> target )
+    {
+    map ret = $[];
+    ret["target"] = target;
+    map root = $[ "mount" : "/", "increasable" : true,
+                  "fsys" : Partitions::default_fs, "size" : 0 ];
+    map opts = get_config_options();
+    list<string> ddev = get_disk_try_list( target, true );
+    string sol_disk = "";
+    list modes = [ `free, `reuse, `remove, `resize, `desparate ];
+    map<string,boolean> valid = $[];
+    map<string,list> size_mb = listmap( string s, ddev, ``($[s:[]]));
+    map solution = listmap( string s, ddev, ``($[s:[]]));
+    target = prepare_part_lists( ddev, target );
+    symbol mode = `free;
+    while( mode != `end && size(sol_disk)==0 )
+	{
+	if( mode == `free || mode == `desparate )
+	    {
+	    valid = listmap( string s, ddev, ``($[s:true]));
+	    if( mode == `desparate )
+		{
+		ddev = get_disk_try_list( target, false );
+		target = prepare_part_lists( ddev, target );
+		foreach( string s, ddev,
+		    ``{
+		    target[s,"partitions"] = 
+			maplist( map p, target[s,"partitions"]:[],
+			    ``{
+			    if( haskey( p, "resize" ))
+				p = remove( p, "resize" );
+			    if( haskey( p, "win_max_length" ))
+				p = remove( p, "win_max_length" );
+			    if( haskey( p, "mount" ))
+				p = remove( p, "mount" );
+			    if( !contains( Partitions::do_not_delete, 
+					   p["fsid"]:0 ))
+				p["delete"] = true;
+			    return( p );
+			    });
+		    });
+		}
+	    }
+	else if( mode == `reuse || mode == `remove )
+	    {
+	    valid = listmap( string s, ddev, 
+		``{
+		if( find( map p, target[s,"partitions"]:[], 
+		          ``(p["linux"]:false && size(p["mount"]:"")==0 &&
+			     !p["delete"]:false)) != nil )
+		    return( $[s:true] );
+		else
+		    return( $[s:false] );
+		});
+	    if( mode == `remove )
+		{
+		foreach( string s, filter( string d, ddev, ``(valid[d]:false)),
+		    ``{
+		    list<map> pl = filter( map p, target[s,"partitions"]:[],
+					   ``( p["linux"]:false && 
+					       size(p["mount"]:"")==0 &&
+					       !p["delete"]:false ));
+		    if( size(pl)>0 )
+			{
+			pl = sort( map a, map b, pl, 
+			           ``(a["size_k"]:0>b["size_k"]:0));
+			target[s,"partitions"] = 
+			    maplist( map p, target[s,"partitions"]:[],
+				``{
+				if( p["linux"]:false && !p["delete"]:false &&
+				    size(p["mount"]:"")==0 &&
+				    p["device"]:""==pl[0,"device"]:"" )
+				    p["delete"] = true;
+				return( p );
+				});
+			y2milestone( "get_inst_proposal del parts %1", 
+				     target[s,"partitions"]:[] );
+			}
+		    });
+		}
+	    }
+	else if( mode == `resize )
+	    {
+	    valid = listmap( string s, ddev, 
+		``{
+		if( find( map p, target[s,"partitions"]:[], 
+		          ``(Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
+			     size(p["winfo"]:$[])>0 && 
+			     p["size_k"]:0 > 1024*1024 && 
+			     !p["resize"]:false && !p["delete"]:false)) != nil )
+		    return( $[s:true] );
+		else
+		    return( $[s:false] );
+		});
+	    foreach( string s, filter( string d, ddev, ``(valid[d]:false)),
+		``{
+		list<map> pl = filter( map p, target[s,"partitions"]:[],
+				       ``( Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
+				           size(p["winfo"]:$[])>0 &&
+					   p["size_k"]:0 > 1024*1024 &&
+					   !p["resize"]:false &&
+					   !p["delete"]:false ));
+		if( size(pl)>0 )
+		    {
+		    pl = sort( map a, map b, pl, 
+			       ``(a["size_k"]:0>b["size_k"]:0));
+		    target[s,"partitions"] = 
+			maplist( map p, target[s,"partitions"]:[],
+			    ``{
+			    if( Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
+			        size(p["winfo"]:$[])>0 &&
+				p["size_k"]:0 > 1024*1024 &&
+				!p["resize"]:false && !p["delete"]:false &&
+				p["device"]:""==pl[0,"device"]:"" )
+				{
+				integer cs = target[s,"cyl_size"]:1;
+				p["resize"] = true;
+				p["region",1] = 
+				    (p["winfo","new_size"]:0+cs-1) / cs;
+				p["win_max_length"] =
+				    (p["winfo","max_win_size"]:0+cs-1) / cs;
+				}
+			    return( p );
+			    });
+		    y2milestone( "get_inst_proposal res parts %1", 
+		                 target[s,"partitions"]:[] );
+		    }
+		});
+	    }
+	y2milestone( "get_inst_proposal valid %1", valid );
+	foreach( string s, ddev,
+	    ``{
+	    map disk = target[s]:$[];
+	    map conf = $[ "partitions" : [] ];
+	    list p = can_boot_reuse( s, target[s,"partitions"]:[] );
+	    boolean have_boot = size(p)>0;
+	    if( have_boot )
+	        target[s,"partitions"] = p;
+	    map r = can_swap_reuse( s, target[s,"partitions"]:[], target );
+	    boolean have_swap = size(r)>0;
+	    if( haskey( r, "partitions" ))
+		target[s,"partitions"] =  r["partitions"]:[];
+	    else if( haskey( r, "targets" ))
+		target = r["targets"]:$[];
+	    list swap_sizes = [];
+	    integer avail_size = get_usable_size_mb(disk,mode==`reuse);
+	    y2milestone( "get_inst_proposal disk %1 mode %2 valid %3 avail %4", 
+	                 s, mode, valid[s]:false, avail_size );
+	    if( valid[s]:false && avail_size>0 )
+		{
+		if( !have_swap )
+		    {
+		    swap_sizes = get_swap_sizes( avail_size );
+		    map swap = $[ "mount" : "swap", "increasable" : true, 
+				  "fsys" : `swap, "maxsize" : 2*1024*1024*1024,
+				  "size"  : swap_sizes[0]:256*1024*1024 ];
+		    conf["partitions"] = add( conf["partitions"]:[], swap );
+		    }
+		conf["partitions"] = add( conf["partitions"]:[], root );
+		map old_root = $[];
+		if( opts["home"]:false && opts["home_limit"]:0 < avail_size )
+		    {
+		    map home = $[ "mount" : "/home", "increasable" : true, 
+				  "fsys" : Partitions::default_fs, 
+				  "size" : 512*1024*1024, 
+				  "pct" : 100-opts["root_percent"]:40 ];
+		    conf["partitions"] = 
+			maplist( map p, conf["partitions"]:[],
+			    ``{
+			    if( p["mount"]:""=="/" )
+				{
+				old_root = p;
+				p["pct"] = opts["root_percent"]:40;
+				p["maxsize"] = opts["root_max"]:0*1024*1024;
+				p["size"] = opts["root_base"]:0*1024*1024;
+				}
+			    return( p );
+			    });
+		    conf["partitions"] = add( conf["partitions"]:[], home );
+		    }
+		map ps1 = do_flexible_disk_conf( disk, conf, have_boot, 
+						 mode==`reuse );
+		if( size(old_root)>0 && !ps1["ok"]:false )
+		    {
+		    conf["partitions"] = 
+			filter( map p, conf["partitions"]:[],
+				``(p["mount"]:""!="/home" && p["mount"]:""!="/"));
+		    conf["partitions"] = add( conf["partitions"]:[], old_root );
+		    ps1 = do_flexible_disk_conf( disk, conf, have_boot, 
+						 mode==`reuse );
+		    }
+		if( !have_swap )
+		    {
+		    integer diff = swap_sizes[0]:256 - swap_sizes[1]:256;
+		    if( diff<0 )
+			diff = -diff;
+		    y2milestone( "get_inst_proposal diff:%1 ps1 ok:%2", 
+				 diff, ps1["ok"]:false );
+		    if( (!ps1["ok"]:false && diff>0) || diff>100 )
+			{
+			conf["partitions",0,"size"] = swap_sizes[1]:256*1024*1024;
+			map ps2 = do_flexible_disk_conf( disk, conf, have_boot, 
+							 mode==`reuse );
+			y2milestone( "get_inst_proposal ps2 ok:%1", 
+				     ps2["ok"]:false );
+			if( ps2["ok"]:false )
+			    {
+			    map rp1 = find( map p, ps1["disk","partitions"]:[], 
+					    ``(!p["delete"]:false && 
+					       p["mount"]:""=="/"));
+			    map rp2 = find( map p, ps2["disk","partitions"]:[], 
+					    ``(!p["delete"]:false && 
+					       p["mount"]:""=="/"));
+			    y2milestone( "get_inst_proposal rp1:%1", rp1 );
+			    y2milestone( "get_inst_proposal rp2:%1", rp2 );
+			    if( rp1==nil || 
+				(rp2!=nil && rp2["size_k"]:0>rp1["size_k"]:0 ))
+				ps1 = ps2;
+			    }
+			}
+		    }
+		if( ps1["ok"]:false )
+		    {
+		    list mb = [ get_mb_sol( ps1, "/" )];
+		    if( opts["home"]:false )
+			mb = add( mb, get_mb_sol( ps1, "/home" ));
+		    if( mb[0]:0+mb[1]:0 > size_mb[s,0]:0 + size_mb[s,1]:0 )
+			{
+			solution[s] = ps1["disk"]:$[];
+			size_mb[s] = mb;
+			}
+		    }
+		}
+	    });
+	integer max_mb = 0;
+	string max_disk = "";
+	foreach( string s, list mb, size_mb,
+	    ``{
+	    if( mb[1]:0>0 && mb[1]:0+mb[0]:0 > max_mb )
+		{
+		max_mb = mb[1]:0+mb[0]:0;
+		max_disk = s;
+		}
+	    });
+	if( max_mb>0 && size_mb[max_disk,0]:0 > 2*1024 && 
+	    size_mb[max_disk,1]:0 > 1*1024 )
+	    {
+	    sol_disk = max_disk;
+	    }
+	y2milestone( "get_inst_proposal mode %1 size_mb %2", mode, size_mb );
+	if( size(sol_disk)==0 )
+	    {
+	    list<boolean> lb = maplist(string s, boolean e, valid, ``(e));
+	    if( mode == `free )
+		mode = `reuse;
+	    else if( mode == `reuse )
+		mode = `remove;
+	    else if( mode == `remove && find( boolean v, lb, ``(v)) == nil )
+		mode = `resize;
+	    else if( mode == `resize && find( boolean v, lb, ``(v)) == nil )
+		mode = `desparate;
+	    else if( mode == `desparate )
+		mode = `end;
+	    }
+	}
+    y2milestone( "get_inst_proposal sol_disk %1", sol_disk );
+    if( size(sol_disk)==0 )
+	{
+	integer max_mb = 0;
+	foreach( string s, list mb, size_mb,
+	    ``{
+	    if( mb[1]:0+mb[0]:0>max_mb )
+		{
+		max_mb = mb[1]:0+mb[0]:0;
+		sol_disk = s;
+		}
+	    });
+	y2milestone( "get_inst_proposal sol_disk %1", sol_disk );
+	}
+    ret["ok"] = size(sol_disk)>0;
+    if( ret["ok"]:false )
+	{
+	ret["target",sol_disk] = solution[sol_disk]:$[];
+	target = Storage::SpecialBootHandling( target );
+	y2milestone( "get_inst_proposal sol:%1", ret["target",sol_disk]:$[] );
+	}
+    y2milestone( "get_inst_proposal ret[ok]:%1", ret["ok"]:false );
     return( ret );
     }
 
