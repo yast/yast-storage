@@ -4574,7 +4574,20 @@ global define map GetEntryForMountpoint( string mp )
 global define list GetRootInitrdModules()
     ``{
     map partition = GetEntryForMountpoint( "/" );
-    y2milestone("root partition in GetInitrdModules %1", partition );
+    y2milestone("GetRootInitrdModules root partition %1", partition );
+
+    map<string,map> tg = GetTargetMap();
+    map disk = $[];
+    foreach( string k, map d, tg, 
+	``{
+	if( size(disk)==0 && 
+	    find( map p, d["partitions"]:[], 
+	          ``(!p["delete"]:false &&
+		     p["device"]:""==partition["device"]:""))!=nil )
+	    disk = d;
+	});
+    y2milestone( "GetRootInitrdModules disk %1", 
+                 haskey(disk,"partitions")?remove(disk,"partitions"):disk );
 
     list initrdmodules =
 	FileSystems::GetNeededModules( partition["used_fs"]:`ext2 );
@@ -4591,12 +4604,11 @@ global define list GetRootInitrdModules()
 	{
 	string vgname = substring( partition["device"]:"", 5 );
 	vgname = substring( vgname, 0, findfirstof( vgname, "/" ));
-	map tg = GetTargetMap();
 	list<string> mod =
 	    (list<string>) maplist(map k, filter(map e, tg["/dev/md","partitions"]:[],
 						 ``(e["used_by"]:""==vgname) ),
 				   ``(k["raid_type"]:""));
-	y2milestone( "mod %1", mod );
+	y2milestone( "GetRootInitrdModules mod %1", mod );
 	foreach(string e, mod,
 	    ``{
 	    if( size(e)>0 && !contains( initrdmodules, e ) )
@@ -4609,7 +4621,26 @@ global define list GetRootInitrdModules()
 	    initrdmodules = add( initrdmodules, "dm_mod" );
 	    }
 	}
-    y2milestone ("initrdmodules %1", initrdmodules);
+    if( disk["driver"]:"" == "usb-storage" )
+	{
+	list<map> uc = (list<map>)SCR::Read(.probe.usbctrl);
+	list<string> dl = maplist( map e, uc, ``(e["driver"]:""));
+	y2milestone( "GetRootInitrdModules dl %1", dl );
+	dl = (list<string>) toset(dl);
+	y2milestone( "GetRootInitrdModules dl %1", dl );
+	string first = "^ehci[_-]hcd$";
+	list f = filter( string s, dl, ``(regexpmatch(s,first)));
+	y2milestone( "GetRootInitrdModules first %1", f );
+	if( size(f)>0 )
+	    {
+	    dl = (list<string>)merge( f, filter( string s, dl, 
+	                                         ``(!regexpmatch(s,first))));
+	    y2milestone( "GetRootInitrdModules dl %1", dl );
+	    }
+	initrdmodules = merge( initrdmodules, dl );
+	initrdmodules = add( initrdmodules, "usb-storage" );
+	}
+    y2milestone( "GetRootInitrdModules ret %1", initrdmodules );
     return initrdmodules;
     };
 
