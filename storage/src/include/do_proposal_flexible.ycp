@@ -47,17 +47,18 @@ map cur_gap = $[];
 
 define boolean ignore_disk( string dev, map entry, boolean soft )
     ``{
-    boolean ret = !Storage::IsRealDisk( entry );
-    if( Arch::board_iseries () && find( dev, "/dev/sd" )==0 )
+    boolean ret = !Storage::IsRealDisk( entry ) || entry["readonly"]:false ||
+                  Arch::s390();
+    if( !ret && Arch::board_iseries () && find( dev, "/dev/sd" )==0 )
 	{
 	ret = true;
 	}
-    if( soft && entry["softraiddisk"]:false )
+    if( !ret && soft && entry["softraiddisk"]:false )
 	{
 	ret = true;
 	}
-    if( soft )
-	ret = ret || entry["used_by_type"]:`UB_NONE != `UB_NONE;
+    if( !ret && soft )
+	ret = entry["used_by_type"]:`UB_NONE != `UB_NONE;
     if( ret )
 	{
 	y2milestone( "ignoring disk %1 soft %2", dev, soft );
