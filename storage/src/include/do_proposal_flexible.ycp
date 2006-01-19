@@ -160,11 +160,10 @@ define map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
     if( size(conf)>0 && Storage::IsRealDisk( disk ))
 	{
 	y2milestone( "do_flexible_disk_conf processing disk %1", dev );
-	map tc = try_add_boot( conf, disk );
 	cur_mode = reuse?`reuse:`free;
 	cur_gap = $[];
 	map gap = get_gap_info( disk, reuse );
-	tc = add_cylinder_info( tc, gap );
+	map tc = add_cylinder_info( conf, gap );
 	map sol = get_perfect_list( tc["partitions"]:[], gap );
 	if( size(sol)>0 )
 	    {
@@ -1770,16 +1769,15 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
     return( ret );
     }
 
-list can_boot_reuse( string disk, string label, integer max_prim, list<map> partitions )
+list<map> can_boot_reuse( string disk, string label, integer max_prim, list<map> partitions )
     {
-    list ret = [];
+    list<map> ret = [];
     if( Partitions::NeedBoot() )
 	{
 	y2milestone( "can_boot_reuse disk %1 max_prim %2 label %3 part %4", 
 	             disk, max_prim, label, partitions );
-	map boot = find( map p, partitions,
-			 ``(!p["delete"]:false &&
-			    (p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
+	map boot = find( map p, filter( map pp, partitions, ``(!pp["delete"]:false)),
+			 ``((p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
 			    (p["fsid"]:0 == Partitions::FsidBoot() && 
 			     p["size_k"]:0<300*1024)||
 			    (p["detected_fs"]:`unknown==`hfs && 
@@ -1962,9 +1960,9 @@ integer get_mb_sol( map sol, string mp )
     return( pa!=nil ? pa["size_k"]:0/1024 : 0 );
     }
 
-list special_boot_proposal_prepare( list<map> partitions )
+list<map> special_boot_proposal_prepare( list<map> partitions )
     {
-    list ret = partitions;
+    list<map> ret = partitions;
     if( Partitions::PrepBoot() )
 	{
 	ret = maplist( map p, partitions,
@@ -1986,8 +1984,6 @@ map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
                        Partitions::fsid_lvm, Partitions::fsid_raid ];
     foreach( string s, ddev,
 	``{
-	tg[s,"partitions"] = 
-	    special_boot_proposal_prepare( tg[s,"partitions"]:[] );
 	tg[s,"partitions"] = 
 	    maplist( map p, tg[s,"partitions"]:[],
 		``{
@@ -2151,14 +2147,14 @@ map get_inst_proposal( map<string,map> target )
 		    }
 		});
 	    }
-	y2milestone( "get_inst_proposal valid %1", valid );
+	y2milestone( "get_inst_proposal mode %1 valid %2", mode, valid );
 	foreach( string s, ddev,
 	    ``{
-	    map disk = target[s]:$[];
 	    map conf = $[ "partitions" : [] ];
-	    list p = can_boot_reuse( s, target[s,"label"]:"msdos",
-	                             target[s,"max_primary"]:4,
-	                             target[s,"partitions"]:[] );
+	    list<map> p = can_boot_reuse( s, target[s,"label"]:"msdos",
+					  target[s,"max_primary"]:4,
+					  target[s,"partitions"]:[] );
+	    p = special_boot_proposal_prepare( p );
 	    boolean have_boot = size(p)>0;
 	    if( have_boot )
 	        target[s,"partitions"] = p;
@@ -2169,6 +2165,7 @@ map get_inst_proposal( map<string,map> target )
 	    else if( haskey( r, "targets" ))
 		target = r["targets"]:$[];
 	    list swap_sizes = [];
+	    map disk = target[s]:$[];
 	    integer avail_size = get_usable_size_mb(disk,mode==`reuse);
 	    y2milestone( "get_inst_proposal disk %1 mode %2 valid %3 avail %4", 
 	                 s, mode, valid[s]:false, avail_size );
@@ -2307,7 +2304,7 @@ map get_inst_proposal( map<string,map> target )
     if( ret["ok"]:false )
 	{
 	ret["target",sol_disk] = solution[sol_disk]:$[];
-	target = Storage::SpecialBootHandling( target );
+	ret["target"] = Storage::SpecialBootHandling( ret["target"]:$[] );
 	y2milestone( "get_inst_proposal sol:%1", ret["target",sol_disk]:$[] );
 	}
     y2milestone( "get_inst_proposal ret[ok]:%1", ret["ok"]:false );
