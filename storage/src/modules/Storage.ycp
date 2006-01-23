@@ -3737,37 +3737,6 @@ global define void WriteFstab()
 		});
 	    }
 	});
-
-    foreach( map cd, StorageDevices::cddrives,
-	``{
-	m = Storage::MakeCdromFstabEntry( cd );
-	Storage::AddFstabEntry( m );
-	});
-
-    num = 0;
-    foreach( string tdevice, any tdata, StorageDevices::ZipDrives,
-	``{
-	m = FileSystems::GetFstabDefaultMap( "zip" );
-	string zfile = "/zip";
-	if( num > 0 )
-	    zfile = zfile + sformat( "%1", num );
-	m["mount"] = "/media"+zfile;
-	m["spec"] = tdevice+"4";
-	Storage::AddFstabEntry( m );
-	num = num+1;
-	});
-    num = 0;
-    foreach( map drive, StorageDevices::FloppyDrives,
-	``{
-	m = FileSystems::GetFstabDefaultMap( "floppy" );
-	string fdname = "/floppy";
-	if( num > 0 )
-	    fdname = fdname + sformat( "%1", num );
-	m["mount"] = "/media"+fdname;
-	m["spec"] = drive["dev_name"]:"";
-	Storage::AddFstabEntry( m );
-	num = num+1;
-	});
     HandleModulesOnBoot( tg );
     }
 
@@ -4024,17 +3993,17 @@ global define map GetBootPartition( string disk )
 
 global define void UpdateFstabSubfs()
     ``{
-    y2milestone( "updating subfs for cdrom and floppy" );
+    y2milestone( "UpdateFstabSubfs removing fstab entries for cdrom and floppy" );
     string tabpath = PathToDestdir( "/etc/fstab" );
     map fstab = Partitions::GetFstab( tabpath );
     integer line = 0;
+    list<integer> rem_lines = [];
     while( line<=AsciiFile::NumLines( fstab ) )
 	{
 	map l = AsciiFile::GetLine( fstab, line );
 	if( find( l["fields",1]:"", "/media/floppy" )==0 )
 	    {
-	    AsciiFile::ChangeLineField( fstab, line, 2, "subfs" );
-	    AsciiFile::ChangeLineField( fstab, line, 3, FileSystems::GetFstabDefaultMntops("floppy") );
+	    rem_lines = add( rem_lines, line );
 	    }
 	else if( find( l["fields",1]:"", "/media/cdrom" )==0 ||
 		 find( l["fields",1]:"", "/media/dvd" )==0 ||
@@ -4045,20 +4014,14 @@ global define void UpdateFstabSubfs()
 		 find( l["fields",1]:"", "/cdrecorder" )==0 ||
 		 find( l["fields",1]:"", "/dvdrecorder" )==0 )
 	    {
-	    AsciiFile::ChangeLineField( fstab, line, 2, "subfs" );
-	    list<string> opts = splitstring( l["fields",3]:"", "," );
-	    opts = filter( string e, opts, ``(size(e)>0 ));
-	    y2milestone( "old opts %1", opts );
-	    opts = filter( string e, opts,
-			   ``(!contains( ["noauto","ro","user","exec"], e )));
-	    y2milestone( "old opts %1", opts );
-	    string nopts = FileSystems::GetFstabDefaultMntops("cdrom");
-	    if( size(opts)>0 )
-		nopts = nopts + "," + mergestring( opts, "," );
-	    y2milestone( "new opts %1", opts );
-	    AsciiFile::ChangeLineField( fstab, line, 3, nopts );
+	    rem_lines = add( rem_lines, line );
 	    }
 	line = line+1;
+	}
+    y2milestone( "UpdateFstabSubfs %1", rem_lines );
+    if( size(rem_lines)>0 )
+	{
+	AsciiFile::RemoveLines( fstab, rem_lines );
 	}
     AsciiFile::RewriteFile( fstab, tabpath );
     }
@@ -4322,9 +4285,10 @@ global define void Update( map oldv, map newv )
 	SCR::Execute( .target.remove, of );
 	StorageDevices::MakeCDLinks();
 	}
+    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0==0))
+	UpdateFstabSubfs();
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
 	{
-	UpdateFstabSubfs();
 	if( Arch::board_iseries () )
 	    {
 	    UpdateFstabIseriesVd();
