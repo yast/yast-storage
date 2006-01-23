@@ -97,6 +97,8 @@ define map try_add_boot( map conf, map disk )
 	pb["auto_added"] = true;
 	pb["max_cyl"] = Partitions::BootCyl();
 	pb["primary"] = Partitions::BootPrimary();
+	pb["max_size"] = 500*1024*1024;
+	pb["increasable"] = true;
 	tc["partitions"] = add( tc["partitions"]:[], pb );
 	y2milestone( "try_add_boot disk_cyl %1 boot_cyl %2 need_boot %3", 
 	             disk["cyl_count"]:0, Partitions::BootCyl(), 
@@ -568,6 +570,64 @@ define map process_partition_data( string dev, map solution )
 	    map part = $[];
 	    if( e["extended"]:false && e["created"]:0 > 0 )
 		{
+		while( e["added",0,1]:(disk["max_primary"]:4+1) <= 
+		    disk["max_primary"]:4 )
+		    {
+		    integer pindex = e["added",0,0]:0;
+		    string mount = solution["partitions",pindex,"mount"]:"";
+		    integer fsid = Partitions::fsid_native;
+		    part["format"] = true;
+		    if( mount == "swap" )
+			{
+			fsid = Partitions::fsid_swap;
+			}
+		    part["create"] = true;
+		    part["nr"] = e["created"]:0;
+		    part["device"] = Storage::GetDeviceName( dev, part["nr"]:-1 );
+		    part["region"] = region;
+		    part["region",1] = e["added",0,2]:0;
+		    region[0] = region[0]:0 + part["region",1]:0;
+		    region[1] = region[1]:0 - part["region",1]:0;
+		    part["type"] = `primary;
+		    if( solution["partitions",pindex,"id"]:0 != 0 )
+			{
+			fsid = solution["partitions",pindex,"id"]:0;
+			if( !haskey( solution["partitions",pindex]:$[], "fsys" ))
+			    {
+			    part["format"] = false;
+			    }
+			}
+		    part["size_k"] = part["region",1]:0 * disk["cyl_size"]:0 / 1024;
+		    part["mount"] = mount;
+		    part["used_fs"] = 
+			solution["partitions",pindex,"fsys"]:`reiser;
+		    value = solution["partitions",pindex,"fstopt"]:"";
+		    if( size(value)>0 )
+			{
+			part["fstopt"] = value;
+			}
+		    else
+			{
+			part["fstopt"] = FileSystems::DefaultFstabOptions( part );
+			}
+		    value = solution["partitions",pindex,"fopt"]:"";
+		    if( size(value)>0 )
+			{
+			part["format_opt"] = value;
+			}
+		    value = solution["partitions",pindex,"label"]:"";
+		    if( size(value)>0 )
+			{
+			part["label"] = value;
+			}
+		    part["fsid"] = fsid;
+		    part["fstype"] = Partitions::FsIdToString( fsid );
+		    y2milestone( "process_partition_data auto partition %1", part );
+		    partitions = add( partitions, part );
+		    e["created"] = e["added",0,1]:0;
+		    e["added"] = remove( e["added"]:[], 0 );
+		    part = $[];
+		    }
 		part["create"] = true;
 		part["nr"] = e["created"]:0;
 		part["device"] = Storage::GetDeviceName( dev, part["nr"]:-1 );
@@ -655,10 +715,12 @@ define map add_cylinder_info( map conf, map gap )
     conf["partitions"] = 
 	sort( map a, map b, conf["partitions"]:[],
 	      ``({
-	      if( a["max_cyl"]:big_cyl != b["max_cyl"]:big_cyl )
+	      if( a["primary"]:false != b["primary"]:false )
+		  return( true );
+	      else if( a["max_cyl"]:big_cyl != b["max_cyl"]:big_cyl )
 		  return( a["max_cyl"]:big_cyl < b["max_cyl"]:big_cyl );
 	      else
-		  return( a["size"]:0 > b["size"]:0 );
+		  return( a["size"]:0 < b["size"]:0 );
 	      }));
     y2milestone( "add_cylinder_info parts %1", conf["partitions"]:[] );
     integer sum = 0;
@@ -788,9 +850,9 @@ define void add_part_recursive( list ps, map g )
 	y2milestone( "add_part_recursive e %1", e );
 	if( (!haskey( part, "max_cyl" ) || part["max_cyl"]:0 >= e["end"]:0) &&
 	    part["cylinders"]:0 <= e["cylinders"]:0 &&
-	    (!e["extended"]:false || !part["primary"]:false) &&
 	    (!e["extended"]:false && size(lg["free_pnr"]:[])>0 ||
-	      e["extended"]:false && size(lg["ext_pnr"]:[])>0))
+	      part["primary"]:false && e["extended"]:false && size(lg["free_pnr"]:[])>0 || 
+	      !part["primary"]:false && e["extended"]:false && size(lg["ext_pnr"]:[])>0))
 	    {
 	    map llg = (map) eval(lg);
 	    if( e["exists"]:false )
@@ -803,7 +865,7 @@ define void add_part_recursive( list ps, map g )
 		    llg["gap",gindex,"cylinders"]:0 - part["cylinders"]:0;
 		}
 	    list addl = [ pindex ];
-	    if( e["extended"]:false )
+	    if( e["extended"]:false && !part["primary"]:false )
 		{
 		addl = add( addl, llg["ext_pnr",0]:5 );
 		llg["ext_pnr"] = remove( llg["ext_pnr"]:[0], 0 );
@@ -1738,7 +1800,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 		     return( p );
 		     });
 	}
-//  else if( false )  FIXME only for testing!!!!!!!!!!!
+//  else if( false )  // FIXME only for testing!!!!!!!!!!!
     else 
 	{
 	swaps = [];
@@ -1772,7 +1834,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 list<map> can_boot_reuse( string disk, string label, integer max_prim, list<map> partitions )
     {
     list<map> ret = [];
-    if( Partitions::NeedBoot() )
+    if( Partitions::NeedBoot() && !Partitions::PrepBoot() )
 	{
 	y2milestone( "can_boot_reuse disk %1 max_prim %2 label %3 part %4", 
 	             disk, max_prim, label, partitions );
