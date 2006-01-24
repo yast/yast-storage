@@ -1472,12 +1472,13 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
 	   //  user changed fsid of existing partition
 	   symbol par_type = cur_val["type"]:`empty;
 	   y2milestone( "EditOrCreatePartDlg par_type %1", par_type );
+	   y2milestone( "EditOrCreatePartDlg retval %1", cur_val );
+	   y2milestone( "EditOrCreatePartDlg cur_val %1", retval );
 	   if( retval["fsid"]:0 != cur_val["fsid"]:0 &&
 	       (par_type==`primary||par_type==`logical||par_type==`extended)&&
-	       !haskey( cur_val, "change_fsid") &&
-	       !retval["create"]:false )
+	       !haskey( cur_val, "change_fsid") && !disk["readonly"]:false &&
+	       !retval["create"]:false && disk["label"]:"msdos"!="gpt" )
 	       {
-		   //rwalter: note changes here
 	       // popup text
 	       boolean ok = Popup::ContinueCancel(_("
 You have changed the FSID of an existing partition.
@@ -2977,8 +2978,9 @@ All data on this partition will be lost if you delete it."));
 			    Storage::UpdatePartition( new_val["device"]:"",
 						      new_val["region",0]:0,
 						      new_val["region",1]:0 );
-			Storage::SetPartitionId( new_val["device"]:"",
-			                         new_val["fsid"]:Partitions::fsid_native );
+			if( !disk["readonly"]:false )
+			    Storage::SetPartitionId( new_val["device"]:"",
+						     new_val["fsid"]:Partitions::fsid_native );
 			Storage::ChangeVolumeProperties( new_val );
 			}
 		    }
