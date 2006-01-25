@@ -2081,9 +2081,20 @@ list<string> get_disk_try_list( map<string,map> tg, boolean soft )
     return( ret );
     }
 
+boolean usable_for_win_resize( map p )
+    {
+    boolean ret = Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
+		  size(p["winfo"]:$[])>0 && 
+		  p["size_k"]:0 > 1024*1024 && 
+		  !p["resize"]:false && !p["delete"]:false;
+    return( ret );
+    }
+
 map get_inst_proposal( map<string,map> target )
     {
+    y2milestone( "get_inst_proposal start" );
     map ret = $[];
+    target = Storage::AddWinInfo(target);
     ret["target"] = target;
     map root = $[ "mount" : "/", "increasable" : true,
                   "fsys" : Partitions::default_fs, "size" : 0 ];
@@ -2167,10 +2178,7 @@ map get_inst_proposal( map<string,map> target )
 	    valid = listmap( string s, ddev, 
 		``{
 		if( find( map p, target[s,"partitions"]:[], 
-		          ``(Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
-			     size(p["winfo"]:$[])>0 && 
-			     p["size_k"]:0 > 1024*1024 && 
-			     !p["resize"]:false && !p["delete"]:false)) != nil )
+		          ``(usable_for_win_resize(p))) != nil )
 		    return( $[s:true] );
 		else
 		    return( $[s:false] );
@@ -2178,11 +2186,7 @@ map get_inst_proposal( map<string,map> target )
 	    foreach( string s, filter( string d, ddev, ``(valid[d]:false)),
 		``{
 		list<map> pl = filter( map p, target[s,"partitions"]:[],
-				       ``( Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
-				           size(p["winfo"]:$[])>0 &&
-					   p["size_k"]:0 > 1024*1024 &&
-					   !p["resize"]:false &&
-					   !p["delete"]:false ));
+				       ``(usable_for_win_resize(p)));
 		if( size(pl)>0 )
 		    {
 		    pl = sort( map a, map b, pl, 
@@ -2190,10 +2194,7 @@ map get_inst_proposal( map<string,map> target )
 		    target[s,"partitions"] = 
 			maplist( map p, target[s,"partitions"]:[],
 			    ``{
-			    if( Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
-			        size(p["winfo"]:$[])>0 &&
-				p["size_k"]:0 > 1024*1024 &&
-				!p["resize"]:false && !p["delete"]:false &&
+			    if( usable_for_win_resize(p) &&
 				p["device"]:""==pl[0,"device"]:"" )
 				{
 				integer cs = target[s,"cyl_size"]:1;
