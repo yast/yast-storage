@@ -1945,20 +1945,28 @@ global boolean ResizeVolume( string device, string disk, integer new_size )
 global boolean SetCrypt( string device, boolean crpt, boolean format )
     {
     y2milestone( "SetCrypt device:%1 val:%2 format:%3", device, crpt, format );
-    integer ret = LibStorage::StorageInterface::setCrypt( sint, device, crpt );
-    if( ret<0 )
+    boolean is_crypt = false;
+    integer ret = LibStorage::StorageInterface::getCrypt( sint, device, 
+                                                          is_crypt );
+    if( ret==0 && !format && is_crypt==crpt )
+	y2milestone( "SetCrypt crypt already set" );
+    else
 	{
-	y2error( "SetCrypt sint ret %1", ret );
-	if( !format && crpt )
-	    Popup::Error( sformat(_("Could not set encryption.
+	ret = LibStorage::StorageInterface::setCrypt( sint, device, crpt );
+	if( ret<0 )
+	    {
+	    y2error( "SetCrypt sint ret %1", ret );
+	    if( !format && crpt )
+		Popup::Error( sformat(_("Could not set encryption.
 System error code is %1.
 
 The crypt password provided could be incorrect.
 "), ret ));
-	LibStorage::StorageInterface::forgetCryptPassword( sint, device );
+	    LibStorage::StorageInterface::forgetCryptPassword( sint, device );
+	    }
+	else
+	    y2milestone( "SetCrypt sint ret:%1", ret );
 	}
-    else
-	y2milestone( "SetCrypt sint ret:%1", ret );
     return( ret==0 );
     }
 
