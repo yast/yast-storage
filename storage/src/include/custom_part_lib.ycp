@@ -495,14 +495,14 @@ define map CheckCryptOk( map new )
     else
 	new["enc_type"] = `none;
     if( crypt_fs &&
-        size(Storage::GetCryptPwd( new["device"]:"create_loop" ))==0 &&
+        size(Storage::GetCryptPwd( new["device"]:"" ))==0 &&
         (!new["noauto"]:false||new["format"]:false) )
 	{
 	string fs_passwd = DlgCreateCryptFs( new["device"]:"", new["format"]:false?8:5, new["format"]:false );
 	// Ask the user for a password for cryptofs, else set crypto to nil??
 	if( fs_passwd != nil && size(fs_passwd)>0 )
 	    {
-	    string dev = new["device"]:"create_loop";
+	    string dev = new["device"]:"";
 	    boolean popup = !new["format"]:false;
 	    y2milestone( "CheckCryptOk dev %1 popup %2", dev, popup );
 	    if( popup )
@@ -515,7 +515,10 @@ define map CheckCryptOk( map new )
 				     `VSpacing(1)));
 
 	    ret["ok"] = Storage::SetCryptPwd( dev, fs_passwd ) && 
-	                Storage::SetCrypt( dev, true, new["format"]:false );
+	                (new["format"]:false ||
+			 Storage::SetCrypt( dev, true, new["format"]:false ));
+	    if( ret["ok"]:false && new["type"]:`unknown == `loop )
+		Storage::UpdateClassified( new["fpath"]:"", fs_passwd );
 	    if( popup )
 		UI::CloseDialog();
 	    }
