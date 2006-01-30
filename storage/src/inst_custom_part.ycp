@@ -996,7 +996,7 @@ define list FillPartitionList(map<string,map> targets)
 	    (disk["type"]:`CT_UNKNOWN==`CT_DISK ||
 	     disk["type"]:`CT_UNKNOWN==`CT_LVM ||
 	     (disk["type"]:`CT_UNKNOWN==`CT_EVMS && size(disk["name"]:"")>0 &&
-	      (!haskey( targets, "/dev/"+substring( disk["name"]:"", find( disk["name"]:"", "/")+1 ))||
+	      (!haskey( targets, "/dev/"+substring( disk["name"]:"", search( disk["name"]:"", "/")+1 ))||
 	       disk["create"]:false))))
 	    {
 	    y2milestone( "disk:%1", disk );
@@ -1036,18 +1036,23 @@ define list FillPartitionList(map<string,map> targets)
 		{
 		hide = true;
 		}
-	    if( !hide && find( partition["device"]:"", "/dev/evms/" )==0 )
+	    if( !hide && search( partition["device"]:"", "/dev/evms/" )==0 )
 		{
 		y2milestone( "evms p: %1", partition );
 		string d1 = "/dev/" + substring( partition["device"]:"", 10 );
 		y2milestone( "evms d1:%1", d1 );
-		if( find( d1, "/lvm/" )>0 )
+		integer val = search( d1, "/lvm/" );
+		if( val!=nil && val>0 )
 		    {
 		    d1 = "/dev/" + substring( d1, 9 );
 		    }
-		else if( find( d1, "/lvm2/" )>0 )
+		else
 		    {
-		    d1 = "/dev/" + substring( d1, 10 );
+		    val = search( d1, "/lvm2/" );
+		    if( val!=nil && val>0 )
+			{
+			d1 = "/dev/" + substring( d1, 10 );
+			}
 		    }
 		hide = size(partition["mount"]:"")==0;
 		if( hide )
@@ -3080,7 +3085,7 @@ All data on this partition will be lost if you delete it."));
 		if( Popup::YesNo( sformat(_("Really delete device %1?"),
 		                            part["device"]:"" )))
 		    {
-		    if( find( id, "/dev/loop")==0 && size(part["fpath"]:"")>0 &&
+		    if( search( id, "/dev/loop")==0 && size(part["fpath"]:"")>0 &&
 			Mode::normal() &&
 			// YesNo popup.  %1 is path to a file
 			Popup::YesNo( sformat(_("\nShould the loop file %1 also be removed?
@@ -3097,13 +3102,13 @@ All data on this partition will be lost if you delete it."));
 		    focusline = Storage::GetIdSmaller( disk["device"]:"",
 		                                       part["nr"]:0 );
 		    }
-		if( find( id, "/dev/md" )==0  )
+		if( search( id, "/dev/md" )==0  )
 		    {
 		    map raid = Storage::GetDisk( Storage::GetTargetMap(), "/dev/md" );
 		    UI::ReplaceWidget( `id(`raid_button),
 				       RaidButton(size(raid["partitions"]:[])) );
 		    }
-		else if( find( id, "/dev/loop" )==0  )
+		else if( search( id, "/dev/loop" )==0  )
 		    {
 		    map dev = Storage::GetDisk( Storage::GetTargetMap(), "/dev/loop" );
 		    UI::ReplaceWidget( `id(`loop_button),
@@ -3241,7 +3246,7 @@ freed disk space?
 
 	    y2milestone( "dasdfmt disk:%1", id );
 
-	    if( haskey( tg, id ) && find( id, "/dev/dasd")==0 )
+	    if( haskey( tg, id ) && search( id, "/dev/dasd")==0 )
 		{
 		if( !disk["dasdfmt"]:false)
 		    {
@@ -3313,7 +3318,7 @@ Select the DASD disk on which dasdfmt should be executed."));
 	    Storage::SetWizardKey( id );
 	    if( ret == `loop_edit )
 		{
-		if( find( id, "/dev/loop" )!= 0 )
+		if( search( id, "/dev/loop" )!=0 )
 		    {
 		    // popup text
 		    Popup::Message( _("Select a loop device entry.") );
