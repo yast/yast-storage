@@ -2814,6 +2814,7 @@ global boolean GetRecursiveRemoval()
 
 global define void SetTargetMap( map<string,map> target )
     {
+    y2milestone( "SetTargetMap" );
     if( !GetRecursiveRemoval() )
         SetRecursiveRemoval(true);
     //SCR::Write(.target.ycp, Storage::SaveDumpPath("targetMap_set_"+sformat("%1",count)), target );
@@ -2826,11 +2827,28 @@ global define void SetTargetMap( map<string,map> target )
                  ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:6 >
 		     type_order[tg[b,"type"]:`CT_UNKNOWN]:6 ));
     y2milestone( "SetTargetMap keys %1", keys );
+    list<string> t1 = filter( string k, keys, 
+                              ``(!tg[k,"delete"]:false&&!tg[k,"create"]:false));
+    y2milestone( "SetTargetMap nodelcr %1", t1 );
+    foreach( string k, t1,
+	``{
+	list<map> dps = filter( map p, tg[k,"partitions"]:[],
+	                        ``(!p["create"]:false&&!p["delete"]:false));
+	y2milestone( "SetTargetMap k:%1 nodelp %2", k, dps );
+	if( size(dps)>0 )
+	    {
+	    foreach( map p, dps, 
+		``{
+		if( p["type"]:`primary != `extended )
+		    ChangeVolumeProperties( p );
+		});
+	    }
+	});
     foreach( string k, keys,
 	``{
 	list<map> dps = filter( map p, tg[k,"partitions"]:[],
 	                        ``(p["create"]:false));
-	if( size(dps)>0 && haskey( dps[0]:$[], "nr" ))
+	if( size(dps)>1 && haskey( dps[0]:$[], "nr" ))
 	    {
 	    y2milestone( "SetTargetMap dps:%1", dps );
 	    dps = sort( map a, map b, dps, ``(a["nr"]:0>b["nr"]:0));
@@ -2854,7 +2872,7 @@ global define void SetTargetMap( map<string,map> target )
 	``{
 	list<map> dps = filter( map p, target[k,"partitions"]:[],
 	                        ``(p["delete"]:false));
-	if( size(dps)>0 && haskey( dps[0]:$[], "nr" ))
+	if( size(dps)>1 && haskey( dps[0]:$[], "nr" ))
 	    {
 	    dps = sort( map a, map b, dps, ``(a["nr"]:0>b["nr"]:0));
 	    }
@@ -2900,15 +2918,12 @@ global define void SetTargetMap( map<string,map> target )
 		}
 	    }
 	list<map> dps = filter( map p, target[k,"partitions"]:[],
-	                        ``(!p["delete"]:false) );
-	if( size(dps)>0 && haskey( dps[0]:$[], "nr" ))
+	                        ``(!p["delete"]:false&&p["create"]:false) );
+	if( size(dps)>1 && haskey( dps[0]:$[], "nr" ))
 	    dps = sort( map a, map b, dps, ``(a["nr"]:0<b["nr"]:0));
 	foreach( map p, dps,
 	    ``{
-	    if( p["create"]:false )
-		{
-		CreateAny( target[k,"type"]:`CT_UNKNOWN, target[k]:$[], p );
-		}
+	    CreateAny( target[k,"type"]:`CT_UNKNOWN, target[k]:$[], p );
 	    if( p["type"]:`primary != `extended )
 		ChangeVolumeProperties( p );
 	    });
