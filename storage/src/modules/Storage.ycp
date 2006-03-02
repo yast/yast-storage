@@ -3808,6 +3808,31 @@ global define void WriteFstab()
 		});
 	    }
 	});
+    num = 0;
+    foreach( string tdevice, any tdata, StorageDevices::ZipDrives,
+   ``{
+   m = FileSystems::GetFstabDefaultMap( "zip" );
+   string zfile = "/zip";
+   if( num > 0 )
+       zfile = zfile + sformat( "%1", num );
+   m["mount"] = "/media"+zfile;
+   m["spec"] = tdevice+"4";
+   Storage::AddFstabEntry( m );
+   num = num+1;
+   });
+    num = 0;
+    foreach( map drive, StorageDevices::FloppyDrives,
+   ``{
+   m = FileSystems::GetFstabDefaultMap( "floppy" );
+   string fdname = "/floppy";
+   if( num > 0 )
+       fdname = fdname + sformat( "%1", num );
+   m["mount"] = "/media"+fdname;
+   m["spec"] = drive["dev_name"]:"";
+   Storage::AddFstabEntry( m );
+   num = num+1;
+   });
+
     HandleModulesOnBoot( tg );
     }
 
@@ -4074,7 +4099,10 @@ global define void UpdateFstabSubfs()
 	map l = AsciiFile::GetLine( fstab, line );
 	if( search( l["fields",1]:"", "/media/floppy" )==0 )
 	    {
-	    rem_lines = add( rem_lines, line );
+       AsciiFile::ChangeLineField( fstab, line, 2, "auto" );
+       AsciiFile::ChangeLineField( fstab, line, 3, FileSystems::GetFstabDefaultMntops("floppy") );
+
+//	    rem_lines = add( rem_lines, line );
 	    }
 	else if( search( l["fields",1]:"", "/media/cdrom" )==0 ||
 		 search( l["fields",1]:"", "/media/dvd" )==0 ||
