@@ -2647,6 +2647,7 @@ define void AddMountPointsForWinParts( list<map> partitions, boolean primary,
 	    }
 
 	if( !haskey( partition, "mount") &&
+	    !partition["delete"]:false &&
 	    ((partnum<=max_prim)==primary) &&
 	    foreign_nr < 24 &&
 	    Partitions::IsDosWinNtPartition(fsid) &&
@@ -2690,10 +2691,8 @@ define void AddMountPointsForWinParts( list<map> partitions, boolean primary,
 		    "/windows/" + substring (foreign_ids, foreign_nr, 1);
 		foreign_nr = foreign_nr + 1;
 		}
-	    if( !partition["delete"]:false ) {
 	    ChangeVolumeProperties( new_partition );
 	    y2milestone( "win part %1", new_partition );
-	    }
 	    }
 	});
     };
@@ -2824,18 +2823,15 @@ global define void SetTargetMap( map<string,map> target )
     //count = count+1;
     integer old_change_time = StorageMap["targets_time"]:0;
     CreateTargetBackup("tmp_set");
-    map<string,map> tg = GetTargetMap();
-    list<string> keys = maplist( string k, any e, tg, ``(k));
-    keys = sort( string a, string b, keys,
-                 ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:6 >
-		     type_order[tg[b,"type"]:`CT_UNKNOWN]:6 ));
+    list<string> keys = maplist( string k, any e, target, ``(k));
     y2milestone( "SetTargetMap keys %1", keys );
     list<string> t1 = filter( string k, keys, 
-                              ``(!tg[k,"delete"]:false&&!tg[k,"create"]:false));
+                              ``(!target[k,"delete"]:false&&
+			         !target[k,"create"]:false));
     y2milestone( "SetTargetMap nodelcr %1", t1 );
     foreach( string k, t1,
 	``{
-	list<map> dps = filter( map p, tg[k,"partitions"]:[],
+	list<map> dps = filter( map p, target[k,"partitions"]:[],
 	                        ``(!p["create"]:false&&!p["delete"]:false));
 	y2milestone( "SetTargetMap k:%1 nodelp %2", k, dps );
 	if( size(dps)>0 )
@@ -2847,6 +2843,12 @@ global define void SetTargetMap( map<string,map> target )
 		});
 	    }
 	});
+    map<string,map> tg = GetTargetMap();
+    keys = maplist( string k, any e, tg, ``(k));
+    keys = sort( string a, string b, keys,
+                 ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:6 >
+		     type_order[tg[b,"type"]:`CT_UNKNOWN]:6 ));
+    y2milestone( "SetTargetMap keys %1", keys );
     foreach( string k, keys,
 	``{
 	list<map> dps = filter( map p, tg[k,"partitions"]:[],
@@ -2921,15 +2923,12 @@ global define void SetTargetMap( map<string,map> target )
 		}
 	    }
 	list<map> dps = filter( map p, target[k,"partitions"]:[],
-	                        //``(!p["delete"]:false&&p["create"]:false) );
-                                  ``(!p["delete"]:false) );
+	                        ``(!p["delete"]:false&&p["create"]:false) );
 	if( size(dps)>1 && haskey( dps[0]:$[], "nr" ))
 	    dps = sort( map a, map b, dps, ``(a["nr"]:0<b["nr"]:0));
 	foreach( map p, dps,
 	    ``{
-            if( p["create"]:false ) {
-                CreateAny( target[k,"type"]:`CT_UNKNOWN, target[k]:$[], p );
-            }
+	    CreateAny( target[k,"type"]:`CT_UNKNOWN, target[k]:$[], p );
 	    if( p["type"]:`primary != `extended )
 		ChangeVolumeProperties( p );
 	    });
