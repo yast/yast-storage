@@ -3787,54 +3787,33 @@ global define void WriteFstab()
 	Storage::AddFstabEntry( FileSystems::GetFstabDefaultMap( "usb" ) );
     Storage::AddFstabEntry( FileSystems::GetFstabDefaultMap( "pts" ) );
 
-    integer num = 1;
-    map<string,map> tg = GetTargetMap();
-    map m = FileSystems::GetFstabDefaultMap( "data" );
-    foreach( string t, map disk, tg,
+    map m = $[];
+    integer num = 0;
+    
+    foreach( string tdevice, any tdata, StorageDevices::ZipDrives,
 	``{
-	if( disk["type"]:`CT_UNKNONW==`CT_DISK && !Arch::s390() )
-	    {
-	    foreach( map p, disk["partitions"]:[],
-		``{
-		if( contains( [ `primary, `logical ], p["type"]:`primary ) &&
-		    p["fsid"]:0 == Partitions::fsid_native &&
-		    size(p["mount"]:"")==0 &&
-		    !contains( [ `unknown, `swap ], p["detected_fs"]:`unknown ))
-		    {
-		    m["mount"] = sformat( "/data%1", num );
-		    m["spec"] = p["device"]:"";
-		    Storage::AddFstabEntry( m );
-		    num = num+1;
-		    }
-		});
-	    }
+	m = FileSystems::GetFstabDefaultMap( "zip" );
+	string zfile = "/zip";
+	if( num > 0 )
+	    zfile = zfile + sformat( "%1", num );
+	m["mount"] = "/media"+zfile;
+	m["spec"] = tdevice+"4";
+	Storage::AddFstabEntry( m );
+	num = num+1;
 	});
     num = 0;
-    foreach( string tdevice, any tdata, StorageDevices::ZipDrives,
-   ``{
-   m = FileSystems::GetFstabDefaultMap( "zip" );
-   string zfile = "/zip";
-   if( num > 0 )
-       zfile = zfile + sformat( "%1", num );
-   m["mount"] = "/media"+zfile;
-   m["spec"] = tdevice+"4";
-   Storage::AddFstabEntry( m );
-   num = num+1;
-   });
-    num = 0;
     foreach( map drive, StorageDevices::FloppyDrives,
-   ``{
-   m = FileSystems::GetFstabDefaultMap( "floppy" );
-   string fdname = "/floppy";
-   if( num > 0 )
-       fdname = fdname + sformat( "%1", num );
-   m["mount"] = "/media"+fdname;
-   m["spec"] = drive["dev_name"]:"";
-   Storage::AddFstabEntry( m );
-   num = num+1;
-   });
-
-    HandleModulesOnBoot( tg );
+	``{
+	m = FileSystems::GetFstabDefaultMap( "floppy" );
+	string fdname = "/floppy";
+	if( num > 0 )
+	    fdname = fdname + sformat( "%1", num );
+	m["mount"] = "/media"+fdname;
+	m["spec"] = drive["dev_name"]:"";
+	Storage::AddFstabEntry( m );
+	num = num+1;
+	});
+    HandleModulesOnBoot( GetTargetMap() );
     }
 
 global define map<string,map> SpecialBootHandling( map<string,map> tg )
