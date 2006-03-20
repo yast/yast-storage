@@ -1117,19 +1117,22 @@ define map normalize_gaps( list ps, map g )
 	``{
 	if( !e["exists"]:false && e["cylinders"]:0>0 )
 	    {
-	    list<integer> weight = 
+	    list<integer> weight = [];
+	    weight =
 		maplist( list l, e["added"]:[], 
-			 ``(ps[l[0]:0,"increasable"]:false ? 1 : 0) );
+			 ``((ps[l[0]:0,"increasable"]:false) ? 1 : 0));
+	    y2milestone( "normalize_gaps w %1", weight );
 	    if( find( integer l, weight, ``(l>0) ) != nil ) 
 		{
 		map r = $[];
 		r = distribute_space( e["cylinders"]:0, weight, e["added"]:[], 
-		                      ps );
+				      ps );
 		g["gap",gindex,"added"] = eval(r["added"]:[]);
 		g["gap",gindex,"cylinders"] = e["cylinders"]:0 - r["diff"]:0;
+		e["cylinders"] = g["gap",gindex,"cylinders"]:0;
 		y2milestone( "normalize_gaps increase increasable p %1 cyl %2", 
-		             g["gap",gindex,"added"]:[],
-		             g["gap",gindex,"cylinders"]:0 );
+			     g["gap",gindex,"added"]:[],
+			     g["gap",gindex,"cylinders"]:0 );
 		}
 	    }
         gindex = gindex + 1;
@@ -1147,6 +1150,31 @@ define map normalize_gaps( list ps, map g )
 	    }
 	gindex = gindex + 1;
 	});
+    gindex = 0;
+    map sort_map = $[ "/boot" : 0, "/boot/efi" : 0, "swap" : 1, 
+                      "/" : 5, "/home" :6 ];
+    foreach( map e, g["gap"]:[],
+	``{
+	if( !e["exists"]:false && size(e["added"]:[])>1 )
+	    {
+	    y2milestone( "normalize_gaps old  added %1", e["added"]:[] );
+	    list nums = maplist( list l, e["added"]:[], ``(l[1]:-1));
+	    y2milestone( "normalize_gaps old nums %1", nums );
+	    list sdd = sort( list a, list b, e["added"]:[],
+	                     ``(sort_map[ps[a[0]:0,"mount"]:""]:3 <
+				sort_map[ps[b[0]:0,"mount"]:""]:3) );
+	    integer idx = 0;
+	    foreach( list e, (list<list>)sdd, 
+		``{
+		sdd[idx,1] = nums[idx]:0;
+		idx = idx+1;
+		});
+	    g["gap",gindex,"added"] = sdd;
+	    y2milestone( "normalize_gaps sort added %1", 
+	                 g["gap",gindex,"added"]:[] );
+	    }
+	gindex = gindex + 1;
+	});
     y2milestone( "normalize_gaps gap %1", g );
     return( g );
     };
@@ -1157,42 +1185,54 @@ define map distribute_space( integer rest, list weights, list added, list ps )
     integer sum = 0;
     integer index = 0;
     integer pindex = 0;
+    integer scount = 0;
     y2milestone( "distribute_space rest %1 weights %2 added %3", rest, 
                  weights, added );
-    foreach( list p, (list<list>)added,
-	``{
-	pindex = p[0]:0;
-	if( ps[pindex,"size_max_cyl"]:0==0 || ps[pindex,"increasable"]:false ||
-	    ps[pindex,"size_max_cyl"]:0 > p[2]:0 )
-	    {
-	    sum = sum + weights[index]:0;
-	    }
-	index = index+1;
-	});
-    index = 0;
-    y2milestone( "distribute_space sum %1 rest %2 added %3", sum, rest, added );
-    foreach( list p, (list<list>)added,
-	``{
-	pindex = p[0]:0;
-	if( size(p)==3 && sum>0 &&
-            (ps[pindex,"size_max_cyl"]:0==0 || ps[pindex,"increasable"]:false ||
-	     ps[pindex,"size_max_cyl"]:0 > p[2]:0) )
-	    {
-	    integer diff = ((rest*weights[index]:0) + sum/2) / sum;
-	    if( ps[pindex,"size_max_cyl"]:0>0 && 
-	        diff > ps[pindex,"size_max_cyl"]:0-p[2]:0 )
+    do
+	{
+	index = 0;
+	sum = 0;
+	scount = 0;
+	foreach( list p, (list<list>)added,
+	    ``{
+	    pindex = p[0]:0;
+	    if( ps[pindex,"size_max_cyl"]:0==0 || 
+	        ps[pindex,"size_max_cyl"]:0 > p[2]:0)
 		{
-		diff = ps[pindex,"size_max_cyl"]:0-p[2]:0;
+		sum = sum + weights[index]:0;
+		y2milestone( "sum %1 wieght %2 pindex %3", sum, 
+		             weights[index]:0, pindex );
+		scount = scount+1;
 		}
-	    sum = sum - weights[index]:0;
-	    rest = rest - diff;
-	    added[index,2] = added[index,2]:0 + diff;
-	    diff_sum = diff_sum + diff;
-	    y2milestone( "distribute_space sum %1 rest %2 diff %3 added %4", 
-	                 sum, rest, diff, added[index]:[] );
-	    }
-	index = index+1;
-	});
+	    index = index+1;
+	    });
+	index = 0;
+	y2milestone( "distribute_space sum %1 rest %2 scount %3 added %4", 
+	             sum, rest, scount, added );
+	foreach( list p, (list<list>)added,
+	    ``{
+	    pindex = p[0]:0;
+	    if( size(p)==3 && sum>0 &&
+		(ps[pindex,"size_max_cyl"]:0==0 ||
+		 ps[pindex,"size_max_cyl"]:0 > p[2]:0) )
+		{
+		integer diff = ((rest*weights[index]:0) + sum/2) / sum;
+		if( ps[pindex,"size_max_cyl"]:0>0 && 
+		    diff > ps[pindex,"size_max_cyl"]:0-p[2]:0 )
+		    {
+		    diff = ps[pindex,"size_max_cyl"]:0-p[2]:0;
+		    }
+		sum = sum - weights[index]:0;
+		rest = rest - diff;
+		added[index,2] = added[index,2]:0 + diff;
+		diff_sum = diff_sum + diff;
+		y2milestone( "distribute_space sum %1 rest %2 diff %3 added %4", 
+			     sum, rest, diff, added[index]:[] );
+		}
+	    index = index+1;
+	    });
+	}
+    while( rest>0 && scount>0 );
     map ret = $[ "added":added, "diff" : diff_sum ];
     y2milestone( "distribute_space ret %1", ret );
     return( ret );
