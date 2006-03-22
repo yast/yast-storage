@@ -835,8 +835,15 @@ global define string MakeUdevRulesLine( map drive )
     string line = "";
     string bpath = UdevPathEntry(drive);
     y2milestone( "MakeUdevRulesLine path:%1", bpath );
-    line = sformat( "SUBSYSTEM==\"block\", %1, SYSFS{removable}==\"1\", %2",
-                    bpath, UdevSylinkEntry(drive["udev_links"]:[]) );
+    if( size(bpath)>0 )
+	{
+	line = sformat( "SUBSYSTEM==\"block\", %1, SYSFS{removable}==\"1\", %2",
+			bpath, UdevSylinkEntry(drive["udev_links"]:[]) );
+	}
+    else
+	{
+	y2error( "No udev path id found for %1", drive );
+	}
     y2milestone( "MakeUdevRulesLine ret %1", line );
     return( line );
     }
@@ -866,7 +873,11 @@ global define void MakeCDLinks ()
 	    AsciiFile::AppendLine( udev_file, [ "# " ] );
 
 	    foreach( map drive, cddrives,
-		``{ AsciiFile::AppendLine( udev_file, [ MakeUdevRulesLine(drive) ]); });
+		``{
+		string line = MakeUdevRulesLine(drive);
+		if( size(line)>0 )
+		    AsciiFile::AppendLine( udev_file, [ line ]); 
+		});
 	    y2milestone( "MakeCDLinks %1", cddrives );
 	    string dir = substring( UdevCdromPath(), 0, findlastof( UdevCdromPath(), "/" ) );
 	    y2milestone( "MakeCDLinks dir %1", dir );
