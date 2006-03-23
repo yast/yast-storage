@@ -236,6 +236,36 @@ global define string GetDeviceName( string disk, any partition )
     any sint                            = nil;
     list<map> conts                     = [];
 
+define any createInterface()
+    {
+    any ret = LibStorage::createStorageInterface(false, false, true);
+    if( ZeroNewPartitions )
+	LibStorage::StorageInterface::setZeroNewPartitions(ret,true);
+
+    return( ret );
+    }
+
+list<map> getContainers();
+
+global define void InitLibstorage()
+    {
+    if( sint==nil )
+	{
+	y2milestone( "InitLibstorage" );
+	LibStorage::initDefaultLogger();
+	sint = createInterface();
+	if( Stage::initial() )
+	    {
+	    LibStorage::StorageInterface::setDetectMountedVolumes(sint,false);
+	    LibStorage::StorageInterface::setRootPrefix( sint,
+							 Installation::destdir );
+	    }
+	conts = getContainers();
+	y2milestone( "InitLibstorage conts:%1", conts );
+	FileSystems::InitSlib( sint );
+	}
+    }
+
 /**
 *
 */
@@ -815,6 +845,7 @@ integer fromSymbol( map<string,any> conv, symbol val )
 global define boolean CheckBackupState( string who )
     {
     y2milestone( "CheckBackupStates who:%1", who );
+    InitLibstorage();
     boolean ret = LibStorage::StorageInterface::checkBackupState( sint, who );
     y2milestone( "CheckBackupStates ret:%1", ret );
     return( ret );
@@ -1634,16 +1665,6 @@ global define boolean Commit()
 	}
     }
 
-define any createInterface()
-    {
-    any ret = LibStorage::createStorageInterface(false, false, true);
-    if( ZeroNewPartitions )
-	LibStorage::StorageInterface::setZeroNewPartitions(ret,true);
-
-    return( ret );
-    }
-
-
 global define void InstallCallbacks()
     {
     StorageClients::InstallCallbacks();
@@ -1662,17 +1683,6 @@ global define void Storage()
 	Storage::SetPartProposalActive( false  );
 	}
     InstallCallbacks();
-    LibStorage::initDefaultLogger ();
-    sint = createInterface();
-    if( Stage::initial() )
-	{
-	LibStorage::StorageInterface::setDetectMountedVolumes(sint,false);
-	LibStorage::StorageInterface::setRootPrefix( sint,
-	                                             Installation::destdir );
-	}
-    conts = getContainers();
-    y2milestone( "conts:%1", conts );
-    FileSystems::InitSlib( sint );
     }
 
 
@@ -2750,6 +2760,7 @@ global define map<string,map> GetTargetMap()
     ``{
     map<string,map> tmp = $[];
     boolean changed = false;
+    InitLibstorage();
     if( !probe_done && !Mode::config() )
 	{
 	y2milestone ("probing StorageDevices" );
@@ -5000,6 +5011,18 @@ global void AddHwPackage( string name )
     if( find( string s, hw_packages, ``(s==name)) == nil )
 	hw_packages = add( hw_packages, name );
     y2milestone( "AddHwPackage list:%1", hw_packages );
+    }
+
+global void SwitchUiAutomounter( boolean on )
+    {
+    y2milestone( "SwitchUiAutomounter on:%1", on );
+    string cmd = "hal-set-property " +
+		  "--udi /org/freedesktop/Hal/devices/computer " +
+		  "--key storage.disable_volume_handling --bool ";
+    cmd = cmd + (on?"true":"false" );
+    y2milestone( "SwitchUiAutomounter cmd %1", cmd );
+    SCR::Execute( .target.bash, cmd );
+    y2milestone( "SwitchUiAutomounter exit" );
     }
 
 
