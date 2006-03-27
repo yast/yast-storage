@@ -18,6 +18,7 @@ client_DATA =			\
 	inst_resize_ui.ycp      \
 	inst_target_part.ycp	\
 	inst_target_selection.ycp \
+	create_udev_cdrom.ycp   \
 	storage_finish.ycp
 
 EXTRA_DIST = $(client_DATA)
