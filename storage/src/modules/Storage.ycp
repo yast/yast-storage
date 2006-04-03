@@ -2729,6 +2729,18 @@ global define void AddMountPointsForWin( map<string,map> targets )
 	});
     }
 
+global define boolean CheckSwapable( string dev )
+    {
+    string cmd = "swapon " + dev;
+    boolean ok = (integer)SCR::Execute(.target.bash, cmd )==0;
+    if( ok )
+	{
+	cmd = "swapoff " + dev;
+	SCR::Execute(.target.bash, cmd );
+	}
+    return( ok );
+    }
+
 /**
  * mark swap-partitions with pseudo Mountpoint swap in targetMap
  * @param target Disk map
@@ -2736,28 +2748,34 @@ global define void AddMountPointsForWin( map<string,map> targets )
  */
 global define map<string,map> AddSwapMp( map<string,map> target )
     ``{
-    list swaps = [];
-    if( !Stage::initial() )
-	swaps = SwappingPartitions();
+    list swaps = SwappingPartitions();
     y2milestone( "AddSwapMp swaps %1", swaps );
     foreach(string diskdev, map disk, target,
 	``{
 	 disk["partitions"] = maplist(map part, disk["partitions"]:[],
-				 ``{
-				 if( (Stage::initial() &&
-				      !Partitions::IsDosWinNtPartition(part["fsid"]:0) &&
-				      part["detected_fs"]:`unknown==`swap &&
-				      !part["old_swap"]:false &&
-				      search( diskdev, "/dev/evms" )!=0 ) ||
-				     (!Stage::initial() &&
-				      contains( swaps, part["device"]:"" )))
-				     {
-				     part["mount"] = "swap";
-				     ChangeVolumeProperties( part );
-				     y2milestone( "AddSwapMp %1", part );
-				     }
-				 return( part );
-				 });
+	     ``{
+	     if( (Stage::initial() &&
+		  !Partitions::IsDosWinNtPartition(part["fsid"]:0) &&
+		  part["detected_fs"]:`unknown==`swap &&
+		  !part["old_swap"]:false &&
+		  search( diskdev, "/dev/evms" )!=0 ) ||
+		 (contains( swaps, part["device"]:"" )))
+		 {
+		 boolean ok = true;
+		 if( !contains( swaps, part["device"]:"" ))
+		     {
+		     ok = CheckSwapable( part["device"]:"" );
+		     y2milestone( "AddSwapMp initial ok:%1", ok );
+		     }
+		 if( ok )
+		     {
+		     part["mount"] = "swap";
+		     ChangeVolumeProperties( part );
+		     y2milestone( "AddSwapMp %1", part );
+		     }
+		 }
+	     return( part );
+	     });
 	target[diskdev] = disk;
 	});
     return( target );
