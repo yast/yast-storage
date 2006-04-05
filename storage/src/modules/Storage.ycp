@@ -2729,9 +2729,30 @@ global define void AddMountPointsForWin( map<string,map> targets )
 	});
     }
 
+global void RemoveDmMapsTo( string device )
+    {
+    y2milestone( "RemoveDmMapsTo device:%1", device );
+    InitLibstorage();
+    if( LibStorage::StorageInterface::checkDmMapsTo( sint, device ))
+	{
+	LibStorage::StorageInterface::removeDmMapsTo( sint, device, true );
+	}
+    else
+	{
+	map d = GetDiskPartition( device );
+	string ddev = d["disk"]:"";
+	if( size(ddev)>0 && ddev!=device &&
+	    LibStorage::StorageInterface::checkDmMapsTo( sint, ddev ) )
+	    {
+	    LibStorage::StorageInterface::removeDmMapsTo( sint, ddev, false );
+	    }
+	}
+    }
+
 global define boolean CheckSwapable( string dev )
     {
     string cmd = "swapon " + dev;
+    RemoveDmMapsTo( dev );
     boolean ok = (integer)SCR::Execute(.target.bash, cmd )==0;
     if( ok )
 	{
@@ -3557,7 +3578,8 @@ global define list<string> AddPackageList()
 	}
     tt = filter( string k, map e, tg, ``(search(k, "/dev/evms/")==0));
     if( size(filter( string k, map e, tg, ``(e["is_container"]:false &&
-					     search(e["name"]:"","lvm/")!=0)))>0)
+					     search(e["name"]:"","lvm/")!=0 &&
+					     search(e["name"]:"","lvm2/")!=0)))>0)
 	{
 	y2milestone( "non lvm evms container" );
 	need_evms = true;
@@ -4481,7 +4503,7 @@ global define list<string> GetEvmsRealDisk( map<string,map> tg, map p )
     string name = "";
     if( size(p["device"]:"")>10 )
 	name = substring( p["device"]:"", 10 );
-    if( search( name, "lvm/" ) == 0 )
+    if( search( name, "lvm/" ) == 0 || search( name, "lvm2/" ) == 0)
 	{
 	name = substring( name, 0, findlastof( name, "/" ));
 	}
@@ -4579,6 +4601,22 @@ global define boolean CheckEvmsLvm()
     return( ret );
     };
 
+global list<map> GetPrepBoot( map<string,map> tg )
+    {
+    list<map> ret = [];
+    list cl = [ 0x06, 0x41 ];
+    foreach( string s, map e, tg,
+	``{
+	if( IsRealDisk( e ) && Partitions::PrepBoot() )
+	    ret = (list<map>)merge( ret, filter( map p, e["partitions"]:[],
+	                              ``( size(p["mount"]:"")==0 &&
+				          contains( cl, p["fsid"]:0 ) &&
+					  !p["delete"]:false )));
+	});
+    y2milestone( "GetPrepBoot ret:%1", ret );
+    return( ret );
+    }
+
 global define void FinishInstall()
     ``{
     map<string,map> tg = GetTargetMap();
@@ -4591,30 +4629,44 @@ global define void FinishInstall()
 	y2milestone( "FinishInstall cmd %1", cmd );
 	map bo = (map)SCR::Execute (.target.bash_output, cmd );
 	y2milestone( "FinishInstall bo %1", bo );
-	list<string> nonevms = GetUsedRealDisks( tg );
-	nonevms = filter( string d, nonevms, ``(!contains( evms, d )));
-	if( size(nonevms)>0 && SCR::Read( .target.size, "/etc/evms.conf" )>=0 )
+	}
+    list<string> nonevms = GetUsedRealDisks( tg );
+    nonevms = filter( string d, nonevms, ``(!contains( evms, d )));
+    nonevms = maplist( string d, nonevms, ``(substring(d,5)));
+    y2milestone( "FinishInstall nonevms %1", nonevms );
+    nonevms = (list<string>)merge( nonevms, maplist( map p, GetPrepBoot(tg),
+				   ``(substring(p["device"]:"",5))));
+    y2milestone( "FinishInstall nonevms %1", nonevms );
+    if( size(nonevms)>0 && SCR::Read( .target.size, "/etc/evms.conf" )>=0 )
+	{
+	map evmsconf = $[];
+	AsciiFile::ReadFile( evmsconf, "/etc/evms.conf" );
+	boolean found = false;
+	integer i = 1;
+	string regex1 = "^[ \t]*activate[ \t]*\\{";
+	string regex2 = "^[ \t]*exclude[ \t]*=";
+	string regex3 = "^[ \t]*\\}";
+	while( i<=AsciiFile::NumLines(evmsconf) && !found )
 	    {
-	    map evmsconf = $[];
-	    AsciiFile::ReadFile( evmsconf, "/etc/evms.conf" );
-	    boolean found = false;
-	    integer i = 1;
-	    string regex = "^[ \t]*exclude[ \t]*=";
-	    while( i<=AsciiFile::NumLines(evmsconf) && !found )
+	    found = regexpmatch( evmsconf["l",i,"line"]:"", regex1 );
+	    i = i+1;
+	    }
+	found = false;
+	boolean found2 = false;
+	while( i<=AsciiFile::NumLines(evmsconf) && !found && !found2)
+	    {
+	    found = regexpmatch( evmsconf["l",i,"line"]:"", regex2 );
+	    found2 = regexpmatch( evmsconf["l",i,"line"]:"", regex3 );
+	    if( found )
 		{
-		map l = AsciiFile::GetLine( evmsconf, i );
-		if( regexpmatch( l["line"]:"", regex ))
-		    {
-		    found = true;
-		    string li = "\texclude = [ " + mergestring( nonevms, " " ) +
-		                " ]";
-		    y2milestone( "FinishInstall li = %1", li );
-		    evmsconf["l",i,"line"] = li;
-		    evmsconf["l",i,"buildline"] = false;
-		    AsciiFile::RewriteFile( evmsconf, "/etc/evms.conf" );
-		    }
-		i = i+1;
+		string li = "\texclude = [ " + mergestring( nonevms, " " ) +
+		            " ]";
+		y2milestone( "FinishInstall li = %1", li );
+		evmsconf["l",i,"line"] = li;
+		evmsconf["l",i,"buildline"] = false;
+		AsciiFile::RewriteFile( evmsconf, "/etc/evms.conf" );
 		}
+	    i = i+1;
 	    }
 	}
     y2milestone( "FinishInstall" );
@@ -5052,25 +5104,11 @@ global void SwitchUiAutomounter( boolean on )
     y2milestone( "SwitchUiAutomounter exit" );
     }
 
-global void RemoveDmMapsTo( string device )
+global void DumpObjectList()
     {
-    y2milestone( "RemoveDmMapsTo device:%1", device );
-    InitLibstorage();
-    if( LibStorage::StorageInterface::checkDmMapsTo( sint, device ))
-	{
-	LibStorage::StorageInterface::removeDmMapsTo( sint, device );
-	}
-    else
-	{
-	map d = GetDiskPartition( device );
-	string ddev = d["disk"]:"";
-	if( size(ddev)>0 && ddev!=device &&
-	    LibStorage::StorageInterface::checkDmMapsTo( sint, ddev ) )
-	    {
-	    LibStorage::StorageInterface::removeDmMapsTo( sint, ddev );
-	    }
-	}
+    if( sint == nil )
+	InitLibstorage();
+    LibStorage::StorageInterface::dumpObjectList(sint);
     }
-
 
 }
