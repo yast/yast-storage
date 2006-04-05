@@ -81,7 +81,7 @@ define boolean has_flex_proposal()
     return( ret );
     }
 
-define map try_add_boot( map conf, map disk )
+define map try_add_boot( map conf, map disk, boolean force )
     ``{
     boolean boot = 
 	size(filter( map e, conf["partitions"]:[], 
@@ -89,8 +89,9 @@ define map try_add_boot( map conf, map disk )
     boolean root = size(filter( map e, conf["partitions"]:[], 
 				``(e["mount"]:""=="/"))) > 0;
     map tc = conf;
-    y2milestone( "try_add_boot boot %1 root %2", boot, root );
-    if( !boot && root &&
+    y2milestone( "try_add_boot conf %1", conf );
+    y2milestone( "try_add_boot boot %1 root %2 force %3", boot, root, force );
+    if( !boot && (root||force) &&
 	(disk["cyl_count"]:0 > Partitions::BootCyl() || Partitions::NeedBoot()))
 	{
 	map pb = $[];
@@ -124,7 +125,7 @@ define map do_flexible_disk( map disk )
     if( size(conf)>0 && Storage::IsRealDisk( disk ))
 	{
 	y2milestone( "do_flexible_disk processing disk %1", dev );
-	map tc = try_add_boot( conf, disk );
+	map tc = try_add_boot( conf, disk, false );
 	cur_mode = `free;
 	cur_gap = $[];
 	map gap = get_gap_info( disk, false );
@@ -155,7 +156,7 @@ define map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
                  dev, ignore_boot, reuse );
     map conf = co;
     if( !ignore_boot )
-	conf = try_add_boot( conf, disk );
+	conf = try_add_boot( conf, disk, true );
     y2milestone( "do_flexible_disk_conf parts %1", disk["partitions"]:[] );
     y2milestone( "do_flexible_disk_conf conf %1", conf );
     map ret = $[];
@@ -465,7 +466,7 @@ define map find_matching_disk( list<string> disks, map target, map conf )
 	map e = target[k]:$[];
 	y2milestone( "find_matching_disk processing disk %1", k );
 	y2milestone( "find_matching_disk parts %1", conf["partitions"]:[] );
-	map tc = try_add_boot( conf, e );
+	map tc = try_add_boot( conf, e, false );
 	if( cur_mode != `desparate )
 	    cur_mode = `free;
 	if( !tc["prefer_remove"]:false )
@@ -560,7 +561,8 @@ define map process_partition_data( string dev, map solution )
 		integer pindex = a[0]:0;
 		if( solution["partitions",pindex,"mount"]:"" == "/" &&
 		    disk["cyl_count"]:0 > Partitions::BootCyl() &&
-		    e["end"]:0 <= Partitions::BootCyl() )
+		    e["end"]:0 <= Partitions::BootCyl() &&
+		    !Partitions::NeedBoot() )
 		    {
 		    remove_boot = true;
 		    }
