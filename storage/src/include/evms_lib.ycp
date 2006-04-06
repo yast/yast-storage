@@ -102,6 +102,10 @@ define boolean evms_check_name( string name )
     return( ( findfirstof( name, " ;/`'´!,\"%#" ) == nil ) );
     }
 
+define string evms_dev_disk( string dev )
+    {
+    return( Storage::EvmsDevDisk( dev ));
+    }
 
 define list<map> filter_deleted_parts( map<string,map> tg, list<map> plist )
     ``{
@@ -111,8 +115,7 @@ define list<map> filter_deleted_parts( map<string,map> tg, list<map> plist )
 	if( search( p["device"]:"", "/dev/evms/" )==0 )
 	    {
 	    map disk = 
-		Storage::GetDiskPartition( "/dev/" + 
-					   substring( p["device"]:"", 10 ) );
+		Storage::GetDiskPartition( evms_dev_disk( p["device"]:"" ));
 	    if( size(filter( map pa, tg[disk["disk"]:"","partitions"]:[],
 			     ``(sformat("%1",pa["nr"]:(any)"")==
 				    sformat("%1",disk["nr"]:(any)0) &&
@@ -134,6 +137,22 @@ define list<map> filter_deleted_parts( map<string,map> tg, list<map> plist )
     return( ret );
     }
 
+define list<map> filter_mounted_evms_part( map<string,map> tg, list<map> pa )
+    {
+    list<map> ret = filter( map p, pa,
+	``{
+	boolean ok = p["evms_native"]:false;
+	if( !ok )
+	    {
+	    string dev = evms_dev_disk( p["device"]:"" );
+	    map part = Storage::GetPartition( tg, dev );
+	    ok = size(part["mount"]:"")==0;
+	    }
+	return( ok );
+	});
+    return( ret );
+    }
+
 define list<map> get_pvlist( map<string,map> tg, string name )
     ``{
     list<map> pv = [];
@@ -149,6 +168,7 @@ define list<map> get_pvlist( map<string,map> tg, string name )
 				           (p["used_by_type"]:`UB_NONE==`UB_EVMS &&
 					    p["used_by"]:""==name)));
 		tmp = filter( map p, tmp, ``(size(p["mount"]:"")==0));
+		tmp = filter_mounted_evms_part( tg, tmp );
 		y2milestone( "key %1 tmp %2", k, tmp );
 		pv = (list<map>)merge( pv, tmp );
 		}
@@ -727,10 +747,14 @@ define list get_evms_volumes( map<string,map> tg )
 		    ``(p["used_by_type"]:`UB_NONE==`UB_NONE));
 	pa = filter( map p, pa, 
 	    ``{
-	    string ndev = "/dev/" + substring( p["device"]:"", 10 );
+	    string ndev = evms_dev_disk( p["device"]:"" );
 	    return( !Storage::IsRealDisk( tg[ndev]:$[] ));
 	    });
 	pa = filter_deleted_parts( tg, pa );
+	if( k=="/dev/evms" )
+	    {
+	    pa = filter_mounted_evms_part( tg, pa );
+	    }
 	parts = 
 	    (list<map>)merge( parts, 
 	                      sort( map x, map y, pa,
