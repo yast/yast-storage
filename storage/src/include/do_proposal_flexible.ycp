@@ -1190,8 +1190,10 @@ define map distribute_space( integer rest, list weights, list added, list ps )
     integer scount = 0;
     y2milestone( "distribute_space rest %1 weights %2 added %3", rest, 
                  weights, added );
+    integer loopcount=0;
     do
 	{
+	loopcount = loopcount+1;
 	index = 0;
 	sum = 0;
 	scount = 0;
@@ -1209,8 +1211,8 @@ define map distribute_space( integer rest, list weights, list added, list ps )
 	    index = index+1;
 	    });
 	index = 0;
-	y2milestone( "distribute_space sum %1 rest %2 scount %3 added %4", 
-	             sum, rest, scount, added );
+	y2milestone( "distribute_space sum %1 rest %2 scount %3 added %4 lc %5",
+	             sum, rest, scount, added, loopcount );
 	foreach( list p, (list<list>)added,
 	    ``{
 	    pindex = p[0]:0;
@@ -1234,7 +1236,7 @@ define map distribute_space( integer rest, list weights, list added, list ps )
 	    index = index+1;
 	    });
 	}
-    while( rest>0 && scount>0 && sum>0 );
+    while( rest>0 && scount>0 && loopcount<3 );
     map ret = $[ "added":added, "diff" : diff_sum ];
     y2milestone( "distribute_space ret %1", ret );
     return( ret );
@@ -2321,6 +2323,7 @@ map get_inst_proposal( map<string,map> target )
 	    if( mode == `desparate )
 		{
 		ddev = get_disk_try_list( target, false );
+		valid = listmap( string s, ddev, ``($[s:true]));
 		target = prepare_part_lists( ddev, target );
 		foreach( string s, ddev,
 		    ``{
@@ -2617,6 +2620,17 @@ map get_inst_proposal( map<string,map> target )
     ret["ok"] = size(sol_disk)>0;
     if( ret["ok"]:false )
 	{
+	string uby = ret["target",sol_disk,"used_by"]:"";
+	y2milestone( "get_inst_proposal uby %1", uby );
+	if( size(uby)>0 )
+	    {
+	    string k = "/dev/"+uby;
+	    if( haskey( ret["target"]:$[], k ))
+		{
+		ret["target",k,"delete"] = true;
+		y2milestone( "get_inst_proposal uby %1", ret["target",k]:$[] );
+		}
+	    }
 	ret["target",sol_disk] = solution[sol_disk]:$[];
 	ret["target"] = Storage::SpecialBootHandling( ret["target"]:$[] );
 	y2milestone( "get_inst_proposal sol:%1", ret["target",sol_disk]:$[] );
