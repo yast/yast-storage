@@ -44,6 +44,7 @@ integer do_weighting( list ps, map g );
 symbol cur_mode = `free;
 integer cur_weight = -10000;
 map cur_gap = $[];
+integer big_cyl = 4 * 1024 * 1024 * 1024;
 
 define boolean ignore_disk( string dev, map entry, boolean soft )
     ``{
@@ -802,7 +803,6 @@ define map process_partition_data( string dev, map solution )
 
 define map add_cylinder_info( map conf, map gap )
     ``{
-    integer big_cyl = 4 * 1024 * 1024 * 1024;
     integer cyl_size = gap["cyl_size"]:1;
     conf["partitions"] = 
 	sort( map a, map b, conf["partitions"]:[],
@@ -940,8 +940,21 @@ define void add_part_recursive( list ps, map g )
     foreach( map e, lg["gap"]:[], 
 	``{
 	y2milestone( "add_part_recursive e %1", e );
-	if( (!haskey( part, "max_cyl" ) || part["max_cyl"]:0 >= e["end"]:0) &&
-	    part["cylinders"]:0 <= e["cylinders"]:0 &&
+	boolean max_cyl_ok = !haskey( part, "max_cyl" ) ||
+	                     part["max_cyl"]:0 >= e["end"]:0;
+	if( !max_cyl_ok )
+	    {
+	    integer cyl = 0;
+	    foreach( list a, lg["gap",gindex,"added"]:[],
+		``{
+		cyl = cyl + ps[a[0]:0,"cylinders"]:0;
+		});
+	    cyl = cyl + part["cylinders"]:0;
+	    y2milestone( "max_cyl_ok cyl %1", cyl );
+	    max_cyl_ok = e["start"]:0 + cyl <= part["max_cyl"]:0;
+	    }
+	y2milestone( "add_part_recursive max_cyl_ok %1", max_cyl_ok );
+	if( max_cyl_ok && part["cylinders"]:0 <= e["cylinders"]:0 &&
 	    ((!e["extended"]:false && size(lg["free_pnr"]:[])>0) ||
 	     (part["primary"]:false && e["created"]:false && e["extended"]:false && size(lg["free_pnr"]:[])>0) || 
 	     (!part["primary"]:false && e["extended"]:false && size(lg["ext_pnr"]:[])>0)))
@@ -1163,8 +1176,16 @@ define map normalize_gaps( list ps, map g )
 	    list nums = maplist( list l, e["added"]:[], ``(l[1]:-1));
 	    y2milestone( "normalize_gaps old nums %1", nums );
 	    list sdd = sort( list a, list b, e["added"]:[],
-	                     ``(sort_map[ps[a[0]:0,"mount"]:""]:3 <
-				sort_map[ps[b[0]:0,"mount"]:""]:3) );
+			     ``({
+			     integer ai = a[0]:0;
+			     integer bi = b[0]:0;
+			     if( ps[ai,"primary"]:false != ps[bi,"primary"]:false )
+				 return( true );
+			     else if( ps[ai,"max_cyl"]:big_cyl != ps[bi,"max_cyl"]:big_cyl )
+				 return( ps[ai,"max_cyl"]:big_cyl < ps[bi,"max_cyl"]:big_cyl );
+			     else
+				 return( sort_map[ps[ai,"mount"]:""]:3 < sort_map[ps[bi,"mount"]:""]:3);
+			     }));
 	    integer idx = 0;
 	    foreach( list e, (list<list>)sdd, 
 		``{
