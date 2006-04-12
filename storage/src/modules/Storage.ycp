@@ -4185,6 +4185,33 @@ global define void UpdateFstabSubfs()
     AsciiFile::RewriteFile( fstab, tabpath );
     }
 
+global define void UpdateFstabSysfs()
+    ``{
+    y2milestone( "UpdateFstabSysfs called" );
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    boolean have_sysfs = false;
+    while( !have_sysfs && line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	have_sysfs = l["fields",1]:"" == "/sys";
+	line = line+1;
+	}
+    if( !have_sysfs )
+	{
+	map entry = FileSystems::GetFstabDefaultMap( "sys" );
+	list fstlist = [ entry["spec"]:"", entry["mount"]:"",
+			 entry["vfstype"]:"", entry["mntops"]:"",
+			 sformat("%1",entry["freq"]:0),
+		         sformat("%1",entry["passno"]:0) ];
+	y2milestone( "UpdateFstabSysfs entry %1", entry );
+	y2milestone( "UpdateFstabSysfs fstlist %1", fstlist );
+	AsciiFile::AppendLine( fstab, fstlist );
+	AsciiFile::RewriteFile( fstab, tabpath );
+	}
+    }
+
 global string HdToIseries( string input )
     ``{
     string ret = input;
@@ -4409,6 +4436,10 @@ define map BuildDiskmap( map oldv )
 global define void Update( map oldv, map newv )
     ``{
     y2milestone( "Update old:%1 new:%2", oldv, newv );
+    if( oldv["major"]:0<=9 )
+	{
+	UpdateFstabSysfs();
+	}
     if( oldv["major"]:0<9 )
 	{
 	UpdateFstabUsbdevfs();
