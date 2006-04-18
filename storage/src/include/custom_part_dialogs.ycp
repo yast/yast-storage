@@ -428,6 +428,13 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
     return ( org_fs_options );
     }
 
+void PopupNoSlashLabel()
+    {
+    // popup text
+    Popup::Error( _("The character '/' is not allowed any more in a volume label.
+Change your volume label so that it does not contain this character any more."));
+    }
+
   /**
    * Dialog: Fstab options
    * @parm old map with original partition
@@ -635,7 +642,7 @@ volume label is not possible to use character / and space.
 			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
 			  new["enc_type"]:`none==`none );
 	UI::ChangeWidget( `id(`vol_label), `ValidChars,
-			  FileSystems::nchars + "-._:" );
+			  FileSystems::nchars + "-._:/" );
 	UI::ChangeWidget( `id(`vol_label), `Value, new["label"]:"" );
 	}
 
@@ -691,7 +698,11 @@ volume label is not possible to use character / and space.
 Maximum volume label length for the selected file system
 is %1. Your volume label was truncated to this size.
 "), max_len ));
-
+			}
+		    if( search(new["label"]:"","/")!=nil )
+			{
+			PopupNoSlashLabel();
+			ret = `again;
 			}
 		    if( !new["format"]:false && !new["create"]:false &&
 			!haskey( new, "ori_label" ) )
@@ -712,6 +723,13 @@ is %1. Your volume label was truncated to this size.
 		    ret = `again;
 		    // popup text
 		    Popup::Error( _("This volume label is already in use. Select a different one."));
+		    continue;
+		    }
+		if( new["mountby"]:`device == `label &&
+		    search(new["label"]:"","/")!=nil )
+		    {
+		    ret = `again;
+		    PopupNoSlashLabel();
 		    continue;
 		    }
 		}
