@@ -2128,7 +2128,8 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 
     foreach( string dev, map disk, targetMap,
 	``{
-        if( Storage::IsRealDisk( disk ) )
+	y2milestone( "dev:%1 isReal:%2", dev, Storage::IsRealDisk( disk ) );
+        if( !disk["readonly"]:false && Storage::IsRealDisk( disk ) )
 	  {
 	  txt = sformat( "&%1: %2", n+1, dev );
 	  diskgroup = add( diskgroup, `Left( `RadioButton( `id(dev), txt,
@@ -2137,6 +2138,7 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 	  disks = add ( disks, dev );
 	  }
 	});
+    y2milestone( "disks:%1", disks );
     if( size(disks)>10 )
 	{
 	diskgroup = `VBox( `SelectionBox( `id(`disklist), _("Available &Disks"),
@@ -2147,7 +2149,7 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 	diskgroup = `RadioButtonGroup( `id(`choosedisk), diskgroup );
 	}
 
-    if( size(disks) != 1 )
+    if( size(disks) > 1 )
 	{
 	UI::OpenDialog( `opt(`decorated), `VBox(`Heading( heading ),
 			`VSpacing(0.5),
@@ -2207,10 +2209,20 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 	    return(r);
 	    }
 	}
-    else
+    else if( size(disks) == 1 )
 	{
 	// if there is only one disk: no
 	return( disks[0]:"" );
+	}
+    else if( size(disks) == 0 )
+	{
+	string txt = _("There are no partitionable Disks available.");
+	if( Arch::s390() )
+	    {
+	    txt = txt + "\n" + _("You may use dasdfmt in Expert-Button to low level format disks.");
+	    }
+	Popup::Error( txt );
+	return( "" );
 	}
     };
 
@@ -2611,7 +2623,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 				      _("Disk to Partition"),
 				      `create );
 
-	    if( ddev == nil )
+	    if( ddev == nil || size(ddev)==0 )
 		{
 		ret = `again;
 		continue;
