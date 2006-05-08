@@ -1319,7 +1319,10 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
     ``{
     boolean create = cur_val["create"]:false;
     string dev = cur_val["device"]:"";
+    boolean is_disk = cur_val["type"]:`primary == `primary ||
+                      cur_val["type"]:`primary == `logical;
     y2milestone( "EditOrCreatePartDlg cur_val:%1", cur_val );
+    y2milestone( "EditOrCreatePartDlg is_disk:%1", is_disk );
 
     string helptextCR = getEditOrCreateHelptext( cur_val, !create );
 
@@ -1331,7 +1334,7 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
     // right side of the main dialog
     term field_dlg_right =
 	`VBox(
-	     `Top( SizeDlg( cur_val, cyl_size, edit_size )),
+	     `Top( SizeDlg( cur_val, cyl_size, edit_size, is_disk )),
 	     `VSpacing(1),
 	     `ReplacePoint( `id(`mount_dlg_rp), MountDlg( cur_val, [] ))
 	     );
@@ -1453,7 +1456,11 @@ define map<string,any> EditOrCreatePartDlg( map<string,any> cur_val,
 	       retval["region"] = region;
 	       }
 
-	  if( !check_ok_fssize( retval["region",1]:0 * cyl_size, retval ))
+	  integer check_size = retval["size_k"]:0 * 1024;
+	  if( is_disk )
+	      check_size = retval["region",1]:0 * cyl_size;
+	      
+	  if( !check_ok_fssize( check_size, retval ))
 	      {
 	      UI::SetFocus(`id(`end_part));
 	      ret = `again;
@@ -2026,7 +2033,7 @@ define map CreateEditExtendedPartDlg( map new_val, string title, string dev,
 			       `HWeight(50,`RichText( helptextCR )),
 			       /// right side
 			       // popup create partition: frame description Start/End Cylinder
-			       `HWeight( 40, SizeDlg( new_val, cyl_size, true) )
+			       `HWeight( 40, SizeDlg( new_val, cyl_size, true, true) )
 			       ),
 			 `VSpacing(0.5),
 			 `HBox(
@@ -2969,6 +2976,10 @@ All data on this partition will be lost if you delete it."));
 			    // header of the dialog to edit a partition %1 is replaced by device name (e.g. /dev/hda1)
 			    title = sformat( _("Edit Existing Partition %1"),
 			                     part["device"]:"" );
+			    if( part["type"]:`primary != `primary &&  
+			        part["type"]:`primary != `logical )
+				title = sformat( _("Edit Existing Device %1"),
+						 part["device"]:"" );
 			    }
 			else
 			    {
