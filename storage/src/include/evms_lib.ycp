@@ -153,6 +153,20 @@ define list<map> filter_mounted_evms_part( map<string,map> tg, list<map> pa )
     return( ret );
     }
 
+define list<map> filter_used_disk_evms_part( map<string,map> tg, list<map> pa, string name )
+    {
+    boolean ok = false;
+    list<map> ret = filter( map p, pa,
+	``{
+	string dev = evms_dev_disk( p["device"]:"" );
+	ok = tg[dev,"used_by_type"]:`UB_NONE == `UB_NONE ||
+	     (tg[dev,"used_by_type"]:`UB_NONE == `UB_EVMS && 
+	      tg[dev,"used_by"]:"" == name);
+	return( ok );
+	});
+    return( ret );
+    }
+
 define list<map> get_pvlist( map<string,map> tg, string name )
     ``{
     list<map> pv = [];
@@ -169,6 +183,7 @@ define list<map> get_pvlist( map<string,map> tg, string name )
 					    p["used_by"]:""==name)));
 		tmp = filter( map p, tmp, ``(size(p["mount"]:"")==0));
 		tmp = filter_mounted_evms_part( tg, tmp );
+		tmp = filter_used_disk_evms_part( tg, tmp, name );
 		y2milestone( "key %1 tmp %2", k, tmp );
 		pv = (list<map>)merge( pv, tmp );
 		}
