@@ -152,6 +152,8 @@ map ClassifiedSettings = $[];
 map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_LOOP : 2, `CT_DM : 3,
                     `CT_LVM : 4, `CT_EVMS : 5 ];
 list<string> hw_packages = [];
+list<string> no_propose_disks = nil;
+
 
  /*
   include "storage/routines.ycp";
@@ -5123,6 +5125,36 @@ global void DumpObjectList()
     if( sint == nil )
 	InitLibstorage();
     LibStorage::StorageInterface::dumpObjectList(sint);
+    }
+
+global define list<string> NoProposeDisks()
+    {
+    if( no_propose_disks == nil )
+	{
+	no_propose_disks = [];
+	if( Stage::initial() && SCR::Read( .target.size, "/etc/install.inf" )>0 )
+	    {
+	    string inst = (string) SCR::Read( .etc.install_inf.Partition );
+	    if( inst!=nil && size(inst)>0 )
+		{
+		if( search( inst, "/dev/" )!=0 )
+		    inst = "/dev/" + inst;
+		map d = GetDiskPartition( inst );
+		y2milestone( "NoProposeDisks inst:%1 disk:%2", inst, d );
+		if( size(d["disk"]:"")>0 )
+		    no_propose_disks = add( no_propose_disks, d["disk"]:"" );
+		}
+	    }
+	if( Stage::initial() )
+	    {
+	    map ret = (map)SCR::Execute( .target.bash_output, "echo $YAST2_STORAGE_NO_PROPOSE_DISKS" );
+	    y2milestone( "NoProposeDisks ret \"%1\"", ret["stdout"]:"" );
+	    list ls = filter( string e, splitstring( ret["stdout"]:"", " \t\n" ), ``(size(e)>0) );
+	    no_propose_disks = (list<string>)merge( no_propose_disks, ls );
+	    }
+	y2milestone( "NoProposeDisks \"%1\"", no_propose_disks );
+	}
+    return( no_propose_disks );
     }
 
 }
