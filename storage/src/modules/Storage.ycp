@@ -2788,7 +2788,31 @@ global define map<string,map> GetTargetMap()
     if( !probe_done && !Mode::config() )
 	{
 	y2milestone ("probing StorageDevices" );
+	map<string,string> rename = $[];
 	tmp = (map<string,map>)StorageDevices::Probe(true);
+	foreach( string dev, map disk, tmp,
+	    ``{
+	    map dtmp = Storage::GetDiskPartition( dev );
+	    y2milestone( "probing dev %1 disk %2", dev, dtmp );
+	    if( size(dtmp["disk"]:"")>0 && dev != dtmp["disk"]:"" )
+		{
+		rename[dev] = dtmp["disk"]:"";
+		y2milestone( "probing rename %1", rename );
+		}
+	    });
+	if( size(rename)>0 )
+	    {
+	    foreach( string old, string new, rename,
+		``{
+		if( haskey( tmp, old ))
+		    {
+		    tmp[new] = tmp[old]:$[];
+		    tmp = remove( tmp, old );
+		    tmp[new,"device"] = new;
+		    y2milestone( "probing old:%1 new:%2", old, tmp[new]:$[] );
+		    }
+		});
+	    }
 	y2milestone ("probing done" );
 	if( size(tmp)>0 )
 	    {
@@ -5135,6 +5159,19 @@ global define list<string> NoProposeDisks()
 	if( Stage::initial() && SCR::Read( .target.size, "/etc/install.inf" )>0 )
 	    {
 	    string inst = (string) SCR::Read( .etc.install_inf.Partition );
+	    y2milestone( "NoProposeDisks .etc.install_inf.Partition \"%1\"", 
+	                 inst );
+	    if( inst!=nil && size(inst)>0 )
+		{
+		if( search( inst, "/dev/" )!=0 )
+		    inst = "/dev/" + inst;
+		map d = GetDiskPartition( inst );
+		y2milestone( "NoProposeDisks inst:%1 disk:%2", inst, d );
+		if( size(d["disk"]:"")>0 )
+		    no_propose_disks = add( no_propose_disks, d["disk"]:"" );
+		}
+	    inst = (string) SCR::Read( .etc.install_inf.Cdrom );
+	    y2milestone( "NoProposeDisks .etc.install_inf.Cdrom \"%1\"", inst );
 	    if( inst!=nil && size(inst)>0 )
 		{
 		if( search( inst, "/dev/" )!=0 )
