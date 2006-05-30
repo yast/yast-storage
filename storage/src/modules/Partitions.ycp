@@ -410,20 +410,36 @@ global define map GetLoopOn( string device )
     return( ret );
     }
 
-define string TanslateMapperName( string device )
+global define string TranslateMapperName( string device )
     ``{
     string ret = device;
-    string regex = "[^-]-[^-]";
+    string regex = "-[^-]";
     if( search( device, "/dev/mapper/" )==0 )
 	{
 	list<integer> pos = regexppos( device, regex );
 	y2milestone( "pos=%1", pos );
 	if( size(pos)>0 )
 	    {
-	    ret = "/dev/" + substring(device,12,pos[0]:0-11) + "/" +
-	          substring(device,pos[0]:0+2);
+	    ret = "/dev/" + substring(device,12,pos[0]:0-12) + "/" +
+	          substring(device,pos[0]:0+1);
+	    integer spos = 4;
+	    integer newpos = search(substring(ret,spos), "--");
+	    if( newpos!=nil )
+		spos = spos + newpos;
+	    else
+		spos = -1;
+	    while( spos>=0 )
+		{
+		ret = substring(ret, 0, spos+1) + substring( ret, spos+2 );
+		spos = spos + 1;
+		newpos = search(substring(ret,spos), "--");
+		if( newpos!=nil )
+		    spos = spos + newpos;
+		else
+		    spos = -1;
+		}
 	    }
-	y2milestone( "TanslateMapperName %1 -> %2", device, ret );
+	y2milestone( "TranslateMapperName %1 -> %2", device, ret );
 	}
     return( ret );
     }
@@ -502,11 +518,9 @@ global define list<map> CurMounted()
 	});
     ret = maplist( map p, ret, 
 	``{
-	p["spec"] = TanslateMapperName( p["spec"]:"" );
+	p["spec"] = TranslateMapperName( p["spec"]:"" );
 	return( p );
 	});
-
-
     y2milestone( "CurMounted all mounts %1", ret);
     return ret;
     };
