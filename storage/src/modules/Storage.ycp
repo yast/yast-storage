@@ -4773,6 +4773,31 @@ global define list GetRootInitrdModules()
 	    initrdmodules = add( initrdmodules, "dm_mod" );
 	    }
 	}
+    if( partition["type"]:`unknown == `evms )
+	{
+	string evmsco = partition["device"]:"";
+	evmsco = substring( evmsco, 0, findlastof( evmsco, "/" ));
+	y2milestone( "GetRootInitrdModules evmsco %1", evmsco );
+	y2milestone( "GetRootInitrdModules evms %1", tg[evmsco]:$[] );
+	list<string> md = filter( string s, tg[evmsco,"devices"]:[], ``(search(s,"/dev/md")==0));
+	y2milestone( "GetRootInitrdModules mddev %1", md );
+	list<string> mod =
+	    (list<string>) maplist(map k, filter(map e, tg["/dev/md","partitions"]:[],
+						 ``(contains(md,e["device"]:""))),
+				   ``(k["raid_type"]:""));
+	y2milestone( "GetRootInitrdModules mod %1", mod );
+	foreach(string e, mod,
+	    ``{
+	    if( size(e)>0 && !contains( initrdmodules, e ) )
+		{
+		initrdmodules = add( initrdmodules, e );
+		}
+	    });
+	if( !contains( initrdmodules, "dm_mod" ) )
+	    {
+	    initrdmodules = add( initrdmodules, "dm_mod" );
+	    }
+	}
     if( disk["driver"]:"" == "usb-storage" )
 	{
 	list<map> uc = (list<map>)SCR::Read(.probe.usbctrl);
