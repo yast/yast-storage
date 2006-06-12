@@ -4206,6 +4206,56 @@ global string HdToIseries( string input )
     return( ret );
     }
 
+global string SLES9PersistentDevNames( string input )
+    ``{
+    string ret = input;
+    string regex1 = "/dev/disk/by-id/.*";
+    string regex2 = "/dev/disk/by-path/.*";
+    string prefix = "scsi-";
+    string tmpdev = "";
+
+    if( regexpmatch( input, ".*-part[0-9]*$" ))
+        {
+	return input;
+	}
+
+    if( regexpmatch( input, ".*/by-id/(scsi|ccw|usb|ata)-.*$" ))
+	{
+	return input;
+	}
+
+    if( regexpmatch( input, regex1 ))
+	{
+	if (regexpmatch ( input, ".*/by-id/0X.{4}p?[0-9]?$" ) )
+	    {
+	    prefix = "ccw-";
+	    }
+	tmpdev = "/dev/disk/by-id/" + prefix + 
+	         substring( input, findlastof(input, "/")+1 );
+	y2milestone( "by id tmp %1", tmpdev );
+	ret = tmpdev;
+	}
+    else if( regexpmatch( input, regex2 ))
+	{
+	tmpdev = input;
+	y2milestone( "by path tmp %1", tmpdev );
+	}
+
+    if( size(tmpdev)>0  )
+	{
+	if( regexpmatch( tmpdev, ".*p[0-9]*$" ) )
+	    {
+	    ret = regexpsub( tmpdev, "(.*)p([0-9]*)$", "\\1-part\\2" );
+	    }
+	else
+	    {
+	    ret = regexpsub( tmpdev, "(.*[[:alpha:][:punct:]])([0-9]*)$", "\\1-part\\2" );
+	    }
+	}
+    y2milestone( "SLES9PersistentDevNames input:%1 ret:%2", input, ret );
+    return( ret );
+    }
+
 global string HdDiskMap( string input, map diskmap )
     ``{
     string ret = input;
@@ -4270,6 +4320,26 @@ global define void UpdateCdromLinks( map diskmap )
 	    SCR::Execute( .target.symlink, substring(diskmap[cont]:"",5), dev );
 	    }
 	});
+    }
+
+global define void UpdateFstabPersistentNames()
+    ``{
+    y2milestone( "UpdateFstabPersistentDevNames updating to SLES10 names" );
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    string n = "";
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	n = SLES9PersistentDevNames( l["fields",0]:"" );
+	if( n != l["fields",0]:"" )
+	    {
+	    AsciiFile::ChangeLineField( fstab, line, 0, n );
+	    }
+	line = line+1;
+	}
+    AsciiFile::RewriteFile( fstab, tabpath );
     }
 
 global define void UpdateFstabDiskmap( map diskmap )
@@ -4426,6 +4496,11 @@ global define void Update( map oldv, map newv )
 	{
 	UpdateFstabUsbdevfs();
 	}
+    if( oldv["major"]:0==9 )
+        {
+	UpdateFstabPersistentNames();
+	}
+
     map dm = BuildDiskmap( oldv );
     if( size(dm)>0 )
 	{
@@ -4475,6 +4550,10 @@ global define list<string> GetTranslatedDevices( map oldv, map newv,
         Arch::board_iseries () )
 	{
 	ret = maplist( string n, names, ``(HdToIseries( n )));
+	}
+    if( oldv["major"]:0==9 )
+	{
+	ret = maplist( string n, names, ``(SLES9PersistentDevNames( n )));
 	}
     y2milestone( "GetTranslatedDevices ret %1", ret );
     return( ret );
