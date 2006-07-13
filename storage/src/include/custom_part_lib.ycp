@@ -663,7 +663,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 
 	if( old_format != format )
 	    {
-	    symbol dfs = `none;
+	    symbol dfs = `unknown;
 	    if( format )
 		{
 		dfs = (symbol)UI::QueryWidget(`id(`fs), `Value);
@@ -733,9 +733,14 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
     if( init || ret == `fs )
 	{
 	symbol new_fs = (symbol)UI::QueryWidget(`id(`fs), `Value);
-	if( init && !new["format"]:false && new["detected_fs"]:`none != `none )
+	if( init )
 	    {
-	    new_fs = new["detected_fs"]:`none;
+	    if( !new["format"]:false && new["detected_fs"]:`unknown != `unknown )
+		new_fs = new["detected_fs"]:`unknown;
+	    else if( new["fsid"]:0 == Partitions::fsid_gpt_boot )
+		new_fs = `vfat;
+	    if( used_fs != new_fs )
+		UI::ChangeWidget(`id(`fs), `Value, new_fs );
 	    }
 	y2milestone( "HandlePartWidgetChanges new_fs %1",
 	             UI::QueryWidget(`id(`fs), `Value) );
@@ -751,7 +756,9 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 
 	    if( !init )
 		{
-		new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
+		if( !contains( selected_fs[`alt_fsid]:[], new["fsid"]:0 ))
+		    new["fsid"] = selected_fs[`fsid]:Partitions::fsid_native;
+		y2milestone( "HandlePartWidgetChanges fsid %1", new["fsid"]:0 );
 		if( UI::WidgetExists( `id(`fsid_point) ))
 		    {
 		    UI::ChangeWidget( `id(`fsid_point), `Value,
