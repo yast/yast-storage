@@ -126,6 +126,7 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
     boolean axp_start_Ex_failure = false;
     boolean all_whole_disk       = true;
     boolean fat_system_mount     = false;
+    boolean fat_system_boot      = false;
     string raid_type             = "";
 
     foreach( string disk, map diskinfo, targetMap,
@@ -298,7 +299,6 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
 		}
 
 
-	    // check if a fat filesystem  is greater than 2 GB
 	    if( part["used_fs"]:`unknown==`vfat && part["format"]:false )
 		{
 		// uses a mountpoint like /usr / /var /home /opt with fat
@@ -307,6 +307,15 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
 		              mountpoint ))
 		    {
 		    fat_system_mount = true;
+		    }
+		}
+
+	    if( !Arch::ia64() && part["used_fs"]:`unknown==`vfat && part["format"]:false )
+		{
+		// uses mountpoint /boot with fat
+		if( !fat_system_boot && mountpoint=="/boot" )
+		    {
+		    fat_system_boot = true;
 		    }
 		}
 
@@ -408,6 +417,16 @@ Assign the root mount point \"/\" to a partition.
 	Popup::Error(_("You tried to mount a fat partition to
 one of the following mount points: / /usr /home /opt /var.
 Use a Linux file system, such as ext2 or reiserfs, for these mount points.
+"));
+
+	retval = `again;
+	}
+
+    if( fat_system_boot || show_all_popups )
+	{
+        // popup text
+	Popup::Error(_("You tried to mount a fat partition to mount point /boot.
+Use a Linux file system, such as ext2 or reiserfs, for this mount point.
 "));
 
 	retval = `again;
