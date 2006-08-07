@@ -473,9 +473,7 @@ define map CheckOkMount( string dev, map old, map<string,any> new )
   **/
 define map CheckCryptOk( map new )
     ``{
-    map ret = $[];
-    ret["ok"] = true;
-    y2milestone( "CheckCryptOk new:%1", new );
+    map ret = $[ "ok" : true ];
     boolean crypt_fs = false;
     if( UI::WidgetExists( `id(`crypt_fs) ))
 	{
@@ -523,15 +521,52 @@ define map CheckCryptOk( map new )
     return( ret );
     };
 
-define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map file_systems )
+define map CheckDeviceFinalOk( map new )
     ``{
+    y2milestone( "CheckDeviceFinalOk new:%1", new );
+    map ret = CheckCryptOk( new );
+    y2milestone( "CheckDeviceFinalOk ret:%1", ret );
+    return( ret );
+    }
+
+define map<string,any> HandleFsChanged( boolean init, map<string,any> new, 
+                                        symbol old_fs, map file_systems )
+    ``{
+    boolean undo_change = false;
     list<string> not_used_mp = [];
     symbol used_fs = new["used_fs"]:`unknown;
     map selected_fs = file_systems[used_fs]:$[];
-    y2milestone( "HandleFsChanged init:%1 used_fs:%2 new:%3",
-                 init, used_fs, new );
+    y2milestone( "HandleFsChanged init:%1 used_fs:%2 old_fs:%3 new:%4",
+                 init, used_fs, old_fs, new );
 
-    if( UI::WidgetExists( `id(`crypt_fs) ))
+    if( !init && used_fs != old_fs )
+	{
+	y2milestone( "HandleFsChanged IsUnsupported:%1", 
+	             FileSystems::IsUnsupported( used_fs ));
+	if( FileSystems::IsUnsupported( new["used_fs"]:`unknown ))
+	    {
+	    // warning message, %1 is replaced by fs name (e.g. Ext3)
+	    string message = _("
+WARNING:
+
+This file system is not supported in &product;.
+It is completely untested and might not be well-integrated 
+in the system.  Do not file bugs against the file system 
+itself if it does not work properly or at all.
+
+Undo the change of file system?
+");
+
+	    undo_change = Popup::YesNo(message);
+	    }
+	if( undo_change )
+	    {
+	    new["used_fs"] = old_fs;
+	    UI::ChangeWidget(`id(`fs), `Value, old_fs );
+	    }
+	}
+
+    if( !undo_change && UI::WidgetExists( `id(`crypt_fs) ))
 	{
 	boolean cr = selected_fs[`crypt]:true;
 
@@ -543,64 +578,68 @@ define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map f
 	    }
 	}
 
-    ////////////////////////////////////////////////
-    // switch between swap and other mountpoints
-    string mount = (string)UI::QueryWidget( `id(`mount_point), `Value);
-    new["mount"] = mount;
-    if( used_fs == `swap )
+    if( !undo_change )
 	{
-	not_used_mp = selected_fs[`mountpoints]:[];
-	if( mount != "swap" && (new["type"]:`primary!=`lvm || mount!=""))
-	    new["mount"] = "swap";
-	}
-    else
-	{
-	not_used_mp =
-	    notUsedMountpoints( Storage::GetTargetMap(),
-				selected_fs[`mountpoints]:[] );
-	if( new["type"]:`primary == `lvm ||
-	    (new["type"]:`primary == `sw_raid&&new["raid_type"]:"raid0"!="raid1") )
+	////////////////////////////////////////////////
+	// switch between swap and other mountpoints
+	string mount = (string)UI::QueryWidget( `id(`mount_point), `Value);
+	new["mount"] = mount;
+	if( used_fs == `swap )
 	    {
-	    not_used_mp = filter( string mp, not_used_mp,
-	                          ``( mp != Partitions::BootMount() ));
+	    not_used_mp = selected_fs[`mountpoints]:[];
+	    if( mount != "swap" && (new["type"]:`primary!=`lvm || mount!=""))
+		new["mount"] = "swap";
 	    }
-	else if( new["type"]:`primary == `loop )
+	else
 	    {
 	    not_used_mp =
-		filter( string mp, not_used_mp,
-			``(!contains( FileSystems::system_m_points, mp)));
+		notUsedMountpoints( Storage::GetTargetMap(),
+				    selected_fs[`mountpoints]:[] );
+	    if( new["type"]:`primary == `lvm ||
+		(new["type"]:`primary == `sw_raid&&
+		 new["raid_type"]:"raid0"!="raid1") )
+		{
+		not_used_mp = filter( string mp, not_used_mp,
+				      ``( mp != Partitions::BootMount() ));
+		}
+	    else if( new["type"]:`primary == `loop )
+		{
+		not_used_mp =
+		    filter( string mp, not_used_mp,
+			    ``(!contains( FileSystems::system_m_points, mp)));
+		}
+	    if(mount == "swap")
+		new["mount"] = "";
 	    }
-	if(mount == "swap")
-	    new["mount"] = "";
-	}
-    UI::ReplaceWidget(`id(`mount_dlg_rp), MountDlg( new, not_used_mp));
-    UI::ChangeWidget( `id(`mount_point), `Value, new["mount"]:"" );
+	UI::ReplaceWidget(`id(`mount_dlg_rp), MountDlg( new, not_used_mp));
+	UI::ChangeWidget( `id(`mount_point), `Value, new["mount"]:"" );
 
-    UI::ChangeWidget(`id(`fstab_options), `Enabled, true );
-    UI::ChangeWidget(`id(`fs_options), `Enabled,
-                     new["format"]:false && selected_fs[`options]:[] != [] );
-    string fstopt = FileSystems::DefaultFstabOptions( new );
-    if( size(fstopt)>0 && size(new["fstopt"]:"")==0 )
-	new["fstopt"] = fstopt;
-    if( !init )
-	{
-	new["fs_options"] = $[];
-	new["fstopt"] = fstopt;
+	UI::ChangeWidget(`id(`fstab_options), `Enabled, true );
+	UI::ChangeWidget(`id(`fs_options), `Enabled,
+			 new["format"]:false && selected_fs[`options]:[]!=[] );
+	string fstopt = FileSystems::DefaultFstabOptions( new );
+	if( size(fstopt)>0 && size(new["fstopt"]:"")==0 )
+	    new["fstopt"] = fstopt;
+	if( !init )
+	    {
+	    new["fs_options"] = $[];
+	    new["fstopt"] = fstopt;
 
-	integer max_len = FileSystems::LabelLength( used_fs );
-	if( size(new["label"]:"") > max_len )
-	    {
-	    new["label"] = substring( new["label"]:"", 0, max_len );
-	    }
-	symbol mountby = new["mountby"]:`device;
-	if( (mountby == `uuid && !FileSystems::MountUuid( used_fs )) ||
-	    (mountby == `label && !FileSystems::MountLabel( used_fs )) )
-	    {
-	    new["mountby"] = `device;
-	    }
-	if( !FileSystems::MountLabel( used_fs ) && size(new["label"]:"")>0 )
-	    {
-	    new["label"] = "";
+	    integer max_len = FileSystems::LabelLength( used_fs );
+	    if( size(new["label"]:"") > max_len )
+		{
+		new["label"] = substring( new["label"]:"", 0, max_len );
+		}
+	    symbol mountby = new["mountby"]:`device;
+	    if( (mountby == `uuid && !FileSystems::MountUuid( used_fs )) ||
+		(mountby == `label && !FileSystems::MountLabel( used_fs )) )
+		{
+		new["mountby"] = `device;
+		}
+	    if( !FileSystems::MountLabel( used_fs ) && size(new["label"]:"")>0 )
+		{
+		new["label"] = "";
+		}
 	    }
 	}
     y2milestone( "HandleFsChanged new %1", new );
@@ -675,7 +714,8 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	    new["used_fs"] = dfs;
 	    y2milestone( "HandlePartWidgetChanges used_fs %1", dfs );
 	    if( new["used_fs"]:`unknown != old["used_fs"]:`unknown )
-		new = HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, old["used_fs"]:`unknown,
+		                       file_systems );
 	    if( format )
 		{
 		if( !contains( selected_fs[`alt_fsid]:[], new["fsid"]:0 ))
@@ -739,11 +779,10 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	             init, used_fs, new_fs );
 	if( init || used_fs != new_fs )
 	    {
-	    used_fs = new_fs;
-	    map selected_fs = file_systems[used_fs]:$[];
-	    new["used_fs"] = used_fs;
+	    map selected_fs = file_systems[new_fs]:$[];
+	    new["used_fs"] = new_fs;
 
-	    new = HandleFsChanged( init, new, file_systems );
+	    new = HandleFsChanged( init, new, used_fs, file_systems );
 
 	    if( !init )
 		{
@@ -810,13 +849,14 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 		{
 		new["used_fs"] = Partitions::default_fs;
 		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
-		new = HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, Partitions::default_fs,
+		                       file_systems );
 		}
 	    else if( fs_int == Partitions::fsid_swap )
 		{
 		new["used_fs"] = `swap;
 		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
-		new = HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, `swap, file_systems );
 		}
 	    else if( contains( Partitions::fsid_wintypes, fs_int ) ||
 	             fs_int==Partitions::fsid_gpt_boot )
@@ -824,14 +864,14 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 		new["mount"] = "";
 		new["used_fs"] = `vfat;
 		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
-		new = HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, `vfat, file_systems );
 		}
 	    else if( fs_int == Partitions::fsid_mac_hfs )
 		{
 		new["mount"] = "";
 		new["used_fs"] = `hfs;
 		UI::ChangeWidget( `id(`fs), `Value, new["used_fs"]:`unknown );
-		new = HandleFsChanged( init, new, file_systems );
+		new = HandleFsChanged( init, new, `hfs, file_systems );
 		}
 	    }
 	}
