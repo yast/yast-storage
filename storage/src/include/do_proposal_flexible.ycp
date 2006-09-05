@@ -48,8 +48,8 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 
 define boolean ignore_disk( string dev, map entry, boolean soft )
     ``{
-    boolean ret = !Storage::IsRealDisk( entry ) || entry["readonly"]:false ||
-                  Arch::s390();
+    boolean ret = !Storage::IsPartitionable( entry ) || 
+                  entry["readonly"]:false || Arch::s390();
     if( !ret && Arch::ia64() && entry["label"]:"gpt"!="gpt" )
 	{
 	ret = true;
@@ -127,7 +127,7 @@ define map do_flexible_disk( map disk )
     map conf = read_partition_config( pinfo_name() );
     map solutions = $[];
 
-    if( size(conf)>0 && Storage::IsRealDisk( disk ))
+    if( size(conf)>0 && Storage::IsPartitionable( disk ))
 	{
 	y2milestone( "do_flexible_disk processing disk %1", dev );
 	map tc = try_add_boot( conf, disk, false );
@@ -169,7 +169,7 @@ define map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
     map solutions = $[];
 
     if( size(conf)>0 && size(conf["partitions"]:[])>0 && 
-        Storage::IsRealDisk( disk ))
+        Storage::IsPartitionable( disk ))
 	{
 	y2milestone( "do_flexible_disk_conf processing disk %1", dev );
 	cur_mode = reuse?`reuse:`free;
@@ -185,7 +185,7 @@ define map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
 	    ret["weight"] = sol["weight"]:-1;
 	    }
 	}
-    else if( Storage::IsRealDisk( disk ) )
+    else if( Storage::IsPartitionable( disk ) )
 	{
 	ret["ok"] = true;
 	ret["disk"] = disk;
@@ -1970,7 +1970,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 	{
 	swaps = [];
 	map<string,map> tg = filter( string k, map d, tgmap,
-				     ``(Storage::IsRealDisk(d)));
+				     ``(Storage::IsPartitionable(d)));
 	if( haskey( tg, disk ))
 	    tg = remove( tg, disk );
 	y2milestone( "can_swap_reuse tg wo %1", tg );

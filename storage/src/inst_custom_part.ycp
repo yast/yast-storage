@@ -108,7 +108,7 @@
    /* FIXME string  boot_mode	      =	Bootloader::getLoaderType ();*/
    string  focusline          = "";
 
-   integer last_sel_disk = 0;
+   string last_sel_disk = "";
 
 
 
@@ -899,6 +899,8 @@ define string usedByString( symbol ub_type, string used_by )
 	ret = "EVMS " + used_by;
     else if( ub_type == `UB_DM )
 	ret = "DM " + used_by;
+    else if( ub_type == `UB_DMRAID )
+	ret = "RAID " + used_by;
     else if( ub_type != `UN_NONE )
 	ret = used_by;
     return( ret );
@@ -932,8 +934,8 @@ define list FillPartitionList(map<string,map> targets)
      boolean log_mode = false;
 
     // order should be md, then loop, then LVM, then EVMS
-    map disk_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_LOOP : 2, `CT_LVM : 3,
-                        `CT_EVMS : 4, `CT_DM : 5 ];
+    map disk_order = $[ `CT_DMRAID : 0, `CT_DISK : 1, `CT_MD : 2, `CT_LOOP : 3,
+                        `CT_LVM : 4, `CT_EVMS : 5, `CT_DM : 6 ];
     list<string> keys = maplist( string dev, map disk, targets,
 				 ``{return(dev);} );
     keys = sort( string a, string b, keys,
@@ -947,7 +949,7 @@ define list FillPartitionList(map<string,map> targets)
     foreach( string dev, keys,
 	``{
 	map disk = targets[dev]:$[];
-	boolean real_disk = Storage::IsRealDisk( disk );
+	boolean real_disk = Storage::IsPartitionable( disk );
 	integer cyl_count     = disk["cyl_count"]:0;
 	integer cyl_size      = disk["cyl_size"]:1000000;
 	string  vendor        = disk["vendor"]:"";
@@ -979,6 +981,10 @@ define list FillPartitionList(map<string,map> targets)
 		{
 		vendor = "EVMS " + disk["name"]:"";
 		}
+	    else if( disk["type"]:`CT_UNKNOWN==`CT_DMRAID )
+		{
+		vendor = "BIOS RAID " + disk["name"]:"";
+		}
 	    else
 		// label text
 		vendor = sformat( _("DISK %1"), substring( dev, 5 ));
@@ -999,6 +1005,7 @@ define list FillPartitionList(map<string,map> targets)
 	if( show_disk && 
 	    !(disk["type"]:`CT_UNKNOWN==`CT_DISK && !real_disk) &&
 	    (disk["type"]:`CT_UNKNOWN==`CT_DISK ||
+	     disk["type"]:`CT_UNKNOWN==`CT_DMRAID ||
 	     disk["type"]:`CT_UNKNOWN==`CT_LVM ||
 	     (disk["type"]:`CT_UNKNOWN==`CT_EVMS && size(disk["name"]:"")>0 &&
 	      (!haskey( targets, "/dev/"+substring( disk["name"]:"", search( disk["name"]:"", "/")+1 ))||
@@ -1035,7 +1042,8 @@ define list FillPartitionList(map<string,map> targets)
 	    ``{
 	    // dont show "system partitions"
 	    string fstype = partition["fstype"]:"";
-	    boolean hide = partition["fsid"]:0 == Partitions::fsid_mac_hidden;
+	    boolean hide = partition["fsid"]:0 == Partitions::fsid_mac_hidden ||
+	                   disk["used_by_type"]:`UB_NONE==`UB_DMRAID;
 	    if( !hide && search( partition["device"]:"", "/dev/evms/" )==0 )
 		{
 		y2milestone( "evms p: %1", partition );
@@ -1059,7 +1067,7 @@ define list FillPartitionList(map<string,map> targets)
 		    {
 		    y2milestone( "evms p: %1", Storage::GetPartition( targets, d1 ));
 		    hide = (size(Storage::GetPartition( targets, d1 ))>0||
-		            targets[d1,"type"]:`CT_UNKNOWN==`CT_DISK) &&
+		            Storage::IsPartType(targets[d1,"type"]:`CT_UNKNOWN)) &&
 			   !partition["evms_native"]:false;
 		    }
 		y2milestone( "evms d1:%1 hide:%2", d1, hide );
@@ -2128,30 +2136,39 @@ fit into this new extended partition.
      *---------------------------------------------------------------------
      */
 
+boolean SelDisk( symbol what, map disk )
+    {
+    return( (what==`delete||!disk["readonly"]:false) &&
+            Storage::IsPartitionable( disk ) &&
+	    disk["used_by_type"]:`UB_NONE==`UB_NONE );
+    }
+
 define string ChooseDisk( map<string,map> targetMap, string heading, symbol what )
     ``{
     // Header Choose disk dialog
     term diskgroup  = `VBox();
     list<string> disks      = [];
-    integer       n = 0;
+    integer n = 0;
     string txt = "";
 
     y2milestone( "ChooseDisk last_sel_disk:%1 what:%2", last_sel_disk, what );
 
-    foreach( string dev, map disk, targetMap,
+    disks = maplist( string dv, map ds, 
+                     filter( string dev, map disk, targetMap, 
+		            ``(SelDisk(what,disk))),
+		    ``(dv));
+    y2milestone( "ChooseDisk disks:%1", disks );
+    disks = (list<string>)
+            merge( filter( string d, disks, ``(search(d,"/dev/mapper/")==0)),
+                   filter( string d, disks, ``(search(d,"/dev/mapper/")!=0)) );
+    y2milestone( "ChooseDisk disks:%1", disks );
+    foreach( string dev, disks,
 	``{
-	y2milestone( "dev:%1 isReal:%2", dev, Storage::IsRealDisk( disk ) );
-        if( (what==`delete||!disk["readonly"]:false) && 
-	    Storage::IsRealDisk( disk ) )
-	  {
 	  txt = sformat( "&%1: %2", n+1, dev );
 	  diskgroup = add( diskgroup, `Left( `RadioButton( `id(dev), txt,
-	                                     n==last_sel_disk )));
+	                                     dev==last_sel_disk )));
 	  n = n + 1;
-	  disks = add ( disks, dev );
-	  }
 	});
-    y2milestone( "disks:%1", disks );
     if( size(disks)>10 )
 	{
 	diskgroup = `VBox( `SelectionBox( `id(`disklist), _("Available &Disks"),
@@ -2178,8 +2195,7 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 		      );
 	if( UI::WidgetExists( `id(`disklist) ))
 	    {
-	    UI::ChangeWidget( `id(`disklist), `CurrentItem,
-	                      disks[last_sel_disk]:"" );
+	    UI::ChangeWidget( `id(`disklist), `CurrentItem, last_sel_disk );
 	    }
 	symbol ret = (symbol)UI::UserInput();
 
@@ -2195,12 +2211,12 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 	    if( !UI::WidgetExists( `id(`disklist) ))
 		{
 		r = (string)UI::QueryWidget(`id(`choosedisk), `CurrentButton);
-		y2milestone( "ChooseDisk r %1", r );
 		}
 	    else
 		{
 		r = (string)UI::QueryWidget(`id(`disklist), `CurrentItem);
 		}
+	    y2milestone( "ChooseDisk r %1", r );
 	    UI::CloseDialog();
 	    n=0;
 	    if( what==`create && targetMap[r,"readonly"]:false )
@@ -2208,16 +2224,7 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 		Popup::Error( Partitions::RdonlyText( r, true ));
 		return( nil );
 		}
-	    foreach( string dev, map disk,
-	             filter( string d, map e, targetMap,
-		             ``(Storage::IsRealDisk(e)) ),
-		``{
-		if( dev==r )
-		    {
-		    last_sel_disk = n;
-		    }
-		n = n+1;
-		});
+	    last_sel_disk = r;
 	    y2milestone( "ChooseDisk last_sel_disk:%1", last_sel_disk );
 	    return(r);
 	    }
@@ -3061,8 +3068,16 @@ All data on this partition will be lost if you delete it."));
 		    string current_vg = substring( tg[id,"device"]:"", 5 );
 		    HandleRemoveVg( tg, current_vg );
 		    }
+		else if( tg[id,"type"]:`CT_UNKNOWN == `CT_DMRAID )
+		    {
+		    if( Popup::YesNo( sformat(_("Really delete BIOS RAID %1?"), id )))
+			{
+			if( deleteAllDevPartitions( disk, Stage::initial(), bsd_label ))
+			    Storage::DeleteDmraid( id );
+			}
+		    }
                 // YesNo popup text %1 is replaced by a disk name e.g. /dev/hda
-		else if( Popup::YesNo ( sformat(_("Really delete all partitions on %1?"), id )))
+		else if( Popup::YesNo( sformat(_("Really delete all partitions on %1?"), id )))
 		    {
 		    focusline = id;
 		    deleteAllDevPartitions( disk, Stage::initial(), bsd_label );
