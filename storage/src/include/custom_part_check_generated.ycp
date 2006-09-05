@@ -127,6 +127,7 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
     boolean all_whole_disk       = true;
     boolean fat_system_mount     = false;
     boolean fat_system_boot      = false;
+    boolean dmraid_root          = false;
     string raid_type             = "";
 
     foreach( string disk, map diskinfo, targetMap,
@@ -213,6 +214,7 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
 		    gpt_warning = true;
 		    }
 		root_found = true;
+		dmraid_root = diskinfo["type"]:`CT_UNKNONW == `CT_DMRAID;
 		root_end   = part["region",0]:0 + part["region",1]:1-1;
 		if( !contains( [ `primary, `logical ], part["type"]:`unknown ))
 		    {
@@ -556,14 +558,14 @@ Change this?
 	    }
 	}
 
-	// iSeries has no problems with this configuration
-	// an initrd will be created and you can boot from a kernel slot
-    if ( installation && !Arch::board_iseries () &&
-         ((((root_raid && !boot_found) || boot_raid) && raid_type!="raid1" ) || show_all_popups) &&
-	 AutoinstStorage::BootRaidWarning)
-	    {
-	    // popup text
-	    boolean ret = Popup::YesNo(sformat(
+    // iSeries has no problems with this configuration
+    // an initrd will be created and you can boot from a kernel slot
+    if( installation && !Arch::board_iseries () &&
+        ((((root_raid && !boot_found) || boot_raid) && raid_type!="raid1" ) || show_all_popups) &&
+	AutoinstStorage::BootRaidWarning)
+	{
+	// popup text
+	boolean ret = Popup::YesNo(sformat(
 _("Warning: With your current setup, your %1
 installation might not be directly bootable, because
 your files below \"/boot\" are on a software RAID device.
@@ -572,17 +574,17 @@ The boot loader setup sometimes fails in this configuration.
 Change this?
 "),Product::name));
 
-	    if (ret == true) retval = `again;
-	    }
+	if (ret == true) retval = `again;
+	}
 
 	// iSeries has no problems with this configuration
 	// an initrd will be created and you can boot from a kernel slot
-    if ( installation && !Arch::board_iseries () &&
-	 ((root_lvm && !boot_found) || show_all_popups ) &&
+    if( installation && !Arch::board_iseries () &&
+	((root_lvm && !boot_found) || show_all_popups ) &&
 	 AutoinstStorage::BootLVMWarning )
-	    {
-	    // popup text
-	    boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %1 installation
+	{
+	// popup text
+	boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %1 installation
 will encounter problems when booting, because you have no \"boot\"
 partition and your \"root\" partition is an LVM logical volume.
 This does not work.
@@ -594,8 +596,8 @@ partition for your files below /boot.
 Change this?
 "),Product::name));
 
-	    if (ret == true) retval = `again;
-	    }
+	if (ret == true) retval = `again;
+	}
 
 
     if( (Arch::ia64 () && installation && (!boot_found || boot_fs != `vfat)) ||
@@ -613,6 +615,24 @@ FAT partition for your files below %1.
 
 Change this?
 "), Partitions::BootMount(),Product::name));
+
+	if (ret == true) retval = `again;
+	}
+
+    if( (root_dmraid && !boot_found) || show_all_popups )
+	{
+	// popup text
+	boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your installation will probably encounter problems 
+when booting, because you have no separate %1
+partition on your RAID disk.
+
+This will give severe problems with the normal boot setup.
+
+If you do not know exactly what you are doing, use a normal
+FAT partition for your files below %1.
+
+Change this?
+"), Partitions::BootMount()));
 
 	if (ret == true) retval = `again;
 	}
@@ -643,7 +663,7 @@ Do you want to change this?
 	if (ret == true) retval = `again;
 	}
 
-    if ( sparc_first_is_swap || show_all_popups )
+    if( sparc_first_is_swap || show_all_popups )
 	{
 	// popup message
 	Popup::Error(  sformat(_("

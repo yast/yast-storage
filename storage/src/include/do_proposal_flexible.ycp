@@ -86,6 +86,12 @@ define boolean has_flex_proposal()
     return( ret );
     }
 
+boolean need_boot( map disk )
+    {
+    return( Partitions::NeedBoot() ||
+	    disk["type"]:`CT_UNKNOWN == `CT_DMRAID );
+    }
+
 define map try_add_boot( map conf, map disk, boolean force )
     ``{
     boolean boot = 
@@ -96,8 +102,8 @@ define map try_add_boot( map conf, map disk, boolean force )
     map tc = conf;
     y2milestone( "try_add_boot conf %1", conf );
     y2milestone( "try_add_boot boot %1 root %2 force %3", boot, root, force );
-    if( !boot && (root||force) &&
-	(disk["cyl_count"]:0 > Partitions::BootCyl() || Partitions::NeedBoot()))
+    if( !boot && (root||force) && 
+        (disk["cyl_count"]:0>Partitions::BootCyl() || need_boot(disk)) )
 	{
 	map pb = $[];
 	pb["mount"] = Partitions::BootMount();
@@ -109,9 +115,9 @@ define map try_add_boot( map conf, map disk, boolean force )
 	pb["primary"] = Partitions::BootPrimary();
 	pb["maxsize"] = 500*1024*1024;
 	tc["partitions"] = add( tc["partitions"]:[], pb );
-	y2milestone( "try_add_boot disk_cyl %1 boot_cyl %2 need_boot %3", 
+	y2milestone( "try_add_boot disk_cyl %1 boot_cyl %2 need_boot %3 typ %4",
 	             disk["cyl_count"]:0, Partitions::BootCyl(), 
-		     Partitions::NeedBoot() );
+		     Partitions::NeedBoot(), disk["type"]:`CT_UNKNOWN );
 	y2milestone( "try_add_boot boot added automagically pb %1", pb );
 	}
     return( tc );
@@ -566,8 +572,7 @@ define map process_partition_data( string dev, map solution )
 		integer pindex = a[0]:0;
 		if( solution["partitions",pindex,"mount"]:"" == "/" &&
 		    disk["cyl_count"]:0 > Partitions::BootCyl() &&
-		    e["end"]:0 <= Partitions::BootCyl() &&
-		    !Partitions::NeedBoot() )
+		    e["end"]:0 <= Partitions::BootCyl() && !need_boot(disk) )
 		    {
 		    remove_boot = true;
 		    }
@@ -2464,7 +2469,7 @@ map get_inst_proposal( map<string,map> target )
 	    map conf = $[ "partitions" : [] ];
 	    map disk = target[s]:$[];
 	    list<map> p = can_boot_reuse( s, disk["label"]:"msdos",
-	                                  Partitions::NeedBoot(),
+	                                  need_boot(disk),
 					  disk["max_primary"]:4,
 					  disk["partitions"]:[] );
 	    disk["partitions"] = 
