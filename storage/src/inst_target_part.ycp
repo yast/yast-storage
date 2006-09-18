@@ -66,7 +66,8 @@
     // Parameter: message to be displayed
     // Return   : `back or `abort
     //
-    define symbol allow_back_abort_only( string message ) ``{
+    define symbol allow_back_abort_only( string message ) 
+	``{
 	symbol ret = `next;
 
 	// Enable back and next buttons independent of the settings
@@ -76,23 +77,24 @@
 	Wizard::EnableNextButton();
 	Wizard::EnableBackButton();
 
-	repeat {
+	repeat 
+	    {
 	    Popup::Message( message );	// Display the message
 
 	    ret= (symbol)UI::UserInput();		// get user input
 
-	    if ( ret == `abort )
-	    {
-		if ( ! Popup::ReallyAbort(true) )
+	    if( ret == `abort )
 		{
+		if( !Popup::ReallyAbort(true) )
+		    {
 		    // user didn't want to abort ==> stay in loop
 		    ret = `dummy;
+		    }
 		}
-	    }
-	} until ( ret == `abort || ret == `back );
+	    } until ( ret == `abort || ret == `back );
 
 	return( ret );
-    };
+	};
 
     map win_partition = $[];	// may be needed later in the resize case (is also a flag)
 
@@ -104,11 +106,12 @@
     // description of the choosen target disk
     map target = targetMap[target_is]:$[];
 
-    if (target == $[]) {
+    if (target == $[]) 
+	{
         // popup text
 	Popup::Message(_("Your system can only be configured with the custom partitioning option."));
 	return `back;
-    }
+	}
 
     // user visible name of target
     string targetname = target["name"]:"";
@@ -199,20 +202,18 @@
     // Event handling
 
     symbol ret = nil;
-    //  TODO:   UI::ControlWidget(dlg, `id(`full), `SetFocus());
-
-    //if( target["label"]:""=="mac" && UI::WidgetExists( `id(`full) ))
-	//{
-	//UI::ChangeWidget( `id(`full), `Enabled, false );
-	//}
 
     boolean ok = false;
     while(!ok)
 	{
 	ret = (symbol)Wizard::UserInput();
-	y2milestone( "ret %1", ret );
-	
-	if( ret == `abort && Popup::ReallyAbort(true))
+	y2milestone( "USERINPUT ret %1", ret );
+
+	if( ret == `lvm && UI::WidgetExists(`id(`evms)) )
+	    UI::ChangeWidget( `id(`evms), `Value, false );
+	else if( ret == `evms && UI::WidgetExists(`id(`lvm)) )
+	    UI::ChangeWidget( `id(`lvm), `Value, false );
+	else if( ret == `abort && Popup::ReallyAbort(true))
 	    {
 	    break;
 	    }
@@ -383,8 +384,18 @@ Really delete your Windows partition?
 
 	    // Check selection for plausability
 	    string reason = nil;
-
+	    Storage::SetProposalHome( (boolean)UI::QueryWidget( `id(`home), `Value ));
+            if( (boolean)UI::QueryWidget( `id(`lvm), `Value )==true )
+		Storage::SetProposalLvm(true);
+	    else if( (boolean)UI::QueryWidget( `id(`evms), `Value )==true )
+		Storage::SetProposalEvms(true);
+	    else
+		{
+		Storage::SetProposalEvms(false);
+		Storage::SetProposalLvm(false);
+		}
 	    ok = create_partitions( targetMap, target, partitions );
+	    Storage::SetProposalDefault();
 	    if( !ok )
 		{
 		reason = _("Too few partitions are marked for removal

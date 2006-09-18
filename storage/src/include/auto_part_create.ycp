@@ -29,73 +29,115 @@ boolean create_partitions( map<string,map> tgmap, map disk, list<map> partitions
     y2milestone( "create_partitions partitions %1", partitions );
     boolean ret = false;
     boolean has_flex = has_flex_proposal();
-    y2milestone( "create_partitions flex %1", has_flex );
+    string vm = Storage::ProposalVM();
+    if( size(vm)>0 )
+	vm = "systec"; // FIXME
+    y2milestone( "create_partitions flex %1 vm %2", has_flex, vm );
     disk["partitions"] = partitions;
     map keep = find( map p, partitions, 
 		     ``(!p["delete"]:false&&p["type"]:`unknown==`free));
-    if( has_flex )
+    if( size(vm)==0 )
 	{
-	map flex = do_flexible_disk( disk );
-	if( flex["ok"]:false )
-	    partitions = flex["disk","partitions"]:[];
-	}
-    else
-	{
-	integer num_del_exist = size(filter(map p, partitions,
-					    ``(p["type"]:`unknown!=`free&&
-					       p["delete"]:false)));
-	integer num_del_free = size(filter(map p, partitions,
-					    ``(p["type"]:`unknown==`free&&
-					       p["delete"]:false)));
-	map r = can_swap_reuse( disk["device"]:"", partitions, tgmap );
-	if( haskey( r, "partitions" ))
-	    partitions = r["partitions"]:[];
-	else if( haskey( r, "targets" ))
-	    tgmap = r["targets"]:$[];
-
-	y2milestone( "create_partitions num_del_exist %1 num_del_free %2 swap_reuse %3", 
-	             num_del_exist, num_del_free, size(r)>0 );
-	y2milestone( "create_partitions keep %1", keep );
-	if( keep!=nil && size(r)>0 && num_del_exist==1 && num_del_free==0 )
+	if( has_flex )
 	    {
-	    y2milestone( "create_partitions single special" );
-	    boolean first = true;
-	    partitions = maplist( map p, partitions, 
-				  ``{
-				  if( p["delete"]:false && first )
-				      {
-				      p = remove( p, "delete" );
-				      first = false;
-				      p["format"] = true;
-				      p["used_fs"] = Partitions::default_fs;
-				      p["mount"] = "/";
-				      y2milestone( "create_partitions single p %1", p );
-				      }
-				  return( p );
-				  });
+	    map flex = do_flexible_disk( disk );
+	    if( flex["ok"]:false )
+		partitions = flex["disk","partitions"]:[];
 	    }
 	else
 	    {
-	    partitions = get_proposal( size(r)>0, disk );
+	    integer num_del_exist = size(filter(map p, partitions,
+						``(p["type"]:`unknown!=`free&&
+						   p["delete"]:false)));
+	    integer num_del_free = size(filter(map p, partitions,
+						``(p["type"]:`unknown==`free&&
+						   p["delete"]:false)));
+	    map r = can_swap_reuse( disk["device"]:"", partitions, tgmap );
+	    if( haskey( r, "partitions" ))
+		partitions = r["partitions"]:[];
+	    else if( haskey( r, "targets" ))
+		tgmap = r["targets"]:$[];
+
+	    y2milestone( "create_partitions num_del_exist %1 num_del_free %2 swap_reuse %3", 
+			 num_del_exist, num_del_free, size(r)>0 );
+	    y2milestone( "create_partitions keep %1", keep );
+	    if( keep!=nil && size(r)>0 && num_del_exist==1 && num_del_free==0 )
+		{
+		y2milestone( "create_partitions single special" );
+		boolean first = true;
+		partitions = maplist( map p, partitions, 
+				      ``{
+				      if( p["delete"]:false && first )
+					  {
+					  p = remove( p, "delete" );
+					  first = false;
+					  p["format"] = true;
+					  p["used_fs"] = Partitions::default_fs;
+					  p["mount"] = "/";
+					  y2milestone( "create_partitions single p %1", p );
+					  }
+				      return( p );
+				      });
+		}
+	    else
+		{
+		partitions = get_proposal( size(r)>0, disk );
+		}
+	    }
+	y2milestone( "create_partitions %1", partitions );
+	}
+    else
+	{
+	map id_save = $[];
+	disk["partitions"] = maplist( map p, disk["partitions"]:[],
+	    ``{
+	    if( !p["delete"]:false && 
+	        p["type"]:`unknown!=`free && p["type"]:`unknown!=`extended )
+		{
+		id_save[p["device"]:""] = p["fsid"]:0;
+		p["fsid"] = Partitions::fsid_hibernation;
+		}
+	    return( p );
+	    });
+	y2milestone( "create_partitions id_save %1", id_save );
+	y2milestone( "create_partitions ps %1", disk["partitions"]:[] );
+	map r = get_proposal_vm( tgmap, vm, disk );
+	ret = r["ok"]:false;
+	if( ret )
+	    {
+	    string ddev = disk["device"]:"";
+	    tgmap = r["target"]:$[];
+	    tgmap[ddev,"partitions"] = maplist( map p, tgmap[ddev,"partitions"]:[],
+		``{
+		if( haskey( id_save, p["device"]:"" ))
+		    p["fsid"] = id_save[p["device"]:""]:0;
+		return( p );
+		});
+	    y2milestone( "create_partitions ps %1", tgmap[ddev,"partitions"]:[] );
 	    }
 	}
-    y2milestone( "create_partitions %1", partitions );
     keep = find( map p, partitions, 
 		 ``(!p["delete"]:false&&!p["create"]:false));
     partitions = filter( map p, partitions, ``(p["type"]:`unknown!=`free));
     y2milestone( "create_partitions keep %1", keep );
     Storage::SetWholeDisk( keep == nil );
-    partitions = maplist( map p, partitions,
-	``{
-	if( size(p["mount"]:"")>0 && !p["delete"]:false )
-	    p["fstopt"] = FileSystems::DefaultFstabOptions( p );
-	return( p );
-	});
-    ret = size(partitions)>0;
+    if( size(vm)==0 )
+	{
+	partitions = maplist( map p, partitions,
+	    ``{
+	    if( size(p["mount"]:"")>0 && !p["delete"]:false )
+		p["fstopt"] = FileSystems::DefaultFstabOptions( p );
+	    return( p );
+	    });
+	ret = size(partitions)>0;
+	if( ret )
+	    {
+	    tgmap[disk["device"]:"","partitions"] = partitions;
+	    tgmap = Storage::SpecialBootHandling(tgmap);
+	    }
+	}
     if( ret )
 	{
-	tgmap[disk["device"]:"","partitions"] = partitions;
-	tgmap = Storage::SpecialBootHandling(tgmap);
 	Storage::SetTargetMap( tgmap );
 	Storage::AddMountPointsForWin(tgmap);
 	}
