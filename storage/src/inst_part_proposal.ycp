@@ -82,6 +82,8 @@
   string accept_str   = "";
   string modify_str   = "";
   string detailed_str = "";
+  string lvm_str      = "";
+  string evms_str     = "";
 
   // Title for dialogue
   title = _("Suggested Partitioning");
@@ -91,6 +93,10 @@
   modify_str   = _("Ba&se Partition Setup on This Proposal");
   // Radiobutton for partition dialog
   detailed_str = _("&Create Custom Partition Setup");
+  // Radiobutton for partition dialog
+  lvm_str = _("Create &LVM Based Proposal");
+  // Radiobutton for partition dialog
+  evms_str = _("Create &EVMS Based Proposal");
 
   string changes = Storage::ChangeText();
   y2milestone( "current proposal: %1", changes );
@@ -101,41 +107,44 @@
 	       _("<p>You rejected the proposal.  Use one of the options to continue partitioning.</p>");
       }
 
+  map cfg = Storage::GetControlCfg();
+
+  term bframe = 
+      `VBox(
+	  `VSpacing (0.2),
+	  `Left( `RadioButton (`id ("accept"), accept_str, part_proposal_mode=="accept")),
+	  `VSpacing (0.2),
+	  `Left( `RadioButton (`id ("modify"), modify_str, part_proposal_mode=="modify")),
+	  `VSpacing (0.2),
+	  `Left( `RadioButton (`id ("detailed"), detailed_str, part_proposal_mode=="detailed")),
+	  `VSpacing (0.2),
+	  `Left( `RadioButton (`id ("lvm"), lvm_str, false ))
+	  );
+
+  if( cfg["evms_config"]:false )
+      {
+      bframe = add( bframe, `VSpacing (0.2) );
+      bframe = add( bframe, 
+		    `Left( `RadioButton (`id ("evms"), evms_str, false )) );
+      }
+
+  // Frame description in suggested partition for mode accept modify ..
+  bframe = `HCenter( `Frame( _("Partitioning"), `HVSquash( bframe ) ));
+
   term contents =
-     //`VCenter(`VBox (
      `VBox (
 	`VSpacing (0.5),
 	`HBox (
 	    `HSpacing (2),
 	    `RadioButtonGroup (`id ("part_option"),
 		     `VBox (
-		          // Label text
 			  `MinHeight( 7, `RichText (`id ("richtext"), changes)),
 			  `VSpacing(1),
-			  //`VStretch(),
-			  // Frame description in suggested partition for mode accept modify ..
-			  `HCenter(`Frame (_("Partitioning"), `HVSquash (
-			     `VBox (
-				    `VSpacing (0.2),
-				    // Radio Button Label in Suggested Partitioning
-				    `Left (`RadioButton (`id ("accept"), accept_str, part_proposal_mode == "accept")),
-				    `VSpacing (0.2),
-				    // Radio Button Label in Suggested Partitioning
-				    `Left (`RadioButton (`id ("modify"), modify_str, part_proposal_mode == "modify")),
-				    `VSpacing (0.2),
-				    // Radio Button Label in Suggested Partitioning
-				    // difficult option: there follows a dialog where the user can choose either the partition
-				    // assistant or the expert partitioner.
-				    `Left (`RadioButton (`id ("detailed"), detailed_str, part_proposal_mode == "detailed")),
-				    `VSpacing (0.2)
-				    )
-			     )
-			   )),
+			  bframe,
 			  `VStretch()
 			  )),
 	    `HSpacing (2)
 	    ),
-	//`VSpacing(2) ));
 	`VSpacing(2) );
 
 
@@ -143,25 +152,46 @@
   string help_text =  _("<p>
 Your hard disks have been checked. The partition setup
 displayed is proposed for your hard drive.</p>");
-  // help text continued
-  help_text =  help_text + _("<p>
-To accept these suggestions and continue, select
-<b>Accept Proposal</b>.</p>
-");
 
   // help text continued
-  help_text =  help_text + _("<p>
+  // %1 is replaced by button text
+  help_text =  help_text + sformat(_("<p>
+To accept these suggestions and continue, select
+<b>%1</b>.</p>
+"), deletechars(accept_str,"&"));
+
+  // help text continued
+  // %1 is replaced by button text
+  help_text =  help_text + sformat(_("<p>
+If you want to do only small adjustments to the proposed
+setup (like e.g. changing filesystem types) choose
+<b>%1</b> and do these modification in expert
+partioner dialog.</p>
+"), deletechars(modify_str,"&"));
+
+  // help text continued
+  help_text =  help_text + sformat(_("<p>
 If the suggestion does not fit your needs, create
 your own partition setup starting with the partitions as
 currently present on the disks.  For this, select
-<b>Custom Partition Setup</b>.
+<b>%1</b>.
 This is also the option to choose for
-advanced options like RAID and LVM.</p>
-");
+advanced options like RAID and encryption.</p>
+"), deletechars(detailed_str,"&"));
 
+  if( cfg["evms_config"]:false )
+      // help text continued
+      // %1 is replaced by button text
+      help_text =  help_text + _("<p>
+To create a LVM or EVMS based proposal choose the corresponding button.</p>");
+  else
+      // help text continued
+      // %1 is replaced by button text
+      help_text =  help_text + _("<p>
+To create a LVM based proposal choose the corresponding button.</p>");
 
-  if ( proposal_firsttime )
-  {
+  if( proposal_firsttime )
+      {
       map prop = get_inst_prop( Storage::GetTargetMap() );
       proposal_firsttime = false;
       no_suggestion_possible = !prop["ok"]:false;
@@ -169,8 +199,7 @@ advanced options like RAID and LVM.</p>
 	  {
 	  targetMap = prop["target"]:$[];
 	  }
-  }
-
+      }
 
 
   symbol ret = nil;
@@ -207,8 +236,7 @@ advanced options like RAID and LVM.</p>
 	  if( ret == `abort && Popup::ReallyAbort(true) )
 	      return `abort;
 
-
-	  if (ret != `back)
+	  if( ret != `back )
               {
 	      Storage::SetPartProposalFirst( false );
 
@@ -216,16 +244,33 @@ advanced options like RAID and LVM.</p>
 
 	      Storage::SetPartProposalMode( part_proposal_mode );
 
-	      if ( part_proposal_mode == "accept")
+	      if( part_proposal_mode == "accept" )
 		  {
-		  symbol doagain = `next;
-
 		  target_is = "SUGGESTION";
-		  list retval = check_created_partition_table( targetMap , true, true );
-		  targetMap   = retval[0]:$[];
-		  doagain     = retval[1]:`next;
-
-		  if ( doagain == `again ) return `again;
+		  }
+	      else if( part_proposal_mode == "lvm" || 
+	               part_proposal_mode == "evms" )
+		  {
+		  target_is = "SUGGESTION";
+		  if( part_proposal_mode=="lvm" )
+		      Storage::SetProposalLvm(true);
+		  else
+		      Storage::SetProposalEvms(true);
+		  Storage::ResetOndiskTarget();
+		  Storage::AddMountPointsForWin(Storage::GetTargetMap());
+		  map prop = get_inst_prop( Storage::GetTargetMap());
+		  if( !prop["ok"]:false )
+		      {
+		      Popup::Error( _("Impossible to create the reuquested proposal.") );
+		      ret = `doagain;
+		      }
+		  else
+		      {
+		      targetMap = prop["target"]:$[];
+		      Storage::SetPartProposalMode( "accept" );
+		      Storage::SetPartProposalActive( true );
+		      }
+		  Storage::SetProposalDefault();
 		  }
 	      else if( part_proposal_mode == "modify" )
 		  {
@@ -243,13 +288,13 @@ advanced options like RAID and LVM.</p>
 		      }
 		  Storage::SetPartDisk( "" );
 		  }
-
 	      y2milestone( "target_is %1", target_is );
-
-	      Storage::SetPartMode( target_is );
-	      Storage::SetTargetMap( targetMap );
+	      if( ret != `doagain )
+		  {
+		  Storage::SetPartMode( target_is );
+		  Storage::SetTargetMap( targetMap );
+		  }
 	      }
-
 	  } until ( ret == `next || ret == `back || ret == `cancel );
       }
   Storage::SaveExitKey( ret );
