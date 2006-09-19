@@ -157,6 +157,7 @@ class Storage : public storage::StorageInterface
 	static bool testFilesEqual( const string& n1, const string& n2 );
 	void printInfo( std::ostream& str );
 	void logCo( Container* c );
+	void logCo( const string& device );
 	void logProcData( const string& l="" );
 	storage::UsedByType usedBy( const string& dev );
 	bool setUsedBy( const string& dev, storage::UsedByType typ,
@@ -207,6 +208,7 @@ class Storage : public storage::StorageInterface
 	                     unsigned long start, unsigned long size,
 			     string& device );
 	int resizePartition( const string& device, unsigned long sizeCyl );
+	int resizePartitionNoFs( const string& device, unsigned long sizeCyl );
 	int nextFreePartition( const string& disk, storage::PartitionType type,
 	                       unsigned &nr, string& device );
 	int updatePartitionArea( const string& device,
@@ -250,6 +252,7 @@ class Storage : public storage::StorageInterface
 	                   const string& vfs, const string& options,
 			   unsigned freq, unsigned passno );
 	int resizeVolume( const string& device, unsigned long long newSizeMb );
+	int resizeVolumeNoFs( const string& device, unsigned long long newSizeMb );
 	int forgetResizeVolume( const string& device );
 	void setRecursiveRemoval( bool val=true );
 	bool getRecursiveRemoval() const { return recursiveRemove; }
@@ -1234,6 +1237,10 @@ class Storage : public storage::StorageInterface
 	void detectFsDataTestMode( const string& file,
 	                           const VolIterator& begin,
 				   const VolIterator& end );
+	int resizeVolume( const string& device, unsigned long long newSizeMb,
+	                  bool ignore_fs );
+	int resizePartition( const string& device, unsigned long sizeCyl,
+	                     bool ignore_fs );
 	static void detectArch();
 	void addToList( Container* e )
 	    { pointerIntoSortedList<Container>( cont, e ); }

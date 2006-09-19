@@ -40,6 +40,7 @@
   import "HTML";
   import "StorageDevices";
   import "StorageClients";
+  import "ProductFeatures";
   import "Stage";
   import "String";
   import "Hotplug";
@@ -153,6 +154,10 @@ map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_LOOP : 2, `CT_DM : 3,
                     `CT_LVM : 4, `CT_EVMS : 5 ];
 list<string> hw_packages = [];
 list<string> no_propose_disks = nil;
+boolean proposal_evms = false;
+boolean proposal_lvm = false;
+boolean proposal_home = false;
+map cfg_xml = $[];
 
 
  /*
@@ -911,6 +916,9 @@ map volumeMap( any vinfo, map p )
 	p["resize"] = true;
 	p["orig_size_k"] = LibStorage::VolumeInfo::swig_OrigSizeK_get(vinfo);
 	}
+    tbool = LibStorage::VolumeInfo::swig_ignore_fs_get(vinfo);
+    if( tbool )
+	p["ignore_fs"] = true;
     tmp = LibStorage::VolumeInfo::swig_loop_get(vinfo);
     if( size(tmp)>0 )
 	p["loop"] = tmp;
@@ -2101,9 +2109,28 @@ global boolean ChangeVolumeProperties( map part )
 	string d = part["device"]:"";
 	integer i = part["region",1]:0;
 	if( part["resize"]:false )
-	    ret = LibStorage::StorageInterface::resizePartition( sint, d, part["region",1]:0 );
+	    {
+	    y2milestone( "ChangeVolumeProperties resize to %1 cyl", i );
+	    if( part["ignore_fs"]:false )
+		ret = LibStorage::StorageInterface::resizePartitionNoFs( sint, d, i );
+	    else
+		ret = LibStorage::StorageInterface::resizePartition( sint, d, i );
+	    }
 	else
 	    ret = LibStorage::StorageInterface::forgetResizeVolume( sint, d );
+	if( ret<0 )
+	    y2error( "ChangeVolumeProperties sint ret:%1", ret );
+	else
+	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+	}
+    if( ret==0 && 
+        part["change_fsid"]:false && part["fsid"]:0 != curr["fsid"]:0)
+	{
+	changed = true;
+	string d = part["device"]:"";
+	integer i = part["fsid"]:0;
+	y2milestone( "ChangeVolumeProperties fsid to %1", i );
+	ret = LibStorage::StorageInterface::changePartitionId( sint, d, i );
 	if( ret<0 )
 	    y2error( "ChangeVolumeProperties sint ret:%1", ret );
 	else
@@ -2739,6 +2766,7 @@ global define boolean CheckSwapable( string dev )
 	cmd = "swapoff " + dev;
 	SCR::Execute(.target.bash, cmd );
 	}
+    y2milestone( "CheckSwapable dev:%1 ret:%2", dev, ok );
     return( ok );
     }
 
@@ -2882,27 +2910,38 @@ global define void SetTargetMap( map<string,map> target )
     //count = count+1;
     integer old_change_time = StorageMap["targets_time"]:0;
     CreateTargetBackup("tmp_set");
+    map<string,map> tg = GetTargetMap();
     list<string> keys = maplist( string k, any e, target, ``(k));
+    foreach( string k, keys,
+	``{
+	if( target[k,"delete"]:false && haskey( tg, k ) )
+	    {
+	    if( target[k,"type"]:`CT_UNKNOWN==`CT_LVM )
+		DeleteLvmVg( target[k,"name"]:"" );
+	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
+		DeleteEvmsCo( target[k,"name"]:"" );
+	    target[k,"delete"] = false;
+	    }
+	});
+    keys = maplist( string k, any e, target, ``(k));
     y2milestone( "SetTargetMap keys %1", keys );
     list<string> t1 = filter( string k, keys, 
                               ``(!target[k,"delete"]:false&&
 			         !target[k,"create"]:false));
-    y2milestone( "SetTargetMap nodelcr %1", t1 );
     foreach( string k, t1,
 	``{
 	list<map> dps = filter( map p, target[k,"partitions"]:[],
 	                        ``(!p["create"]:false&&!p["delete"]:false));
-	y2milestone( "SetTargetMap k:%1 nodelp %2", k, dps );
 	if( size(dps)>0 )
 	    {
 	    foreach( map p, dps, 
 		``{
-		if( p["type"]:`primary != `extended )
+		if( p["type"]:`primary != `extended || p["resize"]:false )
 		    ChangeVolumeProperties( p );
 		});
 	    }
 	});
-    map<string,map> tg = GetTargetMap();
+    tg = GetTargetMap();
     keys = maplist( string k, any e, tg, ``(k));
     keys = sort( string a, string b, keys,
                  ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:6 >
@@ -2914,7 +2953,6 @@ global define void SetTargetMap( map<string,map> target )
 	                        ``(p["create"]:false));
 	if( size(dps)>1 && haskey( dps[0]:$[], "nr" ))
 	    {
-	    y2milestone( "SetTargetMap dps:%1", dps );
 	    dps = sort( map a, map b, dps, ``(a["nr"]:0>b["nr"]:0));
 	    y2milestone( "SetTargetMap dps:%1", dps );
 	    }
@@ -2974,7 +3012,7 @@ global define void SetTargetMap( map<string,map> target )
     y2milestone( "SetTargetMap keys %1", keys );
     foreach( string k, keys,
 	``{
-	if( !target[k,"delete"]:false && target[k,"create"]:false )
+	if( target[k,"create"]:false )
 	    {
 	    if( target[k,"type"]:`CT_UNKNOWN==`CT_LVM )
 		{
@@ -5256,12 +5294,207 @@ global define map onepartition2fstab (map part, integer& other_nr)
     return( ret );
     };
 
+global integer KmgtStrToByte( string input )
+    ``{
+    integer number = 0;
+    integer pos = findfirstnotof( input, " +" );
+
+    if( pos != nil && pos>0 )
+	{
+	input = substring( input, pos );
+	}
+
+    if( size(filterchars(input, "0123456789kKmMgGtTbBoO .")) != size(input))
+       {
+       return(0);
+       }
+
+    input = filterchars(input, "0123456789kKmMgGtTbBoO.");
+
+    if( findfirstnotof( input, "0123456789.") != nil  )
+        {
+	// check whether the last char is in "kKmM" or "bB"
+	string last_char = substring( input, size(input)-1, 1);
+
+	if( last_char == "b" || last_char == "B" ||
+	    last_char == "o" || last_char == "O" )
+	    {
+	    input = substring( input, 0, size(input)-1);
+	    // check whether the last char is in "kKmM"
+	    last_char = substring( input, size(input)-1, 1);
+	    }
+
+        string number_str = substring(input, 0, size(input)-1);
+
+	if( findfirstnotof( number_str, "0123456789.") == nil )
+	    {
+	    if( last_char == "k" || last_char == "K" )
+	        {
+		number = tointeger(tofloat( number_str ) * 1024.0) ;
+		}
+	    else if ( last_char == "m" || last_char == "M" )
+		{
+		number = tointeger(tofloat( number_str ) * 1024.0 * 1024.0);
+	        }
+	    else if ( last_char == "g" || last_char == "G" )
+		{
+		number = tointeger(tofloat( number_str ) * 
+				   1024.0 * 1024.0 * 1024.0);
+		}
+	    else if ( last_char == "t" || last_char == "T" )
+	        {
+		number = tointeger(tofloat( number_str ) * 
+				   1024.0 * 1024.0 * 1024.0 * 1024.0);
+		}
+	    else
+		{
+		number = 0;
+	        }
+	    }
+        else
+	    {
+	    number = 0;
+	    }
+        }
+    else
+        {
+        number = tointeger( input );
+        }
+    return( number );
+    };
+
 global boolean InstallOES()
     {
     boolean ret = false;
     y2milestone( "InstallOES ret:%1", ret );
     return( ret );
     }
+
+global boolean ProposalHome()
+    {
+    return( proposal_home );
+    }
+
+global void SetProposalHome(boolean val)
+    {
+    proposal_home = val;
+    y2milestone( "SetProposalHome val:%1", proposal_home );
+    }
+
+global void SetProposalEvms(boolean val)
+    {
+    proposal_evms = val;
+    if( val )
+	proposal_lvm = false;
+    y2milestone( "SetProposalEvms val:%1 lvm:%2 evms:%3", val,
+                 proposal_lvm, proposal_evms );
+    }
+
+global void SetProposalLvm(boolean val)
+    {
+    proposal_lvm = val;
+    if( val )
+	proposal_evms = false;
+    y2milestone( "SetProposalLvm val:%1 lvm:%2 evms:%3", val,
+                 proposal_lvm, proposal_evms );
+    }
+
+global boolean ProposalEvms()
+    {
+    return( proposal_evms );
+    }
+
+global boolean ProposalLvm()
+    {
+    return( proposal_lvm );
+    }
+
+global void SetProposalDefault()
+    {
+    SetProposalHome( cfg_xml["home"]:false );
+    if( cfg_xml["prop_evms"]:false )
+	{
+	SetProposalEvms(true);
+	}
+    else if( cfg_xml["prop_lvm"]:false )
+	{
+	SetProposalLvm(true);
+	}
+    else
+	{
+	SetProposalLvm(false);
+	SetProposalEvms(false);
+	}
+    y2milestone( "SetProposalDefault lvm:%1 evms:%2 home:%3", 
+                 proposal_lvm, proposal_evms, proposal_home );
+    }
+
+global map GetControlCfg()
+    {
+    if( size(cfg_xml)==0 )
+	{
+	boolean bt = ProductFeatures::GetBooleanFeature( "partitioning",
+							 "try_separate_home" );
+	cfg_xml["home"] = bt?true:false;
+	cfg_xml["root_percent"] = 
+	    tointeger(ProductFeatures::GetStringFeature( "partitioning",
+							 "root_space_percent"));
+	if( cfg_xml["root_percent"]:0 == nil || cfg_xml["root_percent"]:0 <= 0 )
+	    cfg_xml["root_percent"] = 40;
+	string tmp = ProductFeatures::GetStringFeature( "partitioning",
+							"limit_try_home");
+	cfg_xml["home_limit"] = KmgtStrToByte(tmp) / (1024*1024);
+	if( cfg_xml["home_limit"]:0 <= 0 )
+	    cfg_xml["home_limit"] = 5*1024;
+	tmp = ProductFeatures::GetStringFeature( "partitioning",
+						 "root_base_size");
+	cfg_xml["root_base"] = KmgtStrToByte(tmp) / (1024*1024);
+	if( cfg_xml["root_base"]:0 <= 0 )
+	    cfg_xml["root_base"] = 3*1024;
+	tmp = ProductFeatures::GetStringFeature( "partitioning",
+						 "root_max_size");
+	cfg_xml["root_max"] = KmgtStrToByte(tmp) / (1024*1024);
+	if( cfg_xml["root_max"]:0 <= 0 )
+	    cfg_xml["root_max"] = 10*1024;
+	tmp = ProductFeatures::GetStringFeature( "partitioning",
+						 "vm_desired_size");
+	cfg_xml["vm_want"] = KmgtStrToByte(tmp) / (1024*1024);
+	if( cfg_xml["vm_want"]:0 <= 0 )
+	    cfg_xml["vm_want"] = 15*1024;
+	tmp = ProductFeatures::GetStringFeature( "partitioning",
+						 "vm_home_max_size");
+	cfg_xml["home_max"] = KmgtStrToByte(tmp) / (1024*1024);
+	if( cfg_xml["home_max"]:0 <= 0 )
+	    cfg_xml["home_max"] = 25*1024;
+	bt = ProductFeatures::GetBooleanFeature( "partitioning",
+						 "proposal_evms" );
+	cfg_xml["prop_evms"] = bt?true:false;
+	bt = ProductFeatures::GetBooleanFeature( "partitioning",
+						 "proposal_lvm" );
+	cfg_xml["prop_lvm"] = bt?true:false;
+	bt = ProductFeatures::GetBooleanFeature( "partitioning",
+						 "evms_config" );
+	cfg_xml["evms_config"] = bt?true:false;
+	SetProposalDefault();
+	y2milestone( "GetControlCfg cfg_xml %1", cfg_xml );
+	}
+    return( cfg_xml );
+    }
+
+
+global string ProposalVM()
+    {
+    string ret = "";
+    map xml = GetControlCfg();
+    if( proposal_evms || proposal_lvm )
+	{
+	ret = "system";
+	}
+    y2milestone( "ProposalVM lvm:%1 evms:%2 ret:%3", 
+                 proposal_lvm, proposal_evms, ret );
+    return( ret );
+    }
+
 
 global void AddHwPackage( string name )
     {

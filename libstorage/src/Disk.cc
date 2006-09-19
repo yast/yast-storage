@@ -2191,8 +2191,9 @@ int Disk::resizePartition( Partition* p, unsigned long newCyl )
 	    PartIter i = pp.begin();
 	    while( i != pp.end() )
 		{
-		if( i->type()==p->type() && i->cylStart()>=start &&
-		    i->cylStart()<end )
+		if( (i->type()==p->type()||
+		     i->type()==EXTENDED&&p->type()==PRIMARY) && 
+		    i->cylStart()>=start && i->cylStart()<end )
 		    end = i->cylStart();
 		++i;
 		}
@@ -2201,7 +2202,7 @@ int Disk::resizePartition( Partition* p, unsigned long newCyl )
 		free = end-start;
 	    y2milestone( "free cylinders after %lu SizeK:%llu Extend:%lu",
 			 free, cylinderToKb(free), increase );
-	    if( cylinderToKb(free) < increase )
+	    if( free < increase )
 		ret = DISK_RESIZE_NO_SPACE;
 	    else
 		{
