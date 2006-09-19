@@ -5655,4 +5655,63 @@ global define list<string> NoProposeDisks()
     return( no_propose_disks );
     }
 
+boolean expert_detail = nil;
+path ed_path = .sysconfig.storage.EXPERT_DETAIL;
+
+list FindExpertLine( map file )
+    {
+    list ret = [];
+    list<list> t = maplist( integer k, map e, file["l"]:$[], 
+                            ``([k, e["line"]:""]));
+    t = filter( list e, t, ``(search(e[1]:"","EXPERT_DETAIL")==0));
+    y2milestone( "FindExpertLine t:%1", t );
+    ret = t[0]:[];
+    y2milestone( "FindExpertLine ret:%1", ret );
+    return( ret );
+    }
+
+global boolean GetExpertDetail()
+    {
+    if( expert_detail==nil )
+	{
+	map file = $[];
+	AsciiFile::ReadFile( file, "/etc/sysconfig/storage" );
+	y2milestone( "GetExpertDetail file:%1", file );
+	list l = FindExpertLine( file );
+	y2milestone( "GetExpertDetail l:%1", l );
+	l = filter( string s, splitstring( l[1]:"", "= " ), ``(size(s)>0));
+	y2milestone( "GetExpertDetail l:%1", l );
+	if( tointeger(l[1]:"0")==0 )
+	    expert_detail=false;
+	else
+	    expert_detail=true;
+	}
+    y2milestone( "GetExpertDetail ret:%1", expert_detail );
+    return( expert_detail );
+    }
+
+global void SetExpertDetail( boolean val )
+    {
+    y2milestone( "SetExpertDetail val:%1", val );
+    expert_detail = val;
+    }
+
+global boolean SaveExpertDetail()
+    {
+    y2milestone( "SaveExpertDetail val:%1", expert_detail );
+    if( expert_detail!=nil )
+	{
+	map file = $[];
+	AsciiFile::ReadFile( file, "/etc/sysconfig/storage" );
+	list l = FindExpertLine( file );
+	string e = "EXPERT_DETAIL=" + (expert_detail?"1":"0");
+	integer lineno = l[0]:(size(file["l"]:$[]) + 1);
+	if( size(l)==0 )
+	    file["l",lineno] = $[];
+	file["l",lineno,"line"] = e;
+	file["l",lineno,"changed"] = true;
+	AsciiFile::RewriteFile( file, "/etc/sysconfig/storage" );
+	}
+    }
+
 }
