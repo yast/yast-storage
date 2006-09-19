@@ -59,6 +59,7 @@ class PeContainer : public Container
 
 	void init();
 	unsigned long long capacityInKb() const {return pe_size*num_pe;}
+	string addList() const;
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new PeContainer( *this ) ); }
 
