@@ -330,9 +330,11 @@ define symbol DoInputChecks( map entry, string query )
    * @parm new_val map that contains a partition
    * @parm file_systems filesystem definitions
    */
-define map FileSystemOptions( map org_fs_options, map fs_define  )
+define map FileSystemOptions( map< any, map<string,any> > org_fs_options, 
+                              map fs_define  )
     ``{
-    map<any, map<string,any> > fs_options = (map<any, map<string,any> >)eval(org_fs_options);
+    y2milestone( "FileSystemOptions org_fs_options %1", org_fs_options );
+    map<any, map<string,any> > fs_options = org_fs_options;
     term contents 	= `VBox(`VSpacing (1));
     string helptext   = "";
 
@@ -372,13 +374,13 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
 						      Label::CancelButton())))
 					))));
 
-    foreach(any query_key, map<string, any> option_map, fs_options ,
+    foreach(any query_key, map<string, any> option_map, fs_options,
 	``{
 	UI::ChangeWidget( `id(query_key), `Value,
-			  option_map["option_value"]:"" );
+			  option_map["option_value"]:(any)"" );
 	});
 
-
+    list<any> iglist = ["auto", "none", "default"];
     symbol ret = `ok;
     repeat
 	{
@@ -403,17 +405,23 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
 			fs_option["option_blank"] = true;
 			}
 
-
-		    if( is( query, string) &&
-		        !contains( (list<any>)["auto", "none", "default"],
-			           query ))
+		    if( is( query, string) && !contains( iglist, query ))
 			{
 			ret = DoInputChecks( entry, (string)query );
 			}
 
-		    if( query != entry[`default]:nil && ret != `error )
+		    if( ret!=`error )
 			{
-			fs_options[entry[`query_key]:nil] = fs_option;
+			if( query!=entry[`default]:nil && 
+			    !contains( iglist, query ))
+			    {
+			    fs_options[entry[`query_key]:nil] = fs_option;
+			    }
+			else if( haskey( fs_options, entry[`query_key]:nil ))
+			    {
+			    fs_options = remove( fs_options, 
+			                         entry[`query_key]:nil );
+			    }
 			}
 		    y2milestone( "FileSystemOptions fs_options %1", fs_options );
 		    }
@@ -423,9 +431,10 @@ define map FileSystemOptions( map org_fs_options, map fs_define  )
 
     UI::CloseDialog();
 
-    if( ret == `ok )
-	return fs_options;
-    return ( org_fs_options );
+    if( ret != `ok )
+	fs_options = org_fs_options;
+    y2milestone("FileSystemOptions ret %1", fs_options );
+    return( fs_options );
     }
 
 void PopupNoSlashLabel()

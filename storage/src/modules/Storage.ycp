@@ -853,6 +853,117 @@ global define map<string,map> AddFstabInfo( map<string,map> target, boolean line
     return( target );
     }
 
+define string convertFsOptionMapToString( map<any,map> fsopt )
+    {
+    string ret = "";
+
+    // do nothing
+    if( fsopt != nil || fsopt != $[] )
+	{
+	list ignore = [ "auto", "default", "none", "" ];
+
+	foreach(any option_key, map option, fsopt, 
+	    ``{
+	    string option_str   = option["option_str"]:"";
+	    any    option_value = option["option_value"]:(any)"";
+	    boolean option_blank = option["option_blank"]:false;
+	    y2milestone( "convertFsOptionMapToString k:%1 opt:%2 val:%3", 
+	                 option_key, option, option_value );
+
+	    if( is(option_value, string) && option_value != nil )
+		{
+		if( !contains( ignore, option_value ))
+		    {
+		    if( size(ret)>0 )
+			ret = ret + " ";
+		    ret = ret + option_str;
+		    if( option_blank )
+			ret = ret + " ";
+		    ret = ret + (string)option_value;
+		    }
+		}
+	    else if( is(option_value, boolean) && option_value != nil )
+		{
+		if( (boolean) option_value )
+		    {
+		    if( size(ret)>0 )
+			ret = ret + " ";
+		    ret = ret + option_str;
+		    }
+		}
+	    else if( is(option_value, integer) && option_value != nil )
+		{
+		if( size(ret)>0 )
+		    ret = ret + " ";
+		ret = ret + option_str;
+		if( option_blank )
+		    ret = ret + " ";
+		ret = ret + sformat("%1", option_value);
+		}
+	    });
+	}
+    if( size(fsopt)>0 || size(ret)>0 )
+	y2milestone( "convertFsOptionMapToString fsopt:%1 ret:%2", fsopt, ret );
+    return ret;
+    };
+
+map convertStringToFsOptionMap( string opts, symbol fs )
+    {
+    map ret = $[];
+    y2milestone( "convertStringToFsOptionMap opts:\"%1\" fs:%2", opts, fs );
+    integer pos = findfirstnotof( opts, " \t" );
+    if( pos>0 )
+	opts = substring( opts, pos );
+    list<map> op = (list<map>)FileSystems::GetOptions(fs);
+    while( size(opts)>0 )
+	{
+	boolean found = false;
+	foreach( map o, op,
+	    ``{
+	    map m = $[];
+	    string os = o[`option_str]:"";
+	    if( !found && size(os)>0 && search( opts, os )==0 )
+		{
+		found = true;
+		m["option_str"] = os;
+		if( o[`type]:`text==`boolean )
+		    {
+		    m["option_value"] = true;
+		    ret[o[`query_key]:""] = m;
+		    }
+		opts = substring( opts, size(os) );
+		pos = findfirstnotof( opts, " \t" );
+		if( pos>0 )
+		    opts = substring( opts, pos );
+		if( o[`type]:`text!=`boolean && size(opts)>0 && 
+		    search(opts,"-")!=0 )
+		    {
+		    if( pos>0 )
+			m["option_blank"] = true;
+		    pos = findfirstof( opts, " \t" );
+		    if( pos==nil )
+			{
+			m["option_value"] = opts;
+			opts = "";
+			}
+		    else
+			{
+			m["option_value"] = substring( opts, 0, pos );
+			opts = substring( opts, pos );
+			}
+		    ret[o[`query_key]:""] = m;
+		    }
+		pos = findfirstnotof( opts, " \t" );
+		if( pos>0 )
+		    opts = substring( opts, pos );
+		}
+	    });
+	y2milestone( "convertStringToFsOptionMap opts:%1 ret:%2", opts, ret );
+	}
+    y2milestone( "convertStringToFsOptionMap ret:%1", ret );
+    return( ret );
+    }
+
 symbol toSymbol( map<string,any> conv, integer val )
     {
     return( conv["m",val]:(conv["def_sym"]:`invalid_conv_map) );
@@ -960,7 +1071,16 @@ map volumeMap( any vinfo, map p )
 	}
     tmp = LibStorage::VolumeInfo::swig_mkfs_options_get(vinfo);
     if( size(tmp)>0 )
+	{
 	p["mkfs_opt"] = tmp;
+	p["fs_options"] = 
+	    convertStringToFsOptionMap( tmp, p["detected_fs"]:`unknown );
+	}
+    else
+	{
+	if( haskey( p, "fs_options" ))
+	    p = remove( p, "fs_options" );
+	}
     tmp = LibStorage::VolumeInfo::swig_uuid_get(vinfo);
     if( size(tmp)>0 )
 	p["uuid"] = tmp;
@@ -2166,12 +2286,13 @@ global boolean ChangeVolumeProperties( map part )
 	else
 	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
 	}
-    if( ret==0 &&
-        part["format"]:false && part["mkfs_opt"]:"" != curr["mkfs_opt"]:"" )
+    if( ret==0 && part["format"]:false && 
+	convertFsOptionMapToString(part["fs_options"]:$[]) != curr["mkfs_opt"]:"" )
 	{
 	changed = true;
-	ts = part["mkfs_opt"]:"";
-	ret = LibStorage::StorageInterface::changeLabelVolume( sint, dev, ts );
+	ts = convertFsOptionMapToString(part["fs_options"]:$[]);
+	y2milestone( "FsOption ts:%1", ts );
+	ret = LibStorage::StorageInterface::changeMkfsOptVolume( sint, dev, ts );
 	if( ret<0 )
 	    y2error( "ChangeVolumeProperties sint ret:%1", ret );
 	else
