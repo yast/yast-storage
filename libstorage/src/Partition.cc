@@ -534,7 +534,7 @@ void Partition::getCommitActions( list<commitAction*>& l ) const
     if( change_id )
 	{
 	l.push_back( new commitAction( INCREASE, cont->staticType(),
-				       setTypeText(false), false ));
+				       setTypeText(false), this, false ));
 	}
     }
 

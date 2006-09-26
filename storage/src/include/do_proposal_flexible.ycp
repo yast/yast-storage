@@ -1591,15 +1591,15 @@ define map try_resize_windows( map disk )
 	if( Partitions::IsDosWinNtPartition( fsid ) ) 
 	    {
 	    win = p["winfo"]:$[];
-	    y2milestone( "win=%1", win );
-	    if( win != nil && p["size_k"]:0 > 1024*1024 )
+	    y2milestone( "try_resize_windows win=%1", win );
+	    if( win != nil && win["ok"]:false && p["size_k"]:0 > 1024*1024 )
 		{
 		p["winfo"] = win;
 		p["resize"] = true;
 		p["region",1] = (win["new_size"]:0 + cyl_size - 1) / cyl_size;
 		p["win_max_length"] = 
 		    (win["max_win_size"]:0 + cyl_size - 1) / cyl_size;
-		y2milestone( "win part %1", p );
+		y2milestone( "try_resize_windows win part %1", p );
 		}
 	    }
 	return( p );
@@ -2466,12 +2466,18 @@ list<string> get_disk_try_list( map<string,map> tg, boolean soft )
     return( ret );
     }
 
-boolean usable_for_win_resize( map p )
+boolean usable_for_win_resize( map p, boolean assert_cons_fs )
     {
     boolean ret = Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
-		  size(p["winfo"]:$[])>0 && 
 		  p["size_k"]:0 > 1024*1024 && 
 		  !p["resize"]:false && !p["delete"]:false;
+    if( ret )
+	{
+	if( assert_cons_fs )
+	    ret = p["winfo","ok"]:false;
+	else
+	    ret = size(p["winfo"]:$[])>0;
+	}
     return( ret );
     }
 
@@ -2630,7 +2636,11 @@ map get_inst_proposal( map<string,map> target )
 			    ``{
 			    if( !contains( Partitions::do_not_delete, 
 					   p["fsid"]:0 ))
+				{
+				if( usable_for_win_resize(p,false) )
+				    p["dtxt"] = _("Resize impossible due to inconsistent fs. Try checking fs under Windows.");
 				p["delete"] = true;
+				}
 			    return( p );
 			    });
 		    });
@@ -2667,7 +2677,7 @@ map get_inst_proposal( map<string,map> target )
 	    valid = listmap( string s, ddev, 
 		``{
 		if( find( map p, target[s,"partitions"]:[], 
-		          ``(usable_for_win_resize(p))) != nil )
+		          ``(usable_for_win_resize(p,true))) != nil )
 		    return( $[s:true] );
 		else
 		    return( $[s:false] );
@@ -2675,7 +2685,7 @@ map get_inst_proposal( map<string,map> target )
 	    foreach( string s, filter( string d, ddev, ``(valid[d]:false)),
 		``{
 		list<map> pl = filter( map p, target[s,"partitions"]:[],
-				       ``(usable_for_win_resize(p)));
+				       ``(usable_for_win_resize(p,true)));
 		if( size(pl)>0 )
 		    {
 		    pl = sort( map a, map b, pl, 
@@ -2683,7 +2693,7 @@ map get_inst_proposal( map<string,map> target )
 		    target[s,"partitions"] = 
 			maplist( map p, target[s,"partitions"]:[],
 			    ``{
-			    if( usable_for_win_resize(p) &&
+			    if( usable_for_win_resize(p,true) &&
 				p["device"]:""==pl[0,"device"]:"" )
 				{
 				integer cs = target[s,"cyl_size"]:1;
@@ -2853,15 +2863,16 @@ map get_inst_proposal( map<string,map> target )
 	string max_disk = "";
 	foreach( string s, list mb, size_mb,
 	    ``{
-	    if( (!Storage::ProposalHome() || mb[1]:0>0) && 
+	    if( (!Storage::ProposalHome() || mb[1]:0>0 || mode==`resize ) && 
 	        mb[1]:0+mb[0]:0 > max_mb )
 		{
 		max_mb = mb[1]:0+mb[0]:0;
 		max_disk = s;
 		}
 	    });
+	y2milestone( "max_mb %1 size_mb %2", max_mb, size_mb );
 	if( max_mb>0 && size_mb[max_disk,0]:0 > 2*1024 && 
-	    ( !Storage::ProposalHome() || size_mb[max_disk,1]:0 > 1*1024) )
+	    ( !Storage::ProposalHome() || size_mb[max_disk,1]:0 > 1*1024 ))
 	    {
 	    sol_disk = max_disk;
 	    }
@@ -2879,6 +2890,21 @@ map get_inst_proposal( map<string,map> target )
 		mode = `desparate;
 	    else if( mode == `desparate )
 		mode = `end;
+	    if( mode == `desparate && size(sol_disk)==0 )
+		{
+		max_mb = 0;
+		foreach( string s, list mb, size_mb,
+		    ``{
+		    if( mb[1]:0+mb[0]:0 > max_mb && 
+		        size_mb[max_disk,0]:0 > 2*1024 )
+			{
+			max_mb = mb[1]:0+mb[0]:0;
+			sol_disk = s;
+			}
+		    });
+		y2milestone( "get_inst_proposal mode %1 sol_disk %2",
+		             mode, sol_disk );
+		}
 	    }
 	}
     y2milestone( "get_inst_proposal sol_disk %1", sol_disk );
@@ -3385,6 +3411,7 @@ map get_inst_prop_vm( map<string,map> target, string key )
 	    if( mode == `desparate )
 		{
 		ddev = get_disk_try_list( target, false );
+		valid = listmap( string s, ddev, ``($[s:true]));
 		target = prepare_part_lists( ddev, target );
 		foreach( string s, ddev,
 		    ``{
@@ -3395,7 +3422,11 @@ map get_inst_prop_vm( map<string,map> target, string key )
 			    ``{
 			    if( !contains( Partitions::do_not_delete, 
 					   p["fsid"]:0 ))
+				{
+				if( usable_for_win_resize(p,false) )
+				    p["dtxt"] = _("Resize impossible due to inconsistent fs. Try checking fs under Windows.");
 				p["delete"] = true;
+				}
 			    return( p );
 			    });
 		    });
@@ -3423,7 +3454,7 @@ map get_inst_prop_vm( map<string,map> target, string key )
 	    valid = listmap( string s, ddev, 
 		``{
 		if( find( map p, target[s,"partitions"]:[], 
-			``(usable_for_win_resize(p))) != nil )
+			``(usable_for_win_resize(p,true))) != nil )
 		    return( $[s:true] );
 		else
 		    return( $[s:false] );
@@ -3431,7 +3462,7 @@ map get_inst_prop_vm( map<string,map> target, string key )
 	    foreach( string s, filter( string d, ddev, ``(valid[d]:false)),
 		``{
 		list<map> pl = filter( map p, target[s,"partitions"]:[],
-				       ``(usable_for_win_resize(p)));
+				       ``(usable_for_win_resize(p,true)));
 		if( size(pl)>0 )
 		    {
 		    pl = sort( map a, map b, pl, 
@@ -3439,7 +3470,7 @@ map get_inst_prop_vm( map<string,map> target, string key )
 		    target[s,"partitions"] = 
 			maplist( map p, target[s,"partitions"]:[],
 			    ``{
-			    if( usable_for_win_resize(p) &&
+			    if( usable_for_win_resize(p,true) &&
 				p["device"]:""==pl[0,"device"]:"" )
 				{
 				integer cs = target[s,"cyl_size"]:1;

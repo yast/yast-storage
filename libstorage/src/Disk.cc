@@ -1650,7 +1650,7 @@ void Disk::getCommitActions( list<commitAction*>& l ) const
 		++i;
 	    }
 	l.push_front( new commitAction( DECREASE, staticType(),
-				        setDiskLabelText(false), true, true ));
+				        setDiskLabelText(false), this, true ));
 	}
     }
 
