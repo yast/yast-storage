@@ -567,7 +567,7 @@ global define map<string,map> DeleteDestroyedLvmVgs( map<string,map> target )
 global define map GetFreeSpace( string device, integer testsize,
                                 symbol used_fs, boolean verbose )
     ``{
-    if( Mode::test () )
+    if( Mode::test() )
 	{
 	integer wf =  tointeger(tofloat(testsize) * 0.6);
 	integer wu =  tointeger(tofloat(testsize) * 0.4);
@@ -586,20 +586,17 @@ global define map GetFreeSpace( string device, integer testsize,
                                                    df_free, used, win_disk,
 						   used_fs==`ntfs );
 
-    if( r )
-	{
-	resize_free = resize_free * 1024;	// Byte
-	df_free = df_free * 1024;	// Byte
-	used = used * 1024;	// Byte
-	}
+    resize_free = resize_free * 1024;	// Byte
+    df_free = df_free * 1024;	// Byte
+    used = used * 1024;	// Byte
 
     if( used_fs == `ntfs && !r && verbose )
 	{
 	string cmd = sformat("ntfsresize -f -i %1", device );
-	y2milestone( "Executing cmd:%1", cmd );
+	y2milestone( "GetFreeSpace Executing cmd:%1", cmd );
 	map bcall = (map) SCR::Execute( .target.bash_output, cmd,
 					$[ "LC_MESSAGES" :"POSIX"] );
-	y2milestone( "Executing ret:%1", bcall );
+	y2milestone( "GetFreeSpace Executing ret:%1", bcall );
 	string tmp = _("Resize Not Possible:") + "\n\n";
 	tmp = tmp + bcall["stdout"]:"" + bcall["stderr"]:"";
 	Popup::Error( tmp );
@@ -610,46 +607,49 @@ global define map GetFreeSpace( string device, integer testsize,
     integer min_linux_size = 0;
     integer add_free = df_free - resize_free;
 
-    if( resize_free < 300000000 )
+    y2milestone( "GetFreeSpace resize_free %1 add_free %2", 
+                 resize_free, add_free );
+
+    if( resize_free < 300*1024*1024 || !r )
 	{
 	linux_size = 0;
 	min_linux_size = 0;
 	}
-    else if( resize_free < 600000000 )
+    else if( resize_free < 600*1024*1024 )
 	{
 	linux_size = resize_free;
-	if( add_free < 75000000 )
+	if( add_free < 75*1024*1024 )
 	    {
-	    linux_size = linux_size - 75000000 + add_free;
+	    linux_size = linux_size - 75*1024*1024 + add_free;
 	    }
 	min_linux_size = linux_size;
 	}
-    else if ( resize_free < 1000000000 )
+    else if ( resize_free < 1024*1024*1024 )
 	{
 	linux_size = resize_free;
-	if( add_free < 200000000 )
+	if( add_free < 200*1024*1024 )
 	    {
-	    linux_size = linux_size - 200000000 + add_free;
+	    linux_size = linux_size - 200*1024*1024 + add_free;
 	    }
-	min_linux_size = 300000000;
+	min_linux_size = 300*1024*1024;
 	}
-    else if ( resize_free < 2000000000 )
+    else if ( resize_free < 2*1024*1024*1024 )
 	{
 	linux_size = resize_free;
-	if( add_free < 300000000 )
+	if( add_free < 300*1024*1024 )
 	    {
-	    linux_size = linux_size - 300000000 + add_free;
+	    linux_size = linux_size - 300*1024*1024 + add_free;
 	    }
-	min_linux_size = 500000000;
+	min_linux_size = 500*1024*1024;
 	}
-    else if ( resize_free < 3000000000 )
+    else if ( resize_free < 3*1024*1024*1024 )
 	{
 	linux_size = resize_free;
-	if( add_free < 800000000 )
+	if( add_free < 800*1024*1024 )
 	    {
-	    linux_size = linux_size - 800000000 + add_free;
+	    linux_size = linux_size - 800*1024*1024 + add_free;
 	    }
-	min_linux_size = 500000000;
+	min_linux_size = 500*1024*1024;
 	}
     else
 	{
@@ -658,7 +658,7 @@ global define map GetFreeSpace( string device, integer testsize,
 	    {
 	    linux_size = linux_size - resize_free/3 + add_free;
 	    }
-	min_linux_size = 500000000;
+	min_linux_size = 500*1024*1024;
 	}
 
     integer new_size = used + add_free + resize_free - linux_size;
@@ -671,7 +671,9 @@ global define map GetFreeSpace( string device, integer testsize,
 		 "max_win_size":used + resize_free + add_free - min_linux_size,
 		 "ntfs" : (used_fs == `ntfs),
 		 "new_size":new_size ];
-    y2milestone( "GetFreeSpace ret %1", ret );
+    ret["ok"] = r;
+    ret["ok"] = false; // FIXME
+    y2milestone( "GetFreeSpace %1 ret %2", device, ret );
     return( ret );
     };
 
@@ -687,7 +689,7 @@ global define map<string,map> AddWinInfo( map<string,map> targets )
 		    contains( [ `ntfs, `vfat ], p["used_fs"]:`none ))
 		    {
 		    p["winfo"] = GetFreeSpace( p["device"]:"", 0,
-		                               p["used_fs"]:`none, false );
+					       p["used_fs"]:`none, false );
 		    y2milestone( "AddWinInfo %1", p );
 		    }
 		return( p );
@@ -1089,6 +1091,9 @@ map volumeMap( any vinfo, map p )
 	if( haskey( p, "fs_options" ))
 	    p = remove( p, "fs_options" );
 	}
+    tmp = LibStorage::VolumeInfo::swig_dtxt_get(vinfo);
+    if( size(tmp)>0 )
+	p["dtxt"] = tmp;
     tmp = LibStorage::VolumeInfo::swig_uuid_get(vinfo);
     if( size(tmp)>0 )
 	p["uuid"] = tmp;
@@ -2221,6 +2226,12 @@ The crypt password provided could be incorrect.
     return( ret==0 );
     }
 
+integer ChangeDescText( string dev, string txt )
+    {
+    integer ret = LibStorage::StorageInterface::changeDescText( sint, dev, txt );
+    return( ret );
+    }
+
 global boolean ChangeVolumeProperties( map part )
     {
     integer ret = 0;
@@ -2325,6 +2336,11 @@ global boolean ChangeVolumeProperties( map part )
 	{
 	changed = true;
 	SetCrypt( dev, part["enc_type"]:`none!=`none, part["format"]:false );
+	}
+    if( ret==0 && part["dtxt"]:"" != curr["dtxt"]:"" )
+	{
+	changed = true;
+	ret = ChangeDescText( dev, part["dtxt"]:"" );
 	}
     if( ret==0 &&
         ((part["resize"]:false && part["region",1]:0 != curr["region",1]:0) ||
@@ -3234,7 +3250,12 @@ global define void SetTargetMap( map<string,map> target )
 	    {
 	    dps = sort( map a, map b, dps, ``(a["nr"]:0>b["nr"]:0));
 	    }
-	foreach( map p, dps, ``{DeleteDevice( k, p["device"]:"" );});
+	foreach( map p, dps, 
+	    ``{
+	    if( size(p["dtxt"]:"")>0 )
+		ChangeDescText( p["device"]:"", p["dtxt"]:"" );
+	    DeleteDevice( k, p["device"]:"" );
+	    });
 	if( target[k,"delete"]:false )
 	    {
 	    if( target[k,"type"]:`CT_UNKNOWN==`CT_LVM )
