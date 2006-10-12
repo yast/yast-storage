@@ -4157,6 +4157,25 @@ global define void SetMdOn( boolean on )
     y2milestone( "return" );
     }
 
+void UpdateBootFstabEvms()
+    {
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    y2milestone( "UpdateBootFstabEvms %1", 
+                 SCR::Execute( .target.bash_output, "grep /boot " + tabpath ));
+    map fstab = Partitions::GetFstab( tabpath );
+    list lines = AsciiFile::FindLineField( fstab, 1, Partitions::BootMount() );
+    y2milestone( "UpdateBootFstabEvms lines %1", lines );
+    map l = AsciiFile::GetLine( fstab, lines[0]:-1 );
+    if( search( l["fields",0]:"", "/dev/evms" )!=0 )
+	AsciiFile::ChangeLineField( fstab, lines[0]:-1, 0, 
+	                            "/dev/evms/"+substring(l["fields",0]:"",5));
+    AsciiFile::RewriteFile( fstab, tabpath );
+    y2milestone( "UpdateBootFstabEvms %1", 
+                 SCR::Execute( .target.bash_output, "grep /boot " + tabpath ));
+    }
+
+global define boolean BootEvms();
+
 global define void WriteFstab()
     ``{
     y2milestone( "WriteFstab called" );
@@ -4194,6 +4213,8 @@ global define void WriteFstab()
 	Storage::AddFstabEntry( m );
 	num = num+1;
 	});
+    if( BootEvms() )
+	UpdateBootFstabEvms();
     HandleModulesOnBoot( GetTargetMap() );
     }
 
@@ -5730,12 +5751,22 @@ global map GetControlCfg()
 	bt = ProductFeatures::GetBooleanFeature( "partitioning",
 						 "evms_config" );
 	cfg_xml["evms_config"] = bt?true:false;
+	bt = ProductFeatures::GetBooleanFeature( "partitioning",
+						 "evms_boot" );
+	cfg_xml["evms_boot"] = bt?true:false;
 	SetProposalDefault();
 	y2milestone( "GetControlCfg cfg_xml %1", cfg_xml );
 	}
     return( cfg_xml );
     }
 
+global boolean BootEvms()
+    {
+    map cfg = GetControlCfg();
+    boolean ret = cfg["evms_boot"]:false;
+    y2milestone( "BootEvms ret %1", ret );
+    return( ret );
+    }
 
 global string ProposalVM()
     {
