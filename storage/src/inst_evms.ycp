@@ -34,6 +34,9 @@
 
     map<string,map> targetMap    = Storage::GetTargetMap();
     string no_container = "-none-";
+    boolean changed = false;
+
+    Storage::CreateTargetBackup("evms");
 
     y2milestone( "evms:%1", targetMap["/dev/evms","partitions"]:[] );
     y2milestone( "evms co:%1", size(filter(string k, map e, targetMap,
@@ -47,6 +50,43 @@
 	y2milestone( "evms co:%1", size(filter(string k, map e, targetMap,
 					``(e["is_container"]:false))));
 	}
+    foreach( string k, map e, targetMap,
+	``{
+	if( e["type"]:`CT_UNKNOWN==`CT_LVM && 
+	    find( map p, e["partitions"]:[], ``(p["mount"]:""=="swap"))!=nil )
+	    {
+	    changed = true;
+	    y2milestone( "k %1", k );
+	    targetMap[k,"partitions"] = 
+		maplist( map p, e["partitions"]:[],
+		    ``{
+		    if( p["mount"]:""=="swap" )
+			p["mount"] = "";
+		    return( p );
+		    });
+	    y2milestone( "k part %1", targetMap[k,"partitions"]:[] );
+	    }
+	});
+    foreach( string k, map e, targetMap,
+	``{
+	if( e["type"]:`CT_UNKNOWN==`CT_EVMS && e["is_container"]:false )
+	    {
+	    y2milestone( "k %1", k );
+	    targetMap[k,"partitions"] = 
+		maplist( map p, e["partitions"]:[],
+		    ``{
+		    if( Stage::initial() && p["detected_fs"]:`unknown==`swap )
+			{
+			p["mount"] = "swap";
+			changed = true;
+			}
+		    return( p );
+		    });
+	    y2milestone( "k part %1", targetMap[k,"partitions"]:[] );
+	    }
+	});
+    if( changed )
+	Storage::SetTargetMap( targetMap );
     
     list evms_cont = get_containers( targetMap, no_container );
     list table = [];
@@ -146,8 +186,7 @@
 
     string id  =  "";
     symbol ret = `next;
-    boolean changed = false;
-    Storage::CreateTargetBackup("evms");
+    changed = false;
     repeat
 	{
 	/////////////////////////////////////////////////////////////////
@@ -301,9 +340,10 @@ Continue?
 		    }
 		}
 	    }
-
 	} 
     until (ret == `next || ret == `back || ret == `cancel || ret == `abort );
+    if( !changed )
+	Storage::RestoreTargetBackup("evms");
 
     Storage::DisposeTargetBackup("evms");
     return ret;

@@ -4902,7 +4902,8 @@ global define list GetUsedLvmGroups( map<string,map> tg )
  * @param tg Target map
  * @return disks List of disks
  */
-global define list<string> GetUsedRealDisks( map<string,map> tg )
+global define list<string> GetUsedRealDisksNew( map<string,map> tg, 
+                                                boolean ignore_boot )
     ``{
     list<string> disks = [];
     list lvmgr = GetUsedLvmGroups( tg );
@@ -4919,15 +4920,23 @@ global define list<string> GetUsedRealDisks( map<string,map> tg )
 	``{
 	if( IsRealDisk( data ) &&
 	    size( filter( map p, data["partitions"]:[],
-	                  ``(size(p["mount"]:"")>0 ||
-			     contains( mdlist, p["used_by"]:"" )  ||
-			     contains( lvmgr, p["used_by"]:"" ) ) )) > 0 )
+	                  ``( (size(p["mount"]:"")>0 &&
+			       (!ignore_boot ||
+			        p["mount"]:""!=Partitions::BootMount())) ||
+			      contains( mdlist, p["used_by"]:"" )  ||
+			      contains( lvmgr, p["used_by"]:"" ) ) )) > 0 )
 	    {
 	    disks = add( disks, disk );
 	    }
 	});
-    y2milestone( "GetUsedRealDisks ret %1", disks );
+    y2milestone( "GetUsedRealDisksNew ignore_boot %1 ret %2", 
+                 ignore_boot, disks );
     return( disks );
+    };
+
+global define list<string> GetUsedRealDisks( map<string,map> tg )
+    {
+    return( GetUsedRealDisksNew( tg, false ));
     };
 
 global define list<string> GetEvmsRealDisk( map<string,map> tg, map p )
@@ -5011,7 +5020,7 @@ global define boolean CheckEvmsNonEvms()
 	{
 	map<string,map> tg = GetTargetMap();
 	list<string> evms = GetUsedEvmsDisks( tg );
-	list<string> nonevms = GetUsedRealDisks( tg );
+	list<string> nonevms = GetUsedRealDisksNew( tg, true );
 	evms = filter( string d, evms, ``(contains( nonevms, d )));
 	y2milestone( "CheckEvmsNonEvms intersec %1", evms );
 	ret = size(evms)==0;
