@@ -3337,11 +3337,13 @@ Storage::commitPair( CPair& p, bool (* fnc)( const Container& ) )
 	    new_pair = false;
 	    }
 	pt++;
+	logProcData();
 	}
     if( evms_activate && haveEvms() )
 	{
 	evmsActivateDevices();
 	evms_activate = false;
+	logProcData();
 	}
     y2milestone( "ret:%d", ret );
     return( ret );
