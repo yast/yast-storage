@@ -107,6 +107,37 @@ Storage::Storage( bool ronly, bool tmode, bool autodetec ) :
     zeroNewPartitions = false;
     defaultMountBy = MOUNTBY_DEVICE;
     detectMounted = true;
+    ifstream File( "/proc/version" );
+    string line;
+    getline( File, line );
+    File.close();
+    y2mil( "kernel version:" << line );
+    if( inst_sys )
+	{
+	DIR *dir;
+	struct dirent *entry;
+	string mtest;
+	if( (dir=opendir( "/lib/modules" ))!=NULL )
+	    {
+	    while( (entry=readdir( dir ))!=NULL )
+		{
+		if( strcmp( entry->d_name, "." )!=0 &&
+		    strcmp( entry->d_name, ".." )!=0 )
+		    {
+		    y2mil( "modules dir:" << entry->d_name );
+		    line = (string)"/lib/modules/" + entry->d_name + "/updates/initrd/ext3.ko";
+		    if( access( line.c_str(), R_OK )==0 )
+			mtest = line;
+		    }
+		}
+	    closedir( dir );
+	    }
+	if( mtest.length()>0 )
+	    {
+	    line = "/sbin/modinfo " + mtest;
+	    SystemCmd c( line );
+	    }
+	}
     }
 
 void
