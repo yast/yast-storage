@@ -79,7 +79,6 @@ Use this for %1?
 define map construct_partition_dialog( list<map> partitions, string ptype, 
 				       integer bps )
     ``{
-    map cfg = Storage::GetControlCfg();
     term vbox_contents = 
 	`VBox(  // Message between the full name of the hard disk to use
 	        // and the "Use entire hard disk" button
@@ -122,32 +121,14 @@ to Install %1
 		}
 	    }
 	});
-
-    vbox_contents = add (vbox_contents, `VSpacing(1.5) );
-    vbox_contents = add (vbox_contents,
-			 `Left( `HBox(`HSpacing(3),
-			              `CheckBox( `id(`home),
-			                   // Label text
-					   _("Propose Separate &Home Partition" ),
-					   cfg["home"]:false ))));
-    vbox_contents = add (vbox_contents, `VSpacing(1) );
-    vbox_contents = add( vbox_contents,
-		`Left(`HBox(`HSpacing(3), `CheckBox(`id(`lvm), `opt(`notify),
-                    // Label text
-		    _("Create &LVM Based Proposal"), cfg["prop_lvm"]:false ))));
-    if( cfg["evms_config"]:false )
-	vbox_contents = add( vbox_contents,
-	        `Left(`HBox(`HSpacing(3), `CheckBox(`id(`evms), `opt(`notify),
-		    // Label text
-		    _("Create &EVMS Based Proposal"), cfg["prop_evms"]:false ))));
     return $[ "term": vbox_contents, "high_id": ui_id ];
     };
 
 define term create_whole_disk_dialog () ``{
 	// There were no prior partitions on this disk.
 	// No partitions to choose from will be displayed.
-	return (`Left(`Label( sformat(_("There are no partitions on this disk yet.
-The entire disk will be used for %1."),Product::name))));
+	return (`VBox(`Left(`Label( sformat(_("There are no partitions on this disk yet.
+The entire disk will be used for %1."),Product::name)))));
     };
 
 define term create_resize_dialog (list<map> partitions, integer bps) 
@@ -156,13 +137,7 @@ define term create_resize_dialog (list<map> partitions, integer bps)
     string explanation = _("This disk appears to be used by Windows.
 There is not enough space to install Linux.");
 	
-    map pentry = partitions[0]:$[];
-    string part_name = sformat ( "%1, %2 (%3)",
-				 ByteToHumanString(size_of_region(pentry["region"]:[], bps )),
-				 pentry["fstype"]:"",
-				 pentry["device"]:"" );
-	
-    return (`HVSquash (
+    return (`VBox(
 	       `RadioButtonGroup (
 		  `HBox(
 			`HSpacing(1.5),
@@ -232,7 +207,7 @@ lost. </i></b> There will be no way to recover this data.
 								`VSpacing(0.5),
 
 								// All partitions are listed that are found on the target (hard disk).
-								`Left(`HVSquash( targetbox ) ),
+								`VSquash( targetbox ),
 								`VSpacing(0.5)
 								),
 							  `HSpacing()
@@ -266,7 +241,6 @@ This may fail under rare circumstances.
     // Information what to do, background information
     Wizard::SetContents( _("Preparing Hard Disk -- Step 2"),
 		       `HCenter(
-				`HSquash(
 					 `Frame(
 						// Frame title for installation target hard disk / partition(s)
 						_("Installing on:"),
@@ -281,14 +255,38 @@ This may fail under rare circumstances.
 							    `VSpacing(0.5),
 
 							    // All partitions are listed that are found on the target (hard disk).
-							    `Left(`HVSquash( targetbox ) ),
+							    `VSquash(targetbox),
 							    `VSpacing(0.5)
 							    ),
 						      `HSpacing()
 						      )
 						)
-					 )
 				), helptext, (boolean)WFM::Args(0), (boolean)WFM::Args (1));
     };
 
+term add_common_widgets( term vbox )
+    {
+    map cfg = Storage::GetControlCfg();
+    term vb = `VBox();
+    vb = add (vb, 
+	      `Left(`HBox(`HSpacing(3), `CheckBox( `id(`home),
+		  // Label text
+		  _("Propose Separate &Home Partition" ),
+		  cfg["home"]:false ))));
+    vb = add (vb, `VSpacing(1) );
+    vb = add( vb,
+	      `Left(`HBox(`HSpacing(3), `CheckBox(`id(`lvm), `opt(`notify),
+		  // Label text
+		  _("Create &LVM Based Proposal"), cfg["prop_lvm"]:false ))));
+    if( cfg["evms_config"]:false )
+	vb = add( vb,
+		  `Left(`HBox(`HSpacing(3), `CheckBox(`id(`evms), `opt(`notify),
+		      // Label text
+		      _("Create &EVMS Based Proposal"), 
+		      cfg["prop_evms"]:false ))));
+    vbox = add (vbox, `VSpacing(1.5) );
+    term frame = `HVCenter(`Frame( _( "Proposal type" ), `HVCenter(vb) ));
+    vbox = add (vbox, frame );
+    return( vbox );
+    }
 }
