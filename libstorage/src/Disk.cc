@@ -31,7 +31,16 @@ Disk::Disk( Storage * const s, const string& Name,
     Container(s,Name,staticType())
     {
     init_disk = false;
+    nm = Name;
+    undevDevice(nm);
     logfile_name = Name;
+    string::size_type pos = 0;
+    while( (pos=logfile_name.find( '/', pos )) != string::npos )
+	logfile_name[pos] = '_';
+    if( Name.find( "/dev/" )==0 )
+	dev = Name;
+    else
+	dev = "/dev/" + Name;
     size_k = SizeK;
     y2debug( "constructed disk %s", dev.c_str() );
     }
