@@ -415,8 +415,7 @@ int Volume::setFormat( bool val, storage::FsType new_fs )
 	    if( !cont->getStorage()->getFsCapabilities( fs, caps ) ||
 	        !caps.supportsLabel )
 		{
-		label.clear();
-		orig_label.clear();
+		eraseLabel();
 		}
 	    else if( caps.labelLength < label.size() )
 		{
@@ -1403,8 +1402,7 @@ EncryptType Volume::detectLoopEncryption()
 		if( !ok )
 		    {
 		    detected_fs = fs = FSUNKNOWN;
-		    label.erase();
-		    orig_label.erase();
+		    eraseLabel();
 		    uuid.erase();
 		    }
 		}
