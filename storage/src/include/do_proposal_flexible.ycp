@@ -1674,6 +1674,8 @@ define map get_gap_info( map disk, boolean add_exist_linux )
 	}
     integer max_prim = Partitions::MaxPrimary(disk["label"]:"msdos");
     boolean has_ext = Partitions::HasExtended( disk["label"]:"msdos" );
+    integer max_pos_cyl = Storage::MaxCylLabel( disk );
+    integer end = 0;
     if( has_ext )
 	{
 	map ext = filter( map p, plist,
@@ -1682,8 +1684,10 @@ define map get_gap_info( map disk, boolean add_exist_linux )
 	ret["ext_reg"] = ext["region"]:[];
 	if( size(ext)>0 )
 	    {
-	    gap = get_gaps( ext["region",0]:0, 
-			    ext["region",0]:0 + ext["region",1]:1-1, 
+	    end = ext["region",0]:0 + ext["region",1]:1-1;
+	    if( end > max_pos_cyl )
+		end = max_pos_cyl;
+	    gap = get_gaps( ext["region",0]:0, end,
 			    filter( map p, plist, ``(p["nr"]:0>max_prim)),
 			    add_exist_linux );
 	    gap = maplist( map e, gap, 
@@ -1698,8 +1702,11 @@ define map get_gap_info( map disk, boolean add_exist_linux )
 	{
 	ret["extended_possible"] = false;
 	}
-    gap = (list<map>)union( gap, 
-		 get_gaps( 0, disk["cyl_count"]:1-1, plist, add_exist_linux ));
+    end = disk["cyl_count"]:1-1;
+    if( end > max_pos_cyl )
+	end = max_pos_cyl;
+    gap = (list<map>)union( gap, get_gaps( 0, end, plist, add_exist_linux ));
+    gap = filter( map g, gap, ``(g["end"]:0<=max_pos_cyl) );
     integer av_size = 0;
     gap = maplist( map e, gap,
 	``{
