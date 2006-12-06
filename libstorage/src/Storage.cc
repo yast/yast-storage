@@ -540,7 +540,7 @@ Storage::detectEvms()
 	EvmsTree data;
 	EvmsCo::getEvmsList( data );
 	y2mil( "EVMS TREE:" << data );
-	if( !data.volumes.empty() )
+	if( !data.volumes.empty() || !data.cont.empty() )
 	    {
 	    EvmsCo * e = new EvmsCo( this, data );
 	    Container::VolPair ep = e->volPair( isEvmsMd );
@@ -554,6 +554,9 @@ Storage::detectEvms()
 		{
 		y2mil( "EVMS Container:" << *i );
 		e = new EvmsCo( this, *i, data );
+		EvmsCoIterator eco = findEvmsCo( i->name );
+		if( eco != evCoEnd() )
+		    removeContainer( &(*eco) );
 		addToList( e );
 		e->checkConsistency();
 		}
