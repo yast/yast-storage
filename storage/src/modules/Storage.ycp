@@ -4911,19 +4911,30 @@ global define list<string> GetEvmsRealDisk( map<string,map> tg, map p )
     ``{
     list<string> rdisk = [];
     string name = "";
+    string namel = "";
     if( size(p["device"]:"")>10 )
 	name = substring( p["device"]:"", 10 );
     if( search( name, "lvm/" ) == 0 || search( name, "lvm2/" ) == 0)
 	{
 	name = substring( name, 0, findlastof( name, "/" ));
 	}
-    y2milestone( "GetEvmsRealDisk name is %1", name );
+    namel = name;
+    integer pos = search( namel, "/" );
+    if( pos != nil )
+	{
+	namel = substring( namel, pos+1 );
+	}
+    y2milestone( "GetEvmsRealDisk name is %1 namel is %2", name, namel );
     foreach( string disk, map data, tg,
 	``{
 	if( size(name)>0 &&
 	    (IsRealDisk( data ) || disk=="/dev/md") &&
-	    size( filter( map p, data["partitions"]:[],
-	                  ``(p["used_by"]:"" == name)))>0 )
+	    ((size( filter( map p, data["partitions"]:[],
+	                  ``(p["used_by_type"]:`UB_NONE==`UB_EVMS && 
+			     p["used_by"]:""==name)))>0) ||
+	     (size( filter( map p, data["partitions"]:[],
+	                  ``(p["used_by_type"]:`UB_NONE==`UB_LVM && 
+			     p["used_by"]:""==namel)))>0) ))
 	    {
 	    rdisk = (list<string>)union( rdisk, [ disk ] );
 	    }
@@ -4969,7 +4980,7 @@ global define list<string> GetUsedEvmsDisks( map<string,map> tg )
 			    }
 			else
 			    {
-			    disks = (list<string>)add( disks, d );
+			    disks = (list<string>)union( disks, [d] );
 			    }
 			});
 		    }
@@ -5069,7 +5080,15 @@ global define void FinishInstall()
 	    found2 = regexpmatch( evmsconf["l",i,"line"]:"", regex3 );
 	    if( found )
 		{
-		string li = "\texclude = [ " + mergestring( nonevms, " " ) +
+		string co = evmsconf["l",i,"line"]:"";
+		integer pos = search( co, "[" );
+		if( pos!=nil )
+		    co = substring( co, pos+1 );
+		pos = search( co, "]" );
+		if( pos!=nil )
+		    co = substring( co, 0, pos );
+		y2milestone( "FinishInstall co = \"%1\"", co );
+		string li = "\texclude = [ " + co + mergestring( nonevms, " " ) +
 		            " ]";
 		y2milestone( "FinishInstall li = %1", li );
 		evmsconf["l",i,"line"] = li;
