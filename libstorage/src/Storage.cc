@@ -105,7 +105,7 @@ Storage::Storage( bool ronly, bool tmode, bool autodetec ) :
     yesno_popup_cb = NULL;
     recursiveRemove = false;
     zeroNewPartitions = false;
-    defaultMountBy = MOUNTBY_DEVICE;
+    defaultMountBy = MOUNTBY_ID;
     detectMounted = true;
     ifstream File( "/proc/version" );
     string line;
