@@ -78,6 +78,9 @@ storage::MountByType Volume::defaultMountBy( const string& mp )
     if( (mb==MOUNTBY_PATH && udevPath().empty()) || 
         (mb==MOUNTBY_ID && udevId().empty()) )
 	mb = MOUNTBY_DEVICE;
+    if( encryption != ENC_NONE &&
+        (mb==MOUNTBY_UUID || mb==MOUNTBY_LABEL) )
+	mb = MOUNTBY_DEVICE;
     return( mb );
     }
 
@@ -86,6 +89,9 @@ bool Volume::allowedMountBy( storage::MountByType mby, const string& mp )
     bool ret = true;
     if( (cType()!=DISK && (mby==MOUNTBY_ID || mby==MOUNTBY_PATH)) ||
         (mp=="swap" && (mby==MOUNTBY_UUID || mby==MOUNTBY_LABEL)) )
+	ret = false;
+    if( ret && encryption != ENC_NONE && 
+        (mby==MOUNTBY_UUID || mby==MOUNTBY_LABEL) )
 	ret = false;
     y2mil( "mby:" << mb_names[mby] << " mp:" << mp << " ret:" << ret )
     return( ret );
@@ -1180,6 +1186,9 @@ int Volume::setEncryption( bool val )
 		    cont->getStorage()->activateHld(false);
 #endif
 		}
+	    if( encryption != ENC_NONE && 
+	        (mount_by==MOUNTBY_LABEL || mount_by==MOUNTBY_UUID))
+		mount_by = orig_mount_by = MOUNTBY_DEVICE;
 	    }
 	}
     y2milestone( "ret:%d", ret );
