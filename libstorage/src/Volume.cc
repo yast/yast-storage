@@ -73,7 +73,7 @@ storage::MountByType Volume::defaultMountBy( const string& mp )
     MountByType mb = cont->getStorage()->getDefaultMountBy();
     if( cType()!=DISK && (mb==MOUNTBY_ID || mb==MOUNTBY_PATH) )
 	mb = MOUNTBY_DEVICE;
-    if( mp=="swap" && mb==MOUNTBY_UUID )
+    if( mp=="swap" && (mb==MOUNTBY_UUID || mb==MOUNTBY_LABEL))
 	mb = MOUNTBY_DEVICE;
     if( (mb==MOUNTBY_PATH && udevPath().empty()) || 
         (mb==MOUNTBY_ID && udevId().empty()) )
