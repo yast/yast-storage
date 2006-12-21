@@ -144,6 +144,9 @@ class Container
 	storage::UsedByType getUsedByType() const { return( uby.type() ); }
 	const string& usedByName() const { return( uby.name() ); }
 	bool readonly() const { return ronly; }
+	unsigned long long sizeK() const { return size_k; }
+	unsigned long minorNr() const { return mnr; }
+	unsigned long majorNr() const { return mjr; }
 	virtual string removeText(bool doing=true) const;
 	virtual string createText(bool doing=true) const;
 	virtual int resizeVolume( Volume* v, unsigned long long newSize );
@@ -190,6 +193,9 @@ class Container
 	bool silent;
 	bool ronly;
 	storage::usedBy uby;
+	unsigned long long size_k;
+	unsigned long mnr;
+	unsigned long mjr;
 	VCont vols;
 	mutable storage::ContainerInfo info;
     };
