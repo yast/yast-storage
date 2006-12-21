@@ -207,14 +207,13 @@ Really do this?
    **/
 define boolean check_crypt_fs_mount_points( string mount, boolean crypt_fs )
     ``{
-    if( crypt_fs &&
-        (FileSystems::IsCryptMp( mount, false ) || mount=="swap" ))
+    if( crypt_fs && FileSystems::IsCryptMp( mount, false ))
 	{
         // error popup text
 	Popup::Error(
 _("You have assigned an encrypted file system to a partition
 with one of the following mount points: \"/\", \"/usr\", \"/boot\",
-\"swap\".  This is not possible. Change the mount point or use a
+\/var\".  This is not possible. Change the mount point or use a
 nonloopbacked file system.
 "));
 	    return false;
@@ -491,14 +490,14 @@ define map CheckCryptOk( map new )
 	crypt_fs = (boolean)UI::QueryWidget(`id(`crypt_fs), `Value );
 	}
     if( crypt_fs )
-	new["enc_type"] = new["format"]:false?`twofish:`twofish_old;
+	new["enc_type"] = new["format"]:false?`luks:`twofish;
     else
 	new["enc_type"] = `none;
-    if( crypt_fs &&
+    if( crypt_fs &&  new["mount"]:""!="swap" &&
         size(Storage::GetCryptPwd( new["device"]:"" ))==0 &&
         (!new["noauto"]:false||new["format"]:false) )
 	{
-	string fs_passwd = DlgCreateCryptFs( new["device"]:"", new["format"]:false?8:5, new["format"]:false );
+	string fs_passwd = DlgCreateCryptFs( new["device"]:"", new["format"]:false?8:1, new["format"]:false );
 	// Ask the user for a password for cryptofs, else set crypto to nil??
 	if( fs_passwd != nil && size(fs_passwd)>0 )
 	    {
@@ -524,7 +523,7 @@ define map CheckCryptOk( map new )
 	    }
 	else
 	    {
-	    ret["ok"] = false;
+	    ret["ok"] = (new["mount"]:""=="swap");
 	    }
 	}
     ret["map"] = new;

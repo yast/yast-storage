@@ -125,7 +125,7 @@ Dm::getTableInfo()
 		    }
 		}
 	    }
-	else
+	else 
 	    {
 	    y2warning( "unknown target type \"%s\"", target.c_str() );
 	    extractNthWord( 1, line ) >> le;
@@ -168,16 +168,23 @@ string Dm::getDevice( const string& majmin )
     if( ret.empty() )
 	{
 	unsigned mj = 0;
+	unsigned mi = 0;
 	string pair( majmin );
 	SystemCmd c;
 	do
 	    {
+	    mj = mi = 0;
 	    string::size_type pos = pair.find( ':' );
 	    if( pos != string::npos )
 		pair[pos] = ' ';
-	    pair >> mj;
+	    istringstream i( pair );
+	    i >> mj >> mi;
 	    list<string> ls = splitString(pair);
-	    if( mj==dm_major && ls.size()>=2 )
+	    if( cont->majorNr()>0 && mj==cont->majorNr() && mi==cont->minorNr())
+		ret = cont->device();
+	    if( mj==Loop::major() )
+		ret = Loop::loopDeviceName(mi);
+	    if( ret.empty() && mj==dmMajor() && ls.size()>=2 )
 		{
 		c.execute( "dmsetup info -c --noheadings -j " + *ls.begin() +
 		           " -m " + *(++ls.begin()) + " | sed -e \"s/:.*//\"" );
@@ -292,18 +299,7 @@ void Dm::updateMajorMinor()
 	{
 	string d = "/dev/dm-" + decString(minorNr());
 	if( d!=dev )
-	    {
-	    list<string>::iterator i = 
-	        find_if( alt_names.begin(), alt_names.end(), 
-		         find_begin( "/dev/dm-" ) );
-	    if( i!=alt_names.end() )
-		{
-		if( *i != d )
-		    *i = d;
-		}
-	    else
-		alt_names.push_back( d );
-	    }
+	    replaceAltName( "/dev/dm-", d );
 	}
     num = mnr;
     }
@@ -434,6 +430,37 @@ string Dm::devToTable( const string& dev )
 	}
     if( dev!=ret )
 	y2milestone( "dev:%s --> %s", dev.c_str(), ret.c_str() );
+    return( ret );
+    }
+
+string Dm::dmName( const string& table )
+    {
+    string ret = "";
+    int num = Dm::dmNumber( table );
+    if( num>=0 )
+	ret = "dm-" + decString(num);
+    y2mil( "table:" << table << " ret:" << ret );
+    return( ret );
+    }
+
+string Dm::dmDeviceName( unsigned long num )
+    {
+    return( "/dev/dm-" + decString(num));
+    }
+
+int Dm::dmNumber( const string& table )
+    {
+    int ret = -1;
+    SystemCmd c( "dmsetup -c --noheadings info " + table );
+    list<string> sl = splitString( *c.getLine(0), ":" );
+    if( sl.size()>=3 )
+	{
+	list<string>::const_iterator ci = sl.begin();
+	++ci;
+	++ci;
+	*ci >> ret;
+	}
+    y2mil( "table:" << table << " ret:" << ret );
     return( ret );
     }
 

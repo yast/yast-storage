@@ -38,9 +38,6 @@ class Disk : public Container
 	unsigned long cylinders() const { return cyl; }
 	unsigned heads() const { return head; }
 	unsigned sectors() const { return sector; }
-	unsigned long long sizeK() const { return size_k; }
-	unsigned long minorNr() const { return mnr; }
-	unsigned long majorNr() const { return mjr; }
 	unsigned long numMinor() const { return range; }
 	unsigned long cylSizeB() const { return byte_cyl; }
 	unsigned maxPrimary() const { return max_primary; }
@@ -222,9 +219,6 @@ class Disk : public Container
 	bool init_disk;
 	unsigned max_logical;
 	unsigned long byte_cyl;
-	unsigned long long size_k;
-	unsigned long mnr;
-	unsigned long mjr;
 	unsigned long range;
 	mutable storage::DiskInfo info;
     };

@@ -105,6 +105,7 @@ map<string,any> conv_encryption =
        "m" : $[ LibStorage::ENC_TWOFISH() : `twofish,
                 LibStorage::ENC_TWOFISH_OLD() : `twofish_old,
                 LibStorage::ENC_TWOFISH256_OLD() : `twofish_256_old,
+                LibStorage::ENC_LUKS() : `luks,
                 LibStorage::ENC_UNKNOWN() : `unknown,
 	      ]
      ];
@@ -413,6 +414,13 @@ global define map<string,any> GetPartition( map<string,map> tg, string device )
 	filter( map<string, any> pi, tg[disk,"partitions"]:[],
 	        ``(pi["device"]:""==device ));
     ret = part[0]:$[];
+    if( size(ret)==0 && search(device, "/dev/mapper/")==0 )
+	{
+	part = (list< map<string,any> >)
+	    filter( map<string, any> pi, tg["/dev/loop","partitions"]:[],
+		    ``(pi["device"]:""==device ));
+	ret = part[0]:$[];
+	}
     y2debug( "GetPartition ret=%1", ret );
     return( ret );
     }
@@ -1275,6 +1283,8 @@ map getContainerInfo( map c )
 	    p["fstype"] = Partitions::loop_name;
 	    p["fpath"] = LibStorage::LoopInfo::swig_file_get(info);
 	    p["create_file"] = !LibStorage::LoopInfo::swig_reuseFile_get(info);
+	    if( p["enc_type"]:`unknown != `luks )
+		p["device"] = p["loop"]:"";
 	    c["partitions"] = add( c["partitions"]:[], p );
 	    });
 	}

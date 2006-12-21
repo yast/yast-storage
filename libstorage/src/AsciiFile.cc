@@ -53,7 +53,7 @@ bool AsciiFile::loadFile( const string& Name_Cv )
     return( Ret_bi );
     }
 
-const string& AsciiFile::fileName()
+const string& AsciiFile::fileName() const
     {
     return( Name_C );
     }
@@ -162,7 +162,7 @@ bool AsciiFile::updateFile()
 	    if( access( BakName_Ci.c_str(), R_OK ) == 0 &&
 		access( OldBakName_Ci.c_str(), R_OK ) != 0 )
 		{
-		link( BakName_Ci.c_str(), OldBakName_Ci.c_str() );
+		(void)link( BakName_Ci.c_str(), OldBakName_Ci.c_str() );
 		unlink( BakName_Ci.c_str() );
 		}
 	    SystemCmd Cmd_Ci;
@@ -188,6 +188,17 @@ bool AsciiFile::updateFile()
 	chmod( Name_C.c_str(), Stat_ri.st_mode );
 	}
     return( File_Ci.good() );
+    }
+
+bool AsciiFile::removeIfEmpty()
+    {
+    bool ret = Lines_C.empty();
+    if( ret && access( Name_C.c_str(), W_OK )==0 )
+	{
+	unlink( Name_C.c_str() );
+	y2mil( "deleting file " << Name_C );
+	}
+    return( ret );
     }
 
 bool AsciiFile::saveToFile( const string& Name_Cv )
@@ -315,7 +326,7 @@ string& AsciiFile::operator [] ( unsigned int Idx_iv )
     return( Lines_C[Idx_iv] );
     }
 
-int AsciiFile::find( unsigned Start_iv, Regex& Pat_Cv )
+int AsciiFile::find( unsigned Start_iv, Regex& Pat_Cv ) const
     {
     unsigned Idx_ii = Start_iv;
     int Ret_ii = -1;
@@ -339,7 +350,7 @@ int AsciiFile::find( unsigned Start_iv, Regex& Pat_Cv )
     return( Ret_ii );
     }
 
-int AsciiFile::find( unsigned int Start_iv, const string& Pat_Cv )
+int AsciiFile::find( unsigned int Start_iv, const string& Pat_Cv ) const
     {
     string::size_type Pos_ii;
     unsigned int Idx_ii = Start_iv;
