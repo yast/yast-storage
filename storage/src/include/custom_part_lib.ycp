@@ -158,7 +158,7 @@ define boolean check_lvm_mount_points( string mount )
 define boolean check_raid_mount_points( string mount )
     ``{
 	list not_allowed_raid_mount_points  = [ ];
-	if( Arch::ppc () || Arch::s390 () || Arch::ia64 () || Arch::sparc () )
+	if( Arch::ppc () || Arch::s390 () || Arch::sparc () )
 	    {
 	    not_allowed_raid_mount_points =
 		add( not_allowed_raid_mount_points, Partitions::BootMount() );
@@ -486,7 +486,11 @@ define map CheckCryptOk( map new )
     if( crypt_fs && new["mount"]:""!="swap" &&
         size(Storage::GetCryptPwd( new["device"]:"" ))==0 )
 	{
-	string fs_passwd = DlgCreateCryptFs( new["device"]:"", new["format"]:false?8:1, new["format"]:false );
+	boolean tmpc = new["format"]:false && 
+	               contains( FileSystems::tmp_m_mpoint, new["mount"]:"" );
+	string fs_passwd = DlgCreateCryptFs( new["device"]:"", 
+	                                     new["format"]:false?8:1, 
+					     new["format"]:false, tmpc );
 	// Ask the user for a password for cryptofs, else set crypto to nil??
 	if( fs_passwd != nil && size(fs_passwd)>0 )
 	    {
@@ -512,7 +516,7 @@ define map CheckCryptOk( map new )
 	    }
 	else
 	    {
-	    ret["ok"] = (new["mount"]:""=="swap");
+	    ret["ok"] = (new["mount"]:""=="swap") || tmpc;
 	    }
 	}
     ret["map"] = new;
