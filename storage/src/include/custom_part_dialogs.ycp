@@ -39,13 +39,22 @@
   include "partitioning/signatures.ycp";
 
 
-define string DlgCreateCryptFs( string device, integer minpwlen, boolean format )
+define string DlgCreateCryptFs( string device, integer minpwlen, boolean format,
+                                boolean tmpcrypt )
   ``{
-    string helptext = GetCreateCryptFsHelptext(minpwlen, format);
-    y2milestone( "DlgCreateCryptFs minpwlen:%1 format:%2", minpwlen, format );
+    string helptext = GetCreateCryptFsHelptext(minpwlen, format, tmpcrypt);
+    y2milestone( "DlgCreateCryptFs device:%1 minpwlen:%2 format:%3 tmpcrypt:%4",
+                 device, minpwlen, format, tmpcrypt );
 
     // heading text
-    string h = _("Enter your password for the encrypted file system");
+    string h = _("Enter your password for the encrypted file system.");
+    // label text
+    string label = _("Don't forget what you enter here!");
+    if( tmpcrypt )
+	{
+	label = label + " ";
+	label = label + ("Empty password allowed.");
+	}
 
     if( size(device)>0 )
 	// heading text, %1 is replaced by device name (e.g. /dev/hda1)
@@ -67,7 +76,7 @@ define string DlgCreateCryptFs( string device, integer minpwlen, boolean format 
 					  `HSpacing(4),
 					  `VBox(
 						// label text
-						`Label(_("Don't forget what you enter here!")),
+						`Label(label),
 						`VSpacing(),
 
 						`HBox(
@@ -126,25 +135,24 @@ define string DlgCreateCryptFs( string device, integer minpwlen, boolean format 
 		  // popup text
 		  Popup::Message(_("The first and the second version\nof the password do not match!\nPlease try again."));
 	      }
-	      else  if (pw1 == "")
+	      else if( pw1=="" && !tmpcrypt )
 	      {
 		  // popup text
 		  Popup::Message(_("You did not enter a password.
 Try again.
 "));
 	      }
-	      else if (size (pw1) < minpwlen)
+	      else if( size(pw1) < minpwlen && !tmpcrypt )
 	      {
 		  // popup text
 		  Popup::Message(sformat(_("The password must have at least %1 characters.
 Try again.
 "),minpwlen));
 	      }
-	      else if ( size(pw1) >= minpwlen )
+	      else if( size(pw1)>=minpwlen || tmpcrypt )
 	      {
 		  any ret2 = findfirstnotof( pw1, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#* ,.;:._-+!$%&/|\?{[()]}@" );
-
-		  if ( ret2 != nil )
+		  if ( ret2 != nil && size(pw1)>0 )
 		  {
 		      // popup text
 		      Popup::Message(_("The password may only contain the following characters:
@@ -268,7 +276,7 @@ device %1 mounted on %2.
 Try again.
 "));
 	      }
-	      else if ( size(pw1) >= 5 )
+	      else if ( size(pw1) >= 1 )
 	      {
 		  input_is_ok = true;
 	      }
@@ -277,7 +285,7 @@ Try again.
 		  // popup text
 		  Popup::Message(sformat(_("The password must have at least %1 characters.
 Try again.
-"),5));
+"),1));
 	      }
 	  }
 
