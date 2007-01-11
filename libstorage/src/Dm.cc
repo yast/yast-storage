@@ -68,6 +68,7 @@ Dm::getTableInfo()
     pe_map.clear();
     map<string,unsigned long>::iterator mit;
     unsigned long long pesize = pec()->peSize();
+    y2mil("pesize:" << pesize );
     for( unsigned i=0; i<c.numLines(); i++ )
 	{
 	unsigned long le;
