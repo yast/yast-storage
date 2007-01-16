@@ -289,6 +289,7 @@ global define void InitLibstorage()
 	}
     }
 
+global define map<string,map> GetTargetMap();
 /**
 *
 */
@@ -301,93 +302,197 @@ global define map GetDiskPartition( string device )
                               ``(size(s)>0));
     y2debug( "GetDiskPartition size:%1 ls:%2", size(ls), ls );
 
-    if( search( device, "/dev/hd" )==0 ||
-	search( device, "/dev/sd" )==0 ||
-	search( device, "/dev/ed" )==0 ||
-	search( device, "/dev/iseries/vd" )==0 )
+    if( size(ls)>=4 && ls[1]:"" == "disk" &&
+        contains( [ "by-id", "by-path", "by-uuid", "by-label" ], ls[2]:"" ))
 	{
-	dlen = findfirstof( device, "0123456789" );
-	if( dlen == nil )
+	map part = $[];
+	string regex = "-part[0-9]+$";
+	if( ls[2]:"" == "by-label" )
 	    {
-	    dlen = size(device);
+	    foreach( string dev, map disk, GetTargetMap(), 
+		``{
+		if( size(ret["disk"]:"")==0 )
+		    {
+		    part = find( map p, disk["partitions"]:[], 
+				 ``(p["label"]:""==ls[3]:""));
+		    if( part!=nil )
+			{
+			ret["disk"] = dev;
+			if( haskey( part, "nr" ))
+			    ret["nr"] = part["nr"]:(any)0;
+			else
+			    ret["nr"] = part["name"]:"";
+			}
+		    }
+		});
 	    }
-	}
-    else if( search( device, "/dev/md" )==0 && size(ls)==2 )
-	{
-	dlen = 7;
-	}
-    else if( search( device, "/dev/loop" )==0 )
-	{
-	dlen = 9;
-	}
-    else if( search( device, "/dev/i2o/hd" )==0 )
-	{
-	dlen = 12;
-	}
-    else if( search( device, "/dev/rd/" )==0 ||
-	     search( device, "/dev/cciss/" )==0 ||
-	     search( device, "/dev/ataraid/" )==0 ||
-	     search( device, "/dev/etherd/" )==0 ||
-	     search( device, "/dev/ida/" )==0 )
-	{
-	integer pos = findlastof( device, "p" );
-	dlen = size(device);
-	if( pos!=nil )
+	else if( ls[2]:"" == "by-uuid" )
 	    {
-	    dlen = pos;
+	    foreach( string dev, map disk, GetTargetMap(), 
+		``{
+		if( size(ret["disk"]:"")==0 )
+		    {
+		    part = find( map p, disk["partitions"]:[], 
+				 ``(p["uuid"]:""==ls[3]:""));
+		    if( part!=nil )
+			{
+			ret["disk"] = dev;
+			if( haskey( part, "nr" ))
+			    ret["nr"] = part["nr"]:(any)0;
+			else
+			    ret["nr"] = part["name"]:"";
+			}
+		    }
+		});
 	    }
-	}
-    else if( search( device, "/dev/dasd" )==0 )
-	{
-	dlen = size(device);
-	if( findfirstof( device, "0123456789" )!=nil )
+	else if( ls[2]:"" == "by-id" )
 	    {
-	    dlen = dlen-1;
+	    string id = ls[3]:"";
+	    integer num = 0;
+	    list l = regexppos( id, regex );
+	    if( size(l)>0 )
+		{
+		num = tointeger( substring( id, l[0]:0+5 ));
+		id = substring( id, 0, l[0]:0 );
+		y2debug( "GetDiskPartition id:%1 num:%2", id, num );
+		}
+	    foreach( string dev, map disk, GetTargetMap(), 
+		``{
+		if( size(ret["disk"]:"")==0 &&
+		    find( string s, disk["udev_id"]:[], ``(s==id))!=nil)
+		    {
+		    part = find( map p, disk["partitions"]:[], 
+				 ``(p["nr"]:0==num));
+		    if( num==0 || part!=nil )
+			{
+			ret["disk"] = dev;
+			if( num>0 )
+			    ret["nr"] = num;
+			else
+			    ret["nr"] = "";
+			}
+		    }
+		});
+	    }
+	else if( ls[2]:"" == "by-path" )
+	    {
+	    string id = ls[3]:"";
+	    integer num = 0;
+	    list l = regexppos( id, regex );
+	    if( size(l)>0 )
+		{
+		num = tointeger( substring( id, l[0]:0+5 ));
+		id = substring( id, 0, l[0]:0 );
+		y2debug( "GetDiskPartition id:%1 num:%2", id, num );
+		}
+	    foreach( string dev, map disk, GetTargetMap(), 
+		``{
+		if( size(ret["disk"]:"")==0 && disk["udev_path"]:"" == id )
+		    {
+		    part = find( map p, disk["partitions"]:[], 
+				 ``(p["nr"]:0==num));
+		    if( num==0 || part!=nil )
+			{
+			ret["disk"] = dev;
+			if( num>0 )
+			    ret["nr"] = num;
+			else
+			    ret["nr"] = "";
+			}
+		    }
+		});
 	    }
 	}
     else
 	{
-	as_string = true;
-	if( size(ls)>=3 )
+	if( search( device, "/dev/hd" )==0 ||
+	    search( device, "/dev/sd" )==0 ||
+	    search( device, "/dev/ed" )==0 ||
+	    search( device, "/dev/iseries/vd" )==0 )
 	    {
-	    integer pos = findlastof( device, "/" );
+	    dlen = findfirstof( device, "0123456789" );
+	    if( dlen == nil )
+		{
+		dlen = size(device);
+		}
+	    }
+	else if( search( device, "/dev/md" )==0 && size(ls)==2 )
+	    {
+	    dlen = 7;
+	    }
+	else if( search( device, "/dev/loop" )==0 )
+	    {
+	    dlen = 9;
+	    }
+	else if( search( device, "/dev/i2o/hd" )==0 )
+	    {
+	    dlen = 12;
+	    }
+	else if( search( device, "/dev/rd/" )==0 ||
+		 search( device, "/dev/cciss/" )==0 ||
+		 search( device, "/dev/ataraid/" )==0 ||
+		 search( device, "/dev/etherd/" )==0 ||
+		 search( device, "/dev/ida/" )==0 )
+	    {
+	    integer pos = findlastof( device, "p" );
+	    dlen = size(device);
 	    if( pos!=nil )
 		{
 		dlen = pos;
 		}
 	    }
-	else
+	else if( search( device, "/dev/dasd" )==0 )
 	    {
 	    dlen = size(device);
-	    integer nonzero = findlastnotof( device, "0123456789" );
-	    if( nonzero!=nil && nonzero < dlen-1 )
+	    if( findfirstof( device, "0123456789" )!=nil )
 		{
-		dlen = nonzero+1;
-		as_string = false;
+		dlen = dlen-1;
 		}
 	    }
-	}
-    ret = add( ret, "disk", substring( device, 0, dlen ) );
-    device = substring( device, dlen );
-    if( size(device)>0 && findfirstof( device, "/p" )==0 )
-	{
-	device = substring( device, 1 );
-	}
-    ret["nr"] = -1;
-    if( as_string )
-	{
-	ret["nr"] = device;
-	}
-    else
-	{
-	if( size(device)>0 )
+	else
 	    {
-	    ret["nr"] = tointeger(device);
+	    as_string = true;
+	    if( size(ls)>=3 )
+		{
+		integer pos = findlastof( device, "/" );
+		if( pos!=nil )
+		    {
+		    dlen = pos;
+		    }
+		}
+	    else
+		{
+		dlen = size(device);
+		integer nonzero = findlastnotof( device, "0123456789" );
+		if( nonzero!=nil && nonzero < dlen-1 )
+		    {
+		    dlen = nonzero+1;
+		    as_string = false;
+		    }
+		}
 	    }
-	}
-    if( size(ret["disk"]:"")>0 && ret["nr"]:(any)1 == -1 )
-	{
-	ret["nr"] = "";
+	ret = add( ret, "disk", substring( device, 0, dlen ) );
+	device = substring( device, dlen );
+	if( size(device)>0 && findfirstof( device, "/p" )==0 )
+	    {
+	    device = substring( device, 1 );
+	    }
+	ret["nr"] = -1;
+	if( as_string )
+	    {
+	    ret["nr"] = device;
+	    }
+	else
+	    {
+	    if( size(device)>0 )
+		{
+		ret["nr"] = tointeger(device);
+		}
+	    }
+	if( size(ret["disk"]:"")>0 && ret["nr"]:(any)1 == -1 )
+	    {
+	    ret["nr"] = "";
+	    }
 	}
     y2debug( "GetDiskPartition device:%1 ret:%2", device, ret );
     return( ret );
@@ -1537,7 +1642,6 @@ global define map FindFstabEntry( map fstab, string mount, string device,
     return( ret );
     }
 
-global define map<string,map> GetTargetMap();
 
 global define map GetOndiskTarget()
     {
