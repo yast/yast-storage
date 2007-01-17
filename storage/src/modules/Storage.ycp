@@ -1182,10 +1182,7 @@ map volumeMap( any vinfo, map p )
 	if( !tbool )
 	    p["inactive"] = true;
 	t = LibStorage::VolumeInfo::swig_mount_by_get(vinfo);
-	if( t!=LibStorage::MOUNTBY_DEVICE() )
-	    {
-	    p["mountby"] = toSymbol( conv_mountby, t );
-	    }
+	p["mountby"] = toSymbol( conv_mountby, t );
 	}
     t = LibStorage::VolumeInfo::swig_usedBy_get(vinfo);
     if( t!=LibStorage::UB_NONE() )
@@ -2245,10 +2242,11 @@ global integer MaxCylLabel( map disk )
     }
 
 global boolean CreatePartition( string disk, string device, symbol ptype,
-                                integer id, integer start, integer len )
+                                integer id, integer start, integer len,
+				symbol mby )
     {
-    y2milestone( "CreatePartition disk:%1 device:%2 ptype:%3 id:%4 start:%5 len:%6",
-                 disk, device, ptype, id, start, len );
+    y2milestone( "CreatePartition disk:%1 device:%2 ptype:%3 id:%4 start:%5 len:%6 mby:%7",
+                 disk, device, ptype, id, start, len, mby );
     string cdev = "";
     integer pt = fromSymbol(conv_ptype,ptype);
     y2milestone( "CreatePartition type:%1 pt:%2", ptype, pt );
@@ -2263,6 +2261,8 @@ global boolean CreatePartition( string disk, string device, symbol ptype,
 							   id );
     if( ret<0 )
 	y2error( "CreatePartition ret %1", ret );
+    integer tmp = fromSymbol( conv_mountby, mby );
+    LibStorage::StorageInterface::changeMountBy( sint, device, tmp );
     y2milestone( "CreatePartition sint ret:%1", ret );
     UpdateTargetMap();
     return( ret==0 );
@@ -2428,7 +2428,8 @@ global boolean ChangeVolumeProperties( map part )
 	else
 	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
 	}
-    if( ret==0 && part["mountby"]:`device != curr["mountby"]:`device )
+    if( ret==0 && size(part["mount"]:"")>0 &&
+        part["mountby"]:`device != curr["mountby"]:`device )
 	{
 	changed = true;
 	tmp = fromSymbol(conv_mountby,part["mountby"]:`device);
@@ -2972,6 +2973,8 @@ global define boolean DeletePartitionTable(string disk)
     return( ret==0 );
     }
 
+global symbol GetMountBy( string device );
+
 /**
  * Set the flag if a disk needs to be initialized
  * @param string the disk to be changed
@@ -2994,7 +2997,8 @@ global define boolean InitializeDisk(string disk, boolean value)
 	y2milestone( "d:%1", d );
 	rbool = CreatePartition( disk, disk+"1", `primary,
 	                         Partitions::fsid_native,
-				 0, d["cyl_count"]:1 );
+				 0, d["cyl_count"]:1,
+				 GetMountBy( disk+"1" ) );
 	if( !rbool )
 	    y2error( "InitializeDisk create failed" );
 	}
@@ -3015,7 +3019,8 @@ global define boolean CreateAny( symbol ctype, map d, map& p )
 	ret = Storage::CreatePartition( d["device"]:"", p["device"]:"",
 				        p["type"]:`primary,
 				        p["fsid"]:Partitions::fsid_native,
-				        p["region",0]:0, p["region",1]:0 );
+				        p["region",0]:0, p["region",1]:0,
+					p["mountby"]:GetMountBy( p["device"]:"" ) );
 	}
     else if( ctype == `CT_MD )
 	{
@@ -6102,6 +6107,14 @@ global boolean SaveExpertDetail()
 	file["l",lineno,"changed"] = true;
 	AsciiFile::RewriteFile( file, "/etc/sysconfig/storage" );
 	}
+    }
+
+global symbol GetMountBy( string device )
+    {
+    integer val = 0;
+    integer r = LibStorage::StorageInterface::getMountBy( sint, device, val );
+    symbol ret = toSymbol( conv_mountby, val );
+    return( ret );
     }
 
 }
