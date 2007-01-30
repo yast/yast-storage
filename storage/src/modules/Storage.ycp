@@ -503,9 +503,10 @@ global define map GetDiskPartition( string device )
     return( GetDiskPartitionTg( device, GetTargetMap() ));
     }
 
-void UpdateChangeTime()
+global void UpdateChangeTime()
     {
     integer change_time = time();
+    y2milestone( "UpdateChangeTime time %1", change_time );
     StorageMap["targets_time"] = change_time;
     }
 
@@ -1497,7 +1498,6 @@ global void UpdateTargetMap()
 	    }
 	});
     StorageMap[targets_key] = tg;
-    UpdateChangeTime();
     //SCR::Write(.target.ycp, "/tmp/upd_all_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
     //count = count+1;
     }
@@ -1524,7 +1524,6 @@ define void UpdateTargetMapDisk( string dev )
 	tg[dev] = getContainerInfo(c);
 	}
     StorageMap[targets_key] = tg;
-    UpdateChangeTime();
     //SCR::Write(.target.ycp, "/tmp/upd_disk_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
     //count = count+1;
     }
@@ -1572,7 +1571,6 @@ define void UpdateTargetMapDev( string dev )
     else
 	y2error( "UpdateTargetMapDev key %1 not found in target", disk["device"]:"" );
     StorageMap[targets_key] = tg;
-    UpdateChangeTime();
     //SCR::Write(.target.ycp, "/tmp/upd_dev_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
     //count = count+1;
     }
@@ -3198,7 +3196,6 @@ global define void SetTargetMap( map<string,map> target )
         SetRecursiveRemoval(true);
     //SCR::Write(.target.ycp, Storage::SaveDumpPath("targetMap_set_"+sformat("%1",count)), target );
     //count = count+1;
-    integer old_change_time = StorageMap["targets_time"]:0;
     CreateTargetBackup("tmp_set");
     map<string,map> tg = GetTargetMap();
     list<string> keys = maplist( string k, any e, target, ``(k));
@@ -3360,9 +3357,10 @@ global define void SetTargetMap( map<string,map> target )
 	});
     boolean changed = !EqualBackupStates( "tmp_set", "", true );
     y2milestone( "SetTargetMap changed:%1", changed );
-    if( !changed )
-	StorageMap["targets_time"] = old_change_time;
+    if( changed )
+	UpdateChangeTime();
     DisposeTargetBackup("tmp_set");
+    y2milestone( "SetTargetMap ChangeTime %1", GetTargetChangeTime() );
     };
 
 global define map<string,map> ReReadTargetMap()
