@@ -347,6 +347,7 @@ class Storage : public storage::StorageInterface
 	                  std::list<Disk*>& dl );
 
         int commit();
+	void handleHald( bool stop );
 	void activateHld( bool val=true );
 	void removeDmTableTo( const Volume& vol );
 	void removeDmTableTo( const string& device );
@@ -1306,6 +1307,7 @@ class Storage : public storage::StorageInterface
 	string tempdir;
 	string rootprefix;
 	string logdir;
+	unsigned hald_pid;
 	static string proc_arch;
 	static string sysfs_dir;
 	CCont cont;
