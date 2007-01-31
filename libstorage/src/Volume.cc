@@ -1513,7 +1513,7 @@ bool Volume::needCrsetup() const
 
 bool Volume::needFstabUpdate() const
     { 
-    bool ret = !ignore_fstab &&
+    bool ret = !ignore_fstab && !(mp.empty() && orig_mp.empty()) &&
 	       (fstab_opt!=orig_fstab_opt || mount_by!=orig_mount_by ||
 		encryption!=orig_encryption); 
     return( ret );
