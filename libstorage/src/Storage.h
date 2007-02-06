@@ -297,6 +297,8 @@ class Storage : public storage::StorageInterface
 			 string& device );
 	int removeLvmLvByDevice( const string& device );
 	int removeLvmLv( const string& vg, const string& name );
+	int changeLvStripeCount( const string& vg, const string& name,
+				 unsigned long stripes );
 	int changeLvStripeSize( const string& vg, const string& name,
 				unsigned long long stripeSize );
 
@@ -313,6 +315,8 @@ class Storage : public storage::StorageInterface
 			      string& device );
 	int removeEvmsVolumeByDevice( const string& device );
 	int removeEvmsVolume( const string& vg, const string& name );
+	int changeEvmsStripeCount( const string& coname, const string& name,
+				   unsigned long stripes );
 	int changeEvmsStripeSize( const string& coname, const string& name,
 				  unsigned long long stripeSize );
 

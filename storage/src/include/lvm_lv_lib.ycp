@@ -34,33 +34,24 @@ import "Partitions";
 
 include "partitioning/lvm_lib.ycp";
 include "partitioning/lvm_pv_lib.ycp";
-      
-    //////////////////////////////////////////////////////////////////////
-    // add a logical volume to the modify_targets stack
-    //
-    // 1:  $[  "use_module" : "lvm_ll"
-    //         "type"       : "create_lv", 
-    //         "name"       : "usr"
-    //         "size"       : 12121
-    //         "vgname"     : "system"
-    //         "stripes"    : 1 ]           
-    //
-    //   !!!!!!! changes targetMap by reference !!!!!!
-    // 	
-    //////////////////////////////////////////////////////////////////////
 
+define void popupText( integer stripe )
+    {
+    string txt = _("A logical volume with the requested size could 
+not be created.
+");
+    if( stripe > 1 )
+	txt = txt + _("Try reducing the stripe count of the volume.");
+    Popup::Error( txt );
+    }
+      
 define boolean addLogicalVolume( map Lv, string current_vg )
     ``{
     boolean ret=true;
     if( !Storage::CreateLvmLv( current_vg, Lv["name"]:"", Lv["size_k"]:0,
                                Lv["stripes"]:1 ))
 	{
-	string txt = _("A logical volume with the requested size could 
-not be created.
-");
-	if( Lv["stripes"]:1 > 1 )
-	    txt = txt + _("Try reducing the stripe count of the volume.");
-	Popup::Error( txt );
+	popupText( Lv["stripes"]:1 );
 	ret = false;
 	}
     else 
@@ -79,6 +70,18 @@ define boolean editLogicalVolume( map Lv, string current_vg)
     boolean ret = Storage::ChangeVolumeProperties( Lv );
     ret = Storage::ResizeVolume( Lv["device"]:"", "/dev/"+current_vg,
                                  Lv["size_k"]:0 ) && ret;
+    if( Lv["create"]:false )
+	{
+	if( !Storage::ChangeLvStripeCount( current_vg, Lv["name"]:"",
+					  Lv["stripes"]:1 ))
+	    {
+	    popupText( Lv["stripes"]:1 );
+	    ret = false;
+	    }
+	else if( Lv["stripes"]:1 > 1 )
+	    Storage::ChangeLvStripeSize( current_vg, Lv["name"]:"", 
+					 Lv["stripesize"]:64 );
+	}
     return( ret );
     };
 
