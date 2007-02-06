@@ -345,6 +345,7 @@ class Storage : public storage::StorageInterface
 	void checkDeviceExclusive( const string& device, unsigned secs );
 	void getDiskList( bool (* CheckFnc)( const Disk& ),
 	                  std::list<Disk*>& dl );
+	void changeDeviceName( const string& old, const string& nw );
 
         int commit();
 	void handleHald( bool stop );
