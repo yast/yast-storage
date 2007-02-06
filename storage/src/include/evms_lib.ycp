@@ -1200,6 +1200,16 @@ or cancel this dialog.
       return( retval );
       };
 
+define void popupError( integer stripe )
+    {
+    string txt = _("A volume with the requested size 
+could not be created. 
+");
+    if( stripe > 1 )
+	txt = txt + _("Try reducing the stripe count of the volume.");
+    Popup::Error( txt );
+    }
+
 define map add_evms_volume( string co_name, map<string,map> tg )
     ``{
     y2milestone( "add_evms_volume co_name %1", co_name );
@@ -1230,14 +1240,7 @@ define map add_evms_volume( string co_name, map<string,map> tg )
 	                                           part["size_k"]:0, 
 						   part["stripes"]:1 );
 	    if( !ret["ok"]:false )
-		{
-		string txt = _("A volume with the requested size 
-could not be created. 
-");
-		if( part["stripes"]:1 > 1 )
-		    txt = txt + _("Try reducing the stripe count of the volume.");
-		Popup::Error( txt );
-		}
+		popupError( part["stripes"]:1 );
 	    else
 		{
 		ret["ok"] = Storage::ChangeVolumeProperties( part );
@@ -1272,6 +1275,9 @@ define map edit_evms_volume( string device, map<string,map> tg )
     y2milestone( "edit_evms_volume part %1", part );
 
     integer last_size = part["size_k"]:0*1024;
+    integer last_stripe = part["stripes"]:1;
+    string co_name = tg[key,"name"]:"";
+
     part = dlg_logical_volume( (map<string,any>)tg[key]:$[], part, false, 
 			       tg[key,"is_container"]:false );
     if( size(part)>0 )
@@ -1280,6 +1286,16 @@ define map edit_evms_volume( string device, map<string,map> tg )
 	if( ret["ok"]:false && last_size != part["size_k"]:0*1024 )
 	    ret["ok"] = Storage::ResizeVolume( part["device"]:"", key,
 					       part["size_k"]:0 );
+	if( ret["ok"]:false && last_stripe!= part["stripes"]:1 )
+	    ret["ok"] = Storage::ChangeEvmsStripeCount( co_name,
+							part["name"]:"",
+							part["stripes"]:1 );
+	if( ret["ok"]:false && part["stripes"]:1>1 && part["stripesize"]:0>0 )
+	    ret["ok"] = Storage::ChangeEvmsStripeSize( co_name, 
+						       part["name"]:"",
+						       part["stripesize"]:0 );
+	if( !ret["ok"]:false )
+	    popupError( part["stripes"]:1 );
 	}
     return( ret );
     };
