@@ -735,23 +735,46 @@ Do you want to change your setup?
 
 
 
-define symbol check_devices_used( list<map> partitions )
+define symbol check_devices_used( list<map> partitions, boolean not_cr )
     {
     symbol ret = `UB_NONE;
-    /////////////////////////////////////////////////////////////////////////
-    // check LVM partitions
-    if( size(filter( map p, partitions,
-                     ``( p["used_by_type"]:`UB_NONE==`UB_LVM))) != 0)
-	ret = `UB_LVM;
-    else if( size(filter( map p, partitions,
-			  ``( p["used_by_type"]:`UB_NONE==`UB_MD))) != 0)
-	ret = `UB_MD;
-    else if( size(filter( map p, partitions,
-			  ``( p["used_by_type"]:`UB_NONE==`UB_EVMS))) != 0)
-	ret = `UB_EVMS;
-    else if( size(filter( map p, partitions,
-			  ``( p["used_by_type"]:`UB_NONE==`UB_DM))) != 0)
-	ret = `UB_DM;
+    list<map> pl = filter( map p, partitions,
+			   ``( p["used_by_type"]:`UB_NONE!=`UB_NONE));
+    if( not_cr && size(pl)>0 )
+	{
+	map<string,map> tg = Storage::GetTargetMap();
+	list<map> ppl = [];
+	foreach( map p, pl, 
+	    ``{
+	    if( p["used_by_type"]:`UB_NONE==`UB_MD || 
+	        p["used_by_type"]:`UB_NONE==`UB_DM )
+		{
+		string dev = p["used_by"]:"";
+		if( p["used_by_type"]:`UB_NONE==`UB_MD && 
+		    search(dev,"/dev/")!=0 )
+		    dev = "/dev/" + dev;
+		if( p["used_by_type"]:`UB_NONE==`UB_DM && 
+		    search(dev,"/dev/mapper/")!=0 )
+		    dev = "/dev/mapper/" + dev;
+		map pa = Storage::GetPartition( tg, dev );
+		if( size(pa)==0 || !pa["create"]:false )
+		    ppl = add( ppl, p );
+		}
+	    else if( p["used_by_type"]:`UB_NONE==`UB_LVM )
+		{
+		if( !tg["/dev/"+p["used_by"]:"","create"]:false )
+		    ppl = add( ppl, p );
+		}
+	    else if( p["used_by_type"]:`UB_NONE==`UB_EVMS )
+		{
+		if( !tg["/dev/evms/"+p["used_by"]:"","create"]:false )
+		    ppl = add( ppl, p );
+		}
+	    });
+	pl = ppl;
+	}
+    if( size(pl)>0 )
+	ret = pl[0,"used_by_type"]:`UB_NONE;
     return( ret );
     }
 
@@ -771,7 +794,7 @@ define boolean check_device_edit( map curr_part, boolean bsd_label )
 	return false;
 	}
 
-    symbol used = check_devices_used( [ curr_part ] );
+    symbol used = check_devices_used( [ curr_part ], false );
 
     if( used == `UB_MD)
 	{
@@ -806,7 +829,7 @@ Remove the volume before editing it.
     }
 
 define boolean check_device_delete( map curr_part, boolean bsd_label,
-                                    boolean installation )
+                                    boolean installation, list<map> pl )
     ``{
     string part_name = curr_part["device"]:"";
 
@@ -825,7 +848,7 @@ define boolean check_device_delete( map curr_part, boolean bsd_label,
 	    }
 	}
 
-    symbol used = check_devices_used( [ curr_part ] );
+    symbol used = check_devices_used( [ curr_part ], false );
 
     if( used != `UB_NONE )
 	{
@@ -907,6 +930,32 @@ Remove the device anyway?
 		}
 	    }
 	}
+    if( curr_part["type"]:`unknown==`logical )
+	{
+	boolean ok = true;
+	list<map> ppl = filter( map p, pl, ``(p["nr"]:0>curr_part["nr"]:0));
+	if( size(ppl)>0 && check_devices_used( ppl, true )!=`UB_NONE )
+	    ok = false;
+	if( ok && !installation && size(ppl)>0 )
+	    {
+	    integer i = 0;
+	    while( i<size(ppl) && ok )
+		{
+		if( size(Storage::DeviceMounted(ppl[i,"device"]:""))>0 )
+		    ok = false;
+		i = i+1;
+		}
+	    }
+	if( !ok )
+	    {
+	    // popup text %2 is a device name, %1 is the EVMS name
+	    Popup::Message(sformat(_("The device (%1) cannot be removed
+Since it is a logical partition and another logical 
+partition with higher number is in use.
+"), part_name ));
+	    return( false );
+	    }
+	}
     return true;
     };
 
@@ -968,7 +1017,7 @@ Please choose Cancel unless you know exactly what you are doing.
 	    }
 	}
 
-    symbol used = check_devices_used( logical_parts );
+    symbol used = check_devices_used( logical_parts, false );
 
     if( used == `UB_LVM )
 	{
