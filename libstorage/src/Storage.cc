@@ -3568,14 +3568,14 @@ Storage::evmsActivateDevices()
     list<string> save_disks;
     list<string> dev_dm_remove;
 
-    y2milestone( "evmsActivateDevices start" );
+    y2milestone( "start" );
     CPair p = cPair( needSaveFromEvms );
     ContIterator i = p.begin();
     while( i != p.end() )
 	{
+	y2mil( "save:" << *i );
 	i->getToCommit( FORMAT, co, vol );
 	i->getToCommit( MOUNT, co, vol );
-	++i;
 	Disk* disk;
 	if( i->type()==DISK && (disk = dynamic_cast<Disk *>(&(*i)))!=NULL )
 	    {
@@ -3587,6 +3587,7 @@ Storage::evmsActivateDevices()
 		vol.push_back( &(*i2) );
 		}
 	    }
+	++i;
 	}
     if( !vol.empty() )
 	{
