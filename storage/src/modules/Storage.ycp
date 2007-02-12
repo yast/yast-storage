@@ -3177,20 +3177,7 @@ global void RemoveDmMapsTo( string device )
     {
     y2milestone( "RemoveDmMapsTo device:%1", device );
     InitLibstorage();
-    if( LibStorage::StorageInterface::checkDmMapsTo( sint, device ))
-	{
-	LibStorage::StorageInterface::removeDmMapsTo( sint, device, true );
-	}
-    else
-	{
-	map d = GetDiskPartition( device );
-	string ddev = d["disk"]:"";
-	if( size(ddev)>0 && ddev!=device &&
-	    LibStorage::StorageInterface::checkDmMapsTo( sint, ddev ) )
-	    {
-	    LibStorage::StorageInterface::removeDmMapsTo( sint, ddev, false );
-	    }
-	}
+    LibStorage::StorageInterface::removeDmMapsTo( sint, device, true );
     }
 
 global define boolean CheckSwapable( string dev )
@@ -4975,7 +4962,7 @@ global define void UpdateFstabUsbdevfs()
     }
 
 
-global define map BuildDiskmap( map oldv )
+define map BuildDiskmap( map oldv )
     ``{
     map d = (map)SCR::Read( .target.stat,
                             Installation::destdir + "/var/lib/hardware" );
@@ -6145,6 +6132,20 @@ global symbol GetMountBy( string device )
     integer val = 0;
     integer r = LibStorage::StorageInterface::getMountBy( sint, device, val );
     symbol ret = toSymbol( conv_mountby, val );
+    return( ret );
+    }
+
+global boolean DeviceMatchFstab( string device, string fstab_spec )
+    {
+    boolean ret = false;
+    map<string,map> tg = GetTargetMap();
+    string ts = GetTranslatedDevices( $[], $[], [ fstab_spec ] )[0]:"";
+    if( ts!=fstab_spec )
+	y2milestone( "DeviceMatchFstab translate %1 --> %2", fstab_spec, ts );
+    map p = GetPartition( tg, ts );
+    ret = p["device"]:"" == device;
+    y2milestone( "DeviceMatchFstab device:%1 fstab:%2 ret:%3", device, 
+                 fstab_spec, ret );
     return( ret );
     }
 
