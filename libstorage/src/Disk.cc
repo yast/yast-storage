@@ -2112,7 +2112,7 @@ int Disk::doCreate( Volume* v )
 	    getStorage()->checkDeviceExclusive( p->device(), 3 );
 	    }
 #endif
-	if( ret==0 )
+	if( ret==0 && p->type()!=EXTENDED )
 	    {
 	    bool used_as_pv = p->getUsedByType()==UB_EVMS ||
 	                      p->getUsedByType()==UB_LVM;
