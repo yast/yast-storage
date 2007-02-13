@@ -2114,8 +2114,7 @@ string Volume::getFstabDevice()
 	l = static_cast<const Loop*>(this);
     if( l && dmcrypt() && !optNoauto() )
 	ret = l->loopFile();
-    else
-	ret = dev;
+    y2mil( "ret:" << ret );
     return( ret );
     }
 
