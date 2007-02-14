@@ -513,27 +513,38 @@ global void UpdateChangeTime()
 /* return partition <device> of map <tg> */
 global define map<string,any> GetPartition( map<string,map> tg, string device )
     ``{
-    map<string,any> ret = $[];
+    map ret = $[];
     map tmp = GetDiskPartitionTg( device, tg );
     string disk = tmp["disk"]:"";
     if( search(device, "/dev/evms")==0 && !haskey( tg, disk ) )
 	{
 	disk = "/dev/evms";
 	}
-    y2debug( "GetPartition device=%1", device );
-    list< map<string,any> > part = (list< map<string,any> >)
-	filter( map<string, any> pi, tg[disk,"partitions"]:[],
-	        ``(pi["device"]:""==device ));
+    y2debug( "GetPartition device=%1 disk=%2", device, disk );
+    list<map> part = filter( map p, tg[disk,"partitions"]:[],
+			     ``(p["device"]:""==device ));
+    part = filter( map p, part, ``(!p["delete"]:false));
+    if( size(part)==0 )
+	{
+	part = filter( map p, tg[disk,"partitions"]:[],
+		       ``(p["nr"]:-1==tmp["nr"]:0 ));
+	part = filter( map p, part, ``(!p["delete"]:false));
+	}
+    if( size(part)==0 )
+	{
+	part = filter( map p, tg[disk,"partitions"]:[],
+		       ``(p["name"]:""==tmp["nr"]:"" ));
+	part = filter( map p, part, ``(!p["delete"]:false));
+	}
     ret = part[0]:$[];
     if( size(ret)==0 && search(device, "/dev/mapper/")==0 )
 	{
-	part = (list< map<string,any> >)
-	    filter( map<string, any> pi, tg["/dev/loop","partitions"]:[],
-		    ``(pi["device"]:""==device ));
+	part = filter( map p, tg["/dev/loop","partitions"]:[],
+		       ``(p["device"]:""==device ));
 	ret = part[0]:$[];
 	}
     y2debug( "GetPartition ret=%1", ret );
-    return( ret );
+    return( (map<string,any>) ret );
     }
 
 /* return disk <device> belongs to in map <tg> */
