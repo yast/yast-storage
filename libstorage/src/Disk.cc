@@ -521,11 +521,18 @@ Disk::checkSystemError( const string& cmd_line, const SystemCmd& cmd )
 	    }
 	system_stderr += tmp;
         }
-    if( cmd.retcode() != 0 )
+    int ret = cmd.retcode();
+    if( ret!=0 && cmd_line.find( device()+" set" )!=string::npos &&
+	tmp.find( "kernel was unable to re-read" )!=string::npos )
+	{
+	y2mil( "resetting retcode set cmd " << ret << " of:" << cmd_line );
+	ret = 0;
+	}
+    if( ret != 0 )
         {
         y2error( "retcode:%d", cmd.retcode() );
         }
-    return( cmd.retcode() );
+    return( ret );
     }
 
 int
