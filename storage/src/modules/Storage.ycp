@@ -6080,7 +6080,6 @@ global define list<string> NoProposeDisks()
     }
 
 boolean expert_detail = nil;
-path ed_path = .sysconfig.storage.EXPERT_DETAIL;
 
 list FindExpertLine( map file )
     {
@@ -6120,7 +6119,7 @@ global void SetExpertDetail( boolean val )
     expert_detail = val;
     }
 
-global boolean SaveExpertDetail()
+global void SaveExpertDetail()
     {
     y2milestone( "SaveExpertDetail val:%1", expert_detail );
     if( expert_detail!=nil )
@@ -6158,6 +6157,47 @@ global boolean DeviceMatchFstab( string device, string fstab_spec )
     y2milestone( "DeviceMatchFstab device:%1 fstab:%2 ret:%3", device, 
                  fstab_spec, ret );
     return( ret );
+    }
+
+global string GetUsedFs()
+    {
+    InitLibstorage();
+    string r = LibStorage::StorageInterface::getAllUsedFs( sint );
+    list<string> lr = sort(splitstring(r," \t"));
+    r = mergestring( lr, " " );
+    y2milestone( "GetUsedFs ret:%1", r );
+    return( r );
+    }
+
+list FindUsedFsLine( map file )
+    {
+    list ret = [];
+    list<list> t = maplist( integer k, map e, file["l"]:$[], 
+                            ``([k, e["line"]:""]));
+    t = filter( list e, t, ``(search(e[1]:"","USED_FS_LIST")==0));
+    y2milestone( "FindUsedFsLine t:%1", t );
+    ret = t[0]:[];
+    y2milestone( "FindUsedFsLine ret:%1", ret );
+    return( ret );
+    }
+
+global void SaveUsedFs()
+    {
+    y2milestone( "SaveUsedFs" );
+    string s = GetUsedFs();
+    map file = $[];
+    AsciiFile::ReadFile( file, "/etc/sysconfig/storage" );
+    list l = FindUsedFsLine( file );
+    string e = "USED_FS_LIST=\"" + s + "\"";
+    integer lineno = l[0]:(size(file["l"]:$[]) + 1);
+    if( size(l)==0 )
+	file["l",lineno] = $[];
+    if( file["l",lineno,"line"]:""!=e )
+	{
+	file["l",lineno,"line"] = e;
+	file["l",lineno,"changed"] = true;
+	AsciiFile::RewriteFile( file, "/etc/sysconfig/storage" );
+	}
     }
 
 }
