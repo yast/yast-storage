@@ -475,6 +475,25 @@ to a device with nonexistent or unknown file system."));
     return( ret );
     };
 
+define boolean EmptyCryptPwdAllowed( map p )
+    {
+    boolean ret = p["format"]:false && 
+		  contains( union(FileSystems::tmp_m_mpoint,["swap"]), 
+		            p["mount"]:"" );
+    ret = ret && Storage::IsPersistent( p );
+    y2milestone( "EmptyCryptPwdAllowed ret:%1", ret );
+    return( ret );
+    }
+
+define boolean AskCryptPwd( map p )
+    {
+    /* boolean ret = p["mount"]:""!="swap" || !EmptyCryptPwdAllowed(p); */
+    boolean ret = true;
+    y2milestone( "AskCryptPwd ret:%1", ret );
+    return( true );
+    }
+
+
 /**
   * Do all checks concerning handling of crypt fs
   * @param new partition map
@@ -492,11 +511,10 @@ define map CheckCryptOk( map new )
 	new["enc_type"] = new["format"]:false?`luks:`twofish;
     else
 	new["enc_type"] = `none;
-    if( crypt_fs && new["mount"]:""!="swap" &&
+    if( crypt_fs && AskCryptPwd( new ) && 
         size(Storage::GetCryptPwd( new["device"]:"" ))==0 )
 	{
-	boolean tmpc = new["format"]:false && 
-	               contains( FileSystems::tmp_m_mpoint, new["mount"]:"" );
+	boolean tmpc = EmptyCryptPwdAllowed( new );
 	string fs_passwd = DlgCreateCryptFs( new["device"]:"", 
 	                                     new["format"]:false?8:1, 
 					     new["format"]:false, tmpc );
@@ -525,7 +543,7 @@ define map CheckCryptOk( map new )
 	    }
 	else
 	    {
-	    ret["ok"] = (new["mount"]:""=="swap") || tmpc;
+	    ret["ok"] = tmpc;
 	    }
 	}
     ret["map"] = new;
