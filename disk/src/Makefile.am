@@ -5,7 +5,8 @@
 #
 
 client_DATA =		\
-	disk.ycp
+	disk.ycp	\
+	disk_worker.ycp
 
 desktop_DATA = disk.desktop
 
