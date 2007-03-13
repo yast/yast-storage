@@ -23,14 +23,10 @@
  * <h3>Configuration of the disk</h3>
  */
 
-   textdomain "storage";
+    textdomain "storage";
 
-   import "CommandLine";
-   import "StorageClients";
-   import "Popup";
-   import "Storage";
-
-define any DiskSequence () {
+    import "Popup";
+    import "Wizard";
 
     string msg=_("Only use this program if you are familiar with partitioning hard disks.
 
@@ -42,29 +38,36 @@ kernel, which would most likely lead to data loss.
 To continue despite this warning, click Yes.
 ");
 
-    any ret	= `back;
-    // popup headline
-    if (Popup::YesNoHeadline(_("Warning"),msg)==true)
-    {
-	Storage::SwitchUiAutomounter( false );
-	ret = WFM::CallFunction("inst_disk", [ true,  true ]);
-	Storage::SwitchUiAutomounter( true );
-	Storage::SaveUsedFs();
+    any ret = `back;
+
+    // no params == UI, some params == commandline
+    if (size (WFM::Args()) == 0) {
+	Wizard::CreateDialog();
+	Wizard::SetContents (
+	    _("Expert Partitioner"),
+	    `Label (_("Initializing...")),
+	    _("<p>Please wait, while the storage is being initialized.</p>"),
+	    false,
+	    false
+	);
+	Wizard::SetTitleIcon ("yast-disk");
+
+	ret = `back;
+	// popup headline
+	if (Popup::YesNoHeadline(_("Warning"),msg)==true) {
+	    y2milestone ("--- Calling disk_worker %1 ---", WFM::Args());
+	    ret = WFM::call("disk_worker", WFM::Args());
+	    y2milestone ("--- Returned: %1 ---", ret);
+	} else {
+	    y2milestone ("User decided not to run storage...");
+	}
+
+	Wizard::CloseDialog();
+    } else {
+	y2milestone ("--- Calling disk_worker %1 ---", WFM::Args());
+	ret = WFM::call("disk_worker", WFM::Args());
+	y2milestone ("--- Returned: %1 ---", ret);
     }
-    return ret;
-}
 
-/* -- the command line description map -------------------------------------- */
-map cmdline = $[
-    "id"		: "disk",
-    // translators: command line help text for disk module
-    "help"		: _("Disk partitioner"),
-    // custum help text (should replace default one)
-    "customhelp"       : _("Command line interface for the partitioner module is not available"),
-    "guihandler"	: DiskSequence,
-];
-
-CommandLine::Run (cmdline);
-return true;
-
+    return true;
 }
