@@ -54,6 +54,7 @@ class Disk : public Container
 	bool isLogical( unsigned nr ) const;
 	static storage::CType const staticType() { return storage::DISK; }
 	friend std::ostream& operator<< (std::ostream&, const Disk& );
+	void triggerUdevUpdate();
 
 	static bool needP( const string& dev );
 	void setUdevData( const string& path, const string& id );
