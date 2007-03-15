@@ -229,6 +229,20 @@ void Partition::forgetResize()
     reg = Region( cylStart(), disk()->kbToCylinder(size_k) );
     }
 
+bool Partition::operator== ( const Partition& rhs ) const
+    {
+    return( orig_num == rhs.orig_num &&
+            num == rhs.num &&
+            del == rhs.del );
+    }
+
+bool Partition::operator< ( const Partition& rhs ) const
+    {
+    if( orig_num!=rhs.orig_num )
+	return( orig_num<rhs.orig_num );
+    else
+        return( !del );
+    }
 
 ostream& Partition::logData( ostream& file ) const
     {
@@ -275,7 +289,7 @@ const Disk* const Partition::disk() const
     }
 
 int Partition::setFormat( bool val, storage::FsType new_fs )
-{
+    {
     int ret = 0;
     y2milestone( "device:%s val:%d fs:%s", dev.c_str(), val,
 		 fs_names[new_fs].c_str() );
@@ -288,7 +302,7 @@ int Partition::setFormat( bool val, storage::FsType new_fs )
 	ret = Volume::setFormat( val, new_fs );
     y2milestone( "ret:%d", ret );
     return( ret );
-}
+    }
 
 int Partition::changeMount( const string& val )
     {
