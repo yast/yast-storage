@@ -30,7 +30,7 @@ Disk::Disk( Storage * const s, const string& Name,
             unsigned long long SizeK ) :
     Container(s,Name,staticType())
     {
-    init_disk = false;
+    init_disk = iscsi = false;
     nm = Name;
     undevDevice(nm);
     logfile_name = Name;
@@ -52,7 +52,7 @@ Disk::Disk( Storage * const s, const string& Name,
     y2milestone( "constructed disk %s nr %u sizeK:%llu", Name.c_str(), num,
                  SizeK );
     logfile_name = Name + decString(num);
-    init_disk = false;
+    init_disk = iscsi = false;
     ronly = true;
     size_k = SizeK;
     head = new_head = 16;
@@ -305,8 +305,19 @@ bool Disk::getSysfsInfo( const string& SysfsDir )
 	{
 	ret = false;
 	}
-    y2milestone( "Ret:%d Range:%ld Major:%ld Minor:%ld", ret, range, mjr,
-                 mnr );
+    SysfsFile = sysfs_dir+"/device";
+    char lbuf[1024+1];
+    int count;
+    if( access( SysfsFile.c_str(), R_OK )==0 &&
+	(count=readlink( SysfsFile.c_str(), lbuf, sizeof(lbuf) ))>0 )
+	{
+	string lname( lbuf, count );
+	if( lname.find( "/session" )!=string::npos )
+	    iscsi = true;
+	y2mil( "lname:" << lname );
+	}
+    y2milestone( "Ret:%d Range:%ld Major:%ld Minor:%ld iSCSI:%d", 
+                 ret, range, mjr, mnr, iscsi );
     return( ret );
     }
 
@@ -2434,6 +2445,7 @@ void Disk::getInfo( DiskInfo& tinfo ) const
     info.maxLogical = maxLogical();
     info.maxPrimary = maxPrimary();
     info.initDisk = init_disk;
+    info.iscsi = iscsi;
     info.udevPath = udev_path;
     info.udevId = mergeString( udev_id );
     tinfo = info;
@@ -2467,6 +2479,8 @@ std::ostream& operator<< (std::ostream& s, const Disk& d )
 	s << " ExtPossible MaxLogical:" << d.max_logical;
     if( d.init_disk )
 	s << " InitDisk";
+    if( d.iscsi )
+	s << " iSCSI";
     return( s );
     }
 
@@ -2511,6 +2525,13 @@ void Disk::logDifference( const Disk& d ) const
 	else
 	    log += " InitDisk-->";
 	}
+    if( iscsi!=d.iscsi )
+	{
+	if( d.init_disk )
+	    log += " -->iSCSI";
+	else
+	    log += " iSCSI-->";
+	}
     y2milestone( "%s", log.c_str() );
     ConstPartPair p=partPair();
     ConstPartIter i=p.begin();
@@ -2552,7 +2573,7 @@ bool Disk::equalContent( const Disk& rhs ) const
 	       mjr==rhs.mjr && mnr==rhs.mnr && range==rhs.range &&
 	       size_k==rhs.size_k && max_primary==rhs.max_primary &&
 	       ext_possible==rhs.ext_possible && max_logical==rhs.max_logical &&
-	       init_disk==rhs.init_disk && label==rhs.label &&
+	       init_disk==rhs.init_disk && label==rhs.label && iscsi==rhs.iscsi &&
 	       sysfs_dir==rhs.sysfs_dir;
     if( ret )
 	{
@@ -2591,6 +2612,7 @@ Disk& Disk::operator= ( const Disk& rhs )
     ext_possible = rhs.ext_possible;
     max_logical = rhs.max_logical;
     init_disk = rhs.init_disk;
+    iscsi = rhs.iscsi;
     udev_path = rhs.udev_path;
     udev_id = rhs.udev_id;
     mp_alias = rhs.mp_alias;

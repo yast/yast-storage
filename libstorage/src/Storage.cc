@@ -3847,6 +3847,90 @@ Storage::getVolumes( deque<VolumeInfo>& infos )
 	}
     }
 
+int 
+Storage::getContVolInfo( const string& dev, ContVolInfo& info)
+    {
+    int ret = 0;
+    ContIterator c;
+    VolIterator v;
+    info.type = CUNKNOWN;
+    assertInit();
+    if( findVolume( dev, c, v ))
+	{
+	info.type = c->type();
+	info.cname = c->device();
+	info.vname = v->name();
+	info.numeric = v->isNumeric();
+	if( info.numeric )
+	    info.nr = v->nr();
+	else
+	    info.nr = 0;
+	}
+    else 
+	{
+	DiskIterator d;
+	std::pair<string,long> p = Disk::getDiskPartition( dev );
+	if( p.first=="/dev/md" )
+	    {
+	    info.cname = p.first;
+	    info.vname = undevDevice(dev);
+	    info.type = MD;
+	    info.numeric = true;
+	    info.nr = p.second;
+	    }
+	else if( p.first=="/dev/loop" )
+	    {
+	    info.cname = p.first;
+	    info.vname = undevDevice(dev);
+	    info.type = LOOP;
+	    info.numeric = true;
+	    info.nr = p.second;
+	    }
+	else if( p.first=="/dev/dm-" )
+	    {
+	    info.cname = p.first;
+	    info.vname = undevDevice(dev);
+	    info.type = DM;
+	    info.numeric = true;
+	    info.nr = p.second;
+	    }
+	else if( (d=findDisk(p.first))!=dEnd() )
+	    {
+	    info.cname = d->device();
+	    info.vname = dev.substr( dev.find_last_of('/')+1 );
+	    info.type = DISK;
+	    info.numeric = true;
+	    info.nr = p.second;
+	    }
+	else if( dev.find("/dev/evms/")==0 )
+	    {
+	    info.type = EVMS;
+	    info.numeric = false;
+	    info.vname = dev.substr( dev.find_last_of('/')+1 );
+	    info.cname = dev.substr( 0, dev.find_last_of('/') );
+	    }
+	else if( splitString( dev, "/" ).size()==3 && !Disk::needP( dev ) )
+	    {
+	    info.type = LVM;
+	    info.numeric = false;
+	    info.vname = dev.substr( dev.find_last_of('/')+1 );
+	    info.cname = dev.substr( 0, dev.find_last_of('/') );
+	    }
+	else
+	    {
+	    info.cname = p.first;
+	    info.vname = dev.substr( dev.find_last_of('/')+1 );
+	    info.numeric = true;
+	    info.nr = p.second;
+	    }
+	}
+    y2mil( "dev:" << dev << " ret:" << ret << " cn:" << info.cname << 
+           " vn:" << info.vname )
+    if( info.numeric )
+	y2mil( "nr:" << info.nr );
+    return( ret );
+    }
+
 int
 Storage::getVolume( const string& device, VolumeInfo& info )
     {

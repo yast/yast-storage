@@ -219,6 +219,7 @@ class Disk : public Container
 	unsigned max_primary;
 	bool ext_possible;
 	bool init_disk;
+	bool iscsi;
 	unsigned max_logical;
 	unsigned long byte_cyl;
 	unsigned long range;

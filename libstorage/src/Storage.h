@@ -204,6 +204,7 @@ class Storage : public storage::StorageInterface
 	int getMdInfo( deque<storage::MdInfo>& plist );
 	int getDmInfo( deque<storage::DmInfo>& plist );
 	int getLoopInfo( deque<storage::LoopInfo>& plist );
+	int getContVolInfo( const string& dev, ContVolInfo& info);
 
 	bool getFsCapabilities( storage::FsType fstype,
 	                        storage::FsCapabilities& fscapabilities) const;
