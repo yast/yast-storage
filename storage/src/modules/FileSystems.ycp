@@ -24,6 +24,8 @@
   import "LibStorage";
   import "LibStorage::StorageInterface";
   import "LibStorage::FsCapabilities";
+  import "LibStorage::DiskInfo";
+  import "LibStorage::ContVolInfo";
 
 global map<string,any> conv_fs =
     $[ "def_sym" : `unknown,
@@ -61,6 +63,8 @@ integer fromSymbol( map<string,any> conv, symbol val )
   global list<string> tmp_m_mpoint   = [ "/tmp", "/var/tmp" ];
 
   global string nchars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+  any lib_id = nil;
 
 define list FstabOptionStrings = 
     [ "defaults", 
@@ -885,6 +889,7 @@ global define void InitSlib( any sint )
     {
     boolean bval = false;
     integer val = 0;
+    lib_id = sint;
     foreach( symbol fs, map<string,any> cap, capabilities,
 	``{
 	if( fs != `unknown )
@@ -1336,7 +1341,28 @@ global define string DefaultFstabOptions( map part )
 	    fst_default = "ro," + fst_default;
 	    }
 	}
-    y2milestone( "DefaultFstabOptions fsys %1 is %2", fsys, fst_default );
+    any dp = LibStorage::ContVolInfo::new("LibStorage::ContVolInfo");
+    string dev = part["device"]:"";
+    LibStorage::StorageInterface::getContVolInfo( lib_id, dev, dp );
+    integer t = LibStorage::ContVolInfo::swig_type_get(dp);
+    if( t == LibStorage::DISK() )
+	{
+	any infos = LibStorage::DiskInfo::new("LibStorage::DiskInfo");
+	string disk = LibStorage::ContVolInfo::swig_cname_get(dp);
+	y2milestone( "DefaultFstabOptions disk:%1", disk );
+	integer r = LibStorage::StorageInterface::getDiskInfo( lib_id, disk, 
+	                                                       infos );
+	if( r==0 )
+	    {
+	    if(LibStorage::DiskInfo::swig_iscsi_get(infos))
+		{
+		if( size(fst_default)>0 )
+		    fst_default = fst_default + ",";
+		fst_default = fst_default + "hotplug";
+		}
+	    }
+	}
+    y2milestone( "DefaultFstabOptions dev %3 fsys %1 is %2", fsys, fst_default, dev );
     return( fst_default );
     }
 
