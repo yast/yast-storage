@@ -5,7 +5,6 @@
 #
 
 scrconf_DATA = etc_cryptotab.scr \
-	       proc_meminfo.scr  \
 	       proc_swaps.scr	 \
 	       proc_partitions.scr \
 	       dasddev.scr  	 \
