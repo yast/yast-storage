@@ -130,6 +130,7 @@ define map FstabDefaultMap =
 		   `ext3        : true,
 		   `jfs    	: true,
 		   `vfat  	: true,
+		   `ntfs  	: true,
 		   `xxefi  	: false,
 		   `xbootdisk  	: false,
 		   `xbootfat  	: false,
@@ -617,6 +618,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 		      `ext2	: $[
 				    `name 		: "Ext2",
 				    `fsid 		: Partitions::fsid_native,
+				    `real_fs            : true,
 				    `supports_format 	: true,
 				    `fsid_item 		: "0x83 Linux ",
 				    `fstype 		: "Linux native" ,
@@ -631,6 +633,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 		      `vfat	: $[
 				    `name 		: "FAT",
 				    `fsid 		: 12,
+				    `real_fs            : true,
 				    `alt_fsid           : [ 12, 0x103 ],
 				    `supports_format 	: true ,
 				    `fsid_item 		: "0x0C Win95 FAT32 ",
@@ -648,6 +651,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 		      `reiser 	: $[
 				    `name 		: "Reiser",
 				    `fsid 		: Partitions::fsid_native,
+				    `real_fs            : true,
 				    `supports_format 	: true ,
 				    `fsid_item 		: "0x83 Linux " ,
 				    `fstype 		: "Linux native",
@@ -663,6 +667,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 		      `xfs 	: $[
 				    `name 		: "XFS",
 				    `fsid 		: Partitions::fsid_native,
+				    `real_fs            : true,
 				    `supports_format 	: true ,
 				    `fsid_item 		: "0x83 Linux " ,
 				    `fstype 		: "Linux native" ,
@@ -677,6 +682,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 		      `jfs 	: $[
 				    `name 		: "JFS",
 				    `fsid 		: Partitions::fsid_native,
+				    `real_fs            : true,
 				    `supports_format 	: true ,
 				    `fsid_item 		: "0x83 Linux " ,
 				    `fstype 		: "Linux native" ,
@@ -691,6 +697,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 		      `ext3 	: $[
 				    `name 		: "Ext3",
 				    `fsid 		: Partitions::fsid_native,
+				    `real_fs            : true,
 				    `supports_format 	: true ,
 				    `fsid_item 		: "0x83 Linux " ,
 				    `fstype 		: "Linux native" ,
@@ -706,7 +713,9 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 		      `hfs 	: $[
 				    `name 		: "MacHFS",
 				    `fsid 		: Partitions::fsid_mac_hfs,
+				    `real_fs            : true,
 				    `supports_format 	: true,
+				    `alt_fsid           : [ 0x83 ],
 				    `fsid_item 		: "0x102 Apple_HFS " ,
 				    `fstype 		: "Apple_HFS " ,
 				    `crypt		: false,
@@ -715,6 +724,40 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_option	: "-t hfs",
 				    `needed_modules	: [ "hfs" ],
 				    `makefstype		: "hfs",
+				    `fst_options  	: [],
+				    `options      	: []
+		      ],
+		      `hfsplus  : $[
+				    `name 		: "MacHFS+",
+				    `fsid 		: Partitions::fsid_mac_hfs,
+				    `real_fs            : true,
+				    `supports_format 	: false,
+				    `alt_fsid           : [ 0x83 ],
+				    `fsid_item 		: "0x102 Apple_HFS " ,
+				    `fstype 		: "Apple_HFS " ,
+				    `crypt		: false,
+				    `mountpoints 	: [],
+				    `mount_string	: "hfsplus",
+				    `mount_option	: "-t hfsplus",
+				    `needed_modules	: [ "hfsplus" ],
+				    `makefstype		: "",
+				    `fst_options  	: [],
+				    `options      	: []
+		      ],
+		      `ntfs  : $[
+				    `name 		: "NTFS",
+				    `fsid 		: 7,
+				    `real_fs            : true,
+				    `supports_format 	: false,
+				    `alt_fsid           : Partitions::fsid_ntfstypes,
+				    `fsid_item 		: "0x07 NTFS " ,
+				    `fstype 		: "NTFS " ,
+				    `crypt		: false,
+				    `mountpoints 	: [],
+				    `mount_string	: "ntfs",
+				    `mount_option	: "-t ntfs",
+				    `needed_modules	: [ "ntfs" ],
+				    `makefstype		: "",
 				    `fst_options  	: [],
 				    `options      	: []
 		      ]
@@ -876,7 +919,10 @@ global define void FileSystems()
     if( Arch::board_mac() )
 	{
 	support[`hfs] = true;
+	support[`hfsplus] = true;
 	}
+    support[`hfs] = true;
+    support[`hfsplus] = true;
     y2milestone( "support %1", support );
     suggest_m_points = [ "/home", "/srv", "/tmp", "/local", ""];
     if( Stage::initial() )
@@ -945,7 +991,7 @@ global define boolean IsUnsupported( symbol used_fs)
 
 global define map<symbol, any> GetFsMap( symbol used_fs )
     ``{
-    map<symbol, map<symbol, any> > allfs =  GetAllFileSystems( true, true  );
+    map<symbol, map<symbol, any> > allfs = GetAllFileSystems( true, true  );
     if( haskey( allfs, used_fs ))
 	return allfs[ used_fs]:$[];
     else
