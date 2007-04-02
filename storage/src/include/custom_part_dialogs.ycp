@@ -849,17 +849,18 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
     boolean is_swap = new_val["fsid"]:0 == Partitions::fsid_swap;
 
     y2debug( "new=%1 swap=%2", new_val, is_swap );
+    symbol ufs = new_val["used_fs"]:Partitions::DefaultFs();
     foreach( symbol file_system_name, map file_system_map, file_systems,
 	``{
-	if( file_system_map[`supports_format]:false )
+	if( file_system_map[`real_fs]:false &&
+	    (file_system_name==ufs||file_system_map[`supports_format]:false))
 	    {
 	    fs_sel[file_system_name] = $[];
 	    fs_sel[file_system_name,"text"] = file_system_map[`name]:"Ext2";
 	    if( is_swap )
 		fs_sel[file_system_name,"selected"] = file_system_name == `swap;
 	    else
-		fs_sel[file_system_name,"selected"] =
-		    new_val["used_fs"]:Partitions::DefaultFs() == file_system_name;
+		fs_sel[file_system_name,"selected"] = file_system_name==ufs;
 	    }
 	});
     y2milestone( "fs_sel=%1", fs_sel );
@@ -912,7 +913,7 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
  */
 define term FsidComboBox( map new_val, map<symbol, map> file_systems  )
     ``{
-    list items = [];
+    list<term> items = [];
     list added_items = [];
     list added_fsids = [];
     foreach( any fs_name, map fs_map, file_systems,
@@ -935,6 +936,24 @@ define term FsidComboBox( map new_val, map<symbol, map> file_systems  )
 			 Partitions::FsIdToString(id);
 	items = add( items, `item( `id(part_id), part_id, true ));
 	}
+
+    map<string,integer> so = $[ "0x83" : 0, "0x8" : 1, "0xF" : 2, "0x0" : 3, 
+                                "0x10" : 6 ];
+    map<string,integer> val = $[];
+    foreach( term t, items, ``{val[t[1]:""] = 5;} );
+    foreach( string s, integer i, val,
+	``{
+	foreach( string match, integer w, so,
+	    ``{
+	    boolean found = false;
+	    if( !found && search( s, match )==0 )
+		{
+		val[s] = w;
+		found = true;
+		}
+	    });
+	});
+    items = sort( term a, term b, items, ``(val[a[1]:""]:5<=val[b[1]:""]:5));
 
     return( `ComboBox(`id(`fsid_point), `opt(`notify,`editable, `hstretch),
 	    // label text
