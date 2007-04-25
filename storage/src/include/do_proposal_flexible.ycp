@@ -77,6 +77,32 @@ define boolean ignore_disk( string dev, map entry, boolean soft )
 	}
     return( ret );
     };
+
+
+map swapable = $[];
+
+define void flex_init_swapable( map<string,map> tg )
+    ``{
+    swapable = $[];
+    foreach( string dev, map disk, tg,
+	``{
+	list<map> sw = filter( map p, disk["partitions"]:[],
+			       ``(p["type"]:`unknown!=`extended &&
+				  !p["delete"]:false &&
+				  p["detected_fs"]:`unknown==`swap));
+	sw = filter( map p, sw, ``(Storage::CheckSwapable(p["device"]:"")));
+	foreach( map p, sw, 
+	    ``{
+	    swapable[p["device"]:""] = true;
+	    });
+	});
+    y2milestone( "flex_init_swapable %1", swapable );
+    }
+
+define boolean check_swapable( string dev )
+    {
+    return( swapable[dev]:false );
+    }
   
 define string pinfo_name()
     ``{
@@ -2165,7 +2191,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 			      ``(p["type"]:`unknown!=`free &&
 				 !p["delete"]:false &&
 				 p["detected_fs"]:`unknown==`swap));
-    swaps = filter( map p, swaps, ``(Storage::CheckSwapable(p["device"]:"")));
+    swaps = filter( map p, swaps, ``(check_swapable(p["device"]:"")));
     swaps = sort( map a, map b, swaps, ``(a["size_k"]:0>b["size_k"]:0));
     y2milestone( "can_swap_reuse swaps %1", swaps );
     if( swaps[0,"size_k"]:0 >= 128*1024 )
@@ -2201,7 +2227,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 			      ``(p["type"]:`unknown!=`extended &&
 				 !p["delete"]:false &&
 				 p["detected_fs"]:`unknown==`swap));
-	    sw = filter( map p, sw, ``(Storage::CheckSwapable(p["device"]:"")));
+	    sw = filter( map p, sw, ``(check_swapable(p["device"]:"")));
 	    y2milestone( "can_swap_reuse disk %1 sw %2", dev, sw );
 	    swaps = (list<map>)union( swaps, sw );
 	    });
@@ -2648,6 +2674,7 @@ map remove_used_by( map tg, string disk )
 map get_inst_proposal( map<string,map> target )
     {
     y2milestone( "get_inst_proposal start" );
+    flex_init_swapable( target );
     map ret = $[];
     target = Storage::AddWinInfo(target);
     ret["target"] = target;
