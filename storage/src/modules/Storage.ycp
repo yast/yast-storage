@@ -310,9 +310,9 @@ global define map<string,map> GetTargetMap();
 *
 */
 
-define map GetDiskPartitionTg( string device, map<string,map> tg )
+define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
     ``{
-    map ret = $[];
+    list<map> ret = [];
     integer dlen = 0;
     boolean as_string = false;
     list<string> ls = filter( string s, splitstring( device, "/" ), 
@@ -323,9 +323,9 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 	list<string> tl = splitstring( device, "=" );
 	ls = [ "dev", "disk", "", tl[1]:"" ];
 	ls[2] = (search( device, "LABEL=" )==0)?"by-label":"by-uuid";
-	y2milestone( "GetDiskPartition ls:%1", ls );
+	y2milestone( "GetDiskPartitionTg ls:%1", ls );
 	}
-    y2debug( "GetDiskPartition size:%1 ls:%2", size(ls), ls );
+    y2debug( "GetDiskPartitionTg size:%1 ls:%2", size(ls), ls );
     if( size(ls)>=4 && ls[1]:"" == "disk" &&
         contains( [ "by-id", "by-path", "by-uuid", "by-label" ], ls[2]:"" ))
 	{
@@ -335,18 +335,17 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 	    {
 	    foreach( string dev, map disk, tg, 
 		``{
-		if( size(ret["disk"]:"")==0 )
+		part = find( map p, disk["partitions"]:[], 
+			     ``(p["label"]:""==ls[3]:""));
+		if( part!=nil )
 		    {
-		    part = find( map p, disk["partitions"]:[], 
-				 ``(p["label"]:""==ls[3]:""));
-		    if( part!=nil )
-			{
-			ret["disk"] = dev;
-			if( haskey( part, "nr" ))
-			    ret["nr"] = part["nr"]:(any)0;
-			else
-			    ret["nr"] = part["name"]:"";
-			}
+		    map tmp = $[];
+		    tmp["disk"] = dev;
+		    if( haskey( part, "nr" ))
+			tmp["nr"] = part["nr"]:(any)0;
+		    else
+			tmp["nr"] = part["name"]:"";
+		    ret = add( ret, tmp );
 		    }
 		});
 	    }
@@ -354,18 +353,17 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 	    {
 	    foreach( string dev, map disk, tg, 
 		``{
-		if( size(ret["disk"]:"")==0 )
+		part = find( map p, disk["partitions"]:[], 
+			     ``(p["uuid"]:""==ls[3]:""));
+		if( part!=nil )
 		    {
-		    part = find( map p, disk["partitions"]:[], 
-				 ``(p["uuid"]:""==ls[3]:""));
-		    if( part!=nil )
-			{
-			ret["disk"] = dev;
-			if( haskey( part, "nr" ))
-			    ret["nr"] = part["nr"]:(any)0;
-			else
-			    ret["nr"] = part["name"]:"";
-			}
+		    map tmp = $[];
+		    tmp["disk"] = dev;
+		    if( haskey( part, "nr" ))
+			tmp["nr"] = part["nr"]:(any)0;
+		    else
+			tmp["nr"] = part["name"]:"";
+		    ret = add( ret, tmp );
 		    }
 		});
 	    }
@@ -378,22 +376,24 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		{
 		num = tointeger( substring( id, l[0]:0+5 ));
 		id = substring( id, 0, l[0]:0 );
-		y2debug( "GetDiskPartition id:%1 num:%2", id, num );
+		y2debug( "GetDiskPartitionTg id:%1 num:%2", id, num );
 		}
 	    foreach( string dev, map disk, tg, 
 		``{
-		if( size(ret["disk"]:"")==0 &&
+		if( size(ret)==0 &&
 		    find( string s, disk["udev_id"]:[], ``(s==id))!=nil)
 		    {
 		    part = find( map p, disk["partitions"]:[], 
 				 ``(p["nr"]:0==num));
 		    if( num==0 || part!=nil )
 			{
-			ret["disk"] = dev;
+			map tmp = $[];
+			tmp["disk"] = dev;
 			if( num>0 )
-			    ret["nr"] = num;
+			    tmp["nr"] = num;
 			else
-			    ret["nr"] = "";
+			    tmp["nr"] = "";
+			ret = [ tmp ];
 			}
 		    }
 		});
@@ -407,21 +407,23 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		{
 		num = tointeger( substring( id, l[0]:0+5 ));
 		id = substring( id, 0, l[0]:0 );
-		y2debug( "GetDiskPartition id:%1 num:%2", id, num );
+		y2debug( "GetDiskPartitionTg id:%1 num:%2", id, num );
 		}
 	    foreach( string dev, map disk, tg, 
 		``{
-		if( size(ret["disk"]:"")==0 && disk["udev_path"]:"" == id )
+		if( size(ret)==0 && disk["udev_path"]:"" == id )
 		    {
 		    part = find( map p, disk["partitions"]:[], 
 				 ``(p["nr"]:0==num));
 		    if( num==0 || part!=nil )
 			{
-			ret["disk"] = dev;
+			map tmp = $[];
+			tmp["disk"] = dev;
 			if( num>0 )
-			    ret["nr"] = num;
+			    tmp["nr"] = num;
 			else
-			    ret["nr"] = "";
+			    tmp["nr"] = "";
+			ret = [ tmp ];
 			}
 		    }
 		});
@@ -504,7 +506,8 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		    }
 		}
 	    }
-	ret = add( ret, "disk", substring( device, 0, dlen ) );
+	map tmp =$[];
+	tmp["disk"] = substring( device, 0, dlen );
 	device = substring( device, dlen );
 	if( search( device, "_part" )==0 )
 	    device = substring( device, 5 );
@@ -512,30 +515,37 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 	    {
 	    device = substring( device, 1 );
 	    }
-	ret["nr"] = -1;
+	tmp["nr"] = -1;
 	if( as_string )
 	    {
-	    ret["nr"] = device;
+	    tmp["nr"] = device;
 	    }
 	else
 	    {
 	    if( size(device)>0 )
 		{
-		ret["nr"] = tointeger(device);
+		tmp["nr"] = tointeger(device);
 		}
 	    }
-	if( size(ret["disk"]:"")>0 && ret["nr"]:(any)1 == -1 )
+	if( size(tmp["disk"]:"")>0 && tmp["nr"]:(any)1 == -1 )
 	    {
-	    ret["nr"] = "";
+	    tmp["nr"] = "";
 	    }
+	ret = [ tmp ];
 	}
-    y2debug( "GetDiskPartition device:%1 ret:%2", device, ret );
+    if( size(ret)>1 )
+	{
+	list<map> a = filter( map m, ret, ``(search(m["disk"]:"","/dev/evms")!=0));
+	list<map> b = filter( map m, ret, ``(search(m["disk"]:"","/dev/evms")==0));
+	ret = (list<map>)merge( a, b );
+	}
+    y2debug( "GetDiskPartitionTg device:%1 ret:%2", device, ret );
     return( ret );
     };
 
 global define map GetDiskPartition( string device )
     ``{
-    return( GetDiskPartitionTg( device, GetTargetMap() ));
+    return( GetDiskPartitionTg( device, GetTargetMap() )[0]:$[] );
     };
 
 global void UpdateChangeTime()
@@ -545,49 +555,59 @@ global void UpdateChangeTime()
     StorageMap["targets_time"] = change_time;
     }
 
-/* return partition <device> of map <tg> */
-global define map<string,any> GetPartition( map<string,map> tg, string device )
+/* return list of partitions of map <tg> */
+define list<map> GetPartitionLst( map<string,map> tg, string device )
     ``{
-    map ret = $[];
-    map tmp = GetDiskPartitionTg( device, tg );
-    string disk = tmp["disk"]:"";
-    y2milestone( "GetPartition tmp:%1", tmp );
-    if( search(device, "/dev/evms")==0 && !haskey( tg, disk ) )
-	{
-	disk = "/dev/evms";
-	}
-    y2debug( "GetPartition device=%1 disk=%2", device, disk );
-    list<map> part = filter( map p, tg[disk,"partitions"]:[],
-			     ``(p["device"]:""==device ));
-    part = filter( map p, part, ``(!p["delete"]:false));
-    if( size(part)==0 )
-	{
-	part = filter( map p, tg[disk,"partitions"]:[],
-		       ``(p["nr"]:-1==tmp["nr"]:0 ));
+    list<map> ret = [];
+    list<map> tmp = GetDiskPartitionTg( device, tg );
+    y2milestone( "GetPartitionLst tmp:%1", tmp );
+    foreach( map m, tmp, 
+	``{
+	string disk = m["disk"]:"";
+	if( search(device, "/dev/evms")==0 && !haskey( tg, disk ) )
+	    {
+	    disk = "/dev/evms";
+	    }
+	y2debug( "GetPartitionLst device=%1 disk=%2", device, disk );
+	list<map> part = filter( map p, tg[disk,"partitions"]:[],
+				 ``(p["device"]:""==device ));
 	part = filter( map p, part, ``(!p["delete"]:false));
-	}
-    if( size(part)==0 )
-	{
-	part = filter( map p, tg[disk,"partitions"]:[],
-		       ``(p["name"]:""==tmp["nr"]:"" ));
-	part = filter( map p, part, ``(!p["delete"]:false));
-	}
-    ret = part[0]:$[];
-    if( size(ret)==0 && search(device, "/dev/mapper/")==0 )
-	{
-	part = filter( map p, tg["/dev/loop","partitions"]:[],
-		       ``(p["device"]:""==device ));
-	ret = part[0]:$[];
-	}
-    y2debug( "GetPartition ret=%1", ret );
-    return( (map<string,any>) ret );
+	if( size(part)==0 )
+	    {
+	    part = filter( map p, tg[disk,"partitions"]:[],
+			   ``(p["nr"]:-1==m["nr"]:0 ));
+	    part = filter( map p, part, ``(!p["delete"]:false));
+	    }
+	if( size(part)==0 )
+	    {
+	    part = filter( map p, tg[disk,"partitions"]:[],
+			   ``(p["name"]:""==m["nr"]:"" ));
+	    part = filter( map p, part, ``(!p["delete"]:false));
+	    }
+	map pa = part[0]:$[];
+	if( size(pa)==0 && search(device, "/dev/mapper/")==0 )
+	    {
+	    part = filter( map p, tg["/dev/loop","partitions"]:[],
+			   ``(p["device"]:""==device ));
+	    pa = part[0]:$[];
+	    }
+	if( size(pa)>0 )
+	    ret = add( ret, pa );
+	});
+    y2debug( "GetPartitionLst ret=%1", ret );
+    return( ret );
+    }
+
+global define map<string,any> GetPartition( map<string,map> tg, string device )
+    {
+    return( (map<string,any>)GetPartitionLst( tg, device )[0]:$[] );
     }
 
 /* return disk <device> belongs to in map <tg> */
 global define map<string,any> GetDisk( map<string,map> tg, string device )
     ``{
     map<string,any> ret = $[];
-    map tmp = GetDiskPartitionTg( device, tg );
+    map tmp = GetDiskPartitionTg( device, tg )[0]:$[];
     string disk = tmp["disk"]:"";
     if( search(device, "/dev/evms")==0 && !haskey( tg, disk ) )
 	{
@@ -602,7 +622,7 @@ global define map<string,any> GetDisk( map<string,map> tg, string device )
 global define map<string,map> SetPartition( map<string,map> tg, map part )
     ``{
     y2milestone( "SetPartition part=%1", part );
-    map tmp = GetDiskPartitionTg( part["device"]:"", tg );
+    map tmp = GetDiskPartitionTg( part["device"]:"", tg )[0]:$[];
     y2milestone( "SetPartition tmp=%1", tmp );
     string disk = tmp["disk"]:"";
     if( search(part["device"]:"", "/dev/evms")==0 && !haskey( tg, disk ) )
@@ -3281,7 +3301,7 @@ global define map<string,map> GetTargetMap()
 	tmp = (map<string,map>)StorageDevices::Probe(true);
 	foreach( string dev, map disk, tmp,
 	    ``{
-	    map dtmp = Storage::GetDiskPartitionTg( dev, $[] );
+	    map dtmp = Storage::GetDiskPartitionTg( dev, $[] )[0]:$[];
 	    y2milestone( "probing dev %1 disk %2", dev, dtmp );
 	    if( size(dtmp["disk"]:"")>0 && dev != dtmp["disk"]:"" )
 		{
@@ -3748,7 +3768,7 @@ global define map<string,map> SetPartitionData( map<string,map> tg,
     ``{
     y2milestone( "SetPartitionData device=%1 key=%2 value=%3", device, key,
                  value );
-    map tmp = GetDiskPartitionTg( device, tg );
+    map tmp = GetDiskPartitionTg( device, tg )[0]:$[];
     string disk = tmp["disk"]:"";
     string dev = GetDeviceName( tmp["disk"]:"", tmp["nr"]:(any)0 );
     list r_part = filter(map part, tg[disk,"partitions"]:[],
@@ -3772,7 +3792,7 @@ global define map<string,map> DelPartitionData( map<string,map> tg,
                                                 string device, string key)
     ``{
     y2debug( "device=%1, key=%2", device, key );
-    map tmp = GetDiskPartitionTg( device, tg );
+    map tmp = GetDiskPartitionTg( device, tg )[0]:$[];
     string disk = tmp["disk"]:"";
     string dev = GetDeviceName( tmp["disk"]:"", tmp["nr"]:(any)0 );
     list r_part = filter(map part, tg[disk,"partitions"]:[],
@@ -5227,7 +5247,7 @@ global define list<string> GetEvmsRealDisk( map<string,map> tg, map p )
 	});
     if( size(rdisk)==0 && !p["evms_native"]:false )
 	{
-	map d = GetDiskPartitionTg( EvmsDevDisk( p["device"]:"" ), tg );
+	map d = GetDiskPartitionTg( EvmsDevDisk( p["device"]:"" ), tg )[0]:$[];
 	if( haskey( tg, d["disk"]:"" ))
 	    {
 	    rdisk = [ d["disk"]:"" ];
@@ -6177,8 +6197,8 @@ global boolean DeviceMatchFstab( string device, string fstab_spec )
     string ts = GetTranslatedDevices( $[], $[], [ fstab_spec ] )[0]:"";
     if( ts!=fstab_spec )
 	y2milestone( "DeviceMatchFstab translate %1 --> %2", fstab_spec, ts );
-    map p = GetPartition( tg, ts );
-    ret = p["device"]:"" == device;
+    list<map> pl = GetPartitionLst( tg, ts );
+    ret = find( map p, pl, ``(p["device"]:"" == device) )!=nil;
     y2milestone( "DeviceMatchFstab device:%1 fstab:%2 ret:%3", device, 
                  fstab_spec, ret );
     return( ret );
