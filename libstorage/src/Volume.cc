@@ -2286,8 +2286,7 @@ int Volume::doFstabUpdate()
 		    che.device = udevId().front();
 		che.dentry = getFstabDentry();
 		che.encr = encryption;
-		if( dmcrypt() && isTmpCryptMp(mp ) && mp!="swap" &&
-		    crypt_pwd.empty() )
+		if( dmcrypt() && isTmpCryptMp(mp) && crypt_pwd.empty() )
 		    che.tmpcrypt = true;
 		if( !dmcrypt() )
 		    che.loop_dev = fstab_loop_dev;
