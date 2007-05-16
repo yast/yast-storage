@@ -5254,7 +5254,21 @@ global define list<string> GetEvmsRealDisk( map<string,map> tg, map p )
 	                  ``(p["used_by_type"]:`UB_NONE==`UB_LVM && 
 			     p["used_by"]:""==namel)))>0) ))
 	    {
-	    rdisk = (list<string>)union( rdisk, [ disk ] );
+	    list<string> dl = [ disk ];
+	    if( disk=="/dev/md" )
+		{
+		list<map> tl = [];
+		tl = filter( map p, data["partitions"]:[],
+		             ``((p["used_by_type"]:`UB_NONE==`UB_EVMS &&
+				 p["used_by"]:""==name)||
+				(p["used_by_type"]:`UB_NONE==`UB_LVM &&
+				 p["used_by"]:""==namel)));
+		dl = maplist( map p, tl, ``(p["device"]:""));
+		dl = (list<string>)sort( dl );
+		dl = (list<string>)union( dl, dl );
+		y2milestone( "GetEvmsRealDisk dl %1", dl );
+		}
+	    rdisk = (list<string>)union( rdisk, dl );
 	    }
 	});
     if( size(rdisk)==0 && !p["evms_native"]:false )
@@ -5284,12 +5298,16 @@ global define list<string> GetUsedEvmsDisks( map<string,map> tg )
 		    list<string> dl = GetEvmsRealDisk( tg, p );
 		    foreach( string d, dl,
 			``{
+			y2milestone( "GetUsedEvmsDisks d %1", d );
 			if( search( d, "/dev/md" ) == 0 )
 			    {
 			    list<string> ndl = [];
 			    foreach( string dd, map pp, tg,
 				``{
-				if( pp["used_by"]:"" == substring(d,5) )
+				map pu = find( map p, pp["partitions"]:[], 
+				               ``(p["used_by"]:""==substring(d,5)) );
+				y2milestone( "GetUsedEvmsDisks disk:%1 used:%2", dd, pu );
+				if( pu!=nil && size(pu)>0 )
 				    {
 				    ndl = add( ndl, dd );
 				    }
