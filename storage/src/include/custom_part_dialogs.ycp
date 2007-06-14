@@ -25,6 +25,7 @@
   import "Storage";
   import "Partitions";
   import "FileSystems";
+  import "Package";
   import "Mode";
   import "Arch";
   import "Label";
@@ -611,7 +612,9 @@ A volume label cannot contain the / character or spaces.
 	{
 	arb_opt = FileSystems::RemoveCryptOpts( arb_opt );
 	}
-
+    if( FileSystems::CanDoQuota(new) && FileSystems::HasQuota(new) )
+	old_state["opt_quota"] = true;
+    arb_opt = FileSystems::RemoveQuotaOpts(arb_opt);
     old_state[opt_list[size(opt_list)-1,`query_key]:""] = arb_opt;
     y2milestone( "FstabOptions old_state=%1", old_state );
 
@@ -680,6 +683,11 @@ A volume label cannot contain the / character or spaces.
 	{
 	UI::ChangeWidget( `id("opt_user"), `Enabled,
 			  new["enc_type"]:`none==`none || new["noauto"]:false );
+	}
+    if( UI::WidgetExists( `id("opt_quota") ))
+	{
+	UI::ChangeWidget( `id("opt_quota"), `Enabled,
+			  FileSystems::CanDoQuota(new) );
 	}
     foreach( any key, any value, old_state,
 	``{
@@ -808,6 +816,15 @@ is %1. Your volume label was truncated to this size.
 		    new_fstopt = new_fstopt + text;
 		    }
 		});
+	    if( UI::WidgetExists( `id("opt_quota") ) &&
+	        UI::QueryWidget( `id("opt_quota"), `Value )==true )
+		{
+		new_fstopt = FileSystems::AddQuotaOpts(new,new_fstopt);
+		if( !old_state["opt_quota"]:false && Mode::normal() )
+		    {
+		    Package::InstallAll( ["quota"] );
+		    }
+		}
 	    y2milestone( "FstabOptions new_state=%1", new_state );
 	    y2milestone( "FstabOptions old_fstopt=%1 new_fstopt=%2", 
 	                 old["fstopt"]:"", new_fstopt );
@@ -1191,7 +1208,7 @@ define term MountDlg( map new_val, list mountpoints )
 			        // button text
 				_("Fs&tab Options")),
 		   `VSpacing(1),
-		   `ComboBox(`id(`mount_point), `opt(`editable, `hstretch),
+		   `ComboBox(`id(`mount_point), `opt(`editable,`hstretch,`notify),
 			     // label text
 			     _("&Mount Point"), mountpoints  )
 		   );

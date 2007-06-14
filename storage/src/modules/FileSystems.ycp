@@ -82,14 +82,16 @@ define list FstabOptionStrings =
       "procuid", 
       "barrier=none",
       "fs=floppyfss", "fs=cdfss",
-      "users", "gid=users"
+      "users", "gid=users",
+      "usrquota", "grpquota"
       ];
 
 define list FstabOptionRegex = [ "pri=[0-9]\+", "iocharset=.\+", "utf8=\.*",
                                  "nls=.\+", "codepage=.\+", 
 				 "gid=[0-9]\+", "umask=[0-7]\+",
 				 "loop=.\+", "encryption=.\+",
-				 "pri=[0-9]\+" ];
+				 "pri=[0-9]\+",
+				 "usrjquota=.\+", "grpjquota=.\+", "jqfmt=.\+" ];
 
 define map FstabDefaultMap =
     $[ "pts":    $[ "spec":"devpts", "mount":"/dev/pts", "vfstype":"devpts",
@@ -262,6 +264,17 @@ is given. Default is false.</p>
              `type : `boolean,
 	     `str_opt  : $[ 1 : "noauto", "default" : "" ],
 	     `str_scan : [[ "noauto", 1 ], ["auto", 0 ]],
+	   ],
+	  $[
+	     // button text
+	     `widget : `Left(`CheckBox(`id("opt_quota"), `opt(`notify), _("Enable &Quota Support"), false)),
+	     `query_key : "opt_quota",
+	     // help text, richtext format
+	     `help_text : _("<p><b>Enable Quota Support:</b>
+The file system is mounted with user quotas enabled.
+Default is false.</p>
+"),
+             `type : `boolean
 	   ]
 	];
     return( options );
@@ -321,7 +334,7 @@ Allow extended user attributes on the file system.</p>
 "),
              `type : `boolean,
 	     `str_opt  : $[ 1 : "user_xattr", "default" : "" ],
-	     `str_scan : [[ "user_xattr", 1 ], ["no_user_xattr", 0 ]],
+	     `str_scan : [[ "user_xattr", 1 ], ["nouser_xattr", 0 ]],
 	   ],
 	];
     return( options );
@@ -1501,6 +1514,48 @@ global define list GetFstabDefaultList( string key )
     map m = GetFstabDefaultMap( key );
     return( [ m["spec"]:"", m["mount"]:"", m["vfstype"]:"", m["mntops"]:"",
               tostring(m["freq"]:0), tostring(m["passno"]:0) ] );
+    }
+
+global define boolean CanDoQuota( map part )
+    ``{
+    list quota_fs = [ `ext2, `ext3, `reiser, `xfs ];
+    return( contains( quota_fs, part["used_fs"]:`unknown ));
+    }
+
+global define boolean HasQuota( map part )
+    ``{
+    boolean ret = false;
+    list<string> opts = splitstring( part["fstopt"]:"", "," );
+    integer i=0;
+    while( !ret && i<size(opts) )
+	{
+	ret = opts[i]:""=="usrquota" || opts[i]:""=="grpquota" ||
+	      search(opts[i]:"","usrjquota=")==0 ||
+	      search(opts[i]:"","grpjquota=")==0;
+	i = i+1;
+	}
+    return( ret );
+    }
+
+global define string RemoveQuotaOpts( string fst_opts )
+    {
+    list<string> opts = splitstring( fst_opts, "," );
+    opts = filter( string o, opts, 
+                   ``( o!="usrquota" && o!="grpquota" &&
+		       search(o,"usrjquota=")!=0 && search(o,"grpjquota=")!=0 &&
+		       search(o,"jqfmt=")!=0 ));
+    return( mergestring( opts, "," ));
+    }
+
+global define string AddQuotaOpts( map part, string fst_opts )
+    {
+    string ret = RemoveQuotaOpts( fst_opts );
+    list journal = [ `ext3, `reiser ];
+    if( contains( journal, part["used_fs"]:`unknown ))
+	ret = ret + ",usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv0";
+    else
+	ret = ret + "usrquota,grpquota";
+    return( ret );
     }
 
 
