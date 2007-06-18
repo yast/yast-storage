@@ -2580,7 +2580,10 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 						      //button text using case-senstive command name.  dasdfmt should not normally be translated.
 	                    _("dasd&fmt")) );
 	}
-
+    expert_item_list = 
+	add( expert_item_list, `item( `id(`iscsi),
+				      // menu entry text
+				      _("Call &iSCSI configuration")));
 
     term buttonline_b = `HBox();
 
@@ -3392,6 +3395,35 @@ Select the DASD disk on which dasdfmt should be executed."));
 		}
 	    }
 
+	if( ret==`iscsi )
+	    {
+	    boolean changed =
+		!Storage::EqualBackupStates( "custom_part", "", true );
+	    if( changed )
+		{
+		// popup text
+		if( Popup::YesNo(_("Calling iSCSI configuration cancels all current changes.
+Really do this?")))
+		    changed = false;
+		}
+
+	    if( !changed )
+		{
+		if( Package::InstallAll( ["yast2-iscsi-client"] ))
+		    {
+		    WFM::call( "iscsi-client" );
+		    UI::OpenDialog( `opt(`decorated),
+				    `VBox(
+					 `VSpacing(1),
+					 `HBox(`HSpacing(1), 
+					       `Label(_("Rereading disk information...")),
+					       `HSpacing(1)),
+					 `VSpacing(1)));
+		    Storage::ReReadTargetMap();
+		    UI::CloseDialog();
+		    }
+		}
+	    }
 
         /////////////////////////////////////////////////////////////
         // REREAD
