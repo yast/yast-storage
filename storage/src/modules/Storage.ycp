@@ -167,6 +167,7 @@ boolean proposal_evms = false;
 boolean proposal_lvm = false;
 boolean proposal_home = false;
 map cfg_xml = $[];
+string part_insts = "";
 
 
  /*
@@ -2083,8 +2084,20 @@ global define void Storage()
     StorageMap[targets_backup_key] = $[];
     StorageMap[targets_backup_l_key] = $[];
     StorageMap[targets_backup_m_key] = $[];
-    if( Mode::normal () )
+    if( Mode::normal() )
 	{
+	Storage::SetPartMode( "CUSTOM" );
+	Storage::SetPartProposalActive( false  );
+	}
+    if( Stage::initial() )
+	{
+	string inst = (string) SCR::Read( .etc.install_inf.Partition );
+	if( inst!=nil && size(inst)>0 )
+	    {
+	    part_insts = "/dev/" + inst;
+	    y2milestone( "Storage .etc.install_inf.Partition \"%1\" part_insts:%2",
+	                 inst, part_insts );
+	    }
 	Storage::SetPartMode( "CUSTOM" );
 	Storage::SetPartProposalActive( false  );
 	}
@@ -3604,6 +3617,106 @@ global boolean Mount( string dev, string mp )
     {
     boolean ret = LibStorage::StorageInterface::mountDevice( sint, dev, mp );
     y2milestone( "Mount %1 to %2 ret %3", dev, mp, ret );
+    return( ret );
+    }
+
+global boolean CanEdit( map p, boolean verbose )
+    {
+    boolean ret = true;
+    if( Stage::initial() )
+	{
+	if( !p["created"]:false && !p["inactive"]:false && 
+	    p["mount"]:""=="swap" )
+	    {
+	    ret = false;
+	    y2milestone( "CanEdit p:%1", p );
+	    if( verbose )
+		{
+		string txt = sformat( _("
+Device %1 cannot be modified because it contains activated swap
+that is needed to run the installation.
+"), p["device"]:"" );
+		Popup::Message( txt );
+		}
+	    }
+	if( size(part_insts)>0 && p["device"]:""==part_insts )
+	    {
+	    ret = false;
+	    y2milestone( "CanEdit part_insts:%1 p:%2", part_insts, p );
+	    if( verbose )
+		{
+		string txt = sformat( _("
+Device %1 cannot be modified because it contains the installation
+data needed to perform the installation.
+"), p["device"]:"" );
+		Popup::Message( txt );
+		}
+	    }
+	}
+    y2milestone( "CanEdit dev:%1 verbose:%2 ret:%3", p["device"]:"", 
+                 verbose, ret );
+    return( ret );
+    }
+
+global boolean CanDelete( map p, map disk, boolean verbose )
+    {
+    string txt = "";
+    boolean ret = CanEdit( p, false );
+    if( !ret && verbose )
+	{
+	if( p["mount"]:""=="swap" )
+	    {
+	    txt = sformat( _("
+Device %1 cannot be removed because it contains activated swap
+that is needed to run the installation.
+"), p["device"]:"" );
+	    }
+	else
+	    {
+	    txt = sformat( _("
+Device %1 cannot be removed because it contains the installation
+data needed to perform the installation.
+"), p["device"]:"" );
+	    }
+	Popup::Message( txt );
+	}
+    if( ret && (p["type"]:`unknown == `logical||
+                p["type"]:`unknown == `extended) )
+	{
+	integer num = p["type"]:`unknown == `extended ? 4 : p["nr"]:4;
+	list<map> pl = filter( map q, disk["partitions"]:[],
+	                       ``( q["type"]:`unknown==`logical &&
+			           q["nr"]:0 > num ));
+	y2milestone( "CanDelete pl:%1", pl );
+	integer pos = 0;
+	while( ret && pos<size(pl) )
+	    {
+	    ret = CanEdit( pl[pos]:$[], false );
+	    if( ret )
+		pos = pos+1;
+	    }
+	if( !ret && verbose )
+	    {
+	    if( p["mount"]:""=="swap" )
+		{
+		txt = sformat( _("
+Device %1 cannot be removed because this would indirectly change
+device %2 which contains activated swap that is needed to run 
+the installation.
+"), p["device"]:"", pl[pos,"device"]:"" );
+		}
+	    else
+		{
+		txt = sformat( _("
+Device %1 cannot be removed because this would indirectly change
+device %2 which contains data needed to perform the installation.
+"), p["device"]:"", pl[pos,"device"]:"" );
+		}
+	    Popup::Message( txt );
+	    }
+	}
+    y2milestone( "CanDelete dev:%1 verbose:%2 ret:%3", p["device"]:"", 
+                 verbose, ret );
     return( ret );
     }
 
@@ -6129,19 +6242,7 @@ global define list<string> NoProposeDisks()
 	no_propose_disks = [];
 	if( Stage::initial() && SCR::Read( .target.size, "/etc/install.inf" )>0 )
 	    {
-	    string inst = (string) SCR::Read( .etc.install_inf.Partition );
-	    y2milestone( "NoProposeDisks .etc.install_inf.Partition \"%1\"", 
-	                 inst );
-	    if( inst!=nil && size(inst)>0 )
-		{
-		if( search( inst, "/dev/" )!=0 )
-		    inst = "/dev/" + inst;
-		map d = GetDiskPartition( inst );
-		y2milestone( "NoProposeDisks inst:%1 disk:%2", inst, d );
-		if( size(d["disk"]:"")>0 )
-		    no_propose_disks = add( no_propose_disks, d["disk"]:"" );
-		}
-	    inst = (string) SCR::Read( .etc.install_inf.Cdrom );
+	    string inst = (string) SCR::Read( .etc.install_inf.Cdrom );
 	    y2milestone( "NoProposeDisks .etc.install_inf.Cdrom \"%1\"", inst );
 	    if( inst!=nil && size(inst)>0 )
 		{
