@@ -825,11 +825,14 @@ Remove the EVMS volume before editing it.
 Remove the volume before editing it.
 "), curr_part["used_by"]:"" ));
 	}
-    return( used==`UB_NONE );
+    boolean ret = used==`UB_NONE;
+    if( ret )
+	ret = Storage::CanEdit( curr_part, true );
+    return( ret );
     }
 
 define boolean check_device_delete( map curr_part, boolean bsd_label,
-                                    boolean installation, list<map> pl )
+                                    boolean installation, map disk )
     ``{
     string part_name = curr_part["device"]:"";
 
@@ -930,10 +933,11 @@ Remove the device anyway?
 		}
 	    }
 	}
-    if( curr_part["type"]:`unknown==`logical )
+    if( !installation && curr_part["type"]:`unknown==`logical )
 	{
 	boolean ok = true;
-	list<map> ppl = filter( map p, pl, ``(p["nr"]:0>curr_part["nr"]:0));
+	list<map> ppl = filter( map p, disk["partitions"]:[], 
+	                        ``(p["nr"]:0>curr_part["nr"]:0));
 	if( size(ppl)>0 && check_devices_used( ppl, true )!=`UB_NONE )
 	    ok = false;
 	if( ok && !installation && size(ppl)>0 )
@@ -956,7 +960,10 @@ partition with higher number is in use.
 	    return( false );
 	    }
 	}
-    return true;
+    boolean ret = used==`UB_NONE;
+    if( ret )
+	ret = Storage::CanDelete( curr_part, disk, true );
+    return ret;
     };
 
 
@@ -1057,7 +1064,15 @@ that is in use. Remove the used volume before
 deleting the extended partition.
 "));
 	}
-    return( used==`UB_NONE );
+    boolean ret = used==`UB_NONE;
+    if( ret )
+	{
+	map extd = find( map p, partitions,
+		         ``(p["type"]:`primary==`extended));
+	if( extd!=nil && size(extd)>0 )
+	    ret = Storage::CanDelete( extd, curr_disk, true );
+	}
+    return( ret );
     };
 }
 

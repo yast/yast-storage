@@ -821,6 +821,8 @@ define map process_partition_data( string dev, map solution, string vgname )
 		    {
 		    y2milestone( "process_partition_data reuse part %1", p );
 		    p["format"] = true;
+		    if( p["mount"]:"" != mount )
+			p["inactive"] = true;
 		    p["mount"] = mount;
 		    p["used_fs"] = 
 			solution["partitions",pindex,"fsys"]:Partitions::DefaultFs();
@@ -920,6 +922,7 @@ define map process_partition_data( string dev, map solution, string vgname )
 			}
 		    part["size_k"] = part["region",1]:0 * disk["cyl_size"]:0 / 1024;
 		    part["mount"] = mount;
+		    part["inactive"] = true;
 		    part["used_fs"] = 
 			solution["partitions",pindex,"fsys"]:Partitions::DefaultFs();
 		    value = solution["partitions",pindex,"fstopt"]:"";
@@ -1002,6 +1005,7 @@ define map process_partition_data( string dev, map solution, string vgname )
 		    part["type"] = `logical;
 		    }
 		part["mount"] = mount;
+		part["inactive"] = true;
 		part["used_fs"] = 
 		    solution["partitions",pindex,"fsys"]:Partitions::DefaultFs();
 		value = solution["partitions",pindex,"fstopt"]:"";
@@ -1633,7 +1637,8 @@ define map remove_possible_partitions( map disk, map conf )
 	    p["type"]:`primary != `extended &&
 	    !contains( conf["keep_partition_num"]:[], p["nr"]:0 ) &&
 	    !contains( conf["keep_partition_id"]:[], fsid ) &&
-	    !contains( conf["keep_partition_fsys"]:[], p["used_fs"]:`none ))
+	    !contains( conf["keep_partition_fsys"]:[], p["used_fs"]:`none ) &&
+	    Storage::CanDelete( p, disk, false ))
 	    {
 	    p["delete"] = true;
 	    }
@@ -2206,6 +2211,8 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 		     if( !p["delete"]:false &&
 			 p["device"]:""==swaps[0,"device"]:"" )
 			 {
+			 if( p["mount"]:"" != "swap" )
+			     p["inactive"] = true;
 			 p["mount"] = "swap";
 			 if( haskey( p, "vg" ))
 			     {
@@ -2278,8 +2285,9 @@ list<map> can_boot_reuse( string disk, string label, boolean boot,
 	    {
 	    ret = maplist( map p, partitions,
 			   ``{
-			   if( !p["delete"]:false &&
-			       p["device"]:""==boot["device"]:"" )
+			   if( !p["delete"]:false && 
+			       p["device"]:""==boot["device"]:"" &&
+			       Storage::CanEdit(p,false) )
 			       {
 			       p["mount"] = Partitions::BootMount();
 			       p["used_fs"] = Partitions::DefaultBootFs();
@@ -2312,7 +2320,8 @@ list<map> can_mp_reuse( string mp, integer min, integer max,
 		    p["used_by_type"]:`UB_NONE == `UB_NONE &&
 		    size(p["mount"]:"")==0 &&
 		    p["size_k"]:0/1024 >= min &&
-		    (max==0 || p["size_k"]:0/1024 <= max)));
+		    (max==0 || p["size_k"]:0/1024 <= max) &&
+		    Storage::CanEdit( p, false )));
     y2milestone( "can_mp_reuse normal %1", pl );
     if( size(pl)>0 )
 	{
@@ -2563,11 +2572,12 @@ list<map> remove_p_settings( list<map> parts, list<string> mp )
     parts = 
 	maplist( map p, parts,
 	    ``{
-	    if( size(mp)==0 || contains( mp, p["mount"]:"") )
+	    if( (size(mp)==0 || contains( mp, p["mount"]:"")) &&
+	        !(p["mount"]:""=="swap" && !p["inactive"]:false) )
 		{
 		foreach( string s, rems,
 		    ``{
-		    if( haskey( p, s ))
+		    if( haskey( p, s ) )
 			p = remove( p, s );
 		    });
 		}
@@ -2576,8 +2586,9 @@ list<map> remove_p_settings( list<map> parts, list<string> mp )
     return( parts );
     }
 
-list<map> remove_one_partition( list<map> partitions )
+list<map> remove_one_partition( map disk )
     {
+    list<map> partitions = disk["partitions"]:[];
     list<map> pl = filter( map p, partitions,
 			   ``( p["linux"]:false && size(p["mount"]:"")==0 &&
 			       !p["delete"]:false ));
@@ -2594,7 +2605,8 @@ list<map> remove_one_partition( list<map> partitions )
 		``{
 		if( p["linux"]:false && !p["delete"]:false &&
 		    size(p["mount"]:"")==0 &&
-		    p["device"]:""==pl[0,"device"]:"" )
+		    p["device"]:""==pl[0,"device"]:"" &&
+		    Storage::CanDelete( p, disk, false ))
 		    {
 		    p["delete"] = true;
 		    y2milestone( "remove_one_partition p %1", p );
@@ -2631,7 +2643,8 @@ list<map> remove_one_partition_vm( map disk )
 		``{
 		if( p["linux"]:false && !p["delete"]:false &&
 		    size(p["mount"]:"")==0 &&
-		    p["device"]:""==pl[0,"device"]:"" )
+		    p["device"]:""==pl[0,"device"]:"" &&
+		    Storage::CanDelete( p, disk, false ))
 		    {
 		    p["delete"] = true;
 		    nr = p["nr"]:0;
@@ -2711,7 +2724,8 @@ map get_inst_proposal( map<string,map> target )
 			maplist( map p, target[s,"partitions"]:[],
 			    ``{
 			    if( !contains( Partitions::do_not_delete, 
-					   p["fsid"]:0 ))
+					   p["fsid"]:0 ) &&
+				Storage::CanDelete( p, target[s]:$[], false))
 				{
 				if( usable_for_win_resize(p,false) )
 				    p["dtxt"] = _("Resize impossible due to inconsistent fs. Try checking fs under Windows.");
@@ -2744,7 +2758,7 @@ map get_inst_proposal( map<string,map> target )
 		foreach( string s, filter( string d, ddev, ``(valid[d]:false)),
 		    ``{
 		    target[s,"partitions"] = 
-			remove_one_partition( target[s,"partitions"]:[] );
+			remove_one_partition( target[s]:$[] );
 		    });
 		}
 	    }
@@ -3499,7 +3513,8 @@ map get_inst_prop_vm( map<string,map> target, string key )
 			maplist( map p, target[s,"partitions"]:[],
 			    ``{
 			    if( !contains( Partitions::do_not_delete, 
-					   p["fsid"]:0 ))
+					   p["fsid"]:0 ) &&
+				Storage::CanDelete( p, target[s]:$[], false))
 				{
 				if( usable_for_win_resize(p,false) )
 				    p["dtxt"] = _("Resize impossible due to inconsistent fs. Try checking fs under Windows.");
