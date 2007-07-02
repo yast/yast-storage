@@ -4278,15 +4278,23 @@ global define list<string> AddPackageList()
 	pl = add( pl, "yast2-storage-evms" );
 	}
     boolean need_quota = false;
+    boolean need_crypt = false;
     foreach( string k, map e, tg,
 	``{
 	if( size(filter( map p, e["partitions"]:[], 
 	                 ``(FileSystems::HasQuota(p))))>0 )
 	    need_quota = true;
+	if( size(filter( map p, e["partitions"]:[], 
+	                 ``(p["enc_type"]:`none != `none)))>0 )
+	    need_crypt = true;
 	});
     if( need_quota )
 	{
 	pl = add( pl, "quota" );
+	}
+    if( need_crypt )
+	{
+	pl = add( pl, "util-linux-crypto" );
 	}
     y2milestone( "AddPackageList ret %1", pl );
     return( pl );
@@ -5502,65 +5510,83 @@ global list<map> GetPrepBoot( map<string,map> tg )
 
 global define void FinishInstall()
     ``{
+    y2milestone( "FinishInstall initial:%1", Stage::initial() );
     map<string,map> tg = GetTargetMap();
-    HandleModulesOnBoot( tg );
-    list evms = GetUsedEvmsDisks( tg );
-    y2milestone( "FinishInstall evms %1", evms );
-    if( size(evms)>0 )
+    if( Stage::initial() )
 	{
-	string cmd = "cd / && /sbin/insserv /etc/init.d/boot.evms";
+	HandleModulesOnBoot( tg );
+	list evms = GetUsedEvmsDisks( tg );
+	y2milestone( "FinishInstall evms %1", evms );
+	if( size(evms)>0 )
+	    {
+	    string cmd = "cd / && /sbin/insserv /etc/init.d/boot.evms";
+	    y2milestone( "FinishInstall cmd %1", cmd );
+	    map bo = (map)SCR::Execute (.target.bash_output, cmd );
+	    y2milestone( "FinishInstall bo %1", bo );
+	    }
+	list<string> nonevms = GetUsedRealDisks( tg );
+	nonevms = filter( string d, nonevms, ``(!contains( evms, d )));
+	nonevms = maplist( string d, nonevms, ``(substring(d,5)));
+	y2milestone( "FinishInstall nonevms %1", nonevms );
+	nonevms = (list<string>)merge( nonevms, maplist( map p, GetPrepBoot(tg),
+				       ``(substring(p["device"]:"",5))));
+	y2milestone( "FinishInstall nonevms %1", nonevms );
+	if( size(nonevms)>0 && SCR::Read( .target.size, "/etc/evms.conf" )>=0 )
+	    {
+	    map evmsconf = $[];
+	    AsciiFile::ReadFile( evmsconf, "/etc/evms.conf" );
+	    boolean found = false;
+	    integer i = 1;
+	    string regex1 = "^[ \t]*activate[ \t]*\\{";
+	    string regex2 = "^[ \t]*exclude[ \t]*=";
+	    string regex3 = "^[ \t]*\\}";
+	    while( i<=AsciiFile::NumLines(evmsconf) && !found )
+		{
+		found = regexpmatch( evmsconf["l",i,"line"]:"", regex1 );
+		i = i+1;
+		}
+	    found = false;
+	    boolean found2 = false;
+	    while( i<=AsciiFile::NumLines(evmsconf) && !found && !found2)
+		{
+		found = regexpmatch( evmsconf["l",i,"line"]:"", regex2 );
+		found2 = regexpmatch( evmsconf["l",i,"line"]:"", regex3 );
+		if( found )
+		    {
+		    string co = evmsconf["l",i,"line"]:"";
+		    integer pos = search( co, "[" );
+		    if( pos!=nil )
+			co = substring( co, pos+1 );
+		    pos = search( co, "]" );
+		    if( pos!=nil )
+			co = substring( co, 0, pos );
+		    y2milestone( "FinishInstall co = \"%1\"", co );
+		    string li = "\texclude = [ " + co + 
+		                mergestring( nonevms, " " ) + " ]";
+		    y2milestone( "FinishInstall li = %1", li );
+		    evmsconf["l",i,"line"] = li;
+		    evmsconf["l",i,"buildline"] = false;
+		    AsciiFile::RewriteFile( evmsconf, "/etc/evms.conf" );
+		    }
+		i = i+1;
+		}
+	    }
+	}
+    boolean need_crypt = false;
+    foreach( string k, map e, tg,
+	``{
+	if( size(filter( map p, e["partitions"]:[],
+			 ``(p["enc_type"]:`none != `none)))>0 )
+	    need_crypt = true;
+	});
+    if( need_crypt )
+	{
+	string cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto";
 	y2milestone( "FinishInstall cmd %1", cmd );
 	map bo = (map)SCR::Execute (.target.bash_output, cmd );
 	y2milestone( "FinishInstall bo %1", bo );
 	}
-    list<string> nonevms = GetUsedRealDisks( tg );
-    nonevms = filter( string d, nonevms, ``(!contains( evms, d )));
-    nonevms = maplist( string d, nonevms, ``(substring(d,5)));
-    y2milestone( "FinishInstall nonevms %1", nonevms );
-    nonevms = (list<string>)merge( nonevms, maplist( map p, GetPrepBoot(tg),
-				   ``(substring(p["device"]:"",5))));
-    y2milestone( "FinishInstall nonevms %1", nonevms );
-    if( size(nonevms)>0 && SCR::Read( .target.size, "/etc/evms.conf" )>=0 )
-	{
-	map evmsconf = $[];
-	AsciiFile::ReadFile( evmsconf, "/etc/evms.conf" );
-	boolean found = false;
-	integer i = 1;
-	string regex1 = "^[ \t]*activate[ \t]*\\{";
-	string regex2 = "^[ \t]*exclude[ \t]*=";
-	string regex3 = "^[ \t]*\\}";
-	while( i<=AsciiFile::NumLines(evmsconf) && !found )
-	    {
-	    found = regexpmatch( evmsconf["l",i,"line"]:"", regex1 );
-	    i = i+1;
-	    }
-	found = false;
-	boolean found2 = false;
-	while( i<=AsciiFile::NumLines(evmsconf) && !found && !found2)
-	    {
-	    found = regexpmatch( evmsconf["l",i,"line"]:"", regex2 );
-	    found2 = regexpmatch( evmsconf["l",i,"line"]:"", regex3 );
-	    if( found )
-		{
-		string co = evmsconf["l",i,"line"]:"";
-		integer pos = search( co, "[" );
-		if( pos!=nil )
-		    co = substring( co, pos+1 );
-		pos = search( co, "]" );
-		if( pos!=nil )
-		    co = substring( co, 0, pos );
-		y2milestone( "FinishInstall co = \"%1\"", co );
-		string li = "\texclude = [ " + co + mergestring( nonevms, " " ) +
-		            " ]";
-		y2milestone( "FinishInstall li = %1", li );
-		evmsconf["l",i,"line"] = li;
-		evmsconf["l",i,"buildline"] = false;
-		AsciiFile::RewriteFile( evmsconf, "/etc/evms.conf" );
-		}
-	    i = i+1;
-	    }
-	}
-    y2milestone( "FinishInstall" );
+    y2milestone( "FinishInstall done" );
     }
 
 global define map GetEntryForMountpoint( string mp )
