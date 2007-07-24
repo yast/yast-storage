@@ -56,6 +56,7 @@
   import "LibStorage::DmInfo";
   import "LibStorage::DmPartInfo";
   import "LibStorage::DmraidInfo";
+  import "LibStorage::NfsInfo";
   import "LibStorage::ContainerInfo";
   import "LibStorage::DiskInfo";
   import "LibStorage::LvmVgInfo";
@@ -73,7 +74,8 @@ map<string,any> conv_ctype =
                 LibStorage::LVM() : `CT_LVM,
                 LibStorage::EVMS() : `CT_EVMS,
                 LibStorage::DMRAID() : `CT_DMRAID,
-                LibStorage::DM() : `CT_DM
+                LibStorage::DM() : `CT_DM,
+                LibStorage::NFSC() : `CT_NFS
 	      ]
      ];
 
@@ -160,7 +162,7 @@ map DiskMap = $[];
 map ClassifiedSettings = $[];
 map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_DMRAID : 2,
                     `CT_LOOP : 3, `CT_DM : 4, `CT_LVM : 5, 
-		    `CT_EVMS : 6 ];
+		    `CT_EVMS : 6, `CT_NFS : 7 ];
 list<string> hw_packages = [];
 list<string> no_propose_disks = nil;
 boolean proposal_evms = false;
@@ -290,7 +292,7 @@ global define void InitLibstorage()
 	y2milestone( "InitLibstorage" );
 	sint = createInterface();
 	boolean evco = ProductFeatures::GetBooleanFeature( "partitioning",
-							 "evms_config" );
+							   "evms_config" );
 	y2milestone( "InitLibstorage evco %1", evco );
 	if( Stage::initial() )
 	    {
@@ -1555,6 +1557,24 @@ map getContainerInfo( map c )
 	    p["nr"] = LibStorage::DmInfo::swig_nr_get(info);
 	    p["type"] = `dm;
 	    p["fstype"] = Partitions::dm_name;
+	    c["partitions"] = add( c["partitions"]:[], p );
+	    });
+	}
+    else if( c["type"]:`CT_UNKNOWN == `CT_NFS )
+	{
+	list<any> pinfos = [];
+	y2milestone( "before getNfsInfo" );
+	ret = LibStorage::StorageInterface::getNfsInfo( sint, pinfos );
+	y2milestone( "after getNfsInfo" );
+	if( ret<0 )
+	    y2warning( "getNfsInfo ret:%1", ret );
+	foreach( any info, pinfos,
+	    ``{
+	    map p = $[];
+	    vinfo = LibStorage::NfsInfo::swig_v_get(info);
+	    p = volumeMap( vinfo, p );
+	    p["type"] = `nfs;
+	    p["fstype"] = Partitions::nfs_name;
 	    c["partitions"] = add( c["partitions"]:[], p );
 	    });
 	}
