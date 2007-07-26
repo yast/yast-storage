@@ -432,7 +432,7 @@ define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
 		});
 	    }
 	}
-    else
+    else if( search( device, "/" )==0 )
 	{
 	if( search( device, "/dev/hd" )==0 ||
 	    search( device, "/dev/sd" )==0 ||
@@ -535,6 +535,10 @@ define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
 	    tmp["nr"] = "";
 	    }
 	ret = [ tmp ];
+	}
+    else
+	{
+	ret = [ $[ "disk" : "/dev/nfs", "nr" : device ]];
 	}
     if( size(ret)>1 )
 	{
@@ -2875,6 +2879,33 @@ global boolean ChangeEvmsStripeSize( string coname, string name,
     return( ret==0 );
     }
 
+global boolean AddNfsVolume( string nfsdev, integer sz, string mp )
+    {
+    y2milestone( "AddNfsVolume dev:%1 size:%2 mp:%3", nfsdev, sz, mp );
+    integer ret = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::addNfsDevice( sint, nfsdev, sz, mp );
+    if( ret<0 )
+	y2error( "AddNfsVolume sint ret:%1", ret );
+    UpdateTargetMapDisk( "/dev/nfs" );
+    return( ret==0 );
+    }
+
+global integer CheckNfsVolume( string nfsdev )
+    {
+    y2milestone( "CheckNfsVolume dev:%1", nfsdev );
+    integer ret = 0;
+    integer sz = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::checkNfsDevice( sint, nfsdev, sz );
+    if( ret<0 )
+	y2error( "CheckNfsVolume sint ret:%1", ret );
+    else 
+	ret = sz;
+    y2milestone( "CheckNfsVolume ret:%1", ret );
+    return( ret );
+    }
+
 global boolean CreateMd( integer nr, string type )
     {
     y2milestone( "CreateMd nr:%1 type:%2", nr, type );
@@ -3184,6 +3215,11 @@ global define boolean CreateAny( symbol ctype, map d, map& p )
 					   p["stripesize"]:0 );
 	    }
 	}
+    else if( ctype == `CT_NFS )
+	{
+	ret = Storage::AddNfsVolume( p["device"]:"", p["size_k"]:0, 
+	                             p["mount"]:"" );
+	}
     y2milestone( "CreateAny ret:%1", ret );
     return( ret );
     }
@@ -3474,7 +3510,6 @@ global define void SetTargetMap( map<string,map> target )
 		});
 	    }
 	});
-    tg = GetTargetMap();
     keys = maplist( string k, any e, tg, ``(k));
     keys = sort( string a, string b, keys,
                  ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:6 >
@@ -3904,10 +3939,16 @@ GetIdSmaller( string disk, integer delim )
     ``{
     string ret = disk;
     map<string,map> tg = GetTargetMap();
-    list<map> ps = filter( map p, tg[disk,"partitions"]:[], ``(p["nr"]:0<delim));
-    ps = sort( map a, map b, ps, ``(a["nr"]:0>b["nr"]:0));
-    if( size(ps)>0 )
-	ret = ps[0,"device"]:"";
+    if( haskey( tg[disk,"partitions",0]:$[], "nr" ))
+	{
+	list<map> ps = filter( map p, tg[disk,"partitions"]:[], ``(p["nr"]:0<delim));
+	if( size(ps)>1 )
+	    ps = sort( map a, map b, ps, ``(a["nr"]:0>b["nr"]:0));
+	if( size(ps)>0 )
+	    ret = ps[0,"device"]:"";
+	}
+    else 
+	ret = tg[disk,"partitions",0,"device"]:disk;
     y2milestone( "GetIdSmaller disk:%1 delim:%2 ret:%3",
                  disk, delim, ret );
     return( ret );
