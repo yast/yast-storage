@@ -586,6 +586,15 @@ define map CheckDeviceFinalOk( map new )
     return( ret );
     }
 
+map pkg_for_fs = $[
+    `ext2 : [ "e2fsprogs" ],
+    `ext3 : [ "e2fsprogs" ],
+    `reiser : [ "reiserfs" ],
+    `vfat : [ "dosfstools" ],
+    `ntfs : [ "ntfsprogs" ],
+    `jfs : [ "jfsutils" ],
+    `xfs : [ "xfsprogs" ] ];
+
 define map<string,any> HandleFsChanged( boolean init, map<string,any> new, 
                                         symbol old_fs, map file_systems )
     ``{
@@ -615,6 +624,17 @@ Undo the change of file system?
 "), Product::name );
 
 	    undo_change = Popup::YesNo(message);
+	    }
+	if( !undo_change && !Stage::initial() )
+	    {
+	    if( size(pkg_for_fs[used_fs]:[])>0 )
+		{
+		boolean r = Package::InstallAll( pkg_for_fs[used_fs]:[] );
+		y2milestone( "HandleFsChanged install %1 ret:%2", 
+		             pkg_for_fs[used_fs]:[], r );
+		if( !r )
+		    undo_change = true;
+		}
 	    }
 	if( undo_change )
 	    {
