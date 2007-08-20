@@ -58,12 +58,24 @@ integer fromSymbol( map<string,any> conv, symbol val )
   global list<string> system_m_points = [ "/", "/usr", "/var", "/opt", 
                                           Partitions::BootMount() ];
   global list<string> crypt_m_points = [ "/", Partitions::BootMount(), "/usr" ];
-  global list<string> suggest_m_points = (list<string>)union( system_m_points,
-                                        [ "/home", "/srv", "/tmp", "/local", ""] );
+  list<string> suggest_m_points = [];
   global list<string> swap_m_points   = [ "swap", ""  ];
   global list<string> tmp_m_mpoint   = [ "/tmp", "/var/tmp" ];
 
   global string nchars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+global list<string> SuggestMPoints()
+    {
+    if( size(suggest_m_points)==0 )
+	{
+	suggest_m_points = [ "/home", "/srv", "/tmp", "/local", ""];
+	if( Stage::initial() )
+	    suggest_m_points = (list<string>)union( system_m_points,
+						    suggest_m_points );
+	y2milestone( "SuggestMPoints init:%1", suggest_m_points );
+	}
+    return( suggest_m_points );
+    }
 
   any lib_id = nil;
 
@@ -637,7 +649,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `fsid_item 		: "0x83 Linux ",
 				    `fstype 		: "Linux native" ,
 				    `crypt 		: true ,
-				    `mountpoints 	: suggest_m_points,
+				    `mountpoints 	: SuggestMPoints(),
 				    `mount_option	: "-t ext2",
 				    `mount_string	: "ext2",
 				    `makefstype		: "ext2",
@@ -653,7 +665,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `fsid_item 		: "0x0C Win95 FAT32 ",
 				    `fstype 		: "Fat32",
 				    `crypt 		: true ,
-				    `mountpoints 	: suggest_m_points ,
+				    `mountpoints 	: SuggestMPoints() ,
 				    `mount_option	: "-t vfat",
 				    `mount_string	: "vfat",
 				    `makefstype		: "fat32",
@@ -670,7 +682,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `fsid_item 		: "0x83 Linux " ,
 				    `fstype 		: "Linux native",
 				    `crypt 		: true,
-				    `mountpoints 	: suggest_m_points,
+				    `mountpoints 	: SuggestMPoints(),
 				    `mount_option 	: "-t reiserfs",
 				    `mount_string	: "reiserfs",
 				    `needed_modules	: [ "reiserfs" ],
@@ -686,7 +698,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `fsid_item 		: "0x83 Linux " ,
 				    `fstype 		: "Linux native" ,
 				    `crypt 		: true,
-				    `mountpoints 	: suggest_m_points,
+				    `mountpoints 	: SuggestMPoints(),
 				    `mount_option 	: "-t xfs",
 				    `mount_string	: "xfs",
 				    `needed_modules	: [ "xfs" ],
@@ -701,7 +713,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `fsid_item 		: "0x83 Linux " ,
 				    `fstype 		: "Linux native" ,
 				    `crypt		: true,
-				    `mountpoints 	: suggest_m_points,
+				    `mountpoints 	: SuggestMPoints(),
 				    `mount_string	: "jfs",
 				    `mount_option	: "-t jfs",
 				    `needed_modules	: [ "jfs" ],
@@ -716,7 +728,7 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `fsid_item 		: "0x83 Linux " ,
 				    `fstype 		: "Linux native" ,
 				    `crypt		: true,
-				    `mountpoints 	: suggest_m_points,
+				    `mountpoints 	: SuggestMPoints(),
 				    `mount_string	: "ext3",
 				    `mount_option	: "-t ext3",
 				    `needed_modules	: [ "jbd",  "ext3" ],
@@ -937,11 +949,6 @@ global define void FileSystems()
 	support[`hfsplus] = true;
 	}
     y2milestone( "support %1", support );
-    suggest_m_points = [ "/home", "/srv", "/tmp", "/local", ""];
-    if( Stage::initial() )
-	suggest_m_points = (list<string>)union( system_m_points, 
-	                                        suggest_m_points );
-    y2milestone( "suggest_m_points:%1", suggest_m_points );
     }
 
 global define void InitSlib( any sint )
