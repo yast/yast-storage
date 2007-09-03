@@ -5593,6 +5593,22 @@ global list<map> GetPrepBoot( map<string,map> tg )
     return( ret );
     }
 
+void CallInsserv( boolean on, string name )
+    {
+    y2milestone( "CallInsserv on:%1 name:%2", on, name );
+    string scrname = "/etc/init.d/boot." + name;
+    if( SCR::Read( .target.size, scrname )>0 )
+	{
+	string cmd = "cd / && /sbin/insserv ";
+	if( !on )
+	    cmd = cmd + "-r ";
+	cmd = cmd + scrname;
+	y2milestone( "CallInsserv cmd %1", cmd );
+	map bo = (map)SCR::Execute (.target.bash_output, cmd );
+	y2milestone( "CallInsserv bo %1", bo );
+	}
+    }
+
 global define void FinishInstall()
     ``{
     y2milestone( "FinishInstall initial:%1", Stage::initial() );
@@ -5603,12 +5619,7 @@ global define void FinishInstall()
 	list evms = GetUsedEvmsDisks( tg );
 	y2milestone( "FinishInstall evms %1", evms );
 	if( size(evms)>0 )
-	    {
-	    string cmd = "cd / && /sbin/insserv /etc/init.d/boot.evms";
-	    y2milestone( "FinishInstall cmd %1", cmd );
-	    map bo = (map)SCR::Execute (.target.bash_output, cmd );
-	    y2milestone( "FinishInstall bo %1", bo );
-	    }
+	    CallInsserv( true, "evms" );
 	list<string> nonevms = GetUsedRealDisks( tg );
 	nonevms = filter( string d, nonevms, ``(!contains( evms, d )));
 	nonevms = maplist( string d, nonevms, ``(substring(d,5)));
@@ -5658,19 +5669,30 @@ global define void FinishInstall()
 	    }
 	}
     boolean need_crypt = false;
+    boolean need_md = false;
+    boolean need_lvm = false;
+    boolean need_dmraid = false;
     foreach( string k, map e, tg,
 	``{
 	if( size(filter( map p, e["partitions"]:[],
 			 ``(p["enc_type"]:`none != `none)))>0 )
 	    need_crypt = true;
+	if( e["type"]:`CT_UNKNOWN==`CT_MD && size(e["partitions"]:[])>0 )
+	    need_md = true;
+	if( e["type"]:`CT_UNKNOWN==`CT_LVM )
+	    need_lvm = true;
+	if( e["type"]:`CT_UNKNOWN==`CT_DMRAID )
+	    need_dmraid = true;
 	});
+    y2milestone( "FinishInstall need crypto:%1 md:%2 lvm:%3 dmraid:%4",
+                 need_crypt, need_md, need_lvm, need_dmraid );
+    string cmd = "";
+    map bo = $[];
     if( need_crypt )
-	{
-	string cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto";
-	y2milestone( "FinishInstall cmd %1", cmd );
-	map bo = (map)SCR::Execute (.target.bash_output, cmd );
-	y2milestone( "FinishInstall bo %1", bo );
-	}
+	CallInsserv( true, "crypto" );
+    CallInsserv( need_md, "md" );
+    CallInsserv( need_lvm, "lvm" );
+    CallInsserv( need_dmraid, "dmraid" );
     y2milestone( "FinishInstall done" );
     }
 
