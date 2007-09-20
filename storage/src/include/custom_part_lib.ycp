@@ -28,6 +28,61 @@
 
   #include "partitioning/partition_defines.ycp";
 
+define string mountVar( map var, map root, string rdev, string mp, 
+                        map<string,map> targetMap )
+    ``{
+    string ret = "";
+    boolean mount_success = false;
+    y2milestone( "mountVar rdev:%1 mp:%2 var:%3 root:%4", rdev, mp, var, root );
+    if( var["size_k"]:0>0 )
+	{
+	ret = var["device"]:"";
+	}
+    else
+	{
+	list<string> ds = maplist( string d, map disk, targetMap, ``(d));
+	y2milestone( "mountVar ds:%1", ds );
+	ds = filter( string d, ds, ``(targetMap[d,"type"]:`CT_UNKNOWN==`CT_DISK));
+	y2milestone( "mountVar ds:%1", ds );
+	map rootm = Storage::GetDiskPartition( rdev );
+	map rootf = Storage::GetDiskPartition( root["device"]:"" );
+	map varf = Storage::GetDiskPartition( var["device"]:"" );
+	if( rootf["disk"]:""==varf["disk"]:"" )
+	    {
+	    ret = Storage::GetDeviceName( rootm["disk"]:"", varf["nr"]:(any)0 );
+	    }
+	else if( size(ds)==1 )
+	    {
+	    ret = Storage::GetDeviceName( ds[0]:"", varf["nr"]:(any)0 );
+	    }
+	else if( size(ds)>1 )
+	    {
+	    integer i = 0;
+	    while( i<size(ds) && size(ret)==0 )
+		{
+		ret = Storage::GetDeviceName( ds[i]:"", varf["nr"]:(any)0 );
+		if( size(Storage::GetPartition( targetMap, ret ))>0 &&
+		    Storage::Mount( ret, mp ) )
+		    {
+		    map d = (map)SCR::Read( .target.stat, mp+"/lib/hardware" );
+		    y2milestone( "mountVar d:%1", d );
+		    if( !d["isdir"]:false )
+			ret = "";
+		    Storage::Umount( ret );
+		    }
+		else 
+		    ret = "";
+		i = i+1;
+		}
+	    }
+	}
+    if( size(ret)>0 && !Storage::Mount( ret, mp ))
+	ret = "";
+    y2milestone( "mountVar ret:%1", ret );
+    return( ret );
+    }
+
+
   /**
    * Find and read fstab by installation. Scan existing partitions.
    * @parm targetMap all targets
@@ -38,14 +93,15 @@ define list<list> findExistingFstab( map<string,map> targetMap, string search_po
     ``{
     /////////////////////////////////////////////////////////////////
     // foreach partition on each target
-    list<list>    fstab = [];
-    list    skip_fs = [ `unknown, `swap, `vfat, `ntfs ];
+    list<list> fstab = [];
+    list skip_fs = [ `unknown, `swap, `vfat, `ntfs ];
 
     foreach( string dev, map disk, targetMap,
 	``{
 	foreach( map part,
 	         filter( map p, disk["partitions"]:[],
-				``(!contains( skip_fs, p["detected_fs"]:`unknown) )),
+				``(!contains( skip_fs, 
+				              p["detected_fs"]:`unknown) )),
 	    ``{
 	    /////////////////////////////////////////////////////
 	    // try to mount
@@ -55,10 +111,40 @@ define list<list> findExistingFstab( map<string,map> targetMap, string search_po
 	    if( mount_success &&
 		SCR::Read(.target.size, search_point+"/etc/fstab") > 0 )
 		{
-		list tmp = Storage::ReadFstab( search_point+"/etc" );
+		list<map> tmp = 
+		    (list<map>)Storage::ReadFstab( search_point+"/etc" );
 		y2milestone( "findExistingFstab fstab %1", tmp );
 		if( size(tmp)>0 )
 		    {
+		    if( find( map p, tmp, ``(p["size_k"]:0==0 ))!=nil )
+			{
+			string vardev = "";
+			map var = find( map p, tmp, ``(p["mount"]:""=="/var"));
+			map root = find( map p, tmp, ``(p["mount"]:""=="/"));
+			y2milestone( "findExistingFstab var %1", var );
+			if( var != nil )
+			    {
+			    vardev = mountVar( var, root, part["device"]:"", 
+			                       search_point+"/var", targetMap );
+			    y2milestone( "findExistingFstab vardev %1", 
+			                 vardev );
+			    }
+			map dmap = Storage::BuildDiskmap( $[] );
+			if( size(dmap)>0 )
+			    {
+			    y2milestone( "findExistingFstab dmap %1", dmap );
+			    y2milestone( "findExistingFstab tmp %1", tmp );
+			    tmp = maplist( map p, tmp, 
+				``{
+				if( p["size_k"]:0 == 0 )
+				    p["device"] = Storage::HdDiskMap( p["device"]:"", dmap );
+				return( p );
+				});
+			    y2milestone( "findExistingFstab tmp %1", tmp );
+			    }
+			if( size(vardev)>0 )
+			    Storage::Umount( vardev );
+			}
 		    fstab = add( fstab, tmp );
 		    }
 		}
