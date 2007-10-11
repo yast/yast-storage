@@ -694,11 +694,12 @@ global define map GetFreeSpace( string device, integer testsize,
     integer resize_free = 0;
     integer df_free = 0;
     boolean win_disk = false;
+    boolean efi = false;
 
     boolean r = false;
     r = LibStorage::StorageInterface::getFreeInfo( sint, device, resize_free,
                                                    df_free, used, win_disk,
-						   used_fs==`ntfs );
+						   efi, used_fs==`ntfs );
 
     resize_free = resize_free * 1024;	// Byte
     df_free = df_free * 1024;	// Byte
@@ -781,6 +782,7 @@ global define map GetFreeSpace( string device, integer testsize,
 		 "df_free" : df_free,
 		 "used":used,
 		 "win_disk":win_disk,
+		 "efi":efi,
 		 "linux_size":linux_size,
 		 "max_win_size":used + resize_free + add_free - min_linux_size,
 		 "ntfs" : (used_fs == `ntfs),
@@ -3014,6 +3016,14 @@ global define boolean CreateAny( symbol ctype, map d, map& p )
     return( ret );
     }
 
+define boolean IsEfiPartition( map p )
+    {
+    map m = GetFreeSpace( p["device"]:"", 0, p["used_fs"]:`none, false );
+    boolean ret = m["efi"]:false;
+    y2milestone( "IsEfiPartition ret:%1", ret );
+    return( ret );
+    }
+
 /**
  * Search in the list partitions for windows partitions and add the key
  * "mount" to the found windows partitions.
@@ -3046,7 +3056,7 @@ define void AddMountPointsForWinParts( list<map> partitions, boolean primary,
 	    ((partnum<=max_prim)==primary) &&
 	    foreign_nr < 24 &&
 	    Partitions::IsDosWinNtPartition(fsid) &&
-	    (!Arch::ia64() || partition["size_k"]:0 >= 1024*1024) &&
+	    (!Arch::ia64() || !IsEfiPartition(partition)) &&
 	    contains( [`vfat, `ntfs], partition["used_fs"]:`none ))
 	    {
 	    new_partition["fstopt"] = 
