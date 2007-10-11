@@ -159,7 +159,7 @@ class Storage : public storage::StorageInterface
 	void handleLogFile( const string& name );
 	static bool testFilesEqual( const string& n1, const string& n2 );
 	void printInfo( std::ostream& str );
-	void logCo( Container* c );
+	void logCo( Container* c ) const;
 	void logCo( const string& device );
 	void logProcData( const string& l="" );
 	storage::UsedByType usedBy( const string& dev );
