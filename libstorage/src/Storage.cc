@@ -4445,7 +4445,7 @@ Storage::logCo( const string& device )
     }
 
 void
-Storage::logCo( Container* c )
+Storage::logCo( Container* c ) const
     {
     std::ostringstream b;
     c->print( b );
