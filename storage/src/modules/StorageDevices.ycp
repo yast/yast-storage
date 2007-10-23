@@ -45,31 +45,25 @@
      * @return map of $["device": $[..target..], ...] for each ZIP drive
      *
      */
-    global map<string,any> ZipDrives = $[];
+    map<string,map> zip_drives = nil;
 
 
     /**
      * @return list of maps: all kinds of removable media, esp. ZIP drives
-     * @see: FloppyDevice
-     * @see: FloppyReady
      */
-    global list<map> FloppyDrives = [];
+    list<map> floppy_drives = nil;
 
 
     /**
      * @return true if floppy drive present
-     * @see: FloppyDevice
-     * @see: FloppyReady
      */
-    global boolean FloppyPresent = false;
+    boolean floppy_present = nil;
 
 
     /**
      * @return Device name of floppy, empty string if no floppy present
-     * @see: FloppyPresent
-     * @see: FloppyReady
      */
-    global string FloppyDevice = "";	// set in constructor
+    string floppy_device = nil;
 
 
     //---------------------------------------------------------------
@@ -77,13 +71,13 @@
     /**
      * list of cd-rom drives
      */
-    global list<map> cddrives = [];
+    list<map> cd_drives = nil;
 
     global list<string> TypeNames = [ "cdrom", "dvd", "cdrecorder", "dvdrecorder",
 				      "dvdram" ];
 
     // storage for localProbe, see Probe()
-    map targetMap = $[];
+    integer targetMapSize = 0;
 
     //---------------------------------------------------------------
 
@@ -107,8 +101,6 @@ global define integer TypeNameIndex( string cdtype )
 	});
     return( idx );
     }
-
-
 
 
   /**
@@ -226,33 +218,33 @@ global define list<map> AddAlternateLinks( list<map> cddrives )
 	    }
 	}
     y2milestone( "AddAlternateLinks ret %1", cddrives );
-    return( cddrives );
+    return( cd_drives );
     }
 
 /**
   * ProbeCDROMs()
   *
-  * Initialize cddrives
+  * Initialize cd_drives
   *
   */
 global define boolean ProbeCDROMs()
     ``{
-    if (size (cddrives) == 0)
+    if( cd_drives==nil )
 	{
-	if (Stage::initial () || Stage::cont ())
+	cd_drives = [];
+	if (Stage::initial() || Stage::cont())
 	    {
 	    y2milestone( "before SCR::Read (.probe.cdrom)" );
-	    cddrives = (list<map>) SCR::Read (.probe.cdrom);
+	    cd_drives = (list<map>) SCR::Read (.probe.cdrom);
 	    y2milestone( "after SCR::Read (.probe.cdrom)" );
 	    // write out data for hardware status check
-	    foreach (map drive, cddrives,
+	    foreach (map drive, cd_drives,
 		``{
 		HwStatus::Set (drive["unique_key"]:"", `yes);
 		});
 	    }
 	else
 	    {
-	    cddrives = [];
 	    y2milestone( "before SCR::Read (.probe.cdrom)" );
 	    foreach(map e, (list<map>) SCR::Read (.probe.cdrom),
 		``{
@@ -261,18 +253,18 @@ global define boolean ProbeCDROMs()
 		y2milestone( "ProbeCDROMs cd:%1", e );
 		if( conf["available"]:`no != `no )
 		    {
-		    cddrives = add( cddrives, e );
+		    cd_drives = add( cd_drives, e );
 		    }
 		});
 
-	    if ((cddrives == nil) || (size (cddrives) == 0))
+	    if ((cd_drives == nil) || (size (cd_drives) == 0))
 		{
-		cddrives = [ $["dev_name":"/dev/cdrom"] ];
+		cd_drives = [ $["dev_name":"/dev/cdrom"] ];
 		}
 	    }
 
 	// sort out idecdrws and scsicds
-	foreach (map e, cddrives,
+	foreach (map e, cd_drives,
 	    ``{
 	    if( (e["cdr"]:false || e["cdrw"]:false || e["dvdr"]:false ) &&
 		e["bus"]:"" == "IDE" )
@@ -290,39 +282,46 @@ global define boolean ProbeCDROMs()
 
 	if( boot_device != "" )
 	    {
-	    y2milestone( "ProbeCDROMs cddrives:%1", cddrives );
+	    y2milestone( "ProbeCDROMs cddrives:%1", cd_drives );
 	    y2milestone( "ProbeCDROMs boot_device:%1", boot_device );
 
 	    if( search( boot_device, "/dev/" ) != 0 )
 		boot_device = "/dev/" + boot_device;
-	    list tmp = filter( map e, cddrives, ``(e["dev_name"]:""==boot_device));
+	    list tmp = filter( map e, cd_drives, ``(e["dev_name"]:""==boot_device));
 	    if( size(tmp)>0 )
 		{
-		cddrives = filter( map e, cddrives, ``(e["dev_name"]:""!=boot_device));
-		cddrives = (list<map>)merge( tmp, cddrives );
+		cd_drives = filter( map e, cd_drives, ``(e["dev_name"]:""!=boot_device));
+		cd_drives = (list<map>)merge( tmp, cd_drives );
 		}
 
-	    y2milestone( "ProbeCDROMs cddrives:%1", cddrives );
+	    y2milestone( "ProbeCDROMs cddrives:%1", cd_drives );
 	    }
 
-	y2milestone( "ProbeCDROMs cddrives:%1", cddrives );
-	cddrives = AddNormalLinknames( cddrives );
-	cddrives = maplist( map drive, cddrives,
+	y2milestone( "ProbeCDROMs cddrives:%1", cd_drives );
+	cd_drives = AddNormalLinknames( cd_drives );
+	cd_drives = maplist( map drive, cd_drives,
 	    ``{
 	    drive["udev_links"] = [ substring(drive["linkname"]:"",5) ];
 	    return( drive );
 	    });
-	cddrives = AddAlternateLinks( cddrives );
+	cd_drives = AddAlternateLinks( cd_drives );
 	}
-    y2milestone ("ProbeCDROMs (%1)", cddrives);
-    return (size (cddrives) > 0);
+    y2milestone ("ProbeCDROMs (%1)", cd_drives);
+    return( size(cd_drives)>0 );
+    }
+
+global list<map> cddrives()
+    {
+    if( cd_drives==nil )
+	ProbeCDROMs();
+    return( cd_drives );
     }
 
 global define map GetCdromEntry( string device )
     ``{
     map ret = $[];
     y2milestone( "GetCdromEntry device %1", device );
-    ret = find(map e, cddrives, ``(e["dev_orig"]:(e["dev_name"]:"") == device));
+    ret = find(map e, cd_drives, ``(e["dev_orig"]:(e["dev_name"]:"")==device));
     if( ret == nil )
 	{
 	ret = $[];
@@ -339,46 +338,50 @@ global define map GetCdromEntry( string device )
  * @see: FloppyDevice
  */
 
-global define boolean FloppyReady ()
+global define boolean FloppyReady()
     ``{
-    if( Stage::initial () )
+    if( floppy_present==nil )
 	{
-	y2milestone( "before .probe.floppy" );
-	FloppyDrives = (list<map>) SCR::Read(.probe.floppy);
-	y2milestone( "after .probe.floppy" );
-
-	if( !FloppyPresent )	// only once !
+	floppy_present = false;
+	floppy_drives = [];
+	if( Stage::initial() )
 	    {
+	    y2milestone( "before .probe.floppy" );
+	    floppy_drives = (list<map>) SCR::Read(.probe.floppy);
+	    y2milestone( "after .probe.floppy" );
+		
 	    // write out data for hardware status check
-	    foreach (map drive, FloppyDrives,
+	    foreach (map drive, floppy_drives,
 		``{
 		HwStatus::Set (drive["unique_key"]:"", `yes);
 		});
 	    }
+	else
+	    {
+	    y2milestone( "before .probe.floppy.manual" );
+	    floppy_drives = (list<map>) SCR::Read(.probe.floppy.manual);
+	    y2milestone( "after .probe.floppy.manual" );
+	    }
+	floppy_device = floppy_drives[0,"dev_name"]:"";
+	if( (floppy_device != "") || Mode::test ())
+	    {
+	    floppy_present = true;
+	    }
 	}
-    else
-	{
-	FloppyDrives = (list<map>) SCR::Read(.probe.floppy.manual);
-	}
-
-    map floppy_data = FloppyDrives[0]:$[];
-    FloppyDevice = floppy_data["dev_name"]:"";
-    if( (FloppyDevice != "") || Mode::test ())
-	{
-	FloppyPresent = true;
-	}
-    y2milestone( "FloppyDrives %1", FloppyDrives );
-    return( size(floppy_data)>0 && !haskey(floppy_data,"notready") );
+    y2milestone( "FloppyDrives %1", floppy_drives );
+    return( size(floppy_drives[0]:$[])>0 && 
+            !haskey(floppy_drives[0]:$[],"notready") );
     }
 
 
 // loop over floppy drives to find IDE ZIPs
 // return map of $[ "device" : $[target], ...]
 
-define map findZIPs ()
+define map<string,map> findZIPs ()
     ``{
-    map zips = $[];
-    foreach (map disk, FloppyDrives,
+    map<string,map> zips = $[];
+    FloppyReady();
+    foreach (map disk, floppy_drives,
 	``{
 	if (disk["zip"]:false)
 	    {
@@ -405,6 +408,15 @@ define map findZIPs ()
     return zips;
     }
 
+global define map<string,map> ZipDrives()
+    {
+    if( zip_drives==nil )
+	{
+	zip_drives = findZIPs();
+	}
+    return( zip_drives );
+    }
+
 
 /*
  * Fake probing for storage devices in test or demo mode -
@@ -427,6 +439,27 @@ global define map fakeProbe ()
     return target_map;
     } // fakeProbe()
 
+global boolean FloppyPresent()
+    {
+    if( floppy_present==nil )
+	FloppyReady();
+    return( floppy_present );
+    }
+
+global string FloppyDevice()
+    {
+    if( floppy_device==nil )
+	FloppyReady();
+    return( floppy_device );
+    }
+
+global list<map> FloppyDrives()
+    {
+    if( floppy_drives==nil )
+	FloppyReady();
+    return( floppy_drives );
+    }
+
 
 /*
  * Probe for storage devices attached to storage controllers
@@ -441,6 +474,7 @@ define map localProbe()
 	{
 	return fakeProbe();
 	}
+    FloppyReady();
     // do the probing
     list<map> all_disks = (list<map>) SCR::Read(.probe.disk);
 
@@ -462,6 +496,7 @@ define map localProbe()
     integer other_count = 0;
     string fake_raid = "";
     map target = $[];
+    zip_drives = $[];
 
     foreach (map disk, filter(map e,all_disks,``(size(e["dev_name"]:"")>0)),
 	``{
@@ -590,7 +625,9 @@ define map localProbe()
 	if( (!notready||search(ddevice,"/dev/dasd")==0) && (size(target)>0) )
 	    {
 	    if (is_zip)
-		ZipDrives[ddevice] = target;
+		{
+		zip_drives[ddevice] = target;
+		}
 	    else
 		{
 		targets[ddevice] = target;
@@ -606,14 +643,14 @@ define map localProbe()
 
     SCR::UnmountAgent(.disk);
 
-    ZipDrives = (map<string,any>)union (ZipDrives, findZIPs ());
+    zip_drives = (map<string,map>)union( zip_drives, findZIPs() );
 
-    foreach(string k, any e, ZipDrives,
+    foreach(string k, any e, zip_drives,
 	``{
-	FloppyDrives = filter(map f, FloppyDrives, ``(f["dev_name"]:""!=k));
+	floppy_drives = filter(map f, floppy_drives, ``(f["dev_name"]:""!=k));
 	});
-    y2milestone( "localProbe: FloppyDrives %1", FloppyDrives );
-    y2milestone( "localProbe: ZipDrives %1", ZipDrives );
+    y2milestone( "localProbe: FloppyDrives %1", FloppyDrives() );
+    y2milestone( "localProbe: ZipDrives %1", ZipDrives() );
 
     return targets;
     }
@@ -628,16 +665,18 @@ define map localProbe()
 
 global define map Probe(boolean force_reset)
     ``{
+    map target = $[];
     y2milestone( "Probe force_reset:%1 disks_valid:%2", force_reset, disks_valid );
     if( force_reset )
-	targetMap = $[];
+	targetMapSize = 0;
 
-    if( targetMap==$[] && disks_valid )
+    if( targetMapSize==0 && disks_valid )
 	{
-	targetMap = localProbe();
+	target = localProbe();
+	targetMapSize = size(target);
 	ProbeCDROMs();
 	}
-    return targetMap;
+    return target;
     }
 
 
@@ -655,7 +694,7 @@ global define string UdevCdromPath()
  * Initialize
  */
 
-global define void FullProbe ()
+global define void FullProbe()
     ``{
     FloppyReady();		// probe floppy
     ProbeCDROMs();		// probe CDs
@@ -671,11 +710,10 @@ global define void InitDone()
  * Constructor
  */
 
-global define void StorageDevices ()
+global define void StorageDevices()
     ``{
-    if( !Stage::initial () && !Mode::config () )
+    if( !Stage::initial() && !Mode::config() )
 	{
-	FullProbe ();
 	disks_valid = true;
 	}
     return;
