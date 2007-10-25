@@ -5149,7 +5149,7 @@ global define void UpdateFstabPersistentNames()
 
 global define void UpdateFstabDiskmap( map diskmap )
     ``{
-    y2milestone( "UpdateFstabdiskmap map %1", diskmap );
+    y2milestone( "UpdateFstabDiskmap map %1", diskmap );
     string tabpath = PathToDestdir( "/etc/fstab" );
     map fstab = Partitions::GetFstab( tabpath );
     integer line = 0;
@@ -5179,6 +5179,30 @@ global define void UpdateFstabDiskmap( map diskmap )
 	line = line+1;
 	}
     AsciiFile::RewriteFile( crtab, tabpath );
+    }
+
+global define void UpdateMdadm()
+    ``{
+    y2milestone( "UpdateMdadm" );
+    string cpath = PathToDestdir( "/etc/mdadm.conf" );
+    map file = $[];
+    AsciiFile::SetComment( file, "^[ \t]*#" );
+    AsciiFile::ReadFile( file, cpath );
+    integer line = 0;
+    boolean changed = false;
+    while( line<=AsciiFile::NumLines( file ) )
+	{
+	if( search( file["l",line,"line"]:"", "DEVICE" )!=nil &&
+	    search( file["l",line,"line"]:"", "/dev/" )!=nil )
+	    {
+	    changed = true;
+	    file["l",line,"line"] = "DEVICE partitions";
+	    y2milestone( "UpdateMdadm %1", file["l",line]:$[] );
+	    }
+	line = line+1;
+	}
+    if( changed )
+	AsciiFile::RewriteFile( file, cpath );
     }
 
 global define void UpdateCryptoType()
@@ -5327,6 +5351,7 @@ global define void Update( map oldv, map newv )
     if( size(dm)>0 )
 	{
 	UpdateFstabDiskmap( dm );
+	UpdateMdadm();
 	}
     if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0<=2))
 	{
