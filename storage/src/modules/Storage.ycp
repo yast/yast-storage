@@ -176,10 +176,13 @@ string part_insts = "";
   include "storage/routines.ycp";
  */
   /**
-   * Get Device Name
-   * @param disk Disk
+   * Returns Device Name
+   *
+   * @param string Disk
    * @param any partition
    * @return string device name
+   *
+   * @example Storage::GetDeviceName ("/dev/md", 1)
    */
 global define string GetDeviceName( string disk, any partition )
     {
@@ -208,6 +211,12 @@ global define string GetDeviceName( string disk, any partition )
       return( ret );
   };
 
+/**
+ * Returns ...
+ *
+ * @param string dev
+ * @return string EvmsDevDisk
+ */
 global string EvmsDevDisk( string dev )
     {
     string ret = "/dev/" + substring( dev, 10 );
@@ -550,6 +559,12 @@ define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
     return( ret );
     };
 
+/**
+ * Returns map describing the disk partition
+ *
+ * @param string device
+ * @return map DiskPartition
+ */
 global define map GetDiskPartition( string device )
     ``{
     return( GetDiskPartitionTg( device, GetTargetMap() )[0]:$[] );
@@ -562,7 +577,7 @@ global void UpdateChangeTime()
     StorageMap["targets_time"] = change_time;
     }
 
-/* return list of partitions of map <tg> */
+/* eturn list of partitions of map <tg> */
 define list<map> GetPartitionLst( map<string,map> tg, string device )
     ``{
     list<map> ret = [];
@@ -610,7 +625,12 @@ global define map<string,any> GetPartition( map<string,map> tg, string device )
     return( (map<string,any>)GetPartitionLst( tg, device )[0]:$[] );
     }
 
-/* return disk <device> belongs to in map <tg> */
+/**
+ * Returns disk identified by 'device' taken from the 'tg' (target) map
+ *
+ * @param map<string,map> tg (target map)
+ * @param string device
+ */
 global define map<string,any> GetDisk( map<string,map> tg, string device )
     ``{
     map<string,any> ret = $[];
@@ -625,7 +645,13 @@ global define map<string,any> GetDisk( map<string,map> tg, string device )
     }
 
 
-/* set <part>, return changed map <tg> */
+/**
+ * Sets partition 'part' into the 'tg' map and returns changed 'tg' map
+ *
+ * @param map <string,map> tg
+ * @param map part
+ * @return map <string,map> changed tg
+ */
 global define map<string,map> SetPartition( map<string,map> tg, map part )
     ``{
     y2milestone( "SetPartition part=%1", part );
@@ -645,6 +671,8 @@ global define map<string,map> SetPartition( map<string,map> tg, map part )
 
 /**
  * Find next free loop device.
+ *
+ * @param integer start (start with /dev/loop$number)
  * @return string loop_dev ( e.g.: /dev/loop1 )
  */
 global define string GetLoopDev( integer start )
@@ -735,6 +763,14 @@ global define map<string,map> DeleteDestroyedLvmVgs( map<string,map> target )
     return( target );
     }
 
+/**
+ * Returns map of free space per partition
+ *
+ * @param string device
+ * @param integer testsize
+ * @param symbol used_fs
+ * @param boolean verbose
+ */
 global define map GetFreeSpace( string device, integer testsize,
                                 symbol used_fs, boolean verbose )
     ``{
@@ -849,6 +885,12 @@ global define map GetFreeSpace( string device, integer testsize,
     return( ret );
     };
 
+/**
+ * Adds ... and returns the changed map
+ *
+ * @param map <string,map> targets
+ * @return map <string,map> targets
+ */
 global define map<string,map> AddWinInfo( map<string,map> targets )
     ``{
     y2milestone( "AddWinInfo called" );
@@ -877,6 +919,12 @@ global define string SaveDumpPath( string name )``{
     }
 
 //  add mount point for all mounted partitions
+/**
+ * Adds mountpoint info to the target map and returns the changed map
+ *
+ * @param map <string,map> target
+ * @return map <string,map> target
+ */
 global define map<string,map> AddMountPointInfo( map<string,map> target )
     ``{
     list<map> mounts = Partitions::CurMounted();
@@ -1634,6 +1682,11 @@ list<map> getContainers()
 
 integer count=0;
 
+/**
+ * Updates target map
+ *
+ * @see GetTargetMap()
+ */
 global void UpdateTargetMap()
     {
     conts = getContainers();
@@ -1747,6 +1800,13 @@ define void UpdateTargetMapDev( string dev )
     //count = count+1;
     }
 
+/**
+ * Returns map with disk info
+ *
+ * @param string device
+ * @param map disk
+ * @return map disk info
+ */
 global define map getDiskInfo( string device, map disk )
     {
     map c = $[];
@@ -1793,6 +1853,29 @@ global define string GetLastUsed()
     return( last_used );
     }
 
+/**
+ * Finds and returns fstab entry
+ *
+ * @param map fstab
+ * @param string mount
+ * @param string device
+ * @param string uuid
+ * @param string label
+ * @return map fstab entry
+ *
+ * @example
+ *   FindFstabEntry ($[], "", "", "", "")
+ *
+ * @struct
+ * $[
+ *   "spec" : "...",
+ *   "file" : "...",
+ *   "vfstype" : "...",
+ *   "mntops" : "...",
+ *   "freq" : ...,
+ *   "passno" : ...,
+ * ]
+ */
 global define map FindFstabEntry( map fstab, string mount, string device,
 			          string uuid, string label )
     {
@@ -1815,7 +1898,11 @@ global define map FindFstabEntry( map fstab, string mount, string device,
     return( ret );
     }
 
-
+/**
+ * Returns map describing the disk target
+ *
+ * @return map <string, map>
+ */
 global define map< string, map > GetOndiskTarget()
     {
     list keys = [ "mount", "enc_type", "mountby", "fstopt", "used_fs", "format" ];
@@ -2106,6 +2193,7 @@ global define void InstallCallbacks()
     }
 
 
+// Constructor
 global define void Storage()
     ``{
     map m = (map)SCR::Execute(.target.bash_output, "date +%s.%N" );
@@ -2326,6 +2414,18 @@ global integer MaxCylLabel( map disk )
     return( ret );
     }
 
+/**
+ * Creates a new partition
+ *
+ * @param string disk
+ * @param string device
+ * @param symbol ptype (types?)
+ * @param integer id
+ * @param integer start
+ * @param integer len (bytes|cyls?)
+ * @param symbol mby (one of?)
+ * @return boolean if successful
+ */
 global boolean CreatePartition( string disk, string device, symbol ptype,
                                 integer id, integer start, integer len,
 				symbol mby )
@@ -2366,6 +2466,13 @@ global boolean UpdatePartition( string device, integer start, integer len )
     return( ret==0 );
     }
 
+/**
+ * Sets a mountpoint for partition
+ *
+ * @param string device name
+ * @param string mount point
+ * @return boolean if successful
+ */
 global boolean SetPartitionMount( string device, string mp )
     {
     y2milestone( "SetPartitionMount device:%1 mp:%2", device, mp );
@@ -2377,6 +2484,14 @@ global boolean SetPartitionMount( string device, string mp )
     return( ret==0 );
     }
 
+/**
+ * Sets whether a partition should be formatted
+ *
+ * @param string device name
+ * @param boolean format (yes,no)
+ * @param symbol filesystem
+ * @return boolean if successful
+ */
 global boolean SetPartitionFormat( string device, boolean format, symbol fs )
     {
     y2milestone( "SetPartitionFormat device:%1 format:%2 fs:%3", device,
@@ -2392,6 +2507,15 @@ global boolean SetPartitionFormat( string device, boolean format, symbol fs )
     return( ret==0 );
     }
 
+/**
+ * Sets partition ID
+ *
+ * @param string device name
+ * @param integer ID
+ * @return boolean if successful
+ *
+ * @see UnchangePartitionId()
+ */
 global boolean SetPartitionId( string device, integer id )
     {
     y2milestone( "SetPartitionId device:%1 id:%2", device, id );
@@ -2403,6 +2527,14 @@ global boolean SetPartitionId( string device, integer id )
     return( ret==0 );
     }
 
+/**
+ * Restores the original partition ID
+ *
+ * @param string device name
+ * @return boolean if succesful
+ *
+ * @see SetPartitionId()
+ */
 global boolean UnchangePartitionId( string device )
     {
     y2milestone( "UnchangePartitionId device:%1", device );
@@ -2414,6 +2546,14 @@ global boolean UnchangePartitionId( string device )
     return( ret==0 );
     }
 
+/**
+ * Sets a new size for partition
+ *
+ * @param string device name
+ * @param string disk
+ * @param integer new size (in bytes)
+ * @return boolean if successfull
+ */
 global boolean ResizeVolume( string device, string disk, integer new_size )
     {
     y2milestone( "ResizeVolume device:%1 disk:%2 new_size:%3", device, disk,
@@ -3315,6 +3455,11 @@ global define void AddMountPointsForWin( map<string,map> targets )
 	});
     }
 
+/**
+ * Removes ... maps to ...
+ *
+ * @param string device name
+ */
 global void RemoveDmMapsTo( string device )
     {
     y2milestone( "RemoveDmMapsTo device:%1", device );
@@ -3376,6 +3521,16 @@ global define map<string,map> AddSwapMp( map<string,map> target )
     return( target );
     }
 
+/**
+ * Returns a system target map.
+ *
+ * @return map <string,map> target map
+ *
+ * @struct
+ * $[
+ *    ... ?
+ * ]
+ */
 global define map<string,map> GetTargetMap()
     ``{
     map<string,map> tmp = $[];
@@ -3657,6 +3812,13 @@ global define void SetTargetMap( map<string,map> target )
     y2milestone( "SetTargetMap ChangeTime %1", GetTargetChangeTime() );
     };
 
+/**
+ * Rereads the system target map and returns it
+ *
+ * @return map <string,map> target map
+ *
+ * @see GetTargetMap();
+ */
 global define map<string,map> ReReadTargetMap()
     ``{
     y2milestone("start reread sint:%1", sint );
@@ -3669,6 +3831,11 @@ global define map<string,map> ReReadTargetMap()
     return GetTargetMap();
     };
 
+/**
+ * Apply storage changes
+ *
+ * @return integer
+ */
 global integer CommitChanges()
     {
     y2milestone( "CommitChanges" );
@@ -3688,6 +3855,14 @@ global string DeviceMounted( string dev )
     return( ret );
     }
 
+/**
+ * Umounts a device
+ *
+ * @param string device name
+ * @return boolean if successful
+ *
+ * @see Mount()
+ */
 global boolean Umount( string dev )
     {
     boolean ret = LibStorage::StorageInterface::umountDevice( sint, dev );
@@ -3695,6 +3870,15 @@ global boolean Umount( string dev )
     return( ret );
     }
 
+/**
+ * Mounts a device
+ *
+ * @param string device name
+ * @param string mount point
+ * @return boolean if successful
+ *
+ * @see Umount()
+ */
 global boolean Mount( string dev, string mp )
     {
     boolean ret = LibStorage::StorageInterface::mountDeviceRo( sint, dev, mp );
@@ -3802,6 +3986,11 @@ device %2 which contains data needed to perform the installation.
     return( ret );
     }
 
+/**
+ * Reads and returns fstab from directory
+ *
+ * @param string directory
+ */
 global list ReadFstab( string dir )
     {
     list ret = [];
@@ -3867,7 +4056,8 @@ global void SetZeroNewPartitions( boolean val )
     LibStorage::StorageInterface::setZeroNewPartitions( sint, val );
     }
 
-/* GetMountPoints()
+/**
+ * GetMountPoints()
  * collect mountpoint:device as map to get a sorted list
  * @returns: map of lists, the map key is the mount point,
  *		usually starting with a "/". Exception is "swap"
@@ -3961,7 +4151,15 @@ GetIdSmaller( string disk, integer delim )
     }
 
 
-/* set <key> in partition <device> to the given <value> and return changed map <tg> */
+/**
+ * Set <key> in partition <device> to the given <value> and return changed map <tg>
+ *
+ * @param map <string,map> tg
+ * @param string device name
+ * @string key
+ * @string value
+ * @return map <string,map> changed target map
+ */
 global define map<string,map> SetPartitionData( map<string,map> tg,
                                                 string device, string key,
 						any value )
@@ -4056,7 +4254,15 @@ global define void SetWizardKey( string key )
 
 /**
  * Check if a disk is a real disk and not RAID or LVM
+ *
+ * @param map entry (disk)
  * @return boolean true if real disk
+ *
+ * @struct entry ~ $[
+ *   "type":`CT_DISK,
+ *   "driver" : "?",
+ *   "readonly" : false / true,
+ * ]
  */
 global define boolean IsRealDisk( map entry )
     ``{
@@ -4066,8 +4272,12 @@ global define boolean IsRealDisk( map entry )
     }
 
 /**
- * Check if a container is partitionale 
- * @return boolean true if partitionale
+ * Checks if a container is partitionable
+ *
+ * @param map entry
+ * @return boolean true if partitionable
+ *
+ * @struct entry ~ $[ "type" : ... ? ]
  */
 global define boolean IsPartitionable( map entry )
     {
@@ -4096,7 +4306,7 @@ global define boolean DeviceRealDisk( string device )
     return ret;
     }
 
-/**
+/***
   * Determine if there is any Linux partition on this system.
   *
   * If there is none, we don't need to ask if the user wants to update or
@@ -4188,6 +4398,13 @@ global define boolean CheckSwapOn( string disk )``{
     return( ret );
     }
 
+/**
+ * Returns list of primary partitions found
+ *
+ * @param map <string,map> targets
+ * @param boolean foreign_os
+ * @return list of primary partitions
+ */
 global define list GetPrimPartitions( map<string,map> targets,
                                       boolean foreign_os )
     ``{
@@ -4402,6 +4619,12 @@ global define list GetForeignPrimary()
     return( ret );
     }
 
+/**
+ * Returns whether a partition is resizable
+ *
+ * @param map partition
+ * @return map resizable ?
+ */
 global define map IsResizable( map part )
     ``{
     map ret = FileSystems::IsResizable(`unknown);
@@ -4586,6 +4809,12 @@ define void HandleModulesOnBoot( map<string,map> targetMap )
 	}
     }
 
+/**
+ * Adds an entry into the fstab
+ *
+ * @param map entry
+ * @return integer (0 and higher == OK, otherwise error)
+ */
 global define integer AddFstabEntry( map e )
     {
     y2milestone( "AddFstabEntry entry:%1", e );
@@ -4644,6 +4873,9 @@ void UpdateBootFstabEvms()
 
 global define boolean BootEvms();
 
+/**
+ * Writes fstab to the disk
+ */
 global define void WriteFstab()
     ``{
     y2milestone( "WriteFstab called" );
@@ -4829,6 +5061,12 @@ global define boolean PerformLosetup( map& loop, boolean format )
     return( crypt_ok );
     }
 
+/**
+ * Detects a filesystem on a device
+ *
+ * @param device name
+ * @return symbol filesystem
+ */
 global define symbol DetectFs( string device )
     ``{
     symbol ret = `unknown;
@@ -5301,6 +5539,18 @@ global define map BuildDiskmap( map oldv )
     return( DiskMap );
     }
 
+/**
+ * Updates fstab on disk
+ *
+ * @param map old version
+ * @param map new version
+ *
+ * @struct version $[
+ *   // This means version 9.1
+ *   "major" : 9,
+ *   "minor" : 1,
+ * ]
+ */
 global define void Update( map oldv, map newv )
     ``{
     y2milestone( "Update old:%1 new:%2", oldv, newv );
@@ -5425,8 +5675,10 @@ global define list GetUsedLvmGroups( map<string,map> tg )
 
 /**
  * Get used real disks
- * @param tg Target map
- * @return disks List of disks
+ *
+ * @param map <string,map> tg Target map
+ * @param boolean ignore boot
+ * @return list <string> disks List of disks
  */
 global define list<string> GetUsedRealDisksNew( map<string,map> tg, 
                                                 boolean ignore_boot )
