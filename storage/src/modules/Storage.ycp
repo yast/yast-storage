@@ -31,6 +31,7 @@
   import "Encoding";
   import "Directory";
   import "FileSystems";
+  import "FileUtils";
   import "Installation";
   import "Label";
   import "Mode";
@@ -3875,14 +3876,144 @@ global boolean Umount( string dev )
  *
  * @param string device name
  * @param string mount point
+ * @param fstopt mount options
+ * @return boolean if successful
+ *
+ * @see Umount()
+ */
+global boolean MountOpt( string dev, string mp, string fstopt )
+    {
+    boolean ret = LibStorage::StorageInterface::mountDeviceRo( sint, dev, mp,
+                                                               fstopt );
+    y2milestone( "MountOpt %1 to %2 with %3 ret %4", dev, mp, fstopt, ret );
+    return( ret );
+    }
+
+/**
+ * Mounts a device
+ *
+ * @param string device name
+ * @param string mount point
  * @return boolean if successful
  *
  * @see Umount()
  */
 global boolean Mount( string dev, string mp )
     {
-    boolean ret = LibStorage::StorageInterface::mountDeviceRo( sint, dev, mp );
-    y2milestone( "Mount %1 to %2 ret %3", dev, mp, ret );
+    return( MountOpt( dev, mp, "" ) );
+    }
+
+global define map DetectHomeFs( map p )
+    {
+    y2milestone( "DetectHomeFs p:%1", p );
+    map ret = $[];
+    boolean home = false;
+    list poss_fs = [ `ext2, `ext3, `reiser, `xfs, `jfs ];
+    if( !p["created"]:false && contains( poss_fs, p["detected_fs"]:`unknown ) &&
+        size(p["device"]:"")>0 )
+	{
+	boolean mount_ok = false;
+	string tmpdir = (string)SCR::Read(.target.tmpdir) + "/hmp";
+	SCR::Execute(.target.mkdir, tmpdir );
+	string fsto = FileSystems::DefaultFstabOptions( p );
+	mount_ok = Storage::MountOpt( p["device"]:"", tmpdir, fsto );
+	if( !mount_ok )
+	    mount_ok = Storage::Mount( p["device"]:"", tmpdir );
+	else
+	    ret["fstopt"] = fsto;
+	if( mount_ok )
+	    {
+	    list skip = [ ".", "..", "root" ];
+	    list tfile = [ ".profile", ".ssh", ".bashrc", ".kde2", ".gnome2", ".kde", ".gnome" ];
+	    list<string> files = (list<string>)SCR::Read (.target.dir, tmpdir);
+	    y2milestone( "DetectHomeFs files:%1", files );
+	    integer count=0;
+
+	    while( !home && count<size(files) )
+		{
+		string td = tmpdir + "/" + files[count]:"";
+		if( !contains( skip, files[count]:"" ) &&
+		    FileUtils::IsDirectory( td ) )
+		    {
+		    integer i=0;
+		    while( !home && i<size(tfile) )
+			{
+			string tname = td + "/" + tfile[i]:"";
+			home = FileUtils::GetSize( tname )>0;
+			i = i+1;
+			}
+		    }
+		count = count+1;
+		}
+	    Storage::Umount( p["device"]:"" );
+	    }
+	SCR::Execute( .target.bash, "rmdir " + tmpdir );
+	}
+    ret["ishome"] = home;
+    y2milestone( "DetectHomeFs ret:%1", ret );
+    return( ret );
+    }
+
+global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
+                                 string fstab_opts, string label )
+    {
+    y2milestone( "SetVolOptions p:%1", p );
+    y2milestone( "SetVolOptions mount:%1 fs:%2 fs_opt:%3 fst_opt:%4 label:%5", 
+                 mnt, fs, fs_opts, fstab_opts, label );
+    map ret = p;
+    if( size(mnt)>0 )
+	ret["mount"] = mnt;
+    if( fs!=nil && fs!=`unknown )
+	ret["used_fs"] = fs;
+    else
+	{
+	if( mnt==Partitions::BootMount() )
+	    ret["used_fs"] = Partitions::DefaultBootFs();
+	else
+	    ret["used_fs"] = Partitions::DefaultFs();
+	}
+    if( ret["used_fs"]:`unknown == `unknown || 
+        ret["used_fs"]:`unknown == `none )
+	ret["format"] = false;
+    else
+	ret["format"] = true;
+    if( ret["format"]:false && !ret["create"]:false &&
+	ret["detected_fs"]:`unknown != `unknown && mnt=="/home" )
+	{
+	boolean lvm = p["type"]:`primary == `lvm;
+	map h = DetectHomeFs( ret );
+	if( ( lvm && ret["name"]:""=="home") ||
+	    (!lvm && h["ishome"]:false ) )
+	    {
+	    ret["format"] = false;
+	    ret["used_fs"] = ret["detected_fs"]:`unknown;
+	    if( size(fstab_opts)==0 )
+		fstab_opts = h["fstopt"]:"";
+	    }
+	}
+    if( ret["format"]:false && !ret["create"]:false &&
+	ret["detected_fs"]:`unknown == `swap && mnt=="swap" )
+	{
+	ret["format"] = false;
+	ret["used_fs"] = `swap;
+	}
+    if( size(fstab_opts)>0 )
+	ret["fstopt"] = fstab_opts;
+    else
+	ret["fstopt"] = FileSystems::DefaultFstabOptions( ret );
+
+    if( size(fs_opts)>0 )
+	ret["fs_options"] = 
+	    convertStringToFsOptionMap( fs_opts, ret["used_fs"]:`unknown );
+    else
+	ret["fs_options"] = FileSystems::DefaultFormatOptions( ret );
+
+    if( size(label)>0 )
+	ret["label"] = label;
+    else if( size(ret["label"]:"")>0 && ret["format"]:false )
+	ret["label"] = "";
+
+    y2milestone( "SetVolOptions ret:%1", ret );
     return( ret );
     }
 

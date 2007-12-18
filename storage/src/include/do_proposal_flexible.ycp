@@ -822,36 +822,13 @@ define map process_partition_data( string dev, map solution, string vgname )
 		if( p["nr"]:0 == e["added",0,1]:0 )
 		    {
 		    y2milestone( "process_partition_data reuse part %1", p );
-		    p["format"] = true;
 		    if( p["mount"]:"" != mount )
 			p["inactive"] = true;
-		    p["mount"] = mount;
-		    p["used_fs"] = 
-			solution["partitions",pindex,"fsys"]:Partitions::DefaultFs();
-		    value = solution["partitions",pindex,"fstopt"]:"";
-		    if( size(value)>0 )
-			{
-			p["fstopt"] = value;
-			}
-		    else
-			{
-			p["fstopt"] = FileSystems::DefaultFstabOptions( p );
-			}
-		    p["fs_options"] = FileSystems::DefaultFormatOptions( p );
-		    value = solution["partitions",pindex,"fopt"]:"";
-		    if( size(value)>0 )
-			{
-			p["format_opt"] = value;
-			}
-		    value = solution["partitions",pindex,"label"]:"";
-		    if( size(value)>0 )
-			{
-			p["label"] = value;
-			}
-		    else if( size(p["label"]:"")>0 )
-			{
-			p["label"] = "";
-			}
+		    p = Storage::SetVolOptions( p, mount, 
+					        solution["partitions",pindex,"fsys"]:`unknown,
+						solution["partitions",pindex,"fopt"]:"",
+						solution["partitions",pindex,"fstopt"]:"",
+						solution["partitions",pindex,"label"]:"" );
 		    if( p["fsid"]:0 != fsid )
 			{
 			p["change_fsid"] = true;
@@ -901,7 +878,6 @@ define map process_partition_data( string dev, map solution, string vgname )
 		    integer pindex = e["added",0,0]:0;
 		    string mount = solution["partitions",pindex,"mount"]:"";
 		    integer fsid = Partitions::fsid_native;
-		    part["format"] = true;
 		    if( mount == "swap" )
 			{
 			fsid = Partitions::fsid_swap;
@@ -914,6 +890,12 @@ define map process_partition_data( string dev, map solution, string vgname )
 		    region[0] = region[0]:0 + part["region",1]:0;
 		    region[1] = region[1]:0 - part["region",1]:0;
 		    part["type"] = `primary;
+		    part["inactive"] = true;
+		    part = Storage::SetVolOptions( part, mount, 
+						   solution["partitions",pindex,"fsys"]:`unknown,
+						   solution["partitions",pindex,"fopt"]:"",
+						   solution["partitions",pindex,"fstopt"]:"",
+						   solution["partitions",pindex,"label"]:"" );
 		    if( solution["partitions",pindex,"id"]:0 != 0 )
 			{
 			fsid = solution["partitions",pindex,"id"]:0;
@@ -923,34 +905,6 @@ define map process_partition_data( string dev, map solution, string vgname )
 			    }
 			}
 		    part["size_k"] = part["region",1]:0 * disk["cyl_size"]:0 / 1024;
-		    part["mount"] = mount;
-		    part["inactive"] = true;
-		    part["used_fs"] = 
-			solution["partitions",pindex,"fsys"]:Partitions::DefaultFs();
-		    value = solution["partitions",pindex,"fstopt"]:"";
-		    if( size(value)>0 )
-			{
-			part["fstopt"] = value;
-			}
-		    else
-			{
-			part["fstopt"] = FileSystems::DefaultFstabOptions( part );
-			}
-		    part["fs_options"] = FileSystems::DefaultFormatOptions( part );
-		    value = solution["partitions",pindex,"fopt"]:"";
-		    if( size(value)>0 )
-			{
-			part["format_opt"] = value;
-			}
-		    value = solution["partitions",pindex,"label"]:"";
-		    if( size(value)>0 )
-			{
-			part["label"] = value;
-			}
-		    else if( size(part["label"]:"")>0 )
-			{
-			part["label"] = "";
-			}
 		    part["fsid"] = fsid;
 		    part["fstype"] = Partitions::FsIdToString( fsid );
 		    if( size(mount)==0 && size(vgname)>0 )
@@ -978,21 +932,9 @@ define map process_partition_data( string dev, map solution, string vgname )
 		integer pindex = a[0]:0;
 		string mount = solution["partitions",pindex,"mount"]:"";
 		integer fsid = Partitions::fsid_native;
-		part["format"] = true;
 		if( mount == "swap" )
 		    {
 		    fsid = Partitions::fsid_swap;
-		    }
-		if( solution["partitions",pindex,"id"]:0 != 0 )
-		    {
-		    fsid = solution["partitions",pindex,"id"]:0;
-		    if( !haskey( solution["partitions",pindex]:$[], "fsys" ))
-			{
-			part["format"] = false;
-			}
-		    y2milestone( "process_partition_data partition id %1 format %2 part %3", 
-		                 fsid, part["format"]:false, 
-				 solution["partitions",pindex]:$[] );
 		    }
 		part["create"] = true;
 		part["nr"] = a[1]:0;
@@ -1006,33 +948,22 @@ define map process_partition_data( string dev, map solution, string vgname )
 		    {
 		    part["type"] = `logical;
 		    }
-		part["mount"] = mount;
 		part["inactive"] = true;
-		part["used_fs"] = 
-		    solution["partitions",pindex,"fsys"]:Partitions::DefaultFs();
-		value = solution["partitions",pindex,"fstopt"]:"";
-		if( size(value)>0 )
+		part = Storage::SetVolOptions( part, mount, 
+					       solution["partitions",pindex,"fsys"]:`unknown,
+					       solution["partitions",pindex,"fopt"]:"",
+					       solution["partitions",pindex,"fstopt"]:"",
+					       solution["partitions",pindex,"label"]:"" );
+		if( solution["partitions",pindex,"id"]:0 != 0 )
 		    {
-		    part["fstopt"] = value;
-		    }
-		else
-		    {
-		    part["fstopt"] = FileSystems::DefaultFstabOptions( part );
-		    }
-		part["fs_options"] = FileSystems::DefaultFormatOptions( part );
-		value = solution["partitions",pindex,"fopt"]:"";
-		if( size(value)>0 )
-		    {
-		    part["format_opt"] = value;
-		    }
-		value = solution["partitions",pindex,"label"]:"";
-		if( size(value)>0 )
-		    {
-		    part["label"] = value;
-		    }
-		else if( size(part["label"]:"")>0 )
-		    {
-		    part["label"] = "";
+		    fsid = solution["partitions",pindex,"id"]:0;
+		    if( !haskey( solution["partitions",pindex]:$[], "fsys" ))
+			{
+			part["format"] = false;
+			}
+		    y2milestone( "process_partition_data partition id %1 format %2 part %3", 
+		                 fsid, part["format"]:false, 
+				 solution["partitions",pindex]:$[] );
 		    }
 		part["fsid"] = fsid;
 		part["fstype"] = Partitions::FsIdToString( fsid );
@@ -2292,15 +2223,9 @@ list<map> can_boot_reuse( string disk, string label, boolean boot,
 			       p["device"]:""==boot["device"]:"" &&
 			       Storage::CanEdit(p,false) )
 			       {
-			       p["mount"] = Partitions::BootMount();
-			       p["used_fs"] = Partitions::DefaultBootFs();
-			       p["format"] = true;
-			       if( size(p["label"]:"")>0 )
-				   p["label"] = "";
-			       p["fstopt"] = 
-				   FileSystems::DefaultFstabOptions( p );
-			       p["fs_options"] = 
-				   FileSystems::DefaultFormatOptions( p );
+			       p = Storage::SetVolOptions( p, Partitions::BootMount(),
+			                                   Partitions::DefaultBootFs(), 
+							   "", "", "" );
 			       }
 			   return( p );
 			   });
@@ -2314,6 +2239,8 @@ list<map> can_mp_reuse( string mp, integer min, integer max,
                         list<map> partitions )
     {
     list<map> ret = [];
+    if( max>0 )
+	max = max + max/10;
     y2milestone( "can_mp_reuse mp %1 min %2 max %3", mp, min, max );
     list<map> pl = [];
     pl = filter( map p, partitions, 
@@ -2335,14 +2262,9 @@ list<map> can_mp_reuse( string mp, integer min, integer max,
 		       if( !p["delete"]:false &&
 			   p["device"]:""==pl[0,"device"]:"" )
 			   {
-			   p["mount"] = mp;
-			   p["used_fs"] = Partitions::DefaultFs();
-			   p["format"] = true;
-			   if( size(p["label"]:"")>0 )
-			       p["label"] = "";
-			   p["fstopt"] = FileSystems::DefaultFstabOptions( p );
-			   p["fs_options"] = 
-			       FileSystems::DefaultFormatOptions( p );
+			   p = Storage::SetVolOptions( p, mp, 
+			                               Partitions::DefaultFs(),
+						       "", "", "" );
 			   }
 		       return( p );
 		       });
@@ -3384,12 +3306,10 @@ map modify_vm( map vm, map opts, boolean need_swap )
     if( root==nil && root_pe>0 )
 	{
 	map p = $[ "create":true, "name" : "root", 
-	           "format":true, "used_fs" : Partitions::DefaultFs(),
 		   "device" : ret["device"]:"" + "/root",
-		   "mount" : "/",
 	           "size_k" : pe_to_sizek(root_pe,pe) ];
-        p["fstopt"] = FileSystems::DefaultFstabOptions( p );
-        p["fs_options"] = FileSystems::DefaultFormatOptions( p );
+        p = Storage::SetVolOptions( p, "/", Partitions::DefaultFs(),
+				    "", "", "" );
 	y2milestone( "modify_vm created %1", p );
 	ret["partitions"] = add( ret["partitions"]:[], p );
 	}
@@ -3399,14 +3319,8 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	    ``{
 	    if( p["name"]:"" == "root" )
 		{
-		p["mount"] = "/";
-		p["format"] = true;
-		if( p["detected_fs"]:`unknown==`unknown )
-		    {
-		    p["used_fs"] = Partitions::DefaultFs();
-		    }
-		p["fstopt"] = FileSystems::DefaultFstabOptions( p );
-		p["fs_options"] = FileSystems::DefaultFormatOptions( p );
+		p = Storage::SetVolOptions( p, "/", Partitions::DefaultFs(),
+					    "", "", "" );
 		y2milestone( "modify_vm reuse %1", p );
 		}
 	    return(p);
@@ -3415,12 +3329,10 @@ map modify_vm( map vm, map opts, boolean need_swap )
     if( swap==nil && swap_pe>0 )
 	{
 	map p = $[ "create":true, "name" : "swap", 
-	           "format":true, "used_fs" : `swap,
 		   "device" : ret["device"]:"" + "/swap",
-		   "mount" : "swap",
 	           "size_k" : pe_to_sizek(swap_pe,pe) ];
-        p["fstopt"] = FileSystems::DefaultFstabOptions( p );
-	p["fs_options"] = FileSystems::DefaultFormatOptions( p );
+	p = Storage::SetVolOptions( p, "swap", `swap,
+				    "", "", "" );
 	y2milestone( "modify_vm created %1", p );
 	ret["partitions"] = add( ret["partitions"]:[], p );
 	}
@@ -3430,14 +3342,8 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	    ``{
 	    if( p["name"]:"" == "swap" )
 		{
-		p["mount"] = "swap";
-		if( p["detected_fs"]:`unknown!=`swap )
-		    {
-		    p["format"] = true;
-		    p["used_fs"] = `swap;
-		    p["fs_options"] = FileSystems::DefaultFormatOptions( p );
-		    }
-		p["fstopt"] = FileSystems::DefaultFstabOptions( p );
+		p = Storage::SetVolOptions( p, "swap", `swap,
+					    "", "", "" );
 		y2milestone( "modify_vm reuse %1", p );
 		}
 	    return(p);
@@ -3446,12 +3352,10 @@ map modify_vm( map vm, map opts, boolean need_swap )
     if( home==nil && home_pe>0 )
 	{
 	map p = $[ "create":true, "name" : "home", 
-	           "format":true, "used_fs" : Partitions::DefaultFs(),
 		   "device" : ret["device"]:"" + "/home",
-		   "mount" : "/home",
 	           "size_k" : pe_to_sizek(home_pe,pe) ];
-        p["fstopt"] = FileSystems::DefaultFstabOptions( p );
-	p["fs_options"] = FileSystems::DefaultFormatOptions( p );
+	p = Storage::SetVolOptions( p, "/home", Partitions::DefaultFs(),
+				    "", "", "" );
 	y2milestone( "modify_vm created %1", p );
 	ret["partitions"] = add( ret["partitions"]:[], p );
 	}
@@ -3461,14 +3365,8 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	    ``{
 	    if( p["name"]:"" == "home" )
 		{
-		p["mount"] = "/home";
-		if( p["detected_fs"]:`unknown==`unknown )
-		    {
-		    p["format"] = true;
-		    p["used_fs"] = Partitions::DefaultFs();
-		    p["fs_options"] = FileSystems::DefaultFormatOptions( p );
-		    }
-		p["fstopt"] = FileSystems::DefaultFstabOptions( p );
+		p = Storage::SetVolOptions( p, "/home", Partitions::DefaultFs(),
+					    "", "", "" );
 		y2milestone( "modify_vm reuse %1", p );
 		}
 	    return(p);
