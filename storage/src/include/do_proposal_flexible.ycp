@@ -2516,7 +2516,8 @@ list<map> remove_one_partition( map disk )
     list<map> partitions = disk["partitions"]:[];
     list<map> pl = filter( map p, partitions,
 			   ``( p["linux"]:false && size(p["mount"]:"")==0 &&
-			       !p["delete"]:false ));
+			       !p["delete"]:false && 
+			       Storage::CanDelete( p, disk, false )));
     if( size(pl)>0 )
 	{
 	pl = sort( map a, map b, pl, 
@@ -2548,7 +2549,8 @@ list<map> remove_one_partition_vm( map disk )
     list<map> partitions = disk["partitions"]:[];
     list<map> pl = filter( map p, partitions,
 			   ``( p["linux"]:false && size(p["mount"]:"")==0 &&
-			       !p["delete"]:false ));
+			       !p["delete"]:false &&
+			       Storage::CanDelete( p, disk, false )));
     if( size(pl)>0 )
 	{
 	pl = sort( map a, map b, pl, 
@@ -2661,31 +2663,42 @@ map get_inst_proposal( map<string,map> target )
 		    });
 		}
 	    }
-	else if( mode == `reuse || mode == `remove )
+	else if( mode == `reuse )
 	    {
 	    valid = listmap( string s, ddev, 
 		``{
 		if( find( map p, target[s,"partitions"]:[], 
 		          ``(p["linux"]:false && size(p["mount"]:"")==0 &&
-			     !p["delete"]:false)) != nil )
+			     !p["delete"]:false &&
+			     Storage::CanEdit(p,false))) != nil )
 		    return( $[s:true] );
 		else
 		    return( $[s:false] );
 		});
-	    if( mode == `remove )
-		{
-		foreach( string s, ddev,
-		    ``{
-		    target[s,"partitions"] = 
-			remove_p_settings( target[s,"partitions"]:[], 
-			                   ["/", "/home"] );
-		    });
-		foreach( string s, filter( string d, ddev, ``(valid[d]:false)),
-		    ``{
-		    target[s,"partitions"] = 
-			remove_one_partition( target[s]:$[] );
-		    });
-		}
+	    }
+	else if( mode == `remove )
+	    {
+	    valid = listmap( string s, ddev, 
+		``{
+		if( find( map p, target[s,"partitions"]:[], 
+		          ``(p["linux"]:false && size(p["mount"]:"")==0 &&
+			     !p["delete"]:false &&
+			     Storage::CanDelete(p,target[s]:$[],false))) != nil )
+		    return( $[s:true] );
+		else
+		    return( $[s:false] );
+		});
+	    foreach( string s, ddev,
+		``{
+		target[s,"partitions"] = 
+		    remove_p_settings( target[s,"partitions"]:[], 
+				       ["/", "/home"] );
+		});
+	    foreach( string s, filter( string d, ddev, ``(valid[d]:false)),
+		``{
+		target[s,"partitions"] = 
+		    remove_one_partition( target[s]:$[] );
+		});
 	    }
 	else if( mode == `resize )
 	    {
@@ -2887,7 +2900,7 @@ map get_inst_proposal( map<string,map> target )
 		max_disk = s;
 		}
 	    });
-	y2milestone( "max_mb %1 size_mb %2", max_mb, size_mb );
+	y2milestone( "get_inst_proposal max_mb %1 size_mb %2", max_mb, size_mb );
 	if( max_mb>0 && size_mb[max_disk,0]:0 > 2*1024 && 
 	    ( !Storage::ProposalHome() || size_mb[max_disk,1]:0 > 1*1024 ))
 	    {
@@ -3441,7 +3454,8 @@ map get_inst_prop_vm( map<string,map> target, string key )
 		``{
 		if( find( map p, target[s,"partitions"]:[], 
 		          ``(p["linux"]:false && size(p["mount"]:"")==0 &&
-			     !p["delete"]:false)) != nil )
+			     !p["delete"]:false &&
+			     Storage::CanDelete(p,target[s]:$[],false))) != nil )
 		    return( $[s:true] );
 		else
 		    return( $[s:false] );
