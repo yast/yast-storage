@@ -467,6 +467,10 @@ int Volume::setFormat( bool val, storage::FsType new_fs )
 	    {
 	    ret = VOLUME_FORMAT_FS_TOO_SMALL;
 	    }
+	else if( new_fs == NFS )
+	    {
+	    ret = VOLUME_FORMAT_NFS_IMPOSSIBLE;
+	    }
 	else
 	    {
 	    fs = new_fs;
@@ -1071,8 +1075,11 @@ int Volume::doMount()
 	}
     if( ret==0 && !mp.empty() && !cont->getStorage()->test() )
 	{
-	cont->getStorage()->removeDmTableTo( *this );
-	ret = checkDevice(mountDevice());
+	if( fs!=NFS )
+	    {
+	    cont->getStorage()->removeDmTableTo( *this );
+	    ret = checkDevice(mountDevice());
+	    }
 	if( ret==0 )
 	    ret = mount( lmount );
 	}
@@ -1243,6 +1250,8 @@ int Volume::setEncryption( bool val, EncryptType typ )
 	    {
 	    if( !loop_active && !isTmpCryptMp(mp) && crypt_pwd.empty() )
 		ret = VOLUME_CRYPT_NO_PWD;
+	    if( ret == 0 && cType()==NFSC )
+		ret = VOLUME_CRYPT_NFS_IMPOSSIBLE;
 	    if( ret==0 && format )
 		{
 		encryption = typ;
@@ -2255,7 +2264,7 @@ int Volume::doFstabUpdate()
 		    {
 		    changed = true;
 		    che.fs = fs_names[fs];
-		    if( fs==SWAP || encryption!=ENC_NONE )
+		    if( fs==NFS || fs==SWAP || encryption!=ENC_NONE )
 			che.freq = che.passno = 0;
 		    else
 			{
@@ -2587,13 +2596,17 @@ std::ostream& operator<< (std::ostream& s, const Volume &v )
     {
     s << "Device:" << v.dev;
     if( v.numeric )
-	s << " Nr:" << v.num;
-    else
+	{
+	if( v.num>0 )
+	    s << " Nr:" << v.num;
+	}
+    else if( v.nm!=v.dev )
 	s << " Name:" << v.nm;
     s << " SizeK:" << v.size_k;
     if( v.size_k != v.orig_size_k )
 	s << " orig_SizeK:" << v.orig_size_k;
-    s << " Node <" << v.mjr << ":" << v.mnr << ">";
+    if( v.mjr!=0 || v.mnr!=0 )
+	s << " Node <" << v.mjr << ":" << v.mnr << ">";
     if( v.ronly )
 	s << " readonly";
     if( v.del )
@@ -2883,7 +2896,8 @@ bool Volume::isTmpCryptMp( const string& mp )
     }
 
 string Volume::fs_names[] = { "unknown", "reiserfs", "ext2", "ext3", "vfat",
-                              "xfs", "jfs", "hfs", "ntfs", "swap", "none" };
+                              "xfs", "jfs", "hfs", "ntfs", "swap", "nfs",
+			      "none" };
 
 string Volume::mb_names[] = { "device", "uuid", "label", "id", "path" };
 
