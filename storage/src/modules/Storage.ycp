@@ -54,6 +54,7 @@
   import "LibStorage::MdInfo";
   import "LibStorage::LoopInfo";
   import "LibStorage::DmInfo";
+  import "LibStorage::NfsInfo";
   import "LibStorage::ContainerInfo";
   import "LibStorage::DiskInfo";
   import "LibStorage::LvmVgInfo";
@@ -67,7 +68,8 @@ map<string,any> conv_ctype =
                 LibStorage::LOOP() : `CT_LOOP,
                 LibStorage::LVM() : `CT_LVM,
                 LibStorage::EVMS() : `CT_EVMS,
-                LibStorage::DM() : `CT_DM
+                LibStorage::DM() : `CT_DM,
+		LibStorage::NFSC() : `CT_NFS
 	      ]
      ];
 
@@ -152,7 +154,7 @@ map DiskMapVersion = $[];
 map DiskMap = $[];
 map ClassifiedSettings = $[];
 map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_LOOP : 2, `CT_DM : 3,
-                    `CT_LVM : 4, `CT_EVMS : 5 ];
+                    `CT_LVM : 4, `CT_EVMS : 5, `CT_NFS : 6 ];
 list<string> hw_packages = [];
 list<string> no_propose_disks = nil;
 boolean proposal_evms = false;
@@ -306,9 +308,9 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 	list<string> tl = splitstring( device, "=" );
 	ls = [ "dev", "disk", "", tl[1]:"" ];
 	ls[2] = (search( device, "LABEL=" )==0)?"by-label":"by-uuid";
-	y2milestone( "GetDiskPartition ls:%1", ls );
+	y2milestone( "GetDiskPartitionTg ls:%1", ls );
 	}
-    y2debug( "GetDiskPartition size:%1 ls:%2", size(ls), ls );
+    y2debug( "GetDiskPartitionTg size:%1 ls:%2", size(ls), ls );
 
     if( size(ls)>=4 && ls[1]:"" == "disk" &&
         contains( [ "by-id", "by-path", "by-uuid", "by-label" ], ls[2]:"" ))
@@ -362,7 +364,7 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		{
 		num = tointeger( substring( id, l[0]:0+5 ));
 		id = substring( id, 0, l[0]:0 );
-		y2debug( "GetDiskPartition id:%1 num:%2", id, num );
+		y2debug( "GetDiskPartitionTg id:%1 num:%2", id, num );
 		}
 	    foreach( string dev, map disk, tg, 
 		``{
@@ -391,7 +393,7 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		{
 		num = tointeger( substring( id, l[0]:0+5 ));
 		id = substring( id, 0, l[0]:0 );
-		y2debug( "GetDiskPartition id:%1 num:%2", id, num );
+		y2debug( "GetDiskPartitionTg id:%1 num:%2", id, num );
 		}
 	    foreach( string dev, map disk, tg, 
 		``{
@@ -411,7 +413,7 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		});
 	    }
 	}
-    else
+    else if( search( device, "/" )==0 )
 	{
 	if( search( device, "/dev/hd" )==0 ||
 	    search( device, "/dev/sd" )==0 ||
@@ -502,7 +504,11 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 	    ret["nr"] = "";
 	    }
 	}
-    y2debug( "GetDiskPartition device:%1 ret:%2", device, ret );
+    else
+	{
+	ret = $[ "disk" : "/dev/nfs", "nr" : device ];
+	}
+    y2debug( "GetDiskPartitionTg device:%1 ret:%2", device, ret );
     return( ret );
     };
 
@@ -1434,6 +1440,24 @@ map getContainerInfo( map c )
 	    p["nr"] = LibStorage::DmInfo::swig_nr_get(info);
 	    p["type"] = `dm;
 	    p["fstype"] = Partitions::dm_name;
+	    c["partitions"] = add( c["partitions"]:[], p );
+	    });
+	}
+    else if( c["type"]:`CT_UNKNOWN == `CT_NFS )
+	{
+	list<any> pinfos = [];
+	y2milestone( "before getNfsInfo" );
+	ret = LibStorage::StorageInterface::getNfsInfo( sint, pinfos );
+	y2milestone( "after getNfsInfo" );
+	if( ret<0 )
+	    y2warning( "getNfsInfo ret:%1", ret );
+	foreach( any info, pinfos,
+	    ``{
+	    map p = $[];
+	    vinfo = LibStorage::NfsInfo::swig_v_get(info);
+	    p = volumeMap( vinfo, p );
+	    p["type"] = `nfs;
+	    p["fstype"] = Partitions::nfs_name;
 	    c["partitions"] = add( c["partitions"]:[], p );
 	    });
 	}
@@ -2710,6 +2734,35 @@ global boolean ChangeEvmsStripeSize( string coname, string name,
     return( ret==0 );
     }
 
+global boolean AddNfsVolume( string nfsdev, string opts, integer sz, string mp )
+    {
+    y2milestone( "AddNfsVolume dev:%1 opts:%2 size:%3 mp:%4", nfsdev, opts, 
+                 sz, mp );
+    integer ret = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::addNfsDevice( sint, nfsdev, opts, sz, mp );
+    if( ret<0 )
+	y2error( "AddNfsVolume sint ret:%1", ret );
+    UpdateTargetMapDisk( "/dev/nfs" );
+    return( ret==0 );
+    }
+
+global integer CheckNfsVolume( string nfsdev, string opts )
+    {
+    y2milestone( "CheckNfsVolume dev:%1 opts:%2", nfsdev, opts );
+    integer ret = 0;
+    integer sz = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::checkNfsDevice( sint, nfsdev, opts, 
+                                                        sz );
+    if( ret<0 )
+	y2error( "CheckNfsVolume sint ret:%1", ret );
+    else 
+	ret = sz;
+    y2milestone( "CheckNfsVolume ret:%1", ret );
+    return( ret );
+    }
+
 global boolean CreateMd( integer nr, string type )
     {
     y2milestone( "CreateMd nr:%1 type:%2", nr, type );
@@ -3012,6 +3065,11 @@ global define boolean CreateAny( symbol ctype, map d, map& p )
 					   p["stripesize"]:0 );
 	    }
 	}
+    else if( ctype == `CT_NFS )
+	{
+	ret = Storage::AddNfsVolume( p["device"]:"", p["fstopt"]:"", 
+	                             p["size_k"]:0, p["mount"]:"" );
+	}
     y2milestone( "CreateAny ret:%1", ret );
     return( ret );
     }
@@ -3292,7 +3350,6 @@ global define void SetTargetMap( map<string,map> target )
 		});
 	    }
 	});
-    tg = GetTargetMap();
     keys = maplist( string k, any e, tg, ``(k));
     keys = sort( string a, string b, keys,
                  ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:6 >
@@ -3615,10 +3672,16 @@ GetIdSmaller( string disk, integer delim )
     ``{
     string ret = disk;
     map<string,map> tg = GetTargetMap();
-    list<map> ps = filter( map p, tg[disk,"partitions"]:[], ``(p["nr"]:0<delim));
-    ps = sort( map a, map b, ps, ``(a["nr"]:0>b["nr"]:0));
-    if( size(ps)>0 )
-	ret = ps[0,"device"]:"";
+    if( haskey( tg[disk,"partitions",0]:$[], "nr" ))
+	{
+	list<map> ps = filter( map p, tg[disk,"partitions"]:[], ``(p["nr"]:0<delim));
+	if( size(ps)>1 )
+	    ps = sort( map a, map b, ps, ``(a["nr"]:0>b["nr"]:0));
+	if( size(ps)>0 )
+	    ret = ps[0,"device"]:"";
+	}
+    else 
+	ret = tg[disk,"partitions",0,"device"]:disk;
     y2milestone( "GetIdSmaller disk:%1 delim:%2 ret:%3",
                  disk, delim, ret );
     return( ret );

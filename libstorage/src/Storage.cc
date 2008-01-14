@@ -259,7 +259,10 @@ void Storage::detectObjects()
 	{
 	fstab = new EtcFstab( "/etc", isRootMounted() );
 	detectLoops( ppart );
-	detectFsData( vBegin(), vEnd() );
+	ProcMounts pm( this );
+	if( !instsys() )
+	    detectNfs( pm );
+	detectFsData( vBegin(), vEnd(), pm );
 	}
     EvmsCoIterator e = findEvmsCo( "" );
     if( e!=evCoEnd() )
@@ -475,6 +478,26 @@ void Storage::detectLoops( ProcPart& ppart )
     else
 	{
 	LoopCo * v = new LoopCo( this, true, ppart );
+	if( !v->isEmpty() )
+	    addToList( v );
+	else
+	    delete v;
+	}
+    }
+
+void Storage::detectNfs( ProcMounts& mounts )
+    {
+    if( test() )
+	{
+	string file = testdir+"/nfs";
+	if( access( file.c_str(), R_OK )==0 )
+	    {
+	    addToList( new NfsCo( this, file ) );
+	    }
+	}
+    else
+	{
+	NfsCo * v = new NfsCo( this, mounts );
 	if( !v->isEmpty() )
 	    addToList( v );
 	else
@@ -749,7 +772,8 @@ Storage::autodetectDisks( ProcPart& ppart )
     }
 
 void
-Storage::detectFsData( const VolIterator& begin, const VolIterator& end )
+Storage::detectFsData( const VolIterator& begin, const VolIterator& end,
+                       ProcMounts& mounts )
     {
     y2milestone( "detectFsData begin" );
     SystemCmd Blkid( "BLKID_SKIP_CHECK_MDRAID=1 /sbin/blkid -c /dev/null" );
@@ -763,13 +787,12 @@ Storage::detectFsData( const VolIterator& begin, const VolIterator& end )
 	    y2mil( "detect:" << *i );
 	    }
 	}
-    ProcMounts Mounts( this );
     for( VolIterator i=begin; i!=end; ++i )
 	{
 	if( i->getUsedByType()==UB_NONE )
 	    {
 	    if( detectMounted )
-		i->getMountData( Mounts );
+		i->getMountData( mounts );
 	    i->getFstabData( *fstab );
 	    y2mil( "detect:" << *i );
 	    if( i->getFs()==FSUNKNOWN && i->getEncryption()==ENC_NONE )
@@ -2418,7 +2441,8 @@ int Storage::evmsActivate( bool forced )
 		{
 		detectEvms();
 		VPair p = vPair( isEvms );
-		detectFsData( p.begin(), p.end() );
+		ProcMounts pm( this );
+		detectFsData( p.begin(), p.end(), pm );
 		EvmsCoPair ep = evCoPair();
 		EvmsCoIterator coi = ep.begin();
 		while( coi!=ep.end() && coi->device()!="/dev/evms" )
@@ -3118,6 +3142,87 @@ bool Storage::haveMd( MdCo*& md )
     if( i != p.end() )
 	md = static_cast<MdCo*>(&(*i));
     return( i != p.end() );
+    }
+
+bool Storage::haveNfs( NfsCo*& co )
+    {
+    co = NULL;
+    CPair p = cPair();
+    ContIterator i = p.begin();
+    while( i != p.end() && i->type()!=NFSC )
+	++i;
+    if( i != p.end() )
+	co = static_cast<NfsCo*>(&(*i));
+    return( i != p.end() );
+    }
+
+int 
+Storage::addNfsDevice( const string& nfsDev, const string& opts,
+                       unsigned long long sizeK, const string& mp )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil( "name:" << nfsDev << " sizeK:" << sizeK << " mp:" << mp );
+    if( readonly )
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    NfsCo *co = NULL;
+    bool have = true;
+    if( ret==0 )
+	{
+	have = haveNfs(co);
+	if( !have )
+	    co = new NfsCo( this );
+	}
+    if( ret==0 && co!=NULL )
+	{
+	if( sizeK==0 )
+	    checkNfsDevice( nfsDev, opts, sizeK );
+	ret = co->addNfs( nfsDev, sizeK, mp );
+	}
+    if( !have )
+	{
+	if( ret==0 )
+	    addToList( co );
+	else if( co!=NULL )
+	    delete co;
+	}
+    if( ret==0 )
+	{
+	ret = checkCache();
+	}
+    y2milestone( "ret:%d", ret );
+    return( ret );
+    }
+
+int 
+Storage::checkNfsDevice( const string& nfsDev, const string& opts,
+                         unsigned long long& sizeK )
+    {
+    int ret = 0;
+    assertInit();
+    NfsCo co( this );
+    string mdir = tmpDir() + "/tmp_mp";
+    unlink( mdir.c_str() );
+    rmdir( mdir.c_str() );
+    createPath( mdir );
+    ret = co.addNfs( nfsDev, 0, "" );
+    if( !opts.empty() )
+	co.vBegin()->setFstabOption( opts );
+    if( instsys() )
+	{
+	SystemCmd c;
+	c.execute( "/sbin/portmap" );
+	}
+    if( ret==0 && (ret=co.vBegin()->mount( mdir ))==0 )
+	{
+	sizeK = getDfSize( mdir );
+	ret = co.vBegin()->umount( mdir );
+	}
+    y2mil( "name:" << nfsDev << " opts:" << opts << " ret:" << ret <<
+           " sizeK:" << sizeK );
+    return( ret );
     }
 
 int
@@ -4118,6 +4223,20 @@ int Storage::getMdInfo( deque<storage::MdInfo>& plist )
     return( ret );
     }
 
+int Storage::getNfsInfo( deque<storage::NfsInfo>& plist )
+    {
+    int ret = 0;
+    plist.clear();
+    assertInit();
+    ConstNfsPair p = nfsPair(Nfs::notDeleted);
+    for( ConstNfsIterator i = p.begin(); i != p.end(); ++i )
+	{
+	plist.push_back( NfsInfo() );
+	i->getInfo( plist.back() );
+	}
+    return( ret );
+    }
+
 int Storage::getLoopInfo( deque<storage::LoopInfo>& plist )
     {
     int ret = 0;
@@ -4200,6 +4319,9 @@ Storage::getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const
     static FsCapabilitiesX hfsCaps (false, false, false, false, false, false,
 				     false, 0, 10*1024);
 
+    static FsCapabilitiesX nfsCaps (false, false, false, false, false, false,
+				    false, 0, 10*1024);
+
     switch (fstype)
     {
 	case REISERFS:
@@ -4232,6 +4354,10 @@ Storage::getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const
 
 	case HFS:
 	    fscapabilities = hfsCaps;
+	    return true;
+
+	case NFS:
+	    fscapabilities = nfsCaps;
 	    return true;
 
 	case SWAP:
@@ -4941,6 +5067,11 @@ void Storage::rootMounted()
 	{
     	if( haveMd(md) )
 	    md->syncRaidtab();
+	if( instsys() )
+	    {
+	    string path = root()+"/etc/fstab";
+	    unlink( path.c_str() );
+	    }
 	int ret = fstab->changeRootPrefix( root()+"/etc" );
 	if( ret!=0 )
 	    y2error( "changeRootPrefix returns %d", ret );
@@ -5046,6 +5177,27 @@ Storage::readFstab( const string& dir, deque<VolumeInfo>& infos )
     return( ret );
     }
 
+unsigned long long 
+Storage::getDfSize( const string& mp )
+    {
+    unsigned long long ret = 0;
+    struct statvfs64 fsbuf;
+    if( statvfs64( mp.c_str(), &fsbuf )==0 )
+	{
+	ret = fsbuf.f_blocks;
+	ret *= fsbuf.f_bsize;
+	ret /= 1024;
+	y2milestone( "blocks:%llu free:%llu bsize:%lu", fsbuf.f_blocks,
+		     fsbuf.f_bfree, fsbuf.f_bsize );
+	}
+    else
+	{
+	y2war( "errno:" << errno << " " << strerror(errno));
+	}
+    y2mil( "mp:" << mp << " ret:" << ret );
+    return( ret );
+    }
+
 bool
 Storage::getFreeInfo( const string& device, unsigned long long& resize_free,
 		      unsigned long long& df_free,
@@ -5083,8 +5235,8 @@ Storage::getFreeInfo( const string& device, unsigned long long& resize_free,
 		mp = vol->getMount();
 	    if( !mp.empty() )
 		{
-		struct statvfs fsbuf;
-		ret = statvfs( mp.c_str(), &fsbuf )==0;
+		struct statvfs64 fsbuf;
+		ret = statvfs64( mp.c_str(), &fsbuf )==0;
 		if( ret )
 		    {
 		    df_free = fsbuf.f_bfree;
@@ -5094,8 +5246,8 @@ Storage::getFreeInfo( const string& device, unsigned long long& resize_free,
 		    used = fsbuf.f_blocks-fsbuf.f_bfree;
 		    used *= fsbuf.f_bsize;
 		    used /= 1024;
-		    y2milestone( "blocks:%lu free:%lu bsize:%lu", fsbuf.f_blocks,
-				 fsbuf.f_bfree, fsbuf.f_bsize );
+		    y2milestone( "blocks:%llu free:%llu bsize:%lu", 
+		                 fsbuf.f_blocks, fsbuf.f_bfree, fsbuf.f_bsize );
 		    y2milestone( "free:%llu used:%llu", df_free, used );
 		    }
 		if( ret && vol->getFs()==NTFS )
