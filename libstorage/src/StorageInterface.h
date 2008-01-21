@@ -80,7 +80,7 @@ using std::deque;
 
 namespace storage
 {
-    enum FsType { FSUNKNOWN, REISERFS, EXT2, EXT3, VFAT, XFS, JFS, HFS, NTFS, SWAP, FSNONE };
+    enum FsType { FSUNKNOWN, REISERFS, EXT2, EXT3, VFAT, XFS, JFS, HFS, NTFS, SWAP, NFS, FSNONE };
 
     enum PartitionType { PRIMARY, EXTENDED, LOGICAL, PTYPE_ANY };
 
@@ -96,7 +96,8 @@ namespace storage
 
     enum UsedByType { UB_NONE, UB_LVM, UB_MD, UB_EVMS, UB_DM };
 
-    enum CType { CUNKNOWN, DISK, MD, LOOP, LVM, DM, EVMS };
+    enum CType { CUNKNOWN, DISK, MD, LOOP, LVM, DM, EVMS, NFSC, 
+                 COTYPE_LAST_ENTRY };
 
 
     /**
@@ -310,6 +311,15 @@ namespace storage
 	};
 
     /**
+     * Contains info about a nfs volumes
+     */
+    struct NfsInfo
+	{
+	NfsInfo() {};
+	VolumeInfo v;
+	};
+
+    /**
      * Contains info about a file based loop devices.
      */
     struct LoopInfo
@@ -446,6 +456,9 @@ namespace storage
 	VOLUME_CRYPTFORMAT_FAILED = -3033,
 	VOLUME_CRYPTSETUP_FAILED = -3034,
 	VOLUME_CRYPTUNSETUP_FAILED = -3035,
+	VOLUME_FORMAT_NOT_IMPLEMENTED = -3036,
+	VOLUME_FORMAT_NFS_IMPOSSIBLE = -3037,
+	VOLUME_CRYPT_NFS_IMPOSSIBLE = -3038,
 
 	LVM_CREATE_PV_FAILED = -4000,
 	LVM_PV_ALREADY_CONTAINED = -4001,
@@ -581,6 +594,12 @@ namespace storage
 	DASD_FDASD_FAILED = -11001,
 	DASD_DASDFMT_FAILED = -11002,
 
+	NFS_VOLUME_NOT_FOUND = -14001,
+	NFS_CHANGE_READONLY = -14002,
+	NFS_REMOVE_VOLUME_CREATE_NOT_FOUND = -14003,
+	NFS_REMOVE_VOLUME_LIST_ERASE = -14004,
+	NFS_REMOVE_INVALID_VOLUME = -14005,
+
 	CONTAINER_INTERNAL_ERROR = -99000,
 	CONTAINER_INVALID_VIRTUAL_CALL = -99001,
 
@@ -715,6 +734,14 @@ namespace storage
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
 	virtual int getMdInfo( deque<MdInfo>& plist ) = 0;
+
+	/**
+	 * Query infos for nfs devices in system
+	 *
+	 * @param plist list of records that get filled with nfs info
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int getNfsInfo( deque<NfsInfo>& plist ) = 0;
 
 	/**
 	 * Query infos for file based loop devices in system
@@ -930,6 +957,17 @@ namespace storage
 	 * @return default disk label of the architecture
 	 */
 	virtual string defaultDiskLabel() const = 0;
+
+	/**
+	 * Query the default disk label of the architecture of the
+	 * machine (e.g. msdos for ix86, gpt for ia64, ...) for a disk
+	 * with certain size 
+	 *
+	 * @param size_k size of disk in kilobyte
+	 *
+	 * @return default disk label of the disk
+	 */
+	virtual string defaultDiskLabelSize( unsigned long long size_k ) const = 0;
 
 	/**
 	 * Query the maximal allowed size the given disk label supports.
@@ -1593,6 +1631,30 @@ namespace storage
 	virtual int checkMd( const string& name ) = 0;
 
 	/**
+	 * Add knowdlege about existence of nfs device.
+	 *
+	 * @param nfsDev name of nfs device 
+	 * @param sizeK size of the nfs device
+	 * @param opts mount options for nfs mount
+	 * @param mp mount point of the nfs device
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int addNfsDevice( const string& nfsDev, const string& opts,
+	                          unsigned long long sizeK,
+				  const string& mp ) = 0;
+
+	/**
+	 * Check accessability and size of nfs device.
+	 *
+	 * @param nfsDev name of nfs device 
+	 * @param opts mount options for nfs mount
+	 * @param sizeK size of the nfs device
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int checkNfsDevice( const string& nfsDev, const string& opts,
+	                            unsigned long long& sizeK ) = 0;
+
+	/**
 	 * Create a file based loop device. Encryption is automatically
 	 * activated on the loop device.
 	 *
@@ -1860,7 +1922,7 @@ namespace storage
 	                          unsigned long long& resize_free,
 	                          unsigned long long& df_free,
 	                          unsigned long long& used,
-				  bool& win, bool use_cache ) = 0;
+				  bool& win, bool& efi, bool use_cache ) = 0;
 
 	/**
 	 * Read fstab and cryptotab, if existent, from a specified directory and

@@ -346,7 +346,9 @@ makeMap( const list<string>& l, const string& delim, const string& removeSur )
 	if( (pos=i->find_first_of( delim ))!=string::npos )
 	    {
 	    k = i->substr( 0, pos );
-	    v = i->substr( i->find_first_not_of( delim, pos+1 ) );
+	    string::size_type pos2 = i->find_first_not_of( delim, pos+1 );
+	    if( pos2 != string::npos )
+		v = i->substr( pos2 );
 	    }
 	if( !removeSur.empty() )
 	    {
@@ -359,7 +361,8 @@ makeMap( const list<string>& l, const string& delim, const string& removeSur )
 	    if( !v.empty() && (pos=v.find_last_of(removeSur))==v.size()-1 )
 		v.erase( v.find_last_not_of(removeSur)+1 );
 	    }
-	ret[k] = v;
+	if( !k.empty() && !v.empty() )
+	    ret[k] = v;
 	}
     return( ret );
     }
@@ -386,9 +389,15 @@ string normalizeDevice( const string& dev )
     return( ret );
     }
 
+bool isNfsDev( const string& dev )
+    {
+    return( !dev.empty() && dev[0]!='/' &&
+            dev.find( ':' )!=string::npos );
+    }
+
 void normalizeDevice( string& dev )
     {
-    if( dev.find( "/dev/" )!=0 )
+    if( dev.find( "/dev/" )!=0 && !isNfsDev(dev) )
 	dev = "/dev/" + dev;
     }
 

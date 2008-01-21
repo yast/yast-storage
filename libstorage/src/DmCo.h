@@ -16,10 +16,10 @@ class DmCo : public PeContainer
 	DmCo( Storage * const s, bool detect, ProcPart& ppart );
 	DmCo( const DmCo& rhs );
 	virtual ~DmCo();
-	static storage::CType const staticType() { return storage::DM; }
+	static storage::CType staticType() { return storage::DM; }
 	friend std::ostream& operator<< (std::ostream&, const DmCo& );
-	bool equalContent( const DmCo& rhs ) const;
-	void logDifference( const DmCo& d ) const;
+	bool equalContent( const Container& rhs ) const;
+	void logDifference( const Container& d ) const;
 	void updateDmMaps();
 
 	int removeDm( const string& table );
