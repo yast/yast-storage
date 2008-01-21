@@ -77,6 +77,32 @@ define boolean ignore_disk( string dev, map entry, boolean soft )
 	}
     return( ret );
     };
+
+
+map swapable = $[];
+
+define void flex_init_swapable( map<string,map> tg )
+    ``{
+    swapable = $[];
+    foreach( string dev, map disk, tg,
+	``{
+	list<map> sw = filter( map p, disk["partitions"]:[],
+			       ``(p["type"]:`unknown!=`extended &&
+				  !p["delete"]:false &&
+				  p["detected_fs"]:`unknown==`swap));
+	sw = filter( map p, sw, ``(Storage::CheckSwapable(p["device"]:"")));
+	foreach( map p, sw, 
+	    ``{
+	    swapable[p["device"]:""] = true;
+	    });
+	});
+    y2milestone( "flex_init_swapable %1", swapable );
+    }
+
+define boolean check_swapable( string dev )
+    {
+    return( swapable[dev]:false );
+    }
   
 define string pinfo_name()
     ``{
@@ -1608,7 +1634,8 @@ define map try_resize_windows( map disk )
 	    {
 	    win = p["winfo"]:$[];
 	    y2milestone( "try_resize_windows win=%1", win );
-	    if( win != nil && win["ok"]:false && p["size_k"]:0 > 1024*1024 )
+	    if( win != nil && win["ok"]:false && p["size_k"]:0 > 1024*1024 &&
+	        !win["efi"]:false )
 		{
 		p["winfo"] = win;
 		p["resize"] = true;
@@ -1676,7 +1703,7 @@ define map get_gap_info( map disk, boolean add_exist_linux )
     list<integer> exist_pnr = sort( maplist( map e, plist, ``(e["nr"]:0) ));
     integer max_prim = Partitions::MaxPrimary(disk["label"]:"msdos");
     boolean has_ext = Partitions::HasExtended( disk["label"]:"msdos" );
-    integer max_pos_cyl = Storage::MaxCylLabel( disk );
+    integer max_pos_cyl = Storage::MaxCylLabel( disk, 0 );
     integer end = 0;
     if( has_ext )
 	{
@@ -1687,8 +1714,8 @@ define map get_gap_info( map disk, boolean add_exist_linux )
 	if( size(ext)>0 )
 	    {
 	    end = ext["region",0]:0 + ext["region",1]:1-1;
-	    if( end > max_pos_cyl )
-		end = max_pos_cyl;
+	    if( end > ext["region",0]:0 + max_pos_cyl )
+		end = ext["region",0]:0 + max_pos_cyl;
 	    gap = get_gaps( ext["region",0]:0, end,
 			    filter( map p, plist, ``(p["nr"]:0>max_prim)),
 			    add_exist_linux );
@@ -1708,7 +1735,6 @@ define map get_gap_info( map disk, boolean add_exist_linux )
     if( end > max_pos_cyl )
 	end = max_pos_cyl;
     gap = (list<map>)union( gap, get_gaps( 0, end, plist, add_exist_linux ));
-    gap = filter( map g, gap, ``(g["end"]:0<=max_pos_cyl) );
     integer av_size = 0;
     gap = maplist( map e, gap,
 	``{
@@ -2143,7 +2169,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 			      ``(p["type"]:`unknown!=`free &&
 				 !p["delete"]:false &&
 				 p["detected_fs"]:`unknown==`swap));
-    swaps = filter( map p, swaps, ``(Storage::CheckSwapable(p["device"]:"")));
+    swaps = filter( map p, swaps, ``(check_swapable(p["device"]:"")));
     swaps = sort( map a, map b, swaps, ``(a["size_k"]:0>b["size_k"]:0));
     y2milestone( "can_swap_reuse swaps %1", swaps );
     if( swaps[0,"size_k"]:0 >= 128*1024 )
@@ -2179,7 +2205,7 @@ map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
 			      ``(p["type"]:`unknown!=`extended &&
 				 !p["delete"]:false &&
 				 p["detected_fs"]:`unknown==`swap));
-	    sw = filter( map p, sw, ``(Storage::CheckSwapable(p["device"]:"")));
+	    sw = filter( map p, sw, ``(check_swapable(p["device"]:"")));
 	    y2milestone( "can_swap_reuse disk %1 sw %2", dev, sw );
 	    swaps = (list<map>)union( swaps, sw );
 	    });
@@ -2493,7 +2519,7 @@ boolean usable_for_win_resize( map p, boolean assert_cons_fs )
     if( ret )
 	{
 	if( assert_cons_fs )
-	    ret = p["winfo","ok"]:false;
+	    ret = p["winfo","ok"]:false && !p["winfo","efi"]:false;
 	else
 	    ret = size(p["winfo"]:$[])>0;
 	}
@@ -2622,6 +2648,7 @@ map remove_used_by( map tg, string disk )
 map get_inst_proposal( map<string,map> target )
     {
     y2milestone( "get_inst_proposal start" );
+    flex_init_swapable( target );
     map ret = $[];
     target = Storage::AddWinInfo(target);
     ret["target"] = target;

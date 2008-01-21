@@ -43,8 +43,9 @@ class Container
 	    { return( !(*this<rhs) ); }
 	bool operator> ( const Container& rhs ) const
 	    { return( !(*this<=rhs) ); }
-	bool equalContent( const Container& rhs ) const;
-	string logDifference( const Container& c ) const;
+	virtual bool equalContent( const Container& rhs ) const;
+	virtual string getDiffString( const Container& c ) const;
+	virtual void logDifference( const Container& c ) const;
 
 	virtual void getCommitActions( std::list<storage::commitAction*>& l ) const;
 	virtual int getToCommit( storage::CommitStage stage, 
@@ -131,7 +132,7 @@ class Container
     public:
 	Container( Storage * const, const string& Name, storage::CType typ );
 	Container( const Container& );
-	Storage * const getStorage() const { return sto; }
+	Storage * getStorage() const { return sto; }
 	virtual ~Container();
 	const string& name() const { return nm; }
 	const string& device() const { return dev; }
@@ -153,7 +154,7 @@ class Container
 	virtual string createText(bool doing=true) const;
 	virtual int resizeVolume( Volume* v, unsigned long long newSize );
 	virtual int removeVolume( Volume* v );
-	static storage::CType const staticType() { return storage::CUNKNOWN; }
+	static storage::CType staticType() { return storage::CUNKNOWN; }
 	friend std::ostream& operator<< (std::ostream& s, const Container &c );
 	virtual Container* getCopy() const { return( new Container( *this ) ); }
 	bool compareContainer( const Container* c, bool verbose ) const;
@@ -183,8 +184,8 @@ class Container
 	static bool stageCreate( const Volume& v )
 	    { return( v.created()||v.needExtend()); }
 
-	static string type_names[EVMS+1];
-	static unsigned order[EVMS+1];
+	static string type_names[COTYPE_LAST_ENTRY];
+	static unsigned order[COTYPE_LAST_ENTRY];
 
 	Storage * const sto;
 	storage::CType typ;

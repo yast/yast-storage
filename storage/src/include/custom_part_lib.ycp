@@ -552,6 +552,14 @@ define map CheckCryptOk( map new )
     return( ret );
     };
 
+define map CheckDeviceFinalOk( map new )
+    ``{
+    y2milestone( "CheckDeviceFinalOk new:%1", new );
+    map ret = CheckCryptOk( new );
+    y2milestone( "CheckDeviceFinalOk ret:%1", ret );
+    return( ret );
+    };
+
 define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map file_systems )
     ``{
     list<string> not_used_mp = [];
@@ -606,8 +614,9 @@ define map<string,any> HandleFsChanged( boolean init, map<string,any> new, map f
     UI::ChangeWidget( `id(`mount_point), `Value, new["mount"]:"" );
 
     UI::ChangeWidget(`id(`fstab_options), `Enabled, true );
-    UI::ChangeWidget(`id(`fs_options), `Enabled,
-                     new["format"]:false && selected_fs[`options]:[] != [] );
+    if( UI::WidgetExists( `id(`fs_options) ))
+	UI::ChangeWidget(`id(`fs_options), `Enabled,
+			 new["format"]:false && selected_fs[`options]:[] != [] );
     string fstopt = FileSystems::DefaultFstabOptions( new );
     if( size(fstopt)>0 && size(new["fstopt"]:"")==0 )
 	new["fstopt"] = fstopt;
@@ -655,7 +664,14 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	    new = filter(string key, any value, new, ``( key != "fstopt"));
 	    }
 	}
-    if( init || ret == `format_true || ret == `format_false )
+    if( !init && ret == `mount_point &&
+        UI::WidgetExists( `id(`fstab_options) ))
+	{
+	string mp = (string)UI::QueryWidget(`id(`mount_point), `Value);
+	UI::ChangeWidget( `id(`fstab_options), `Enabled, size(mp)>0 );
+	}
+    if( (init && UI::WidgetExists( `id(`format))) || 
+        ret == `format_true || ret == `format_false )
 	{
 	boolean format = UI::QueryWidget(`id(`format), `CurrentButton) ==
 	                 `format_true;
@@ -666,11 +682,15 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	// format partition
 	new["format"] = format;
 
-	////////////////////////////////////////////////
-	// modify widgets
-	UI::ChangeWidget( `id(`fs), `Enabled, format );
-	UI::ChangeWidget( `id(`fs_options), `Enabled,
-			  format && selected_fs[`options]:[] != [] );
+	if( UI::WidgetExists( `id(`fs) ))
+	    {
+	    UI::ChangeWidget( `id(`fs), `Enabled, format );
+	    }
+	if( UI::WidgetExists( `id(`fs_options) ))
+	    {
+	    UI::ChangeWidget( `id(`fs_options), `Enabled,
+			      format && selected_fs[`options]:[] != [] );
+	    }
 	if( UI::WidgetExists( `id(`crypt_fs) ))
 	    {
 	    UI::ChangeWidget( `id(`crypt_fs), `Enabled,
@@ -741,7 +761,9 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	}
     if( init || ret == `fs )
 	{
-	symbol new_fs = (symbol)UI::QueryWidget(`id(`fs), `Value);
+	symbol new_fs = used_fs;
+	if( UI::WidgetExists( `id(`fs) ))
+	    new_fs = (symbol)UI::QueryWidget(`id(`fs), `Value);
 	if( init )
 	    {
 	    if( !new["format"]:false && new["detected_fs"]:`unknown != `unknown )
@@ -751,8 +773,6 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	    if( used_fs != new_fs )
 		UI::ChangeWidget(`id(`fs), `Value, new_fs );
 	    }
-	y2milestone( "HandlePartWidgetChanges new_fs %1",
-	             UI::QueryWidget(`id(`fs), `Value) );
 	y2milestone( "HandlePartWidgetChanges init=%1 used_fs:%2 new_fs:%3",
 	             init, used_fs, new_fs );
 	if( init || used_fs != new_fs )
