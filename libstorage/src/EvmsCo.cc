@@ -1872,89 +1872,76 @@ std::ostream& operator<< (std::ostream& s, const EvmsCo& d )
 
 }
 
-void EvmsCo::logDifference( const Container& d ) const
+void EvmsCo::logDifference( const EvmsCo& d ) const
     {
-    const EvmsCo * p = dynamic_cast<const EvmsCo*>(&d);
-    if( p )
+    string log = PeContainer::logDifference( d );
+    if( lvm1!=d.lvm1 )
 	{
-	string log = PeContainer::getDiffString( *p );
-	if( lvm1!=p->lvm1 )
-	    {
-	    if( p->lvm1 )
-		log += " -->lvm1";
-	    else
-		log += " lvm1-->";
-	    }
-	if( container!=p->container )
-	    {
-	    if( p->container )
-		log += " -->cont";
-	    else
-		log += " cont-->";
-	    }
-	if( uuid!=p->uuid )
-	    log += " UUID:" + uuid + "-->" + p->uuid;
-	y2milestone( "%s", log.c_str() );
-	ConstEvmsPair pp=evmsPair();
-	ConstEvmsIter i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstEvmsPair pc=p->evmsPair();
-	    ConstEvmsIter j = pc.begin();
-	    while( j!=pc.end() && 
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j!=pc.end() )
-		{
-		if( !i->equalContent( *j ) )
-		    i->logDifference( *j );
-		}
-	    else
-		y2mil( "  -->" << *i );
-	    ++i;
-	    }
-	pp=p->evmsPair();
-	i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstEvmsPair pc=evmsPair();
-	    ConstEvmsIter j = pc.begin();
-	    while( j!=pc.end() && 
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j==pc.end() )
-		y2mil( "  <--" << *i );
-	    ++i;
-	    }
+	if( d.lvm1 )
+	    log += " -->lvm1";
+	else
+	    log += " lvm1-->";
 	}
-    else
-	y2mil( "" << Container::getDiffString(d) );
+    if( container!=d.container )
+	{
+	if( d.container )
+	    log += " -->cont";
+	else
+	    log += " cont-->";
+	}
+    if( uuid!=d.uuid )
+	log += " UUID:" + uuid + "-->" + d.uuid;
+    y2milestone( "%s", log.c_str() );
+    ConstEvmsPair p=evmsPair();
+    ConstEvmsIter i=p.begin();
+    while( i!=p.end() )
+	{
+	ConstEvmsPair pc=d.evmsPair();
+	ConstEvmsIter j = pc.begin();
+	while( j!=pc.end() && 
+	       (i->device()!=j->device() || i->created()!=j->created()) )
+	    ++j;
+	if( j!=pc.end() )
+	    {
+	    if( !i->equalContent( *j ) )
+		i->logDifference( *j );
+	    }
+	else
+	    y2mil( "  -->" << *i );
+	++i;
+	}
+    p=d.evmsPair();
+    i=p.begin();
+    while( i!=p.end() )
+	{
+	ConstEvmsPair pc=evmsPair();
+	ConstEvmsIter j = pc.begin();
+	while( j!=pc.end() && 
+	       (i->device()!=j->device() || i->created()!=j->created()) )
+	    ++j;
+	if( j==pc.end() )
+	    y2mil( "  <--" << *i );
+	++i;
+	}
     }
 
-bool EvmsCo::equalContent( const Container& rhs ) const
+bool EvmsCo::equalContent( const EvmsCo& rhs ) const
     {
-    const EvmsCo * p = NULL;
-    bool ret = Container::equalContent(rhs);
+    bool ret = PeContainer::equalContent(rhs,false) &&
+	       uuid==rhs.uuid && lvm1==rhs.lvm1 && container==rhs.container;
     if( ret )
-	p = dynamic_cast<const EvmsCo*>(&rhs);
-    if( ret && p )
 	{
-	ret = PeContainer::equalContent(*p,false) &&
-	      uuid==p->uuid && lvm1==p->lvm1 && container==p->container;
-	}
-    if( ret && p )
-	{
-	ConstEvmsPair pp = evmsPair();
-	ConstEvmsPair pc = p->evmsPair();
-	ConstEvmsIter i = pp.begin();
+	ConstEvmsPair p = evmsPair();
+	ConstEvmsPair pc = rhs.evmsPair();
+	ConstEvmsIter i = p.begin();
 	ConstEvmsIter j = pc.begin();
-	while( ret && i!=pp.end() && j!=pc.end() ) 
+	while( ret && i!=p.end() && j!=pc.end() ) 
 	    {
 	    ret = ret && i->equalContent( *j );
 	    ++i;
 	    ++j;
 	    }
-	ret = ret && i==pp.end() && j==pc.end();
+	ret == ret && i==p.end() && j==pc.end();
 	}
     return( ret );
     }

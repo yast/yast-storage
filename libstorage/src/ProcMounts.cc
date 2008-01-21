@@ -25,6 +25,7 @@ ProcMounts::ProcMounts( Storage * const sto )
     getline( mounts, line );
     while( mounts.good() )
 	{
+	y2mil( "line:\"" << line << "\"" );
 	string dev = extractNthWord( 0, line );
 	if( dev.find( "/by-label/" ) != string::npos )
 	    {
@@ -50,10 +51,7 @@ ProcMounts::ProcMounts( Storage * const sto )
 	    }
 	if( dev!= "rootfs" && dev!="/dev/root" )
 	    {
-	    co[dev].device = dev;
-	    co[dev].mount = extractNthWord( 1, line );
-	    co[dev].fs = extractNthWord( 2, line );
-	    co[dev].opts = splitString( extractNthWord( 3, line ), "," );
+	    co[dev] = extractNthWord( 1, line );
 	    }
 	getline( mounts, line );
 	}
@@ -65,8 +63,7 @@ ProcMounts::ProcMounts( Storage * const sto )
 	    {
 	    dev = sto->findNormalDevice( dev );
 	    }
-	co[dev].device = dev;
-	co[dev].mount = "/";
+	co[dev] = "/";
 	}
     mounts.close();
     mounts.clear();
@@ -83,26 +80,19 @@ ProcMounts::ProcMounts( Storage * const sto )
 	    y2mil( "dev:" << dev );
 	    dev.erase( pos );
 	    }
-	co[dev].device = dev;
-	co[dev].mount = "swap";
-	co[dev].fs = "swap";
+	co[dev] = "swap";
 	getline( mounts, line );
 	}
-    map<string,FstabEntry>::const_iterator i = co.begin();
-    while( i!=co.end() )
-	{
-	y2mil( "co:[" << i->first << "]-->" << i->second );
-	++i;
-	}
+    y2mil( "co:" << co );
     }
 
 string 
 ProcMounts::getMount( const string& dev ) const
     {
     string ret;
-    map<string,FstabEntry>::const_iterator i = co.find( dev );
+    map<string,string>::const_iterator i = co.find( dev );
     if( i!=co.end() )
-	ret = i->second.mount;
+	ret = i->second;
     return( ret );
     }
 
@@ -123,19 +113,12 @@ map<string,string>
 ProcMounts::allMounts() const
     {
     map<string,string> ret;
-    for( map<string,FstabEntry>::const_iterator i = co.begin(); i!=co.end(); ++i )
+    map<string,string>::const_iterator i = co.begin();
+    for( map<string,string>::const_iterator i = co.begin(); i!=co.end(); ++i )
 	{
-	ret[i->second.mount] = i->first;
+	ret[i->second] = i->first;
 	}
     return( ret );
     }
 
-void ProcMounts::getEntries( list<FstabEntry>& l ) const
-    {
-    l.clear();
-    for( map<string,FstabEntry>::const_iterator i = co.begin(); i!=co.end(); ++i )
-	{
-	l.push_back( i->second );
-	}
-    }
 

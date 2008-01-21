@@ -62,7 +62,7 @@ class Dm : public Volume
 
     protected:
 	void init();
-	const PeContainer* pec() const;
+	const PeContainer* const pec() const;
 	virtual const string shortPrintedName() const { return( "Dm" ); }
 	string getDevice( const string& majmin );
 	static void getDmMajor();

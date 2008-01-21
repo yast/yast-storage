@@ -18,7 +18,7 @@ class MdCo : public Container
 	MdCo( const MdCo& rhs );
 
 	virtual ~MdCo();
-	static storage::CType staticType() { return storage::MD; }
+	static storage::CType const staticType() { return storage::MD; }
 	friend std::ostream& operator<< (std::ostream&, const MdCo& );
 
 	int createMd( unsigned num, storage::MdType type, 
@@ -30,8 +30,8 @@ class MdCo : public Container
 	int changeMdChunk( unsigned num, unsigned long chunk );
 	int changeMdParity( unsigned num, storage::MdParity ptype );
 	int checkMd( unsigned num );
-	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& d ) const;
+	bool equalContent( const MdCo& rhs ) const;
+	void logDifference( const MdCo& d ) const;
 
 	unsigned unusedNumber();
 	void syncRaidtab();

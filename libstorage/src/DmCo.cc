@@ -292,65 +292,59 @@ inline std::ostream& operator<< (std::ostream& s, const DmCo& d )
 
 }
 
-void DmCo::logDifference( const Container& d ) const
+void DmCo::logDifference( const DmCo& d ) const
     {
-    y2mil( "" << getDiffString( d ));
-    const DmCo * p = dynamic_cast<const DmCo*>(&d);
-    if( p != NULL )
+    string log = Container::logDifference( d );
+    y2milestone( "%s", log.c_str() );
+    ConstDmPair p=dmPair();
+    ConstDmIter i=p.begin();
+    while( i!=p.end() )
 	{
-	ConstDmPair pp=dmPair();
-	ConstDmIter i=pp.begin();
-	while( i!=pp.end() )
+	ConstDmPair pc=d.dmPair();
+	ConstDmIter j = pc.begin();
+	while( j!=pc.end() && 
+	       (i->device()!=j->device() || i->created()!=j->created()) )
+	    ++j;
+	if( j!=pc.end() )
 	    {
-	    ConstDmPair pc=p->dmPair();
-	    ConstDmIter j = pc.begin();
-	    while( j!=pc.end() && 
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j!=pc.end() )
-		{
-		if( !i->equalContent( *j ) )
-		    i->logDifference( *j );
-		}
-	    else
-		y2mil( "  -->" << *i );
-	    ++i;
+	    if( !i->equalContent( *j ) )
+		i->logDifference( *j );
 	    }
-	pp=p->dmPair();
-	i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstDmPair pc=dmPair();
-	    ConstDmIter j = pc.begin();
-	    while( j!=pc.end() && 
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j==pc.end() )
-		y2mil( "  <--" << *i );
-	    ++i;
-	    }
+	else
+	    y2mil( "  -->" << *i );
+	++i;
+	}
+    p=d.dmPair();
+    i=p.begin();
+    while( i!=p.end() )
+	{
+	ConstDmPair pc=dmPair();
+	ConstDmIter j = pc.begin();
+	while( j!=pc.end() && 
+	       (i->device()!=j->device() || i->created()!=j->created()) )
+	    ++j;
+	if( j==pc.end() )
+	    y2mil( "  <--" << *i );
+	++i;
 	}
     }
 
-bool DmCo::equalContent( const Container& rhs ) const
+bool DmCo::equalContent( const DmCo& rhs ) const
     {
-    const DmCo * p = NULL;
     bool ret = Container::equalContent(rhs);
     if( ret )
-	p = dynamic_cast<const DmCo*>(&rhs);
-    if( ret && p )
 	{
-	ConstDmPair pp = dmPair();
-	ConstDmPair pc = p->dmPair();
-	ConstDmIter i = pp.begin();
+	ConstDmPair p = dmPair();
+	ConstDmPair pc = rhs.dmPair();
+	ConstDmIter i = p.begin();
 	ConstDmIter j = pc.begin();
-	while( ret && i!=pp.end() && j!=pc.end() ) 
+	while( ret && i!=p.end() && j!=pc.end() ) 
 	    {
 	    ret = ret && i->equalContent( *j );
 	    ++i;
 	    ++j;
 	    }
-	ret = ret && i==pp.end() && j==pc.end();
+	ret == ret && i==p.end() && j==pc.end();
 	}
     return( ret );
     }

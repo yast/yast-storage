@@ -21,8 +21,6 @@
 #include "y2storage/DmCo.h"
 #include "y2storage/LoopCo.h"
 #include "y2storage/Loop.h"
-#include "y2storage/NfsCo.h"
-#include "y2storage/Nfs.h"
 #include "y2storage/FilterIterator.h"
 #include "y2storage/DerefIterator.h"
 #include "y2storage/ListListIterator.h"
@@ -118,8 +116,6 @@ class Storage : public storage::StorageInterface
 	    { return( d.type()==storage::MD ); }
 	static bool isLoop( const Container&d )
 	    { return( d.type()==storage::LOOP ); }
-	static bool isNfs( const Container&d )
-	    { return( d.type()==storage::NFSC ); }
 	static bool isDm( const Container&d )
 	    { return( d.type()==storage::DM ); }
 	struct FreeInfo
@@ -128,15 +124,12 @@ class Storage : public storage::StorageInterface
 	    unsigned long long df_free;
 	    unsigned long long used;
 	    bool win;
-	    bool efi;
 	    bool rok;
-	    FreeInfo() { resize_free=df_free=used=0; efi=win=rok=false; }
+	    FreeInfo() { resize_free=df_free=used=0; win=rok=false; }
 	    FreeInfo( unsigned long long df,
 		      unsigned long long resize,
-		      unsigned long long usd, bool w=false, bool e=false,
-		      bool r=true )
-		      { resize_free=resize; df_free=df; used=usd; win=w; 
-		        efi=e, rok=r; }
+		      unsigned long long usd, bool w=false, bool r=true )
+		      { resize_free=resize; df_free=df; used=usd; win=w; rok=r; }
 	    };
 
     public:
@@ -163,7 +156,7 @@ class Storage : public storage::StorageInterface
 	void handleLogFile( const string& name );
 	static bool testFilesEqual( const string& n1, const string& n2 );
 	void printInfo( std::ostream& str );
-	void logCo( Container* c ) const;
+	void logCo( Container* c );
 	void logCo( const string& device );
 	void logProcData( const string& l="" );
 	storage::UsedByType usedBy( const string& dev );
@@ -210,7 +203,6 @@ class Storage : public storage::StorageInterface
 			 deque<storage::EvmsInfo>& plist );
 	int getMdInfo( deque<storage::MdInfo>& plist );
 	int getDmInfo( deque<storage::DmInfo>& plist );
-	int getNfsInfo( deque<storage::NfsInfo>& plist );
 	int getLoopInfo( deque<storage::LoopInfo>& plist );
 	int getContVolInfo( const string& dev, ContVolInfo& info);
 
@@ -241,7 +233,6 @@ class Storage : public storage::StorageInterface
 	int destroyPartitionTable( const string& disk, const string& label );
 	int initializeDisk( const string& disk, bool value );
 	string defaultDiskLabel() const;
-	string defaultDiskLabelSize( unsigned long long size_k ) const;
 	unsigned long long maxSizeLabelK( const string& label ) const;
 
 	int changeFormatVolume( const string& device, bool format,
@@ -289,9 +280,7 @@ class Storage : public storage::StorageInterface
 	bool readFstab( const string& dir, deque<storage::VolumeInfo>& infos);
 	bool getFreeInfo( const string& device, unsigned long long& resize_free,
 	                  unsigned long long& df_free,
-	                  unsigned long long& used, bool& win, bool& efi,
-			  bool use_cache );
-	unsigned long long getDfSize( const string& mp );
+	                  unsigned long long& used, bool& win, bool use_cache );
 	int createBackupState( const string& name );
 	int removeBackupState( const string& name );
 	int restoreBackupState( const string& name );
@@ -344,11 +333,6 @@ class Storage : public storage::StorageInterface
 	int changeMdParity( const string& name, storage::MdParity ptype );
 	int checkMd( const string& name );
 
-
-	int addNfsDevice( const string& nfsDev, const string& opts,
-	                  unsigned long long sizeK, const string& mp );
-	int checkNfsDevice( const string& nfsDev, const string& opts,
-	                    unsigned long long& sizeK );
 
 	int createFileLoop( const string& lname, bool reuseExisting,
 			    unsigned long long sizeK, const string& mp,
@@ -1192,66 +1176,6 @@ class Storage : public storage::StorageInterface
 	    return( typename ConstLoopI<Pred>::type( typename ConstLoopPI<Pred>::type(pair, p, true )) );
 	    }
 
-// iterators over nfs devices
-    protected:
-	// protected typedefs for iterators over nfs devices
-	typedef CastIterator<ConstVolInter, Nfs *> ConstNfsInter;
-	template< class Pred >
-	    struct ConstNfsPI { typedef ContainerIter<Pred,
-	                                             ConstNfsInter> type; };
-	typedef CheckFnc<const Nfs> CheckFncNfs;
-	typedef CheckerIterator< CheckFncNfs, ConstNfsPI<CheckFncNfs>::type,
-	                         ConstNfsInter, Nfs > ConstNfsPIterator;
-    public:
-	// public typedefs for iterators over nfs devices
-	template< class Pred >
-	    struct ConstNfsI
-		{ typedef ContainerDerIter<Pred, typename ConstNfsPI<Pred>::type,
-		                           const Nfs> type; };
-	template< class Pred >
-	    struct NfsCondIPair
-		{ typedef MakeCondIterPair<Pred, typename ConstNfsI<Pred>::type> type;};
-	typedef DerefIterator<ConstNfsPIterator, const Nfs> ConstNfsIterator;
-	typedef IterPair<ConstNfsIterator> ConstNfsPair;
-
-	// public member functions for iterators over nfs devices
-	ConstNfsPair nfsPair( bool (* CheckNfs)( const Nfs& )=NULL ) const
-	    {
-	    return( ConstNfsPair( nfsBegin( CheckNfs ), nfsEnd( CheckNfs ) ));
-	    }
-	ConstNfsIterator nfsBegin( bool (* CheckNfs)( const Nfs& )=NULL ) const
-	    {
-	    ConstVolInter b( contPair( isNfs ) );
-	    ConstVolInter e( contPair( isNfs ), true );
-	    IterPair<ConstNfsInter> p( (ConstNfsInter(b)), (ConstNfsInter(e)) );
-	    return( ConstNfsIterator( ConstNfsPIterator(p, CheckNfs )));
-	    }
-	ConstNfsIterator nfsEnd( bool (* CheckNfs)( const Nfs& )=NULL ) const
-	    {
-	    ConstVolInter b( contPair( isNfs ) );
-	    ConstVolInter e( contPair( isNfs ), true );
-	    IterPair<ConstNfsInter> p( (ConstNfsInter(b)), (ConstNfsInter(e)) );
-	    return( ConstNfsIterator( ConstNfsPIterator(p, CheckNfs, true )));
-	    }
-	template< class Pred > typename NfsCondIPair<Pred>::type nfsCondPair( const Pred& p ) const
-	    {
-	    return( typename NfsCondIPair<Pred>::type( nfsCondBegin( p ), nfsCondEnd( p ) ) );
-	    }
-	template< class Pred > typename ConstNfsI<Pred>::type nfsCondBegin( const Pred& p ) const
-	    {
-	    ConstVolInter b( contPair( isNfs ) );
-	    ConstVolInter e( contPair( isNfs ), true );
-	    IterPair<ConstNfsInter> pair( (ConstNfsInter(b)), (ConstNfsInter(e)) );
-	    return( typename ConstNfsI<Pred>::type( typename ConstNfsPI<Pred>::type(pair, p) ) );
-	    }
-	template< class Pred > typename ConstNfsI<Pred>::type nfsCondEnd( const Pred& p ) const
-	    {
-	    ConstVolInter b( contPair( isNfs ) );
-	    ConstVolInter e( contPair( isNfs ), true );
-	    IterPair<ConstNfsInter> pair( (ConstNfsInter(b)), (ConstNfsInter(e)) );
-	    return( typename ConstNfsI<Pred>::type( typename ConstNfsPI<Pred>::type(pair, p, true )) );
-	    }
-
 // iterators over device mapper devices
     protected:
 	// protected typedefs for iterators over device mapper devices
@@ -1320,13 +1244,11 @@ class Storage : public storage::StorageInterface
 	void detectMultipath();
 	void detectMds();
 	void detectLoops( ProcPart& ppart );
-	void detectNfs( ProcMounts& mounts );
 	void detectLvmVgs();
 	void detectEvms();
 	void detectDm( ProcPart& ppart );
 	void initDisk( DiskData& data, ProcPart& pp );
-	void detectFsData( const VolIterator& begin, const VolIterator& end,
-			   ProcMounts& mounts );
+	void detectFsData( const VolIterator& begin, const VolIterator& end );
 	void detectFsDataTestMode( const string& file,
 	                           const VolIterator& begin,
 				   const VolIterator& end );
@@ -1347,7 +1269,6 @@ class Storage : public storage::StorageInterface
 	bool findContainer( const string& device, ContIterator& c );
 
 	bool haveMd( MdCo*& md );
-	bool haveNfs( NfsCo*& co );
 	bool haveLoop( LoopCo*& loop );
 	bool haveEvms();
 	void handleEvmsRemoveDevice( const Disk* disk, const string& d,
@@ -1371,12 +1292,10 @@ class Storage : public storage::StorageInterface
 	void deleteBackups();
 	void setFreeInfo( const string& device, unsigned long long df_free,
 			  unsigned long long resize_free,
-			  unsigned long long used, bool win, bool efi,
-			  bool resize_ok );
+			  unsigned long long used, bool win, bool resize_ok );
 	bool getFreeInf( const string& device, unsigned long long& df_free,
 			 unsigned long long& resize_free,
-			 unsigned long long& used, bool& win, bool& efi,
-			 bool& resize_ok );
+			 unsigned long long& used, bool& win, bool& resize_ok );
 
 	// protected internal member variables
 	bool readonly;

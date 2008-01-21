@@ -26,7 +26,6 @@ specialize_sequence(storage::EvmsInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::MdInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::LoopInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::DmInfo, TO_PACK, FROM_PACK, CHECK)
-specialize_sequence(storage::NfsInfo, TO_PACK, FROM_PACK, CHECK)
 
 %include "../../src/StorageInterface.h"
 
