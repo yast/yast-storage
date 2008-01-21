@@ -54,7 +54,6 @@
 
   include "partitioning/partition_defines.ycp";
   include "partitioning/loop.ycp";
-  include "partitioning/nfs.ycp";
   include "partitioning/lvm_ui_dialogs.ycp";
   include "partitioning/lvm_pv_lib.ycp";
   include "partitioning/raid_lib.ycp";
@@ -91,7 +90,6 @@
   boolean button_reread           = true;    // Should the "Reread Partition"-Button be shown in Expert menu
   boolean button_raid 	          = true;    // Should the "RAID"  -Button be shown in main window
   boolean button_loop 	          = true;    // Should the "LOOP"  -Button be shown in main window
-  boolean button_nfs  	          = true;    // Should the "NFS"   -Button be shown in main window
   boolean button_lvm              = true;    // Should the "LVM"   -Button be shown in main window
                                              // Should the "EVMS"  -Button be shown in main window
   boolean button_evms             = ProductFeatures::GetBooleanFeature ("partitioning", "evms_config");
@@ -935,13 +933,13 @@ define list FillPartitionList(map<string,map> targets)
 
     // order should be md, then loop, then LVM, then EVMS
     map disk_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_LOOP : 2, `CT_LVM : 3,
-                        `CT_EVMS : 4, `CT_DM : 5, `CT_NFS : 6 ];
+                        `CT_EVMS : 4, `CT_DM : 5 ];
     list<string> keys = maplist( string dev, map disk, targets,
 				 ``{return(dev);} );
     keys = sort( string a, string b, keys,
 	``{
-	integer oa = disk_order[targets[a,"type"]:`CT_UNKNOWN]:7;
-	integer ob = disk_order[targets[b,"type"]:`CT_UNKNOWN]:7;
+	integer oa = disk_order[targets[a,"type"]:`CT_UNKNOWN]:6;
+	integer ob = disk_order[targets[b,"type"]:`CT_UNKNOWN]:6;
 	return( (oa==ob) ? (a<b) : (oa<ob) );
 	});
 
@@ -1251,7 +1249,7 @@ or the size of the partition (for example, +100M or 1.8GB )
 		{
 		////////////////////// STEP D /////////////////////
 
-		integer  max_cyl = Storage::MaxCylLabel(disk,int_start_cyl);
+		integer  max_cyl = Storage::MaxCylLabel(disk);
 		int_end_cyl = int_start_cyl +
 			      ToEndRegion( str_start_cyl, str_end_part,
 					   cyl_size ) - 1;
@@ -1292,10 +1290,10 @@ Use the maximum allowed value?
 The value of the end cylinder %1 was not valid.
 The used disk label %2 does not support partitions above 
 the size of %3.
-Therefore, the cylinder value must be below %4.
+Therefore the cylinder value must be below %4.
 
 Use the maximum allowed value
-or select <b>No</b> and enter a correct value yourself.
+or select No and enter a correct value yourself.
 
 Use the maximum allowed value?
 "),
@@ -2267,7 +2265,7 @@ define string ChooseDisk( map<string,map> targetMap, string heading, symbol what
 	}
     else if( size(disks) == 0 )
 	{
-	string txt = _("There are no partitionable disks available.");
+	string txt = _("There are no partitionable Disks available.");
 	if( Arch::s390() )
 	    {
 	    txt = txt + "\n" + _("You may use dasdfmt in Expert-Button to low level format disks.");
@@ -2588,13 +2586,9 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		 `ReplacePoint( `id(`loop_button),
 			        LoopButton(size(tg["/dev/loop","partitions"]:[]))));
 
-    if( button_nfs )
-	buttonline_b = add( buttonline_b, `PushButton(`id(`nfs), _("&NFS...")));
-
-    if( button_expert) 
+    if( button_expert) buttonline_b =
 	// main dialog: Menu-Button for Expert options
-	buttonline_b =
-	    add( buttonline_b, `MenuButton ( _("E&xpert.."), expert_item_list ));
+	add( buttonline_b, `MenuButton ( _("E&xpert.."), expert_item_list ));
 
 
 
@@ -2966,10 +2960,6 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		    {
 		    ret = `loop_edit;
 		    }
-		else if( part["type"]:`unknown == `nfs )
-		    {
-		    ret = `nfs_edit;
-		    }
 		else
 		    {
 		    map new_val = $[];
@@ -3173,11 +3163,6 @@ All data on this partition will be lost if you delete it."));
 			Storage::DeleteLoop( disk["device"]:"",
 			                     part["fpath"]:"", true );
 			}
-		    if( part["type"]:`unknown == `nfs )
-			{
-			Storage::DeleteDevice( "/dev/nfs",
-			                       part["device"]:"" );
-			}
 		    else
 			{
 			Storage::DeleteDevice( disk["device"]:"",
@@ -3229,14 +3214,13 @@ All data on this partition will be lost if you delete it."));
 		part["used_by_type"]:`UB_NONE == `UB_LVM ||
 		part["used_by_type"]:`UB_NONE == `UB_MD ||
 	        part["type"]:`unknown == `sw_raid ||
-	        part["type"]:`unknown == `nfs ||
 	        part["type"]:`unknown == `loop ||
 	        part["type"]:`unknown == `dm )
 		{
                 // popup text
 		Popup::Message(_("
 You cannot resize a disk device, LVM volume group, LVM physical volume,
-NFS mount, or MD device.
+or MD device.
 "));
 		}
 	    else if( !part["format"]:false &&
@@ -3321,7 +3305,7 @@ freed disk space?
 	    // not cancel
 	    if( ddev != nil )
 		{
-		DDZeroPartitionTable( ddev, tg[ddev,"size_k"]:0 );
+		DDZeroPartitionTable(ddev);
 		}
 	    }
 
@@ -3419,13 +3403,6 @@ Select the DASD disk on which dasdfmt should be executed."));
 		UI::ReplaceWidget( `id(`loop_button),
 				   LoopButton(size(dev["partitions"]:[])) );
 		}
-	    }
-
-	if( ret == `nfs || ret == `nfs_edit )
-	    {
-	    string id = (string)UI::QueryWidget( `id(`table), `CurrentItem );
-	    Storage::SetWizardKey( id );
-	    NfsSetup( ret == `nfs_edit );
 	    }
 
 	/////////////////////////////////////////////////////////////

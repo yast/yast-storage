@@ -314,14 +314,8 @@ std::ostream& operator<< ( std::ostream& s, const Container &c )
     }
 }
 
-void
-Container::logDifference( const Container& c ) const
-    {
-    y2milestone( "%s", getDiffString(c).c_str() );
-    }
-    
 string
-Container::getDiffString( const Container& c ) const
+Container::logDifference( const Container& c ) const
     {
     string ret = "Name:" + nm;
     if( nm!=c.nm )
@@ -381,15 +375,46 @@ bool Container::compareContainer( const Container* c, bool verbose ) const
     if( !ret )
 	{
 	if( verbose )
-	    y2milestone( "%s", getDiffString( *c ).c_str() );
+	    y2milestone( "%s", logDifference( *c ).c_str() );
 	}
     else
 	{
-	ret = equalContent( *c );
-	if( !ret && verbose )
-	    logDifference( *c );
-	if( typ==COTYPE_LAST_ENTRY || typ==CUNKNOWN )
-	    y2err( "Unknown Container:" << *c ); 
+	switch( typ )
+	    {
+	    case DISK:
+		ret = ((const Disk*)this)->equalContent( *(const Disk*)c );
+		if( !ret && verbose )
+		    ((const Disk*)this)->logDifference( *(const Disk*)c );
+		break;
+	    case MD:
+		ret = ((const MdCo*)this)->equalContent( *(const MdCo*)c );
+		if( !ret && verbose )
+		    ((const MdCo*)this)->logDifference( *(const MdCo*)c );
+		break;
+	    case LOOP:
+		ret = ((const LoopCo*)this)->equalContent( *(const LoopCo*)c );
+		if( !ret && verbose )
+		    ((const LoopCo*)this)->logDifference( *(const LoopCo*)c );
+		break;
+	    case LVM:
+		ret = ((const LvmVg*)this)->equalContent( *(const LvmVg*)c );
+		if( !ret && verbose )
+		    ((const LvmVg*)this)->logDifference( *(const LvmVg*)c );
+		break;
+	    case DM:
+		ret = ((const DmCo*)this)->equalContent( *(const DmCo*)c );
+		if( !ret && verbose )
+		    ((const DmCo*)this)->logDifference( *(const DmCo*)c );
+		break;
+	    case EVMS:
+		ret = ((const EvmsCo*)this)->equalContent( *(const EvmsCo*)c );
+		if( !ret && verbose )
+		    ((const EvmsCo*)this)->logDifference( *(const EvmsCo*)c );
+		break;
+	    default:
+		ret = this->equalContent( *c );
+		break;
+	    }
 	}
     return( ret );
     }
@@ -415,6 +440,5 @@ Container::Container( const Container& rhs ) : sto(rhs.sto)
     *this = rhs;
     }
 
-string Container::type_names[] = { "UNKNOWN", "DISK", "MD", "LOOP", "LVM", 
-                                   "DM", "EVMS", "NFS" };
+string Container::type_names[] = { "UNKNOWN", "DISK", "MD", "LOOP", "LVM", "DM", "EVMS" };
 

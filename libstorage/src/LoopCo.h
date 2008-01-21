@@ -17,7 +17,7 @@ class LoopCo : public Container
 	LoopCo( const LoopCo& rhs );
 
 	virtual ~LoopCo();
-	static storage::CType staticType() { return storage::LOOP; }
+	static storage::CType const staticType() { return storage::LOOP; }
 	friend std::ostream& operator<< (std::ostream&, const LoopCo& );
 
 	int createLoop( const string& file, bool reuseExisting, 
@@ -28,8 +28,8 @@ class LoopCo : public Container
 	void loopIds( std::list<unsigned>& l ) const;
 
 	int removeVolume( Volume* v );
-	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& d ) const;
+	bool equalContent( const LoopCo& rhs ) const;
+	void logDifference( const LoopCo& d ) const;
 	
     protected:
 	// iterators over LOOP volumes

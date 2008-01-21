@@ -92,7 +92,7 @@ class EvmsCo : public PeContainer
 	unsigned numVol() const { return vols.size(); }
 	bool lvm2() const { return( !lvm1 ); }
 	bool isContainer() const { return( container ); } 
-	static storage::CType staticType() { return storage::EVMS; }
+	static storage::CType const staticType() { return storage::EVMS; }
 	friend std::ostream& operator<< (std::ostream&, const EvmsCo& );
 
 	int removeCo();
@@ -119,8 +119,8 @@ class EvmsCo : public PeContainer
 	int removeVolume( Volume* v );
 	void addVolume( Evms* v );
 	void getInfo( storage::EvmsCoInfo& info ) const;
-	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& d ) const;
+	bool equalContent( const EvmsCo& rhs ) const;
+	void logDifference( const EvmsCo& d ) const;
 	bool checkConsistency() const;
 	void updateMd();
 	void changeDeviceName( const string& old, const string& nw );

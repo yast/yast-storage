@@ -54,7 +54,6 @@
   import "LibStorage::MdInfo";
   import "LibStorage::LoopInfo";
   import "LibStorage::DmInfo";
-  import "LibStorage::NfsInfo";
   import "LibStorage::ContainerInfo";
   import "LibStorage::DiskInfo";
   import "LibStorage::LvmVgInfo";
@@ -68,8 +67,7 @@ map<string,any> conv_ctype =
                 LibStorage::LOOP() : `CT_LOOP,
                 LibStorage::LVM() : `CT_LVM,
                 LibStorage::EVMS() : `CT_EVMS,
-                LibStorage::DM() : `CT_DM,
-		LibStorage::NFSC() : `CT_NFS
+                LibStorage::DM() : `CT_DM
 	      ]
      ];
 
@@ -154,7 +152,7 @@ map DiskMapVersion = $[];
 map DiskMap = $[];
 map ClassifiedSettings = $[];
 map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_LOOP : 2, `CT_DM : 3,
-                    `CT_LVM : 4, `CT_EVMS : 5, `CT_NFS : 6 ];
+                    `CT_LVM : 4, `CT_EVMS : 5 ];
 list<string> hw_packages = [];
 list<string> no_propose_disks = nil;
 boolean proposal_evms = false;
@@ -308,9 +306,9 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 	list<string> tl = splitstring( device, "=" );
 	ls = [ "dev", "disk", "", tl[1]:"" ];
 	ls[2] = (search( device, "LABEL=" )==0)?"by-label":"by-uuid";
-	y2milestone( "GetDiskPartitionTg ls:%1", ls );
+	y2milestone( "GetDiskPartition ls:%1", ls );
 	}
-    y2debug( "GetDiskPartitionTg size:%1 ls:%2", size(ls), ls );
+    y2debug( "GetDiskPartition size:%1 ls:%2", size(ls), ls );
 
     if( size(ls)>=4 && ls[1]:"" == "disk" &&
         contains( [ "by-id", "by-path", "by-uuid", "by-label" ], ls[2]:"" ))
@@ -364,7 +362,7 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		{
 		num = tointeger( substring( id, l[0]:0+5 ));
 		id = substring( id, 0, l[0]:0 );
-		y2debug( "GetDiskPartitionTg id:%1 num:%2", id, num );
+		y2debug( "GetDiskPartition id:%1 num:%2", id, num );
 		}
 	    foreach( string dev, map disk, tg, 
 		``{
@@ -393,7 +391,7 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		{
 		num = tointeger( substring( id, l[0]:0+5 ));
 		id = substring( id, 0, l[0]:0 );
-		y2debug( "GetDiskPartitionTg id:%1 num:%2", id, num );
+		y2debug( "GetDiskPartition id:%1 num:%2", id, num );
 		}
 	    foreach( string dev, map disk, tg, 
 		``{
@@ -413,7 +411,7 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 		});
 	    }
 	}
-    else if( search( device, "/" )==0 )
+    else
 	{
 	if( search( device, "/dev/hd" )==0 ||
 	    search( device, "/dev/sd" )==0 ||
@@ -504,11 +502,7 @@ define map GetDiskPartitionTg( string device, map<string,map> tg )
 	    ret["nr"] = "";
 	    }
 	}
-    else
-	{
-	ret = $[ "disk" : "/dev/nfs", "nr" : device ];
-	}
-    y2debug( "GetDiskPartitionTg device:%1 ret:%2", device, ret );
+    y2debug( "GetDiskPartition device:%1 ret:%2", device, ret );
     return( ret );
     };
 
@@ -700,12 +694,11 @@ global define map GetFreeSpace( string device, integer testsize,
     integer resize_free = 0;
     integer df_free = 0;
     boolean win_disk = false;
-    boolean efi = false;
 
     boolean r = false;
     r = LibStorage::StorageInterface::getFreeInfo( sint, device, resize_free,
                                                    df_free, used, win_disk,
-						   efi, used_fs==`ntfs );
+						   used_fs==`ntfs );
 
     resize_free = resize_free * 1024;	// Byte
     df_free = df_free * 1024;	// Byte
@@ -788,7 +781,6 @@ global define map GetFreeSpace( string device, integer testsize,
 		 "df_free" : df_free,
 		 "used":used,
 		 "win_disk":win_disk,
-		 "efi":efi,
 		 "linux_size":linux_size,
 		 "max_win_size":used + resize_free + add_free - min_linux_size,
 		 "ntfs" : (used_fs == `ntfs),
@@ -1440,24 +1432,6 @@ map getContainerInfo( map c )
 	    p["nr"] = LibStorage::DmInfo::swig_nr_get(info);
 	    p["type"] = `dm;
 	    p["fstype"] = Partitions::dm_name;
-	    c["partitions"] = add( c["partitions"]:[], p );
-	    });
-	}
-    else if( c["type"]:`CT_UNKNOWN == `CT_NFS )
-	{
-	list<any> pinfos = [];
-	y2milestone( "before getNfsInfo" );
-	ret = LibStorage::StorageInterface::getNfsInfo( sint, pinfos );
-	y2milestone( "after getNfsInfo" );
-	if( ret<0 )
-	    y2warning( "getNfsInfo ret:%1", ret );
-	foreach( any info, pinfos,
-	    ``{
-	    map p = $[];
-	    vinfo = LibStorage::NfsInfo::swig_v_get(info);
-	    p = volumeMap( vinfo, p );
-	    p["type"] = `nfs;
-	    p["fstype"] = Partitions::nfs_name;
 	    c["partitions"] = add( c["partitions"]:[], p );
 	    });
 	}
@@ -2170,21 +2144,20 @@ global integer MaxSizeLabelK( map disk )
     integer ret = 0;
     string tmp = disk["label"]:"";
     ret = LibStorage::StorageInterface::maxSizeLabelK( sint, tmp );
-    y2milestone( "MaxSizeLabelK %1 is %2", disk["label"]:"", ret );
+    y2milestone( "MaxSizeLabel %1 is %2", disk["label"]:"", ret );
     return( ret );
     }
 
-global integer MaxCylLabel( map disk, integer start_cyl )
+global integer MaxCylLabel( map disk )
     {
     integer ret = MaxSizeLabelK(disk);
     y2milestone( "MaxCylLabel val_k:%1 cyl_size:%2", ret, disk["cyl_size"]:1 );
-    integer cylk2 = disk["cyl_size"]:1/512;
-    if( cylk2<2 )
-	cylk2 = 2;
-    y2milestone( "MaxCylLabel val_k:%1 cylk2:%2", ret, cylk2 );
-    ret = ret*2 / cylk2 - 1;
-    ret = ret + start_cyl;
-    y2milestone( "MaxCylLabel ret:%1", ret );
+    integer cylk = disk["cyl_size"]:1/1024;
+    if( cylk<1 )
+	cylk = 1;
+    y2milestone( "MaxCylLabel val_k:%1 cylk:%2", ret, cylk );
+    ret = ret / cylk;
+    y2milestone( "MaxCylLabel ret %1", ret );
     return( ret );
     }
 
@@ -2736,35 +2709,6 @@ global boolean ChangeEvmsStripeSize( string coname, string name,
     return( ret==0 );
     }
 
-global boolean AddNfsVolume( string nfsdev, string opts, integer sz, string mp )
-    {
-    y2milestone( "AddNfsVolume dev:%1 opts:%2 size:%3 mp:%4", nfsdev, opts, 
-                 sz, mp );
-    integer ret = 0;
-    string dummy = "";
-    ret = LibStorage::StorageInterface::addNfsDevice( sint, nfsdev, opts, sz, mp );
-    if( ret<0 )
-	y2error( "AddNfsVolume sint ret:%1", ret );
-    UpdateTargetMapDisk( "/dev/nfs" );
-    return( ret==0 );
-    }
-
-global integer CheckNfsVolume( string nfsdev, string opts )
-    {
-    y2milestone( "CheckNfsVolume dev:%1 opts:%2", nfsdev, opts );
-    integer ret = 0;
-    integer sz = 0;
-    string dummy = "";
-    ret = LibStorage::StorageInterface::checkNfsDevice( sint, nfsdev, opts, 
-                                                        sz );
-    if( ret<0 )
-	y2error( "CheckNfsVolume sint ret:%1", ret );
-    else 
-	ret = sz;
-    y2milestone( "CheckNfsVolume ret:%1", ret );
-    return( ret );
-    }
-
 global boolean CreateMd( integer nr, string type )
     {
     y2milestone( "CreateMd nr:%1 type:%2", nr, type );
@@ -2968,18 +2912,18 @@ global boolean SetCryptPwd( string device, string pwd )
  * @param string the disk to deleted the partition table from
  * @return boolean
  */
-global define boolean DeletePartitionTable(string disk, integer size_k)
+global define boolean DeletePartitionTable(string disk)
     ``{
-    y2milestone( "DeletePartitionTable %1 size_k:%2", disk, size_k );
-    string label = 
-	LibStorage::StorageInterface::defaultDiskLabelSize( sint, size_k );
+    y2milestone( "DeletePartitionTable %1", disk );
+    string label = LibStorage::StorageInterface::defaultDiskLabel( sint );
     y2milestone( "DeletePartitionTable label:%1", label );
     integer ret =
 	LibStorage::StorageInterface::destroyPartitionTable( sint, disk,
 	                                                     label );
     if( ret<0 )
 	y2error( "DeletePartitionTable sint ret:%1", ret );
-    UpdateTargetMap();
+    UpdateTargetMapDisk( disk );
+    UpdateTargetMapDisk( "/dev/evms" );
     return( ret==0 );
     }
 
@@ -3068,20 +3012,7 @@ global define boolean CreateAny( symbol ctype, map d, map& p )
 					   p["stripesize"]:0 );
 	    }
 	}
-    else if( ctype == `CT_NFS )
-	{
-	ret = Storage::AddNfsVolume( p["device"]:"", p["fstopt"]:"", 
-	                             p["size_k"]:0, p["mount"]:"" );
-	}
     y2milestone( "CreateAny ret:%1", ret );
-    return( ret );
-    }
-
-define boolean IsEfiPartition( map p )
-    {
-    map m = GetFreeSpace( p["device"]:"", 0, p["used_fs"]:`none, false );
-    boolean ret = m["efi"]:false;
-    y2milestone( "IsEfiPartition ret:%1", ret );
     return( ret );
     }
 
@@ -3117,7 +3048,7 @@ define void AddMountPointsForWinParts( list<map> partitions, boolean primary,
 	    ((partnum<=max_prim)==primary) &&
 	    foreign_nr < 24 &&
 	    Partitions::IsDosWinNtPartition(fsid) &&
-	    (!Arch::ia64() || !IsEfiPartition(partition)) &&
+	    (!Arch::ia64() || partition["size_k"]:0 >= 1024*1024) &&
 	    contains( [`vfat, `ntfs], partition["used_fs"]:`none ))
 	    {
 	    new_partition["fstopt"] = 
@@ -3324,15 +3255,10 @@ global define void SetTargetMap( map<string,map> target )
 	if( target[k,"delete"]:false && haskey( tg, k ) )
 	    {
 	    if( target[k,"type"]:`CT_UNKNOWN==`CT_LVM )
-		{
 		DeleteLvmVg( target[k,"name"]:"" );
-		target[k,"delete"] = false;
-		}
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
-		{
 		DeleteEvmsCo( target[k,"name"]:"" );
-		target[k,"delete"] = false;
-		}
+	    target[k,"delete"] = false;
 	    }
 	});
     keys = maplist( string k, any e, target, ``(k));
@@ -3353,6 +3279,7 @@ global define void SetTargetMap( map<string,map> target )
 		});
 	    }
 	});
+    tg = GetTargetMap();
     keys = maplist( string k, any e, tg, ``(k));
     keys = sort( string a, string b, keys,
                  ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:6 >
@@ -3418,7 +3345,7 @@ global define void SetTargetMap( map<string,map> target )
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
 		DeleteEvmsCo( target[k,"name"]:"" );
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_DISK )
-		DeletePartitionTable( k, target[k,"size_k"]:0 );
+		DeletePartitionTable( k );
 	    }
 	});
     keys = maplist( string k, any e, target, ``(k));
@@ -3675,16 +3602,10 @@ GetIdSmaller( string disk, integer delim )
     ``{
     string ret = disk;
     map<string,map> tg = GetTargetMap();
-    if( haskey( tg[disk,"partitions",0]:$[], "nr" ))
-	{
-	list<map> ps = filter( map p, tg[disk,"partitions"]:[], ``(p["nr"]:0<delim));
-	if( size(ps)>1 )
-	    ps = sort( map a, map b, ps, ``(a["nr"]:0>b["nr"]:0));
-	if( size(ps)>0 )
-	    ret = ps[0,"device"]:"";
-	}
-    else 
-	ret = tg[disk,"partitions",0,"device"]:disk;
+    list<map> ps = filter( map p, tg[disk,"partitions"]:[], ``(p["nr"]:0<delim));
+    ps = sort( map a, map b, ps, ``(a["nr"]:0>b["nr"]:0));
+    if( size(ps)>0 )
+	ret = ps[0,"device"]:"";
     y2milestone( "GetIdSmaller disk:%1 delim:%2 ret:%3",
                  disk, delim, ret );
     return( ret );
@@ -5098,16 +5019,16 @@ global define list<string> GetTranslatedDevices( map oldv, map newv,
     map dm = BuildDiskmap( oldv );
     if( size(dm)>0 )
 	{
-	ret = maplist( string n, ret, ``(HdDiskMap( n, dm )));
+	ret = maplist( string n, names, ``(HdDiskMap( n, dm )));
 	}
     if( (oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0)) &&
         Arch::board_iseries () )
 	{
-	ret = maplist( string n, ret, ``(HdToIseries( n )));
+	ret = maplist( string n, names, ``(HdToIseries( n )));
 	}
     if( oldv["major"]:0==9 )
 	{
-	ret = maplist( string n, ret, ``(SLES9PersistentDevNames( n )));
+	ret = maplist( string n, names, ``(SLES9PersistentDevNames( n )));
 	}
     y2milestone( "GetTranslatedDevices ret %1", ret );
     return( ret );
@@ -5203,21 +5124,7 @@ global define list<string> GetEvmsRealDisk( map<string,map> tg, map p )
 	                  ``(p["used_by_type"]:`UB_NONE==`UB_LVM && 
 			     p["used_by"]:""==namel)))>0) ))
 	    {
-	    list<string> dl = [ disk ];
-	    if( disk=="/dev/md" )
-		{
-		list<map> tl = [];
-		tl = filter( map p, data["partitions"]:[],
-		             ``((p["used_by_type"]:`UB_NONE==`UB_EVMS &&
-				 p["used_by"]:""==name)||
-				(p["used_by_type"]:`UB_NONE==`UB_LVM &&
-				 p["used_by"]:""==namel)));
-		dl = maplist( map p, tl, ``(p["device"]:""));
-		dl = (list<string>)sort( dl );
-		dl = (list<string>)toset( dl );
-		y2milestone( "GetEvmsRealDisk dl %1", dl );
-		}
-	    rdisk = (list<string>)union( rdisk, dl );
+	    rdisk = (list<string>)union( rdisk, [ disk ] );
 	    }
 	});
     if( size(rdisk)==0 && !p["evms_native"]:false )
@@ -5247,16 +5154,12 @@ global define list<string> GetUsedEvmsDisks( map<string,map> tg )
 		    list<string> dl = GetEvmsRealDisk( tg, p );
 		    foreach( string d, dl,
 			``{
-			y2milestone( "GetUsedEvmsDisks d %1", d );
 			if( search( d, "/dev/md" ) == 0 )
 			    {
 			    list<string> ndl = [];
 			    foreach( string dd, map pp, tg,
 				``{
-				map pu = find( map p, pp["partitions"]:[], 
-				               ``(p["used_by"]:""==substring(d,5)) );
-				y2milestone( "GetUsedEvmsDisks disk:%1 used:%2", dd, pu );
-				if( pu!=nil && size(pu)>0 )
+				if( pp["used_by"]:"" == substring(d,5) )
 				    {
 				    ndl = add( ndl, dd );
 				    }
