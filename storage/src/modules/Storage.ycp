@@ -6555,7 +6555,7 @@ global integer KmgtStrToByte( string input )
 
     input = filterchars(input, "0123456789kKmMgGtTbBoO.");
 
-    if( findfirstnotof( input, "0123456789.") != nil  )
+    if( size(input)>0 && findfirstnotof( input, "0123456789.") != nil  )
         {
 	// check whether the last char is in "kKmM" or "bB"
 	string last_char = substring( input, size(input)-1, 1);
@@ -6600,6 +6600,10 @@ global integer KmgtStrToByte( string input )
 	    number = 0;
 	    }
         }
+    else if( size(input)==0 )
+	{
+	number = 0;
+	}
     else
         {
         number = tointeger( input );
@@ -6653,24 +6657,27 @@ global boolean ProposalLvm()
     return( proposal_lvm );
     }
 
-global void SetProposalDefault()
+global void SetProposalDefault( boolean home_only )
     {
     SetProposalHome( cfg_xml["home"]:false );
-    if( cfg_xml["prop_evms"]:false )
+    if( !home_only )
 	{
-	SetProposalEvms(true);
+	if( cfg_xml["prop_evms"]:false )
+	    {
+	    SetProposalEvms(true);
+	    }
+	else if( cfg_xml["prop_lvm"]:false )
+	    {
+	    SetProposalLvm(true);
+	    }
+	else
+	    {
+	    SetProposalLvm(false);
+	    SetProposalEvms(false);
+	    }
 	}
-    else if( cfg_xml["prop_lvm"]:false )
-	{
-	SetProposalLvm(true);
-	}
-    else
-	{
-	SetProposalLvm(false);
-	SetProposalEvms(false);
-	}
-    y2milestone( "SetProposalDefault lvm:%1 evms:%2 home:%3", 
-                 proposal_lvm, proposal_evms, proposal_home );
+    y2milestone( "SetProposalDefault ho:%4 lvm:%1 evms:%2 home:%3", 
+                 proposal_lvm, proposal_evms, proposal_home, home_only );
     }
 
 global map GetControlCfg()
@@ -6722,7 +6729,7 @@ global map GetControlCfg()
 	bt = ProductFeatures::GetBooleanFeature( "partitioning",
 						 "evms_boot" );
 	cfg_xml["evms_boot"] = bt?true:false;
-	SetProposalDefault();
+	SetProposalDefault(false);
 	y2milestone( "GetControlCfg cfg_xml %1", cfg_xml );
 	}
     return( cfg_xml );

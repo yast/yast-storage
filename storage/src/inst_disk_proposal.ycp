@@ -1,0 +1,387 @@
+/*
+ *************************************************************
+ *
+ *     YaST2      SuSE Labs                        -o)
+ *     --------------------                        /\\
+ *                                                _\_v
+ *           www.suse.de / www.suse.com
+ * ----------------------------------------------------------
+ *
+ * Author:        Michael Hager <mike@suse.de>
+ *
+ * Description:   Create a proposal for partitioning
+ *
+ *
+ *
+ *
+ *
+ *************************************************************
+
+ $Id: inst_part_proposal.ycp 43636 2008-01-15 17:25:46Z fehr $
+
+*/
+
+{
+  textdomain "storage";
+  import "Arch";
+  import "Wizard";
+  import "Mode";
+  import "Popup";
+  import "Storage";
+
+  include "wizard/sequencer.ycp";
+  include "partitioning/custom_part_check_generated.ycp";
+  include "partitioning/do_proposal_flexible.ycp";
+
+define void HandlePackages()
+    ``{
+    Pkg::DoRemove( ["lvm2"] );
+    list<string> pack = Storage::AddPackageList();
+    if( size(pack)>0 )
+	{
+	Pkg::DoProvide( pack );
+	}
+    if( Stage::initial() )
+	{
+	Storage::SaveUsedFs();
+	}
+    }
+
+define boolean AskOverwriteChanges()
+    ``{
+    boolean ret = true;
+    string target_is = Storage::GetPartMode();
+    y2milestone( "AskOverwriteChanges target_is %1", target_is );
+    if( target_is=="USE_DISK" || target_is=="CUSTOM" ||
+        target_is=="PROP_MODIFY" )
+	{
+	ret = Popup::YesNo(
+_("Computing this proposal will overwrite manual changes 
+done so far. Continue with computing proposal?"));
+	}
+    y2milestone( "AskOverwriteChanges ret:%1", ret );
+    return( ret );
+    }
+
+define void execSubscreens( boolean detailed )
+    ``{
+    y2milestone( "execSubscreens detailed %1", detailed );
+    map aliases =
+	$[ "disk" :
+		``(WFM::CallFunction("inst_disk", [true, true])),
+	   "target_sel" :
+		``(WFM::CallFunction("inst_target_selection", [true, true])),
+	   "target_part" :
+		``(WFM::CallFunction("inst_target_part", [true, true])),
+	   "resize_ui" :
+		``(WFM::CallFunction("inst_resize_ui", [true, true])),
+	  ];
+    map seq = $[];
+    seq["disk"] = $[ `abort : `abort, `cancel: `cancel, `next: `next ];
+    if( Arch::s390() || Mode::autoinst() )
+	{
+	Storage::SetPartMode("PROP_MODIFY");
+	seq["ws_start"] = "disk";
+	}
+    else
+	{
+	y2milestone( "ProposalActive %1 ProposalMode %2 PartMode %3",
+		     Storage::GetPartProposalActive(),
+		     Storage::GetPartProposalMode(), Storage::GetPartMode() );
+	seq["target_sel"] = $[ `abort : `abort, `cancel: `cancel,
+			       `next : "target_part" ];
+	seq["target_part"] = $[ `abort : `abort, `cancel: `cancel,
+				`next : "disk" ];
+	if( Arch::i386() )
+	    {
+	    seq["resize_ui"] = $[ `abort : `abort, `cancel: `cancel,
+				  `next : "disk" ];
+	    seq["target_part",`next] = "resize_ui";
+	    }
+	seq["disk"] = $[ `abort : `abort, `cancel: `cancel, `next : `next ];
+	y2milestone( "execSubscreens GetPartMode %1", Storage::GetPartMode() );
+	if( detailed && Storage::GetPartMode()!="CUSTOM" )
+	    seq["ws_start"] = "target_sel";
+	else
+	    seq["ws_start"] = "disk";
+	if( Storage::CheckBackupState("disk"))
+	    Storage::DisposeTargetBackup("disk");
+	y2milestone( "execSubscreens sequence %1", seq );
+	Wizard::OpenNextBackDialog();
+	symbol result = WizardSequencer(aliases, seq);
+	Wizard::CloseDialog();
+	HandlePackages();
+	}
+    }
+
+map<string,map> targetMap       = Storage::GetTargetMap();
+
+if( Mode::test() && size(targetMap)==0 )
+    {
+    y2warning("***** Demo mode active - using fake demo values *****");
+    targetMap = (map<string,map>)SCR::Read(.target.yast2, "demo_target_map.ycp");
+    Storage::SetTargetMap( targetMap );
+    }
+
+
+//////////////////////////////////////////////////////
+// This module is only for i386 fdisk-label
+
+if( Arch::s390() )
+    {
+    return Storage::GetExitKey();
+    }
+
+string title        = "";
+string modify_str   = "";
+string detailed_str = "";
+string lvm_str      = "";
+string evms_str     = "";
+string part_str     = "";
+
+// Title for dialogue
+title = _("Suggested Partitioning");
+// Radiobutton for partition dialog
+modify_str   = _("&Edit Partition Setup...");
+// Radiobutton for partition dialog
+detailed_str = _("&Create Partition Setup...");
+// Radiobutton for partition dialog
+part_str = _("&Partition Based");
+// Radiobutton for partition dialog
+lvm_str = _("&LVM Based");
+// Radiobutton for partition dialog
+evms_str = _("&EVMS Based");
+
+string target_is = "";
+
+string changes = "";
+if( Storage::GetPartProposalFirst() )
+    {
+    map prop = get_inst_prop( Storage::GetTargetMap() );
+    y2milestone( "prop ok:%1", prop["ok"]:false );
+    if( prop["ok"]:false )
+        {
+	map save = targetMap;
+	Storage::SetTargetMap( prop["target"]:$[] );
+	targetMap = prop["target"]:$[];
+	Storage::SetPartProposalMode( "accept" );
+	changes = Storage::ChangeText();
+	HandlePackages();
+	target_is = "SUGGESTION";
+	Storage::SetPartMode( target_is );
+	Storage::SetPartProposalFirst( false );
+	Storage::SetPartProposalActive( true );
+	}
+    else
+        {
+	Storage::SetPartProposalMode( "impossible" );
+	}
+    }
+else
+    changes = Storage::ChangeText();
+
+if( Storage::GetPartProposalMode() == "impossible" )
+    {
+    changes = "<font color=red>";
+    changes = changes + _("No automatic proposal possible.
+Specify mount points manually in the 'Partitioner' dialog.");
+    changes = changes + "</font>";
+    }
+
+y2milestone( "current proposal: %1", changes );
+
+map cfg = Storage::GetControlCfg();
+
+term rframe = 
+    `HBox(
+	`HSpacing(3),
+	`MinWidth(20,`Left( `RadioButton( `id(`part), `opt(`notify), part_str, 
+	                                  !Storage::ProposalEvms() &&
+					  !Storage::ProposalLvm() ))),
+	`HSpacing(3),
+	`MinWidth(20,`Left( `RadioButton( `id(`lvm), `opt(`notify), lvm_str, 
+	                                  Storage::ProposalLvm() ))),
+	`HSpacing(3)
+	);
+
+if( cfg["evms_config"]:false && false )  // No EVMS proposal for SLES10!!
+    {
+    boolean v = Storage::ProposalEvms() && !Storage::ProposalLvm();
+    rframe = add( rframe, `HStretch() );
+    rframe = add( rframe, 
+		  `MinWidth(20,`Left( `RadioButton( `id(`evms), evms_str, v ))) );
+    rframe = add( rframe, `HSpacing(3) );
+    }
+
+term bframe = 
+    `HBox(
+	`PushButton( `id(`modify), modify_str ),
+	`HSpacing(5),
+	`PushButton( `id(`detailed), detailed_str ),
+	`HSpacing(5)
+	);
+
+
+// Frame description in suggested partition for mode accept modify ..
+//bframe = `HCenter( `Frame( _("Partitioning"), `HVSquash( bframe ) ));
+
+term contents =
+     `VBox(
+	`VSpacing(0.5),
+	`HBox(
+	    `HSpacing(2),
+	    `VBox(
+		 `MinHeight( 7, `RichText( `id("richtext"), changes )),
+		 `VSpacing(1),
+		 `RadioButtonGroup( `id("prop_mode"), rframe ),
+		 `VSpacing(4),
+		 bframe,
+		 `VStretch()
+		 ),
+	    `HSpacing(2)
+	    ),
+	`VSpacing(2) );
+
+
+// help on suggested partitioning
+string help_text =  _("<p>
+Your hard disks have been checked. The partition setup
+displayed is proposed for your hard drive.</p>");
+
+// help text continued
+// %1 is replaced by button text
+help_text =  help_text + sformat(_("<p>
+To make only small adjustments to the proposed
+setup (like e.g. changing filesystem types), choose
+<b>%1</b> and do these modification in the expert
+partioner dialog.</p>
+"), deletechars(modify_str,"&"));
+
+// help text continued
+help_text =  help_text + sformat(_("<p>
+If the suggestion does not fit your needs, create
+your own partition setup starting with the partitions as
+currently present on the disks.  For this, select
+<b>%1</b>.
+This is also the option to choose for
+advanced options like RAID and encryption.</p>
+"), deletechars(detailed_str,"&"));
+
+if( cfg["evms_config"]:false && false )  // No EVMS proposal for SLES10!!
+    // help text continued
+    // %1 is replaced by button text
+    help_text =  help_text + _("<p>
+To create an LVM or EVMS based proposal, choose the corresponding button.</p>
+");
+else
+    // help text continued
+    // %1 is replaced by button text
+    help_text =  help_text + _("<p>
+To create an LVM based proposal, choose the corresponding button.</p>
+");
+
+
+symbol ret = nil;
+
+if( !Storage::GetTestsuite() )
+    {
+    map enab = (map)WFM::Args(0);
+    Wizard::SetContents( title, contents, help_text,
+			 enab["enable_back"]:false, enab["enable_next"]:false );
+    if( Stage::initial () )
+	Wizard::SetTitleIcon( "yast-partitioning" );
+
+    any r = nil;
+
+    repeat
+	{
+	symbol old_mode = (symbol)UI::QueryWidget( `id("prop_mode"), 
+	                                           `CurrentButton );
+	y2milestone( "old_mode %1", old_mode );
+	Wizard::SetFocusToNextButton();
+	ret = (symbol)Wizard::UserInput();
+	y2milestone( "USERINPUT %1", ret );
+
+	if( ret == `abort && Popup::ReallyAbort(true) )
+	    return `abort;
+
+	if( contains( [ `lvm, `evms, `part ], ret ) )
+	    {
+	    if( AskOverwriteChanges() )
+		{
+		target_is = "SUGGESTION";
+		if( ret==`lvm )
+		    Storage::SetProposalLvm(true);
+		else if( ret==`evms )
+		    Storage::SetProposalEvms(true);
+		else
+		    {
+		    Storage::SetProposalLvm(false);
+		    Storage::SetProposalEvms(false);
+		    }
+		Storage::ResetOndiskTarget();
+		Storage::AddMountPointsForWin(Storage::GetTargetMap());
+		map prop = get_inst_prop( Storage::GetTargetMap());
+		if( !prop["ok"]:false )
+		    {
+		    Popup::Error( _("Impossible to create the requested proposal.") );
+		    Storage::SetPartProposalMode( "impossible" );
+		    }
+		else
+		    {
+		    targetMap = prop["target"]:$[];
+		    Storage::SetPartProposalMode( "accept" );
+		    Storage::SetPartProposalActive( true );
+		    }
+		Storage::SetPartMode( target_is );
+		Storage::SetTargetMap( targetMap );
+		changes = Storage::ChangeText();
+		UI::ChangeWidget( `id("richtext"), `Value, changes );
+		}
+	    else
+		{
+		UI::ChangeWidget( `id("prop_mode"), `CurrentButton, old_mode );
+		}
+	    }
+	else if( ret==`modify || ret==`detailed )
+	    {
+	    Storage::SetPartProposalFirst( false );
+	    Storage::SetPartProposalActive( false );
+	    if( ret==`modify )
+		{
+		target_is = "PROP_MODIFY";
+		Storage::SetPartProposalMode( "modify" );
+		}
+	    else
+		{
+	        if( Storage::GetPartMode()!="CUSTOM" )
+		    {
+		    target_is = "NORMAL";
+		    }
+		else
+		    {
+		    target_is = "CUSTOM";
+		    }
+		Storage::SetPartDisk( "" );
+		Storage::SetPartProposalMode( "detailed" );
+		}
+	    Storage::SetPartMode( target_is );
+	    execSubscreens( ret==`detailed );
+	    changes = Storage::ChangeText();
+	    UI::ChangeWidget( `id("richtext"), `Value, changes );
+	    if(  ret==`detailed )
+		{
+		if( Storage::ProposalLvm() )
+		    UI::ChangeWidget( `id("prop_mode"), `CurrentButton, `lvm );
+		else if( Storage::ProposalEvms() )
+		    UI::ChangeWidget( `id("prop_mode"), `CurrentButton, `evms );
+		else 
+		    UI::ChangeWidget( `id("prop_mode"), `CurrentButton, `part );
+		}
+	    }
+	} until ( ret == `next || ret == `back || ret == `cancel );
+    }
+Storage::SaveExitKey( ret );
+
+return ret;
+}
