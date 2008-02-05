@@ -1259,6 +1259,8 @@ map dmPartCoMap( any infos, map d )
     list<string> ls = splitstring( LibStorage::DmPartCoInfo::swig_devices_get(infos), " " );
     y2milestone( "ls=%1", ls );
     d["devices"] = ls;
+    integer t = LibStorage::DmPartCoInfo::swig_minor_get(infos);
+    d["minor"] = t;
     y2milestone( "dmPartCoMap ret:%1", d );
     return( d );
     }
@@ -3542,6 +3544,7 @@ global define map<string,map> GetTargetMap()
     InitLibstorage();
     if( !probe_done && !Mode::config() )
 	{
+	map<string,string> bios_id_raid = $[];
 	y2milestone ("probing StorageDevices" );
 	map<string,string> rename = $[];
 	tmp = (map<string,map>)StorageDevices::Probe(true);
@@ -3549,12 +3552,19 @@ global define map<string,map> GetTargetMap()
 	    ``{
 	    map dtmp = Storage::GetDiskPartitionTg( dev, $[] )[0]:$[];
 	    y2milestone( "probing dev %1 disk %2", dev, dtmp );
-	    if( size(dtmp["disk"]:"")>0 && dev != dtmp["disk"]:"" )
+	    if( search( dev, "/dev/dm-" )==0 )
+		{
+		if( size(disk["bios_id"]:"")>0 )
+		    bios_id_raid[dev] = disk["bios_id"]:"";
+		}
+	    else if( size(dtmp["disk"]:"")>0 && dev != dtmp["disk"]:"" )
 		{
 		rename[dev] = dtmp["disk"]:"";
 		y2milestone( "probing rename %1", rename );
 		}
 	    });
+	tmp = filter( string dev, map disk, tmp,
+	              ``(search( dev, "/dev/dm-" )!=0));
 	if( size(rename)>0 )
 	    {
 	    foreach( string old, string new, rename,
@@ -3594,6 +3604,22 @@ global define map<string,map> GetTargetMap()
 		if( c["type"]:`CT_UNKNOWN!=`CT_DISK )
 		    tmp[c["device"]:""] = getContainerInfo( c );
 		});
+	    if( size(bios_id_raid)>0 )
+		{
+		y2milestone( "bios_id_raid:%1", bios_id_raid );
+		foreach( string dm, string bios, bios_id_raid,
+		    ``{
+		    integer pos = findfirstof( dm, "0123456789" );
+		    integer minor = tointeger( substring( dm, pos ));
+		    y2milestone( "pos:%1 minor:%2", pos, minor );
+		    foreach( string dev, map c, tmp,
+			``{
+			if( c["type"]:`CT_UNKNOWN == `CT_DMRAID &&
+			    c["minor"]:0 == minor )
+			    tmp[dev,"bios_id"] = bios;
+			});
+		    });
+		}
 	    StorageMap[targets_key] = tmp;
 	    }
 	}
