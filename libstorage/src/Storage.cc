@@ -5315,8 +5315,9 @@ Storage::getFreeInfo( const string& device, unsigned long long& resize_free,
 			ret = false;
 		    }
 		win = false;
-		char * files[] = { "boot.ini", "msdos.sys", "io.sys",
-				   "config.sys", "MSDOS.SYS", "IO.SYS" };
+		const char * files[] = { "boot.ini", "msdos.sys", "io.sys",
+					 "config.sys", "MSDOS.SYS", "IO.SYS",
+					 "bootmgr", "$Boot" };
 		string f;
 		unsigned i=0;
 		while( !win && i<lengthof(files) )
