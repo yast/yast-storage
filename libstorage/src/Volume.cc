@@ -1172,6 +1172,8 @@ int Volume::resizeFs()
 	    case EXT2:
 	    case EXT3:
 		cmd = "resize2fs -f " + mountDevice();
+		if( isMounted() )
+		    cmd = "ext2online -q " + mountDevice();
 		if( needShrink() )
 		    cmd += " " + decString(size_k) + "K";
 		c.execute( cmd );
