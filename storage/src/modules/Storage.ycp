@@ -578,7 +578,7 @@ global void UpdateChangeTime()
     StorageMap["targets_time"] = change_time;
     }
 
-/* eturn list of partitions of map <tg> */
+/* return list of partitions of map <tg> */
 define list<map> GetPartitionLst( map<string,map> tg, string device )
     ``{
     list<map> ret = [];
@@ -6921,13 +6921,27 @@ global symbol GetMountBy( string device )
     return( ret );
     }
 
+
+global boolean IsKernelDeviceName(string device)
+{
+    return substring(device, 0, 6) != "LABEL=" &&
+	substring(device, 0, 5) != "UUID=" &&
+	substring(device, 0, 13) != "/dev/disk/by-";
+}
+
+
 global boolean DeviceMatchFstab( string device, string fstab_spec )
     {
     boolean ret = false;
     map<string,map> tg = GetTargetMap();
-    string ts = GetTranslatedDevices( $[], $[], [ fstab_spec ] )[0]:"";
-    if( ts!=fstab_spec )
-	y2milestone( "DeviceMatchFstab translate %1 --> %2", fstab_spec, ts );
+    string ts = fstab_spec;
+    if (IsKernelDeviceName(fstab_spec))
+    {
+	// translate fstab_spec from old to new kernel device name
+	ts = GetTranslatedDevices( $[], $[], [ fstab_spec ] )[0]:"";
+	if( ts!=fstab_spec )
+	    y2milestone( "DeviceMatchFstab translate %1 --> %2", fstab_spec, ts );
+    }
     list<map> pl = GetPartitionLst( tg, ts );
     ret = find( map p, pl, ``(p["device"]:"" == device) )!=nil;
     y2milestone( "DeviceMatchFstab device:%1 fstab:%2 ret:%3", device, 
