@@ -4,12 +4,12 @@
 # $Id$
 #
 
-scrconf_DATA = etc_cryptotab.scr \
-	       proc_swaps.scr	 \
-	       proc_partitions.scr \
-	       dasddev.scr  	 \
-	       etc_mtab.scr      \
-	       cfg_storage.scr   \
-	       run_swapon_s.scr
+scrconf_DATA = etc_cryptotab.scr	\
+	       etc_mtab.scr		\
+	       proc_dasddev.scr		\
+	       proc_partitions.scr	\
+	       proc_swaps.scr		\
+	       run_swapon_s.scr		\
+	       sysconfig_storage.scr
 
 EXTRA_DIST = $(scrconf_DATA)
