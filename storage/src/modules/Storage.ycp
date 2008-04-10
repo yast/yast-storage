@@ -1076,7 +1076,7 @@ global define map<string,map> AddFstabInfo( map<string,map> target, boolean line
     return( target );
     }
 
-define string convertFsOptionMapToString( map<any,map> fsopt )
+string convertFsOptionMapToString( map<any, map> fsopt, symbol cmd )
     {
     string ret = "";
 
@@ -1090,9 +1090,12 @@ define string convertFsOptionMapToString( map<any,map> fsopt )
 	    string option_str   = option["option_str"]:"";
 	    any    option_value = option["option_value"]:(any)"";
 	    boolean option_blank = option["option_blank"]:false;
-	    y2milestone( "convertFsOptionMapToString k:%1 opt:%2 val:%3", 
-	                 option_key, option, option_value );
+	    symbol option_cmd = option["option_cmd"]:`mkfs;
+	    y2milestone( "convertFsOptionMapToString k:%1 opt:%2 val:%3 cmd:%4",
+	                 option_key, option, option_value, option_cmd );
 
+	    if (cmd == option_cmd)
+	    {
 	    if( is(option_value, string) && option_value != nil )
 		{
 		if( !contains( ignore, option_value ))
@@ -1123,6 +1126,7 @@ define string convertFsOptionMapToString( map<any,map> fsopt )
 		    ret = ret + " ";
 		ret = ret + sformat("%1", option_value);
 		}
+	    }
 	    });
 	}
     if( size(fsopt)>0 || size(ret)>0 )
@@ -1130,14 +1134,17 @@ define string convertFsOptionMapToString( map<any,map> fsopt )
     return ret;
     };
 
-map convertStringToFsOptionMap( string opts, symbol fs )
+map<any, map> convertStringToFsOptionMap( string opts, symbol fs, symbol cmd )
     {
-    map ret = $[];
-    y2milestone( "convertStringToFsOptionMap opts:\"%1\" fs:%2", opts, fs );
+    map<any, map> ret = $[];
+    y2milestone( "convertStringToFsOptionMap opts:\"%1\" fs:%2 cmd:%3", opts, fs, cmd );
     integer pos = findfirstnotof( opts, " \t" );
     if( pos>0 )
 	opts = substring( opts, pos );
+
     list<map> op = (list<map>)FileSystems::GetOptions(fs);
+    op = filter(map o, op, { return o[`option_cmd]:`mkfs == cmd; });
+
     while( size(opts)>0 )
 	{
 	boolean found = false;
@@ -1148,7 +1155,8 @@ map convertStringToFsOptionMap( string opts, symbol fs )
 	    if( !found && size(os)>0 && search( opts, os )==0 )
 		{
 		found = true;
-		m["option_str"] = os;
+ 		m["option_str"] = os;
+		m["option_cmd"] = o[`option_cmd]:`mkfs;
 		if( o[`type]:`text==`boolean )
 		    {
 		    m["option_value"] = true;
@@ -1309,12 +1317,19 @@ map volumeMap( any vinfo, map p )
 	{
 	p["mkfs_opt"] = tmp;
 	p["fs_options"] = 
-	    convertStringToFsOptionMap( tmp, p["detected_fs"]:`unknown );
+	    convertStringToFsOptionMap( tmp, p["detected_fs"]:`unknown, `mkfs );
 	}
     else
 	{
 	if( haskey( p, "fs_options" ))
 	    p = remove( p, "fs_options" );
+	}
+    tmp = LibStorage::VolumeInfo::swig_tunefs_options_get(vinfo);
+    if( size(tmp)>0 )
+	{
+	p["tunefs_opt"] = tmp;
+	p["fs_options"] = union(p["fs_options"]:$[],
+	    convertStringToFsOptionMap( tmp, p["detected_fs"]:`unknown, `tunefs ));
 	}
     tmp = LibStorage::VolumeInfo::swig_dtxt_get(vinfo);
     if( size(tmp)>0 )
@@ -2683,12 +2698,24 @@ global boolean ChangeVolumeProperties( map part )
 	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
 	}
     if( ret==0 && part["format"]:false && 
-	convertFsOptionMapToString(part["fs_options"]:$[]) != curr["mkfs_opt"]:"" )
+	convertFsOptionMapToString(part["fs_options"]:$[], `mkfs) != curr["mkfs_opt"]:"" )
 	{
 	changed = true;
-	ts = convertFsOptionMapToString(part["fs_options"]:$[]);
+	ts = convertFsOptionMapToString(part["fs_options"]:$[], `mkfs);
 	y2milestone( "FsOption ts:%1", ts );
 	ret = LibStorage::StorageInterface::changeMkfsOptVolume( sint, dev, ts );
+	if( ret<0 )
+	    y2error( "ChangeVolumeProperties sint ret:%1", ret );
+	else
+	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+	}
+    if( ret==0 && part["format"]:false && 
+	convertFsOptionMapToString(part["fs_options"]:$[], `tunefs) != curr["tunefs_opt"]:"" )
+	{
+	changed = true;
+	ts = convertFsOptionMapToString(part["fs_options"]:$[], `tunefs);
+	y2milestone( "FsOption ts:%1", ts );
+	ret = LibStorage::StorageInterface::changeTunefsOptVolume( sint, dev, ts );
 	if( ret<0 )
 	    y2error( "ChangeVolumeProperties sint ret:%1", ret );
 	else
@@ -4035,7 +4062,7 @@ global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
 
     if( size(fs_opts)>0 )
 	ret["fs_options"] = 
-	    convertStringToFsOptionMap( fs_opts, ret["used_fs"]:`unknown );
+	    convertStringToFsOptionMap( fs_opts, ret["used_fs"]:`unknown, `mkfs );
     else
 	ret["fs_options"] = FileSystems::DefaultFormatOptions( ret );
 
