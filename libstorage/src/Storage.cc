@@ -2530,6 +2530,7 @@ int Storage::evmsActivate( bool forced )
 			++ci;
 		    if( ci==i->second.end() )
 			{
+			ep = evCoPair(evmsCo);
 			coi = ep.begin();
 			while( coi != ep.end() )
 			    {
