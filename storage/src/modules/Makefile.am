@@ -7,11 +7,6 @@ YCPCFLAGS = -I . -I include -M ../../../libstorage/bindings/ycp
 YCPC_LD_LIBRARY_PATH = ../../../libstorage/src/.libs
 YCPC_Y2DIR = ../../../libstorage/src/.libs
 
-yncludedir = @yncludedir@/storage
-
-ynclude_DATA =		\
-	routines.ycp
-
 module_DATA =				\
 		Partitions.ycp		\
 		FileSystems.ycp		\
@@ -20,7 +15,7 @@ module_DATA =				\
 		StorageControllers.ycp  \
 		StorageDevices.ycp
 
-EXTRA_DIST = $(module_DATA) $(ynclude_DATA)
+EXTRA_DIST = $(module_DATA)
 
 include:
 	mkdir include && ln -sf ../../include include/partitioning
