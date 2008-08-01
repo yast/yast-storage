@@ -15,8 +15,9 @@
  *
  */
 
-  {
-    
+{
+    import "Integer";
+      
 
 include "partitioning/partition_defines.ycp";
 include "partitioning/signatures.ycp";
@@ -35,12 +36,11 @@ define string lvmVg( string vg )
 //////////////////////////////////////////////////////////////////////
 // get a list of all volume groups in the targetMap
     
-define list get_vgs( map<string,map> targetMap )
-    ``{
-    list lvm_vg = [];
+list<string> get_vgs( map<string,map> targetMap )
+{
+    list<string> lvm_vg = [];
 	
-    foreach( string dev, map devmap, targetMap,
-	``{
+    foreach( string dev, map devmap, targetMap, {
 	if ( devmap["type"]:`CT_UNKNOWN==`CT_LVM )
 	    {
 	    // add a found volume group
@@ -48,7 +48,7 @@ define list get_vgs( map<string,map> targetMap )
 	    }
 	});
     return( lvm_vg );
-    };
+};
 
 //////////////////////////////////////////////////////////////////////
 // pesize to byte
@@ -56,35 +56,17 @@ define list get_vgs( map<string,map> targetMap )
 // 
 // return "0" if input is invalid
 // 
-// pesize is valid   8K to 512M in power of 2
-// 8 is 8k
-// 16K == 16k == 16KB == 16kb
-define integer pesize_str_to_byte( string input )
-    ``{
-    integer num = kmgt_str_to_byte( input );
-    if( findfirstnotof( input, "0123456789 " ) == nil )
-	num = num*1024;
+// pesize is valid 8kB to 512MB in power of 2
+define integer pesize_str_to_byte(string input)
+{
+    integer ret = kmgt_str_to_byte(input);
 
-    integer ret = num;
-
-    if( ret % 1024 != 0 )
+    if (!Integer::IsPowerOfTwo(ret))
 	ret = 0;
-    else
-	{
-	while( num>1 && ret>0 )
-	    {
-	    if( num%2 != 0 )
-		ret = 0;
-	    else
-		num = num/2;
-            }
-        }
-    if( ret < 8*1024 || ret > 524288*1024 )
-        {
+    else if (ret < 8*1024 || ret > 512*1024*1024)
         ret = 0;
-        }
-    return( ret );
-    };
+    return ret;
+};
 
 
 //////////////////////////////////////////////////////////////////////

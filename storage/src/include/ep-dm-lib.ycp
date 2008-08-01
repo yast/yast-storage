@@ -1,0 +1,40 @@
+/**
+ * File:	ep-dm-lib.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    void EpEditDmDevice(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No DM device selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+
+	if (data["used_by"]:"" != "")
+	{
+	    Error(sformat(_("The DM %1 is in use. It cannot be
+edited. To edit %1, make sure it is not used."), device));
+	    return;
+	}
+
+	if (DlgEditDmVolume(data))
+	{
+	    Debug("edit dm from data", data);
+
+	    Storage::ChangeVolumeProperties(data);
+
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	    UpdateTableFocus(device);
+	}
+    }
+}

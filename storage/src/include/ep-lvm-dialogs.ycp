@@ -1,0 +1,549 @@
+/**
+ * File:	ep-lvm-dialogs.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    boolean CheckVgName(string name)
+    {
+	if (size(name) == 0)
+	{
+	    // error popup text
+	    Error(_("Enter a name for the volume group."));
+	    return false;
+	}
+
+	if (size(name) > 128)
+	{
+	    // error popup text
+	    Error(_("The name for the volume group is longer than 128 characters."));
+	    return false;
+	}
+
+	if (substring(name, 0, 1) == "-")
+	{
+	    // error popup text
+	    Error(_("The name for the volume group must not start with a \"-\"."));
+	    return false;
+	}
+
+	string allowed_chars = "0123456789" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+	    "abcdefghijklmnopqrstuvwxyz" + "._-+";
+	if (findfirstnotof(name, allowed_chars) != nil)
+	{
+	    // error popup text
+	    Error(_("The name for the volume group contains illegal characters. Allowed
+are alphanumeric characters, \".\", \"_\", \"-\" and \"+\"."));
+	    return false;
+	}
+
+	return true;
+    }
+
+
+    boolean CheckVgNameConflict(string name, list<string> vgs)
+    {
+	if (contains(vgs, name))
+	{
+	    // error popup text
+	    Error(sformat(_("The volume group \"%1\" already exists."), name ));
+	    return false;
+	}
+
+	if (!check_vgname_dev(name))
+	{
+	    // error popup text
+	    Error(sformat(_("The volume group name \"%1\" conflicts
+with another entry in the /dev directory.\n"), name));
+	    return false;
+	}
+
+	return true;
+    }
+
+
+    boolean CheckPeSize(integer pe_size)
+    {
+	if (!Integer::IsPowerOfTwo(pe_size) || pe_size < 1024)
+	{
+	    Error(_("The data entered is invalid. Insert a physical extent size larger than 1kB
+in powers of 2, for example, \"512kB\" or \"4MB\""));
+	    return false;
+	}
+	else
+	{
+	    return true;
+	}
+    }
+
+
+    boolean CheckNumberOfDevicesForVg(integer num)
+    {
+	if (num < 1)
+	{
+	    Error(sformat(_("Select at least one device.")));
+	    return false;
+	}
+	else
+	{
+	    return true;
+	}
+    }
+
+
+    boolean CheckLvName(string lv_name)
+    {
+	if (size(lv_name) == 0)
+	{
+	    // error popup text
+	    Error(_("Enter a name for the logical volume."));
+	    return false;
+	}
+
+	if (size(lv_name) > 128)
+	{
+	    // error popup text
+	    Error(_("The name for the logical volume is longer than 128 characters."));
+	    return false;
+	}
+
+	string allowed_chars = "0123456789" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+	    "abcdefghijklmnopqrstuvwxyz" + "._-+";
+	if (findfirstnotof(lv_name, allowed_chars) != nil)
+	{
+	    // error popup text
+	    Error(_("The name for the logical volume contains illegal characters. Allowed
+are alphanumeric characters, \".\", \"_\", \"-\" and \"+\"."));
+	    return false;
+	}
+
+	return true;
+    }
+
+
+    boolean CheckLvNameConflict(string lv_name, string vg_name, list<string> lvs)
+    {
+	if (contains(lvs, lv_name))
+	{
+	    // error popup text
+	    Popup::Error(sformat(_("A logical volume named \"%1\" already exists
+in volume group \"%2\"."),
+				 lv_name, vg_name));
+	    return false;
+	}
+
+	return true;
+    }
+
+
+    symbol MiniWorkflowStepVg(map<string, any> &data)
+    {
+	y2milestone("MiniWorkflowStepVg data:%1", data);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	list<string> vgs = get_vgs(target_map);
+
+	string vgname = size(vgs) == 0 ? "system" : "";
+	integer pesize = 4*1024*1024;
+	list<string> pvs = [];
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size ]);
+
+	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return pv["used_by"]:"" == ""; });
+
+	term contents = `VBox();
+
+	list<term> pesizes_list = maplist(integer i, Integer::RangeFrom(19, 26), {
+	    return `item(`id(2 << i), Storage::ByteToHumanStringWithPrecision(2 << i, 2, true));
+	});
+
+	contents = add(contents, `Left(`InputField(`id("vgname"), "Volume Group Name")));
+	contents = add(contents, `Left(`ComboBoxSelected(`id("pesize"), `opt(`editable), _("&Physical Extent Size"), pesizes_list, `id(pesize))));
+
+	contents = add(contents, DevicesSelectionBox::Create(unused_pvs, [], fields, nil,
+							    _("Available Physical Volumes:"),
+							    _("Selected Physical Volumes:")));
+
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "TODO help");
+	MiniWorkflow::SetLastStep(true);
+
+	symbol widget = nil;
+
+	repeat
+	{
+	    widget = MiniWorkflow::UserInput();
+	    DevicesSelectionBox::Handle(widget);
+
+	    switch (widget)
+	    {
+		case `next:
+		{
+		    vgname = (string) UI::QueryWidget(`id("vgname"), `Value);
+
+		    any tmp = UI::QueryWidget(`id("pesize"), `Value);
+		    if (is(tmp, integer))
+			pesize = (integer) tmp;
+		    else if (!Storage::HumanStringToByte((string) tmp, pesize))
+			pesize = 0; // will trigger error below
+
+		    pvs = maplist(map pv, DevicesSelectionBox::GetSelectedDevices(), {
+			return pv["device"]:"";
+		    });
+
+		    if (!CheckVgName(vgname) || !CheckVgNameConflict(vgname, vgs) ||
+			!CheckPeSize(pesize) || !CheckNumberOfDevicesForVg(size(pvs)))
+			widget = `again;
+		}
+		break;
+	    }
+	}
+	until (widget == `abort || widget == `back || widget == `next);
+
+	if (widget == `next)
+	{
+	    data["name"] = vgname;
+	    data["pesize"] = pesize;
+	    data["devices"] = pvs;
+
+	    widget = `finish;
+	}
+
+	y2milestone("MiniWorkflowStepVg data:%1 ret:%2", data, widget);
+
+	return widget;
+    }
+
+
+    symbol MiniWorkflowStepResizeVg(map<string, any> &data)
+    {
+	y2milestone("MiniWorkflowStepResizeVg data:%1", data);
+
+	string vgname = data["name"]:"error";
+	list<string> pvs_new = [];
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return pv["used_by"]:"" == ""; });
+	list<map> used_pvs = filter(map pv, get_possible_pvs(target_map), { return pv["used_by"]:"" == vgname; });
+
+	term contents = `VBox();
+
+	contents = add(contents, DevicesSelectionBox::Create(unused_pvs, used_pvs, fields, nil,
+							    _("Available Physical Volumes:"),
+							    _("Selected Physical Volumes:")));
+
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "TODO help");
+	MiniWorkflow::SetLastStep(true);
+
+	symbol widget = nil;
+
+	repeat
+	{
+	    widget = MiniWorkflow::UserInput();
+	    DevicesSelectionBox::Handle(widget);
+
+	    switch (widget)
+	    {
+		case `next:
+		{
+		    pvs_new = maplist(map pv, DevicesSelectionBox::GetSelectedDevices(), {
+			return pv["device"]:"";
+		    });
+
+		    if (!CheckNumberOfDevicesForVg(size(pvs_new)))
+			widget = `again;
+
+		    // TODO: overall size check
+		}
+		break;
+	    }
+	}
+	until (widget == `abort || widget == `back || widget == `next);
+
+	if (widget == `next)
+	{
+	    data["devices_new"] = pvs_new;
+
+	    widget = `finish;
+	}
+
+	y2milestone("MiniWorkflowStepResizeVg data:%1 ret:%2", data, widget);
+
+	return widget;
+    }
+
+
+    boolean DlgCreateVolumeGroupNew(map<string, any> &data)
+    {
+	map<string, any> aliases = $[
+	    "TheOne" : ``(MiniWorkflowStepVg(data))
+	];
+
+	map<string, any> sequence = $[
+	    "TheOne" : $[ `finish : `finish ]
+	];
+
+	symbol widget = MiniWorkflow::Run(_("Add Volume Group"), lvm_icon, aliases, sequence, "TheOne");
+
+	return widget == `finish;
+    }
+
+
+    symbol MiniWorkflowStepLvSize(map<string, any> &data)
+    {
+	y2milestone("MiniWorkflowStepLvSize data:%1", data);
+
+	integer min_size_k = data["pesize"]:0 / 1024;
+	integer max_size_k = data["max_size_k"]:0;
+	integer size_k = data["size_k"]:max_size_k;
+
+	symbol what = (size_k == max_size_k) ? `max_size : `manual_size;
+
+	integer stripes = data["stripes"]:1;
+	integer stripe_size = data["stripesize"]:64*1024;
+
+	term frames = `VStackFrames();
+
+	frames = add(frames,
+		     `Frame(_("Size"),
+			    `RadioButtonGroup(`id(`size),
+					      `VBox(
+						  `LeftRadioButton(`id(`max_size), `opt(`notify),
+								   sformat(_("Maximum Size (%1)"), Storage::KByteToHumanString(max_size_k))),
+						  `LeftRadioButtonWithAttachment(`id(`manual_size), `opt(`notify), _("Manual Size"),
+										 `VBox(`id(`manual_size_attachment),
+										       `MinWidth(15, `InputField(`id(`size_input), `opt(`shrinkable), _("Size")))
+										     )
+						      )
+						  )
+				)));
+
+	list<term> stripes_list = maplist(integer i, Integer::RangeFrom(1, 9), {
+	    return `item(`id(i), tostring(i));
+	});
+
+	list<term> stripe_sizes_list = maplist(integer i, Integer::RangeFrom(11, 20), {
+	    return `item(`id(2 << i), Storage::ByteToHumanStringWithPrecision(2 << i, 2, true));
+	});
+
+	frames = add(frames, `Frame("Stripes",
+				    `HBox(
+					`Left(`ComboBoxSelected(`id(`stripes), `opt(`notify), _("Number"), stripes_list, `id(stripes))),
+					`Left(`ComboBoxSelected(`id(`stripe_size), _("Size"), stripe_sizes_list, `id(stripe_size))),
+					`HStretch())
+			 )
+	    );
+
+	term contents = `HVSquash(frames);
+
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "TODO help");
+	MiniWorkflow::SetLastStep(false);
+
+	UI::ChangeWidget(`id(`size), `Value, what);
+	UI::ChangeWidget(`id(`manual_size_attachment), `Enabled, what == `manual_size);
+	UI::ChangeWidget(`id(`size_input), `Value, Storage::KByteToHumanString(size_k));
+	UI::ChangeWidget(`id(`stripe_size), `Enabled, stripes > 1);
+
+	symbol widget = nil;
+
+	repeat
+	{
+	    widget = MiniWorkflow::UserInput();
+
+	    switch (widget)
+	    {
+		case `max_size:
+		    UI::ChangeWidget(`id(`manual_size_attachment), `Enabled, false);
+		    break;
+
+		case `manual_size:
+		    UI::ChangeWidget(`id(`manual_size_attachment), `Enabled, true);
+		    break;
+
+		case `stripes:
+		    stripes = (integer) UI::QueryWidget(`id(`stripes), `Value);
+		    UI::ChangeWidget(`id(`stripe_size), `Enabled, stripes > 1);
+		    break;
+
+		case `next:
+		    what = (symbol) UI::QueryWidget(`id(`size), `Value);
+
+		    if (what == `manual_size)
+		    {
+			string tmp = (string) UI::QueryWidget(`id(`size_input), `Value);
+			if (!Storage::HumanStringToKByte(tmp, size_k))
+			{
+			    Error(_("The size entered is invalid. Enter a value like \"500MB\" or \"1GB\"."));
+			    widget = `again;
+			}
+			else if (size_k < min_size_k || size_k > max_size_k)
+			{
+			    Error(sformat(_("The size entered is invalid. Enter a size beteen %1 and %2."),
+					  Storage::KByteToHumanString(min_size_k),
+					  Storage::KByteToHumanString(max_size_k)));
+			    widget = `again;
+			}
+		    }
+
+		    stripes = (integer) UI::QueryWidget(`id(`stripes), `Value);
+		    stripe_size = (integer) UI::QueryWidget(`id(`stripe_size), `Value);
+		    break;
+	    }
+	}
+	until (widget == `abort || widget == `back || widget == `next);
+
+	if (widget == `next)
+	{
+	    switch (what)
+	    {
+		case `max_size:
+		    data["size_k"] = max_size_k;
+		    break;
+
+		case `manual_size:
+		    data["size_k"] = size_k;
+		    break;
+	    }
+
+	    data["stripes"] = stripes;
+	    data["stripesize"] = stripe_size/1024;
+	}
+
+	y2milestone("MiniWorkflowStepLvSize data:%1 ret:%2", data, widget);
+
+	return widget;
+    }
+
+
+    boolean DlgResizeVolumeGroup(map<string, any> &data)
+    {
+	map<string, any> aliases = $[
+	    "TheOne" : ``(MiniWorkflowStepResizeVg(data))
+	];
+
+	map<string, any> sequence = $[
+	    "TheOne" : $[ `finish : `finish ]
+	];
+
+	string title = sformat(_("Resize Volume Group %1"), data["device"]:"error");
+
+	symbol widget = MiniWorkflow::Run(title, lvm_icon, aliases, sequence, "TheOne");
+
+	return widget == `finish;
+    }
+
+
+    symbol MiniWorkflowStepLvName(map<string, any> &data)
+    {
+	y2milestone("MiniWorkflowStepLvName data:%1", data);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	string vg_name = data["vg_name"]:"error";
+
+	list<string> lvs = get_lv_names(target_map, vg_name);
+
+	string lv_name = data["name"]:"";
+
+	term contents = `HVSquash(`Frame("Name",
+				`VBox(
+				    `Left(`InputField(`id(`lvname), "Logical Volume", lv_name)))
+				      )
+	    );
+
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "TODO help");
+	MiniWorkflow::SetLastStep(false);
+
+	symbol widget = nil;
+
+	repeat
+	{
+	    widget = MiniWorkflow::UserInput();
+
+	    switch (widget)
+	    {
+		case `next:
+		    lv_name = (string) UI::QueryWidget(`id(`lvname), `Value);
+
+		    if (!CheckLvName(lv_name) || !CheckLvNameConflict(lv_name, vg_name, lvs))
+			widget = `again;
+
+		    break;
+	    }
+	}
+	until (widget == `abort || widget == `back || widget == `next);
+
+	if (widget == `next)
+	{
+	    data["name"] = lv_name;
+	}
+
+	y2milestone("MiniWorkflowStepLvName data:%1 ret:%2", data, widget);
+
+	return widget;
+    }
+
+
+    boolean DlgCreateLogicalVolume(map<string, any> &data)
+    {
+	map<string, any> aliases = $[
+	    "Name"        : ``(MiniWorkflowStepLvName(data)),
+	    "Size"        : ``(MiniWorkflowStepLvSize(data)),
+	    "FormatMount" : ``(MiniWorkflowStepFormatMount(data)),
+	    "Password"	  : ``(MiniWorkflowStepPassword(data))
+	];
+
+	map<string, any> sequence = $[
+	    "Name"        : $[ `next : "Size" ],
+	    "Size"        : $[ `next : "FormatMount",
+			       `finish : `finish ],
+	    "FormatMount" : $[ `next : "Password",
+			       `finish : `finish ],
+	    "Password"    : $[ `finish : `finish ]
+	];
+
+	string title = sformat(_("Add Logical Volume on %1"), "/dev/" + data["vg_name"]:"error");
+
+	symbol widget = MiniWorkflow::Run(title, lvm_lv_icon, aliases, sequence, "Name");
+
+	return widget == `finish;
+    }
+
+
+    boolean DlgEditLogicalVolume(map<string, any> &data)
+    {
+	string device = data["device"]:"error";
+
+	map<string, any> aliases = $[
+	    "FormatMount" : ``(MiniWorkflowStepFormatMount(data)),
+	    "Password"	  : ``(MiniWorkflowStepPassword(data))
+	];
+
+	map<string, any> sequence = $[
+	    "FormatMount" : $[ `next : "Password",
+			       `finish : `finish ],
+	    "Password"    : $[ `finish : `finish ]
+	];
+
+	string title = sformat(_("Edit Logical Volume %1"), device);
+
+	symbol widget = MiniWorkflow::Run(title, lvm_lv_icon, aliases, sequence, "FormatMount");
+
+	return widget == `finish;
+    }
+
+
+    void DlgResizeLogicalVolumeNew(map <string, any> &data)
+    {
+	//the empty map is here because data on whole disk need to be passed
+	//to resize dialog for partitions (to get available space etc.)  
+	//for LVMs we probably don't need it)
+	DlgResize(data, $[], `lv);
+    }
+}

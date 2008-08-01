@@ -1,0 +1,141 @@
+/**
+ * File:	StorageSettings.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    module "StorageSettings";
+
+
+    textdomain "storage";
+
+
+    import "Storage";
+    import "Partitions";
+
+
+    symbol display_name = nil;
+
+    list<symbol> hidden_fields = nil;
+
+
+    global void SetDisplayName(symbol new_display_name)
+    {
+	display_name = new_display_name;
+    }
+
+    global symbol GetDisplayName()
+    {
+	if (display_name == nil)
+	{
+	    string tmp = (string) SCR::Read(.sysconfig.storage.DISPLAY_NAME);
+	    if (tmp == nil || !contains([ "device", "id", "path" ], tolower(tmp)))
+		tmp = "device";
+
+	    display_name = symbolof(toterm(tolower(tmp)));
+	}
+
+	return display_name;
+    }
+
+    global string DisplayName(map data)
+    {
+	string ret = "";
+
+	switch (GetDisplayName())
+	{
+	    case `path:
+		ret = data["udev_path"]:"";
+		break;
+
+	    case `id:
+		ret = data["udev_id", 0]:"";
+		break;
+	}
+
+	if (ret == "")
+	    ret = data["device"]:"";
+
+	return ret;
+    }
+
+
+    global void SetHiddenFields(list<symbol> new_hidden_fields)
+    {
+	hidden_fields = toset(new_hidden_fields);
+    }
+
+
+    global list<symbol> GetHiddenFields()
+    {
+	if (hidden_fields == nil)
+	{
+	    string tmp = (string) SCR::Read(.sysconfig.storage.HIDDEN_FIELDS);
+	    if (tmp == nil)
+		tmp = "";
+
+	    hidden_fields = toset(maplist(string field, splitstring(tmp, " \t"), {
+		return symbolof(toterm(tolower(field)));
+	    }));
+	}
+
+	return hidden_fields;
+    }
+
+
+    global list<symbol> FilterTable(list<symbol> fields)
+    {
+	list<symbol> hidden = GetHiddenFields();
+
+	if (GetDisplayName() != `path)
+	    hidden = toset(add(hidden, `udev_path));
+	else
+	    hidden = filter(symbol field, hidden, { return field != `udev_path; });
+
+	if (GetDisplayName() != `id)
+	    hidden = toset(add(hidden, `udev_id));
+	else
+	    hidden = filter(symbol field, hidden, { return field != `udev_id; });
+
+	return filter(symbol field, fields, { return !setcontains(hidden, field); });
+    }
+
+
+    global list<symbol> FilterOverview(list<symbol> fields)
+    {
+	list<symbol> hidden = GetHiddenFields();
+
+	return filter(symbol field, fields, { return !setcontains(hidden, field); });
+    }
+
+
+    global void Save()
+    {
+	if (display_name != nil)
+	{
+	    string tmp = substring(tostring(display_name), 1);
+	    SCR::Write(.sysconfig.storage.DISPLAY_NAME, tmp);
+	}
+
+	if (hidden_fields != nil)
+	{
+	    string tmp = mergestring(maplist(symbol field, hidden_fields, {
+		return substring(tostring(field), 1);
+	    }), " ");
+	    SCR::Write(.sysconfig.storage.HIDDEN_FIELDS, tmp);
+	}
+
+	if (true)
+	{
+	    string tmp = substring(tostring(Storage::GetDefaultMountBy()), 1);
+	    SCR::Write(.sysconfig.storage.DEVICE_NAMES, tmp);
+	}
+
+	if (true)
+	{
+	    string tmp = substring(tostring(Partitions::DefaultFs()), 1);
+	    SCR::Write(.sysconfig.storage.DEFAULT_FS, tmp);
+	}
+    }
+}

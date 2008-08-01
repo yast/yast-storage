@@ -65,6 +65,7 @@
   import "LibStorage::PartitionAddInfo";
   import "LibStorage::DmPartCoInfo";
   import "LibStorage::DmraidCoInfo";
+  import "LibStorage::PartitionSlotInfo";
 
 map<string,any> conv_ctype =
     $[ "def_sym" : `CT_UNKNOWN,
@@ -315,6 +316,50 @@ global define void InitLibstorage()
 	}
     }
 
+
+global string ByteToHumanString(integer bytes)
+{
+    return LibStorage::StorageInterface::byteToHumanString(sint, bytes, false, 2, false);
+}
+
+
+global string KByteToHumanString(integer kbytes)
+{
+    return LibStorage::StorageInterface::byteToHumanString(sint, kbytes * 1024, false, 2, false);
+}
+
+
+global string ByteToHumanStringWithPrecision(integer bytes, integer precision, boolean omit_zeroes)
+{
+    return LibStorage::StorageInterface::byteToHumanString(sint, bytes, false, precision, omit_zeroes);
+}
+
+
+global string KByteToHumanStringWithPrecision(integer kbytes, integer precision, boolean omit_zeroes)
+{
+    return LibStorage::StorageInterface::byteToHumanString(sint, kbytes * 1024, false, precision, omit_zeroes);
+}
+
+
+global boolean HumanStringToByte(string str, integer& bytes)
+{
+    integer i = 0; bytes = i;	// bnc #408829 and #408891
+    boolean ret = LibStorage::StorageInterface::humanStringToByte(sint, str, false, bytes);
+    y2milestone("HumanStringToByte ret:%1 str:%2 bytes:%3", ret, str, bytes);
+    return ret;
+}
+
+
+global boolean HumanStringToKByte(string str, integer& kbytes)
+{
+    integer bytes = 0;		// bnc #408829
+    boolean ret = LibStorage::StorageInterface::humanStringToByte(sint, str, false, bytes);
+    kbytes = bytes / 1024;
+    y2milestone("HumanStringToKByte ret:%1 str:%2 kbytes:%3", ret, str, kbytes);
+    return ret;
+}
+
+
 global define map<string,map> GetTargetMap();
 /**
 *
@@ -562,6 +607,12 @@ define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
  *
  * @param string device
  * @return map DiskPartition
+ *
+ * Examples:
+ *   "/dev/sda"            ->  $[ "disk" : "/dev/sda", "nr" : "" ]
+ *   "/dev/sda2"           ->  $[ "disk" : "/dev/sda", "nr" : 2 ]
+ *   "/dev/system"         ->  $[ "disk" : "/dev/system", "nr" : "" ]
+ *   "/dev/system/abuild"  ->  $[ "disk" : "/dev/system", "nr" : "abuild" ]
  */
 global define map GetDiskPartition( string device )
     ``{
@@ -884,6 +935,30 @@ global define map GetFreeSpace( string device, integer testsize,
     y2milestone( "GetFreeSpace %1 ret %2", device, ret );
     return( ret );
     };
+
+
+global integer GetUnusedPartitionSlots(string device, list<map> &slots)
+{
+    list<any> swig_slots = [];
+
+    integer ret = LibStorage::StorageInterface::getUnusedPartitionSlots(sint, device, swig_slots);
+
+    slots = maplist(any swig_slot, swig_slots, {
+	return $[
+	    "region" : [ LibStorage::PartitionSlotInfo::swig_cylStart_get(swig_slot),
+			 LibStorage::PartitionSlotInfo::swig_cylSize_get(swig_slot) ],
+	    "primary_slot" : LibStorage::PartitionSlotInfo::swig_primarySlot_get(swig_slot),
+	    "primary_possible" : LibStorage::PartitionSlotInfo::swig_primaryPossible_get(swig_slot),
+	    "extended_slot" : LibStorage::PartitionSlotInfo::swig_extendedSlot_get(swig_slot),
+	    "extended_possible" : LibStorage::PartitionSlotInfo::swig_extendedPossible_get(swig_slot),
+	    "logical_Slot" : LibStorage::PartitionSlotInfo::swig_logicalSlot_get(swig_slot),
+	    "logical_possible" : LibStorage::PartitionSlotInfo::swig_logicalPossible_get(swig_slot)
+	];
+    });
+
+    return ret;
+}
+
 
 /**
  * Adds ... and returns the changed map
@@ -2412,6 +2487,20 @@ global map NextPartition( string disk, symbol ptype )
     return( ret );
     }
 
+
+global map<string, any> NextMd()
+{
+    y2milestone("NextMd");
+    integer num = 0;
+    string dev = "";
+    integer r = LibStorage::StorageInterface::nextFreeMd(sint, num, dev);
+    if( r<0 )
+	y2error("NextMd ret %1", r);
+    map<string, any> ret = $[ "device" : dev, "nr" : num ];
+    y2milestone( "NextMd sint ret:%1 map:%2", r, ret );
+    return ret;
+}
+
 global integer MaxSizeLabelK( map disk )
     {
     integer ret = 0;
@@ -2832,6 +2921,18 @@ global boolean CreateLvmVg( string name, integer pesize, boolean lvm2 )
     return( ret==0 );
     }
 
+global boolean CreateLvmVgWithDevs( string name, integer pesize, boolean lvm2, list<string> devs )
+    {
+    y2milestone( "CreateLvmVgWithDevs name:%1 pesize:%2 lvm2:%3 devs:%4", name, pesize, lvm2, devs );
+    integer ret = 0;
+    ret = LibStorage::StorageInterface::createLvmVg( sint, name, pesize/1024,
+                                                     !lvm2, devs );
+    if( ret<0 )
+	y2error( "CreateLvmVgWithDevs sint ret:%1", ret );
+    UpdateTargetMap();
+    return( ret==0 );
+    }
+
 global boolean ExtendLvmVg( string name, string device )
     {
     y2milestone( "ExtendLvmVg name:%1 device:%2", name, device );
@@ -3100,6 +3201,25 @@ global boolean CreateMd( integer nr, string type )
     return( ret==0 );
     }
 
+global boolean CreateMdWithDevs(integer nr, symbol type, list<string> devices)
+{
+    y2milestone( "CreateMdWithDevs nr:%1 type:%2 devices:%3", nr, type, devices );
+    integer ret = 0;
+
+    integer tmp = LibStorage::RAID_UNK();
+    foreach(integer k, symbol v, conv_mdtype["m"]:$[], {
+	if (v == type)
+	    tmp = k;
+    });
+    
+    string rd = sformat("/dev/md%1", nr );
+    ret = LibStorage::StorageInterface::createMd(sint, rd, tmp, devices);
+    if( ret<0 )
+	y2error( "CreateMdWithDevs sint ret:%1", ret );
+    UpdateTargetMap();
+    return ret==0;
+}
+
 global boolean ExtendMd( integer nr, string dev )
     {
     y2milestone( "ExtendMd nr:%1 dev:%2", nr, dev );
@@ -3150,6 +3270,19 @@ global boolean ChangeMdParity( integer nr, string ptype )
     return( ret==0 );
     }
 
+global boolean ChangeMdParitySymbol( integer nr, symbol ptype )
+{
+    y2milestone( "ChangeMdParitySymbol nr:%1 parity:%2", nr, ptype );
+    integer ret = 0;
+    string rd = sformat("/dev/md%1", nr );
+    integer tmp = fromSymbol(conv_mdparity, ptype);
+    ret = LibStorage::StorageInterface::changeMdParity(sint, rd, tmp);
+    if( ret<0 )
+	y2error( "ChangeMdParitySymbol sint ret:%1", ret );
+    UpdateTargetMapDev( rd );
+    return( ret==0 );
+}
+
 global boolean ChangeMdChunk( integer nr, integer chunk )
     {
     y2milestone( "ChangeMdChunk nr:%1 chunk:%2", nr, chunk );
@@ -3172,6 +3305,22 @@ global integer CheckMd( integer nr )
 	y2milestone( "CheckMd sint ret:%1", ret );
     return( ret );
     }
+
+global integer ComputeMdSize(symbol md_type, list<string> devices, integer& sizeK)
+{
+    integer ret = 0;
+
+    integer tmp = LibStorage::RAID_UNK();
+    foreach(integer k, symbol v, conv_mdtype["m"]:$[], {
+	if (v == md_type)
+	    tmp = k;
+    });
+
+    ret = LibStorage::StorageInterface::computeMdSize(sint, tmp, devices, sizeK);
+    if( ret!=0 )
+	y2milestone( "ComputeMdSize sint ret:%1", ret );
+    return ret;
+}
 
 global string CreateLoop( string file, boolean create, integer sizeK,
                           string mp )
@@ -3285,6 +3434,16 @@ global boolean SetCryptPwd( string device, string pwd )
     return( ret==0 );
     }
 
+
+global string DefaultDiskLabel(integer size_k)
+{  
+    y2milestone("DefaultDiskLabel size_k:%1", size_k );
+    string label = LibStorage::StorageInterface::defaultDiskLabelSize(sint, size_k);
+    y2milestone("DefaultDiskLabel label:%1", label);
+    return label;
+}
+
+
 /**
  * Delete the partition table and disk label of device
  * @param string the disk to deleted the partition table from
@@ -3304,6 +3463,18 @@ global define boolean DeletePartitionTable(string disk, integer size_k)
     UpdateTargetMap();
     return( ret==0 );
     }
+
+
+global boolean CreatePartitionTable(string disk, string label)
+{
+    y2milestone("CreatePartitionTable %1 label:%2", disk, label);
+    integer ret = LibStorage::StorageInterface::destroyPartitionTable(sint, disk, label);
+    if (ret < 0)
+	y2error("CreatePartitionTable sint ret:%1", ret);
+    UpdateTargetMap();
+    return ret == 0;
+}
+
 
 global symbol GetMountBy( string device );
 
@@ -3616,7 +3787,7 @@ global define map<string,map> GetTargetMap()
 		disk = getDiskInfo( dev, disk );
 		integer s = disk["size_k"]:0 * 1024;
 		disk["name"] = disk["dname"]:"" +
-		   Partitions::ByteToHumanString( s ) + ", " +
+		   Storage::ByteToHumanString( s ) + ", " +
 		   disk["device"]:"" + ", ";
 		if( size( disk["vendor"]:"")>0 )
 		    disk["name"] = disk["name"]:"" + disk["vendor"]:"" + "-";
@@ -6938,6 +7109,22 @@ global void SaveExpertDetail()
 	AsciiFile::RewriteFile( file, "/etc/sysconfig/storage" );
 	}
     }
+
+
+global void SetDefaultMountBy(symbol mby)
+{
+    integer val = fromSymbol( conv_mountby, mby );
+    LibStorage::StorageInterface::setDefaultMountBy(sint, val);
+}
+
+
+global symbol GetDefaultMountBy()
+{
+    integer val = LibStorage::StorageInterface::getDefaultMountBy(sint);
+    symbol ret = toSymbol(conv_mountby, val);
+    return ret;
+}
+
 
 global symbol GetMountBy( string device )
     {

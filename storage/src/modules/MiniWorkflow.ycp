@@ -1,0 +1,66 @@
+/**
+ * File:        MiniWorkflow.ycp
+ * Package:     yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:     Arvin Schnell <aschnell@suse.de>
+ *
+ * Tiny wrapper around Sequencer and Wizard.
+ */
+{
+    module "MiniWorkflow";
+
+
+    import "Label";
+    import "Wizard";
+    import "Sequencer";
+
+
+    string title = "";
+
+
+    global void SetContents(term contents, string help_text)
+    {
+	Wizard::SetContents(title, contents, help_text, true, true);
+    }
+
+
+    global void SetLastStep(boolean last_step)
+    {
+	if (last_step)
+	    Wizard::SetNextButton(`next, Label::FinishButton());
+	else
+	    Wizard::SetNextButton(`next, Label::NextButton());
+    }
+
+
+    global symbol UserInput()
+    {
+	return (symbol) Wizard::UserInput();
+    }
+
+
+    global symbol Run(string new_title, string new_icon, map<string, any> aliases,
+		      map<string, any> sequence, string start)
+    {
+	title = new_title;
+
+	Wizard::OpenNextBackDialog();
+	Wizard::SetContents(title, `Empty(), "", false, false);
+	Wizard::SetTitleIcon(substring(new_icon, 0, size(new_icon) - 4));
+
+	sequence = mapmap(string key, any value, sequence, {
+	    if (key != "ws_start" && is(value, map))
+		if (!haskey((map) value, `abort))
+		    value = add((map) value, `abort, `abort);
+	    return $[ key : value ];
+	});
+
+	sequence["ws_start"] = start;
+
+	symbol ret = Sequencer::Run(aliases, sequence);
+
+	Wizard::CloseDialog();
+
+	return ret;
+    }
+}

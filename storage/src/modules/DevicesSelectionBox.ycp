@@ -1,0 +1,123 @@
+/**
+ * File:	DevicesSelectionBox.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    module "DevicesSelectionBox";
+
+    textdomain "storage";
+
+
+    import "Storage";
+    import "StorageFields";
+    import "DualMultiSelectionBox";
+    import "Integer";
+
+
+    list<map> devices = [];
+
+    integer(list<map>) selected_size_function = nil;
+
+
+    /**
+     * Returns list with the maps of the unselected devices.
+     */
+    global list<map> GetUnselectedDevices()
+    {
+	list<string> selected = (list<string>) DualMultiSelectionBox::GetSelected();
+
+	return filter(map device, devices, {
+	    return !contains(selected, device["device"]:"");
+	});
+    }
+
+
+    /**
+     * Returns list with the maps of the selected devices.
+     */
+    global list<map> GetSelectedDevices()
+    {
+	list<string> selected = (list<string>) DualMultiSelectionBox::GetSelected();
+
+	return filter(map device, devices, {
+	    return contains(selected, device["device"]:"");
+	});
+    }
+
+
+    integer Sum(list<map> devices)
+    {
+	return Integer::Sum(maplist(map device, devices, { return device["size_k"]:0; }));
+    }
+
+
+    term UnselectedSizeTerm(list<map> unselected_devices)
+    {
+	integer size_k = Sum(unselected_devices);
+	return `Left(`Label(sformat(_("Total size: %1"), Storage::KByteToHumanString(size_k))));
+    }
+
+
+    term SelectedSizeTerm(list<map> selected_devices)
+    {
+	integer size_k = selected_size_function(selected_devices);
+	return `Left(`Label(sformat(_("Resulting size: %1"), Storage::KByteToHumanString(size_k))));
+    }
+
+
+    /**
+     * The maps for the devices must contain the entries "device" and "size_k".
+     *
+     * Ordering of device list is irrelevant. Devices are ordered by StorageFields::IterateTargetMap.
+     */
+    global term Create(list<map> unselected_devices, list<map> selected_devices, list<symbol> fields,
+		       integer(list<map>) new_selected_size_function, string unselected_label, string selected_label)
+    {
+	devices = flatten([ unselected_devices, selected_devices ]);
+
+	selected_size_function = new_selected_size_function != nil ? new_selected_size_function : Sum;
+
+	list<string> device_names = maplist(map device, devices, { return device["device"]:""; });
+
+	symbol Predicate(map disk, map partition)
+	{
+	    return StorageFields::PredicateDevice(disk, partition, device_names);
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term header = StorageFields::TableHeader(fields);
+	list<term> content = StorageFields::TableContents(fields, target_map, Predicate);
+
+	list<string> selected = maplist(map device, selected_devices, { return device["device"]:""; });
+
+	return DualMultiSelectionBox::Create(header, content, selected, unselected_label, selected_label,
+					     UnselectedSizeTerm(unselected_devices), SelectedSizeTerm(selected_devices));
+    }
+
+
+    global void UpdateUnselectedSize()
+    {
+	UI::ReplaceWidget(`id(`unselected_rp), UnselectedSizeTerm(GetUnselectedDevices()));
+    }
+
+
+    global void UpdateSelectedSize()
+    {
+	UI::ReplaceWidget(`id(`selected_rp), SelectedSizeTerm(GetSelectedDevices()));
+    }
+
+
+    global void Handle(symbol widget)
+    {
+	DualMultiSelectionBox::Handle(widget);
+
+	if (contains([`unselected, `selected, `add, `add_all, `remove, `remove_all], widget))
+	{
+	    UpdateUnselectedSize();
+	    UpdateSelectedSize();
+	}
+    }
+}

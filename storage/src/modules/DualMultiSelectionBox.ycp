@@ -1,0 +1,104 @@
+/**
+ * File:	DualMultiSelectionBox.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * The items must have the `id() as their first element.
+ */
+{
+    module "DualMultiSelectionBox";
+
+    textdomain "storage";
+
+
+    list<term> items = [];
+
+    list<any> selected = [];
+
+
+    list<term> GetUnselectedItems()
+    {
+	return filter(term item, items, {
+	    any id = item[0, 0]:nil;
+	    return !contains(selected, id);
+	});
+    }
+
+
+    list<term> GetSelectedItems()
+    {
+	return filter(term item, items, {
+	    any id = item[0, 0]:nil;
+	    return contains(selected, id);
+	});
+    }
+
+
+    global term Create(term header, list<term> new_items, list<any> new_selected, string unselected_label,
+		       string selected_label, term unselected_rp, term selected_rp)
+    {
+	items = new_items;
+	selected = new_selected;
+
+	return `HBox(
+	    `HWeight(1, `VBox(
+			 `Left(`Label(unselected_label)),
+			 `Table(`id(`unselected), `opt(`keepSorting, `multiSelection, `notify), header, GetUnselectedItems()),
+			 `ReplacePoint(`id(`unselected_rp), unselected_rp)
+			 )),
+	    `MarginBox(1, 1,
+		       `HSquash(`VBox(
+				    `PushButton(`id(`add), `opt(`hstretch), _("Add") + " " + UI::Glyph(`ArrowRight)),
+				    `PushButton(`id(`add_all), `opt(`hstretch), _("Add All") + " " + UI::Glyph(`ArrowRight)),
+				    `VSpacing(1),
+				    `PushButton(`id(`remove), `opt(`hstretch), UI::Glyph(`ArrowLeft) + " " + _("Remove")),
+				    `PushButton(`id(`remove_all), `opt(`hstretch), UI::Glyph(`ArrowLeft) + " " + _("Remove All"))
+				    ))),
+	    `HWeight(1, `VBox(
+			 `Left(`Label(selected_label)),
+			 `Table(`id(`selected), `opt(`keepSorting, `multiSelection, `notify), header, GetSelectedItems()),
+			 `ReplacePoint(`id(`selected_rp), selected_rp)
+			 ))
+	    );
+    }
+
+
+    global list<any> GetSelected()
+    {
+	return selected;
+    }
+
+
+    global void Handle(symbol widget)
+    {
+	switch (widget)
+	{
+	    case `unselected:
+	    case `add: {
+		list<any> tmp1 = (list<any>) UI::QueryWidget(`id(`unselected), `SelectedItems);
+		selected = flatten([ selected, tmp1 ]);
+	    } break;
+
+	    case `selected:
+	    case `remove: {
+		list<any> tmp1 = (list<any>) UI::QueryWidget(`id(`selected), `SelectedItems);
+		selected = filter(any tmp2, selected, { return !contains(tmp1, tmp2); });
+	    } break;
+
+	    case `add_all: {
+		selected = maplist(term item, items, { any id = item[0, 0]:nil; return id; });
+	    } break;
+
+	    case `remove_all: {
+		selected = [];
+	    } break;
+	}
+
+	if (contains([`unselected, `selected, `add, `add_all, `remove, `remove_all], widget))
+	{
+	    UI::ChangeWidget(`id(`unselected), `Items, GetUnselectedItems());
+	    UI::ChangeWidget(`id(`selected), `Items, GetSelectedItems());
+	}
+    }
+}

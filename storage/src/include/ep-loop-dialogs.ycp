@@ -1,0 +1,143 @@
+/**
+ * File:	ep-loop-dialogs.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    symbol MiniWorkflowStepLoopNameSize(map<string, any> &data)
+    {
+	y2milestone("MiniWorkflowStepLoopNameSize data:%1", data);
+
+	integer min_size_k = 1024;
+	integer size_k = data["size_k"]:(50 * 1024);
+	string fpath = data["fpath"]:"";
+	boolean create_file = data["create_file"]:false;
+
+	term contents = `HVSquash(
+	    `VBox(
+		`Left(`MinWidth(25, `InputField(`id(`fpath), `opt(`hstretch), _("Path Name of Loop File"), fpath))),
+		Mode::normal() ? `Left(`PushButton(`id(`browse), _("Browse..."))) : `Empty(),
+		`VSpacing(0.75),
+		`LeftCheckBoxWithAttachment(`id(`create_file), `opt(`notify), _("Create Loop File"),
+					    `MinWidth(15, `InputField(`id(`size), `opt(`shrinkable), _("Size"),
+								      Storage::KByteToHumanString(size_k))))
+		)
+	    );
+
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "TODO help");
+	MiniWorkflow::SetLastStep(false);
+
+	UI::ChangeWidget(`id(`create_file), `Value, create_file);
+	UI::ChangeWidget(`id(`size), `Enabled, create_file);
+
+	symbol widget = nil;
+
+	repeat
+	{
+	    widget = MiniWorkflow::UserInput();
+
+	    switch (widget)
+	    {
+		case `browse:
+		    string tmp = UI::AskForExistingFile("/", "*", "");
+		    if (tmp != nil)
+			fpath = tmp;
+		    UI::ChangeWidget(`id(`fpath), `Value, fpath);
+
+		    // TODO: file existence -> set create
+
+		    break;
+
+		case `create_file:
+		    create_file = (boolean) UI::QueryWidget(`id(`create_file), `Value);
+		    UI::ChangeWidget(`id(`size), `Enabled, create_file);
+		    break;
+
+		case `next:
+		    fpath = (string) UI::QueryWidget(`id(`fpath), `Value);
+
+		    if (create_file)
+		    {
+			string tmp = (string) UI::QueryWidget(`id(`size), `Value);
+			if (!Storage::HumanStringToKByte(tmp, size_k))
+			{
+			    Error(_("The size entered is invalid. Enter a value like \"500MB\" or \"1GB\"."));
+			    widget = `again;
+			}
+			else if (size_k < min_size_k)
+			{
+			    Error(sformat(_("The size entered is invalid. Enter a size of at least %1."),
+					  Storage::KByteToHumanString(min_size_k)));
+			    widget = `again;
+			}
+		    }
+
+		    // TODO checks, valid filename, file existence
+
+		    break;
+	    }
+	}
+	until (widget == `abort || widget == `back || widget == `next);
+
+	if (widget == `next)
+	{
+	    data["fpath"] = fpath;
+	    data["create_file"] = create_file;
+	    data["size_k"] = size_k;
+	}
+
+	y2milestone("MiniWorkflowStepLoopNameSize data:%1 ret:%2", data, widget);
+
+	return widget;
+    }
+
+
+    boolean DlgCreateLoop(map<string, any> &data)
+    {
+	map<string, any> aliases = $[
+	    "NameSize"    : ``(MiniWorkflowStepLoopNameSize(data)),
+	    "FormatMount" : ``(MiniWorkflowStepFormatMount(data)),
+	    "Password"	  : ``(MiniWorkflowStepPassword(data))
+	];
+
+	map<string, any> sequence = $[
+	    "NameSize"    : $[ `next : "FormatMount" ],
+	    "FormatMount" : $[ `next : "Password",
+			       `finish : `finish ],
+	    "Password"    : $[ `finish : `finish ]
+	];
+
+	string title = _("Add Crypt File");
+
+	symbol widget = MiniWorkflow::Run(title, lvm_lv_icon, aliases, sequence, "NameSize");
+
+	return widget == `finish;
+    }
+
+
+    boolean DlgEditLoop(map<string, any> &data)
+    {
+	string device = data["device"]:"error";
+
+	map<string, any> aliases = $[
+	    "FormatMount" : ``(MiniWorkflowStepFormatMount(data)),
+	    "Password"	  : ``(MiniWorkflowStepPassword(data))
+	];
+
+	map<string, any> sequence = $[
+	    "FormatMount" : $[ `next : "Password",
+			       `finish : `finish ],
+	    "Password"    : $[ `finish : `finish ]
+	];
+
+	string title = sformat(_("Edit Crypt File %1"), device);
+
+	symbol widget = MiniWorkflow::Run(title, dm_icon, aliases, sequence, "FormatMount");
+
+	return widget == `finish;
+    }
+}

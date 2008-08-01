@@ -10,6 +10,4 @@ client_DATA = 		\
 	lvm_config.ycp	\
 	lvm_config_ui.ycp
 
-desktop_DATA = lvm_config.desktop
-
-EXTRA_DIST = $(client_DATA) $(desktop_DATA)
+EXTRA_DIST = $(client_DATA)

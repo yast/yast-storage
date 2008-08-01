@@ -1,0 +1,242 @@
+/**
+ * File:	ep-lvm-lib.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    boolean AddPvs(string vg_name, list<string> devs)
+    {
+	boolean ret = true;
+
+	foreach(string dev, devs, {
+	    Storage::SetPartitionId(dev, Partitions::fsid_lvm);
+	    Storage::SetPartitionFormat(dev, false, `none);
+	    if (!Storage::ExtendLvmVg(vg_name, dev))
+		ret = false;
+	});
+
+	return ret;
+    }
+
+
+    boolean RemovePvs(string vg_name, list<string> devs)
+    {
+	boolean ret = true;
+
+	foreach(string dev, devs, {
+	    Storage::UnchangePartitionId(dev);
+	    if (!Storage::ReduceLvmVg(vg_name, dev))
+		ret = false;
+	});
+
+	return ret;
+    }
+
+
+    void EpCreateVolumeGroup()
+    {
+	map<string, map> target_map = Storage::GetTargetMap();
+	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return pv["used_by"]:"" == ""; });
+
+	if (size(unused_pvs) < 1)
+	{
+	    Error(_("There are not enough suitable unused devices to create a volume group."));
+	    return;
+	}
+
+	map<string, any> data = $[];
+
+	if (DlgCreateVolumeGroupNew(data))
+	{
+	    Debug("create vg from data", data);
+
+	    string vg_name = data["name"]:"error";
+	    integer pe_size = data["pesize"]:0;
+
+	    if (Storage::CreateLvmVgWithDevs(vg_name, pe_size, true, []))
+	    {
+		list<string> devices = data["devices"]:[];
+		AddPvs(vg_name, devices);
+
+		UpdateNavigationTree(nil);
+		TreePanel::Create();
+		UpdateTableFocus("/dev/" + vg_name);
+	    }
+	}
+    }
+
+
+    void EpResizeVolumeGroup(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No volume group selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetDisk(target_map, device);
+
+	string vgname = data["name"]:"error";
+
+	if (DlgResizeVolumeGroup(data))
+	{
+	    Debug("resize vg from data", data);
+
+	    list<string> devices_old = (list<string>) union(data["devices"]:[], data["devices_add"]:[]);
+	    devices_old = filter(string tmp, devices_old, { return !contains(data["devices_rem"]:[], tmp); });
+	    list<string> devices_new = data["devices_new"]:[];
+
+	    list<string> devices_added = AddedToList(devices_old, devices_new);
+	    list<string> devices_removed = RemovedFromList(devices_old, devices_new);
+
+	    if (size(devices_added) > 0 || size(devices_removed) > 0)
+	    {
+		AddPvs(vgname, devices_added);
+
+		if (!RemovePvs(vgname, devices_removed))
+		{
+		    Error(_("Failed to remove some physical devices. TODO"));
+		}
+
+		UpdateNavigationTree(nil);
+		TreePanel::Create();
+	    }
+	}
+    }
+
+
+    void EpDeleteVolumeGroup(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No volume group selected."));
+	    return;
+	}
+
+	string vgname = substring(device, 5);
+
+	map<string,map> tg = Storage::GetTargetMap();
+	integer count = size(get_lv_names(tg, vgname));
+
+	if (count > 0)
+	{
+	    // Message popup
+	    Popup::Message(sformat(_("The volume group \"%1\" contains at least one logical
+volume.  It cannot be removed. Remove all logical volumes then
+remove the volume group.
+"), vgname));
+	}
+	else
+	{
+	    // popup text
+	    if (Popup::YesNo(sformat(_("Really delete the volume group \"%1\"?"), vgname)))
+	    {
+		if (Storage::DeleteLvmVg(vgname))
+		{
+		    UpdateNavigationTree(`lvm);
+		    TreePanel::Create();
+		}
+	    }
+	}
+    }
+
+
+    void EpCreateLogicalVolume(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No logical volume selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	map<string, any> data = $[ "new" : true,
+	                           "create" : true ];
+
+	string vg_name = substring(device, 5);
+
+	if (target_map[device, "pe_free"]:0 == 0)
+	{
+	    Error(sformat(_("No free space left in the volume group \"%1\"."), vg_name));
+	    return;
+	}
+
+	data["vg_name"] = vg_name;
+	data["pesize"] = target_map[device, "pesize"]:0;
+	data["max_size_k"] = (target_map[device, "pe_free"]:0 * target_map[device, "pesize"]:0) / 1024;
+
+	if (DlgCreateLogicalVolume(data))
+	{
+	    Debug("create lv from data", data);
+
+	    addLogicalVolume(data, substring(device, 5));
+
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	    UpdateTableFocus("/dev/" + data["vg_name"]:"error" + "/" + data["name"]:"error");
+	}
+    }
+
+
+    void EpEditLogicalVolume(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No logical volume selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+
+	if (DlgEditLogicalVolume(data))
+	{
+	    Debug("edit lv from data", data);
+
+	    Storage::ChangeVolumeProperties(data);
+
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	    UpdateTableFocus(device);
+	}
+    }
+
+
+    void EpResizeLogicalVolume(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No logical volume selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+
+	DlgResizeLogicalVolumeNew(data);
+    }
+
+
+    void EpDeleteLogicalVolume(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No logical volume selected."));
+	    return;
+	}
+
+	string parent = ParentDevice(device);
+
+	if (EpDeleteDevice(device))
+	{
+	    UpdateNavigationTree(parent);
+	    TreePanel::Create();
+	}
+    }
+}

@@ -1,0 +1,106 @@
+/**
+ * File:	ep-loop.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ */
+{
+    textdomain "storage";
+
+
+    include "partitioning/ep-loop-dialogs.ycp";
+    include "partitioning/ep-loop-lib.ycp";
+
+
+    void CreateLoopMainPanel(any user_data)
+    {
+	symbol Predicate(map disk, map partition)
+	{
+	    return StorageFields::PredicateDiskType(disk, partition, [`CT_LOOP]);
+	}
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `size, `mount_point ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `HStretch(),
+				  `IconAndHeading(_("Crypt Files"), loop_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify),
+					 table_header, table_contents),
+				  `HBox(
+				      `Left(`PushButton(`id(`add), _("Add Crypt File..."))),
+				      `HStretch()
+				      )
+				  )
+			      )
+	    );
+
+	string helptext = _("<p>Crypt Files TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
+    void HandleLoopMainPanel(any user_data, symbol widget)
+    {
+	switch (widget)
+	{
+	    case `add:
+		EpCreateLoop();
+		break;
+	}
+    }
+
+
+    void CreateLoopPanel(any user_data)
+    {
+	string part_device = (string) user_data;
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `file_path,
+								`heading_filesystem, `fs_type, `mount_point ]);
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `IconAndHeading(sformat(_("Crypt File: %1"), part_device), loop_icon),
+				  `HStretch(),
+				  StorageFields::Overview(fields, target_map, part_device),
+				  `HBox(
+				      `PushButton(`id(`edit), _("Edit...")),
+				      `PushButton(`id(`delete), _("Delete...")),
+				      `HStretch()
+				      )
+				  ))
+	    );
+
+	string helptext = _("<p>Crypt Files TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::OverviewHelptext(fields));
+    }
+
+
+    void HandleLoopPanel(any user_data, symbol widget)
+    {
+	string part_device = (string) user_data;
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditLoop(part_device);
+		break;
+
+	    case `delete:
+		EpDeleteLoop(part_device);
+		break;
+	}
+    }
+}

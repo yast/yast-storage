@@ -1,0 +1,164 @@
+/**
+ * File:	ep-lib.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    list<string> AddedToList(list<string> old, list<string> new)
+    {
+	return filter(string tmp, new, { return !contains(old, tmp); });
+    }
+
+
+    list<string> RemovedFromList(list<string> old, list<string> new)
+    {
+	return filter(string tmp, old, { return !contains(new, tmp); });
+    }
+
+
+    string ParentDevice(string device)
+    {
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	map disk = target_map[device]:nil;
+	map part = nil;
+
+	if (disk == nil)
+	{
+	    foreach(string s, map d, target_map, {
+		part = find(map p, d["partitions"]:[], { return p["device"]:"" == device; });
+		if (part != nil) {
+		    disk = d;
+		    break;
+		}
+	    });
+	}
+
+	return disk["device"]:"";
+    }
+
+
+    boolean EpDeleteDevice(string id)
+    {
+	map<string,map> tg =  Storage::GetTargetMap();
+
+	map<string,any> part = $[];
+	map<string,any> disk = Storage::GetDisk( tg, id );
+
+	if( !haskey( tg, id ) )
+	    part = Storage::GetPartition( tg, id );
+	y2milestone( "id:%1 part:%2", id, part );
+	if( !haskey( tg, id ) && size(part)==0 )
+	{
+	    return false;
+	}
+
+	if( disk["readonly"]:false )
+	{
+	    Popup::Error( Partitions::RdonlyText( disk["device"]:"", true ));
+	    return false;
+	}
+
+	if( haskey( tg, id ) )
+	{
+	    if( tg[id,"type"]:`CT_UNKNOWN == `CT_MD )
+	    {
+		return false;
+	    }
+	    else if( tg[id,"type"]:`CT_UNKNOWN == `CT_LVM )
+	    {
+		string current_vg = substring( tg[id,"device"]:"", 5 );
+		HandleRemoveVg( tg, current_vg );
+	    }
+	    else if( tg[id,"type"]:`CT_UNKNOWN == `CT_DMRAID )
+	    {
+		if( Popup::YesNo( sformat(_("Really delete BIOS RAID %1?"), id )))
+		{
+		    if( deleteAllDevPartitions( disk, Stage::initial(), bsd_label ))
+			Storage::DeleteDmraid( id );
+		    return true;
+		}
+	    }
+	    // YesNo popup text %1 is replaced by a disk name e.g. /dev/hda
+	    else if( Popup::YesNo( sformat(_("Really delete all partitions on %1?"), id )))
+	    {
+		deleteAllDevPartitions( disk, Stage::initial(), bsd_label );
+		return true;
+	    }
+	}
+	else if( part["type"]:`unknown==`lvm )
+	{
+	    if( !check_device_delete( part, false, Stage::initial(), $[] ))
+	    {
+		return false;
+	    }
+	    else
+	    {
+		HandleRemoveLv( tg, id );
+		return true;
+	    }
+	}
+	else
+	{
+	    /////////////////////////////////////////////////////
+	    // delete algorithm:
+	    // if you find newly created (but until now not realy
+	    // written) partition (sign: "create = true"): delete it
+	    // else there must be already existing partition: mark it
+	    // with "delete = true"
+
+	    y2milestone( "delete part %1", part );
+	    /////////////////////////////////////////////////////
+	    // check if the partition can be deleted
+
+	    if( part["type"]:`primary == `extended &&
+		!check_extended_delete( disk, Stage::initial() ))
+	    {
+		return false;
+	    }
+	    if( part["type"]:`primary != `extended &&
+		!check_device_delete( part, bsd_label, Stage::initial(),
+				      disk ))
+	    {
+		return false;
+	    }
+
+	    /////////////////////////////////////////////////////
+	    // now delete partition!!
+
+	    // YesNo popup text, %1 is replaced by a device name e.g. /dev/hda1
+	    if( Popup::YesNo( sformat(_("Really delete %1?"),
+				      part["device"]:"" )))
+	    {
+		if( (search( id, "/dev/loop")==0 ||
+		     search( id, "/dev/mapper/")==0) &&
+		    size(part["fpath"]:"")>0 &&
+		    Mode::normal() &&
+		    // YesNo popup.  %1 is path to a file
+		    Popup::YesNo( sformat(_("\nShould the loop file %1 also be removed?
+"), part["fpath"]:"" )))
+		{
+		    Storage::DeleteLoop( disk["device"]:"",
+					 part["fpath"]:"", true );
+		}
+		if( part["type"]:`unknown == `nfs )
+		{
+		    Storage::DeleteDevice( "/dev/nfs",
+					   part["device"]:"" );
+		}
+		else
+		{
+		    Storage::DeleteDevice( disk["device"]:"",
+					   part["device"]:"" );
+		}
+		return true;
+	    }
+	}
+
+	return false;
+    }
+}

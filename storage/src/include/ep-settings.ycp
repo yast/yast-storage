@@ -1,0 +1,111 @@
+/**
+ * File:	ep-settings.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    // TODO: check if translated when switching language
+    list< map<symbol, any> > visible_fields = [
+	$[ `label : _("Label"), `fields : [ `label ] ],
+	$[ `label : _("UUID"), `fields : [ `uuid ] ],
+	$[ `label : _("Mount by"), `fields : [ `mount_by ] ],
+	$[ `label : _("Used by"), `fields : [ `used_by ] ],
+	$[ `label : _("BIOS ID"), `fields : [ `bios_id ] ],
+	$[ `label : _("Cylinder information"), `fields : toset([ `start_cyl, `end_cyl, `num_cyl, `cyl_size ]) ],
+	$[ `label : _("Fibre Channel information"), `fields : toset([ `fc_wwpn, `fc_port_id ]) ]
+    ];
+
+
+    void CreateSettingsPanel(any user_data)
+    {
+	list <term> PreselectVisibleFields()
+	{
+	    list <symbol> hidden_fields = StorageSettings::GetHiddenFields();
+	    return maplist(integer i, Integer::Range(size(visible_fields)), {
+		string label = visible_fields[i, `label]:"";
+		list<symbol> fields = visible_fields[i, `fields]:[];
+		boolean selected = list::reduce(boolean tmp, symbol field, true, fields, {
+		    return tmp && !setcontains(hidden_fields, field);
+		});
+		return `item(`id(i), label, selected);
+	    });
+	}
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `IconAndHeading(_("Settings"), settings_icon),
+				  `VBox(
+				      `Left(`ComboBoxSelected(`id(`default_mountby),
+							      _("Default Mount by"),
+							      [ `item(`id(`device), _("Device Name")),
+								`item(`id(`label), _("Volume Label")),
+								`item(`id(`uuid), _("UUID")),
+								`item(`id(`id), _("Device ID")),
+								`item(`id(`path), _("Device Path")) ],
+							      `id(Storage::GetDefaultMountBy()))),
+				      `Left(`ComboBoxSelected(`id(`default_fs),
+							      _("Default Filesystem"),
+							      [ `item(`id(`ext2), "Ext2"),
+								`item(`id(`ext3), "Ext3"),
+								`item(`id(`reiserfs), "Reiser") ],
+							      `id(Partitions::DefaultFs()))),
+				      `VSpacing(1),
+				      `Left(`ComboBoxSelected(`id(`display_name), `opt(`notify),
+							      _("Show Storage Devices by"),
+							      [ `item(`id(`device), _("Device Name")),
+								`item(`id(`id), _("Device ID")),
+								`item(`id(`path), _("Device Path")) ],
+							      `id(StorageSettings::GetDisplayName()))),
+				      //This looks extremely ugly, but obviously there are few other means how
+				      //to make MultiSelection widget smaller, yet still readable
+				      `Left(`HBox(
+						`MultiSelectionBox(`id(`visible_fields), `opt(`shrinkable),
+							           _("Visible Information On Storage Devices"),
+								   PreselectVisibleFields()),
+				                `HStretch()
+						))
+				      ),
+				  `VStretch()
+				  )));
+
+	Wizard::RestoreHelp("TODO");
+    }
+
+
+    void HandleSettingsPanel(any user_data, symbol widget)
+    {
+	if (widget == `display_name)
+	{
+	    StorageSettings::SetDisplayName((symbol) UI::QueryWidget(`id(`display_name), `Value));
+	    UpdateNavigationTree(nil);
+	}
+    }
+
+
+    void DestroySettingsPanel(any user_data)
+    {
+	list<symbol> InvertVisibleFields(list<symbol> hidden_fields)
+	{
+	    list<integer> selected = (list<integer>) UI::QueryWidget(`id(`visible_fields), `SelectedItems);
+
+	    foreach(integer i, Integer::Range(size(visible_fields)), {
+		list<symbol> fields = visible_fields[i, `fields]:[];
+		if (contains(selected, i))
+		    hidden_fields = filter(symbol hidden_field, hidden_fields, { return !setcontains(fields, hidden_field); });
+		else
+		    hidden_fields = toset(flatten([ hidden_fields, fields ]));
+	    });
+
+	    return hidden_fields;
+	}
+
+	Storage::SetDefaultMountBy((symbol) UI::QueryWidget(`id(`default_mountby), `Value));
+	Partitions::SetDefaultFs((symbol) UI::QueryWidget(`id(`default_fs), `Value));
+	StorageSettings::SetHiddenFields(InvertVisibleFields(StorageSettings::GetHiddenFields()));
+    }
+}

@@ -13,7 +13,15 @@ module_DATA =				\
 		Storage.ycp		\
 		StorageClients.ycp      \
 		StorageControllers.ycp  \
-		StorageDevices.ycp
+		StorageDevices.ycp	\
+		StorageFields.ycp	\
+		StorageSettings.ycp	\
+		TreePanel.ycp		\
+		TabPanel.ycp		\
+		MiniWorkflow.ycp	\
+		Greasemonkey.ycp	\
+		DevicesSelectionBox.ycp	\
+		DualMultiSelectionBox.ycp
 
 EXTRA_DIST = $(module_DATA)
 

@@ -1,0 +1,407 @@
+/**
+ * File:        ep-hd.ycp
+ * Package:     yast2-storage
+ * Summary:     Expert Partitioner
+ * Authors:     Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+    import "Arch";
+    import "Directory";
+    import "PackageCallbacks";
+    import "PackageSystem";
+    import "FileUtils";
+    import "Stage";
+
+    include "partitioning/ep-hd-dialogs.ycp";
+    include "partitioning/ep-hd-lib.ycp";
+
+
+    void CreateHdMainPanel(any user_data)
+    {
+	symbol Predicate(map disk, map partition)
+	{
+	    return StorageFields::PredicateDiskType(disk, partition, [`CT_DMRAID, `CT_DISK]);
+	}
+
+	boolean IsAvailable ( string client )
+	{
+	    //in the installed system, we don't care if the client isn't there
+	    //as the user will be prompted to install the pkg anyway (in CallConfig)
+	    if ( !Stage::initial() )
+		return true;
+	    //check if the client is in inst-sys
+	    else
+	    {
+		string filename = Directory::clientdir + "/" + client + ".ycp";
+		return ( FileUtils::Exists( filename ) );
+	    }
+	}
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `format,
+							     `type, `mount_point, `mount_by,
+							     `start_cyl, `end_cyl, `used_by ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+
+	term buttons = `HBox(
+	    // push button text
+	    `PushButton(`id(`rescan), _("Rescan Disks"))
+	);
+
+	if (Mode::installation()) {
+	    // push button text
+	    buttons = add(buttons, `PushButton(`id(`fstab), _("Import Mount Points...")));
+	}
+
+	buttons = add(buttons, `HStretch());
+
+	list<term> configs = [];
+
+	// TODO: bug #392972
+
+	if (IsAvailable("iscsi-client")) {
+	    // menu entry text
+	    configs = add(configs, `item(`id(`iscsi), _("Configure &iSCSI...")));
+	}
+
+	if (IsAvailable("multipath")) {
+	    // menu entry text
+	    configs = add(configs, `item(`id(`multipath), _("Configure &Multipath...")));
+	}
+
+	if (Arch::s390() && IsAvailable("s390")) {
+	    // menu entry text
+	    configs = add(configs, `item(`id(`dasd), _("Configure DASD...")));
+	    // menu entry text
+	    configs = add(configs, `item(`id(`zfcp), _("Configure zFCP...")));
+	    // menu entry text
+	    configs = add(configs, `item(`id(`xpram), _("Configure XPRAM...")));
+	}
+
+	if (size(configs) > 0) {
+	    // menu button text
+	    buttons = add(buttons, `MenuButton(_("Configure..."), configs));
+	}
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `IconAndHeading(_("Hard Disks"), hd_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify),
+					 table_header, table_contents),
+				  buttons
+				  )
+			      )
+	    );
+
+	string helptext = _("<p>HD TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
+    void HandleHdMainPanel(any user_data, symbol widget)
+    {
+	boolean CheckAndInstallPackages( list <string> pkgs )
+	{
+	    boolean ret = false;
+	    //switch off pkg-mgmt loading progress dialogs,
+	    //because it just plain sucks
+	    PackageCallbacks::RegisterEmptyProgressCallbacks();
+	    ret = PackageSystem::CheckAndInstallPackages(pkgs);
+	    PackageCallbacks::RestorePreviousProgressCallbacks();
+
+	    return ret;
+	}
+
+	void CallConfig(string text, list<string> pkgs, string call)
+	{
+	    boolean doit = true;
+
+	    if (!Storage::EqualBackupStates("expert-partitioner", "", true))
+	    {
+		doit = Popup::YesNo(text);
+	    }
+
+	    if (doit)
+	    {
+		if (pkgs == nil || CheckAndInstallPackages(pkgs))
+		{
+		    if (call != nil)
+			WFM::call(call);
+		    RescanDisks();
+		    Storage::CreateTargetBackup("expert-partitioner");
+		    UpdateNavigationTree(nil);
+		    TreePanel::Create();
+		}
+	    }
+	}
+
+	switch (widget)
+	{
+	    case `rescan:
+		// popup text
+		CallConfig(_("Rescaning disks cancels all current changes.
+Really rescan disks?"), nil, nil);
+		break;
+
+	    case `iscsi:
+		// popup text
+		CallConfig(_("Calling iSCSI configuration cancels all current changes.
+Really call iSCSI configuration?"), ["yast2-iscsi-client"], "iscsi-client");
+		break;
+
+	    case `multipath:
+		// popup text
+		CallConfig(_("Calling Multipath configuration cancels all current changes.
+Really call Multipath configuration?"), ["yast2-multipath"], "multipath");
+		break;
+
+	    case `dasd:
+		// popup text
+		CallConfig(_("Calling DASD configuration cancels all current changes.
+Really call DASD configuration?"), ["yast2-s390"], "dasd");
+		break;
+
+	    case `zfcp:
+		// popup text
+		CallConfig(_("Calling zFCP configuration cancels all current changes.
+Really call zFCP configuration?"), ["yast2-s390"], "zfcp");
+		break;
+
+	    case `xpram:
+		// popup text
+		CallConfig(_("Calling XPRAM configuration cancels all current changes.
+Really call XPRAM configuration?"), ["yast2-s390"], "xpram");
+		break;
+	}
+    }
+
+
+    void CreateHdDiskOverviewTab(any user_data)
+    {
+	string device = (string) user_data;
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `udev_path,
+								`udev_id, `used_by, `heading_hd, `vendor,
+								`model, `num_cyl, `cyl_size, `bus, `bios_id,
+								`disk_label ]);
+
+	UI::ReplaceWidget(`tab_panel,
+			  `VBox(
+			      `HStretch(),
+			      StorageFields::Overview(fields, target_map, device),
+			      `HBox(
+				  `PushButton(`id(`smart), _("Smart...")),
+				  `PushButton(`id(`hdparm), _("HD Parm...")),
+				  `HStretch()
+				  )
+			      )
+	    );
+
+	string helptext = _("<p>HD TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::OverviewHelptext(fields));
+    }
+
+
+    void HandleHdDiskOverviewTab(any user_data, symbol widget)
+    {
+	string disk_device = (string) user_data;
+
+	switch (widget)
+	{
+	    case `smart:
+		DisplayCommandOutput(sformat("/usr/sbin/smartctl --health '%1'", disk_device));
+		break;
+
+	    case `hdparm:
+		DisplayCommandOutput(sformat("/sbin/hdparm -aAgr '%1'", disk_device));
+		break;
+	}
+    }
+
+
+    void CreateHdDiskPartitionsTab(any user_data)
+    {
+	string device = (string) user_data;
+
+	symbol Predicate(map disk, map partition)
+	{
+	    return StorageFields::PredicateDiskDevice(disk, partition, [ device ]);
+	}
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `format,
+							     `type, `mount_point, `mount_by,
+							     `start_cyl, `end_cyl, `used_by ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+
+	list<term> expert_cmds = [
+	    `item(`id(`create_partition_table),
+		  // menu entry text
+		  _("Create New Partition Table"))
+	    ];
+
+	if (Arch::s390() && search(device, "/dev/dasd") == 0)
+	{
+	    expert_cmds = add(expert_cmds,
+			      `item(`id(`dasdfmt),
+				    // menu entry text
+				    _("Execute dasd&fmt on the DASD Device"))
+		);
+	}
+
+	UI::ReplaceWidget(`tab_panel,
+			  `VBox(
+			      `Table(`id(`table), `opt(`keepSorting, `notify),
+				     table_header, table_contents),
+			      `HBox(
+				  `PushButton(`id(`add), _("Add...")),
+				  `PushButton(`id(`edit), _("Edit...")),
+				  `PushButton(`id(`resize), _("Resize...")),
+				  `PushButton(`id(`delete), _("Delete...")),
+				  `HStretch(),
+				  `MenuButton(_("Expert..."), expert_cmds)
+				  )
+			      ));
+
+	string helptext = _("<p>HD TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
+    void HandleHdDiskPartitionsTab(any user_data, symbol widget)
+    {
+	string disk_device = (string) user_data;
+	string part_device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+
+	switch (widget)
+	{
+	    case `add:
+		EpCreatePartition(disk_device);
+		break;
+
+	    case `edit:
+		EpEditPartition(part_device);
+		break;
+
+	    case `resize:
+		EpResizePartition(part_device);
+		break;
+
+	    case `delete:
+		EpDeletePartition(part_device);
+		break;
+
+	    case `create_partition_table:
+		EpCreatePartitionTable(disk_device);
+		break;
+
+	    case `dasdfmt:
+		EpDasdfmtDisk(disk_device);
+		break;
+	}
+    }
+
+
+    void CreateHdDiskPanel(any user_data)
+    {
+	string device = (string) user_data;
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	map<symbol, map> data = $[ `overview : $[ `create : CreateHdDiskOverviewTab,
+						  `handle : HandleHdDiskOverviewTab,
+						  `user_data : user_data ],
+				   `partitions : $[ `create : CreateHdDiskPartitionsTab,
+						    `handle : HandleHdDiskPartitionsTab,
+						    `user_data : user_data ] ];
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `IconAndHeading(sformat(_("Hard Disk: %1"), device), hd_icon),
+				  `DumbTab(`id(`tab), [
+					       `item(`id(`overview), _("&Overview")),
+					       `item(`id(`partitions), _("&Partitions"))
+					       ],
+					   `ReplacePoint(`id(`tab_panel), TabPanel::empty_panel)
+				      )
+				  )
+			      ));
+
+	TabPanel::Init(data);
+    }
+
+
+    void HandleHdDiskPanel(any user_data, symbol widget)
+    {
+	TabPanel::Handle(widget);
+    }
+
+
+    void CreateHdPartitionPanel(any user_data)
+    {
+	string device = (string) user_data;
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `udev_path,
+								`udev_id, `used_by, `fs_id, `heading_filesystem,
+								`fs_type, `mount_point, `mount_by, `uuid,
+								`label, `encrypted ]);
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `HStretch(),
+				  `IconAndHeading(sformat(_("Partition: %1"), device), hd_part_icon),
+				  StorageFields::Overview(fields, target_map, device),
+				  `HBox(
+				      `PushButton(`id(`edit), _("Edit...")),
+				      `PushButton(`id(`resize), _("Resize...")),
+				      `PushButton(`id(`delete), _("Delete...")),
+				      `HStretch()
+				      )
+				  )
+			      )
+	    );
+
+	string helptext = _("<p>HD TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::OverviewHelptext(fields));
+    }
+
+
+    void HandleHdPartitionPanel(any user_data, symbol widget)
+    {
+	string part_device = (string) user_data;
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditPartition(part_device);
+		break;
+
+	    case `resize:
+		EpResizePartition(part_device);
+		break;
+
+	    case `delete:
+		EpDeletePartition(part_device);
+		break;
+	}
+    }
+}

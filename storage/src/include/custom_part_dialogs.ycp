@@ -29,6 +29,7 @@
   import "Mode";
   import "Arch";
   import "Label";
+  import "Popup";
 
   //////////////////////////////////////////////////////////////////////////////
   // Dialog Password for Crypted FS
@@ -346,10 +347,10 @@ define symbol DoInputChecks( map entry, string query )
    * @parm new_val map that contains a partition
    * @parm file_systems filesystem definitions
    */
-define map FileSystemOptions( map< any, map<string,any> > org_fs_options, 
-                              map fs_define  )
+map <any, map<string, any> > FileSystemOptions(map< any, map<string,any> > org_fs_options, 
+					       map fs_define)
     ``{
-    y2milestone( "FileSystemOptions org_fs_options %1", org_fs_options );
+    y2milestone( "FileSystemOptions org_fs_options:%1 fs_define:%2", org_fs_options, fs_define );
     map<any, map<string,any> > fs_options = org_fs_options;
     term contents 	= `VBox(`VSpacing (1));
     string helptext   = "";
@@ -620,33 +621,32 @@ A volume label cannot contain the / character or spaces.
     y2milestone( "FstabOptions old_state=%1", old_state );
 
     UI::OpenDialog( `opt(`decorated),
-                    `HBox(
-			`HWeight(4, `RichText( helptext )),
-			`HWeight(7,
-			    `VBox(
-				`HSpacing(50),
-			        // heading text
-				`Left(`Heading(_("Fstab options:"))),
-				`VStretch(),
-				`VSpacing(1),
-				`HBox(`HStretch(),
-				`HSpacing(1),
-				contents,
-				`HStretch(),
-				`HSpacing(1)),
-				`VSpacing(1),
-				`VStretch(),
-				`HBox(
-				    `Bottom(`PushButton(`id(`ok),
-							`opt(`default),
-							Label::OKButton())),
-				    `Bottom(`PushButton(`id(`cancel),
-				                        Label::CancelButton()))
-				    )
-				)
-			    )
-			)
+		      `VBox (
+		          `HSpacing(50),
+		          // heading text
+		          `Left(`Heading(_("Fstab options:"))),
+		          `VStretch(),
+		          `VSpacing(1),
+		          `HBox(`HStretch(),
+		          `HSpacing(1),
+		          contents,
+		          `HStretch(),
+		          `HSpacing(1)),
+		          `VSpacing(1),
+		          `VStretch(),
+		          `HBox(
+		              `Left(`PushButton(`id(`help),`opt(`helpButton), Label::HelpButton())),
+		              `Right(`HBox (
+				  `PushButton(`id(`ok),
+					`opt(`default),
+					Label::OKButton()),
+		                  `PushButton(`id(`cancel),
+		                                  Label::CancelButton()))
+		              )
+		          )
+		      )
 		  );
+
     if( UI::WidgetExists( `id(`mt_group) ))
 	{
 	list no_mountby_type = [ `loop ];
@@ -706,6 +706,10 @@ A volume label cannot contain the / character or spaces.
 	{
 	ret = UI::UserInput();
 	y2milestone( "FstabOptions ret %1", ret );
+	if( ret == `help)
+	{
+	    Popup::LongText(_("Fstab Options Help"), `RichText(helptext), 50,20);
+	}
 	if( ret == "opt_noauto" )
 	    {
 	    if( UI::WidgetExists( `id("opt_user") ))
@@ -912,7 +916,7 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
     if( !Arch::s390 () )
 	{
 	boolean cr = new_val["enc_type"]:`none != `none;
-	CryptWidget = `VBox( `VSpacing(0.7),
+	CryptWidget = `VBox( // `VSpacing(0.7),
 	                     `Left(`CheckBox(`id(`crypt_fs), `opt(`notify),
 					    // button text
 			                     _("&Encrypt file system"), cr )));
@@ -923,9 +927,9 @@ define term FileSystemsComboBox( map new_val, map<symbol,map> file_systems )
 			      `ComboBox(`id(`fs), `opt(`hstretch, `notify),
 					// label text
 					_("File &system"), filesystems )),
-			      `PushButton( `id(`fs_options ),`opt(`hstretch),
+			      `PushButton( `id(`fs_options ), `opt(`hstretch),
 					   // button text
-					   _("O&ptions") ),
+					   _("O&ptions...") ),
 			      CryptWidget );
     }
 
@@ -1593,62 +1597,57 @@ Really do this?
     };
 
 
-define symbol ReallyInstPrepdisk( )
-    ``{
-    map<string,map> targetMap = Storage::GetTargetMap();
+symbol ReallyInstPrepdisk()
+{
     symbol ret = `none;
 
     string doto = Storage::ChangeText();
-    y2milestone( "ReallyInstPrepdisk doto:%1", doto );
-    term dlg = `Empty();
-    if( size(doto) == 0 )
-	{
+    y2milestone("ReallyInstPrepdisk doto:%1", doto);
+
+    if (size(doto) == 0)
+    {
 	// popup text
-	Popup::Message( _("No unsaved changes exist."));
+	Popup::Message(_("No unsaved changes exist."));
 	ret = `back;
-	}
+    }
     else
-	{
-	dlg = `VBox( `VSpacing(1),
-		     `HSpacing(60),
-		     // label text
-		     `Left(`Heading(_("Changes:"))),
-		     `RichText( doto ) );
+    {
+	term dlg = `VBox(`VSpacing(1),
+			 `HSpacing(60),
+			 // label text
+			 `Left(`Heading(_("Changes:"))),
+			 `RichText(doto));
 
 	UI::OpenDialog(`opt(`decorated, `warncolor),
 		       `HBox(
-			     `HSpacing(1),
-			     `VBox(
-				   dlg,
-				   `VSpacing(1),
-				   // popup text
-				   `Heading(_(" Do you really want to execute these changes?")),
-				   `VSpacing(1),
-
-				   `HBox(
-					 // all right, start installation *now*
-
-					 `PushButton(`id(`back), Label::CancelButton()),
-					 `HStretch(),
-					 // button text
-					 `PushButton(`id(`apply),   _("&Apply")),
-					 `PushButton(`id(`finish),  Label::FinishButton() )
-					 // no, don't go on, i just changed my mind
-					 ),
-				   `VSpacing(0.2)
+			   `HSpacing(1),
+			   `VBox(
+			       dlg,
+			       `VSpacing(1),
+			       // popup text
+			       `Heading(_(" Do you really want to execute these changes?")),
+			       `VSpacing(1),
+			       `HBox(
+				   `PushButton(`id(`back), Label::CancelButton()),
+				   `HStretch(),
+				   // button text
+				   `PushButton(`id(`apply), _("&Apply")),
+				   `PushButton(`id(`finish), Label::FinishButton() )
 				   ),
-			     `HSpacing(1)
-			     )
-					  );
+			       `VSpacing(0.2)
+			       ),
+			   `HSpacing(1)
+			   )
+	    );
 
-	ret = (symbol)UI::UserInput();
+	ret = (symbol) UI::UserInput();
 	UI::CloseDialog();
-	}
+    }
 
-    y2milestone( "ReallyInstPrepdisk ret=%1", ret );
+    y2milestone("ReallyInstPrepdisk ret=%1", ret);
 
     return ret;
-    };
+}
 
 
 /**

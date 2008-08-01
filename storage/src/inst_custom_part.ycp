@@ -64,20 +64,6 @@
   include "partitioning/evms_lib.ycp";
 
 
-  // Which columns show the main window have
-  boolean showT_dev 		  = true;      // show /dev/hda1
-  boolean showT_id 		  = false;     // s390 show FD01
-  boolean showT_cyl 		  = true;      // show start and endcyl
-  boolean showT_size 		  = true;      // show size of partition
-  boolean showT_format 		  = true;      // show format flag
-  boolean showT_fs 		  = true;      // show filesystem
-  boolean showT_mount 		  = true;      // show mountpoint
-  boolean showT_mby               = true;      // show mount by
-  boolean showT_Used		  = true;      // show using entity
-  boolean showT_Label             = true;      // show assigned label
-  boolean showT_udev_id		  = true;      // show persistent id
-  boolean showT_udev_path         = true;      // show persistent path
-
   // hide some details in the table by default
   boolean show_T_details = Storage::GetExpertDetail();
 
@@ -126,13 +112,11 @@
 
    if( Arch::ppc () )
        {
-       showT_cyl	 = false;
        bsd_label         = false;
        }
 
    if( Arch::s390 () )
        {
-       showT_id = true;
        button_resize = false;
        button_loop = false;
        }
@@ -871,314 +855,6 @@ define integer TestLogicalSlot( integer slot_start_cyl, string dev, map disk)
     return(nil);
     };
 
-
-    /*---------------------------------------------------------------------
-     * returns for nonnegative numbers a string with a minimum of 4 characters:
-     * 1      -> "   1"
-     * 22     -> "  22"
-     * 145    -> " 145"
-     * 2134   -> "2134"
-     * 34111 -> "34111"
-     *----------------------------------------------------------------------
-     */
-define string to4string( integer nb )
-    ``{
-    if ( nb < 10 )   return( sformat( "   %1", nb ));
-    if ( nb < 100 )  return( sformat( "  %1",  nb ));
-    if ( nb < 1000 ) return( sformat( " %1",   nb ));
-    return( sformat( "%1", nb ));
-    };
-
-define string usedByString( symbol ub_type, string used_by )
-    {
-    string ret = "";
-    if( ub_type == `UB_LVM )
-	ret = "LVM " + used_by;
-    else if( ub_type == `UB_EVMS )
-	ret = "EVMS " + used_by;
-    else if( ub_type == `UB_DM )
-	ret = "DM " + used_by;
-    else if( ub_type == `UB_DMRAID )
-	ret = "RAID " + used_by;
-    else if( ub_type != `UN_NONE )
-	ret = used_by;
-    return( ret );
-    }
-
-    /*---------------------------------------------------------------------
-     * Fill the selection box with ID 'selbox_id' inside widget tree
-     * 'widget' with disk and partition info from 'all_disks'.
-     *
-     *  Return value:
-     * term contents = `VBox(`Label("Partitions"),
-     *                        `Table(`header("Device", "Start", "End", "Size", "F", "Type", "Mount", "RAID" , "LVM" ),
-     *                               [
-     *                                `item(`id("/dev/hda"),    "/dev/hda",      "8.5 GB",   " ", "Seagate ST 48012", " ",	  "1",  "1115"	,"",	""),
-     *                                `item(`id("1//dev/hda"), "  /dev/hda1",   "509.8 MB", " ", "FAT16",            " ",	  "1",  "65"	,"",	""),
-     *                                `item(`id("2//dev/hda"), "  /dev/hda2",   "666.7 MB", " ", "NTFS",             " ",	  "66", "150"	,"",	""),
-     *                                `item(`id("3//dev/hda"), "  /dev/hda3",   "5.5 GB",   " ", "Extended",         " ",	  "301","1024"	,"",	""),
-     *                                `item(`id("4//dev/hda"), "  /dev/hda5",   "7.8 MB",   "F", "Linux ",           "/boot",	  "301","302"	,"",	""),
-     * 				      `item(`id("5//dev/hda"), "  /dev/hda6",   "7.8 MB",   "", "Linux LVM ",         "",         "303","304"	,"",	"system"),
-     *				      `item(`id("6//dev/hda"), "  /dev/hda7",   "7.8 MB",   "", "Linux RAID ",        "",         "305","307"	,"/dev/md1",	""),
-     *                               ] )) ;
-     *
-     *  PPC: without Start End
-     *
-     *----------------------------------------------------------------------
-     */
-
-define list FillPartitionList(map<string,map> targets)
-    ``{
-     list<term> table_input 	= [];
-     boolean log_mode = false;
-
-    // order should be md, then loop, then LVM, then EVMS
-    map disk_order = $[ `CT_DMRAID : 0, `CT_DISK : 1, `CT_MD : 2, `CT_LOOP : 3,
-                        `CT_LVM : 4, `CT_EVMS : 5, `CT_DM : 6, `CT_NFS : 7 ];
-    list<string> keys = maplist( string dev, map disk, targets,
-				 ``{return(dev);} );
-    keys = sort( string a, string b, keys,
-	``{
-	integer oa = disk_order[targets[a,"type"]:`CT_UNKNOWN]:8;
-	integer ob = disk_order[targets[b,"type"]:`CT_UNKNOWN]:8;
-	return( (oa==ob) ? (a<b) : (oa<ob) );
-	});
-
-    SCR::Write(.target.ycp,Storage::SaveDumpPath("targetMap_c"), targets );
-    foreach( string dev, keys,
-	``{
-	map disk = targets[dev]:$[];
-	boolean real_disk = Storage::IsPartitionable( disk );
-	integer cyl_count     = disk["cyl_count"]:0;
-	integer cyl_size      = disk["cyl_size"]:1000000;
-	string  vendor        = disk["vendor"]:"";
-	string  model         = disk["model"]:"";
-	string  dev_size      = ByteToHumanString(disk["size_k"]:0*1024);
-	string  dev_start_cyl = to4string(0);
-	string  dev_nb_cyl    = to4string(cyl_count==0?cyl_count:(cyl_count-1));
-	string  udev_id       = mergestring( disk["udev_id"]:[], " ");
-	string  udev_path     = disk["udev_path"]:"";
-
-	if ( (model != "") && (vendor != "") )
-	    vendor = vendor + "-" + model;
-	else
-	    vendor = vendor +       model;
-
-	// entry in column "Type" for a unknown disk
-	if( vendor == "" )
-	    {
-	    if (disk["bus"]:"" == "RAID")
-		{
-		vendor = "RAID "+dev;
-		}
-	    else if( disk["type"]:`CT_UNKNOWN==`CT_LVM )
-		{
-		vendor = "LVM" + (disk["lvm2"]:false ? "2 " : " ") +
-			 disk["name"]:"";
-		}
-	    else if( disk["type"]:`CT_UNKNOWN==`CT_EVMS )
-		{
-		vendor = "EVMS " + disk["name"]:"";
-		}
-	    else if( disk["type"]:`CT_UNKNOWN==`CT_DMRAID )
-		{
-		vendor = "BIOS RAID " + disk["name"]:"";
-		}
-	    else
-		// label text
-		vendor = sformat( _("DISK %1"), substring( dev, 5 ));
-	    }
-
-	boolean id_sw_raid_dev = (dev == "/dev/md");
-
-	/////////////////////////////////////////////////////////////
-	// Insert line for the entire disk into selection box widget
-	// Look, if for the architecture disk, and Cylinder are shown
-
-	if( !real_disk )
-	    {
-	    dev_nb_cyl    = " -- ";
-	    dev_start_cyl = " -- ";
-	    }
-
-	if( show_disk && 
-	    !(disk["type"]:`CT_UNKNOWN==`CT_DISK && !real_disk) &&
-	    (disk["type"]:`CT_UNKNOWN==`CT_DISK ||
-	     disk["type"]:`CT_UNKNOWN==`CT_DMRAID ||
-	     disk["type"]:`CT_UNKNOWN==`CT_LVM ||
-	     (disk["type"]:`CT_UNKNOWN==`CT_EVMS && size(disk["name"]:"")>0 &&
-	      (!haskey( targets, "/dev/"+substring( disk["name"]:"", search( disk["name"]:"", "/")+1 ))||
-	       disk["create"]:false))))
-	    {
-	    y2milestone( "disk:%1", disk );
-	    term a = `item(`id(dev));
-
-	    if( showT_dev )    a = add(a, dev );
-	    if( showT_id )     a = add(a, sformat( " (%1)",
-						   disk["bios_id"]:"" ) );
-	    if( showT_size )   a = add(a, dev_size );
-	    if( showT_format ) a = add(a, (disk["dasdfmt"]:false)?"X":" " );
-	    if( showT_fs )     a = add(a, vendor);
-	    if( showT_mount )  a = add(a, "" );
-	    if( show_T_details && showT_mby ) a = add(a, "");
-	    if( show_T_details && showT_cyl ) a = add(a, dev_start_cyl );
-	    if( show_T_details && showT_cyl ) a = add(a, dev_nb_cyl );
-	    if( showT_Used )   a = add(a, usedByString( disk["used_by_type"]:`UB_NONE,
-							disk["used_by"]:"" ));
-	    if( showT_Label )  a = add(a, "");
-	    if( show_T_details && showT_udev_id )   a = add(a, udev_id);
-	    if( show_T_details && showT_udev_path ) a = add(a, udev_path);
-
-	    table_input = add( table_input, a );
-	    }
-
-	/////////////////////////////////////////////////////////////
-	// Now we come to the partitions ...
-
-	list<map> partitions = disk["partitions"]:[];
-
-	foreach( map partition, partitions,
-	    ``{
-	    // dont show "system partitions"
-	    string fstype = partition["fstype"]:"";
-	    boolean hide = partition["fsid"]:0 == Partitions::fsid_mac_hidden ||
-	                   disk["used_by_type"]:`UB_NONE==`UB_DMRAID;
-	    if( !hide && search( partition["device"]:"", "/dev/evms/" )==0 )
-		{
-		y2milestone( "evms p: %1", partition );
-		string d1 = evms_dev_disk( partition["device"]:"" );
-		y2milestone( "evms d1:%1", d1 );
-		integer val = search( d1, "/lvm/" );
-		if( val!=nil && val>0 )
-		    {
-		    d1 = "/dev/" + substring( d1, 9 );
-		    }
-		else
-		    {
-		    val = search( d1, "/lvm2/" );
-		    if( val!=nil && val>0 )
-			{
-			d1 = "/dev/" + substring( d1, 10 );
-			}
-		    }
-		hide = size(partition["mount"]:"")==0;
-		if( hide )
-		    {
-		    y2milestone( "evms p: %1", Storage::GetPartition( targets, d1 ));
-		    hide = (size(Storage::GetPartition( targets, d1 ))>0||
-		            Storage::IsPartType(targets[d1,"type"]:`CT_UNKNOWN)) &&
-			   !partition["evms_native"]:false;
-		    }
-		y2milestone( "evms d1:%1 hide:%2", d1, hide );
-		}
-	    if( !hide || log_mode )
-		{
-		string   part_id         = "";
-
-		string part_dev_name = partition["device"]:"";
-		string id = part_dev_name;
-
-		////////////////////////////////////////////////////////////
-		// Format other Colums:
-
-		integer  start_cyl       = partition["region",0]:0;
-		integer  nb_cyl          = partition["region",1]:0;
-		symbol   type            = partition["type"]:`unknown;
-		boolean  format          = partition["format"]:false;
-		boolean  crypt_fs        = partition["enc_type"]:`none != `none;
-		symbol   used_fs         = partition["used_fs"]:`unknown;
-		string   mount_point     = partition["mount"]:"";
-		symbol   mount_by        = partition["mountby"]:`device;
-		string   filesystem_name = "";
-		string   label           = partition["label"]:"";
-		string   udev_id         = mergestring( partition["udev_id"]:[], " ");
-		string   udev_path       = partition["udev_path"]:"";
-
-		string used_by = 
-		    usedByString( partition["used_by_type"]:`UB_NONE,
-				  partition["used_by"]:"" );
-
-		filesystem_name = partition["fstype"]:"";
-
-		if( format && partition["fsid"]:0 == Partitions::fsid_native)
-		    {
-		    string fs_name =  FileSystems::GetName( used_fs, "Ext2" );
-		    filesystem_name = filesystem_name + " (" + fs_name + ") ";
-		    }
-
-		string format_flag      = "";
-		if ( format ) format_flag = "F";
-		if ( crypt_fs ) format_flag = "C" + format_flag;
-
-		string bytes_of_part =
-		    ByteToHumanString( partition["size_k"]:0*1024 );
-
-		/////////////////////////////////////////////////////
-		// Insert line for this partition into selection box widget
-		//
-		// Start- and EndCly are shown (intel) or not (ppc) ...
-
-		term a = `item(`id(id));
-
-		if( showT_dev )    a = add(a, part_dev_name );
-		if( showT_id )     a = add(a, part_id );
-		if( showT_size )   a = add(a, bytes_of_part);
-		if( showT_format ) a = add(a, format_flag);
-		if( showT_fs )     a = add(a, filesystem_name);
-		if( showT_mount )
-		    {
-		    string tmp = mount_point;
-		    if( Mode::normal() && partition["inactive"]:false )
-			{
-			tmp = tmp + " *";
-			}
-		    a = add(a, tmp );
-		    }
-		if( show_T_details && showT_mby )
-		    {
-		    if (size (mount_point) > 0)
-			{
-			map tmp = $[ `device : "K", `uuid : "U", `label : "L",
-				     `id : "I", `path : "P" ];
-			a = add(a, tmp[mount_by]:"");
-			}
-		    else
-			a = add(a, "");
-		    }
-		if( show_T_details && showT_cyl )
-		    {
-		    if( real_disk )
-			{
-			a = add(a, to4string(start_cyl));
-			integer num = start_cyl + nb_cyl - 1;
-			if( num<0 )
-			    num=0;
-			a = add(a, to4string(num));
-			}
-		    else
-			{
-			a = add(a, " -- ");
-			a = add(a, " -- ");
-			}
-		    }
-		if( showT_Used )   a = add(a, used_by);
-		if( showT_Label )  a = add(a, label);
-		
-		if( show_T_details && showT_udev_id ) a = add(a, udev_id);
-		if( show_T_details && showT_udev_path ) a = add(a, udev_path);
-
-		table_input = add( table_input, a );
-		}
-	    else
-	       {
-	       // as deleted marked
-	       // y2debug( "ddddddddddddd----");
-	       }
-	    });
-	});
-
-    return( table_input );
-    };
 
 /*-------------------------------------------------------------------
  *
@@ -2401,53 +2077,6 @@ define string FormatCauseLine( symbol cause )
     return( "---" );
     };
 
-define term GetTableHeader () {
-    term header = `header();
-
-    // Column header
-    if ( showT_dev )    header = add( header, _("Device"));
-
-    // Column header
-    if ( showT_id )     header = add( header, _("ID"));
-
-    // Column header: centered / minimum = 11 characters /
-    // fill with space if needed
-    if ( showT_size )   header = add( header, `Right(_("    Size    ")));
-
-    // Column header: centered / minimum = 3 characters /
-    // fill with space if needed
-    if ( showT_format ) header = add( header, `Right(_(" F ")));
-
-    // Column header
-    if ( showT_fs )     header = add( header,  _("Type"));
-
-    // Column header: centered / minimum = 7 characters /
-    // fill with space if needed
-    if ( showT_mount )  header = add( header, _(" Mount "));
-
-    // Column header
-    if ( show_T_details && showT_mby )    header = add( header, _("Mount By"));
-
-    // Column header: minimum = 5 characters   fill with space if needed
-    if ( show_T_details && showT_cyl )    header = add( header, `Right(_("Start")));
-
-    // Column header: minimum = 4 characters   fill with space if needed
-    if ( show_T_details && showT_cyl )    header = add( header, `Right(_("End ")));
-
-    // Column header
-    if ( showT_Used )   header = add( header, `Left(_("Used By")));
-
-    // Column header
-    if ( showT_Label )  header = add( header, `Left(_("Label")));
-
-    // Column header
-    if ( show_T_details && showT_udev_id )   header = add( header, `Left(_("Device ID")));
-
-    // Column header
-    if ( show_T_details && showT_udev_path ) header = add( header, `Left(_("Device Path")));
-    
-    return header;
-}
 
     /*---------------------------------------------------------------------
      * Make a output string for "you can not create a partition, because: "
@@ -2503,6 +2132,18 @@ define string FormatYouCannotCause( boolean primary_is_possible,
     // MAIN:
     /////////////////////////////////////////////////////////////////
 
+
+
+
+    if (true)
+    {
+	include "partitioning/ep-main.ycp";
+	return test_new_ep();
+    }
+
+
+
+
     symbol ret = nil;
 
     y2milestone( "Custom partitioner started" );
@@ -2512,7 +2153,6 @@ define string FormatYouCannotCause( boolean primary_is_possible,
                Storage::GetTargetMap() );
 
     map<string,map> tg = Storage::GetTargetMap();
-    list table_list = FillPartitionList(tg);
 
     if( !Storage::CheckBackupState("custom_part") )
 	{
@@ -2623,16 +2263,6 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 	`CheckBox (`id(`show_table_details), `opt(`notify), _("&Show Details"), show_T_details)
     );
 
-    term contents = `VBox( `VSpacing(0.5),
-			   `ReplacePoint(
-			     `id(`table_rp),
-                             `Table( `id(`table), `opt(`notify,`keepSorting),
-				   GetTableHeader(), table_list )
-		           ),
-			   details_checkbox,
-			   buttonline_a,
-			   buttonline_b ) ;
-
     string help_text = "";
     if( Arch::s390 () )
 	{
@@ -2660,8 +2290,8 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 	}
 
     // heading text
-    Wizard::SetContentsButtons(_("Expert Partitioner"), contents, help_text,
-                               back_label, next_label );
+    // Wizard::SetContentsButtons(_("Expert Partitioner"), contents, help_text,
+    //                           back_label, next_label );
 
 
    //////////////////////////////////////////////////////////////////
@@ -2671,8 +2301,8 @@ define string FormatYouCannotCause( boolean primary_is_possible,
     repeat
         {
 	map<string,map> tg =  Storage::GetTargetMap();
-        table_list = FillPartitionList(tg);
-        UI::ChangeWidget(`id(`table), `Items, table_list);
+        // table_list = FillPartitionList(tg);
+        // UI::ChangeWidget(`id(`table), `Items, table_list);
 
 	///////////////////////////////////////////////////////
 	// Now set the focus
@@ -2695,11 +2325,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
 	if( ret==`show_table_details ) 
 	    {
-	    show_T_details = (boolean) UI::QueryWidget(`id(`show_table_details), `Value);
-	    UI::ReplaceWidget( `id(`table_rp),
-			       `Table( `id(`table), `opt(`notify,`keepSorting),
-				       GetTableHeader(), [] ));
-	    continue;
+		continue;
 	    }
 	
 
@@ -3112,137 +2738,6 @@ All data on this partition will be lost if you delete it."));
         /////////////////////////////////////////////////////////////
         if (ret == `delete)
 	    {
-	    map<string,any> part = $[];
-	    string id = (string)UI::QueryWidget( `id(`table), `CurrentItem);
-	    map<string,any> disk = Storage::GetDisk( tg, id );
-
-	    if( !haskey( tg, id ) )
-		part = Storage::GetPartition( tg, id );
-	    y2milestone( "id:%1 part:%2", id, part );
-	    if( !haskey( tg, id ) && size(part)==0 )
-		{
-		ret = `again;
-		continue;
-		}
-
-	    if( disk["readonly"]:false )
-		{
-		Popup::Error( Partitions::RdonlyText( disk["device"]:"", true ));
-		ret = `again;
-		continue;
-		}
-
-	    if( haskey( tg, id ) )
-		{
-		if( tg[id,"type"]:`CT_UNKNOWN == `CT_MD )
-		    {
-		    ret = `again;
-		    continue;
-		    }
-		else if( tg[id,"type"]:`CT_UNKNOWN == `CT_LVM )
-		    {
-		    string current_vg = substring( tg[id,"device"]:"", 5 );
-		    HandleRemoveVg( tg, current_vg );
-		    }
-		else if( tg[id,"type"]:`CT_UNKNOWN == `CT_DMRAID )
-		    {
-		    if( Popup::YesNo( sformat(_("Really delete BIOS RAID %1?"), id )))
-			{
-			if( deleteAllDevPartitions( disk, Stage::initial(), bsd_label ))
-			    Storage::DeleteDmraid( id );
-			}
-		    }
-                // YesNo popup text %1 is replaced by a disk name e.g. /dev/hda
-		else if( Popup::YesNo( sformat(_("Really delete all partitions on %1?"), id )))
-		    {
-		    focusline = id;
-		    deleteAllDevPartitions( disk, Stage::initial(), bsd_label );
-		    }
-		}
-	    else if( part["type"]:`unknown==`lvm )
-		{
-		if( !check_device_delete( part, false, Stage::initial(), $[] ))
-		    {
-		    ret = `again;
-		    continue;
-		    }
-		else
-		    HandleRemoveLv( tg, id );
-		}
-            else
-		{
-                /////////////////////////////////////////////////////
-                // delete algorithm:
-                // if you find newly created (but until now not realy
-		// written) partition (sign: "create = true"): delete it
-                // else there must be already existing partition: mark it
-		// with "delete = true"
-
-		focusline = id;
-
-		y2milestone( "delete part %1", part );
-		/////////////////////////////////////////////////////
-		// check if the partition can be deleted
-
-		if( part["type"]:`primary == `extended &&
-		    !check_extended_delete( disk, Stage::initial() ))
-		    {
-		    ret = `again;
-		    continue;
-		    }
-		if( part["type"]:`primary != `extended &&
-		    !check_device_delete( part, bsd_label, Stage::initial(),
-		                          disk ))
-		    {
-		    ret = `again;
-		    continue;
-		    }
-
-		/////////////////////////////////////////////////////
-		// now delete partition!!
-
-                // YesNo popup text, %1 is replaced by a device name e.g. /dev/hda1
-		if( Popup::YesNo( sformat(_("Really delete %1?"),
-		                            part["device"]:"" )))
-		    {
-		    if( (search( id, "/dev/loop")==0 ||
-		         search( id, "/dev/mapper/")==0) && 
-		        size(part["fpath"]:"")>0 &&
-			Mode::normal() &&
-			// YesNo popup.  %1 is path to a file
-			Popup::YesNo( sformat(_("\nShould the loop file %1 also be removed?
-"), part["fpath"]:"" )))
-			{
-			Storage::DeleteLoop( disk["device"]:"",
-			                     part["fpath"]:"", true );
-			}
-		    if( part["type"]:`unknown == `nfs )
-			{
-			Storage::DeleteDevice( "/dev/nfs",
-			                       part["device"]:"" );
-			}
-		    else
-			{
-			Storage::DeleteDevice( disk["device"]:"",
-					       part["device"]:"" );
-			}
-		    focusline = Storage::GetIdSmaller( disk["device"]:"",
-		                                       part["nr"]:0 );
-		    }
-		if( search( id, "/dev/md" )==0  )
-		    {
-		    map raid = Storage::GetDisk( Storage::GetTargetMap(), "/dev/md" );
-		    UI::ReplaceWidget( `id(`raid_button),
-				       RaidButton(size(raid["partitions"]:[])) );
-		    }
-		else if( search( id, "/dev/loop" )==0 || 
-		         search( id, "/dev/mapper/" )==0 )
-		    {
-		    map dev = Storage::GetDisk( Storage::GetTargetMap(), "/dev/loop" );
-		    UI::ReplaceWidget( `id(`loop_button),
-				       LoopButton(size(dev["partitions"]:[])) );
-		    }
-		}
 	    }
 
 
