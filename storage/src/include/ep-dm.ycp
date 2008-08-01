@@ -1,0 +1,88 @@
+/**
+ * File:	ep-dm.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    include "partitioning/ep-dm-dialogs.ycp";
+    include "partitioning/ep-dm-lib.ycp";
+
+
+    void CreateDmMainPanel(any user_data)
+    {
+	symbol Predicate(map disk, map partition)
+	{
+	    return StorageFields::PredicateDiskType(disk, partition, [`CT_DM]);
+	}
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `size, `format, `type, `mount_point,
+							     `mount_by, `used_by ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `HStretch(),
+				  `IconAndHeading(_("Device Mapper (DM)"), dm_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify),
+					 table_header, table_contents)
+				  )
+			      )
+	    );
+
+	string helptext = _("<p>DM TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
+    void CreateDmPanel(any user_data)
+    {
+	string dm_device = (string) user_data;
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `used_by,
+								`heading_filesystem, `fs_type, `mount_point,
+								`mount_by, `uuid, `label ]);
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `IconAndHeading(sformat(_("DM Device: %1"), dm_device), dm_icon),
+				  `HStretch(),
+				  StorageFields::Overview(fields, target_map, dm_device),
+				  `HBox(
+				      `PushButton(`id(`edit), _("Edit...")),
+				      `HStretch()
+				      )
+				  )
+			      )
+	    );
+
+	string helptext = _("<p>DM TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::OverviewHelptext(fields));
+    }
+
+
+    void HandleDmPanel(any user_data, symbol widget)
+    {
+	string dm_device = (string) user_data;
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditDmDevice(dm_device);
+		break;
+	}
+    }
+}

@@ -1,0 +1,88 @@
+/**
+ * File:	ep-loop-lib.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    void EpCreateLoop()
+    {
+	map<string, any> data = $[ "new" : true,
+				   "create" : true ];
+
+	data["device"] = Storage::GetLoopDevice();
+
+	data["type"] = `loop;
+	data["format"] = true;
+
+	if (DlgCreateLoop(data))
+	{
+	    Debug("create loop from data", data);
+
+	    Storage::UpdateLoop(data["device"]:"", data["fpath"]:"",
+				data["create_file"]:false, data["size_k"]:0);
+
+	    Storage::ChangeVolumeProperties(data);
+
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	    UpdateTableFocus(data["device"]:"error");
+	}
+	else
+	{
+	    // TODO: This is ugly. Storage::GetLoopDevice creates a loop device which
+	    // must be deleted if the user abort the creation dialog.
+	    Storage::DeleteDevice("/dev/loop", data["device"]:"");
+	}	
+    }
+
+
+    void EpEditLoop(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No crypt file selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+
+	if (data["used_by"]:"" != "")
+	{
+	    Error(sformat(_("The Crypt File %1 is in use. It cannot be
+edited. To edit %1, make sure it is not used."), device));
+	    return;
+	}
+
+	if (DlgEditLoop(data))
+	{
+	    Debug("edit loop from data", data);
+
+	    Storage::ChangeVolumeProperties(data);
+
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	    UpdateTableFocus(device);
+	}
+    }
+
+
+    void EpDeleteLoop(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No crypt file selected."));
+	    return;
+	}
+
+	if (EpDeleteDevice(device))
+	{
+	    UpdateNavigationTree(`loop);
+	    TreePanel::Create();
+	}
+    }
+}

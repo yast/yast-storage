@@ -1,0 +1,186 @@
+/**
+ * File:	ep-raid-lib.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    boolean AddDevices(integer raid_nr, list<string> devs)
+    {
+	boolean ret = true;
+
+	foreach(string dev, devs, {
+	    Storage::SetPartitionId(dev, Partitions::fsid_raid);
+	    Storage::SetPartitionFormat(dev, false, `none);
+	    if (!Storage::ExtendMd(raid_nr, dev))
+		ret = false;
+	});
+
+	return ret;
+    }
+
+
+    boolean RemoveDevices(integer raid_nr, list<string> devs)
+    {
+	boolean ret = true;
+
+	foreach(string dev, devs, {
+	    Storage::UnchangePartitionId(dev);
+	    if (!Storage::ShrinkMd(raid_nr, dev))
+		ret = false;
+	});
+
+	return ret;
+    }
+
+
+    void EpCreateRaid()
+    {
+	map<string, map> target_map = Storage::GetTargetMap();
+	list<map> unused_devices = filter(map dev, get_possible_rds(target_map), { return dev["used_by"]:"" == ""; });
+
+	if (size(unused_devices) < 2)
+	{
+	    Error(_("There are not enough suitable unused devices to create a RAID."));
+	    return;
+	}
+
+	map<string, any> data = $[ "new" : true,
+				   "create" : true ];
+
+	map r = Storage::NextMd();
+	data["device"] = r["device"]:"";
+	data["nr"] = r["nr"]:0;
+
+	if (DlgCreateRaidNew(data))
+	{
+	    Debug("create raid from data", data);
+
+	    integer nr = data["nr"]:0;
+	    symbol raid_type = symbolof(toterm(data["raid_type"]:"raid0"));
+
+	    if (Storage::CreateMdWithDevs(nr, raid_type, []))
+	    {
+		list<string> devices = data["devices"]:[];
+		AddDevices(nr, devices);
+
+		integer chunk_size_k = data["chunk_size_k"]:4;
+		Storage::ChangeMdChunk(nr, chunk_size_k);
+
+		if (raid_type == `raid5) {
+		    symbol parity_algorithm = data["parity_algorithm"]:`left_asymmetric;
+		    Storage::ChangeMdParitySymbol(nr, parity_algorithm);
+		}
+
+		Storage::ChangeVolumeProperties(data);
+
+		UpdateNavigationTree(nil);
+		TreePanel::Create();
+		UpdateTableFocus(data["device"]:"error");
+	    }
+	}
+    }
+
+
+    void EpEditRaid(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No RAID selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+
+	if (data["used_by"]:"" != "")
+	{
+	    Error(sformat(_("The RAID %1 is in use. It cannot be
+edited. To edit %1, make sure it is not used."), device));
+	    return;
+	}
+
+	if (DlgEditRaid(data))
+	{
+	    Debug("edit raid from data", data);
+
+	    Storage::ChangeVolumeProperties(data);
+
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	    UpdateTableFocus(device);
+	}
+    }
+
+
+    void EpResizeRaid(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No RAID selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+
+	if (!data["create"]:false)
+	{
+	    Error(sformat(_("The RAID %1 is already created on disk. It cannot be
+resized. To resize %1, remove it and create it again."), device));
+	    return;
+	}
+
+	if (data["used_by"]:"" != "")
+	{
+	    Error(sformat(_("The RAID %1 is in use. It cannot be
+resized. To resize %1, make sure it is not used."), device));
+	    return;
+	}
+
+	if (DlgResizeRaid(data))
+	{
+	    Debug("resize raid from data", data);
+
+	    integer raid_nr = data["nr"]:0;
+
+	    list<string> devices_old = data["devices"]:[];
+	    list<string> devices_new = data["devices_new"]:[];
+
+	    list<string> devices_added = AddedToList(devices_old, devices_new);
+	    list<string> devices_removed = RemovedFromList(devices_old, devices_new);
+
+	    if (size(devices_added) > 0 || size(devices_removed) > 0)
+	    {
+		AddDevices(raid_nr, devices_added);
+
+		if (!RemoveDevices(raid_nr, devices_removed))
+		{
+		    Error(_("Failed to remove some devices. TODO"));
+		}
+
+		UpdateNavigationTree(nil);
+		TreePanel::Create();
+	    }
+	}
+    }
+
+
+    void EpDeleteRaid(string device)
+    {
+	if (device == nil)
+	{
+	    Error(_("No RAID selected."));
+	    return;
+	}
+
+	if (EpDeleteDevice(device))
+	{
+	    UpdateNavigationTree(`md);
+	    TreePanel::Create();
+	}
+    }
+}

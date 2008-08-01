@@ -1,0 +1,511 @@
+/**
+ * File:	ep-dialogs.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    // TODO: see fate #304971
+    boolean YesNo(string text)
+    {
+	return Popup::YesNo(String::WrapAt(text, 50, ""));
+    }
+
+    void Error(string text)
+    {
+	Popup::Error(String::WrapAt(text, 50, ""));
+    }
+
+
+    symbol MiniWorkflowStepFormatMount(map<string, any> &orig_data)
+    {
+	map<string, any> data = orig_data;
+
+	y2milestone("MiniWorkflowStepFormatMount data:%1", data);
+
+	boolean do_format = data["format"]:false;
+	boolean crypt_fs = data["enc_type"]:`none != `none;
+	string mount = data["mount"]:"";
+	boolean do_mount = mount != "";
+
+	if (data["new"]:false && !data["formatmount_proposed"]:false)
+	{
+	    data["formatmount_proposed"] = true;
+
+	    string mount_point_proposal = GetMountPointProposal(Storage::GetTargetMap(), []);
+
+	    symbol used_fs = Partitions::DefaultFs();
+	    if (mount_point_proposal == Partitions::BootMount())
+		used_fs = Partitions::DefaultBootFs();
+
+	    // TODO
+	    data["format"] = true;
+	    data["fsid"] = Partitions::fsid_native;
+	    mount = mount_point_proposal;
+	    do_mount = mount != "";
+	    data["used_fs"] = used_fs;
+	}
+
+	term tmp1 = `Empty();
+	if (contains([`primary, `extended, `logical], data["type"]:`none))
+	    tmp1 = `VBox(`id(`do_not_format_attachment), FsidComboBox(data, FileSystems::GetAllFileSystems(true, true)));
+
+	list mountpoints = nil;
+	if (mountpoints == nil)
+	    mountpoints = [ "/", "/usr", Partitions::BootMount(), "/var", "/home", "/opt" ];
+
+	if (mount != "" && !contains(mountpoints, mount))
+	    mountpoints = union([mount], mountpoints);
+
+	term contents = `HVSquash(`VStackFrames(
+				      `Frame(_("Format"),
+					     `RadioButtonGroup(`id(`format),
+							       `VBox(
+								   `LeftRadioButtonWithAttachment(`id(`do_format), `opt(`notify),
+												  _("Format the partition"),
+												  `VBox(`id(`do_format_attachment),
+												      FileSystemsComboBox($[], FileSystems::GetAllFileSystems(true, true))
+												      )),
+								   `VSpacing(0.45),
+								   `LeftRadioButtonWithAttachment(`id(`do_not_format), `opt(`notify),
+												  _("Do not format the partition"),
+												  tmp1)
+								   )
+						 )
+					  ),
+				      `Frame(_("Mount"),
+					     `RadioButtonGroup(`id(`mount),
+							       `VBox(
+								   `LeftRadioButtonWithAttachment(`id(`do_mount), `opt(`notify),
+												  _("Mount partition"),
+												  `VBox(
+												      `id(`do_mount_attachment),
+												      `ComboBox(`id(`mount_point), `opt(`editable, `hstretch, `notify),
+														_("Mount Point"), mountpoints),
+												      `PushButton(`id(`fstab_options), `opt(`hstretch),
+														  // button text
+														  _("Fs&tab Options..."))
+												      )),
+								   `VSpacing(0.45),
+								   `LeftRadioButton(`id(`do_not_mount), `opt(`notify),
+										    _("Do not mount partition"))
+								   )
+						 )
+					  )
+				      )
+	    );
+
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "help");
+
+	MiniWorkflow::SetLastStep(true);
+
+	UI::ChangeWidget(`id(`format), `Value, do_format ? `do_format : `do_not_format);
+	UI::ChangeWidget(`id(`do_format_attachment), `Enabled, do_format);
+	UI::ChangeWidget(`id(`crypt_fs), `Value, crypt_fs);
+	UI::ChangeWidget(`id(`do_not_format_attachment), `Enabled, !do_format);
+	UI::ChangeWidget(`id(`mount), `Value, do_mount ? `do_mount : `do_not_mount);
+	UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, do_mount);
+	UI::ChangeWidget(`id(`mount_point), `Value, mount);
+
+	symbol widget = nil;
+
+	repeat
+	{
+	    widget = MiniWorkflow::UserInput();
+
+	    switch (widget)
+	    {
+		case `fs:
+		    symbol used_fs = (symbol) UI::QueryWidget(`id(`fs), `Value);
+		    if (used_fs != data["used_fs"]:`none)
+		    {
+			data["used_fs"] = used_fs;
+			data = filter(string key, any value, data, { return key != "fs_options"; });
+		    }
+		    break;
+
+		case `crypt_fs:
+		    MiniWorkflow::SetLastStep(UI::QueryWidget(`id(`crypt_fs), `Value) != true);
+		    break;
+
+		case `fs_options:
+		    map fs_options = FileSystems::DefaultFormatOptions(data);
+		    if (size(fs_options) > 0 && !haskey(data, "fs_options"))
+			data["fs_options"] = FileSystems::DefaultFormatOptions(data);
+
+		    map filesystems = FileSystems::GetAllFileSystems(true, true);
+		    data["fs_options"] = FileSystemOptions(data["fs_options"]:$[], filesystems[data["used_fs"]:`unknown]:$[]);
+		    break;
+
+		case `fstab_options:
+		    string fstopt = FileSystems::DefaultFstabOptions(data);
+		    if (size(fstopt) > 0 && !haskey(data, "fstopt"))
+			data["fstopt"] = fstopt;
+
+		    data = FstabOptions(data, data);
+		    break;
+
+		case `do_format:
+		    // TODO
+		    data["used_fs"] = (symbol) UI::QueryWidget(`id(`fs), `Value);
+
+		    UI::ChangeWidget(`id(`do_format_attachment), `Enabled, true);
+		    UI::ChangeWidget(`id(`do_not_format_attachment), `Enabled, false);
+		    MiniWorkflow::SetLastStep(UI::QueryWidget(`id(`crypt_fs), `Value) != true);
+		    break;
+
+		case `do_not_format:
+		    UI::ChangeWidget(`id(`do_format_attachment), `Enabled, false);
+		    UI::ChangeWidget(`id(`do_not_format_attachment), `Enabled, true);
+		    MiniWorkflow::SetLastStep(true);
+		    break;
+
+		case `fsid_point:
+		    // TODO
+		    break;
+
+		case `do_mount:
+		    UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, true);
+		    break;
+
+		case `do_not_mount:
+		    UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, false);
+		    break;
+
+		case `next:
+		    do_format = (boolean) UI::QueryWidget(`id(`do_format), `Value);
+		    crypt_fs = (boolean) UI::QueryWidget(`id(`crypt_fs), `Value);
+		    do_mount = (boolean) UI::QueryWidget(`id(`do_mount), `Value);
+		    mount = (string) UI::QueryWidget(`id(`mount_point), `Value);
+		    // TODO: checks
+		    break;
+	    }
+	}
+	until (widget == `abort || widget == `back || widget == `next);
+
+	if (widget == `next)
+	{
+	    if (crypt_fs)
+		data["enc_type"] = data["format"]:false ? `luks : `twofish;
+	    else
+		data["enc_type"] = `none;
+
+	    data["format"] = do_format;
+	    data["mount"] = do_mount ? mount : "";
+
+	    if (!data["format"]:false)
+		data = filter(string key, any value, data, { return key != "fs_options"; });
+
+	    if (!do_format || !crypt_fs)
+		widget = `finish;
+
+	    orig_data = data;
+	}
+
+	y2milestone("MiniWorkflowStepFormatMount data:%1 ret:%2", data, widget);
+
+	return widget;
+    }
+
+
+    symbol MiniWorkflowStepPassword(map<string, any> &data)
+    {
+	y2milestone("MiniWorkflowStepPassword data:%1", data);
+
+	integer min_pw_len = data["format"]:false ? 8 : 1;
+	boolean empty_pw_allowed = EmptyCryptPwdAllowed(data);
+
+	string label = _("Don't forget what you enter here!");
+	if (empty_pw_allowed)
+	    label = label + "\n" + _("Empty password allowed.");
+
+	term contents = `HVSquash(`Frame(_("Password"),
+					 `VBox(
+					     `Password(`id(`pw1),
+						       // Label: get password for user root
+						       // Please use newline if label is longer than 40 characters
+						       _("&Enter a password for your file system:"), ""),
+					     `Password(`id(`pw2),
+						       // Label: get same password again for verification
+						       // Please use newline if label is longer than 40 characters
+						       _("Reenter the password for &verification:"), ""),
+					     `VSpacing(0.5),
+					     `Left(`Label(label))
+					     )
+				      )
+	    );
+
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "TODO help");
+	MiniWorkflow::SetLastStep(true);
+
+	string pw1 = "";
+	string pw2 = "";
+
+	symbol widget = nil;
+
+	repeat
+	{
+	    UI::ChangeWidget(`id(`pw1), `Value, "");
+	    UI::ChangeWidget(`id(`pw2), `Value, "");
+
+	    widget = MiniWorkflow::UserInput();
+
+	    if (widget == `next)
+	    {
+		pw1 = (string) UI::QueryWidget(`id(`pw1), `Value);
+		pw2 = (string) UI::QueryWidget(`id(`pw2), `Value);
+
+		if ( pw1 != pw2 )
+		{
+		    // popup text
+		    Popup::Message(_("The first and the second version\nof the password do not match!\nPlease try again."));
+		    widget = `again;
+		}
+		else if (pw1 == "" && !empty_pw_allowed)
+		{
+		    // popup text
+		    Popup::Message(_("You did not enter a password.
+Try again.
+"));
+		    widget = `again;
+		}
+		else if (size(pw1) < min_pw_len && !empty_pw_allowed)
+		{
+		    // popup text
+		    Popup::Message(sformat(_("The password must have at least %1 characters.
+Try again.
+"), min_pw_len));
+		    widget = `again;
+		}
+		else if (size(pw1) >= min_pw_len || empty_pw_allowed)
+		{
+		    any ret2 = findfirstnotof( pw1, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#* ,.;:._-+!$%&/|\?{[()]}@^\\<>" );
+		    if ( ret2 != nil && size(pw1)>0 )
+		    {
+			// popup text
+			Popup::Message(_("The password may only contain the following characters:
+0..9, a..z, A..Z, and any of \"@#* ,.;:._-+!$%&/|\?{[()]}^\\<>\".
+Try again."));
+			widget = `again;
+		    }
+		}
+	    }
+	}
+	until (widget == `abort || widget == `back || widget == `next);
+
+	if (widget == `next)
+	{
+	    Storage::UpdateClassified(data["device"]:"", pw1);
+	    widget = `finish;
+	}
+
+	y2milestone("MiniWorkflowStepPassword data:%1 ret:%2", data, widget);
+
+	return widget;
+    }
+
+    //data i.e. partition 
+    map<symbol, any> DlgResize(map <string, any> &data , map <string, any> disk, symbol flavour)
+    {
+	integer cyl_size = disk["cyl_size"]:1;
+	integer free_cyl_after = Storage::FreeCylAfter( disk, data);
+	integer av_space = cyl_size * free_cyl_after;
+	integer fsid = data["fsid"]:0;
+
+	string device = data["device"]:"error";
+	symbol used_fs = data["used_fs"]:`none;
+
+	/*integer lv_used	= 3500;
+	integer lv_free = 7000;
+	integer lv_min_free = 10;
+	integer vg_free	= 80000;
+	integer vg_min_free = 0;*/
+
+	integer used = 0;
+	integer free = 0; 
+	integer total = 0; 
+	//leave this 5 for now, will be different for Windows
+	integer min_free = 5;
+
+	// Unit for partition resizing - currently Megabytes
+	string unit = _("MB");
+	integer factor = 1024*1024;
+
+	string heading = "";
+	string field_label_free = "";
+	string field_label_vg_free = "";
+
+	map AdjustSwapPartitionDf ( map size_data)
+	{
+	    map ret = size_data; 
+	    ret["used"] = 0;
+	    ret["df_free"] = data["region",1]:0 * cyl_size;
+
+	    return ret;
+	}
+
+	list <string> BarGraphLabels()
+        {
+	    string used = "";
+	    string free = "";
+	    string available = "";
+
+	    if (flavour == `part)
+	    {
+	     //FIXME: add special case for Windows part.
+		used =  _("Space\nUsed\n%1 ") + unit;
+
+		if ( Partitions::IsSwapPartition( fsid ) )
+		    free = _("Swap\nSpace\n%1 ") + unit;
+		else
+		    free = _("Space\nFree\n%1 ") + unit;
+
+		available = _("Unused\nDisk\n%1 ") + unit;
+	    }
+	    if (flavour == `lv)
+	    {
+	        // Labels for bar graph. "%1" will be replace with a numeric value.
+	        used = _("LV\nUsed\n%1") + unit;
+	        // Labels for bar graph. "%1" will be replace with a numeric value.
+	        free = _("LV\nFree\n%1") + unit;
+	        // Labels for bar graph. "%1" will be replace with a numeric value.
+	        available = _("VG\nFree\n%1") + unit;
+	    }
+
+	    return [ used, free, available ];
+	}
+
+	if (flavour == `part)
+	{
+
+	    // Heading for dialog
+	    heading = sformat(_("Resize Partition %1"), device);
+
+	    map size_data = Storage::GetFreeSpace( device, 0, used_fs, true);
+	    y2internal("zirafa %1 %2", size_data["used"]:0, size_data["df_free"]:0);
+
+	    if( size_data["df_free"]:0 > 15*1024*factor )
+            {
+		factor = factor * 1024;
+		unit = _("GB");
+            }
+
+	    if ( Partitions::IsSwapPartition( fsid ) )
+		size_data = AdjustSwapPartitionDf( size_data );
+
+	    used =  size_data["used"]:0 / factor;
+            free = size_data["df_free"]:0 / factor;
+	    av_space = av_space / factor;
+	    total = used + free + av_space;
+
+	    // TODO: see texts in inst_custom_part.ycp
+	}
+	else if (flavour == `lv)
+	{
+	    // Heading for dialog
+	    heading = sformat(_("Resize Logical Volume %1"), device);
+
+	    // Labels for input fields. "%1" will be replaced with the current unit (MB).
+	    field_label_free = sformat(_("LV Free (%1)"), unit);
+	    // Labels for input fields. "%1" will be replaced with the current unit (MB).
+	    field_label_vg_free = sformat(_("VG Free (%1)"), unit);
+	}
+
+	term content = `Empty();
+
+	if (UI::HasSpecialWidget(`BarGraph) &&
+	    UI::HasSpecialWidget(`Slider))
+	{
+	    content = `VBox(
+                         `BarGraph(`id(`graph), `opt(`vstretch), [used, free, av_space], BarGraphLabels() ),
+		         //`Slider(`id(`new_size), `opt(`notify), sformat(_("New Size (in %1)"), unit), vg_min_free,
+		         //        (lv_used + free - lv_min_free), lv_used )
+		         `Slider(`id(`new_size), `opt(`notify), sformat(_("New Size (in %1)"), unit), used+min_free,
+				   used + free + av_space, used+free)
+		     );
+	}
+	else
+	{
+	    content = `Frame("",
+			   `IntField(`id(`new_size), `opt(`notify), sformat(_("New Size (in %1)"), unit),
+			      used + min_free, used + free + av_space,
+			      used + free)
+		       );
+	}
+
+        UI::OpenDialog(
+	    `VBox(
+	        `Left(`Heading(heading)),
+	        `HSpacing(60),
+		 content,
+	        `Left(`Label( `id(`free), sformat(_("Free Space Remaining: %1 MB"), free ))),
+		`VSpacing(1.0),
+	        `Left(`Label( sformat(_("Minimum Partition Size: %1 MB"), used + min_free ))),
+	        `Left(`Label( sformat(_("Maximum Partition Size: %1 MB"), total ))),
+	        //`PartitionSplitter(lv_used, free, vg_free, vg_min_free, lv_min_free,
+	    //		       bargraph_label_used, bargraph_label_free,
+	    //		       bargraph_label_vg_free, field_label_free,
+	    //		       field_label_vg_free),
+	        `HBox(
+	    	   `HStretch(),
+	    	   `PushButton(`id(`cancel), Label::CancelButton()),
+	    	   `PushButton(`id(`ok), `opt(`default), Label::OKButton())
+	    	)
+	    )
+	);
+
+	any widget = nil;
+	do {
+	    widget = UI::UserInput();
+
+	    if (widget == `new_size)
+	    {
+	       integer new_size = (integer) UI::QueryWidget(`id(`new_size), `Value);
+	       integer new_free = new_size - used ;
+	       UI::ChangeWidget(`id(`graph), `Values, [ used, new_free, total - (new_free + used) ]);
+	       UI::ChangeWidget(`id(`free), `Value, sformat(_("Free Space Remaining: %1 MB"),  new_free));
+	    }
+
+	} while ( widget != `cancel && widget != `ok);
+
+	UI::CloseDialog();
+
+	return $[ `widget : widget,
+		  `size : 42 ];
+    }
+
+
+    void DisplayCommandOutput(string command)
+    {
+	// TODO: maybe use LogView.ycp, but here we want to wait until the command has finished
+	// TODO: better error handling
+
+	UI::OpenDialog(`VBox(
+			   `MinWidth(60, `LogView(`id(`log), "Out&put of " + command, 15, 0)),
+			   `PushButton(`opt(`default), Label::CloseButton())
+			   ));
+
+	map tmp = (map) SCR::Execute(.target.bash_output, command);
+
+	string lines = tmp["stderr"]:"" != "" ? tmp["stderr"]:"" : tmp["stdout"]:"";
+	UI::ChangeWidget(`id(`log), `Value, lines);
+
+	UI::UserInput();
+	UI::CloseDialog();
+    }
+
+
+    void RescanDisks()
+    {
+	UI::OpenDialog(`opt(`decorated),
+		       // popup text
+		       `MarginBox(2, 1, `Label(_("Rescanning disks..."))));
+
+	Storage::ReReadTargetMap();
+
+	UI::CloseDialog();
+    }
+}

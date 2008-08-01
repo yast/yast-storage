@@ -1,0 +1,110 @@
+/**
+ * File:        TabPanel.ycp
+ * Package:     yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:     Arvin Schnell <aschnell@suse.de>
+ *
+ * The DumbTab widget must have id `tab.  The ids of the items of the DumbTab
+ * widget must be made of symbols.
+ */
+{
+    module "TabPanel";
+
+
+    map<symbol, map> data = nil;
+
+    symbol current_item = nil;
+
+    list<symbol> history = [];
+
+
+    global const term empty_panel = `VBox(`VStretch(), `HStretch());
+
+
+    void CallCreate()
+    {
+	map tmp = data[current_item]:nil;
+	void(any) create_func = (void(any)) tmp[`create]:nil;
+	if (create_func != nil)
+	{
+	    any user_data = tmp[`user_data]:nil;
+	    create_func(user_data);
+	}
+    }
+
+    void CallHandle(symbol widget)
+    {
+	map tmp = data[current_item]:nil;
+	void(any, symbol) handle_func = (void(any, symbol)) tmp[`handle]:nil;
+	if (handle_func != nil)
+	{
+	    any user_data = tmp[`user_data]:nil;
+	    handle_func(user_data, widget);
+	}
+    }
+
+    void CallDestroy()
+    {
+	map tmp = data[current_item]:nil;
+	void(any) destroy_func = (void(any)) tmp[`destroy]:nil;
+	if (destroy_func != nil)
+	{
+	    any user_data = tmp[`user_data]:nil;
+	    destroy_func(user_data);
+	}
+    }
+
+
+    void AddToHistory()
+    {
+	history = filter(symbol s, history, { return s != current_item; });
+	history = prepend(history, current_item);
+    }
+
+
+    /**
+     * When calling this function the DumbTab widget must already exist.
+     */
+    global void Init(map<symbol, map> d)
+    {
+	data = d;
+
+	list<symbol> items = maplist(symbol s, map m, data, { return s; });
+	current_item = find(symbol s, history, { return contains(items, s); });
+
+	if (current_item != nil)
+	    UI::ChangeWidget(`tab, `CurrentItem, current_item);
+
+	current_item = (symbol) UI::QueryWidget(`tab, `CurrentItem);
+
+	CallCreate();
+    }
+
+    global void Create()
+    {
+	CallCreate();
+    }
+
+    global void Handle(symbol widget)
+    {
+	if (haskey(data, widget))
+	{
+	    if (widget != current_item)
+	    {
+		CallDestroy();
+		current_item = widget;
+		AddToHistory();
+		CallCreate();
+	    }
+	}
+	else
+	{
+	    CallHandle(widget);
+	}
+    }
+
+    global void Destroy()
+    {
+	CallDestroy();
+    }
+}

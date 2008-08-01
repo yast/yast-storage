@@ -1,0 +1,60 @@
+/**
+ * File:        ep-unused.ycp
+ * Package:     yast2-storage
+ * Summary:     Expert Partitioner
+ * Authors:     Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    void CreateUnusedPanel(any user_data)
+    {
+	symbol Predicate(map disk, map partition)
+	{
+	    symbol disk_type = disk["type"]:`CT_UNKNOWN;
+
+	    if (partition == nil)
+	    {
+		if (disk["partitions"]:[] == [] &&
+		    disk["used_by_type"]:`UB_NONE == `UB_NONE)
+		{
+		    return `show;
+		}
+
+		return `follow;
+	    }
+	    else
+	    {
+		if (partition["type"]:`primary != `extended &&
+		    partition["mount"]:"" == "" &&
+		    partition["used_by_type"]:`UB_NONE == `UB_NONE)
+		{
+		    return `show;
+		}
+
+		return `ignore;
+	    }
+	}
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `type ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `IconAndHeading(_("Unused Devices"), unused_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify),
+					 table_header, table_contents)
+				  ))
+	    );
+
+	string helptext = _("<p>Unused TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+}

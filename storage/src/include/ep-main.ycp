@@ -1,0 +1,309 @@
+/**
+ * File:        ep-main.ycp
+ * Package:     yast2-storage
+ * Summary:     Expert Partitioner
+ * Authors:     Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    import "Hostname";
+    import "TabPanel";
+    import "TreePanel";
+    import "Popup";
+    import "StorageFields";
+    import "StorageSettings";
+    import "MiniWorkflow";
+    import "Greasemonkey";
+    import "Partitions";
+    import "DevicesSelectionBox";
+    import "Integer";
+
+
+    void Debug(string text, any value)
+    {
+	return;
+
+	import "ValueBrowser";
+	UI::OpenDialog(`MinSize(50, 20,
+				`VBox(
+				    `Label(text),
+				    `Tree(`opt(`hstretch, `vstretch), "&Variable",
+					  [ ValueBrowser::BrowseTreeHelper(value, "") ]),
+				    `PushButton (Label::OKButton())
+				    )
+			   )
+	    );
+	UI::UserInput();
+	UI::CloseDialog();
+    }
+
+
+    void UpdateNavigationTree(any new_focus);
+
+
+    void UpdateTableFocus(string device)
+    {
+	if (UI::WidgetExists(`id(`table)))
+	    UI::ChangeWidget(`id(`table), `CurrentItem, device);
+    }
+
+
+    include "partitioning/icons.ycp";
+
+    include "partitioning/ep-lib.ycp";
+    include "partitioning/ep-dialogs.ycp";
+
+    include "partitioning/ep-settings.ycp";
+    include "partitioning/ep-log.ycp";
+
+    include "partitioning/ep-all.ycp";
+    include "partitioning/ep-hd.ycp";
+    include "partitioning/ep-lvm.ycp";
+    include "partitioning/ep-raid.ycp";
+    include "partitioning/ep-loop.ycp";
+    include "partitioning/ep-dm.ycp";
+    include "partitioning/ep-nfs.ycp";
+    include "partitioning/ep-unused.ycp";
+
+
+    void MakeNavigationTree(map open_items, list<term>& tree, map<any, map>& data)
+    {
+	// TODO: somehow use AlwaysHideDisk
+
+	data = $[ `all : $[ `create : CreateAllPanel ],
+		  `hd : $[ `create : CreateHdMainPanel, `handle : HandleHdMainPanel ],
+		  `lvm : $[ `create : CreateLvmMainPanel, `handle : HandleLvmMainPanel ],
+		  `md : $[ `create : CreateRaidMainPanel, `handle : HandleRaidMainPanel ],
+		  `loop : $[ `create : CreateLoopMainPanel, `handle : HandleLoopMainPanel ],
+		  `dm : $[ `create : CreateDmMainPanel ],
+		  `nfs : $[ `create : CreateNfsMainPanel, `handle : HandleNfsMainPanel ],
+		  `unused : $[ `create : CreateUnusedPanel ],
+		  `settings : $[ `create : CreateSettingsPanel, `handle : HandleSettingsPanel, `destroy : DestroySettingsPanel ],
+		  `log : $[ `create : CreateLogPanel, `handle : HandleLogPanel, `destroy : DestroyLogPanel ] ];
+
+	map<symbol, list> subtree = $[];
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+
+	boolean open(any id)
+	{
+	    return open_items[id]:"" == "ID";
+	}
+
+
+	void huhu(map disk, symbol type, map a, map b)
+	{
+	    string disk_device = disk["device"]:"";
+
+	    list<map> partitions = disk["partitions"]:[];
+	    partitions = filter(map partition, partitions, {
+		return !StorageFields::AlwaysHidePartition(target_map, disk, partition);
+	    });
+
+	    list<term> tmp = [];
+	    foreach(map partition, partitions, {
+		string part_device = partition["device"]:"";
+		string part_displayname = StorageSettings::DisplayName(partition);
+		tmp = add(tmp, `item(`id(part_device), part_displayname, open(part_device)));
+		data = add(data, part_device, union(a, $[ `user_data : part_device ]));
+	    });
+
+	    if (b != nil)
+	    {
+		string disk_displayname = StorageSettings::DisplayName(disk);
+		subtree[type] = add(subtree[type]:[], `item(`id(disk_device), disk_displayname, open(disk_device), tmp));
+		data = add(data, disk_device, union(b, $[ `user_data : disk_device ]));
+	    }
+	    else
+	    {
+		subtree[type] = merge(subtree[type]:[], tmp);
+	    }
+	}
+
+
+	void callback(map<string, map> target_map, map disk)
+	{
+	    symbol type = disk["type"]:`CT_UNKNOWN;
+
+	    switch(type)
+	    {
+		case `CT_DISK:
+		case `CT_DMRAID:
+		    huhu(disk, `hd, $[ `create : CreateHdPartitionPanel, `handle : HandleHdPartitionPanel ],
+			 $[ `create : CreateHdDiskPanel, `handle : HandleHdDiskPanel ]);
+		    break;
+		case `CT_LVM:
+		    huhu(disk, `lvm, $[ `create : CreateLvmLvPanel, `handle : HandleLvmLvPanel ],
+			 $[ `create : CreateLvmVgPanel, `handle : HandleLvmVgPanel ]);
+		    break;
+		case `CT_MD:
+		    huhu(disk, `md, $[ `create : CreateRaidPanel, `handle : HandleRaidPanel ], nil);
+		    break;
+		case `CT_LOOP:
+		    huhu(disk, `loop, $[ `create : CreateLoopPanel, `handle : HandleLoopPanel ], nil);
+		    break;
+		case `CT_DM:
+		    huhu(disk, `dm, $[ `create : CreateDmPanel, `handle : HandleDmPanel ], nil);
+		    break;
+		case `CT_NFS:
+		    huhu(disk, `nfs, $[ `create : CreateNfsPanel, `handle : HandleNfsPanel ], nil);
+		    break;
+	    }
+	}
+
+
+	StorageFields::IterateTargetMap(target_map, callback);
+
+	string short_hostname = Hostname::CurrentHostname();
+
+	// TODO: same ordering as with IterateTargetMap
+	tree = [ `item(`id(`all), `icon(all_icon), short_hostname, open(`all), [
+			   `item(`id(`hd), `icon(hd_icon), _("Hard Disks"), open(`hd), subtree[`hd]:[]),
+			   `item(`id(`lvm), `icon(lvm_icon), _("Volume Management"), open(`lvm), subtree[`lvm]:[]),
+			   `item(`id(`md), `icon(raid_icon), _("RAID"), open(`md), subtree[`md]:[]),
+			   `item(`id(`loop), `icon(loop_icon), _("Crypt Files"), open(`loop), subtree[`loop]:[]),
+			   `item(`id(`dm), `icon(dm_icon), _("Device Mapper"), open(`dm), subtree[`dm]:[]),
+			   `item(`id(`nfs), `icon(nfs_icon), _("NFS"), open(`nfs), subtree[`nfs]:[]),
+			   `item(`id(`unused), `icon(unused_icon), _("Unused Devices"), open(`unused))
+			   ]),
+		 `item(`id(`settings), `icon(settings_icon), _("Settings"), open(`settings)),
+		 `item(`id(`log), `icon(log_icon), _("Log"), open(`log)) ];
+    }
+
+
+    void UpdateNavigationTree(any new_focus)
+    {
+	list<term> tree = [];
+	map<any, map> data = $[];
+	map open_items = (map) UI::QueryWidget(`id(`tree), `OpenItems);
+	MakeNavigationTree(open_items, tree, data);
+	TreePanel::Update(data, tree, new_focus);
+    }
+
+
+    /**
+     * apply changes in running system
+     */
+    symbol DoApply()
+    {
+	symbol ret1 = ReallyInstPrepdisk();
+
+	if (ret1 == `back)
+	{
+	    return `back;
+	}
+	else if (ret1 == `apply || ret1 == `finish)
+	{
+	    StorageSettings::Save();
+
+	    symbol ret2 = (symbol) WFM::CallFunction("inst_prepdisk", [true, true]);
+	    Storage::CreateTargetBackup("expert-partitioner");
+
+	    if (ret2 != `next)
+		return `back;
+
+	    if (ret1 == `apply)
+		return `back;
+	    else
+		return `next;
+	}
+    }
+
+
+    any test_new_ep()
+    {
+	SCR::Write(.target.ycp, Storage::SaveDumpPath("targetmap-ep-start"), Storage::GetTargetMap());
+
+	Storage::CreateTargetBackup("expert-partitioner");
+
+	list<term> tree = [];
+	map<any, map> data = $[];
+	MakeNavigationTree($[`all : "ID"], tree, data);
+
+	string back_label = Label::BackButton();
+	string next_label = Label::AcceptButton();
+
+	term contents = `MarginBox(0.5, 0.5,
+				  `HBox(
+				      `HWeight(30,
+					       `VBox(
+						   `Tree(`id(`tree), `opt(`notify), _("System View"), tree)
+						   )
+					  ),
+				      `HWeight(70,
+					       `ReplacePoint(`id(`tree_panel), TreePanel::empty_panel))
+				      )
+	    );
+
+	// heading text
+	Wizard::SetContentsButtons(_("Expert Partitioner"), contents, "", back_label, next_label);
+
+	TreePanel::Init(data);
+
+	symbol widget = nil;
+
+	repeat
+	{
+	    widget = (symbol) Wizard::UserInput();
+
+	    TreePanel::Handle(widget);
+
+	    switch (widget)
+	    {
+		case `back:
+		case `abort:
+		    if (!Storage::EqualBackupStates("expert-partitioner", "", true))
+		    {
+			// popup text %1 will be replaces with button text
+			string txt = sformat(_("You have changed the partitioning.
+These changes are lost if you exit the main dialog with %1.
+Really quit the main dialog?
+"), deletechars(back_label, "&")); // TODO
+
+			if (!Popup::YesNo(txt))
+			{
+			    widget = `again;
+			}
+		    }
+		    break;
+
+		case `next:
+		    if (Mode::normal())
+		    {
+			if (DoApply() == `back)
+			{
+			    // DoApply (inst_prepdisk) replaces the wizard contents
+			    // TODO: make nicer
+			    Wizard::SetContentsButtons(_("Expert Partitioner"), contents, "", back_label, next_label);
+			    UpdateNavigationTree(nil);
+			    widget = `again;
+			}
+		    }
+		    break;
+
+		case `table:
+		    any citem = UI::QueryWidget(`id(`table), `CurrentItem);
+		    TreePanel::SwitchToNew(citem);
+		    UI::SetFocus(`tree);
+		    break;
+	    }
+	}
+	until (widget == `back || widget == `abort || widget == `next);
+
+	TreePanel::Destroy();
+
+	if (widget == `back || widget == `abort)
+	{
+	    Storage::RestoreTargetBackup("expert-partitioner");
+	}
+	else
+	{
+	    Storage::DisposeTargetBackup("expert-partitioner");
+	}
+
+	return `abort;
+    }
+}

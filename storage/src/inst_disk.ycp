@@ -17,207 +17,68 @@
  * Main file for disk configuration. Uses all other files.
  *
  */
-
 {
+    textdomain "storage";
 
 
-/***
- * <h3>Configuration of the disk</h3>
- */
-   y2milestone( "start disk");
+    import "Wizard";
+    import "Mode";
+    import "Storage";
+    import "StorageClients";
 
-import "Arch";
-import "Wizard";
-import "Mode";
-import "Storage";
-import "StorageClients";
-import "Sequencer";
 
-textdomain "storage";
-
-include "partitioning/signatures.ycp";
-include "partitioning/custom_part_helptexts.ycp";
-include "partitioning/custom_part_dialogs.ycp";
-include "partitioning/custom_part_lib.ycp";
-include "partitioning/raid_lib.ycp";
-include "partitioning/raid_ui.ycp";
-include "partitioning/loop.ycp";
-include "partitioning/lvm_pv_lib.ycp";
-include "partitioning/partition_defines.ycp";
-include "partitioning/custom_part_check_generated.ycp";
+    y2milestone("start inst_disk");
 
     y2milestone( "PartMode %1 ProposalActive %2 ", Storage::GetPartMode(),
                  Storage::GetPartProposalActive() );
 
 
     if( !Storage::GetCustomDisplay() && Storage::GetPartMode() != "CUSTOM" &&
-         Storage::GetPartMode() != "PROP_MODIFY" )
-      return Storage::GetExitKey();
-
-    if( !Storage::CheckBackupState("disk"))
-	Storage::CreateTargetBackup("disk");
-
-
-    boolean installation = Stage::initial ();
-
-    y2milestone( " running in instsys %1", installation );
-
-
-define symbol InitSettings( boolean in )
-    ``{
-    return `next;
+	Storage::GetPartMode() != "PROP_MODIFY" )
+    {
+	symbol ret = Storage::GetExitKey();
+	y2milestone("end inst_disk ret:%1", ret);
+	return ret;
     }
 
 
-    map aliases = $[
-	"RaidTypeWizard"     : ``(ChooseRaidType(`wizard  )),
-	"RaidDeviceWizard"   : ``(RaidDevices(`wizard  )),
-	"RaidDeviceSettings" : ``(RaidDevices(`settings)),
-        "LoopCreateWizard"   : ``(LoopSetup(false)),
-        "LoopEditWizard"     : ``(LoopSetup(true)),
-	"RaidExpertWizard"   : ``(RaidExpertWizard()),
-	"RaidMpAutodetect"   : ``(RaidMultipathAuto()),
-	"ReallyInstPrepdisk" : ``(ReallyInstPrepdisk()),
-	"LvmPv"		     : ``(WFM::CallFunction("inst_lvm_pv", [true, true])),
-	"LvmLv"		     : ``(WFM::CallFunction("inst_lvm_lv", [true, true])),
-	"S390Zfcp"	     : ``(WFM::call("xfcp")),
-	"S390Dasd"	     : ``(WFM::call("dasd")),
-	"Evms"               : ``(WFM::CallFunction("inst_evms", [true, true])),
-	"Custom"             : ``(WFM::CallFunction("inst_custom_part", [true, true])),
-	"PrepDiskEnd"        : ``(WFM::CallFunction("inst_prepdisk", [true, true])),
-	"PrepDiskApply"      : ``(WFM::CallFunction("inst_prepdisk", [true, true])),
-	"ReInitSettings"     : ``(InitSettings(installation)),
-	"abort"              : ``(AbortDialog())
-    ];
+    if (!Storage::CheckBackupState("disk"))
+	Storage::CreateTargetBackup("disk");
 
-
-    map sequence = $[
-	"ws_start"           : "Custom",
-
-        "RaidTypeWizard"     : $[ `abort   : "abort",
-				  `cancel  : `cancel,
-				  `mp_auto : "RaidMpAutodetect",
-				  `next    : "RaidDeviceWizard" ],
-
-        "RaidDeviceWizard"   : $[ `abort  : "abort",
-				  `cancel : `cancel,
-                                  `next   : "RaidExpertWizard" ],
-
-        "RaidMpAutodetect"   : $[ `abort  : "abort",
-				  `cancel : `cancel,
-                                  `next   : "Custom" ],
-
-	"RaidExpertWizard"   : $[ `abort  : "abort",
-				  `cancel : `cancel,
-                                  `next   : "Custom" ],
-
-	"RaidDeviceSettings" : $[ `abort  : "abort",
-				  `cancel : `cancel,
-				  `next   : "Custom" ],
-
-	"LoopCreateWizard"   : $[ `abort  : "abort",
-				  `cancel : `cancel,
-                                  `next   : "Custom" ],
-
-	"LoopEditWizard"     : $[ `abort  : "abort",
-				  `cancel : `cancel,
-                                  `next   : "Custom"],
-
-	"ReallyInstPrepdisk" : $[ `abort  : `abort,
-				  `cancel : `cancel,
-                                  `finish : "PrepDiskEnd",
-				  `apply  : "PrepDiskApply" ],
-
-        "Custom"             : $[ `abort         : "abort",
-				  `cancel        : `cancel,
-                                  `raid_wizard   : "RaidTypeWizard",
-				  `raid_settings : "RaidDeviceSettings",
-                                  `loop_create   : "LoopCreateWizard",
-                                  `loop_edit     : "LoopEditWizard",
-				  `backtoi       : `back,
-				  `sysnext       : "ReallyInstPrepdisk",
-				  `lvm           : "LvmPv",
-				  `lvmlv         : "LvmLv",
-				  `zfcp          : "S390Zfcp",
-				  `dasd          : "S390Dasd",
-				  `evms          : "Evms",
-                                  `again         : "Custom",
-                                  `apply         : "PrepDiskApply",
-                                  `instnext      : `next ],
-
-	"LvmPv"		    :  $[ `abort  : "abort",
-				  `cancel : `cancel,
-				  `next   : "LvmLv" ],
-
-	"LvmLv"		    :  $[ `abort  : "abort",
-				  `cancel : `cancel,
-				  `next   :  "Custom" ],
-
-	"Evms"		    :  $[ `abort  : "abort",
-				  `cancel : `cancel,
-				  `next   :  "Custom" ],
-
-	"S390Zfcp"	    :  $[ `abort  : "abort",
-				  `cancel : `cancel,
-				  `next   : "Custom" ],
-
-	"S390Dasd"	    :  $[ `abort  : "abort",
-				  `cancel : `cancel,
-				  `next   : "Custom" ],
-
-	"PrepDiskApply"     :  $[ `abort  : "ReInitSettings",
-				  `cancel : `cancel,
-                                  `back   : "ReInitSettings",
-                                  `next   : "ReInitSettings" ],
-
-	"PrepDiskEnd"       :  $[ `abort  : "ReInitSettings",
-				  `cancel : `cancel,
-                                  `back   : "ReInitSettings",
-                                  `next   : `next ],
-
-	"ReInitSettings"    :  $[ `abort  : "abort",
-				  `cancel : `cancel,
-				  `next   : "Custom" ],
-
-        "abort"             :  $[ `yes    : `abort,
-				  `cancel : `cancel]
-    ];
 
     boolean handle_dialog = Mode::normal() || Mode::repair();
 
 
-    if ( handle_dialog )  {
-        Wizard::CreateDialog();
-        Wizard::SetDesktopIcon("disk");
+    if (handle_dialog)
+    {
+	Wizard::CreateDialog();
+	Wizard::SetDesktopIcon("disk");
 	StorageClients::EnablePopup();
     }
 
     /*************************************************/
     /*   Let's do the work ...                       */
     /*************************************************/
-    symbol ret = Sequencer::Run(aliases, sequence);
-    /*************************************************/
-    y2milestone( "Sequencer ret=%1 handle_dialog=%2", ret, handle_dialog );
+    symbol ret = (symbol) WFM::CallFunction("inst_custom_part", [true, true]);
 
-
-    if( handle_dialog )
-	{
+    if (handle_dialog)
+    {
 	UI::CloseDialog();
-	}
+    }
     else
-	{
+    {
 	if( ret == `back || ret == `abort )
-	    {
+	{
 	    Storage::RestoreTargetBackup("disk");
-	    }
+	}
 	else if( ret == `next )
-	    {
+	{
 	    Storage::DisposeTargetBackup("disk");
 	    Storage::SetPartProposalActive(false);
-	    }
 	}
+    }
 
-    y2milestone("Disk module finished");
-    Storage::SaveExitKey( ret );
-    return( ret );
+    Storage::SaveExitKey(ret);
+    y2milestone("end inst_disk ret:%1", ret);
+    return ret;
 }

@@ -16,6 +16,7 @@
     import "Mode";
     import "Stage";
     import "AsciiFile";
+    import "String";
 
     // The filesystem ids for the partitions
     global integer fsid_empty    = 0;
@@ -97,36 +98,40 @@
 	];
 
 
-global define void Partitions()
-    ``{
-        return ;
-    }
+global void SetDefaultFs(symbol new_default_fs)
+{
+    default_fs = new_default_fs;
+}
 
-global define symbol DefaultFs()
-    ``{
-    if( default_fs == `unknown )
-	{
-	default_fs = `ext3;
-	}
-    return( default_fs );
-    }
+global symbol DefaultFs()
+{
+    if (default_fs == `unknown)
+    {
+	string tmp = (string) SCR::Read(.sysconfig.storage.DEFAULT_FS);
+	if (tmp == nil || !contains([ "ext2", "ext3", "reiserfs" ], tolower(tmp)))
+	    tmp = "ext3";
 
-global define symbol DefaultBootFs()
-    ``{
-    if( default_boot_fs == `unknown )
+	default_fs = symbolof(toterm(tolower(tmp)));
+    }
+    return default_fs;
+}
+
+global symbol DefaultBootFs()
+{
+    if (default_boot_fs == `unknown)
+    {
+        default_boot_fs = DefaultFs();
+	if (Arch::ia64())
 	{
-	default_boot_fs = `ext3;
-	if( Arch::ia64 () )
-	    {
 	    default_boot_fs = `vfat;
-	    }
-	else if( Arch::board_mac () )
-	    {
-	    default_boot_fs = `hfs;
-	    }
 	}
-    return( default_boot_fs );
+	else if (Arch::board_mac())
+	{
+	    default_boot_fs = `hfs;
+	}
     }
+    return default_boot_fs;
+}
 
 global define string BootMount()
     ``{
@@ -282,6 +287,11 @@ global define boolean IsDosWinNtPartition( integer fsid )
 global define boolean IsExtendedPartition( integer fsid )
     ``{
     return( fsid==fsid_extended || fsid==fsid_extended_win );
+    }
+
+global define boolean IsSwapPartition( integer fsid )
+    ``{
+    return( !IsDosWinNtPartition( fsid ) && fsid==fsid_swap );
     }
 
 global define integer SwapSizeMb( integer slot_size )
@@ -745,63 +755,5 @@ this disk during installation.
 	}
     return( text );
     }
-
-    /*---------------------------------------------------------------------
-     * returns for a string a string with a minimum of 9 characters:
-     * "1"      -> "       1"
-     * "22"     -> "      22"
-     * "145"    -> "     145"
-     * "2134"   -> "    2134"
-     *----------------------------------------------------------------------
-     */
-define string sto8string( string str )
-    ``{
-    integer nb = size( str );
-    if ( nb > 8  )   return( sformat( "%1", str ));
-    if ( nb > 7  )   return( sformat( " %1", str ));
-    if ( nb > 6  )   return( sformat( "  %1", str ));
-    if ( nb > 5  )   return( sformat( "   %1", str ));
-    if ( nb > 4  )   return( sformat( "    %1", str ));
-    if ( nb > 3  )   return( sformat( "     %1", str ));
-    if ( nb > 2  )   return( sformat( "      %1", str ));
-    if ( nb > 1  )   return( sformat( "       %1", str ));
-    return( sformat( "         %1", str ));
-    };
-
-/*---------------------------------------------------------------------
- * Convert <number-of-bytes> to XXX.X MB or XXX.X GB or XXX.X TB
- *
- * see also ByteToHumanStringWithZero !
- * Return value: string  "unknown" if input == 0
- *----------------------------------------------------------------------
- */
-global define string ByteToHumanString ( integer number )
-    ``{
-    // column description, if disk space is not known
-    if( number == 0 ) return( _("unknown") );
-
-    if( number < 1073741824 )
-	{
-	// < 1 GB
-	integer MB    = number / 1048576;
-	integer hunKB = (number - (MB * 1048576)) / 104858;
-	return( sto8string(sformat( "%1.%2 MB", MB,hunKB )));
-	}
-    else if ( number < 1099511627776 )
-	{
-	// < 1 TB
-	integer GB    = number / 1073741824;
-	integer hunMB = (number - (GB * 1073741824)) / 107374183;
-	return( sto8string(sformat( "%1.%2 GB", GB,hunMB )));
-	}
-    else
-        {
-        // >= 1 TB
-        integer TB    = number / 1099511627776;
-        integer hunGB = (number - (TB * 1099511627776)) / 109951162778;
-	return( sto8string(sformat( "%1.%2 TB", TB,hunGB )));
-        }
-    };
-
 
 }
