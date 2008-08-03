@@ -247,7 +247,6 @@ global string EvmsDevDisk( string dev )
 		    ]
     */
 
-    global boolean ZeroNewPartitions = false;
 
     map  StorageMap	= $[];
     map<integer,map>  StorageMaps	= $[];
@@ -282,39 +281,55 @@ global string EvmsDevDisk( string dev )
     any sint                            = nil;
     list<map> conts                     = [];
 
-define any createInterface()
-    {
-    any ret = LibStorage::createStorageInterface(false, Mode::test(), true);
-    if( ZeroNewPartitions )
-	LibStorage::StorageInterface::setZeroNewPartitions(ret,true);
 
-    return( ret );
+any CreateInterface(boolean readonly)
+{
+    while (sint == nil)
+    {
+	integer locker_pid = 0;
+	sint = LibStorage::createStorageInterfacePid(readonly, Mode::test(), true, locker_pid);
+	y2milestone("sint:%1", sint);
+
+	if (sint == nil)
+	{
+	    y2milestone("locker_pid:%1", locker_pid);
+
+	    // TODO
+
+	    if (!Popup::YesNo("Retry TODO"))
+		break;
+	}
     }
+
+    y2milestone("sint:%1", sint);
+    return sint;
+}
+
 
 list<map> getContainers();
 
-global define void InitLibstorage()
+global boolean InitLibstorage(boolean readonly)
+{
+    if (sint != nil)
+	return true;
+
+    y2milestone("InitLibstorage");
+    sint = CreateInterface(readonly);
+    if (sint == nil)
+	return false;
+    
+    if (Stage::initial())
     {
-    if( sint==nil )
-	{
-	y2milestone( "InitLibstorage" );
-	sint = createInterface();
-	boolean evco = ProductFeatures::GetBooleanFeature( "partitioning",
-							   "evms_config" );
-	y2milestone( "InitLibstorage evco %1", evco );
-	if( evco!=nil && !evco )
-	    LibStorage::StorageInterface::setNoEvms(sint,true);
-	if( Stage::initial() )
-	    {
-	    LibStorage::StorageInterface::setDetectMountedVolumes(sint,false);
-	    LibStorage::StorageInterface::setRootPrefix( sint,
-							 Installation::destdir );
-	    }
-	conts = getContainers();
-	y2milestone( "InitLibstorage conts:%1", conts );
-	FileSystems::InitSlib( sint );
-	}
+	LibStorage::StorageInterface::setDetectMountedVolumes(sint, false);
+	LibStorage::StorageInterface::setRootPrefix(sint, Installation::destdir);
     }
+
+    conts = getContainers();
+    y2milestone("InitLibstorage conts:%1", conts);
+    FileSystems::InitSlib(sint);
+
+    return true;
+}
 
 
 global string ByteToHumanString(integer bytes)
@@ -1296,7 +1311,8 @@ integer fromSymbol( map<string,any> conv, symbol val )
 global define boolean CheckBackupState( string who )
     {
     y2milestone( "CheckBackupStates who:%1", who );
-    InitLibstorage();
+    if (!InitLibstorage(false))
+	return nil;
     boolean ret = LibStorage::StorageInterface::checkBackupState( sint, who );
     y2milestone( "CheckBackupStates ret:%1", ret );
     return( ret );
@@ -3674,7 +3690,8 @@ global define void AddMountPointsForWin( map<string,map> targets )
 global void RemoveDmMapsTo( string device )
     {
     y2milestone( "RemoveDmMapsTo device:%1", device );
-    InitLibstorage();
+    if (!InitLibstorage(false))
+	return;
     LibStorage::StorageInterface::removeDmTableTo( sint, device );
     }
 
@@ -3742,11 +3759,13 @@ global define map<string,map> AddSwapMp( map<string,map> target )
  *    ... ?
  * ]
  */
-global define map<string,map> GetTargetMap()
-    ``{
+global map<string,map> GetTargetMap()
+{
+    if (!InitLibstorage(false))
+	return nil;
+
     map<string,map> tmp = $[];
     boolean changed = false;
-    InitLibstorage();
     if( !probe_done && !Mode::config() )
 	{
 	map<string,string> bios_id_raid = $[];
@@ -4054,17 +4073,20 @@ global define void SetTargetMap( map<string,map> target )
  *
  * @see GetTargetMap();
  */
-global define map<string,map> ReReadTargetMap()
-    ``{
-    y2milestone("start reread sint:%1", sint );
+global map<string, map> ReReadTargetMap()
+{
+    boolean need_reread = sint != nil;
+
+    if (!InitLibstorage(false))
+	return nil;
+
+    y2milestone("start reread need_reread:%1", need_reread);
     probe_done = false;
-    if( sint == nil )
-	InitLibstorage();
-    else
-	LibStorage::StorageInterface::rescanEverything( sint );
+    if (need_reread)
+	LibStorage::StorageInterface::rescanEverything(sint);
     conts = getContainers();
     return GetTargetMap();
-    };
+}
 
 /**
  * Apply storage changes
@@ -7009,11 +7031,12 @@ global void SwitchUiAutomounter( boolean on )
     }
 
 global void DumpObjectList()
-    {
-    if( sint == nil )
-	InitLibstorage();
+{
+    if (!InitLibstorage(false))
+	return;
+
     LibStorage::StorageInterface::dumpObjectList(sint);
-    }
+}
 
 global define list<string> NoProposeDisks()
     {
@@ -7111,14 +7134,16 @@ global boolean DeviceMatchFstab( string device, string fstab_spec )
     }
 
 global string GetUsedFs()
-    {
-    InitLibstorage();
+{
+    if (!InitLibstorage(false))
+	return nil;
+
     string r = LibStorage::StorageInterface::getAllUsedFs( sint );
     list<string> lr = sort(splitstring(r," \t"));
     r = mergestring( lr, " " );
     y2milestone( "GetUsedFs ret:%1", r );
     return( r );
-    }
+}
 
 list FindUsedFsLine( map file )
     {
