@@ -282,22 +282,49 @@ global string EvmsDevDisk( string dev )
     list<map> conts                     = [];
 
 
+string GetProcessName(integer pid)
+{
+    string name = (string) SCR::Read(.target.symlink, "/proc/" + tostring(pid) + "/exe");
+    if (name == nil)
+	return nil;
+
+    integer pos = findlastof(name, "/");
+    if (pos == nil)
+	return name;
+
+    return substring(name, pos + 1);
+}
+
+
 any CreateInterface(boolean readonly)
 {
     while (sint == nil)
     {
 	integer locker_pid = 0;
 	sint = LibStorage::createStorageInterfacePid(readonly, Mode::test(), true, locker_pid);
-	y2milestone("sint:%1", sint);
 
 	if (sint == nil)
 	{
-	    y2milestone("locker_pid:%1", locker_pid);
+	    string locker_name = GetProcessName(locker_pid);
+	    y2milestone("locker_pid:%1 locker_name:%2", locker_pid, locker_name);
 
-	    // TODO
-
-	    if (!Popup::YesNo("Retry TODO"))
-		break;
+	    if (locker_name == nil)
+	    {
+		if (!Popup::AnyQuestion(Label::ErrorMsg(),
+					_("The storage subsystem is locked by an unknown application.
+You must quit that application before you can continue."), Label::ContinueButton(),
+					Label::CancelButton(), `focus_no))
+		    break;
+	    }
+	    else
+	    {
+		if (!Popup::AnyQuestion(Label::ErrorMsg(),
+					sformat(_("The storage subsystem is locked by the application \"%1\" (%2).
+You must quit that application before you can continue."), locker_name, locker_pid),
+					Label::ContinueButton(), Label::CancelButton(),
+					`focus_no))
+		    break;
+	    }
 	}
     }
 
