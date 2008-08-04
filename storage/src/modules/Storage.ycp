@@ -210,6 +210,14 @@ global define string GetDeviceName( string disk, any partition )
       return( ret );
   };
 
+
+global boolean IsKernelDeviceName(string device)
+{
+    return substring(device, 0, 6) != "LABEL=" &&
+	substring(device, 0, 5) != "UUID=" &&
+	substring(device, 0, 13) != "/dev/disk/by-";
+}
+
 /**
  * Returns ...
  *
@@ -5703,11 +5711,14 @@ global string SLES9PersistentDevNames( string input )
 global string HdDiskMap( string input, map diskmap )
     ``{
     string ret = input;
-    map d = GetDiskPartition( input );
-    if( haskey( diskmap, d["disk"]:"" ))
+    if (IsKernelDeviceName(input))
+    {
+	map d = GetDiskPartition( input );
+	if( haskey( diskmap, d["disk"]:"" ))
 	{
-	ret = GetDeviceName( diskmap[d["disk"]:""]:"", d["nr"]:(any)0 );
+	    ret = GetDeviceName( diskmap[d["disk"]:""]:"", d["nr"]:(any)0 );
 	}
+    }
     y2milestone( "HdDiskMap input:%1 ret:%2", input, ret );
     return( ret );
     }
@@ -7131,14 +7142,6 @@ global symbol GetMountBy( string device )
     symbol ret = toSymbol( conv_mountby, val );
     return( ret );
     }
-
-
-global boolean IsKernelDeviceName(string device)
-{
-    return substring(device, 0, 6) != "LABEL=" &&
-	substring(device, 0, 5) != "UUID=" &&
-	substring(device, 0, 13) != "/dev/disk/by-";
-}
 
 
 global boolean DeviceMatchFstab( string device, string fstab_spec )
