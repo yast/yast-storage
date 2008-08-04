@@ -170,7 +170,7 @@ list<string> no_propose_disks = nil;
 boolean proposal_evms = false;
 boolean proposal_lvm = false;
 boolean proposal_home = false;
-map cfg_xml = $[];
+map<string, any> cfg_xml = $[];
 string part_insts = "";
 
 
@@ -6829,78 +6829,6 @@ global define map onepartition2fstab (map part, integer& other_nr)
     return( ret );
     };
 
-global integer KmgtStrToByte( string input )
-    ``{
-    integer number = 0;
-    integer pos = findfirstnotof( input, " +" );
-
-    if( pos != nil && pos>0 )
-	{
-	input = substring( input, pos );
-	}
-
-    if( size(filterchars(input, "0123456789kKmMgGtTbBoO .")) != size(input))
-       {
-       return(0);
-       }
-
-    input = filterchars(input, "0123456789kKmMgGtTbBoO.");
-
-    if( size(input)>0 && findfirstnotof( input, "0123456789.") != nil  )
-        {
-	// check whether the last char is in "kKmM" or "bB"
-	string last_char = substring( input, size(input)-1, 1);
-
-	if( last_char == "b" || last_char == "B" ||
-	    last_char == "o" || last_char == "O" )
-	    {
-	    input = substring( input, 0, size(input)-1);
-	    // check whether the last char is in "kKmM"
-	    last_char = substring( input, size(input)-1, 1);
-	    }
-
-        string number_str = substring(input, 0, size(input)-1);
-
-	if( findfirstnotof( number_str, "0123456789.") == nil )
-	    {
-	    if( last_char == "k" || last_char == "K" )
-	        {
-		number = tointeger(tofloat( number_str ) * 1024.0) ;
-		}
-	    else if ( last_char == "m" || last_char == "M" )
-		{
-		number = tointeger(tofloat( number_str ) * 1024.0 * 1024.0);
-	        }
-	    else if ( last_char == "g" || last_char == "G" )
-		{
-		number = tointeger(tofloat( number_str ) * 
-				   1024.0 * 1024.0 * 1024.0);
-		}
-	    else if ( last_char == "t" || last_char == "T" )
-	        {
-		number = tointeger(tofloat( number_str ) * 
-				   1024.0 * 1024.0 * 1024.0 * 1024.0);
-		}
-	    else
-		{
-		number = 0;
-	        }
-	    }
-        else
-	    {
-	    number = 0;
-	    }
-        }
-    else if( size(input)==0 )
-	{
-	number = 0;
-	}
-    else
-        {
-        number = tointeger( input );
-        }
-    return( number );
-    };
 
 global boolean InstallOES()
     {
@@ -6971,60 +6899,70 @@ global void SetProposalDefault( boolean home_only )
                  proposal_lvm, proposal_evms, proposal_home, home_only );
     }
 
-global map GetControlCfg()
+
+global map<string, any> GetControlCfg()
+{
+    integer StrToByte(string str)
     {
-    if( size(cfg_xml)==0 )
-	{
+	integer bytes = 0;
+	if (!LibStorage::StorageInterface::humanStringToByte(sint, str, true, bytes))
+	    y2error("cannot parse %1", str);
+	return bytes;
+    }
+
+    if (size(cfg_xml) == 0)
+    {
 	boolean bt = ProductFeatures::GetBooleanFeature( "partitioning",
 							 "try_separate_home" );
 	cfg_xml["home"] = bt?true:false;
+
 	cfg_xml["root_percent"] = 
 	    tointeger(ProductFeatures::GetStringFeature( "partitioning",
 							 "root_space_percent"));
 	if( cfg_xml["root_percent"]:0 == nil || cfg_xml["root_percent"]:0 <= 0 )
 	    cfg_xml["root_percent"] = 40;
+
 	string tmp = ProductFeatures::GetStringFeature( "partitioning",
 							"limit_try_home");
-	cfg_xml["home_limit"] = KmgtStrToByte(tmp) / (1024*1024);
+	cfg_xml["home_limit"] = StrToByte(tmp) / (1024*1024);
 	if( cfg_xml["home_limit"]:0 <= 0 )
 	    cfg_xml["home_limit"] = 5*1024;
+
 	tmp = ProductFeatures::GetStringFeature( "partitioning",
 						 "root_base_size");
-	cfg_xml["root_base"] = KmgtStrToByte(tmp) / (1024*1024);
+	cfg_xml["root_base"] = StrToByte(tmp) / (1024*1024);
 	if( cfg_xml["root_base"]:0 <= 0 )
 	    cfg_xml["root_base"] = 3*1024;
+
 	tmp = ProductFeatures::GetStringFeature( "partitioning",
 						 "root_max_size");
-	cfg_xml["root_max"] = KmgtStrToByte(tmp) / (1024*1024);
+	cfg_xml["root_max"] = StrToByte(tmp) / (1024*1024);
 	if( cfg_xml["root_max"]:0 <= 0 )
 	    cfg_xml["root_max"] = 10*1024;
+
 	tmp = ProductFeatures::GetStringFeature( "partitioning",
 						 "vm_desired_size");
-	cfg_xml["vm_want"] = KmgtStrToByte(tmp) / (1024*1024);
+	cfg_xml["vm_want"] = StrToByte(tmp) / (1024*1024);
 	if( cfg_xml["vm_want"]:0 <= 0 )
 	    cfg_xml["vm_want"] = 15*1024;
+
 	tmp = ProductFeatures::GetStringFeature( "partitioning",
 						 "vm_home_max_size");
-	cfg_xml["home_max"] = KmgtStrToByte(tmp) / (1024*1024);
+	cfg_xml["home_max"] = StrToByte(tmp) / (1024*1024);
 	if( cfg_xml["home_max"]:0 <= 0 )
 	    cfg_xml["home_max"] = 25*1024;
-	bt = ProductFeatures::GetBooleanFeature( "partitioning",
-						 "proposal_evms" );
-	cfg_xml["prop_evms"] = bt?true:false;
+
 	bt = ProductFeatures::GetBooleanFeature( "partitioning",
 						 "proposal_lvm" );
 	cfg_xml["prop_lvm"] = bt?true:false;
-	bt = ProductFeatures::GetBooleanFeature( "partitioning",
-						 "evms_config" );
-	cfg_xml["evms_config"] = bt?true:false;
-	bt = ProductFeatures::GetBooleanFeature( "partitioning",
-						 "evms_boot" );
-	cfg_xml["evms_boot"] = bt?true:false;
+
 	SetProposalDefault(false);
-	y2milestone( "GetControlCfg cfg_xml %1", cfg_xml );
-	}
-    return( cfg_xml );
+	y2milestone("GetControlCfg cfg_xml:%1", cfg_xml);
     }
+
+    return cfg_xml;
+}
+
 
 global boolean BootEvms()
     {
