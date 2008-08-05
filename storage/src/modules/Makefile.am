@@ -1,33 +1,28 @@
 #
-# Files being accessed using "import" should be installed to
+# Makefile.am for storage/src/modules
 #
 
-YCPCFLAGS = -I . -I include -M ../../../libstorage/bindings/ycp
+YCPCFLAGS = -M ../../../libstorage/bindings/ycp
 
 YCPC_LD_LIBRARY_PATH = ../../../libstorage/src/.libs
 YCPC_Y2DIR = ../../../libstorage/src/.libs
 
 module_DATA =				\
-		Partitions.ycp		\
-		FileSystems.ycp		\
-		Storage.ycp		\
-		StorageClients.ycp      \
-		StorageControllers.ycp  \
-		StorageDevices.ycp	\
-		StorageFields.ycp	\
-		StorageSettings.ycp	\
-		TreePanel.ycp		\
-		TabPanel.ycp		\
-		MiniWorkflow.ycp	\
-		Greasemonkey.ycp	\
-		DevicesSelectionBox.ycp	\
-		DualMultiSelectionBox.ycp
+	Partitions.ycp			\
+	FileSystems.ycp			\
+	Storage.ycp			\
+	StorageClients.ycp      	\
+	StorageControllers.ycp  	\
+	StorageDevices.ycp		\
+	StorageFields.ycp		\
+	StorageSettings.ycp		\
+	TreePanel.ycp			\
+	TabPanel.ycp			\
+	MiniWorkflow.ycp		\
+	Greasemonkey.ycp		\
+	DevicesSelectionBox.ycp		\
+	DualMultiSelectionBox.ycp
 
 EXTRA_DIST = $(module_DATA)
-
-include:
-	mkdir include && ln -sf ../../include include/partitioning
-
-ycpchook = include
 
 include $(top_srcdir)/Makefile.am.common
