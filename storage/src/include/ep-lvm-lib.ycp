@@ -86,7 +86,8 @@ RAID device is required. Change your partition table accordingly."));
 
 	string vgname = data["name"]:"error";
 
-	if (DlgResizeVolumeGroup(data))
+
+	symbol Commit()
 	{
 	    Debug("resize vg from data", data);
 
@@ -104,11 +105,21 @@ RAID device is required. Change your partition table accordingly."));
 		if (!RemovePvs(vgname, devices_removed))
 		{
 		    Error(_("Failed to remove some physical devices. TODO"));
-		}
 
-		UpdateNavigationTree(nil);
-		TreePanel::Create();
+		    // TODO: update data
+
+		    return `back;
+		}
 	    }
+
+	    return `finish;
+	}
+	
+
+	if (DlgResizeVolumeGroup(data, Commit))
+	{
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
 	}
     }
 
@@ -174,15 +185,23 @@ remove the volume group.
 	data["pesize"] = target_map[device, "pesize"]:0;
 	data["max_size_k"] = (target_map[device, "pe_free"]:0 * target_map[device, "pesize"]:0) / 1024;
 
-	if (DlgCreateLogicalVolume(data))
-	{
-	    // ChangeVolumeProperties and thus addLogicalVolume need the device name
+
+	symbol Commit()
+        {
+	    // ChangeVolumeProperties and thus addLogicalVolume need the device
 	    data["device"] = device + "/" + data["name"]:"";
 
 	    Debug("create lv from data", data);
 
-	    addLogicalVolume(data, substring(device, 5));
+	    if (!addLogicalVolume(data, substring(device, 5)))
+		return `back;
 
+	    return `finish;
+	}
+
+
+	if (DlgCreateLogicalVolume(data, Commit))
+	{
 	    UpdateNavigationTree(nil);
 	    TreePanel::Create();
 	    UpdateTableFocus("/dev/" + data["vg_name"]:"error" + "/" + data["name"]:"error");
