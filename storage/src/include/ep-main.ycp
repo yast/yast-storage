@@ -29,10 +29,7 @@
 
 
     include "partitioning/lvm_ui_dialogs.ycp";
-    include "partitioning/lvm_pv_lib.ycp";
     include "partitioning/raid_lib.ycp";
-    include "partitioning/custom_part_lib.ycp";
-    include "partitioning/custom_part_dialogs.ycp";
     include "partitioning/custom_part_check_generated.ycp";
 
 
@@ -271,7 +268,7 @@
 	    switch (widget)
 	    {
 		case `back:
-		case `abort:
+		case `abort: {
 		    if (!Storage::EqualBackupStates("expert-partitioner", "", true))
 		    {
 			// popup text %1 will be replaces with button text
@@ -285,27 +282,38 @@ Really quit the main dialog?
 			    widget = `again;
 			}
 		    }
-		    break;
+		} break;
 
-		case `next:
-		    if (Mode::normal())
+		case `next: {
+		    list<any> retval = check_created_partition_table(Storage::GetTargetMap(), true,
+								     Stage::initial() && !Mode::repair());
+		    Storage::SetTargetMap(retval[0]:$[]);
+
+		    if (retval[1]:`next != `next)
 		    {
-			if (DoApply() == `back)
+			widget = `again;
+		    }
+		    else
+		    {
+			if (Mode::normal())
 			{
-			    // DoApply (inst_prepdisk) replaces the wizard contents
-			    // TODO: make nicer
-			    Wizard::SetContentsButtons(_("Expert Partitioner"), contents, "", back_label, next_label);
-			    UpdateNavigationTree(nil);
-			    widget = `again;
+			    if (DoApply() == `back)
+			    {
+				// DoApply (inst_prepdisk) replaces the wizard contents
+				// TODO: make nicer
+				Wizard::SetContentsButtons(_("Expert Partitioner"), contents, "", back_label, next_label);
+				UpdateNavigationTree(nil);
+				widget = `again;
+			    }
 			}
 		    }
-		    break;
+		} break;
 
-		case `table:
+		case `table: {
 		    any citem = UI::QueryWidget(`id(`table), `CurrentItem);
 		    TreePanel::SwitchToNew(citem);
 		    UI::SetFocus(`tree);
-		    break;
+		} break;
 	    }
 	}
 	until (widget == `back || widget == `abort || widget == `next);
