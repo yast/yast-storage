@@ -76,8 +76,6 @@
   boolean button_expert           = true;    // Should the "EXPERT"-Button be shown in main window
   boolean button_delete_parttable = true;    // Should the "Delete partition table and disk label"
                                              // -Button be shown in Expert menu
-  boolean button_adapt_mp	  = false;   // Should the "Adapt mount points from
-                                             // existing /etc/fstab" -Button be shown in Expert menu
 
    boolean test_mode          = Mode::test ();
    string  boot_mode	      =	"fritz";
@@ -117,17 +115,6 @@
        bsd_label = true;
        }
 
-   if( Stage::initial () )
-       {
-       button_adapt_mp = true;
-       }
-   if( Mode::repair () )
-      {
-      button_adapt_mp	  = false;
-      }
-
-
-   y2debug( "ARCHIT %1", Arch::architecture () );
 
 
    ////////////////////////////////////////////////////////////////////////
@@ -2175,12 +2162,6 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 	    add( expert_item_list ,
 	         // menu entry text
 		 `item( `id (`reread),  _("&Reread Partition Table")));
-    if( button_adapt_mp )
-	expert_item_list =
-	    add( expert_item_list,
-		 `item( `id (`adapt_mp),
-			// menu entry text
-		        _("&Import Mount Points from Existing /etc/fstab")));
     if ( button_delete_parttable )
 	expert_item_list =
 	    add( expert_item_list,
@@ -2882,43 +2863,6 @@ Really do this?")))
 		    Storage::ReReadTargetMap();
 		    UI::CloseDialog();
 		    }
-		}
-	    }
-
-	/////////////////////////////////////////////////////////////
-        // Adapt mount points from existing /etc/fstab
-        /////////////////////////////////////////////////////////////
-
-        if (ret == `adapt_mp && Stage::initial() )
-	    {
-	    map<string,map> od = (map<string,map>)Storage::GetOndiskTarget();
-	    list<list> fstab = scanAndReadExistingFstab( od );
-	    y2milestone( "adapt_mp fstab %1", fstab );
-	    list ti = maplist( list e, fstab,
-	                       ``(AddFstabToData( od, (list<map>)e)[1]:$[]));
-	    y2milestone( "adapt_mp ti %1", ti );
-
-	    integer idx = FstabAddDialog( ti );
-	    if( idx>=0 )
-		{
-		od = (map<string,map>)Storage::GetOndiskTarget();
-		y2milestone( "adapt_mp use fstab idx %1", idx );
-		ti = AddFstabToData( od, (list<map>)fstab[idx]:[] );
-		Storage::ResetOndiskTarget();
-		foreach( string d, map disk, ti[0]:$[],
-		    ``{
-		    foreach( map p, disk["partitions"]:[],
-			``{
-			if( size(p["mount"]:"")>0 && p["enc_type"]:`none!=`none &&
-			    !p["tmpcrypt"]:false )
-			    {
-			    string pwd = DlgCreateCryptFs( p["device"]:"", 1, false, false );
-			    if( pwd != nil && size(pwd)>0 )
-				Storage::SetCryptPwd( p["device"]:"", pwd );
-			    }
-			});
-		    });
-		Storage::SetTargetMap( ti[0]:$[] );
 		}
 	    }
 

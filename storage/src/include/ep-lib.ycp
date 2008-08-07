@@ -161,4 +161,37 @@
 
 	return false;
     }
+
+
+    void ImportMountPoints()
+    {
+	map<string,map> od = (map<string,map>)Storage::GetOndiskTarget();
+	list<list> fstab = scanAndReadExistingFstab( od );
+	y2milestone( "adapt_mp fstab %1", fstab );
+	list ti = maplist( list e, fstab, ``(AddFstabToData( od, (list<map>)e)[1]:$[]));
+	y2milestone( "adapt_mp ti %1", ti );
+
+	integer idx = FstabAddDialog( ti );
+	if( idx>=0 )
+	{
+	    od = (map<string,map>)Storage::GetOndiskTarget();
+	    y2milestone( "adapt_mp use fstab idx %1", idx );
+	    ti = AddFstabToData( od, (list<map>)fstab[idx]:[] );
+	    Storage::ResetOndiskTarget();
+	    foreach( string d, map disk, ti[0]:$[],
+		     ``{
+			 foreach( map p, disk["partitions"]:[],
+				  ``{
+				      if( size(p["mount"]:"")>0 && p["enc_type"]:`none!=`none &&
+					  !p["tmpcrypt"]:false )
+				      {
+					  string pwd = DlgCreateCryptFs( p["device"]:"", 1, false, false );
+					  if( pwd != nil && size(pwd)>0 )
+					      Storage::SetCryptPwd( p["device"]:"", pwd );
+				      }
+				  });
+		     });
+	    Storage::SetTargetMap(ti[0]:$[]);
+	}
+    }
 }
