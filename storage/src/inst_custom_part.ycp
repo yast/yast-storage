@@ -1907,154 +1907,15 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
         ret = (symbol)Wizard::UserInput();
 
-      ///////////////////////////////////////////////////////////////
-      ////  EDIT
-      ///////////////////////////////////////////////////////////////
 
-        if( ret == `edit || ret == `table )
-	    {
-	    map<string,any> part = $[];
-	    string id = "";
-	    id = (string)UI::QueryWidget(`id(`table), `CurrentItem);
-
-	    // notify a line is selected
-            if( id != nil )
-		{
-		focusline = id;
-		if( !haskey( tg, id ) )
-		    part = Storage::GetPartition( tg, id );
-
-		y2milestone( "current partition %1", part );
-
-		if( size(part)==0 )
-		    {
-		    if( tg[id,"type"]:`CT_UNKNOWN == `CT_LVM )
-			{
-			ret = `lvm;
-			}
-		    else
-			{
-			}
-		    }
-		else if( part["type"]:`unknown == `lvm )
-		    {
-		    HandleEditLv( tg, id );
-		    }
-		else if( part["type"]:`unknown == `sw_raid )
-		    {
-		    }
-		else if( part["type"]:`unknown == `evms )
-		    {
-		    }
-		else if( part["type"]:`unknown == `loop )
-		    {
-		    ret = `loop_edit;
-		    }
-		else if( part["type"]:`unknown == `nfs )
-		    {
-		    ret = `nfs_edit;
-		    }
-		else
-		    {
-		    map new_val = $[];
-		    map<string,any> disk = Storage::GetDisk( tg, id );
-		    /////////////////////////////////////////////////////
-		    // check if the partition can be deleted
-
-		    if( !check_device_edit( part, bsd_label))
-			{
-			ret = `again;
-			continue;
-			}
-
-		    list<map> partitions_without_current =
-			filter( map p, disk["partitions"]:[],
-				``(p["nr"]:(any)0!=part["nr"]:(any)0 ));
-
-		    map<string,any> disk_without_current =
-			add( disk, "partitions", partitions_without_current);
-		    //////////////////////////////////////
-		    // There are three different Editors:
-		    // - "normal"
-		    // - extended
-		    // - already existing
-
-		    if( part["type"]:`primary == `extended )
-			{
-			if( part["create"]:false )
-			    {
-			    // header of the dialog edit a partition
-			    string title = _("Edit an Extended Partition") +
-			                   " " + part["device"]:"";
-			    new_val = CreateEditExtendedPartDlg( part,
-								 title,
-								 part["device"]:"",
-								 disk_without_current,
-								 disk["cyl_size"]:1000000,
-								 true,
-								 bsd_label
-							       );
-			    }
-			else
-			    {
-			    // error popup text
-			    Popup::Error( _("An already-existing extended partition cannot be changed.
+	// TODO: check in redesign
+	/*
+	Popup::Error( _("An already-existing extended partition cannot be changed.
 Delete this partition then create a new one using
 the new parameters.
 All data on this partition will be lost if you delete it."));
-			    new_val = nil;
-			    }
-			}
-		    else
-			{
-			string title = "";
-			if( !part["create"]:false )
-			    {
-			    // header of the dialog to edit a partition %1 is replaced by device name (e.g. /dev/hda1)
-			    title = sformat( _("Edit Existing Partition %1"),
-			                     part["device"]:"" );
-			    if( part["type"]:`primary != `primary &&  
-			        part["type"]:`primary != `logical )
-				title = sformat( _("Edit Existing Device %1"),
-						 part["device"]:"" );
-			    }
-			else
-			    {
-			    // header of the dialog to edit a partition %1 is replaced by device name (e.g. /dev/hda1)
+	*/
 
-			    title = sformat( _("Edit Partition %1"),
-			                     part["device"]:"" );
-			    }
-
-			new_val =
-			    EditOrCreatePartDlg( part,
-						 FileSystems::GetAllFileSystems(true, true) ,
-						 title,
-						 disk_without_current,
-						 bsd_label, edit_cylinder,
-						 disk["cyl_size"]:1000000,
-						 Stage::initial() );
-			}
-		    if( new_val != nil && size(new_val)>0 )   // not canceld
-			{
-			if( new_val["create"]:false )
-			    Storage::UpdatePartition( new_val["device"]:"",
-						      new_val["region",0]:0,
-						      new_val["region",1]:0 );
-			if( !disk["readonly"]:false && 
-			    part["fsid"]:0!=new_val["fsid"]:Partitions::fsid_native )
-			    Storage::SetPartitionId( new_val["device"]:"",
-						     new_val["fsid"]:Partitions::fsid_native );
-			Storage::ChangeVolumeProperties( new_val );
-			}
-		    }
-	        }
-	    else
-	        {
-                // popup text
-                Popup::Message(_("Select the partition to edit in the main dialog.") );
-	        }
-	    }
 
         /////////////////////////////////////////////////////////////
         // RESIZE
