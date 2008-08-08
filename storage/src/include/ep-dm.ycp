@@ -44,7 +44,7 @@
     }
 
 
-    void CreateDmPanel(any user_data)
+    void CreateDmOverviewTab(any user_data)
     {
 	string dm_device = (string) user_data;
 
@@ -54,7 +54,7 @@
 								`heading_filesystem, `fs_type, `mount_point,
 								`mount_by, `uuid, `label ]);
 
-	UI::ReplaceWidget(`tree_panel,
+	UI::ReplaceWidget(`tab_panel,
 			  Greasemonkey::Transform(
 			      `VBox(
 				  `IconAndHeading(sformat(_("DM Device: %1"), dm_device), dm_icon),
@@ -74,7 +74,7 @@
     }
 
 
-    void HandleDmPanel(any user_data, symbol widget)
+    void HandleDmOverviewTab(any user_data, symbol widget)
     {
 	string dm_device = (string) user_data;
 
@@ -84,5 +84,69 @@
 		EpEditDmDevice(dm_device);
 		break;
 	}
+    }
+
+
+    void CreateDmDevicesTab(any user_data)
+    {
+	string part_device = (string) user_data;
+
+	Debug("part_device", substring(part_device, 5));
+
+	symbol Predicate(map disk, map partition)
+	{
+	    // TODO: this is sick
+	    return StorageFields::PredicateUsedByDevice(disk, partition, [ "/dev/" + substring(part_device, 12) ]);
+	}
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size,
+							     `format, `type, `used_by ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+
+	UI::ReplaceWidget(`tab_panel,
+			  `VBox(
+			      `Table(`id(`table), `opt(`keepSorting, `notify),
+				     table_header, table_contents)
+			      )
+	    );
+
+	string helptext = _("<p>DM TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
+    void CreateDmPanel(any user_data)
+    {
+	string device = (string) user_data;
+
+	map<symbol, map> data = $[ `overview : $[ `create : CreateDmOverviewTab, `handle : HandleDmOverviewTab, `user_data : user_data ],
+				   `devices : $[ `create : CreateDmDevicesTab, `user_data : user_data ] ];
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `IconAndHeading(sformat(_("Dm Device: %1"), device), dm_icon),
+				  `DumbTab(`id(`tab), [
+					       `item(`id(`overview), _("&Overview")),
+					       `item(`id(`devices), _("&Used Devices"))
+					       ],
+					   `ReplacePoint(`id(`tab_panel), TabPanel::empty_panel)
+				      )
+				  )
+			      )
+	    );
+
+	TabPanel::Init(data);
+    }
+
+
+    void HandleDmPanel(any user_data, symbol widget)
+    {
+	TabPanel::Handle(widget);
     }
 }
