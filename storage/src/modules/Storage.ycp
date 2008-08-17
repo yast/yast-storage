@@ -56,6 +56,7 @@
   import "LibStorage::DmInfo";
   import "LibStorage::DmPartInfo";
   import "LibStorage::DmraidInfo";
+  import "LibStorage::DmmultipathInfo";
   import "LibStorage::NfsInfo";
   import "LibStorage::ContainerInfo";
   import "LibStorage::DiskInfo";
@@ -63,6 +64,7 @@
   import "LibStorage::PartitionAddInfo";
   import "LibStorage::DmPartCoInfo";
   import "LibStorage::DmraidCoInfo";
+  import "LibStorage::DmmultipathCoInfo";
   import "LibStorage::PartitionSlotInfo";
 
 map<string,any> conv_ctype =
@@ -73,6 +75,7 @@ map<string,any> conv_ctype =
                 LibStorage::LOOP() : `CT_LOOP,
                 LibStorage::LVM() : `CT_LVM,
                 LibStorage::DMRAID() : `CT_DMRAID,
+                LibStorage::DMMULTIPATH() : `CT_DMMULTIPATH,
                 LibStorage::DM() : `CT_DM,
                 LibStorage::NFSC() : `CT_NFS
 	      ]
@@ -84,6 +87,7 @@ map<string,any> conv_usedby =
        "m" : $[ LibStorage::UB_LVM() : `UB_LVM,
                 LibStorage::UB_MD() : `UB_MD,
                 LibStorage::UB_DMRAID() : `UB_DMRAID,
+                LibStorage::UB_DMMULTIPATH() : `UB_DMMULTIPATH,
                 LibStorage::UB_DM() : `UB_DM
 	      ]
      ];
@@ -156,9 +160,8 @@ map<string,integer> conv_parstring =
 map DiskMapVersion = $[];
 map DiskMap = $[];
 map ClassifiedSettings = $[];
-map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_DMRAID : 2,
-                    `CT_LOOP : 3, `CT_DM : 4, `CT_LVM : 5, 
-		    `CT_EVMS : 6, `CT_NFS : 7 ];
+map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_DMRAID : 2, `CT_DMMULTIPATH : 3,
+                    `CT_LOOP : 4, `CT_DM : 5, `CT_LVM : 6, `CT_NFS : 7 ];
 list<string> hw_packages = [];
 list<string> no_propose_disks = nil;
 boolean proposal_evms = false;
@@ -1584,6 +1587,31 @@ map getContainerInfo( map c )
 	    map p = $[];
 	    p = dmPartMap( pinfo, p );
 	    p["fstype"] = Partitions::dmraid_name;
+	    if( p["nr"]:-1 != 0 )
+		c["partitions"] = add( c["partitions"]:[], p );
+	    });
+	}
+    else if( c["type"]:`CT_UNKNOWN == `CT_DMMULTIPATH )
+	{
+	list<any> pinfos = [];
+	any infos = LibStorage::DmmultipathCoInfo::new("LibStorage::DmmultipathCoInfo");
+	string d = c["device"]:"";
+	ret = LibStorage::StorageInterface::getDmmultipathCoInfo( sint, d, infos );
+	if( ret==0 )
+	    {
+	    any pinfo = LibStorage::DmmultipathCoInfo::swig_p_get( infos );
+	    c = dmPartCoMap( pinfo, c );
+	    }
+	else
+	    y2warning( "disk \"%1\" ret:%2", c["device"]:"", ret );
+	c["partitions"] = [];
+	ret = LibStorage::StorageInterface::getDmmultipathInfo( sint, d, pinfos );
+	foreach( any info, pinfos,
+	    ``{
+	    any pinfo = LibStorage::DmmultipathInfo::swig_p_get( info );
+	    map p = $[];
+	    p = dmPartMap( pinfo, p );
+	    p["fstype"] = Partitions::dmmultipath_name;
 	    if( p["nr"]:-1 != 0 )
 		c["partitions"] = add( c["partitions"]:[], p );
 	    });
@@ -3415,10 +3443,12 @@ global define boolean InitializeDisk(string disk, boolean value)
     return( rbool );
     }
 
-global define boolean IsPartType( symbol t )
-    {
-    return( t==`CT_DMRAID || t==`CT_DISK );
-    }
+
+global boolean IsPartType(symbol t)
+{
+    return t == `CT_DMRAID || t == `CT_DMMULTIPATH || t == `CT_DISK;
+}
+
     
 global define boolean CreateAny( symbol ctype, map d, map& p )
     {
@@ -4550,11 +4580,11 @@ global define boolean IsRealDisk( map entry )
  *
  * @struct entry ~ $[ "type" : ... ? ]
  */
-global define boolean IsPartitionable( map entry )
-    {
-    return( entry["type"]:`CT_UNKNOWN==`CT_DMRAID ||
-            IsRealDisk( entry ) );
-    }
+global boolean IsPartitionable( map entry )
+{
+    return entry["type"]:`CT_UNKNOWN==`CT_DMRAID || entry["type"]:`CT_UNKNOWN==`CT_DMMULTIPATH ||
+	IsRealDisk( entry );
+}
 
 global define boolean DeviceRealDisk( string device )
     ``{
@@ -6184,6 +6214,7 @@ global define void FinishInstall()
     boolean need_md = false;
     boolean need_lvm = false;
     boolean need_dmraid = false;
+    boolean need_dmmultipath = false;
     foreach( string k, map e, tg,
 	``{
 	if( size(filter( map p, e["partitions"]:[],
@@ -6195,9 +6226,11 @@ global define void FinishInstall()
 	    need_lvm = true;
 	if( e["type"]:`CT_UNKNOWN==`CT_DMRAID )
 	    need_dmraid = true;
+	if( e["type"]:`CT_UNKNOWN==`CT_DMMULTIPATH )
+	    need_dmmultipath = true;
 	});
-    y2milestone( "FinishInstall need crypto:%1 md:%2 lvm:%3 dmraid:%4",
-                 need_crypt, need_md, need_lvm, need_dmraid );
+    y2milestone( "FinishInstall need crypto:%1 md:%2 lvm:%3 dmraid:%4 dmmultipath:%5",
+                 need_crypt, need_md, need_lvm, need_dmraid, need_dmmultipath );
     string cmd = "";
     map bo = $[];
     if( need_crypt )
@@ -6205,6 +6238,7 @@ global define void FinishInstall()
     CallInsserv( need_md, "md" );
     CallInsserv( need_lvm, "lvm" );
     CallInsserv( need_dmraid, "dmraid" );
+    CallInsserv( need_dmmultipath, "multipathd" );
     y2milestone( "FinishInstall done" );
     }
 
@@ -6968,7 +7002,7 @@ global boolean Storage::IsPersistent( map p )
 	if( p["type"]:`unknown==`evms )
 	    ret = d["is_container"]:false || p["evms_native"]:false;
 	else 
-	    ret = d["type"]:`CT_UNKNONW==`CT_DMRAID ||
+	    ret = d["type"]:`CT_UNKNONW==`CT_DMRAID || d["type"]:`CT_UNKNONW==`CT_DMMULTIPATH ||
 	          size(d["udev_id"]:[])>0;
 	}
     y2milestone( "IsPersistent device:%1 ret:%2", p["device"]:"", ret );
