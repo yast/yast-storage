@@ -25,8 +25,8 @@
      */
     global void IterateTargetMap(map<string, map> target_map, void(map<string, map>, map) callback)
     {
-	const map disk_order = $[ `CT_DMRAID : 0, `CT_DISK : 1, `CT_MD : 2, `CT_LOOP : 3,
-				  `CT_LVM : 4, `CT_DM : 6, `CT_NFS : 7 ];
+	const map disk_order = $[ `CT_DMRAID : 0, `CT_DMMULTIPATH : 1, `CT_DISK : 2,
+				  `CT_MD : 3, `CT_LOOP : 4, `CT_LVM : 5, `CT_DM : 6, `CT_NFS : 8 ];
 
 	list<string> keys = maplist(string dev, map disk, target_map, { return dev; });
 	keys = sort(string a, string b, keys, {
@@ -51,7 +51,9 @@
 	    case `UB_DM:
 		return "DM " + used_by;
 	    case `UB_DMRAID:
-		return "RAID " + used_by;
+		return "DM RAID " + used_by;
+	    case `UB_DMMULTIPATH:
+		return "DM Multipath " + used_by;
 	    case `UB_MD:
 		return "RAID " + used_by;
 	    default:
@@ -312,7 +314,11 @@ this column to be empty.";
 			}
 			else if(disk["type"]:`CT_UNKNOWN==`CT_DMRAID)
 			{
-			    value = "BIOS RAID " + disk["name"]:"";
+			    value = "DM RAID " + disk["name"]:"";
+			}
+			else if(disk["type"]:`CT_UNKNOWN==`CT_DMMULTIPATH)
+			{
+			    value = "DM Multipath " + disk["name"]:"";
 			}
 			else
 			{
@@ -694,7 +700,7 @@ this column to be empty.";
 	if (type == `CT_DISK && !real_disk)
 	    return true;
 
-	if (!contains([ `CT_DISK, `CT_DMRAID, `CT_LVM ], type))
+	if (!contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH, `CT_LVM ], type))
 	    return true;
 
 	return false;
@@ -706,7 +712,7 @@ this column to be empty.";
 	if (partition["fsid"]:0 == Partitions::fsid_mac_hidden)
 	    return true;
 
-	if (disk["used_by_type"]:`UB_NONE == `UB_DMRAID)
+	if (contains([ `UB_DMRAID, `UB_DMMULTIPATH ], disk["used_by_type"]:`UB_NONE))
 	    return true;
 
 	return false;

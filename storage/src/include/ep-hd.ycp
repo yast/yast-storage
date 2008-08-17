@@ -23,7 +23,7 @@
     {
 	symbol Predicate(map disk, map partition)
 	{
-	    return StorageFields::PredicateDiskType(disk, partition, [`CT_DMRAID, `CT_DISK]);
+	    return StorageFields::PredicateDiskType(disk, partition, [`CT_DMRAID, `CT_DMMULTIPATH, `CT_DISK]);
 	}
 
 	boolean IsAvailable ( string client )
@@ -325,6 +325,36 @@ Really call XPRAM configuration?"), ["yast2-s390"], "xpram");
     }
 
 
+    void CreateHdDiskDevicesTab(any user_data)
+    {
+	string part_device = (string) user_data;
+
+	symbol Predicate(map disk, map partition)
+	{
+	    return StorageFields::PredicateUsedByDevice(disk, partition, [ part_device ]);
+	}
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size,
+							     `format, `type, `used_by ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+
+	UI::ReplaceWidget(`tab_panel,
+			  `VBox(
+			      `Table(`id(`table), `opt(`keepSorting, `notify),
+				     table_header, table_contents)
+			      )
+	    );
+
+	string helptext = _("<p>Disk TODO</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
     void CreateHdDiskPanel(any user_data)
     {
 	string device = (string) user_data;
@@ -336,7 +366,9 @@ Really call XPRAM configuration?"), ["yast2-s390"], "xpram");
 						  `user_data : user_data ],
 				   `partitions : $[ `create : CreateHdDiskPartitionsTab,
 						    `handle : HandleHdDiskPartitionsTab,
-						    `user_data : user_data ] ];
+						    `user_data : user_data ],
+				   `devices : $[ `create : CreateHdDiskDevicesTab, 
+						 `user_data : user_data ] ];
 
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
@@ -344,7 +376,8 @@ Really call XPRAM configuration?"), ["yast2-s390"], "xpram");
 				  `IconAndHeading(sformat(_("Hard Disk: %1"), device), hd_icon),
 				  `DumbTab(`id(`tab), [
 					       `item(`id(`overview), _("&Overview")),
-					       `item(`id(`partitions), _("&Partitions"))
+					       `item(`id(`partitions), _("&Partitions")),
+					       `item(`id(`devices), _("&Used Devices"))
 					       ],
 					   `ReplacePoint(`id(`tab_panel), TabPanel::empty_panel)
 				      )
