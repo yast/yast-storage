@@ -17,7 +17,6 @@
     import "Mode";
     import "Stage";
     import "AsciiFile";
-    import "String";
 
 
     // The filesystem ids for the partitions
@@ -100,10 +99,17 @@
 	];
 
 
+global boolean EfiBoot()
+{
+    return Arch::ia64();
+}
+
+
 global void SetDefaultFs(symbol new_default_fs)
 {
     default_fs = new_default_fs;
 }
+
 
 global symbol DefaultFs()
 {
@@ -118,12 +124,13 @@ global symbol DefaultFs()
     return default_fs;
 }
 
+
 global symbol DefaultBootFs()
 {
     if (default_boot_fs == `unknown)
     {
         default_boot_fs = DefaultFs();
-	if (Arch::ia64())
+	if (EfiBoot())
 	{
 	    default_boot_fs = `vfat;
 	}
@@ -135,18 +142,20 @@ global symbol DefaultBootFs()
     return default_boot_fs;
 }
 
-global define string BootMount()
-    ``{
-    if( boot_mount_point == "" )
-	{
+
+global string BootMount()
+{
+    if (boot_mount_point == "")
+    {
 	boot_mount_point = "/boot";
-	if( Arch::ia64 () )
-	    {
+	if (EfiBoot())
+	{
 	    boot_mount_point = "/boot/efi";
-	    }
 	}
-    return( boot_mount_point );
     }
+    return boot_mount_point;
+}
+
 
 global define integer MinimalNeededBootsize()
     ``{
@@ -244,37 +253,40 @@ global define boolean BootPrimary()
     return( ret );
     }
 
-global define integer FsidBoot()
-    ``{
-    if( fsid_boot == 0 )
-	{
-	fsid_boot = fsid_native;
-	if( Arch::ia64 () )
-	    {
-	    fsid_boot = fsid_gpt_boot;
-	    }
-	else if( PrepBoot() )
-	    {
-	    fsid_boot = fsid_prep_chrp_boot;
-	    }
-	else if( Arch::board_mac () )
-	    {
-	    fsid_boot = fsid_mac_hfs;
-	    }
-	}
-    return( fsid_boot );
-    }
 
-global define boolean NeedBoot()
-    ``{
-    boolean ret = false;
-    if( Arch::ia64()||Arch::ppc()||Arch::sparc()||Arch::alpha() )
+global integer FsidBoot()
+{
+    if( fsid_boot == 0 )
+    {
+	fsid_boot = fsid_native;
+	if (EfiBoot())
 	{
-	ret = true;
+	    fsid_boot = fsid_gpt_boot;
 	}
-    y2milestone( "NeedBoot ret %1", ret );
-    return( ret );
+	else if( PrepBoot() )
+	{
+	    fsid_boot = fsid_prep_chrp_boot;
+	}
+	else if( Arch::board_mac () )
+	{
+	    fsid_boot = fsid_mac_hfs;
+	}
     }
+    return fsid_boot;
+}
+
+
+global boolean NeedBoot()
+{
+    boolean ret = false;
+    if (EfiBoot() || Arch::ppc() || Arch::sparc() || Arch::alpha())
+    {
+	ret = true;
+    }
+    y2milestone( "NeedBoot ret %1", ret );
+    return ret;
+}
+
 
 global define boolean IsDosPartition( integer fsid )
     ``{
