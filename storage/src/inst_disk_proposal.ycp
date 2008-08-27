@@ -136,7 +136,6 @@ string title        = "";
 string modify_str   = "";
 string detailed_str = "";
 string lvm_str      = "";
-string evms_str     = "";
 string part_str     = "";
 
 // Title for dialogue
@@ -149,8 +148,6 @@ detailed_str = _("&Create Partition Setup...");
 part_str = _("&Partition Based");
 // Radiobutton for partition dialog
 lvm_str = _("&LVM Based");
-// Radiobutton for partition dialog
-evms_str = _("&EVMS Based");
 
 string target_is = "";
 
@@ -196,22 +193,12 @@ term rframe =
     `HBox(
 	`HSpacing(3),
 	`MinWidth(20,`Left( `RadioButton( `id(`part), `opt(`notify), part_str, 
-	                                  !Storage::ProposalEvms() &&
 					  !Storage::ProposalLvm() ))),
 	`HSpacing(3),
 	`MinWidth(20,`Left( `RadioButton( `id(`lvm), `opt(`notify), lvm_str, 
 	                                  Storage::ProposalLvm() ))),
 	`HSpacing(3)
 	);
-
-if( cfg["evms_config"]:false && false )  // No EVMS proposal for SLES10!!
-    {
-    boolean v = Storage::ProposalEvms() && !Storage::ProposalLvm();
-    rframe = add( rframe, `HStretch() );
-    rframe = add( rframe, 
-		  `MinWidth(20,`Left( `RadioButton( `id(`evms), evms_str, v ))) );
-    rframe = add( rframe, `HSpacing(3) );
-    }
 
 term bframe = 
     `HBox(
@@ -267,16 +254,9 @@ This is also the option to choose for
 advanced options like RAID and encryption.</p>
 "), deletechars(detailed_str,"&"));
 
-if( cfg["evms_config"]:false && false )  // No EVMS proposal for SLES10!!
-    // help text continued
-    // %1 is replaced by button text
-    help_text =  help_text + _("<p>
-To create an LVM or EVMS based proposal, choose the corresponding button.</p>
-");
-else
-    // help text continued
-    // %1 is replaced by button text
-    help_text =  help_text + _("<p>
+// help text continued
+// %1 is replaced by button text
+help_text =  help_text + _("<p>
 To create an LVM based proposal, choose the corresponding button.</p>
 ");
 
@@ -308,20 +288,15 @@ if( !Storage::GetTestsuite() )
 	if( ret == `abort && Popup::ReallyAbort(true) )
 	    return `abort;
 
-	if( contains( [ `lvm, `evms, `part ], ret ) )
+	if( contains( [ `lvm, `part ], ret ) )
 	    {
 	    if( AskOverwriteChanges() )
 		{
 		target_is = "SUGGESTION";
 		if( ret==`lvm )
 		    Storage::SetProposalLvm(true);
-		else if( ret==`evms )
-		    Storage::SetProposalEvms(true);
 		else
-		    {
 		    Storage::SetProposalLvm(false);
-		    Storage::SetProposalEvms(false);
-		    }
 		Storage::ResetOndiskTarget();
 		Storage::AddMountPointsForWin(Storage::GetTargetMap());
 		map prop = get_inst_prop( Storage::GetTargetMap());
@@ -376,8 +351,6 @@ if( !Storage::GetTestsuite() )
 		{
 		if( Storage::ProposalLvm() )
 		    UI::ChangeWidget( `id("prop_mode"), `CurrentButton, `lvm );
-		else if( Storage::ProposalEvms() )
-		    UI::ChangeWidget( `id("prop_mode"), `CurrentButton, `evms );
 		else 
 		    UI::ChangeWidget( `id("prop_mode"), `CurrentButton, `part );
 		}
