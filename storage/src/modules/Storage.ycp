@@ -3025,73 +3025,6 @@ global boolean ChangeLvStripeCount( string vgname, string lvname,
     return( ret==0 );
     }
 
-global boolean DeleteEvmsCo( string name )
-    {
-	return false;
-    }
-
-global string EvmsShortName( string lname )
-    {
-    string sname = lname;
-    if( search( sname, "/" )!=nil )
-	sname = substring( sname, search( sname, "/" )+1 );
-    return( sname );
-    }
-
-global boolean ActivateEvms()
-    {
-	return false;
-    }
-
-global list EvmsTrivialMaps( map tgMap )
-    {
-    string regex1 = "[0-9]+$";
-    y2milestone( "EvmsTrivialMaps %1", tgMap["/dev/evms","partitions"]:[] );
-    list ps = filter( map p, tgMap["/dev/evms","partitions"]:[],
-		      ``(size(regexppos(p["name"]:"",regex1))>0));
-    y2milestone( "EvmsTrivialMaps %1", ps );
-    return( ps );
-    }
-
-global boolean CreateEvmsCo( string name, integer pesize, boolean lvm2 )
-    {
-	return false;
-    }
-
-global boolean ModifyEvmsCo( string old_name, string new_name, integer pesize,
-                             boolean lvm2 )
-    {
-	return false;
-    }
-
-global boolean ExtendEvmsCo( string name, string device )
-    {
-	return false;
-    }
-
-global boolean ReduceEvmsCo( string name, string device )
-    {
-	return false;
-    }
-
-global boolean CreateEvmsVolume( string coname, string lvname, integer sizeK,
-				 integer stripe )
-    {
-	return false;
-    }
-
-global boolean ChangeEvmsStripeCount( string coname, string name,
-				      integer stripe )
-    {
-	return false;
-    }
-
-global boolean ChangeEvmsStripeSize( string coname, string name,
-				     integer stripeSize )
-    {
-	return false;
-    }
-
 global boolean AddNfsVolume( string nfsdev, string opts, integer sz, string mp )
     {
     y2milestone( "AddNfsVolume dev:%1 opts:%2 size:%3 mp:%4", nfsdev, opts, 
@@ -3492,16 +3425,6 @@ global define boolean CreateAny( symbol ctype, map d, map& p )
 	                                 p["stripesize"]:0 );
 	    }
 	}
-    else if( ctype == `CT_EVMS )
-	{
-	ret = Storage::CreateEvmsVolume( d["name"]:"", p["name"]:"",
-	                                 p["size_k"]:0, p["stripes"]:1 );
-	if( ret && p["stripes"]:1>1 && p["stripesize"]:0>0 )
-	    {
-	    Storage::ChangeEvmsStripeSize( d["name"]:"", p["name"]:"",
-					   p["stripesize"]:0 );
-	    }
-	}
     else if( ctype == `CT_NFS )
 	{
 	ret = Storage::AddNfsVolume( p["device"]:"", p["fstopt"]:"", 
@@ -3809,11 +3732,6 @@ global define void SetTargetMap( map<string,map> target )
 		DeleteLvmVg( target[k,"name"]:"" );
 		target[k,"delete"] = false;
 		}
-	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
-		{
-		DeleteEvmsCo( target[k,"name"]:"" );
-		target[k,"delete"] = false;
-		}
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_DMRAID )
 		{
 		DeleteDmraid( k );
@@ -3858,8 +3776,6 @@ global define void SetTargetMap( map<string,map> target )
 	    {
 	    if( tg[k,"type"]:`CT_UNKNOWN==`CT_LVM )
 		DeleteLvmVg( tg[k,"name"]:"" );
-	    else if( tg[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
-		DeleteEvmsCo( tg[k,"name"]:"" );
 	    }
 	else if( !tg[k,"delete"]:false )
 	    {
@@ -3869,12 +3785,6 @@ global define void SetTargetMap( map<string,map> target )
 		list<string> ls = target[k,"devices_add"]:[];
 		foreach( string d, ls,
 			 ``{Storage::ReduceLvmVg( target[k,"name"]:"", d );});
-		}
-	    else if( tg[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
-		{
-		list<string> ls = target[k,"devices_add"]:[];
-		foreach( string d, ls,
-			 ``{Storage::ReduceEvmsCo( target[k,"name"]:"", d );});
 		}
 	    }
 	});
@@ -3901,8 +3811,6 @@ global define void SetTargetMap( map<string,map> target )
 	    {
 	    if( target[k,"type"]:`CT_UNKNOWN==`CT_LVM )
 		DeleteLvmVg( target[k,"name"]:"" );
-	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
-		DeleteEvmsCo( target[k,"name"]:"" );
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_DISK )
 		DeletePartitionTable( k, target[k,"size_k"]:0 );
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_DMRAID )
@@ -3933,16 +3841,6 @@ global define void SetTargetMap( map<string,map> target )
 		foreach( string d, ls,
 			 ``{Storage::ExtendLvmVg( target[k,"name"]:"", d );});
 		}
-	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_EVMS )
-		{
-		CreateEvmsCo( target[k,"name"]:"", target[k,"pesize"]:0,
-		              target[k,"lvm2"]:true );
-		list<string> ls =
-		    (list<string>)union( target[k,"devices"]:[],
-				         target[k,"devices_add"]:[] );
-		foreach( string d, ls,
-			 ``{Storage::ExtendEvmsCo( target[k,"name"]:"", d );});
-		}
 	    }
 	if( !target[k,"delete"]:false && !target[k,"create"]:false )
 	    {
@@ -3952,13 +3850,6 @@ global define void SetTargetMap( map<string,map> target )
 		list<string> ls = target[k,"devices_add"]:[];
 		foreach( string d, ls,
 			 ``{Storage::ExtendLvmVg( target[k,"name"]:"", d );});
-		}
-	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_EVMS &&
-	        size(target[k,"devices_add"]:[])>0 )
-		{
-		list<string> ls = target[k,"devices_add"]:[];
-		foreach( string d, ls,
-			 ``{Storage::ExtendEvmsCo( target[k,"name"]:"", d );});
 		}
 	    }
 	list<map> dps = filter( map p, target[k,"partitions"]:[],
