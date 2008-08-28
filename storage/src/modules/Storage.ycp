@@ -237,12 +237,9 @@ global string EvmsDevDisk( string dev )
 
     /* Storage = TargetMap
     /* Storage = $[ "targets" 			: $[],
-		    "lvm_view_all_mnt"    	: true,
 		    "whole_disk"    		: false,
 		    "must_reread_partitions"   	: false,
 		    "win_device"   		: false,
-		    "raidtab_created"   	: false,
-		    "use_lvm"   		: false,
 		    "testsuite"   		: false,
 		    "do_resize"    		: "",
 		    "part_proposal_mode"        : "",
@@ -253,10 +250,8 @@ global string EvmsDevDisk( string dev )
 
 
     map  StorageMap	= $[];
-    map<integer,map>  StorageMaps	= $[];
 
     /* stringkeys for access  to the Storage map */
-    string lvm_view_all_mnt_key  	= "lvm_view_all_mnt";
     string targets_key 			= "targets";
     string targets_backup_key 		= "targets_backup";
     string targets_backup_l_key 	= "targets_l_backup";
@@ -264,7 +259,6 @@ global string EvmsDevDisk( string dev )
     string part_mode_key 		= "part_mode";
     string part_disk_key  		= "part_disk";
     string whole_disk_key 		= "whole_disk";
-    string raidtab_created_key 		= "raidtab_created";
     string testsuite_key       		= "testsuite";
     string do_resize_key 		= "do_resize";
     string win_device_key	 	= "win_device";
@@ -272,13 +266,7 @@ global string EvmsDevDisk( string dev )
     string part_proposal_mode_key	= "part_proposal_mode";
     string part_proposal_first_key	= "part_proposal_first";
     string part_proposal_active_key	= "part_proposal_active";
-    string use_lvm_key			= "use_lvm";
 
-    string storage_map_key		= "storage_map";
-    string storage_type_key     	= "storage_type";
-    string storage_doc_key		= "storage_doc";
-    symbol record_key			= `record;
-    symbol custom_key			= `custom;
     boolean probe_done             	= false;
     symbol  exit_key               	= `next;
     any sint                            = nil;
@@ -408,9 +396,7 @@ global boolean HumanStringToKByte(string str, integer& kbytes)
 
 
 global define map<string,map> GetTargetMap();
-/**
-*
-*/
+
 
 define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
     ``{
@@ -2131,22 +2117,6 @@ global define void SetPartDisk( string value )
       StorageMap = add( StorageMap, testsuite_key, value );
   }
 
-  global define boolean GetLvmViewAllMnt()``{
-      return StorageMap[lvm_view_all_mnt_key]:true;
-  }
-
-  global define void SetLvmViewAllMnt( boolean value ) ``{
-      StorageMap = add( StorageMap, lvm_view_all_mnt_key, value );
-  }
-
-  global define boolean GetRaidtabCreated()``{
-      return StorageMap[raidtab_created_key]:false;
-  }
-
-  global define void SetRaidtabCreated( boolean value ) ``{
-      StorageMap = add( StorageMap, raidtab_created_key, value );
-  }
-
   global define string GetDoResize()``{
       return StorageMap[do_resize_key]:"NO";
   }
@@ -2187,118 +2157,6 @@ global define void SetPartDisk( string value )
       StorageMap = add( StorageMap, win_device_key, value );
     }
 
-
-
-
-    /* StorageMaps =  [
-       1: $[  storage_map_key		: 	$[ Storage_01],
-              storage_type_key		:	`record,
-	      ],
-       2, $[ storage_map_key		: 	$[ Storage_02],
-             storage_type_key		: 	`custom,
-             storage_doc_key 		:	"create partition /dev/hda2"
-	     ],
-       3: $[ storage_map_key		:       $[ Storage_03 ],
-             storage_type_key		:	`custom,
-	     storage_doc_key		:	"delete partition /dev/hda1"
-	     ],
-       4: $[ storage_map_key		: 	$[ Storage_04 ],
-             storage_type_key		: 	`record
-	     ]
-	];
-    */
-
-
-
-    /* Record - Rollback - Commit */
-    /* update focus and Storage - StorageStack */
-
-    /* Find the next free position in the map StorageMaps
-     * @return integer
-     */
-    define integer NextStorageMapsPos() ``{
-	return (size( StorageMaps) + 1);
-    }
-
-
-    define integer FindLastRecordEntry() ``{
-	map<integer,any> all_record_entries = (map<integer,any>)filter (integer key, map entry , StorageMaps, ``( entry[storage_type_key]:custom_key == record_key ));
-	list<integer> all_record_keys   = (list<integer>) maplist(integer key, any entry , all_record_entries,  ``(  key ));
-
-	if( size( all_record_entries ) > 0 )
-	    return sort(integer x, integer y, all_record_keys , ``(y < x))[0]:1;
-	else return 0;
-    }
-
-
-    define void Rollback2Pos(integer pos ) ``{
-	StorageMap = StorageMaps[pos,storage_map_key]:$[];
-	StorageMaps = filter(integer key, map entry, StorageMaps, ``( key < pos ));
-    }
-
-
-    define void AddEntry2StorageMaps(symbol type_key, string doc )``{
-	map storage_maps_entry = $[];
-
-	storage_maps_entry = add(storage_maps_entry, storage_map_key  , StorageMap    );
-	storage_maps_entry = add(storage_maps_entry, storage_type_key , type_key   );
-
-	if( doc != "" )
-	    storage_maps_entry = add(storage_maps_entry, storage_type_key , doc    );
-
-	StorageMaps = add( StorageMaps, NextStorageMapsPos(), storage_maps_entry );
-    }
-
-
-    /**
-     *
-     * @return boolean
-     */
-/*
-    global define void Record()``{
-	AddEntry2StorageMaps( record_key, "");
-    }
-*/
-
-    /**
-     *
-     * @return boolean
-     */
-/*
-    global define boolean Rollback()``{
-	integer last_record_entry =  FindLastRecordEntry();
-	if( last_record_entry != 0 )
-	{
-	    Rollback2Pos( last_record_entry );
-	    return true;
-	}
-	else
-	{
-	    return false;
-	}
-    }
-*/
-
-    /**
-     *
-     *	@return boolean
-     */
-/*
-global define boolean Commit()
-    ``{
-    integer last_record_entry = FindLastRecordEntry();
-    if( last_record_entry != 0 )
-	{
-	StorageMaps = filter( integer key, map entry, StorageMaps,
-			      ``( key < last_record_entry ));
-	return true;
-	}
-    else
-	{
-	return false;
-	}
-    }
-*/
 
 global define void InstallCallbacks()
     {
@@ -4432,15 +4290,6 @@ global define void SetWizardKey( string key )
     y2debug(" Set WizardKey %1", WizardKey);
     WizardKey = key;
     };
-
-
-    /* Functions for testing */
-
-    global define void DebugStorage()``{
-
-	y2milestone("StorageMaps: %1",StorageMaps);
-	y2milestone("Storage:%1",StorageMap);
-    }
 
 
 /**
