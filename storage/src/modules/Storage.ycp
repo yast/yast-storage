@@ -4893,66 +4893,6 @@ global define string PathToDestdir( string pt )
     return( pt );
     }
 
-//-----------------------------------------------------
-//
-// change an entry in /etc/fstab
-//
-global define void ChangeLineFstab( map entry )
-    ``{
-    string tabpath = PathToDestdir( "/etc/fstab" );
-    if( Installation::scr_destdir != "/" )
-	{
-	if( SCR::Read( .target.size, tabpath )>= 0 )
-	    SCR::Execute( .target.remove, tabpath );
-	}
-    map fstab = Partitions::GetFstab( tabpath );
-    list lines = Storage::FindFstabLines( fstab, entry["mount"]:"",
-                                          entry["spec"]:"", "x", "x" );
-    list fstlist = [ entry["spec"]:"", entry["mount"]:"",
-		     entry["vfstype"]:"", entry["mntops"]:"",
-		     sformat("%1",entry["freq"]:0),
-		     sformat("%1",entry["passno"]:0) ];
-    y2milestone( "lines %1", lines );
-    if( size(lines)==0 )
-	{
-	AsciiFile::AppendLine( fstab, fstlist );
-	}
-    else
-	{
-	integer field = 0;
-	while( field<4 )
-	    {
-	    AsciiFile::ChangeLineField( fstab, lines[0]:-1, field,
-					fstlist[field]:"" );
-	    field = field+1;
-	    }
-	}
-    string dir = entry["mount"]:"";
-    if( substring( dir, 0, 1 )== "/" )
-	{
-	dir = PathToDestdir( dir );
-	if( SCR::Read( .target.size, dir )<=0 )
-	    {
-	    SCR::Execute( .target.mkdir, dir );
-	    }
-	}
-    AsciiFile::RewriteFile( fstab, tabpath );
-    };
-
-global define map MakeCdromFstabEntry( map cd )
-    ``{
-    map entry = FileSystems::GetFstabDefaultMap( "cdrom" );
-    string cdmount = cd["linkname"]:"";
-    entry["spec"] = cdmount;
-    entry["mount"] = "/media/"+substring(cdmount,5);
-    string enc = FileSystems::LangTypicalEncoding();
-    if( !contains( [ "iso8859-1", "iso8859-15", "" ], enc ))
-	{
-	entry["mntops"] = entry["mntops"]:"" + ",iocharset=" + enc;
-	}
-    y2milestone( "ret %1", entry );
-    return( entry );
-    };
 
 define void HandleModulesOnBoot( map<string,map> targetMap )
     ``{
@@ -5164,56 +5104,6 @@ global define map<string,map> SpecialBootHandling( map<string,map> tg )
     return( tg );
     }
 
-global define list<list<string> > AutodetectMultipathRaid( map<string,map> tg )
-    ``{
-    list<list<string> > ret = [];
-    map<string, list> disks = (map<string, list>) $[];
-    foreach(string dev, map disk, tg,
-	``{
-	string id = disk["unique"]:"";
-	integer pos = search( id, "." );
-	if( pos != nil )
-	    {
-	    id = substring( id, pos+1 );
-	    if( haskey( disks, id ) )
-		{
-		disks[id] = add( disks[id]:[], dev );
-		}
-	    else
-		{
-		disks[id] = [ dev ];
-		}
-	    }
-	});
-    disks = (map<string, list>) filter(string key, list entry, disks, ``(size(entry)>=2) );
-    y2milestone( "disks %1", disks );
-    foreach( string key, list entry, disks,
-	``{
-	foreach(map p, tg[entry[0]:"","partitions"]:[],
-	    ``{
-	    boolean ok = true;
-	    list<string> dl = [];
-	    foreach(string disk, (list<string>)entry,
-		``{
-		string dev = p["device"]:"";
-		map p1 = GetPartition( tg, dev );
-		if( p1["type"]:`primary == `extended ||
-		    p1["used_by_type"]:`UB_NONE!=`UB_NONE ||
-		    size(p1["mount"]:"")>0 )
-		    {
-		    ok = false;
-		    }
-		dl = add( dl, dev );
-		});
-	    if( ok )
-		{
-		ret = add( ret, dl );
-		}
-	    });
-	});
-    y2milestone( "ret %1", ret );
-    return( ret );
-    }
 
 global define boolean PerformLosetup( map& loop, boolean format )
     ``{
@@ -6671,10 +6561,7 @@ global map<string, any> GetControlCfg()
 
 global boolean BootEvms()
     {
-    map cfg = GetControlCfg();
-    boolean ret = cfg["evms_boot"]:false;
-    y2milestone( "BootEvms ret %1", ret );
-    return( ret );
+    return false;
     }
 
 global string ProposalVM()
