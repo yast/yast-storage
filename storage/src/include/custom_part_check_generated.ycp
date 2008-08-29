@@ -341,8 +341,7 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
 
 	});
 
-	whole_disk = whole_disk || diskinfo["type"]:`CT_UNKNOWN==`CT_LVM ||
-	                           diskinfo["type"]:`CT_UNKNOWN==`CT_EVMS;
+	whole_disk = whole_disk || diskinfo["type"]:`CT_UNKNOWN==`CT_LVM;
 	diskinfo  = add( diskinfo, "whole_disk", whole_disk );
 	all_whole_disk = all_whole_disk && whole_disk;
 	targetMap = add( targetMap, disk, diskinfo );
@@ -742,11 +741,6 @@ define symbol check_devices_used( list<map> partitions, boolean not_cr )
 		if( !tg["/dev/"+p["used_by"]:"","create"]:false )
 		    ppl = add( ppl, p );
 		}
-	    else if( p["used_by_type"]:`UB_NONE==`UB_EVMS )
-		{
-		if( !tg["/dev/evms/"+p["used_by"]:"","create"]:false )
-		    ppl = add( ppl, p );
-		}
 	    });
 	pl = ppl;
 	}
@@ -787,13 +781,6 @@ Remove it from the RAID before editing it.
 	Popup::Message(sformat(_("The selected device belongs to a volume group (%1).
 Remove it from the volume group before editing it.
 "),curr_part["used_by"]:"" ));
-	}
-    else if( used == `UB_EVMS )
-	{
-	// popup text %1 is replaced by a name e.g. system
-	Popup::Message(sformat(_("The selected device is used by EVMS volume (%1).
-Remove the EVMS volume before editing it.
-"), curr_part["used_by"]:"" ));
 	}
     else if( used != `UB_NONE )
 	{
@@ -847,17 +834,9 @@ Remove it from the volume group before deleting it.
 Remove it from the RAID before deleting it.
 "), curr_part["used_by"]:"", part_name ));
 	    }
-
-	else if( used == `UB_EVMS)
-	    {
-	    // popup text %2 is a device name, %1 is the EVMS name
-	    Popup::Message(sformat(_("The device (%2) is used by EVMS object (%1).
-Remove the EVMS object before deleting it.
-"), curr_part["used_by"]:"", part_name ));
-	    }
 	else
 	    {
-	    // popup text %2 is a device name, %1 is the EVMS name
+	    // popup text, %1 and %2 are device names
 	    Popup::Message(sformat(_("The device (%2) is used by %1.
 Remove %1 before deleting it.
 "), curr_part["used_by"]:"", part_name ));
@@ -929,7 +908,7 @@ Remove the device anyway?
 	    }
 	if( !ok )
 	    {
-	    // popup text %2 is a device name, %1 is the EVMS name
+	    // popup text, %1 is a device name
 	    Popup::Message(sformat(_("The device (%1) cannot be removed
 Since it is a logical partition and another logical 
 partition with higher number is in use.
@@ -1021,15 +1000,6 @@ The selected extended partition contains at least one partition
 that is part of a RAID system. Unassign the
 partitions from their respective RAID systems before
 deleting the extended partition.
-"));
-	}
-    else if( used == `UB_EVMS )
-	{
-	// popup text, Do not translate EVMS.
-	Popup::Message(_("
-The selected extended partition contains at least one partition
-that is used by an EVMS volume. Remove the EVMS volume
-before deleting the extended partition.
 "));
 	}
     else if( used != `UB_NONE )
