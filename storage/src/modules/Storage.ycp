@@ -4459,75 +4459,48 @@ global define list GetWinPrimPartitions( map<string,map> targets )
     return( ret );
     }
 
-global define list<string> AddPackageList()
-    ``{
+
+global list<string> AddPackageList()
+{
     list<string> pl = hw_packages;
-    boolean mount_lvm = false;
-    boolean need_evms = false;
+
     map<string,map> tg = GetTargetMap();
-    map<string,map> tt = filter( string k, map e, tg,
-                                 ``(e["type"]:`CT_UNKNOWN==`CT_LVM ));
-    boolean have_lvm = size(tt)>0;
-    if( have_lvm )
-	{
-	list<map> part = [];
-	foreach( string k, map e, tt,
-		 ``{
-		 part = (list<map>)merge( part, e["partitions"]:[]);
-		 });
-	mount_lvm = size(filter( map p, part, ``(size(p["mount"]:"")>0)))>0;
-	}
-    tt = filter( string k, map e, tg, ``(k=="/dev/evms"||search(k, "/dev/evms/")==0));
-    if( size(filter( string k, map e, tg, ``(e["is_container"]:false &&
-					     search(e["name"]:"","lvm/")!=0 &&
-					     search(e["name"]:"","lvm2/")!=0)))>0)
-	{
-	y2milestone( "non lvm evms container" );
-	need_evms = true;
-	}
-    if( !need_evms )
-	{
-	list<map> part = [];
-	foreach( string k, map e, tt,
-		 ``{
-		 part = (list<map>)merge( part, e["partitions"]:[]);
-		 });
-	need_evms = size(filter( map p, part, ``(size(p["mount"]:"")>0)))>0;
-	}
-    y2milestone( "AddPackageList have_lvm %1 mount_lvm %2 need_evms %3",
-                  have_lvm, mount_lvm, need_evms );
-    if( have_lvm && (mount_lvm||!need_evms))
-	{
-	pl = add( pl, "lvm2" );
-	}
-    if( need_evms )
-	{
-	pl = add( pl, "evms" );
-	pl = add( pl, "yast2-storage-evms" );
-	}
+
+    boolean need_lvm = false;
     boolean need_quota = false;
     boolean need_crypt = false;
-    foreach( string k, map e, tg,
-	``{
+
+    foreach( string k, map e, tg, {
+	if (e["type"]:`CT_UNKNOWN == `CT_LVM)
+	    need_lvm = true;
 	if( size(filter( map p, e["partitions"]:[], 
 	                 ``(FileSystems::HasQuota(p))))>0 )
 	    need_quota = true;
 	if( size(filter( map p, e["partitions"]:[], 
 	                 ``(p["enc_type"]:`none != `none)))>0 )
 	    need_crypt = true;
-	});
+    }); 
+
+    y2milestone("AddPackageList need lvm:%1 quota:%2 crypt:%3", need_lvm, need_quota, need_crypt);
+
+    if (need_lvm)
+    {
+	pl = add(pl, "lvm2");
+    }
     if( need_quota )
-	{
+    {
 	pl = add( pl, "quota" );
-	}
+    }
     if( need_crypt )
-	{
+    {
 	pl = add( pl, "cryptsetup" );
 	pl = add( pl, "pam_mount" );
-	}
-    y2milestone( "AddPackageList ret %1", pl );
-    return( pl );
     }
+
+    y2milestone("AddPackageList ret %1", pl);
+    return pl;
+}
+
 
 global define list GetForeignPrimary()
     ``{
@@ -5646,10 +5619,12 @@ void CallInsserv( boolean on, string name )
 	}
     }
 
-global define void FinishInstall()
-    ``{
-    y2milestone( "FinishInstall initial:%1", Stage::initial() );
+global void FinishInstall()
+{
+    y2milestone("FinishInstall initial:%1", Stage::initial());
+
     map<string,map> tg = GetTargetMap();
+
     if( Stage::initial() )
 	{
 	HandleModulesOnBoot( tg );
@@ -5707,13 +5682,14 @@ global define void FinishInstall()
 	    }
 */
 	}
+
     boolean need_crypt = false;
     boolean need_md = false;
     boolean need_lvm = false;
     boolean need_dmraid = false;
     boolean need_dmmultipath = false;
-    foreach( string k, map e, tg,
-	``{
+
+    foreach( string k, map e, tg, {
 	if( size(filter( map p, e["partitions"]:[],
 			 ``(p["enc_type"]:`none != `none)))>0 )
 	    need_crypt = true;
@@ -5725,17 +5701,20 @@ global define void FinishInstall()
 	    need_dmraid = true;
 	if( e["type"]:`CT_UNKNOWN==`CT_DMMULTIPATH )
 	    need_dmmultipath = true;
-	});
+    });
+
     y2milestone( "FinishInstall need crypto:%1 md:%2 lvm:%3 dmraid:%4 dmmultipath:%5",
                  need_crypt, need_md, need_lvm, need_dmraid, need_dmmultipath );
+
     if( need_crypt )
 	CallInsserv( true, "crypto" );
     CallInsserv( need_md, "md" );
     CallInsserv( need_lvm, "lvm" );
     CallInsserv( need_dmraid, "dmraid" );
     // activation of multipath is task of yast2-multipath
-    y2milestone( "FinishInstall done" );
-    }
+
+    y2milestone("FinishInstall done");
+}
 
 global define map GetEntryForMountpoint( string mp )
     ``{
