@@ -4825,33 +4825,6 @@ global define void SetMdOn( boolean on )
     y2milestone( "return" );
     }
 
-void UpdateBootFstabEvms()
-    {
-    string tabpath = PathToDestdir( "/etc/fstab" );
-    y2milestone( "UpdateBootFstabEvms %1", 
-                 SCR::Execute( .target.bash_output, "grep /boot " + tabpath ));
-    map fstab = Partitions::GetFstab( tabpath );
-    list lines = AsciiFile::FindLineField( fstab, 1, Partitions::BootMount() );
-    y2milestone( "UpdateBootFstabEvms lines %1", lines );
-    map l = AsciiFile::GetLine( fstab, lines[0]:-1 );
-    if( search( l["fields",0]:"", "/dev/evms" )!=0 )
-	{
-	map<string,map> tg = filter( string k, map e, GetTargetMap(), 
-	                             ``(IsRealDisk( e )) );
-	map p = GetPartition( tg, l["fields",0]:"" );
-	y2milestone( "UpdateBootFstabEvms p %1", p );
-	if( size(p)>0 )
-	    {
-	    AsciiFile::ChangeLineField( fstab, lines[0]:-1, 0, 
-					"/dev/evms/"+substring(p["device"]:"",5));
-	    AsciiFile::RewriteFile( fstab, tabpath );
-	    }
-	}
-    y2milestone( "UpdateBootFstabEvms %1", 
-                 SCR::Execute( .target.bash_output, "grep /boot " + tabpath ));
-    }
-
-global define boolean BootEvms();
 
 /**
  * Writes fstab to the disk
@@ -4880,8 +4853,6 @@ global define void WriteFstab()
 	Storage::AddFstabEntry( m );
 	num = num+1;
 	});
-    if( BootEvms() )
-	UpdateBootFstabEvms();
     HandleModulesOnBoot( GetTargetMap() );
     }
 
