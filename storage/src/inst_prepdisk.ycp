@@ -36,6 +36,8 @@
   import "Storage";
   import "Hotplug";
   import "String";
+  import "SlideShow";
+  import "StorageClients";
 
   if (Mode::update ())
     return `auto;
@@ -51,6 +53,7 @@
 // Define macro that creates a dialog with progressbar
 define void MakefsDialog()
     ``{
+    return;
 
     if (!Wizard::IsWizardDialog())
 	return;
@@ -93,7 +96,27 @@ performs various checks. </p>");
   // check for ppc-PReP/CHRP system, they need a special boot partition
   // todo -> put this in a lib, we need it also in inst_custom_part ...
 
-  MakefsDialog();
+  if( Mode::normal() )
+  {
+	// we need to open dialog and set up slideshow
+	SlideShow::Setup(
+  		[
+    		$[
+    			"name" : "disk",
+    			"description": _("Preparing disks..."),
+    			"value" : Mode::update() ? 0 : 120, // FIXME: 2 minutes
+    			"units" : `sec,
+    		],
+		]
+
+	);
+
+	SlideShow::OpenDialog();
+  }
+
+  StorageClients::total_actions = Storage::ActionsCount();
+
+  SlideShow::MoveToStage( "disk" );
 
   y2milestone( "installation=%1", Stage::initial() );
   symbol ret_val = `next;
@@ -144,6 +167,10 @@ System error code was: %1
       Storage::FinishInstall();
       }
   Storage::UpdateTargetMap();
+
+  // close progress on running system
+  if( Mode::normal() )
+  	SlideShow::CloseDialog();
 
   SCR::Write( .target.ycp, Storage::SaveDumpPath("targetMap_pe"), 
 	      Storage::GetTargetMap() );
