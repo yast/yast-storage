@@ -8,6 +8,20 @@
     textdomain "storage";
 
 
+    string MiniWorkflowStepFormatMountHelptext()
+    {
+	// helptext
+	string helptext = _("<p>First, choose whether the partition should be
+formatted and the desired file system type.</p>");
+
+	// helptext
+	helptext = helptext + _("<p>Then, choose whether the partition should
+be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
+
+	return helptext;
+    }
+
+
     symbol MiniWorkflowStepFormatMount(map<string, any> &orig_data)
     {
 	map<string, any> data = orig_data;
@@ -86,7 +100,7 @@
 				      )
 	    );
 
-	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "TODO help");
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepFormatMountHelptext());
 
 	MiniWorkflow::SetLastStep(true);
 
@@ -199,6 +213,54 @@
     }
 
 
+    string MiniWorkflowStepPasswordHelptext(map<string, any> data)
+    {
+	integer min_pw_len = data["format"]:false ? 8 : 1;
+	boolean empty_pw_allowed = EmptyCryptPwdAllowed(data);
+
+	// helptext
+	string helptext = _("<p>
+Keep in mind that this file system is only protected when it is not
+mounted. Once it is mounted, it is as secure as every other
+Linux file system.
+</p>");
+
+	if (empty_pw_allowed)
+	    // helptext
+	    helptext = helptext + _("<p>
+This mount point corresponds to a temporary filesystem like /tmp or /var/tmp.
+You may leave the crypt password empty. If you do this, the system will create
+a random password at system startup for you. This means, you will lose all
+data on these filesystems at system shutdown.
+</p>
+");
+
+        // helptext
+        helptext = helptext + _("<p>
+If you forget your password, you will lose access to the data on your file system.
+Choose your password carefully. A combination of letters and numbers
+is recommended. To ensure the password was entered correctly,
+enter it twice.
+</p>
+");
+
+        // helptext, %1 is replaced by integer
+        helptext = helptext + sformat(_("<p>
+You must distinguish between uppercase and lowercase. A password should have at
+least %1 characters and, as a rule, not contain any special characters
+(e.g., letters with accents or umlauts).
+</p>
+"), min_pw_len);
+
+	// helptext
+	helptext = helptext + _("<p>
+Do not forget this password!
+</p>");
+
+	return helptext;
+    }
+
+
     symbol MiniWorkflowStepPassword(map<string, any> &data)
     {
 	y2milestone("MiniWorkflowStepPassword data:%1", data);
@@ -226,7 +288,7 @@
 				      )
 	    );
 
-	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), "TODO help");
+	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepPasswordHelptext(data));
 	MiniWorkflow::SetLastStep(true);
 
 	string pw1 = "";
@@ -295,7 +357,7 @@ Try again."));
 	return widget;
     }
 
-    //data i.e. partition 
+    //data i.e. partition
     map<symbol, any> DlgResize(map <string, any> &data , map <string, any> disk, symbol flavour)
     {
 	integer cyl_size = disk["cyl_size"]:1;
@@ -313,8 +375,8 @@ Try again."));
 	integer vg_min_free = 0;*/
 
 	integer used = 0;
-	integer free = 0; 
-	integer total = 0; 
+	integer free = 0;
+	integer total = 0;
 	//leave this 5 for now, will be different for Windows
 	integer min_free = 5;
 
@@ -328,7 +390,7 @@ Try again."));
 
 	map AdjustSwapPartitionDf ( map size_data)
 	{
-	    map ret = size_data; 
+	    map ret = size_data;
 	    ret["used"] = 0;
 	    ret["df_free"] = data["region",1]:0 * cyl_size;
 
