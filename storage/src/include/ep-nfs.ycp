@@ -7,6 +7,10 @@
 {
     textdomain "storage";
 
+    //boolean initialized = false;
+    map <string, map> target_map = $[];
+    map <string, integer> index = $[];
+    list <map> nfs_list = [];
 
     void CreateNfsMainPanel(any user_data)
     {
@@ -18,8 +22,26 @@
 	//FIXME: check if nfs-client package is there
 	//list<symbol> fields = StorageSettings::FilterTable([ `device, `size, `mount_point ]);
 
-	map<string, map> target_map = Storage::GetTargetMap();
-	list < map <string, any> > nfs_shares = target_map["/dev/nfs", "partitions"]:[];
+        void Initialize() 
+	{
+	    target_map = Storage::GetTargetMap();
+
+	    //No NFS shares so far, set empty 'partitions' list
+	    if( !haskey( target_map, "/dev/nfs" ) )
+	        target_map["/dev/nfs"] = $[ "type" : `CT_NFS, "partitions" : [] ];
+
+	    nfs_list = target_map["/dev/nfs", "partitions"]:[];
+	    y2internal("before %1", nfs_list);
+
+	    //Create index
+	    integer i = 0;
+	    foreach( map entry, nfs_list, {
+		index = add(index, entry["device"]:"", i);
+		i = i+1;
+	    });
+	}
+
+	//list < map <string, any> > nfs_shares = target_map["/dev/nfs", "partitions"]:[];
 
 	//term table_header = StorageFields::TableHeader(fields);
 	//list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
@@ -46,22 +68,83 @@
 
 	// helptext
 	string helptext = _("<p>NFS TODO</p>");
+	Initialize();
 
-	WFM::CallFunction("nfs-client4part", [ "FromStorage", $[ "shares" : nfs_shares ] ] );
+	WFM::CallFunction("nfs-client4part", [ "FromStorage", $[ "shares" : nfs_list] ] );
 	//Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
     }
 
 
     void HandleNfsMainPanel(any user_data, symbol widget)
     {
-/*	switch (widget)
-	{
-	    case `add:
-		break;
-	}*/
-	WFM::CallFunction("nfs-client4part", [ "HandleEvent", $[ "widget_id" : widget ] ]);
-    }
 
+	
+	void AddShare ( map <string, any> entry ) 
+	{
+	    map newent = $[];
+	    newent["type"] = `nfs;
+	    newent["used_fs"] = `nfs;
+	    newent["detected_fs"] = `nfs;
+	    newent["device"] = entry["spec"]:"";
+	    newent["fstopt"] = entry["mntops"]:"";
+	    newent["mount"] = entry["file"]:"";
+	    newent["create"] = true;
+
+	    nfs_list = add( nfs_list, newent);
+        }
+
+	void EditShare( map <string, any> entry )
+	{
+	    string dev = entry["spec"]:"";
+	    map newent = $[];
+	    y2internal("%1 %2 %3", dev, index, nfs_list);
+
+	    if ( haskey( index, dev)) 
+	    {
+	        newent = nfs_list[ index[dev]: -1 ]: $[];
+		newent["fstopt"] = entry["mntops"]:"";
+	        newent["mount"] = entry["file"]:"";
+		nfs_list [ index[dev]: -1 ] = newent;
+	    }
+
+	}
+	void DeleteShare( map <string, any> entry )
+	{
+	    string dev = entry["spec"]:"";
+
+	    if ( haskey( index, dev)) 
+	    {
+		Storage::DeleteDevice("/dev/nfs", dev );
+	    }
+	}
+
+	map <string, any> line = ( map <string, any> ) WFM::CallFunction("nfs-client4part", [ "HandleEvent", $[ "widget_id" : widget ] ]);
+
+	switch (widget )
+	{
+	    case `newbut:
+	    {
+		AddShare( line );
+		break;
+	    }
+	    case `editbut:
+	    {
+		EditShare( line );
+		break;
+	    }
+	    case `delbut:
+	    {
+		DeleteShare( line );
+		break;
+	    }
+	    default:
+		break;
+	}
+
+	target_map["/dev/nfs", "partitions"] = nfs_list;
+	y2internal("after %1", target_map["/dev/nfs", "partitions"]:[]);
+	Storage::SetTargetMap( target_map );
+    }
 
     void CreateNfsPanel(any user_data)
     {
