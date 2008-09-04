@@ -303,9 +303,22 @@ define map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		    gap[key] = remove( gap[key]:[], 0 );
 		    if( g["cylinders"]:0 > 1 )
 			{
-			g["added"] = add( g["added"]:[], 
-			                  [ 0, gap[key,0]:0, g["cylinders"]:0 ] );
-			g["cylinders"] = 0;
+		        integer vg_size = Storage::GetControlCfg()["vm_want"]:(15*1024);
+		        // get only limited amount of the gap so that there is free
+		        // space left (fate #303594)
+		        y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
+			integer add_cylinders = g["cylinders"]:0;  // whole partition as default
+			if (vg_size != nil && vg_size > 0)
+			{
+			    integer cyl_size = g["size"]:0 / g["cylinders"]:0;
+			    add_cylinders = (vg_size * 1024 * 1024) / cyl_size;
+			    if (add_cylinders > g["cylinders"]:0)
+				add_cylinders = g["cylinders"]:0;
+			}
+			g["added"] = add( g["added"]:[],
+			                  [ 0, gap[key,0]:0, add_cylinders ] );
+		        y2milestone ("do_vm_disk_conf added new partition: %1", g);
+			g["cylinders"] = 0; // do not use the rest of the gap, if not set to zero, it is used, don't know why
 			gap[key] = remove( gap[key]:[], 0 );
 			}
 		    }
@@ -429,9 +442,22 @@ define map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		     (!g["extended"]:false && size(gap["free_pnr"]:[])>0)))
 		    {
 		    string key = g["extended"]:false ? "ext_pnr" : "free_pnr";
+		    // get only limited amount of the gap so that there is free
+		    // space left (fate #303594)
+		    integer vg_size = Storage::GetControlCfg()["vm_want"]:(15*1024);
+		    y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
+		    integer add_cylinders = g["cylinders"]:0; // whole partition as default
+		    if (vg_size != nil && vg_size > 0)
+		    {
+		        integer cyl_size = g["size"]:0 / g["cylinders"]:0;
+		        add_cylinders = (vg_size * 1024 * 1024) / cyl_size;
+		        if (add_cylinders > g["cylinders"]:0)
+			    add_cylinders = g["cylinders"]:0;
+		    }
 		    g["added"] = add( g["added"]:[], 
-		                      [ 0, gap[key,0]:0, g["cylinders"]:0 ]);
-		    g["cylinders"] = 0;
+		                      [ 0, gap[key,0]:0, add_cylinders ]);
+		    y2milestone ("do_vm_disk_conf added new partition: %1", g);
+		    g["cylinders"] = 0; // otherwise it get another chunk - don't know why :-(
 		    gap[key] = remove( gap[key]:[], 0 );
 		    }
 		return( g );
