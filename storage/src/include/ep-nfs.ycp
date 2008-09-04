@@ -7,6 +7,12 @@
 {
     textdomain "storage";
 
+    import "Directory";
+    import "FileUtils";
+    import "PackageCallbacks";
+    import "PackageSystem";
+    import "Wizard";
+
     //boolean initialized = false;
     map <string, map> target_map = $[];
     map <string, integer> index = $[];
@@ -19,8 +25,44 @@
 	    return StorageFields::PredicateDiskType(disk, partition, [`CT_NFS]);
 	}
 
-	//FIXME: check if nfs-client package is there
-	//list<symbol> fields = StorageSettings::FilterTable([ `device, `size, `mount_point ]);
+	term CreateContent() 
+	{
+	    boolean pkg_installed = false;
+	    //fallback dialog content
+	    term fallback_content = `VBox (
+				`Left( `Label(_("NFS configuration is not available. Check yast2-nfs-client package installation.")) ),
+				`VStretch(),
+				`HStretch()
+			    );
+
+	    //Check if we have y2-nfs-client installed
+	    if ( !Stage::initial() )
+	    {
+		list <string> pkgs = [ "yast2-nfs-client" ];
+	        PackageCallbacks::RegisterEmptyProgressCallbacks();
+	        pkg_installed = PackageSystem::CheckAndInstallPackages(pkgs);
+	        PackageCallbacks::RestorePreviousProgressCallbacks();
+	    }
+	    //in inst-sys, have a look at nfs-client4part adapter client
+	    else
+	    {
+		string filename = Directory::clientdir + "/" + "nfs-client4part.ycp";
+		pkg_installed = FileUtils::Exists(filename);
+	    }
+
+	    if ( pkg_installed )
+	    {
+	        term content = (term) WFM::CallFunction("nfs-client4part", ["CreateUI"]);
+		if ( content != nil )
+		    return content;
+		else
+		    y2error("Failed to retrieve dialog content from yast2-nfs-client");
+	    }
+
+	    //Obviously something went wrong - reset the help text and put a fallback content in
+	    Wizard::SetHelpText(" ");
+	    return fallback_content;
+	}
 
         void Initialize() 
 	{
@@ -41,12 +83,7 @@
 	    });
 	}
 
-	//list < map <string, any> > nfs_shares = target_map["/dev/nfs", "partitions"]:[];
 
-	//term table_header = StorageFields::TableHeader(fields);
-	//list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
-
-	term content = (term) WFM::CallFunction("nfs-client4part", ["CreateUI"]);
 
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
@@ -54,24 +91,14 @@
 				  `HStretch(),
 				  // heading
 				  `IconAndHeading(_("Network File System (NFS)"), nfs_icon),
-				  /*`Table(`id(`table), `opt(`keepSorting, `notify),
-					 table_header, table_contents),
-				  `HBox(
-				      `Left(`PushButton(`id(`add), _("Add NFS Path..."))),
-				      `HStretch()
-				      )
-				  )*/
-			          content
+			          CreateContent()
 				  )
 			      )
 	    );
 
-	// helptext
-	string helptext = _("<p>NFS TODO</p>");
 	Initialize();
 
 	WFM::CallFunction("nfs-client4part", [ "FromStorage", $[ "shares" : nfs_list] ] );
-	//Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
     }
 
 
