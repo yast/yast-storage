@@ -5137,6 +5137,25 @@ global define void UpdateFstabPersistentNames()
     AsciiFile::RewriteFile( fstab, tabpath );
     }
 
+global void UpdateFstabEvms2Lvm() {
+    y2milestone( "UpdateFstabEvms2Lvm migrating EVMS to LVM" );
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    string n = "";
+    while( line<=AsciiFile::NumLines( fstab ) ) {
+	map l = AsciiFile::GetLine( fstab, line );
+	n = l["fields",0]:"";
+        if (substring (n, 0, 15) == "/dev/evms/lvm2/")
+	{
+            n = "/dev/" + substring (n, 15);
+	    AsciiFile::ChangeLineField( fstab, line, 0, n );
+	}
+	line = line+1;
+    }
+    AsciiFile::RewriteFile( fstab, tabpath );
+}
+
 global define void UpdateFstabDiskmap( map diskmap )
     ``{
     y2milestone( "UpdateFstabDiskmap map %1", diskmap );
@@ -5349,6 +5368,10 @@ global define void Update( map oldv, map newv )
 	UpdateFstabPersistentNames();
 	}
 
+    // remove EVMS
+    // FIXME add appropriate condition if needed (does not seem so)
+    UpdateFstabEvms2Lvm();
+
     map dm = BuildDiskmap( oldv );
     if( size(dm)>0 )
 	{
@@ -5415,6 +5438,14 @@ global define list<string> GetTranslatedDevices( map oldv, map newv,
 	{
 	ret = maplist( string n, ret, ``(SLES9PersistentDevNames( n )));
 	}
+    // convert EVMS names to LVM
+    // FIXME: add version checking, but does not seem necessary, since non-LVM
+    // installations will not be affected by this conversion at all
+    ret = maplist (string n, ret, {
+	if (substring (n, 0, 15) == "/dev/evms/lvm2/")
+	    n = "/dev/" + substring (n, 15);
+	return n;
+    });
     y2milestone( "GetTranslatedDevices ret %1", ret );
     return( ret );
     }
