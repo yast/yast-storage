@@ -33,27 +33,48 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	string mount = data["mount"]:"";
 	boolean do_mount = mount != "";
 
+	/* MiniWorkflowStepPartitionSize data:
+		$["create":true, 
+		  "cyl_size":8225280, 
+		   "device":"/dev/sda1", 
+		   "disk_device":"/dev/sda", 
+		   "new":true, 
+		   "slots":$[`primary:[1, 65]], 
+		   "type":`primary]
+	*/
+
+	//Supply some reasonable defaults for newly created partitions
+	//and mark it for formatting, too
 	if (data["new"]:false && !data["formatmount_proposed"]:false)
 	{
 	    data["formatmount_proposed"] = true;
 
+	    //propose new mountpoint and filesystem
 	    string mount_point_proposal = GetMountPointProposal(Storage::GetTargetMap(), []);
-
 	    symbol used_fs = Partitions::DefaultFs();
+
+	    //special case for boot partition
 	    if (mount_point_proposal == Partitions::BootMount())
 		used_fs = Partitions::DefaultBootFs();
 
-	    // TODO
 	    data["format"] = true;
 	    data["fsid"] = Partitions::fsid_native;
+	    data["used_fs"] = used_fs;
+
+	    //set globals
+	    do_format = true;
 	    mount = mount_point_proposal;
 	    do_mount = mount != "";
-	    data["used_fs"] = used_fs;
 	}
+
 
 	term tmp1 = `Empty();
 	if (contains([`primary, `extended, `logical], data["type"]:`none))
-	    tmp1 = `VBox(`id(`do_not_format_attachment), FsidComboBox(data, FileSystems::GetAllFileSystems(true, true)));
+	{
+	    tmp1 = `VBox(`id(`do_not_format_attachment), 
+			 FsidComboBox(data, FileSystems::GetAllFileSystems(true, true))
+		    );
+	}
 
 	list mountpoints = nil;
 	if (mountpoints == nil)
@@ -121,14 +142,27 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	    switch (widget)
 	    {
 		case `fs:
+		{
+		    //retrieve all filesystems
+		    map<symbol, map<symbol, any> > all_filesystems = FileSystems::GetAllFileSystems( true, true);
 		    symbol used_fs = (symbol) UI::QueryWidget(`id(`fs), `Value);
+
+		    //retrieve info about fs user has selected
+		    map used_fs_data = all_filesystems[used_fs]:$[];
+		    y2milestone("Selected filesystem details %1", used_fs_data);
+
 		    if (used_fs != data["used_fs"]:`none)
 		    {
 			data["used_fs"] = used_fs;
 			data = filter(string key, any value, data, { return key != "fs_options"; });
+
+			//set file system ID (and update the File System ID widget
+			//that is - FsidComboBox)
+			data["fsid"] = used_fs_data[`fsid]: Partitions::fsid_native;
+			UI::ChangeWidget( `id(`fsid_point), `Value, used_fs_data[`fsid_item]:"");
 		    }
 		    break;
-
+	 	}
 		case `crypt_fs:
 		    MiniWorkflow::SetLastStep(UI::QueryWidget(`id(`crypt_fs), `Value) != true);
 		    break;
