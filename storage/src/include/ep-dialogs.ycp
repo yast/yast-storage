@@ -25,10 +25,32 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
     symbol MiniWorkflowStepFormatMount(map<string, any> &orig_data)
     {
 	map<string, any> data = orig_data;
-
 	y2milestone("MiniWorkflowStepFormatMount data:%1", data);
 
+        //retrieve all filesystems
+	map<symbol, map<symbol, any> > all_filesystems = FileSystems::GetAllFileSystems( true, true);
+
+	list <string> ProposeMountpoints( symbol used_fs, string current_mp )
+	{
+	    map <symbol, any> fs_data = all_filesystems[used_fs]: $[];
+
+	   //not much choice for swap partitions :)
+	   if( used_fs == `swap )
+	   {
+		return fs_data[ `mountpoints ]:[]; 
+	   }
+	   //otherwise, ask notUsedMountPoint, it will filter out
+	   //mountpoint already in use + add current mountpoint
+	   else
+	   {
+		list <string> not_used = notUsedMountpoints( Storage::GetTargetMap(), fs_data[ `mountpoints]:[]);
+		return ( list <string> ) union( [current_mp], not_used );
+	   }
+	}
+
+
 	boolean do_format = data["format"]:false;
+	symbol used_fs = data["used_fs"]:`unknown;
 	boolean crypt_fs = data["enc_type"]:`none != `none;
 	string mount = data["mount"]:"";
 	boolean do_mount = mount != "";
@@ -50,8 +72,8 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	    data["formatmount_proposed"] = true;
 
 	    //propose new mountpoint and filesystem
-	    string mount_point_proposal = GetMountPointProposal(Storage::GetTargetMap(), []);
-	    symbol used_fs = Partitions::DefaultFs();
+	    string mount_point_proposal = SingleMountPointProposal( );
+	    used_fs = Partitions::DefaultFs();
 
 	    //special case for boot partition
 	    if (mount_point_proposal == Partitions::BootMount())
@@ -76,12 +98,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    );
 	}
 
-	list mountpoints = nil;
-	if (mountpoints == nil)
-	    mountpoints = [ "/", "/usr", Partitions::BootMount(), "/var", "/home", "/opt" ];
-
-	if (mount != "" && !contains(mountpoints, mount))
-	    mountpoints = union([mount], mountpoints);
+	list mountpoints = ProposeMountpoints( used_fs, mount );
 
 	term contents = `HVSquash(`VStackFrames(
 				      `Frame(_("Format"),
@@ -141,11 +158,10 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 	    switch (widget)
 	    {
+		//user has chosen different filesystem
 		case `fs:
 		{
-		    //retrieve all filesystems
-		    map<symbol, map<symbol, any> > all_filesystems = FileSystems::GetAllFileSystems( true, true);
-		    symbol used_fs = (symbol) UI::QueryWidget(`id(`fs), `Value);
+		    used_fs = (symbol) UI::QueryWidget(`id(`fs), `Value);
 
 		    //retrieve info about fs user has selected
 		    map used_fs_data = all_filesystems[used_fs]:$[];
@@ -153,6 +169,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 		    if (used_fs != data["used_fs"]:`none)
 		    {
+			//set file system type
 			data["used_fs"] = used_fs;
 			data = filter(string key, any value, data, { return key != "fs_options"; });
 
@@ -160,9 +177,16 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 			//that is - FsidComboBox)
 			data["fsid"] = used_fs_data[`fsid]: Partitions::fsid_native;
 			UI::ChangeWidget( `id(`fsid_point), `Value, used_fs_data[`fsid_item]:"");
+
+			//suggest some nice mountpoints if user wants to mount this partition
+			if (do_mount)
+			{
+			    //string current_mp = (string) UI::QueryWidget(`id(`mount_point), `Value);
+			    UI::ChangeWidget(`id(`mount_point), `Items, ProposeMountpoints( used_fs, mount ));
+			}
 		    }
 		    break;
-	 	}
+		}
 		case `crypt_fs:
 		    MiniWorkflow::SetLastStep(UI::QueryWidget(`id(`crypt_fs), `Value) != true);
 		    break;
@@ -204,10 +228,12 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    break;
 
 		case `do_mount:
+		    do_mount = true;
 		    UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, true);
 		    break;
 
 		case `do_not_mount:
+		    do_mount = false;
 		    UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, false);
 		    break;
 

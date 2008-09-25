@@ -215,35 +215,18 @@ string ByteToHumanStringWithZero(integer number)
 
 
     /**
-     * Make a proposal for a Mountpoint
-     * @parm targetMap all targets
-     * @return string next mountpoint
+     * Make a proposal for a single mountpoint
+     * (first free on the list in installation, 
+     * empty string otherwise)
      **/
-define string GetMountPointProposal( map<string,map> targetMap, 
-                                     list not_supported_mount_points )
-    ``{
-    list<string> base = FileSystems::SuggestMPoints();
-    base = filter( string mount_point, base, 
-		   ``( !contains( not_supported_mount_points, mount_point )));
-    list free_list = filter( string point, base,
-	``{
-	boolean found = false;
-
-	foreach(string dev, map disk, targetMap, 
-	    ``{
-	    map parti = (map) find(map part, disk["partitions"]:[], 
-	                      ``( part["mount"]:"" == point ));
-	    if (parti != nil)
-		{
-		found = true;
-		}
-	    });
-
-	return( !found );
-	});
-
-    return( Mode::normal()?"":(free_list[0]:"") );
-    };
-
-
+define string SingleMountPointProposal( ) 
+``{
+    if ( Mode::normal() )
+	return "";
+    else
+    {
+        list free_list = notUsedMountpoints( Storage::GetTargetMap(), FileSystems::SuggestMPoints() ); // = filter( string point, base,
+	return free_list[0]:"";
+    }
+  }
 }
