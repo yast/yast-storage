@@ -423,7 +423,7 @@ Try again."));
     }
 
     //data i.e. partition
-    map<symbol, any> DlgResize(map <string, any> &data , map <string, any> disk, symbol flavour)
+    boolean DlgResize(map <string, any> &data , map <string, any> disk, symbol flavour)
     {
 	integer cyl_size = disk["cyl_size"]:1;
 	integer free_cyl_after = Storage::FreeCylAfter( disk, data);
@@ -442,16 +442,32 @@ Try again."));
 	integer used = 0;
 	integer free = 0;
 	integer total = 0;
-	//leave this 5 for now, will be different for Windows
 	integer min_free = 5;
 
-	// Unit for partition resizing - currently Megabytes
+	// Unit for partition resizing 
 	string unit = _("MB");
 	integer factor = 1024*1024;
 
 	string heading = "";
 	string field_label_free = "";
 	string field_label_vg_free = "";
+
+	//Depending on size of the partition,
+	//set correct division factor and units
+	void AdjustUnits ( map size_data )
+	{
+
+	    //for partitions with free space less than ~10GB we'll 
+	    //keep using MBs to allow fine-grained 
+	    //size adjusting
+	    if( size_data["df_free"]:0 > 10*1024*factor  )
+            {
+		factor = factor * 1024;
+		unit = _("GB");
+            }
+
+	    min_free = (factor==1024*1024) ? 5 : 1;
+	}
 
 	map AdjustSwapPartitionDf ( map size_data)
 	{
@@ -460,6 +476,11 @@ Try again."));
 	    ret["df_free"] = data["region",1]:0 * cyl_size;
 
 	    return ret;
+	}
+
+	integer ToUI (integer i)
+	{
+	    return i / factor;
 	}
 
 	list <string> BarGraphLabels()
@@ -500,20 +521,14 @@ Try again."));
 	    heading = sformat(_("Resize Partition %1"), device);
 
 	    map size_data = Storage::GetFreeSpace( device, 0, used_fs, true);
-	    y2internal("zirafa %1 %2", size_data["used"]:0, size_data["df_free"]:0);
-
-	    if( size_data["df_free"]:0 > 15*1024*factor )
-            {
-		factor = factor * 1024;
-		unit = _("GB");
-            }
+	    AdjustUnits( size_data );
 
 	    if ( Partitions::IsSwapPartition( fsid ) )
 		size_data = AdjustSwapPartitionDf( size_data );
 
-	    used =  size_data["used"]:0 / factor;
-            free = size_data["df_free"]:0 / factor;
-	    av_space = av_space / factor;
+	    used =  ToUI( size_data["used"]:0 );
+            free = ToUI( size_data["df_free"]:0 );
+	    av_space =ToUI( av_space );
 	    total = used + free + av_space;
 
 	    // TODO: see texts in inst_custom_part.ycp
@@ -558,8 +573,8 @@ Try again."));
 		 content,
 	        `Left(`Label( `id(`free), sformat(_("Free Space Remaining: %1 MB"), free ))),
 		`VSpacing(1.0),
-	        `Left(`Label( sformat(_("Minimum Partition Size: %1 MB"), used + min_free ))),
-	        `Left(`Label( sformat(_("Maximum Partition Size: %1 MB"), total ))),
+	        `Left(`Label( sformat(_("Minimum Partition Size: %1 %2"), used + min_free, unit ))),
+	        `Left(`Label( sformat(_("Maximum Partition Size: %1 %2"), total, unit ))),
 	        //`PartitionSplitter(lv_used, free, vg_free, vg_min_free, lv_min_free,
 	    //		       bargraph_label_used, bargraph_label_free,
 	    //		       bargraph_label_vg_free, field_label_free,
@@ -573,23 +588,47 @@ Try again."));
 	);
 
 	any widget = nil;
+	integer new_size = -1;
+	integer old_size = used + free;
+
 	do {
 	    widget = UI::UserInput();
 
-	    if (widget == `new_size)
-	    {
-	       integer new_size = (integer) UI::QueryWidget(`id(`new_size), `Value);
-	       integer new_free = new_size - used ;
-	       UI::ChangeWidget(`id(`graph), `Values, [ used, new_free, total - (new_free + used) ]);
-	       UI::ChangeWidget(`id(`free), `Value, sformat(_("Free Space Remaining: %1 MB"),  new_free));
+	    switch ( (symbol) widget)
+	    { 
+	        case `new_size:
+	        {
+	            new_size = (integer) UI::QueryWidget(`id(`new_size), `Value);
+	            integer new_free = new_size - used ;
+	            UI::ChangeWidget(`id(`graph), `Values, [ used, new_free, total - (new_free + used) ]);
+	            UI::ChangeWidget(`id(`free), `Value, sformat(_("Free Space Remaining: %1 %2"),  new_free, unit));
+		    break;
+	        }
+	        case `ok:
+	        {
+		    if ( new_size != old_size )
+		    {
+	                //mark partition for resizing
+	                data["resize"] = true;
+			//calculate the difference
+			list old_reg = data["region"]:[];
+	                list new_reg = [ data["region",0]:0, PartedSizeToCly( (tofloat(new_size*factor)), cyl_size ) ];
+
+			integer diff = old_reg[1]:0 - new_reg[1]:0;
+			y2internal("snehulak %1", diff);
+	                data["region"] = new_reg;
+		    }
+		    break;
+	        }
+		case `cancel:
+		    break;
 	    }
 
 	} while ( widget != `cancel && widget != `ok);
 
 	UI::CloseDialog();
 
-	return $[ `widget : widget,
-		  `size : 42 ];
+	return ( widget == `ok);
     }
 
 
