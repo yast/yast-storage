@@ -498,12 +498,12 @@ Try again."));
 	    if (flavour == `part)
 	    {
 	     //FIXME: add special case for Windows part.
-		used =  _("Space\nUsed\n%1 ") + unit;
+		used =  _("Used\nSpace\n%1 ") + unit;
 
 		if ( Partitions::IsSwapPartition( fsid ) )
 		    free = _("Swap\nSpace\n%1 ") + unit;
 		else
-		    free = _("Space\nFree\n%1 ") + unit;
+		    free = _("Free\nSpace\n%1 ") + unit;
 
 		available = _("Unused\nDisk\n%1 ") + unit;
 	    }
@@ -518,6 +518,14 @@ Try again."));
 	    }
 
 	    return [ used, free, available ];
+	}
+
+	string FreeSpaceLabel()
+	{
+	    if ( Partitions::IsSwapPartition( fsid ) )
+		return _("Swap Space");
+	    else
+		return _("Remaining Free Space");
 	}
 
 	if (flavour == `part)
@@ -574,14 +582,15 @@ Try again."));
 	{
 	    content = `VBox(
                          `BarGraph(`id(`graph), `opt(`vstretch), [used, free, av_space], BarGraphLabels() ),
-		         `Slider(`id(`new_size), `opt(`notify), sformat(_("New Size (in %1)"), unit), used+min_free,
+		         `Slider(`id(`new_size), `opt(`notify), sformat(_("New Partition Size (in %1)"), unit), used+min_free,
 				   used + free + av_space, used+free)
 		     );
 	}
+	//FIXME: something nicer for ncurses, this layout sucks - #410956
 	else
 	{
 	    content = `Frame("",
-			   `IntField(`id(`new_size), `opt(`notify), sformat(_("New Size (in %1)"), unit),
+			   `IntField(`id(`new_size), `opt(`notify), sformat(_("New Partition Size (in %1)"), unit),
 			      used + min_free, used + free + av_space,
 			      used + free)
 		       );
@@ -592,33 +601,40 @@ Try again."));
 	        `Left(`Heading(heading)),
 	        `HSpacing(60),
 		 content,
-	        `Left(`Label( `id(`free), sformat(_("Free Space Remaining: %1 MB"), free ))),
+	        `Left(`Label( `id(`free), sformat("%1: %2 %3", FreeSpaceLabel(), free, unit ))),
 		`VSpacing(1.0),
 	        `Left(`Label( sformat(_("Minimum Partition Size: %1 %2"), used + min_free, unit ))),
 	        `Left(`Label( sformat(_("Maximum Partition Size: %1 %2"), total, unit ))),
 	        `HBox(
-	    	   `HStretch(),
-	    	   `PushButton(`id(`cancel), Label::CancelButton()),
-	    	   `PushButton(`id(`ok), `opt(`default), Label::OKButton())
-	    	)
+		   `ButtonBox(
+		       `PushButton(`id(`help), Label::HelpButton()),
+		       `PushButton(`id(`cancel), `opt(`cancelButton), Label::CancelButton()),
+		       `PushButton(`id(`ok), `opt(`default, `okButton), Label::OKButton())
+		   )
+		)
 	    )
 	);
 
 	any widget = nil;
-	integer new_size = -1;
 	integer old_size = used + free;
+	integer new_size = old_size;
 
 	do {
 	    widget = UI::UserInput();
 
 	    switch ( (symbol) widget)
 	    { 
+		case `help:
+		{
+		    Popup::LongText(_("Partition Resizing"), `RichText("To-Do: Let's get outta here"), 50, 20);
+		    break;
+		}
 	        case `new_size:
 	        {
 	            new_size = (integer) UI::QueryWidget(`id(`new_size), `Value);
 	            integer new_free = new_size - used ;
 	            UI::ChangeWidget(`id(`graph), `Values, [ used, new_free, total - (new_free + used) ]);
-	            UI::ChangeWidget(`id(`free), `Value, sformat(_("Free Space Remaining: %1 %2"),  new_free, unit));
+	            UI::ChangeWidget(`id(`free), `Value, sformat("%1: %2 %3", FreeSpaceLabel(), new_free, unit));
 		    break;
 	        }
 	        case `ok:
