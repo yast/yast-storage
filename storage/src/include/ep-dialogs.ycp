@@ -5,6 +5,8 @@
  * Authors:	Arvin Schnell <aschnell@suse.de>
  */
 {
+    include "partitioning/custom_part_lib.ycp";
+
     textdomain "storage";
 
 
@@ -454,6 +456,7 @@ Try again."));
 
 	//Depending on size of the partition,
 	//set correct division factor and units
+	//and minimum required free space, too
 	void AdjustUnits ( map size_data )
 	{
 
@@ -474,10 +477,13 @@ Try again."));
 	    map ret = size_data;
 	    ret["used"] = 0;
 	    ret["df_free"] = data["region",1]:0 * cyl_size;
+	    ret["free"] = ret["df_free"]:0;
 
 	    return ret;
 	}
 
+	//convert bytes to ints (i.e. numbers UI can understand)
+	//depending on current size scale
 	integer ToUI (integer i)
 	{
 	    return i / factor;
@@ -520,18 +526,35 @@ Try again."));
 	    // Heading for dialog
 	    heading = sformat(_("Resize Partition %1"), device);
 
-	    map size_data = Storage::GetFreeSpace( device, 0, used_fs, true);
-	    AdjustUnits( size_data );
+	    map size_data = $[]; 
 
 	    if ( Partitions::IsSwapPartition( fsid ) )
+	    {
 		size_data = AdjustSwapPartitionDf( size_data );
+	    }
+	    else 
+	    {
+		size_data = Storage::GetFreeSpace( device, 0, used_fs, true);
 
+		if (size( size_data ) == 0 || !size_data["ok"]:false)
+		{
+		    y2error("Failed to retrieve FreeSpace %1, filesystem %2", device, data["used_fs"]:`none); 
+		    //FIXME: Really? 
+		    Popup::Error( sformat( _("Partition %1 cannot be resized\nbecause the filesystem seems to be inconsistent"), device ));
+		    return false;
+		}
+	    }
+
+	    AdjustUnits( size_data );
 	    used =  ToUI( size_data["used"]:0 );
             free = ToUI( size_data["df_free"]:0 );
 	    av_space =ToUI( av_space );
 	    total = used + free + av_space;
 
-	    // TODO: see texts in inst_custom_part.ycp
+	    y2milestone("ResizePartition used %1, free %2, available %3, total %4",
+			Storage::ByteToHumanString(used), Storage::ByteToHumanString(free),
+			Storage::ByteToHumanString(av_space), Storage::ByteToHumanString(total) );
+
 	}
 	else if (flavour == `lv)
 	{
@@ -551,8 +574,6 @@ Try again."));
 	{
 	    content = `VBox(
                          `BarGraph(`id(`graph), `opt(`vstretch), [used, free, av_space], BarGraphLabels() ),
-		         //`Slider(`id(`new_size), `opt(`notify), sformat(_("New Size (in %1)"), unit), vg_min_free,
-		         //        (lv_used + free - lv_min_free), lv_used )
 		         `Slider(`id(`new_size), `opt(`notify), sformat(_("New Size (in %1)"), unit), used+min_free,
 				   used + free + av_space, used+free)
 		     );
@@ -575,10 +596,6 @@ Try again."));
 		`VSpacing(1.0),
 	        `Left(`Label( sformat(_("Minimum Partition Size: %1 %2"), used + min_free, unit ))),
 	        `Left(`Label( sformat(_("Maximum Partition Size: %1 %2"), total, unit ))),
-	        //`PartitionSplitter(lv_used, free, vg_free, vg_min_free, lv_min_free,
-	    //		       bargraph_label_used, bargraph_label_free,
-	    //		       bargraph_label_vg_free, field_label_free,
-	    //		       field_label_vg_free),
 	        `HBox(
 	    	   `HStretch(),
 	    	   `PushButton(`id(`cancel), Label::CancelButton()),
@@ -608,15 +625,31 @@ Try again."));
 	        {
 		    if ( new_size != old_size )
 		    {
-	                //mark partition for resizing
-	                data["resize"] = true;
+			string mountpoint = data["inactive"]:false ? "" : data["mount"]:"";
+
 			//calculate the difference
 			list old_reg = data["region"]:[];
 	                list new_reg = [ data["region",0]:0, PartedSizeToCly( (tofloat(new_size*factor)), cyl_size ) ];
-
 			integer diff = old_reg[1]:0 - new_reg[1]:0;
-			y2internal("snehulak %1", diff);
+
+			y2milestone("ResizePartition - new size %1 %2, in cylinders %3", new_size, unit, diff);
 	                data["region"] = new_reg;
+
+			//1 - ask & be interactive, 2 - we are on lvm, 3 - cyl.diff, 4 - filesystem, 5 - mountpoint 
+			if ( !CheckResizePossible( false, false, diff, used_fs, mountpoint ))
+			{
+			    //FIXME: To check whether the part. can be resized only
+			    //after user tries to do that is stupid - in some cases
+			    //we can tell beforehand, thus user should never get to this
+			    //point (e.g. when the partition is mounted)
+			    y2error("Resizing the partition is not possible");
+			    widget = `again;
+			}
+			else 
+			{
+	                    //mark partition for resizing
+	                    data["resize"] = true;
+			}
 		    }
 		    break;
 	        }
