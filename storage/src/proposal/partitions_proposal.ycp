@@ -13,6 +13,7 @@
     textdomain "storage";
 
     import "Arch";
+    import "PackagesProposal";
 
     include "wizard/sequencer.ycp";
     include "partitioning/partition_defines.ycp";
@@ -24,12 +25,17 @@
 
     define void HandlePackages()
 	``{
-	Pkg::DoRemove( ["lvm2"] );
-	list<string> pack = Storage::AddPackageList();
-	if( size(pack)>0 )
-	    {
-	    Pkg::DoProvide( pack );
-	    }
+	//Use PackagesProposal to ensure that package selection
+	//does not get reset by this module (#433001)
+	string proposal_ID = "partitions_proposal";
+	PackagesProposal::RemoveResolvables( proposal_ID, `package, ["lvm2"] );
+
+	list<string> pkgs = Storage::AddPackageList();
+	//Set rather than Add, there might be some packs left over
+	//from previous 'MakeProposal' we don't need now
+	//This also covers the case when AddPackagesList returns [] or nil
+	PackagesProposal::SetResolvables( proposal_ID, `package, pkgs );
+
 	if( Stage::initial() )
 	    {
 	    Storage::SaveUsedFs();
