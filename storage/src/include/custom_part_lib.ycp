@@ -369,7 +369,7 @@ Really do this?
      **/
 define boolean check_mount_point( map<string,map> targetMap, string dev,
                                   map part )
-    ``{
+{
     string mount = part["mount"]:"";
     symbol used_fs = part["used_fs"]:`unknown;
     y2milestone( "check_mount_point part:%1", part );
@@ -379,8 +379,23 @@ define boolean check_mount_point( map<string,map> targetMap, string dev,
 	[ "/proc", "/dev", "/mnt", "/var/adm/mnt", "/lost+found", "/lib",
 	  "/bin", "/etc", "/sbin" ];
 
-    if( mount != "" && 
-        (mount != "swap" || part["type"]:`unknown==`loop)  )
+    if (mount == "")
+    {
+	allowed = true;
+    }
+    else if (used_fs == `swap && mount != "swap")
+    {
+	allowed = false;
+	// error popup
+	Popup::Error(_("Swap devices must have swap as mount point."));
+    }
+    else if (used_fs != `swap && mount == "swap")
+    {
+	allowed = false;
+	// error popup
+	Popup::Error(_("Only swap devices may have swap as mount point."));
+    }
+    else if (mount != "swap" || part["type"]:`unknown == `loop)
 	{
 	// check if the mount point is already in use
 	foreach( string disk, map diskinfo, targetMap, ``{
@@ -445,16 +460,14 @@ Change the setup?
 
 	allowed = !Popup::YesNo(message);
 	}
-    else
-	{
-	allowed = true;
-	}
+
     if( allowed )
 	{
 	allowed = CheckFstabOptions( part );
 	}
-    return( allowed );
-    };
+    return allowed;
+}
+
 
 define boolean check_ok_fssize( integer siz, map part )
     ``{
