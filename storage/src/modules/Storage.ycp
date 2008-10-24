@@ -4493,12 +4493,15 @@ global list<string> AddPackageList()
     map<string,map> tg = GetTargetMap();
 
     boolean need_lvm = false;
+    boolean need_nfs = false;
     boolean need_quota = false;
     boolean need_crypt = false;
 
     foreach( string k, map e, tg, {
 	if (e["type"]:`CT_UNKNOWN == `CT_LVM)
 	    need_lvm = true;
+	if (e["type"]:`CT_UNKNOWN == `CT_NFS)
+	    need_nfs = true;
 	if( size(filter( map p, e["partitions"]:[], 
 	                 ``(FileSystems::HasQuota(p))))>0 )
 	    need_quota = true;
@@ -4507,11 +4510,19 @@ global list<string> AddPackageList()
 	    need_crypt = true;
     }); 
 
-    y2milestone("AddPackageList need lvm:%1 quota:%2 crypt:%3", need_lvm, need_quota, need_crypt);
+    y2milestone("AddPackageList need lvm:%1 need nfs: %2 quota:%3 crypt:%4", need_lvm, need_nfs, need_quota, need_crypt);
 
     if (need_lvm)
     {
 	pl = add(pl, "lvm2");
+    }
+
+    //nfs-client needs to be marked for installation if we have 
+    //some NFS shares. It will pull in portmapper package(#436897)
+    if (need_nfs)
+    {
+	pl = add(pl, "nfs-client");
+	pl = add(pl, "yast2-nfs-client");
     }
     if( need_quota )
     {
