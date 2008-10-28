@@ -96,7 +96,8 @@
 	y2milestone("MiniWorkflowStepPartitionSize data:%1", data);
 
 	integer cyl_size = data["cyl_size"]:0;
-	list<integer> slot = data["slots", data["type"]:`unknown]:[];
+	list slots = data["slots", data["type"]:`unknown]:[];
+	list<integer> slot = slots[0]:[];
 
 	list<integer> region = data["region"]:slot;
 	integer size_k = (region[1]:0 * cyl_size) / 1024;
@@ -124,9 +125,9 @@
 					 `LeftRadioButtonWithAttachment(`id(`manual_region), `opt(`notify), _("Custom Region"),
 									`VBox(`id(`manual_region_attachment),
 									      `MinWidth(10, `IntField(`id(`start_cyl), `opt(`shrinkable),
-												      _("Start Cylinder"), 0, 1000 /* TODO */, 42)),
-									      `MinWidth(10, `IntField(`id(`end_cyl), `opt(`shrinkable),
-												      _("End Cylinder"), 0, 1000 /* TODO */, 42))
+												      _("Start Cylinder"), 0, 10000 /* TODO */, 42)),
+									      `MinWidth(10, `IntField(`id(`num_cyls), `opt(`shrinkable),
+												      _("Number of Cylinders"), 0, 10000 /* TODO */, 42))
 									    ))
 					 )
 				)
@@ -149,7 +150,7 @@
 	    switch (widget)
 	    {
 		case `max_size:
-		    UI::ChangeWidget(`id(`manual_size_attachment), `Enabled, false);	
+		    UI::ChangeWidget(`id(`manual_size_attachment), `Enabled, false);
 		    UI::ChangeWidget(`id(`manual_region_attachment), `Enabled, false);
 		    break;
 
@@ -166,24 +167,44 @@
 		case `next:
 		    what = (symbol) UI::QueryWidget(`id(`size), `Value);
 
-		    if (what == `manual_size)
+		    switch (what)
 		    {
-			string tmp = (string) UI::QueryWidget(`id(`size_input), `Value);
-			if (!Storage::HumanStringToKByte(tmp, size_k))
+			case `manual_size:
 			{
-			    // error popup, %1 and %2 are replaced by sizes
-			    Popup::Error(sformat(_("The size entered is invalid. Enter a value like \"%1\" or \"%2\"."),
-						 Storage::KByteToHumanString(500*1024),
-						 Storage::KByteToHumanString(1024*1024)));
-			    widget = `again;
+			    string tmp = (string) UI::QueryWidget(`id(`size_input), `Value);
+			    if (!Storage::HumanStringToKByte(tmp, size_k))
+			    {
+				// error popup, %1 and %2 are replaced by sizes
+				Popup::Error(sformat(_("The size entered is invalid. Enter a value like \"%1\" or \"%2\"."),
+						     Storage::KByteToHumanString(500*1024),
+						     Storage::KByteToHumanString(1024*1024)));
+				widget = `again;
+			    }
+			    else if (size_k < min_size_k || size_k > max_size_k)
+			    {
+				// error popup, %1 and %2 are replaced by sizes
+				Popup::Error(sformat(_("The size entered is invalid. Enter a size between %1 and %2."),
+						     Storage::KByteToHumanString(min_size_k),
+						     Storage::KByteToHumanString(max_size_k)));
+				widget = `again;
+			    }
+			    break;
 			}
-			else if (size_k < min_size_k || size_k > max_size_k)
+
+			case `manual_region:
 			{
-			    // error popup, %1 and %2 are replaced by sizes
-			    Popup::Error(sformat(_("The size entered is invalid. Enter a size between %1 and %2."),
-						 Storage::KByteToHumanString(min_size_k),
-						 Storage::KByteToHumanString(max_size_k)));
-			    widget = `again;
+			    integer tmp1 = (integer) UI::QueryWidget(`id(`start_cyl), `Value);
+			    integer tmp2 = (integer) UI::QueryWidget(`id(`num_cyls), `Value);
+
+			    if (false) // TODO
+			    {
+				Popup::Error(_("The region is invalid."));
+				widget = `again;
+			    }
+
+			    region = [ tmp1, tmp2 ];
+
+			    break;
 			}
 		    }
 
@@ -206,6 +227,12 @@
 		{
 		    integer num_cyl = size_k * 1024 / cyl_size;
 		    data["region"] = [ slot[0]:0, num_cyl ];
+		    break;
+		}
+
+		case `manual_region:
+		{
+		    data["region"] = region;
 		    break;
 		}
 	    }
