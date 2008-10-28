@@ -21,7 +21,8 @@ module_DATA =				\
 	MiniWorkflow.ycp		\
 	Greasemonkey.ycp		\
 	DevicesSelectionBox.ycp		\
-	DualMultiSelectionBox.ycp
+	DualMultiSelectionBox.ycp	\
+	Region.ycp
 
 EXTRA_DIST = $(module_DATA)
 
