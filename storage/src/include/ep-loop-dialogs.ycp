@@ -87,7 +87,12 @@ careful about the size and path name you provide.</p>
 			fpath = tmp;
 		    UI::ChangeWidget(`id(`fpath), `Value, fpath);
 
-		    // TODO: file existence -> set create
+		    if (Mode::normal())
+		    {
+			integer s = (integer) SCR::Read(.target.size, fpath);
+			create_file = s < 0;
+			UI::ChangeWidget(`id(`create_file), `Value, create_file);
+		    }
 
 		    break;
 
@@ -98,6 +103,16 @@ careful about the size and path name you provide.</p>
 
 		case `next:
 		    fpath = (string) UI::QueryWidget(`id(`fpath), `Value);
+
+		    if (fpath == "" || substring(fpath, 0, 1) != "/")
+		    {
+			// popup text
+			Popup::Error(sformat(_("The file name \"%1\" is invalid.
+Use an absolute path name.
+"), fpath));
+			widget = `again;
+			continue;
+		    }
 
 		    if (create_file)
 		    {
@@ -115,10 +130,31 @@ careful about the size and path name you provide.</p>
 			    Popup::Error(sformat(_("The size entered is invalid. Enter a size of at least %1."),
 						 Storage::KByteToHumanString(min_size_k)));
 			    widget = `again;
+			    continue;
 			}
 		    }
+		    else
+		    {
+			integer s = (integer) SCR::Read(.target.size, fpath);
+			y2milestone("loop file size:%1", s);
 
-		    // TODO checks, valid filename, file existence
+			if (Mode::normal())
+			{
+			    if (s < 0)
+			    {
+				// popup text
+				Popup::Error( sformat(_("The file name \"%1\" does not exist
+and the flag for create is off. Either use an existing file or activate
+the create flag."), fpath));
+				widget = `again;
+				continue;
+			    }
+			    else
+			    {
+				size_k = s / 1024;
+			    }
+			}
+		    }
 
 		    break;
 	    }
