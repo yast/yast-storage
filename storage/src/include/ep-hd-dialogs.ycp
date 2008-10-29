@@ -126,9 +126,11 @@
 					 `LeftRadioButtonWithAttachment(`id(`manual_region), `opt(`notify), _("Custom Region"),
 									`VBox(`id(`manual_region_attachment),
 									      `MinWidth(10, `IntField(`id(`start_cyl), `opt(`shrinkable),
-												      _("Start Cylinder"), 0, cyl_count, region[0]:0)),
-									      `MinWidth(10, `IntField(`id(`num_cyls), `opt(`shrinkable),
-												      _("Number of Cylinders"), 1, cyl_count, region[1]:0))
+												      _("Start Cylinder"), 0, cyl_count,
+												      Region::Start(region))),
+									      `MinWidth(10, `IntField(`id(`end_cyl), `opt(`shrinkable),
+												      _("End Cylinder"), 0, cyl_count,
+												      Region::End(region)))
 									    ))
 					 )
 				)
@@ -180,6 +182,7 @@
 						     Storage::KByteToHumanString(500*1024),
 						     Storage::KByteToHumanString(1024*1024)));
 				widget = `again;
+				continue;
 			    }
 			    else if (size_k < min_size_k || size_k > max_size_k)
 			    {
@@ -188,16 +191,18 @@
 						     Storage::KByteToHumanString(min_size_k),
 						     Storage::KByteToHumanString(max_size_k)));
 				widget = `again;
+				continue;
 			    }
 			    break;
 			}
 
 			case `manual_region:
 			{
-			    region = [ (integer) UI::QueryWidget(`id(`start_cyl), `Value),
-				       (integer) UI::QueryWidget(`id(`num_cyls), `Value) ];
+			    integer s = (integer) UI::QueryWidget(`id(`start_cyl), `Value);
+			    integer e = (integer) UI::QueryWidget(`id(`end_cyl), `Value);
+			    region = [ s, e - s + 1 ];
 
-			    boolean valid = find(list<integer> slot, slots, {
+			    boolean valid = Region::Length(region) > 0 && find(list<integer> slot, slots, {
 				return Region::Inside(slot, region);
 			    }) != nil;
 
@@ -206,6 +211,7 @@
 				// error popup
 				Popup::Error(_("The region entered is invalid."));
 				widget = `again;
+				continue;
 			    }
 
 			    break;
