@@ -45,12 +45,7 @@
 
 
 
-  boolean edit_cylinder           = true;
   boolean bsd_label               = false;
-
-
-   string  focusline          = "";
-
 
 
     /*---------------------------------------------------------------------
@@ -1817,44 +1812,7 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 
     symbol ret = nil;
 
-    y2milestone( "Custom partitioner started" );
-    Storage::SetWizardKey("");
 
-    SCR::Write(.target.ycp, Storage::SaveDumpPath("targetMap_s"),
-               Storage::GetTargetMap() );
-
-    map<string,map> tg = Storage::GetTargetMap();
-
-    if( !Storage::CheckBackupState("custom_part") )
-	{
-	Storage::CreateTargetBackup("custom_part");
-	}
-
-
-
-    // Main dialog: Header
-
-    string back_label = "";
-    string next_label = "";
-    if( Stage::initial () )
-	{
-	back_label = Label::BackButton();
-	next_label = Label::NextButton();
-	}
-    else
-	{
-	back_label = Label::CancelButton();
-	next_label = Label::OKButton();
-	Wizard::HideAbortButton();
-	}
-
-
-   //////////////////////////////////////////////////////////////////
-   ////  Loop for User Input ....
-   //////////////////////////////////////////////////////////////////
-
-    repeat
-        {
 	map<string,map> tg =  Storage::GetTargetMap();
 
         ret = (symbol)Wizard::UserInput();
@@ -1866,7 +1824,6 @@ define string FormatYouCannotCause( boolean primary_is_possible,
         if (ret == `resize)
 	    {
 	    string id = (string)UI::QueryWidget(`id(`table), `CurrentItem);
-	    focusline = id;
 	    map part = $[];
 	    map disk = Storage::GetDisk( tg, id );
 	    if( !haskey( tg, id ) )
@@ -1876,7 +1833,6 @@ define string FormatYouCannotCause( boolean primary_is_possible,
 		{
 		Popup::Error( Partitions::RdonlyText( disk["device"]:"", true ));
 		ret = `again;
-		continue;
 		}
 
 	    y2milestone( "disk=%1", disk );
@@ -1963,109 +1919,5 @@ freed disk space?
 		    }
 		}
 	    }
-
-        /////////////////////////////////////////////////////////////
-        // End of Actions, Now check the returncode
-        /////////////////////////////////////////////////////////////
-
-        if (ret == `next || ret == `back || ret == `raid || ret == `lvm ||
-	    ret == `raid_settings || ret == `raid_wizard || ret == `evms )
-	    {
-    	    symbol doagain = `next;
-
-	    if( ret == `raid_wizard || ret == `raid_settings )
-		{
-		if( Storage::CheckBackupState("raid"))
-		    Storage::DisposeTargetBackup("raid");
-		}
-
-	    if( ret == `back &&
-		!Storage::EqualBackupStates( "custom_part", "", true ))
-		{
-		// popup text %1 will be replaces with button text
-		string txt = sformat( _("You have changed the partitioning.
-These changes are lost if you exit the main dialog with %1.
-Really quit the main dialog?
-"),
-				      deletechars(back_label,"&") );
-		if( !Popup::YesNo( txt ))
-		    {
-		    doagain = `again;
-		    }
-		}
-	    if( ret == `next )
-		{
-		boolean changed =
-		    !Storage::EqualBackupStates( "custom_part", "", true );
-		y2milestone( "CheckNext ret=%1 changed=%2", ret, changed );
-		if( changed )
-		    {
-		    Storage::SetPartMode( "CUSTOM" );
-		    Storage::UpdateChangeTime();
-		    }
-		}
-	    if ( ret == `next )
-		{
-		list retval = check_created_partition_table( Storage::GetTargetMap(), true,
-							     Stage::initial()&&!Mode::repair() );
-		Storage::SetTargetMap( retval[0]:$[] );
-	        doagain = retval[1]:`next;
-		}
-
-	    if( (ret==`abort || ret==`back || ret==`next) && doagain!=`again )
-		{
-		Storage::DisposeTargetBackup("custom_part");
-		}
-
-	    if( doagain == `again ) ret = `again;
-
-            if( ret != `back )
-		{
-                if (ret == `apply) return `again;
-		}
-	    if( (ret == `back||ret==`abort) && Storage::GetPartMode()=="NORMAL" )
-		{
-		Storage::SetPartMode( "CUSTOM" );
-		}
-	    }
-
-	y2milestone( "end main loop ret %1 focusline %2", ret, focusline );
-        } until (ret == `next || ret == `back || ret == `cancel ||
-	         ret == `raid_wizard || ret == `raid_settings ||
-	         ret == `evms ||
-		 ret == `lvm || ret == `lvmlv || ret == `abort );
-
-  Wizard::RestoreNextButton();
-  if( (ret == `lvm || ret == `raid_wizard || ret == `raid_settings ||
-       ret == `evms) &&
-      !Stage::initial () )
-      {
-      Wizard::RestoreBackButton();
-      }
-
-
-
-  SCR::Write(.target.ycp, Storage::SaveDumpPath("targetMap_e"),
-             Storage::GetTargetMap() );
-
-  //next by installation
-  if( Stage::initial () && ret == `next )
-      ret = `instnext;
-
-  //next in existing system
-  if( !Stage::initial () && ret == `next )
-      ret = `sysnext;
-
-  if( ret == `back )
-      ret = `backtoi;
-
-  /*
-  if( ret == `raid_settings || ret == `raid_wizard )
-      Storage::Record();
-  */
-
-  y2milestone( "ChangeTime %1", Storage::GetTargetChangeTime() );
-
-  return ret;
 
 }
