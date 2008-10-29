@@ -11,71 +11,12 @@
  *   mike <mike@suse.de>
  *
  * $Id$
- *
- *
- *----------------------
- *  rd or Rd == raid device, a device like hda1 or /dev/system/usr
- *              that belongs to a raid
  */
-
-
 {
   import "Storage";
-  import "Mode";
   import "Partitions";
-  import "Wizard";
+
   textdomain "storage";
-
-
-/**
- * Build raid dev item list e.g.: [`item (`id ("/dev/md2"), "/dev/md2", false)]
- *
- **/
-define list<term> get_raid_devices( map tg, integer raid_nr )
-    ``{
-    list<term> all_raid_devices = [];
-    list<map> partitions = tg["/dev/md","partitions"]:[];
-
-    foreach( map part, partitions, 
-	``{
-	integer num = part["nr"]:255;
-	all_raid_devices = 
-	    add( all_raid_devices, 
-		 `item( `id(sformat("/dev/md%1", num )),
-			Storage::GetDeviceName( "/dev/md", num ), 
-			num == raid_nr ));
-	});
-    return all_raid_devices;
-    };
-
-
-  /**
-   * Checks if a RAID is currently created or if it was already
-   *
-   **/
-define boolean IsRaidCreated( map tg, string device, symbol what )
-    ``{
-    boolean created = false;
-    if( what != `wizard )
-	{
-	list<map> partitions = (list<map>)tg["/dev/md", "partitions"]:[];
-	y2milestone( "parts %1", partitions );
-
-	foreach( map part, partitions, 
-	    ``{
-	    if( part["device"]:""==device && part["create"]:false )
-		{
-		created = true;
-		}
-	    });
-	}
-    else
-	{
-	created = true;
-	}
-    y2milestone( "device %1 what %2 created %3", device, what, created );
-    return( created );
-    };
 
 
 /*
@@ -127,106 +68,4 @@ define list<map> get_possible_rds( map<string,map> targetMap )
 	});
     return( allret );
     };
-
-
-/*
- * get the number of devices which belong to the raid
- */
-define integer getNrOfParts( map<string,map> targetMap, string current_raid )
-    ``{
-    list<map> partition_list = get_possible_rds( targetMap );
-    string dev = "md" + current_raid;
-
-    partition_list = filter( map part, partition_list, 
-			     ``( part["used_by"]:""==dev ) );
-    return( size( partition_list ) );
-    };
-
-
-/**
- * belongs the the partition "id" already to a raid
- **/
-define boolean isItemRd( map<string,map> tg, string id )
-    ``{
-    map partition = Storage::GetPartition( tg, id );
-    return( partition["used_by_type"]:`UB_NONE == `UB_MD );
-    };
-
-
-/**
- * number for /dev/mdX, 0 for /dev/md0, 1 for /dev/md1
- */
-define integer get_free_raid_nr( map<string,map> targetMap, integer min )
-    ``{
-    integer i = min;
-    list raid_nrs = maplist( map mdX, targetMap["/dev/md","partitions"]:[],
-			     ``(mdX["nr"]:256)) ;
-    while( contains(raid_nrs, i) && i < 255)
-	{
-	i = i+1;
-	}
-    y2milestone( "get_free_raid_nr ret:%1", i );
-    return( i );
-    };
-
-/**
- * Add the main device ( "/dev/hda") to the partition map.
- * partition = $[
- *                "nr"	: 1,
- *		      "main_dev": "/dev/hda",
- *              ......
- *              ];
- * Use change !!!!!!!!!
- * @param targetMap all targets
- * @return nil
- */
-define map add_main_dev_to_partition_map( map<string,map> targetMap )
-    ``{
-    foreach( string targetdevice, map target, targetMap, 
-	``{
-	targetMap[targetdevice,"partitions"] = 
-	    maplist( map p, target["partitions"]:[],
-		``({
-		if( size(p["used_by"]:"")>0 )
-		    {
-		    p["main_dev"] = targetdevice;
-		    }
-		return( p );
-		}));
-	});
-    y2debug("targets %1", targetMap );
-    return( targetMap );
-    };
-
-/**
- * @return list a list with all partition that have a key raid_name != "".
- * @param targetMap all targets
- */
-define list<map> all_raid_partitions( map<string,map> targetMap ) 
-    ``{
-    list<list> ret = 
-      (list<list>) maplist( string targetdevice, map target, targetMap,
-			    ``( filter( map part, target["partitions"]:[],
-					``(part["used_by_type"]:`UB_NONE==`UB_MD))));
-    return(list<map>)( flatten(ret) );
-    };
-
-define boolean check_raid_possible( map<string,map> targetMap )
-    ``{
-    integer possible_parts_found = size(get_possible_rds(targetMap));
-
-    if( possible_parts_found < 2 )
-        {
-        // Translators: the text 'do not format' must match the label in the corresponding popup!
-        Popup::Message(_("To use RAID, at least two partitions of type 0xFD (or 0x83)
-are required. Change your partition table accordingly.
-In most cases, this can be done in the following way:
-click 'Create', select 'Do not format', and set the File System ID to 0xFD.
-"));
-
-        return false;
-        }
-    return true;
-    }
-
 }
