@@ -109,12 +109,15 @@
 	{
 	    y2milestone("Adding NFS share: %1 mountpoint: %2 options: %3", 
                          entry["device"]:"", entry["mount"]:"", entry["fstopt"]:"");
+            target_map = Storage::GetTargetMap();
+	    list<map> nfs_list = target_map["/dev/nfs", "partitions"]:[];
+
 	    integer sizeK = Storage::CheckNfsVolume (entry["device"]:"", entry["fstopt"]:"");
 
 	    if ( sizeK <= 0)
 	    {
 		Popup::Error( sformat( _("Test mount of NFS share '%1' failed.\nCheck that remote server is accesible and try again."), entry["device"]:"") );
-		//FIXME: rollback if the operation didn't succeed
+		WFM::CallFunction("nfs-client4part", [ "FromStorage", $[ "shares" : nfs_list] ] );
 	    }
 	    else
 	    {
@@ -157,25 +160,29 @@
 
 	map <string, any> line = ( map <string, any> ) WFM::CallFunction("nfs-client4part", [ "HandleEvent", $[ "widget_id" : widget ] ]);
 
-	switch (widget )
+	//do something only if y2-nfs-client returns some reasonable data
+	if ( line != $[] && line != nil)
 	{
-	    case `newbut:
+	    switch (widget )
 	    {
-		AddShare( line );
-		break;
+	        case `newbut:
+	        {
+		    AddShare( line );
+		    break;
+	        }
+	        case `editbut:
+	        {
+		    EditShare( line );
+		    break;
+	        }
+	        case `delbut:
+	        {
+		    DeleteShare( line );
+		    break;
+	        }
+	        default:
+		    break;
 	    }
-	    case `editbut:
-	    {
-		EditShare( line );
-		break;
-	    }
-	    case `delbut:
-	    {
-		DeleteShare( line );
-		break;
-	    }
-	    default:
-		break;
 	}
 
 	//FIXME: Take care that non-fstab settings of nfs-client 
