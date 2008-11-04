@@ -302,7 +302,7 @@ Also check the format option.
 			{
 			    if (ret_mp["field"]:`none != `none)
 				UI::SetFocus(`id(ret_mp["field"]:`none));
-			    widget = `again; 
+			    widget = `again;
 			    continue;
 			}
 		    }
@@ -498,8 +498,10 @@ Try again."));
     }
 
     //data i.e. partition
-    boolean DlgResize(map <string, any> &data , map <string, any> disk, symbol flavour)
+    boolean DlgResize(map <string, any> &data, map <string, any> disk)
     {
+	y2milestone("haha %1", data);
+
 	integer cyl_size = disk["cyl_size"]:1;
 	integer free_cyl_after = Storage::FreeCylAfter( disk, data);
 	integer av_space = cyl_size * free_cyl_after;
@@ -568,26 +570,33 @@ Try again."));
 	    string free = "";
 	    string available = "";
 
-	    if (flavour == `part)
+	    switch (data["type"]:`unknown)
 	    {
-	     //FIXME: add special case for Windows part.
-		used =  _("Used\nSpace\n%1 ") + unit;
+		case `primary:
+		case `logical:
 
-		if ( Partitions::IsSwapPartition( fsid ) )
-		    free = _("Swap\nSpace\n%1 ") + unit;
-		else
-		    free = _("Free\nSpace\n%1 ") + unit;
+		    //FIXME: add special case for Windows part.
+		    used =  _("Used\nSpace\n%1 ") + unit;
 
-		available = _("Unused\nDisk\n%1 ") + unit;
-	    }
-	    if (flavour == `lv)
-	    {
-	        // Labels for bar graph. "%1" will be replace with a numeric value.
-	        used = _("LV\nUsed\n%1") + unit;
-	        // Labels for bar graph. "%1" will be replace with a numeric value.
-	        free = _("LV\nFree\n%1") + unit;
-	        // Labels for bar graph. "%1" will be replace with a numeric value.
-	        available = _("VG\nFree\n%1") + unit;
+		    if ( Partitions::IsSwapPartition( fsid ) )
+			free = _("Swap\nSpace\n%1 ") + unit;
+		    else
+			free = _("Free\nSpace\n%1 ") + unit;
+
+		    available = _("Unused\nDisk\n%1 ") + unit;
+
+		    break;
+
+		case `lvm:
+
+		    // Labels for bar graph. "%1" will be replace with a numeric value.
+		    used = _("LV\nUsed\n%1") + unit;
+		    // Labels for bar graph. "%1" will be replace with a numeric value.
+		    free = _("LV\nFree\n%1") + unit;
+		    // Labels for bar graph. "%1" will be replace with a numeric value.
+		    available = _("VG\nFree\n%1") + unit;
+
+		    break;
 	    }
 
 	    return [ used, free, available ];
@@ -601,51 +610,57 @@ Try again."));
 		return _("Remaining Free Space");
 	}
 
-	if (flavour == `part)
+	switch (data["type"]:`unknown)
 	{
+	    case `primary:
+	    case `logical:
 
-	    // Heading for dialog
-	    heading = sformat(_("Resize Partition %1"), device);
+		// Heading for dialog
+		heading = sformat(_("Resize Partition %1"), device);
 
-	    map size_data = $[];
+		map size_data = $[];
 
-	    if ( Partitions::IsSwapPartition( fsid ) )
-	    {
-		size_data = AdjustSwapPartitionDf( size_data );
-	    }
-	    else
-	    {
-		size_data = Storage::GetFreeSpace( device, 0, used_fs, true);
-
-		if (size( size_data ) == 0 || !size_data["ok"]:false)
+		if ( Partitions::IsSwapPartition( fsid ) )
 		{
-		    y2error("Failed to retrieve FreeSpace %1, filesystem %2", device, data["used_fs"]:`none);
-		    //FIXME: Really?
-		    Popup::Error( sformat( _("Partition %1 cannot be resized\nbecause the filesystem seems to be inconsistent"), device ));
-		    return false;
+		    size_data = AdjustSwapPartitionDf( size_data );
 		}
-	    }
+		else
+		{
+		    size_data = Storage::GetFreeSpace( device, 0, used_fs, true);
 
-	    AdjustUnits( size_data );
-	    used =  ToUI( size_data["used"]:0 );
-            free = ToUI( size_data["df_free"]:0 );
-	    av_space =ToUI( av_space );
-	    total = used + free + av_space;
+		    if (size( size_data ) == 0 || !size_data["ok"]:false)
+		    {
+			y2error("Failed to retrieve FreeSpace %1, filesystem %2", device, data["used_fs"]:`none);
+			//FIXME: Really?
+			Popup::Error( sformat( _("Partition %1 cannot be resized\nbecause the filesystem seems to be inconsistent"), device ));
+			return false;
+		    }
+		}
 
-	    y2milestone("ResizePartition used %1, free %2, available %3, total %4",
-			Storage::ByteToHumanString(used), Storage::ByteToHumanString(free),
-			Storage::ByteToHumanString(av_space), Storage::ByteToHumanString(total) );
+		AdjustUnits( size_data );
+		used =  ToUI( size_data["used"]:0 );
+		free = ToUI( size_data["df_free"]:0 );
+		av_space =ToUI( av_space );
+		total = used + free + av_space;
 
-	}
-	else if (flavour == `lv)
-	{
-	    // Heading for dialog
-	    heading = sformat(_("Resize Logical Volume %1"), device);
+		y2milestone("ResizePartition used %1, free %2, available %3, total %4",
+			    Storage::ByteToHumanString(used), Storage::ByteToHumanString(free),
+			    Storage::ByteToHumanString(av_space), Storage::ByteToHumanString(total) );
 
-	    // Labels for input fields. "%1" will be replaced with the current unit (MB).
-	    field_label_free = sformat(_("LV Free (%1)"), unit);
-	    // Labels for input fields. "%1" will be replaced with the current unit (MB).
-	    field_label_vg_free = sformat(_("VG Free (%1)"), unit);
+		break;
+
+	    case `lvm:
+
+		// Heading for dialog
+		heading = sformat(_("Resize Logical Volume %1"), device);
+
+		// Labels for input fields. "%1" will be replaced with the current unit (MB).
+		field_label_free = sformat(_("LV Free (%1)"), unit);
+		// Labels for input fields. "%1" will be replaced with the current unit (MB).
+		field_label_vg_free = sformat(_("VG Free (%1)"), unit);
+
+		break;
+
 	}
 
 	term content = `Empty();
