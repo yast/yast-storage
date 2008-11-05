@@ -33,6 +33,7 @@
     include "partitioning/raid_lib.ycp";
     include "partitioning/custom_part_check_generated.ycp";
 
+    string caption = _("Expert Partitioner");
 
     void Debug(string text, any value)
     {
@@ -208,19 +209,74 @@
 	TreePanel::Update(data, tree, new_focus);
     }
 
+    /**
+     * Confirm leaving the module
+     */
+    boolean ReallyQuit( string label )
+    {
+	// popup text, %1 will be replaces with button text
+	string text = sformat(_("You have changed the partitioning. These changes will be lost 
+if you exit the partitioner with %1. Really exit?"), deletechars(label, "&"));
+
+	return Popup::YesNo(text);
+    }
+
+    /**
+     * Fullscreen summary of changes
+     */
+    symbol SummaryDialog()
+    {
+	symbol ret = `none;
+	string doto = Storage::ChangeText();
+        y2milestone("Summary of changes: %1", doto);
+
+        /*if (size(doto) == 0)
+        {
+	    // popup text
+	    Popup::Message(_("No unsaved changes exist."));
+	    return `back;
+        }*/
+
+	Wizard::CreateDialog();
+	Wizard::SetContentsButtons( caption + _(": Summary"), 
+			`VBox(`RichText( `id(`summary), _("Creating summary ..."))),
+			"some help, to be filled later",
+			Label::BackButton(),
+			Label::FinishButton()
+			);
+	Wizard::SetDesktopIcon("disk");
+	UI::ChangeWidget( `id(`summary), `Value, _("<h1>Changes in Partitioning</h1>") + doto );
+
+	while (true)
+	{
+	    ret = (symbol) UI::UserInput();
+
+	    if (ret == `next || ret == `back)
+		break;
+	    if( ret == `abort && ReallyQuit( Label::AbortButton() ))
+	    {
+		ret =`abort;
+		break;
+	    }
+	}
+
+	Wizard::CloseDialog();
+	y2milestone("Summary dialog returned %1", ret);
+	return ret;
+    }
 
     /**
      * apply changes in running system
      */
     symbol DoApply()
     {
-	symbol ret1 = ReallyInstPrepdisk();
+	symbol ret1 = SummaryDialog();
 
 	if (ret1 == `back)
 	{
 	    return `back;
 	}
-	else if (ret1 == `apply || ret1 == `finish)
+	else if (ret1 == `next)
 	{
 	    Wizard::CreateDialog();
 	    Wizard::SetDesktopIcon("disk");
@@ -232,14 +288,10 @@
 
 	    if (ret2 != `next)
 		return `back;
-
-	    if (ret1 == `apply)
-		return `back;
 	    else
 		return `next;
 	}
     }
-
 
     symbol ExpertPartitioner()
     {
@@ -252,7 +304,8 @@
 	MakeNavigationTree($[`all : "ID"], tree, data);
 
 	string back_label = Label::BackButton();
-	string next_label = Label::AcceptButton();
+	string next_label = Mode::normal() ? Label::NextButton() : Label::AcceptButton();
+	string abort_label = Label::AbortButton();
 
 	term contents = `MarginBox(0.5, 0.5,
 				  `HBox(
@@ -267,7 +320,9 @@
 	    );
 
 	// heading text
-	Wizard::SetContentsButtons(_("Expert Partitioner"), contents, "", back_label, next_label);
+	Wizard::SetContentsButtons(caption, contents, "", back_label, next_label);
+	if (Mode::normal())
+	   Wizard::HideBackButton();
 
 	TreePanel::Init(data);
 
@@ -283,37 +338,37 @@
 	    {
 		case `back:
 		case `abort: {
-		    if (!Storage::EqualBackupStates("expert-partitioner", "", true))
+		    if ( !Storage::EqualBackupStates("expert-partitioner", "", true) )
 		    {
-			// popup text, %1 will be replaces with button text
-			string text = sformat(_("You have changed the partitioning.
-These changes are lost if you exit the main dialog with %1.
-Really quit the main dialog?
-"), deletechars(back_label, "&"));
-
-			if (!Popup::YesNo(text))
-			{
+			if ( !ReallyQuit(  widget == `back ? back_label : abort_label) )
 			    widget = `again;
-			}
 		    }
 		} break;
 
 		case `next: {
-		    list<any> retval = check_created_partition_table(Storage::GetTargetMap(), true,
-								     Stage::initial() && !Mode::repair());
-		    Storage::SetTargetMap(retval[0]:$[]);
-
-		    if (retval[1]:`next != `next)
+		    if ( !Storage::EqualBackupStates("expert-partitioner", "", true) )
 		    {
-			widget = `again;
+		        list<any> retval = check_created_partition_table(Storage::GetTargetMap(), true,
+							     Stage::initial() && !Mode::repair());
+		        Storage::SetTargetMap(retval[0]:$[]);
+
+		        if (retval[1]:`next != `next)
+		        {
+		            widget = `again;
+		        }
+		        else
+		        {
+		            if (Mode::normal())
+		            {
+		                if (DoApply() == `back)
+				widget = `again;
+		            }
+		        }
 		    }
 		    else
 		    {
-			if (Mode::normal())
-			{
-			    if (DoApply() == `back)
-				widget = `again;
-			}
+			y2milestone("No changes to partitioning - nothing to do");
+			widget = `abort;
 		    }
 		} break;
 
