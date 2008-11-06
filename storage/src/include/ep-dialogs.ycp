@@ -497,70 +497,56 @@ Try again."));
 	return widget;
     }
 
-    //data i.e. partition
+
     boolean DlgResize(map <string, any> &data, map <string, any> disk)
     {
+	map<string, map> target_map = Storage::GetTargetMap();
+
 	integer cyl_size = disk["cyl_size"]:1;
-	integer free_cyl_after = Storage::FreeCylAfter( disk, data);
-	integer av_space = cyl_size * free_cyl_after;
-	integer fsid = data["fsid"]:0;
+	integer free_cyl_after = Storage::FreeCylAfter(disk, data);
 
 	string device = data["device"]:"error";
 	symbol used_fs = data["used_fs"]:`none;
 
-	/*integer lv_used	= 3500;
-	integer lv_free = 7000;
-	integer lv_min_free = 10;
-	integer vg_free	= 80000;
-	integer vg_min_free = 0;*/
 
-	integer used = 0;
-	integer free = 0;
-	integer total = 0;
-	integer min_free = 5;
+	integer used_k = FileSystems::MinFsSizeK(used_fs);
+	if (!data["create"]:false)
+	{
+	    if (used_fs != `swap)
+	    {
+		map free_data = Storage::GetFreeSpace(device, 0, used_fs, true);
+		used_k = Integer::Max([ used_k, free_data["used"]:0 / 1024 ]);
+	    }
+	}
 
-	// Unit for partition resizing
+	integer min_free_k = 10*1024;
+
+	integer size_k = data["size_k"]:0;
+
+	integer min_size_k = Integer::Min([ used_k + min_free_k, size_k ]);
+	integer max_size_k = 0;
+
+
 	string unit = _("MB");
-	integer factor = 1024*1024;
-
-	string heading = "";
-	string field_label_free = "";
-	string field_label_vg_free = "";
+	integer factor = 1024;
 
 	//Depending on size of the partition,
 	//set correct division factor and units
 	//and minimum required free space, too
-	void AdjustUnits ( map size_data )
+	// TODO: get rid of this unit factor and unit altogether
+	void AdjustUnits()
 	{
-
-	    //for partitions with free space less than ~10GB we'll
-	    //keep using MBs to allow fine-grained
-	    //size adjusting
-	    if( size_data["df_free"]:0 > 10*1024*factor  )
-            {
+	    if (max_size_k > 20*1024*1024)
+	    {
 		factor = factor * 1024;
 		unit = _("GB");
             }
-
-	    min_free = (factor==1024*1024) ? 5 : 1;
 	}
 
-	map AdjustSwapPartitionDf ( map size_data)
-	{
-	    map ret = size_data;
-	    ret["used"] = 0;
-	    ret["df_free"] = data["region",1]:0 * cyl_size;
-	    ret["free"] = ret["df_free"]:0;
 
-	    return ret;
-	}
-
-	//convert bytes to ints (i.e. numbers UI can understand)
-	//depending on current size scale
-	integer ToUI (integer i)
-	{
-	    return i / factor;
-	}
+	string heading = "";
+	string field_label_free = "";
+	string field_label_vg_free = "";
 
 	list <string> BarGraphLabels()
         {
@@ -574,9 +560,9 @@ Try again."));
 		case `logical:
 
 		    //FIXME: add special case for Windows part.
-		    used =  _("Used\nSpace\n%1 ") + unit;
+		    used = _("Used\nSpace\n%1 ") + unit;
 
-		    if ( Partitions::IsSwapPartition( fsid ) )
+		    if (used_fs == `swap)
 			free = _("Swap\nSpace\n%1 ") + unit;
 		    else
 			free = _("Free\nSpace\n%1 ") + unit;
@@ -602,30 +588,22 @@ Try again."));
 
 	string FreeSpaceLabel()
 	{
-	    if ( Partitions::IsSwapPartition( fsid ) )
+	    if (used_fs == `swap)
 		return _("Swap Space");
 	    else
 		return _("Remaining Free Space");
 	}
 
+
 	switch (data["type"]:`unknown)
 	{
 	    case `primary:
 	    case `logical:
-
+	    {
 		// Heading for dialog
 		heading = sformat(_("Resize Partition %1"), device);
 
-		map size_data = $[];
-
-		if ( Partitions::IsSwapPartition( fsid ) )
-		{
-		    size_data = AdjustSwapPartitionDf( size_data );
-		}
-		else
-		{
-		    size_data = Storage::GetFreeSpace( device, 0, used_fs, true);
-
+		/*
 		    if (size( size_data ) == 0 || !size_data["ok"]:false)
 		    {
 			y2error("Failed to retrieve FreeSpace %1, filesystem %2", device, data["used_fs"]:`none);
@@ -634,21 +612,18 @@ Try again."));
 			return false;
 		    }
 		}
+		*/
 
-		AdjustUnits( size_data );
-		used = ToUI( size_data["used"]:0 );
-		free = ToUI( size_data["df_free"]:0 );
-		av_space =ToUI( av_space );
-		total = used + free + av_space;
+		integer cyl_size = disk["cyl_size"]:1;
+		integer free_cyl_after = Storage::FreeCylAfter( disk, data);
 
-		y2milestone("ResizePartition used %1, free %2, available %3, total %4",
-			    Storage::ByteToHumanString(used), Storage::ByteToHumanString(free),
-			    Storage::ByteToHumanString(av_space), Storage::ByteToHumanString(total) );
-
-		break;
+		min_size_k = Integer::Max([ min_size_k, cyl_size / 1024 ]);
+		max_size_k = size_k + (cyl_size * free_cyl_after) / 1024;
+	    }
+	    break;
 
 	    case `lvm:
-
+	    {
 		// Heading for dialog
 		heading = sformat(_("Resize Logical Volume %1"), device);
 
@@ -657,28 +632,42 @@ Try again."));
 		// Labels for input fields. "%1" will be replaced with the current unit (MB).
 		field_label_vg_free = sformat(_("VG Free (%1)"), unit);
 
-		break;
-
+		min_size_k = Integer::Max([ min_size_k, disk["pesize"]:0 / 1024 ]);
+		max_size_k = size_k + (disk["pe_free"]:0 * disk["pesize"]:0) / 1024;
+	    }
+	    break;
 	}
+
+	y2milestone("used_k:%1 size_k:%2", used_k, size_k);
+	y2milestone("min_size_k:%1 max_size_k:%2", min_size_k, max_size_k);
+
+
+	AdjustUnits();
+
+	integer slider_size_k = size_k / factor;
+	integer slider_min_size_k = min_size_k / factor;
+	integer slider_max_size_k = max_size_k / factor;
+
 
 	term content = `Empty();
 
 	if (UI::HasSpecialWidget(`BarGraph) && UI::HasSpecialWidget(`Slider))
 	{
 	    content = `VBox(
-                         `BarGraph(`id(`graph), `opt(`vstretch), [used, free, av_space], BarGraphLabels() ),
-		         `Slider(`id(`new_size), `opt(`notify), sformat(_("New Partition Size (in %1)"), unit), used+min_free,
-				   used + free + av_space, used+free)
-		     );
+		`BarGraph(`id(`graph), `opt(`vstretch), [ slider_min_size_k, slider_size_k - slider_min_size_k,
+							  slider_max_size_k - slider_size_k ],
+			  BarGraphLabels()),
+		`Slider(`id(`new_size), `opt(`notify), sformat(_("New Partition Size (in %1)"), unit),
+			slider_min_size_k, slider_max_size_k, slider_size_k)
+	    );
 	}
-	//FIXME: something nicer for ncurses, this layout sucks - #410956
 	else
 	{
+	    // TODO: something nicer for ncurses, this layout sucks - #410956
 	    content = `Frame("",
-			   `IntField(`id(`new_size), `opt(`notify), sformat(_("New Partition Size (in %1)"), unit),
-			      used + min_free, used + free + av_space,
-			      used + free)
-		       );
+			     `IntField(`id(`new_size), `opt(`notify), sformat(_("New Partition Size (in %1)"), unit),
+				       slider_min_size_k, slider_max_size_k, slider_size_k)
+	    );
 	}
 
         UI::OpenDialog(
@@ -686,10 +675,10 @@ Try again."));
 	        `Left(`Heading(heading)),
 	        `HSpacing(60),
 		 content,
-	        `Left(`Label( `id(`free), sformat("%1: %2 %3", FreeSpaceLabel(), free, unit ))),
+	        `Left(`Label(`id(`free), sformat("%1: %2      ", FreeSpaceLabel(), Storage::KByteToHumanString(size_k - used_k)))),
 		`VSpacing(1.0),
-	        `Left(`Label( sformat(_("Minimum Partition Size: %1 %2"), used + min_free, unit ))),
-	        `Left(`Label( sformat(_("Maximum Partition Size: %1 %2"), total, unit ))),
+	        `Left(`Label(sformat(_("Minimum Partition Size: %1 %2"), Storage::KByteToHumanString(min_size_k), ""))),
+	        `Left(`Label(sformat(_("Maximum Partition Size: %1 %2"), Storage::KByteToHumanString(max_size_k), ""))),
 	        `HBox(
 		   `ButtonBox(
 		       `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
@@ -708,8 +697,8 @@ numeric value in either input field.</p>");
 
 
 	symbol widget = nil;
-	integer old_size = used + free;
-	integer new_size = old_size;
+
+	integer old_size_k = size_k;
 
 	do {
 
@@ -719,29 +708,32 @@ numeric value in either input field.</p>");
 	    {
 	        case `new_size:
 	        {
-	            new_size = (integer) UI::QueryWidget(`id(`new_size), `Value);
-	            integer new_free = new_size - used ;
-	            UI::ChangeWidget(`id(`graph), `Values, [ used, new_free, total - (new_free + used) ]);
-	            UI::ChangeWidget(`id(`free), `Value, sformat("%1: %2 %3", FreeSpaceLabel(), new_free, unit));
+		    slider_size_k = (integer) UI::QueryWidget(`id(`new_size), `Value);
+		    size_k = Integer::Clamp(slider_size_k * factor, min_size_k, max_size_k);
+
+		    UI::ChangeWidget(`id(`graph), `Values, [ slider_min_size_k, slider_size_k - slider_min_size_k,
+							     slider_max_size_k - slider_size_k ]);
+
+		    /*
+		    UI::ChangeWidget(`id(`graph), `Labels, [ Storage::KByteToHumanString(slider_min_size_k),
+							     Storage::KByteToHumanString(slider_size_k - slider_min_size_k),
+							     Storage::KByteToHumanString(slider_max_size_k - slider_size_k) ]);
+		    */
+
+		    UI::ChangeWidget(`id(`free), `Value, sformat("%1: %2", FreeSpaceLabel(),
+								 Storage::KByteToHumanString(size_k - used_k)));
+
 		    break;
 	        }
 
 	        case `ok:
 	        {
-		    if ( new_size != old_size )
+		    if (size_k != old_size_k)
 		    {
 			string mountpoint = data["inactive"]:false ? "" : data["mount"]:"";
 
-			//calculate the difference
-			list old_reg = data["region"]:[];
-	                list new_reg = [ data["region", 0]:0, PartedSizeToCly( (tofloat(new_size*factor)), cyl_size ) ];
-
-			integer diff = new_reg[1]:0 - old_reg[1]:0;
-
-			y2milestone("ResizePartition - new size %1 %2, in cylinders %3", new_size, unit, diff);
-
 			//1 - ask & be interactive, 2 - we are on lvm, 3 - cyl.diff, 4 - filesystem, 5 - mountpoint
-			if ( !CheckResizePossible( false, false, diff, used_fs, mountpoint ))
+			if (!CheckResizePossible(false, false, size_k - old_size_k, used_fs, mountpoint))
 			{
 			    //FIXME: To check whether the part. can be resized only
 			    //after user tries to do that is stupid - in some cases
@@ -749,11 +741,21 @@ numeric value in either input field.</p>");
 			    //point (e.g. when the partition is mounted)
 			    y2error("Resizing the partition is not possible");
 			    widget = `again;
+			    continue;
 			}
-			else
+
+			switch (data["type"]:`unknown)
 			{
-			    data["region"] = new_reg;
-	                    data["resize"] = true;
+			    case `primary:
+			    case `logical:
+				// TODO: double check with Free_Cyl_After
+				data["region", 1] = PartedSizeToCly((tofloat(size_k*1024)), cyl_size);
+				data["resize"] = true;
+				break;
+
+			    case `lvm:
+				data["size_k"] = size_k;
+				break;
 			}
 		    }
 		    break;
