@@ -502,6 +502,19 @@ Try again."));
     {
 	map<string, map> target_map = Storage::GetTargetMap();
 
+
+	map possible = Storage::IsResizable(data);
+	if (!data["format"]:false && !possible["shrink"]:false && !possible["extend"]:false)
+	{
+	    // popup text
+	    Popup::Message(_("
+You cannot resize the selected partition because the file system
+on this partition does not support resizing.
+"));
+	    return false;
+	}
+
+
 	integer cyl_size = disk["cyl_size"]:1;
 	integer free_cyl_after = Storage::FreeCylAfter(disk, data);
 
@@ -510,11 +523,19 @@ Try again."));
 
 
 	integer used_k = FileSystems::MinFsSizeK(used_fs);
-	if (!data["create"]:false)
+	if (!data["format"]:false)
 	{
 	    if (used_fs != `swap)
 	    {
 		map free_data = Storage::GetFreeSpace(device, 0, used_fs, true);
+		if (size(free_data) == 0 || !free_data["ok"]:false)
+		{
+		    y2error("Failed to retrieve FreeSpace %1, filesystem %2", device, data["used_fs"]:`none);
+		    //FIXME: Really?
+		    Popup::Error(sformat(_("Partition %1 cannot be resized\nbecause the filesystem seems to be inconsistent"), device));
+		    return false;
+		}
+
 		used_k = Integer::Max([ used_k, free_data["used"]:0 / 1024 ]);
 	    }
 	}
@@ -600,17 +621,6 @@ Try again."));
 	    {
 		// Heading for dialog
 		heading = sformat(_("Resize Partition %1"), device);
-
-		/*
-		    if (size( size_data ) == 0 || !size_data["ok"]:false)
-		    {
-			y2error("Failed to retrieve FreeSpace %1, filesystem %2", device, data["used_fs"]:`none);
-			//FIXME: Really?
-			Popup::Error( sformat( _("Partition %1 cannot be resized\nbecause the filesystem seems to be inconsistent"), device ));
-			return false;
-		    }
-		}
-		*/
 
 		min_size_k = Integer::Max([ min_size_k, cyl_size / 1024 ]);
 		max_size_k = (cyl_size * free_cyl_after) / 1024;
