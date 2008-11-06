@@ -22,7 +22,6 @@
  * $Id$
  */
 {
-
   module "Storage";
   textdomain "storage";
 
@@ -44,6 +43,7 @@
   import "ProductFeatures";
   import "Stage";
   import "String";
+  import "Region";
   import "Hotplug";
 
   import "LibStorage";
@@ -4590,40 +4590,34 @@ global define map IsResizable( map part )
     return( ret );
     }
 
-global define integer FreeCylAfter( map disk, map partition )
-    ``{
+
+global define integer FreeCylAfter(map disk, map partition)
+{
     integer ret = 0;
+    integer end_cyl = Region::End(partition["region"]:[]);
     integer next_used_cyl = disk["cyl_count"]:0;
-    integer cylinder = partition["region",0]:0;
-    if( haskey( partition, "orig_size_k" ))
-	{
-        cylinder = cylinder + partition["orig_size_k"]:0*1024/disk["cyl_size"]:1;
-        }
-    else
-	{
-        cylinder = cylinder + partition["region",1]:0;
-        }
     if( partition["type"]:`primary == `logical )
 	{
 	map ext = filter( map part, disk["partitions"]:[],
 			  ``( part["type"]:`primary==`extended ))[0]:$[];
-	next_used_cyl = ext["region",0]:0+ext["region",1]:0;
+	next_used_cyl = Region::Length(ext["region"]:[]);
 	}
-    if( cylinder < next_used_cyl )
+    if( end_cyl < next_used_cyl )
 	{
 	foreach(map part, disk["partitions"]:[], ``{
 	    integer start = part["region",0]:0;
-	    if( start >= cylinder && start < next_used_cyl )
+	    if( start >= end_cyl && start < next_used_cyl )
 		{
 		next_used_cyl = start;
 		}
 	    });
-	}
-    if( next_used_cyl >= cylinder )
-	ret = next_used_cyl-cylinder;
-    y2milestone( "FreeCylAfter cyl:%1 ret:%2", cylinder, ret );
-    return( ret );
-    }
+	}  
+    if( next_used_cyl >= end_cyl )
+	ret = next_used_cyl - end_cyl;
+    y2milestone("FreeCylAfter end_cyl:%1 ret:%2", end_cyl, ret);
+    return ret;
+}
+
 
 global define boolean CheckNextCreated( map disk, list region )
     ``{
