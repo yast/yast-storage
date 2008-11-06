@@ -545,10 +545,9 @@ Try again."));
 
 
 	string heading = "";
-	string field_label_free = "";
-	string field_label_vg_free = "";
 
-	list <string> BarGraphLabels()
+
+	list <string> BarGraphLabels(list<integer> values_k)
         {
 	    string used = "";
 	    string free = "";
@@ -560,25 +559,25 @@ Try again."));
 		case `logical:
 
 		    //FIXME: add special case for Windows part.
-		    used = _("Used\nSpace\n%1 ") + unit;
+		    used = sformat(_("Used\nSpace\n%1 "), Storage::KByteToHumanString(values_k[0]:0));
 
 		    if (used_fs == `swap)
-			free = _("Swap\nSpace\n%1 ") + unit;
+			free = sformat(_("Swap\nSpace\n%1 "), Storage::KByteToHumanString(values_k[1]:0));
 		    else
-			free = _("Free\nSpace\n%1 ") + unit;
+			free = sformat(_("Free\nSpace\n%1 "), Storage::KByteToHumanString(values_k[1]:0));
 
-		    available = _("Unused\nDisk\n%1 ") + unit;
+		    available = sformat(_("Unused\nDisk\n%1 "), Storage::KByteToHumanString(values_k[2]:0));
 
 		    break;
 
 		case `lvm:
 
 		    // Labels for bar graph. "%1" will be replace with a numeric value.
-		    used = _("LV\nUsed\n%1") + unit;
+		    used = sformat(_("LV\nUsed\n%1"), Storage::KByteToHumanString(values_k[0]:0));
 		    // Labels for bar graph. "%1" will be replace with a numeric value.
-		    free = _("LV\nFree\n%1") + unit;
+		    free = sformat(_("LV\nFree\n%1"), Storage::KByteToHumanString(values_k[1]:0));
 		    // Labels for bar graph. "%1" will be replace with a numeric value.
-		    available = _("VG\nFree\n%1") + unit;
+		    available = sformat(_("VG\nFree\n%1"), Storage::KByteToHumanString(values_k[2]:0));
 
 		    break;
 	    }
@@ -627,11 +626,6 @@ Try again."));
 		// Heading for dialog
 		heading = sformat(_("Resize Logical Volume %1"), device);
 
-		// Labels for input fields. "%1" will be replaced with the current unit (MB).
-		field_label_free = sformat(_("LV Free (%1)"), unit);
-		// Labels for input fields. "%1" will be replaced with the current unit (MB).
-		field_label_vg_free = sformat(_("VG Free (%1)"), unit);
-
 		min_size_k = Integer::Max([ min_size_k, disk["pesize"]:0 / 1024 ]);
 		max_size_k = size_k + (disk["pe_free"]:0 * disk["pesize"]:0) / 1024;
 	    }
@@ -656,7 +650,7 @@ Try again."));
 	    content = `VBox(
 		`BarGraph(`id(`graph), `opt(`vstretch), [ slider_min_size_k, slider_size_k - slider_min_size_k,
 							  slider_max_size_k - slider_size_k ],
-			  BarGraphLabels()),
+			  BarGraphLabels([ min_size_k, size_k - min_size_k, max_size_k - size_k ])),
 		`Slider(`id(`new_size), `opt(`notify), sformat(_("New Partition Size (in %1)"), unit),
 			slider_min_size_k, slider_max_size_k, slider_size_k)
 	    );
@@ -714,11 +708,7 @@ numeric value in either input field.</p>");
 		    UI::ChangeWidget(`id(`graph), `Values, [ slider_min_size_k, slider_size_k - slider_min_size_k,
 							     slider_max_size_k - slider_size_k ]);
 
-		    /*
-		    UI::ChangeWidget(`id(`graph), `Labels, [ Storage::KByteToHumanString(slider_min_size_k),
-							     Storage::KByteToHumanString(slider_size_k - slider_min_size_k),
-							     Storage::KByteToHumanString(slider_max_size_k - slider_size_k) ]);
-		    */
+		    UI::ChangeWidget(`id(`graph), `Labels, BarGraphLabels([ min_size_k, size_k - min_size_k, max_size_k - size_k ]));
 
 		    UI::ChangeWidget(`id(`free), `Value, sformat("%1: %2", FreeSpaceLabel(),
 								 Storage::KByteToHumanString(size_k - used_k)));
