@@ -21,13 +21,22 @@
 	term table_header = StorageFields::TableHeader(fields);
 	list<term> table_contents = StorageFields::TableContents(fields, target_map, StorageFields::PredicateAll);
 
+	term buttons = `HBox();
+
+	if (Mode::installation()) {
+	    // push button text
+	    buttons = add(buttons, `PushButton(`id(`import), _("Import Mount Points...")));
+	    buttons = add(buttons, `HStretch());
+	}
+
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // dialog heading, %1 is replaced with hostname
 				  `IconAndHeading(sformat(_("Available Storage on %1"), short_hostname), all_icon),
 				  `Table(`id(`table), `opt(`keepSorting, `notify),
-					 table_header, table_contents)
+					 table_header, table_contents),
+				  buttons
 				  ))
 	    );
 
@@ -52,5 +61,19 @@ navigate to the view with detailed information about the device.</p>");
 	}
 
 	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
+    void HandleAllPanel(any user_data, symbol widget)
+    {
+	switch (widget)
+	{
+	    case `import:
+		ImportMountPoints();
+		Storage::CreateTargetBackup("expert-partitioner");
+		UpdateNavigationTree(nil);
+		TreePanel::Create();
+		break;
+	}
     }
 }
