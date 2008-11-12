@@ -98,6 +98,8 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
     string  curr_boot_mode  = "";
     boolean show_all_popups = false;
 
+    boolean diskless = true;
+
     boolean partition_mounted_but_not_formated = false;
     boolean have_swap            = false;
     symbol  retval               = `next;
@@ -147,10 +149,12 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
 	// now we calculate <n> : nth-cyl
 	//////////////////////////////////////////////////////////////
 
+	if (contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH ], diskinfo["type"]:`CT_UNKNOWN))
+	    diskless = false;
+
 	integer nth_cyl = (1048576 / cyl_size);
 
 	boolean id_sw_raid_dev = (disk == "/dev/md");
-
 
 	foreach( map part, part_info, ``{
 	    // All valid partitions ...
@@ -326,9 +330,10 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
 	targetMap = add( targetMap, disk, diskinfo );
 	});
 
-    y2milestone( "root_found:%1 boot_found %2", root_found, boot_found );
-    y2milestone( "dmraid_root:%1 root_raid %2 boot_raid %3 raid_type:%4", 
-	         dmraid_root, root_raid, boot_raid, raid_type );
+    y2milestone("diskless:%1", diskless);
+    y2milestone("root_found:%1 boot_found %2", root_found, boot_found);
+    y2milestone("dmraid_root:%1 root_raid %2 boot_raid %3 raid_type:%4", 
+		dmraid_root, root_raid, boot_raid, raid_type);
 
 
       Storage::SetWholeDisk( all_whole_disk );
@@ -471,7 +476,7 @@ Do you want to do this?
 
 	// iSeries does not really need a boot partition
 	// a bootable binary will be written to a kernel slot in /proc
-	if( (Partitions::PrepBoot() && ! Arch::board_iseries ()) || show_all_popups )
+	if ((Partitions::PrepBoot() && !Arch::board_iseries() && !diskless) || show_all_popups)
 	    {
 	    // popup text
 	    // If the user chooses 'no' here, the system will not be able to
@@ -1001,7 +1006,3 @@ deleting the extended partition.
     return( ret );
     };
 }
-
-
-
-
