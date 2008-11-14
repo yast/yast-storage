@@ -11,16 +11,10 @@
  *
  * Description:   Partitioner for experts.
  *
- *
- *
  * Purpose:
  *                      -Determing possible partitions.
  *                      -Ask the user which partition to use.
  *                      -Check the input and return error-messages.
- *
- * external function:   get_partition_info: get a list of current partitions
- *                      check4partitions:   read the disk-information
- *                      target-agent.bash
  *
  *************************************************************
 
@@ -44,24 +38,20 @@
 
 
     /*---------------------------------------------------------------------
-     * Checks the generated partition table.  (adds whole_disk - flags to the table)
+     * Checks the generated partition table.
      *---------------------------------------------------------------------
      * Checkpoints:
      * - popup if unformated mounted partitions exist
      *   - detect the fs on this partition
-     * - checks if yast can take a whole disk
-     *   all partitions have a fsid have of the type 130 131 5 // all fsid 131 partitions are mounted
-     *
      * - checks if / mountpoint is set
      * - check if the boot partition ends in a bootable cylinder (/or/boot)
      * - check that all reiser Filesystems are bigger than 60MB
      */
 
-define list check_created_partition_table( map<string,map> targetMap, boolean setup_lvm,
-					   boolean installation )
-    ``{
-    y2milestone( "now checking generated target map setup_lvm:%1 installation:%2",
-                 setup_lvm, installation );
+boolean check_created_partition_table(const map<string,map> targetMap, boolean installation)
+{
+    y2milestone("now checking generated target map installation:%2", installation);
+
     string  curr_boot_mode  = "";
     boolean show_all_popups = false;
 
@@ -92,7 +82,6 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
     integer axp_start_nth        = 0;
     boolean axp_start_Cr_failure = false;
     boolean axp_start_Ex_failure = false;
-    boolean all_whole_disk       = true;
     boolean fat_system_mount     = false;
     boolean fat_system_boot      = false;
     boolean dmraid_root          = false;
@@ -101,7 +90,6 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
     foreach( string disk, map diskinfo, targetMap,
         ``{
 	list<map> part_info     = diskinfo["partitions"]:[];
-	boolean whole_disk = true;
 	integer cyl_size   = diskinfo["cyl_size"]:1000000;
 
 	//////////////////////////////////////////////////////////////
@@ -271,18 +259,6 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
 		    }
 		}
 
-	    //   | NOT
-	    //   v
-	    if(  ! ( fsid==Partitions::fsid_native ||
-		     fsid==Partitions::fsid_swap ||
-		     fsid==Partitions::fsid_extended ||
-		     fsid==Partitions::fsid_extended_win ||
-		     fsid==Partitions::fsid_raid ||
-		     fsid==Partitions::fsid_lvm ) )
-		{
-		whole_disk = false;
-		}
-
 	    if( !part["format"]:false && part["used_fs"]:`unknown!=`nfs &&
 		FileSystems::IsSystemMp( part["mount"]:"", false ) )
 		{
@@ -291,10 +267,6 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
 
 	});
 
-	whole_disk = whole_disk || diskinfo["type"]:`CT_UNKNOWN==`CT_LVM;
-	diskinfo  = add( diskinfo, "whole_disk", whole_disk );
-	all_whole_disk = all_whole_disk && whole_disk;
-	targetMap = add( targetMap, disk, diskinfo );
 	});
 
     y2milestone("diskless:%1", diskless);
@@ -302,8 +274,6 @@ define list check_created_partition_table( map<string,map> targetMap, boolean se
     y2milestone("dmraid_root:%1 root_raid %2 boot_raid %3 raid_type:%4", 
 		dmraid_root, root_raid, boot_raid, raid_type);
 
-
-      Storage::SetWholeDisk( all_whole_disk );
 
       if( (axp_start_Cr_failure && installation) || show_all_popups )
 	  {
@@ -657,9 +627,8 @@ Do you want to change your setup?
 	if (ret == true) retval = `again;
 	}
 
-    return( [targetMap, retval] );
-    };
-
+    return retval == `next;
+}
 
 
 define symbol check_devices_used( list<map> partitions, boolean not_cr )
