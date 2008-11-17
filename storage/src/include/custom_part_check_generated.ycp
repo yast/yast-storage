@@ -52,7 +52,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 {
     y2milestone("now checking generated target map installation:%2", installation);
 
-    string  curr_boot_mode  = "";
     boolean show_all_popups = false;
 
     boolean diskless = true;
@@ -78,10 +77,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     boolean boot_size_check      = !(Arch::board_chrp() || Arch::board_prep() || Arch::board_iseries() || Arch::board_mac());
     integer root_cyl_for_gb      = 0;
     integer boot_cyl_for_gb      = 0;
-    string  axp_start_dev        = "";
-    integer axp_start_nth        = 0;
-    boolean axp_start_Cr_failure = false;
-    boolean axp_start_Ex_failure = false;
     boolean fat_system_mount     = false;
     boolean fat_system_boot      = false;
     boolean dmraid_root          = false;
@@ -92,22 +87,8 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 	list<map> part_info     = diskinfo["partitions"]:[];
 	integer cyl_size   = diskinfo["cyl_size"]:1000000;
 
-	//////////////////////////////////////////////////////////////
-	// for axp
-	// look if the user wants to create a partition
-	// or there is a partition, which overlaps
-	// the zone from 0-th cylinder to <n>th-cylinder
-	// <n> ist that cylinder, which is even for little part written,
-	// when I write 1MB to the disk, starting from cylinder 0
-	// (typically its only the first cylinder)
-	//
-	// now we calculate <n> : nth-cyl
-	//////////////////////////////////////////////////////////////
-
 	if (contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH ], diskinfo["type"]:`CT_UNKNOWN))
 	    diskless = false;
-
-	integer nth_cyl = (1048576 / cyl_size);
 
 	boolean id_sw_raid_dev = (disk == "/dev/md");
 
@@ -116,30 +97,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 	    integer fsid       = part["fsid"]:0;
 	    string  mountpoint = part["mount"]:"";
 	    boolean is_mounted = size(mountpoint)>0;
-
-	    //////////////////////////////////////////////////////////////
-	    // axp+aboot (bsd-label): look for first cylinders of disk
-	    // see comment above
-	    //////////////////////////////////////////////////////////////
-
-	    if ( (curr_boot_mode == "aboot") &&
-		 part["region",0]:0 <= nth_cyl && part["nr"]:0 != 3 )
-	    {
-		axp_start_dev          = disk;
-		axp_start_nth          = nth_cyl;
-		y2error("WWWWWWWWWWWWWWW1 %1", nth_cyl );
-
-		if ( part["create"]:false )
-		{
-		    y2error("WWWWWWWWWWWWWWW2 %1", nth_cyl );
-		    axp_start_Cr_failure = true;
-		}
-		else
-		{
-		    y2error("WWWWWWWWWWWWWWW3 %1", nth_cyl );
-		    axp_start_Ex_failure = true;
-		}
-	    }
 
 	    //////////////////////////////////////////////////////////////
 	    // look for root and boot
@@ -273,35 +230,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     y2milestone("root_found:%1 boot_found %2", root_found, boot_found);
     y2milestone("dmraid_root:%1 root_raid %2 boot_raid %3 raid_type:%4", 
 		dmraid_root, root_raid, boot_raid, raid_type);
-
-
-      if( (axp_start_Cr_failure && installation) || show_all_popups )
-	  {
-          // popup text %2 is a disk name e.g. /dev/hda %1 is a number
-	  Popup::Error( sformat(_("\
-You have created a partition at the beginning of the disk %2.
-This is not compatible with the bootloader.
-Change the start cylinder of your partition to cylinder %1
-or delete this partition"), axp_start_nth +1, axp_start_dev ));
-
-	  retval = `again;
-	  }
-
-
-
-      if ( ( axp_start_Ex_failure && installation ) || show_all_popups )
-	  {
-          // popup text %2 is a disk name e.g. /dev/hda %1 is a number
-	  boolean ret = Popup::YesNo( sformat(_("You have a partition at the beginning of disk %2.
-This is not compatible with the bootloader.
-You should delete this partition and create a
-new partition starting at cylinder %1.
-
-Do you want to change your partitioning?
-"), axp_start_nth +1, axp_start_dev ) );
-
-	  if (ret == true) retval = `again;
-	  }
 
       if ( ( !Arch::ia64 () && installation && gpt_warning) || show_all_popups )
 	  {
