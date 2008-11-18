@@ -58,6 +58,21 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	string mount = data["mount"]:"";
 	boolean do_mount = mount != "";
 
+
+	boolean AskPassword()
+	{
+	    if (!crypt_fs)
+		return false;
+
+	    // TODO: this is ugly
+	    string key = (data["type"]:`unknown != `loop) ? (data["device"]:"error") : (data["fpath"]:"error");
+	    if (Storage::HasClassified(key))
+		return false;
+
+	    return true;
+	}
+
+
 	/* MiniWorkflowStepPartitionSize data:
 		$["create":true,
 		  "cyl_size":8225280,
@@ -146,7 +161,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepFormatMountHelptext());
 
-	MiniWorkflow::SetLastStep(!crypt_fs);
+	MiniWorkflow::SetLastStep(!AskPassword());
 
 	UI::ChangeWidget(`id(`format), `Value, do_format ? `do_format : `do_not_format);
 	UI::ChangeWidget(`id(`do_format_attachment), `Enabled, do_format);
@@ -338,7 +353,7 @@ Also check the format option.
 		if (data["fsid"]:0 != orig_data["fsid"]:0)
 		    data["change_fsid"] = true;
 
-	    if (!do_format || !crypt_fs)
+	    if (!AskPassword())
 		widget = `finish;
 
 	    orig_data = data;
