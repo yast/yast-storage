@@ -1,4 +1,6 @@
-# Makefile.am for YCP module y2c_storage/doc/autodocs
+#
+# Makefile.am for storage/storage/doc/autodocs
+#
 
 htmldir = @docdir@/autodocs
 

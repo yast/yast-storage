@@ -1,7 +1,5 @@
 #
-# Makefile.am for y2c_XXpkgXX/doc
-#
-# $Id$
+# Makefile.am for storage/storage/doc
 #
 
 SUBDIRS = autodocs

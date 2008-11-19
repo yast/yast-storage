@@ -1,5 +1,5 @@
 #
-# Makefile.am for storage/src/modules
+# Makefile.am for storage/storage/src/modules
 #
 
 YCPCFLAGS = -M ../../../libstorage/bindings/ycp

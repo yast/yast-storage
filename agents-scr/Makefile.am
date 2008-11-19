@@ -1,7 +1,5 @@
 #
-# Makefile.am for storage/agents
-#
-# $Id$
+# Makefile.am for storage/agents-scr
 #
 
 scrconf_DATA = etc_cryptotab.scr	\
