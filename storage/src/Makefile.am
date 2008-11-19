@@ -1,5 +1,5 @@
 #
-# Makefile.am for storage/src
+# Makefile.am for storage/storage/src
 #
 
 SUBDIRS = include modules proposal
@@ -13,8 +13,7 @@ client_DATA =				\
 	inst_resize_ui.ycp		\
 	inst_target_part.ycp		\
 	inst_target_selection.ycp	\
-	storage_finish.ycp		\
-	multipath-simple.ycp
+	storage_finish.ycp
 
 EXTRA_DIST = $(client_DATA)
 

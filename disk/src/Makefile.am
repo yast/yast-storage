@@ -1,11 +1,9 @@
 #
 # Makefile.am for storage/disk/src
 #
-# $Id$
-#
 
-client_DATA =		\
-	disk.ycp	\
+client_DATA =			\
+	disk.ycp		\
 	disk_worker.ycp
 
 desktop_DATA = disk.desktop
