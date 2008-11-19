@@ -1,5 +1,5 @@
 #
-# Makefile.am for y2m_inst/ycp/partitioning/data
+# Makefile.am for storage/storage/data
 #
 
 ydata_DATA = \

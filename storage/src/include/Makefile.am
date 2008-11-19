@@ -1,5 +1,5 @@
 #
-# Makefile.am for y2m_inst/ycp/partitioning/include
+# Makefile.am for storage/storage/src/include
 #
 
 yncludedir = @yncludedir@/partitioning
