@@ -59,9 +59,22 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	boolean do_mount = mount != "";
 
 
-	boolean AskPassword()
+	// returns true also when password can be omitted (e.g. encrypted swap)
+	boolean NeedPassword()
 	{
 	    if (!crypt_fs)
+		return false;
+
+	    if (data["create"]:false && !do_format)
+		return false;
+
+	    return true;
+	}
+
+
+	boolean AskPassword()
+	{
+	    if (!NeedPassword())
 		return false;
 
 	    // TODO: this is ugly
@@ -215,7 +228,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    break;
 		}
 
-		case `crypt_fs:  
+		case `crypt_fs:
 		    crypt_fs = (boolean) UI::QueryWidget(`id(`crypt_fs), `Value);
 		    MiniWorkflow::SetLastStep(!AskPassword());
 		    break;
@@ -242,7 +255,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    */
 
 		case `do_format:
-		    // TODO
+		    do_format = (boolean) UI::QueryWidget(`id(`do_format), `Value);
 		    data["used_fs"] = (symbol) UI::QueryWidget(`id(`fs), `Value);
 
 		    UI::ChangeWidget(`id(`do_format_attachment), `Enabled, true);
@@ -251,6 +264,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    break;
 
 		case `do_not_format:
+		    do_format = (boolean) UI::QueryWidget(`id(`do_format), `Value);
 		    UI::ChangeWidget(`id(`do_format_attachment), `Enabled, false);
 		    UI::ChangeWidget(`id(`do_not_format_attachment), `Enabled, true);
 		    MiniWorkflow::SetLastStep(!AskPassword());
@@ -339,7 +353,7 @@ Also check the format option.
 
 	if (widget == `next)
 	{
-	    if (crypt_fs)
+	    if (NeedPassword())
 		data["enc_type"] = data["format"]:false ? `luks : `twofish;
 	    else
 		data["enc_type"] = `none;
