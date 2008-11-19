@@ -1,4 +1,6 @@
-# Makefile.am for YCP module .../doc/autodocs
+#
+# Makefile.am for storage/disk/doc/autodocs
+#
 
 htmldir = @docdir@/autodocs
 
@@ -7,3 +9,4 @@ CLEANFILES = $(html_DATA)
 
 index.html: $(srcdir)/../../src/*.ycp
 	@ybindir@/ycpdoc -d. $(srcdir)/../../src/*.ycp
+
