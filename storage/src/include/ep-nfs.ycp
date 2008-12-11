@@ -116,13 +116,18 @@
 
 	    if ( sizeK <= 0)
 	    {
-		Popup::Error( sformat( _("Test mount of NFS share '%1' failed.\nCheck that remote server is accesible and try again."), entry["device"]:"") );
-		WFM::CallFunction("nfs-client4part", [ "FromStorage", $[ "shares" : nfs_list] ] );
+		//rollback only if user does not want to save (#450060)
+		//the mount might fail later if the errors are not corrected, but the user has been warned
+		if (  !Popup::YesNo( sformat( _("Test mount of NFS share '%1' failed.\nSave it anyway?"), entry["device"]:"")) )
+		{
+		    WFM::CallFunction("nfs-client4part", [ "FromStorage", $[ "shares" : nfs_list] ] );
+		    return;
+		}
+		//this really sucks - but libstorage returns negative integers (error code) instead of
+		//real size - Perl then wants to die in addNfsVolume call
+		sizeK = 0;
 	    }
-	    else
-	    {
-		Storage::AddNfsVolume( entry["device"]:"", entry["fstopt"]:"", sizeK, entry["mount"]:"");
-	    }
+	    Storage::AddNfsVolume( entry["device"]:"", entry["fstopt"]:"", sizeK, entry["mount"]:"");
         }
 
 	void EditShare( map <string, any> entry )
