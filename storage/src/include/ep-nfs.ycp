@@ -129,24 +129,31 @@
 	{
 	    y2milestone("Changing NFS share: %1 mountpoint: %2 options: %3", 
                          entry["device"]:"", entry["mount"]:"", entry["fstopt"]:"");
-	    //FIXME: renaming the device is not handled
-	    //we have to delete the dev with old name
-	    //and create a new one
-	    string dev = entry["device"]:"";
-            target_map = Storage::GetTargetMap();
-	    list<map> nfs_list = target_map["/dev/nfs", "partitions"]:[];
 
-	    nfs_list = maplist ( map m, nfs_list, {
-		if( m["device"]:"" == dev)
-		{
-		    m["fstopt"] = entry["fstopt"]:"";
-	            m["mount"] = entry["mount"]:"";
-		}
-		return m;
-	    });
-	    target_map["/dev/nfs", "partitions"] = nfs_list;
-	    Storage::SetTargetMap( target_map );
+	    //device got renamed -
+	    //delete the one with old name and create new 
+	    if (haskey(entry,"old_device"))
+	    {
+		Storage::DeleteDevice("/dev/nfs", entry["old_device"]:"");
+		AddShare(entry);
+	    }
+	    else
+	    {
+	        string dev = entry["device"]:"";
+                target_map = Storage::GetTargetMap();
+	        list<map> nfs_list = target_map["/dev/nfs", "partitions"]:[];
 
+	        nfs_list = maplist ( map m, nfs_list, {
+		    if( m["device"]:"" == dev)
+		    {
+		        m["fstopt"] = entry["fstopt"]:"";
+	                m["mount"] = entry["mount"]:"";
+		    }
+		    return m;
+	        });
+	        target_map["/dev/nfs", "partitions"] = nfs_list;
+	        Storage::SetTargetMap( target_map );
+	    }
 	}
 
 	void DeleteShare( map <string, any> entry )
