@@ -3999,15 +3999,14 @@ global list<map> mountedPartitionsOnDisk( string disk )
     }
 
 
-global map<symbol, any> GetCommitInfo()
+global list<map> GetCommitInfos()
 {
-    any info = LibStorage::CommitInfo::new("LibStorage::CommitInfo");
-    LibStorage::StorageInterface::getCommitInfo(sint, true, info);
-
-    map<symbol, any> ret = $[
-	`destructive :  LibStorage::CommitInfo::swig_destructive_get(info)
-    ];
-
+    list<any> infos = [];
+    LibStorage::StorageInterface::getCommitInfos(sint, infos);
+    list<map> ret = maplist(any info, infos, {
+	return $[ `destructive : LibStorage::CommitInfo::swig_destructive_get(info),
+		  `text : LibStorage::CommitInfo::swig_text_get(info) ];
+    });
     return ret;
 }
 
@@ -4015,21 +4014,27 @@ global map<symbol, any> GetCommitInfo()
 string save_chtxt = "";
 
 global string ChangeText()
+{
+    list<string> texts = maplist(map info, GetCommitInfos(), {
+	string text = String::EscapeTags(info[`text]:"");
+	if (info[`destructive]:false)
+	    text = "<font color=red>" + text + "</font>";
+	return text;
+    });
+
+    string ret = (size(texts) == 0) ? "" : HTML::List(texts);
+
+    if (ret != save_chtxt)
     {
-    list<string> l = LibStorage::StorageInterface::getCommitActions( sint, true );
-    string ret = "";
-    if( size(l)>0 )
-	ret = HTML::List( l );
-    if( ret != save_chtxt )
-	{
-	foreach( string s, l,
-	    ``{
-	    y2milestone( "ChangeText %1", s );
-	    });
+	foreach(string text, texts, {
+	    y2milestone("ChangeText %1", text);
+	});
 	save_chtxt = ret;
-	}
-    return( ret );
     }
+
+    return ret;
+}
+
 
 global string LastAction()
     {
@@ -6497,10 +6502,5 @@ global boolean IsPersistent( map p )
     return( ret );
     }
 
-global integer ActionsCount()
-  {
-        return size(LibStorage::StorageInterface::getCommitActions( sint, true ));
-  }
 
 }
-
