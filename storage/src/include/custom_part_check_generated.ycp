@@ -56,8 +56,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     boolean partition_mounted_but_not_formated = false;
     boolean have_swap            = false;
     symbol  retval               = `next;
-    boolean sparc_first_is_swap  = false;
-    string  sparc_first_dev      = "";
     boolean swap_found           = false;
     boolean boot_found           = false;
     boolean root_found           = false;
@@ -72,8 +70,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     symbol  boot_fs              = `unknown;
     integer boot_size_k          = 0;
     boolean boot_size_check      = !(Arch::board_chrp() || Arch::board_prep() || Arch::board_iseries() || Arch::board_mac());
-    integer root_cyl_for_gb      = 0;
-    integer boot_cyl_for_gb      = 0;
     boolean fat_system_mount     = false;
     boolean fat_system_boot      = false;
     boolean dmraid_root          = false;
@@ -111,7 +107,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 		    root_end = 0;
 		    }
 		root_fs = part["used_fs"]:`unknown;
-		root_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;   // 1GB/cylinder size
 
 		if ( part["type"]:`unknown==`sw_raid ) root_raid = true;
 		if( !boot_raid ) raid_type = part["raid_type"]:"";
@@ -131,13 +126,10 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 		if( diskinfo["type"]:`CT_UNKNOWN==`CT_DISK )
 		    {
 		    boot_end = part["region",0]:0 + part["region",1]:1-1;
-		    // 1GB/cylinder size
-		    boot_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;
 		    }
 		else
 		    {
 		    boot_end = 0;
-		    boot_cyl_for_gb = 0;
 		    }
 		boot_fs = part["used_fs"]:`unknown;
 		boot_size_k = part["size_k"]:0;
@@ -153,7 +145,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 		    boot_found      = true;
 		    boot_end        = part["region",0]:0 + part["region",1]:1-1;
 		    boot_fs         = part["used_fs"]:`unknown;
-		    boot_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;
 		    boot_size_k = part["size_k"]:0;
 		    }
 		else if( Arch::board_mac() && part["used_fs"]:`unknown==`hfs )
@@ -161,7 +152,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 		    boot_found      = true;
 		    boot_end        = part["region",0]:0 + part["region",1]:1-1;
 		    boot_fs         = part["used_fs"]:`unknown;
-		    boot_cyl_for_gb = 1073741824 / diskinfo["cyl_size"]:1000000;
 		    boot_size_k = part["size_k"]:0;
 		    }
 		}
@@ -170,7 +160,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 	    //////////////////////////////////////////////////////////////
 	    // look for swap partition and check:
 	    // - is there any
-	    // - on sparc: is first partition a swap partition
 	    //
 	    // check only "swap" not fsid cause for example on pdisk fsid = 0
 	    //
@@ -179,15 +168,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 	    if( mountpoint == "swap" )
 		{
 		have_swap = true;
-
-		// first partition of a sparc system shouldn't be a swap
-		// parition
-		if( Arch::sparc() && part["type"]:`unknown==`primary &&
-		    part["nr"]:0 == 1 )
-		    {
-		    sparc_first_is_swap = true;
-		    sparc_first_dev     = disk;
-		    }
 		}
 
 
@@ -297,24 +277,6 @@ Change this?
 	    }
 
 
-	// not substring sparc!
-	if ( ( Arch::sparc32 () && boot_end >= boot_cyl_for_gb ) || show_all_popups )
-	    {
-	    // popup text
-	    boolean ret = Popup::YesNo(sformat(_("Warning:
-With the current setup, your %1
-installation might not be directly bootable.
-Some PROM versions have problems with a boot
-partition with an end cylinder above 1 GB.
-
-Change this?
-"),Product::name));
-
-
-	    if (ret == true) retval = `again;
-	    }
-
-
 	if ( (boot_size_k < 12*1024 && boot_size_check) || show_all_popups )
 	    {
 	    // popup text
@@ -372,34 +334,6 @@ Change this?
 	    if (ret == true)  retval = `again;
 	    }
 
-	if ( (Arch::sparc32 () && root_end >= root_cyl_for_gb) || show_all_popups )
-	    {
-	    // popup text
-	    boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %1
-installation might not be directly bootable, because
-some PROM versions have problems with a boot partition
-ending above the 1 GB boundary.
-
-Change this?
-"),Product::name));
-
-	    if (ret == true) retval = `again;
-	    }
-
-	if ( (Arch::sparc () && root_fs != `ext2) || show_all_popups )
-	    {
-	    // popup text
-	    boolean ret = Popup::YesNo(sformat(
-_("Warning: With your current setup, your %1
-installation might not be directly bootable, because
-some PROM versions have problems with a boot partition
-ending above the 1 GB boundary.
-
-Change this?
-"),Product::name));
-
-	    if (ret == true) retval = `again;
-	    }
 	}
 
     // iSeries has no problems with this configuration
@@ -507,16 +441,6 @@ Do you want to change this?
 	if (ret == true) retval = `again;
 	}
 
-    if( sparc_first_is_swap || show_all_popups )
-	{
-	// popup message
-	Popup::Error(  sformat(_("
-Your swap partition is the first partition of %1.
-It is strongly recommended to change this, because
-the disk label will be deleted.
-"), sparc_first_dev ));
-	retval = `again;
-	}
 
     if( (partition_mounted_but_not_formated && installation) || show_all_popups )
 	{
