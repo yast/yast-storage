@@ -543,6 +543,22 @@ Try again."));
 
     boolean DlgResize(map <string, any> &data, map <string, any> disk)
     {
+	/*
+	 * This resize dialog is simple but avoids several problems faced
+	 * before:
+	 *
+	 * - Stripped digits in a bargraph (bnc #445590)
+	 *
+	 * - Impossible to resize to maximal size (bnc #373744, #442318,
+	 *   #456816)
+	 *
+	 * - Changing dialog size (bnc #460382)
+	 *
+	 * If somebody wants fancy stuff like slider or bargraph it's a
+	 * feature request.
+	 */
+
+
 	map<string, map> target_map = Storage::GetTargetMap();
 
 
@@ -563,7 +579,6 @@ on this partition does not support resizing.
 
 	string device = data["device"]:"error";
 	symbol used_fs = data["used_fs"]:`none;
-	boolean onLvm = ( data["type"]:`unknown == `lvm);
 
 
 	integer used_k = FileSystems::MinFsSizeK(used_fs);
@@ -585,68 +600,13 @@ on this partition does not support resizing.
 	}
 
 	integer min_free_k = 10*1024;
-
 	integer size_k = data["size_k"]:0;
 
 	// minimal and maximal size for volume
 	integer min_size_k = Integer::Min([ used_k + min_free_k, size_k ]);
 	integer max_size_k = 0;
 
-
-	string unit = _("MB");
-	integer factor = 1024;
-
-	//Depending on size of the partition,
-	//set correct division factor and units
-	//and minimum required free space, too
-	// TODO: get rid of this unit factor and unit altogether
-	void AdjustUnits()
-	{
-	    if (max_size_k > 20*1024*1024)
-	    {
-		factor = factor * 1024;
-		unit = _("GB");
-            }
-	}
-
-
 	string heading = "";
-
-
-	list <string> BarGraphLabels( boolean newlines )
-        {
-	    string used = "";
-	    string free = "";
-	    string available = "";
-
-	    switch (data["type"]:`unknown)
-	    {
-		case `primary:
-		case `logical:
-		    // Labels for bar graph/text field. Keep it short
-		    used = newlines ? _("Used\nSpace") : _("Used Space: ");
-		    if (used_fs == `swap)
-			// Labels for bar graph/text field. Keep it short
-			free = newlines? _("Swap\nSpace") : _("Swap Space: ");
-		    else
-			// Labels for bar graph/text field. Keep it short
-			free = newlines ? _("Free\nSpace") : _("Free Space: ");
-		    // Labels for bar graph. Keep it short
-		    available = newlines ? _("Unused\nDisk") : _("Unused Disk: ");
-		    break;
-
-		case `lvm:
-		    // Labels for bar graph/text field. LV stands for 'Logical volume'. Keep it short
-		    used = newlines ? _("LV\nUsed") : _("LV Used: ");
-		    // Labels for bar graph/text field. LV stands for 'Logical volume'. Keep it short
-		    free = newlines ? _("LV\nFree") : _("LV Free: ");
-		    // Labels for bar graph/text field. VG stands for 'Volume group'. Keep it short
-		    available = newlines ? _("VG\nFree") : _("VG Free: ");
-		    break;
-	    }
-
-	    return [ used, free, available ];
-	}
 
 	switch (data["type"]:`unknown)
 	{
@@ -675,85 +635,46 @@ on this partition does not support resizing.
 	    break;
 	}
 
+	// size_k + min_size_k could be > max_size_k
+	min_size_k = Integer::Min([ min_size_k, max_size_k ]);
+
 	y2milestone("used_k:%1 size_k:%2", used_k, size_k);
 	y2milestone("min_size_k:%1 max_size_k:%2", min_size_k, max_size_k);
 
 
-	AdjustUnits();
+	term infos = `VBox(`Left(`Label(sformat(_("Current size: %1"), Storage::KByteToHumanString(size_k)))));
+	if (used_fs != `swap && !data["format"]:false)
+	    infos = add(infos, `Left(`Label(sformat(_("Currently used: %1"), Storage::KByteToHumanString(used_k)))));
 
-	integer slider_size_k = size_k / factor;
-	integer slider_min_size_k = min_size_k / factor;
-	integer slider_max_size_k = max_size_k / factor;
 
-	term extra_content = `Empty();
-	//Spinbox label - %1 will be substituted by unit (GB and alike)
-	string newsz = onLvm ? _("New Logical Volume Size (in %1)") : _("New Partition Size (in %1)");
-
-	if (UI::HasSpecialWidget(`BarGraph) && UI::HasSpecialWidget(`Slider))
-	{
-	    extra_content = `VBox(
-		`BarGraph(`id(`graph), `opt(`vstretch), [ slider_min_size_k, slider_size_k - slider_min_size_k,
-							  slider_max_size_k - slider_size_k ], BarGraphLabels( true ) ),
-		`VSpacing(0.5),
-		`Slider(`id(`new_size), `opt(`notify), sformat( newsz, unit),
-			slider_min_size_k, slider_max_size_k, slider_size_k)
-	    );
-	}
-	else
-	{
-	    extra_content = `IntField( `id(`new_size), `opt(`notify), sformat(newsz, unit ),
-				 slider_min_size_k, slider_max_size_k, slider_size_k );
-	}
-
-	//without newlines
-	list <string> other_labels = BarGraphLabels( false );
+	term contents = `HVSquash(
+	    // frame heading
+	    `FrameWithMarginBox(_("Size"),
+				`RadioButtonGroup(`id(`size),
+						  `VBox(
+						      `LeftRadioButton(`id(`max_size), `opt(`notify),
+								       // radio button text, %1 is replaced by size
+								       sformat(_("Maximum Size (%1)"), Storage::KByteToHumanString(max_size_k))),
+						      `LeftRadioButton(`id(`min_size), `opt(`notify),
+								         // radio button text, %1 is replaced by size
+								       sformat(_("Minimum Size (%1)"), Storage::KByteToHumanString(min_size_k))),
+						      // radio button text
+						      `LeftRadioButtonWithAttachment(`id(`custom_size), `opt(`notify), _("Custom Size"),
+										     `VBox(`id(`custom_size_attachment),
+											   `MinWidth(15, `InputField(`id(`custom_size_input), 
+														     `opt(`shrinkable), _("Size")))
+											 )),
+						      `VSpacing(1),
+						      infos
+						      )
+				)
+		));
 
         UI::OpenDialog(
 	    `VBox(
 	        `Left(`Heading(heading)),
-	        `HSpacing(60),
-		`VBox(
-		    //Frame label
-		    `Frame( onLvm ?  _("Space on Logical Volume ") : _("Space on the Partition"),
-			`MarginBox( 0.5, 0.5,
-			    `Left(`HBox(
-				( used_fs != `swap) ? (
-			        `HBox( 
-				    `Label( other_labels[0]:""),
-			            `Label(`id(`used), `opt(`outputField), Storage::KByteToHumanString( min_size_k)),
-			            `HSpacing(0.5)) 
-				)  : `Empty(),
-
-			        `Label( other_labels[1]:""),
-				`ReplacePoint(`id(`r2),
-			            `Label(`id(`free),`opt(`outputField), Storage::KByteToHumanString(size_k - min_size_k))
-				),
-			        `HSpacing(0.5),
-
-			        `Label( other_labels[2]:""),
-				`ReplacePoint(`id(`r3),
-			            `Label(`id(`unused),`opt(`outputField), Storage::KByteToHumanString( max_size_k - size_k))
-				)
-			    ))
-		        )
-		    )
-		),
-		 extra_content,
+		Greasemonkey::Transform(contents),
 		`VSpacing(1.0),
-		//Frame label
-		`Frame ( onLvm ?  _("LV Size Restrictions") : _("Partition Size Restrictions"),
-		    `MarginBox(0.5, 0.5,
-			`Left(`HBox(
-			    //text field label
-	                    `Label( onLvm ? _("Minimum LV Size") : _("Minimum Partition Size: ")),
-		            `Label(`opt(`outputField), Storage::KByteToHumanString(min_size_k)),
-		            `HSpacing(0.5),
-			    //text field label
-	                    `Label( onLvm ? _("Maximum LV Size") : _("Maximum Partition Size: ")),
-			    `Label(`opt(`outputField), Storage::KByteToHumanString(max_size_k))
-			    ))
-		    )
-		),
 		`ButtonBox(
 		    `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
 		    `PushButton(`id(`cancel), `opt(`cancelButton), Label::CancelButton()),
@@ -763,11 +684,12 @@ on this partition does not support resizing.
 	);
 
 	// help text
-	string help_text = _("<p>Choose the new size by dragging the slider or by entering a
-numeric value in either input field.</p>");
+	string help_text = _("<p>Choose new size.</p>");
 
 	UI::ChangeWidget(`help, `HelpText, help_text);
 
+	UI::ChangeWidget(`id(`size), `Value, `max_size); 
+	UI::ChangeWidget(`id(`custom_size_attachment), `Enabled, false);
 
 	symbol widget = nil;
 
@@ -779,26 +701,65 @@ numeric value in either input field.</p>");
 
 	    switch (widget)
 	    {
-	        case `new_size:
+	        case `max_size:
 	        {
-		    slider_size_k = (integer) UI::QueryWidget(`id(`new_size), `Value);
-		    size_k = Integer::Clamp(slider_size_k * factor, min_size_k, max_size_k);
+		    UI::ChangeWidget(`id(`custom_size_attachment), `Enabled, false);
+		    break;
+		}
 
-		    UI::ChangeWidget(`id(`graph), `Values, [ slider_min_size_k, slider_size_k - slider_min_size_k,
-							     slider_max_size_k - slider_size_k ]);
+		case `min_size:
+	        {
+		    UI::ChangeWidget(`id(`custom_size_attachment), `Enabled, false);
+		    break;
+		}
 
-
-		    //Replacing widgets, rather than just changing value. It is clumsy, but UI sets value
-		    //of the label without adjusting its size. RecalcLayout makes ncurses flicker insanely.
-		    //ReplaceWidget does, too, but not so much
-		    UI::ReplaceWidget(`id(`r2), `Label(`opt(`outputField), Storage::KByteToHumanString( size_k - min_size_k )) );
-		    UI::ReplaceWidget(`id(`r3), `Label(`opt(`outputField), Storage::KByteToHumanString( max_size_k - size_k )) );
-
+		case `custom_size:
+	        {
+		    UI::ChangeWidget(`id(`custom_size_attachment), `Enabled, true);
 		    break;
 	        }
 
 	        case `ok:
 	        {
+		    switch ((symbol) UI::QueryWidget(`id(`size), `Value))
+		    {
+			case `max_size:
+			{
+			    size_k = max_size_k;
+			    break;
+			}
+
+			case `min_size:
+			{
+			    size_k = min_size_k;
+			    break;
+			}
+
+			case `custom_size:
+			{
+			    string tmp = (string) UI::QueryWidget(`id(`custom_size_input), `Value);
+			    if (!Storage::HumanStringToKByte(tmp, size_k))
+			    {
+				// error popup, %1 and %2 are replaced by sizes
+				Popup::Error(sformat(_("The size entered is invalid. Enter a value like \"%1\" or \"%2\"."),
+						     Storage::KByteToHumanString(500*1024),
+						     Storage::KByteToHumanString(1024*1024)));
+				widget = `again;
+				continue;
+			    }
+			    else if (size_k < min_size_k || size_k > max_size_k)
+			    {
+				// error popup, %1 and %2 are replaced by sizes
+				Popup::Error(sformat(_("The size entered is invalid. Enter a size between %1 and %2."),
+						     Storage::KByteToHumanString(min_size_k),
+						     Storage::KByteToHumanString(max_size_k)));
+				widget = `again;
+				continue;
+			    }
+			    break;
+			}
+		    }
+
 		    if (size_k != old_size_k)
 		    {
 			string mountpoint = data["inactive"]:false ? "" : data["mount"]:"";
