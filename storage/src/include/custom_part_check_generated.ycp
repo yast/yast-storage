@@ -55,7 +55,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     boolean diskless = true;
 
     boolean partition_mounted_but_not_formated = false;
-    boolean have_swap            = false;
     symbol  retval               = `next;
     boolean swap_found           = false;
     boolean boot_found           = false;
@@ -65,6 +64,7 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     integer boot_end             = 0;
     integer root_end             = 0;
     boolean root_raid            = false;
+    boolean root_dmraid          = false;
     boolean boot_raid            = false;
     boolean root_lvm             = false;
     symbol  root_fs              = `unknown;
@@ -73,7 +73,6 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     boolean boot_size_check      = !(Arch::board_chrp() || Arch::board_prep() || Arch::board_iseries() || Arch::board_mac());
     boolean fat_system_mount     = false;
     boolean fat_system_boot      = false;
-    boolean dmraid_root          = false;
     string raid_type             = "";
 
     foreach( string disk, map diskinfo, targetMap,
@@ -100,7 +99,7 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 		    gpt_warning = true;
 		    }
 		root_found = true;
-		dmraid_root = diskinfo["type"]:`CT_UNKNOWN == `CT_DMRAID;
+		root_dmraid = diskinfo["type"]:`CT_UNKNOWN == `CT_DMRAID;
 		root_end = Region::End(part["region"]:[]);
 		if( !contains( [ `primary, `logical ], part["type"]:`unknown ))
 		    {
@@ -168,7 +167,7 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 
 	    if( mountpoint == "swap" )
 		{
-		have_swap = true;
+		swap_found = true;
 		}
 
 
@@ -204,8 +203,8 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 
     y2milestone("diskless:%1", diskless);
     y2milestone("root_found:%1 boot_found %2", root_found, boot_found);
-    y2milestone("dmraid_root:%1 root_raid %2 boot_raid %3 raid_type:%4", 
-		dmraid_root, root_raid, boot_raid, raid_type);
+    y2milestone("root_dmraid:%1 root_raid %2 boot_raid %3 raid_type:%4", 
+		root_dmraid, root_raid, boot_raid, raid_type);
 
       if ( ( !Arch::ia64 () && installation && gpt_warning) || show_all_popups )
 	  {
@@ -398,7 +397,7 @@ Change this?
 	if (ret == true) retval = `again;
 	}
 
-    if( (dmraid_root && !boot_found) || show_all_popups )
+    if( (root_dmraid && !boot_found) || show_all_popups )
 	{
 	// popup text
 	boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your installation will probably encounter problems 
@@ -425,7 +424,7 @@ Change this?
 	if (ret == true) retval = `again;
 	}
 
-    if ( (!have_swap && Stage::initial() && root_fs!=`nfs) || show_all_popups )
+    if ( (!swap_found && Stage::initial() && root_fs!=`nfs) || show_all_popups )
 	{
 	// popup text
 	boolean ret = Popup::YesNo(_("
