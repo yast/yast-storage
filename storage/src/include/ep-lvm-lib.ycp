@@ -135,22 +135,31 @@ RAID device is required. Change your partition table accordingly."));
 	}
 
 	string vgname = substring(device, 5);
-
 	map<string,map> tg = Storage::GetTargetMap();
-	integer count = size(get_lv_names(tg, vgname));
+	//all LVs
+        list<map> parts = tg["/dev/" + vgname, "partitions"]:[];
+	//LV device names
+        list<string> log_volumes = maplist(map part, parts, { return part["device"]:""; });
+	//how many of those we have?
+	integer count = size(log_volumes);
 
-	if (count > 0)
+	boolean proceed = (count > 0) ? 
+	    //non-empty VG - make sure user wants to delete all LVs
+	    ConfirmVgDelete(vgname, log_volumes) :
+	    //empty VG - simple
+	    Popup::YesNo(sformat(_("Really delete the volume group \"%1\"?"), vgname));
+
+	if (proceed)
 	{
-	    // message popup
-	    Popup::Message(sformat(_("The volume group \"%1\" contains at least one logical
-volume.  It cannot be removed. Remove all logical volumes then
-remove the volume group.
-"), vgname));
-	}
-	else
-	{
-	    // popup text
-	    if (Popup::YesNo(sformat(_("Really delete the volume group \"%1\"?"), vgname)))
+	    foreach (string one_volume, log_volumes, {
+	        if (!EpDeleteDevice(one_volume))
+		{
+		   proceed = false;
+	           break;
+		}
+	    });
+
+	    if (proceed)
 	    {
 		if (Storage::DeleteLvmVg(vgname))
 		{
@@ -158,6 +167,11 @@ remove the volume group.
 		    UpdateNavigationTree(`lvm);
 		    TreePanel::Create();
 		}
+	    }
+	    else
+	    {
+		Popup::Error( sformat(_("Deleting volume group \"%1\" failed."), vgname));
+		//FIXME: some rollback?
 	    }
 	}
     }
