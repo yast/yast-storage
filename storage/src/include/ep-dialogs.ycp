@@ -5,6 +5,7 @@
  * Authors:	Arvin Schnell <aschnell@suse.de>
  */
 {
+    import "Icon";
     include "partitioning/custom_part_lib.ycp";
 
     textdomain "storage";
@@ -834,5 +835,55 @@ on this partition does not support resizing.
 	Storage::ReReadTargetMap();
 
 	UI::CloseDialog();
+    }
+
+    boolean ConfirmRecursiveDelete( string device, list<string> partitions, 
+				    string headline, string text_before,
+				    string text_after )
+    {
+	string plist = "<ul>";
+
+	foreach( string one_part, partitions, {
+	    plist = plist + "<li>" + one_part + "</li>";
+	});
+
+	plist = plist + "</ul>";
+
+	term button_box = `ButtonBox (
+		`PushButton(`id(`yes), `opt(`okButton), Label::DeleteButton() ),
+		`PushButton(`id(`no_button), `opt(`default, `cancelButton), Label::CancelButton()) 
+	);
+
+	map display_info = UI::GetDisplayInfo();
+	boolean has_image_support = display_info["HasImageSupport"]:false;
+
+	term layout = 
+	`VBox (
+	    `VSpacing (0.4),
+	    `HBox (
+		has_image_support ? `Top (`Image(Icon::IconPath ("question"))) : `Empty(),
+		`HSpacing (1),
+		`VBox (
+		    `Left (`Heading (headline)),
+		    `VSpacing (0.2),
+		    `Left( `Label( text_before ) ),
+		    `VSpacing (0.2),
+		    `Left(`RichText(plist)),
+		    `VSpacing (0.2),
+		    `Left(`Label( text_after)),
+		    button_box
+		)
+	    )
+	);
+
+	boolean success = (boolean) UI::OpenDialog( layout);
+	any ret = nil;
+
+	if( success ){
+	    ret = UI::UserInput();
+	    UI::CloseDialog();
+	}
+
+	return (ret == `yes);
     }
 }
