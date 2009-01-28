@@ -296,17 +296,21 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    mount = (string) UI::QueryWidget(`id(`mount_point), `Value);
 
 		    // TODO: checks
-
+		    //crypt-file specific checks
 		    if (data["type"]:`unknown == `loop)
 		    {
+			//is encrypt fs checked?
 			if (!crypt_fs)
 			{
 			    // error popup
 			    Popup::Error(_("Crypt files must be encrypted."));
+			    UI::ChangeWidget(`id(`crypt_fs), `Value, true);
+			    UI::SetFocus(`id(`crypt_fs));
 			    widget = `again;
 			    continue;
 			}
 
+			//enforce formatting the crypt-file
 			if (data["create_file"]:false && !do_format)
 			{
 			    // error popup
@@ -315,14 +319,20 @@ that it should be formatted. This does not make sense.
 
 Also check the format option.
 "));
+			    UI::ChangeWidget(`id(`do_format), `Value, true);
+			    UI::ChangeWidget(`id(`do_format_attachment), `Enabled, true);
+			    UI::SetFocus(`id(`fs));
 			    widget = `again;
 			    continue;
 			}
-
-			if (!do_mount || mount == "")
+			//enforce specifying mountpoint
+			if (!do_mount)
 			{
 			    // error popup
 			    Popup::Error(_("Crypt files require a mount point."));
+			    UI::ChangeWidget(`id(`do_mount), `Value, true);
+			    UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, true);
+			    UI::SetFocus(`id(`mount_point));
 			    widget = `again;
 			    continue;
 			}
@@ -455,11 +465,11 @@ Do not forget this password!
 
 	term contents = `HVSquash(`FrameWithMarginBox(_("Password"),
 					 `VBox(
-					     `Password(`id(`pw1),
+					     `Password(`id(`pw1), `opt(`hstretch),
 						       // Label: get password for user root
 						       // Please use newline if label is longer than 40 characters
 						       _("&Enter a password for your file system:"), ""),
-					     `Password(`id(`pw2),
+					     `Password(`id(`pw2), `opt(`hstretch),
 						       // Label: get same password again for verification
 						       // Please use newline if label is longer than 40 characters
 						       _("Reenter the password for &verification:"), ""),
@@ -477,11 +487,12 @@ Do not forget this password!
 
 	symbol widget = nil;
 
+	//don't put those inside the loop - they'd be reset after each unsuccesful try
+	UI::ChangeWidget(`id(`pw1), `Value, "");
+	UI::ChangeWidget(`id(`pw2), `Value, "");
+
 	repeat
 	{
-	    UI::ChangeWidget(`id(`pw1), `Value, "");
-	    UI::ChangeWidget(`id(`pw2), `Value, "");
-
 	    widget = MiniWorkflow::UserInput();
 
 	    if (widget == `next)
@@ -493,6 +504,7 @@ Do not forget this password!
 		{
 		    // popup text
 		    Popup::Message(_("The first and the second version\nof the password do not match!\nPlease try again."));
+		    UI::SetFocus(`id(`pw1) );
 		    widget = `again;
 		}
 		else if (pw1 == "" && !empty_pw_allowed)
@@ -501,6 +513,7 @@ Do not forget this password!
 		    Popup::Message(_("You did not enter a password.
 Try again.
 "));
+		    UI::SetFocus(`id(`pw1) );
 		    widget = `again;
 		}
 		else if (size(pw1) < min_pw_len && !empty_pw_allowed)
@@ -509,6 +522,7 @@ Try again.
 		    Popup::Message(sformat(_("The password must have at least %1 characters.
 Try again.
 "), min_pw_len));
+		    UI::SetFocus(`id(`pw1) );
 		    widget = `again;
 		}
 		else if (size(pw1) >= min_pw_len || empty_pw_allowed)
@@ -520,6 +534,7 @@ Try again.
 			Popup::Message(_("The password may only contain the following characters:
 0..9, a..z, A..Z, and any of \"@#* ,.;:._-+!$%&/|\?{[()]}^\\<>\".
 Try again."));
+		        UI::SetFocus(`id(`pw1) );
 			widget = `again;
 		    }
 		}
