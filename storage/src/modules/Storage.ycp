@@ -6371,17 +6371,34 @@ global void AddHwPackage( string name )
     y2milestone( "AddHwPackage list:%1", hw_packages );
     }
 
-global void SwitchUiAutomounter( boolean on )
+
+global void SwitchUiAutomounter(boolean on)
+{
+    y2milestone("SwitchUiAutomounter on:%1", on);
+
+    if (!on)
     {
-    y2milestone( "SwitchUiAutomounter on:%1", on );
-    string cmd = "hal-set-property " +
-		  "--udi /org/freedesktop/Hal/devices/computer " +
-		  "--key storage.disable_volume_handling --bool ";
-    cmd = cmd + (on?"true":"false" );
-    y2milestone( "SwitchUiAutomounter cmd %1", cmd );
-    SCR::Execute( .target.bash, cmd );
-    y2milestone( "SwitchUiAutomounter exit" );
+	SCR::Execute(.dbus.method,
+		     $[ `destination : "org.freedesktop.Hal",
+			`path : "/org/freedesktop/Hal/Manager",
+			`interface : "org.freedesktop.Hal.Manager",
+			`method : "AcquireGlobalInterfaceLock" ],
+		     [ "org.freedesktop.Hal.Device.Storage",
+		       true ]);
     }
+    else
+    {
+	SCR::Execute(.dbus.method,
+		     $[ `destination : "org.freedesktop.Hal",
+			`path : "/org/freedesktop/Hal/Manager",
+			`interface : "org.freedesktop.Hal.Manager",
+			`method : "ReleaseGlobalInterfaceLock" ],
+		     [ "org.freedesktop.Hal.Device.Storage" ]);
+    }
+
+    y2milestone("SwitchUiAutomounter exit");
+}
+
 
 global void DumpObjectList()
 {
