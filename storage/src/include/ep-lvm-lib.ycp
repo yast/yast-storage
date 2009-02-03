@@ -143,7 +143,7 @@ RAID device is required. Change your partition table accordingly."));
 	//how many of those we have?
 	integer count = size(log_volumes);
 
-	boolean proceed = (count > 0) ? 
+	boolean proceed = (count > 0) ?
 	    //non-empty VG - make sure user wants to delete all LVs
 	    ConfirmVgDelete(vgname, log_volumes) :
 	    //empty VG - simple
@@ -272,7 +272,7 @@ RAID device is required. Change your partition table accordingly."));
     }
 
 
-    void EpDeleteLogicalVolume(string device)
+    void EpDeleteLogicalVolume(string device, symbol context)
     {
 	if (device == nil)
 	{
@@ -282,12 +282,26 @@ RAID device is required. Change your partition table accordingly."));
 	}
 
 	string parent = ParentDevice(device);
+	string next = NextDeviceAfterDelete(device);
 
 	if (EpDeleteDevice(device))
 	{
 	    UpdateMainStatus();
-	    UpdateNavigationTree(parent);
-	    TreePanel::Create();
+
+	    switch (context)
+	    {
+		case `table:
+		    UpdateNavigationTree(nil);
+		    TreePanel::Create();
+		    if (!isempty(next))
+			UI::ChangeWidget(`id(`table), `CurrentItem, next);
+		    break;
+
+		case `overview:
+		    UpdateNavigationTree(parent);
+		    TreePanel::Create();
+		    break;
+	    }
 	}
     }
 }
