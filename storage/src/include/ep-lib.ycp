@@ -7,6 +7,7 @@
 {
     textdomain "storage";
 
+    boolean EpDeleteVolumeGroup(string device);
 
     list<string> AddedToList(list<string> old, list<string> new)
     {
@@ -44,6 +45,32 @@
 	return disk["device"]:"";
     }
 
+    boolean ConfirmDeletingUsedDevice( map <string, any> part, symbol used_by )
+    {
+	switch (used_by)
+	{
+	    case `UB_LVM:
+		if (Popup::AnyQuestion( _("Confirm Deleting Partition Used by LVM"),
+		    sformat(_("The selected partition \"%1\" belongs to volume group \"%2\". 
+To keep system in consistent state, it is recommended to delete the volume group and 
+all its logical volumes before deleting the partition. 
+ 
+Delete partition \"%1\" AND volume group \"%2\" now?"), part["device"]:"", part["used_by_device"]:""),
+		    Label::DeleteButton(),
+		    Label::CancelButton(),
+		    `focus_no
+		    ))
+		{
+		   return  EpDeleteVolumeGroup(part["used_by_device"]:"");
+		}
+		break;
+	    //FIXME: add RAID case here
+	    default:
+		break;
+	}
+
+	return false;
+    }
 
     /**
      * Must be called before removing device.
@@ -145,6 +172,7 @@
 	    // with "delete = true"
 
 	    y2milestone( "delete part %1", part );
+	    boolean ask = true;
 	    /////////////////////////////////////////////////////
 	    // check if the partition can be deleted
 
@@ -153,18 +181,37 @@
 	    {
 		return false;
 	    }
-	    if( part["type"]:`primary != `extended &&
-		!check_device_delete( part, false, Stage::initial(),
-				      disk ))
+
+	    if( part["type"]:`primary != `extended )
 	    {
-		return false;
+		symbol used_by = check_devices_used( [ part ], false);
+
+		if ( used_by != `UB_NONE)
+		{
+		    if (!ConfirmDeletingUsedDevice( part, used_by ))
+			return false;
+		    // whatever was using the defice is deleted by now
+		    else
+		    {
+			// but we must re-read target map to reflect current status
+			// i.e. device is no longer used by now
+			tg = Storage::GetTargetMap();
+		        part = Storage::GetPartition(tg, id);
+			// do not ask anymore - user has already confirmed deleting
+		        ask = false;
+		    }
+		}
+
+		if (!check_device_delete( part, false, Stage::initial(),
+				      disk ))
+		    return false;
 	    }
 
 	    /////////////////////////////////////////////////////
 	    // now delete partition!!
 
 	    // YesNo popup text, %1 is replaced by a device name e.g. /dev/hda1
-	    if( Popup::YesNo( sformat(_("Really delete %1?"),
+	    if( !ask || Popup::YesNo( sformat(_("Really delete %1?"),
 				      part["device"]:"" )))
 	    {
 		if( (search( id, "/dev/loop")==0 ||
