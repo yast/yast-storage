@@ -25,6 +25,18 @@
 	$[ `label : _("Fibre Channel information"), `fields : toset([ `fc_wwpn, `fc_fcp_lun, `fc_port_id ]) ]
     ];
 
+    map <symbol, string> mount_bys = $[
+	// combo box entry
+	`device : _("Device Name"),
+	// combo box entry
+	`label : _("Volume Label"),
+	// combo box entry
+	`uuid : _("UUID"),
+	// combo box entry
+	`id : _("Device ID"),
+	// combo box entry
+	`path :  _("Device Path")
+    ];
 
     void CreateSettingsPanel(any user_data)
     {
@@ -39,7 +51,11 @@
 	    });
 	}
 
-	UI::ReplaceWidget(`tree_panel,
+	list <term> CBItems = maplist( symbol item_id, string label, mount_bys, {
+	    return `item(`id(item_id), label);
+	});
+
+	UI::ReplaceWidget(`tree_panel, 
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // dialog heading
@@ -48,18 +64,7 @@
 				      `Left(`ComboBoxSelected(`id(`default_mountby),
 							      // combo box label
 							      _("Default Mount by"),
-							      [
-								  // combo box entry
-								  `item(`id(`device), _("Device Name")),
-								  // combo box entry
-								  `item(`id(`label), _("Volume Label")),
-								  // combo box entry
-								  `item(`id(`uuid), _("UUID")),
-								  // combo box entry
-								  `item(`id(`id), _("Device ID")),
-								  // combo box entry
-								  `item(`id(`path), _("Device Path"))
-							      ],
+							      CBItems,
 							      `id(Storage::GetDefaultMountBy()))),
 				      `Left(`ComboBoxSelected(`id(`default_fs),
 							      // combo box label
@@ -138,10 +143,8 @@ Devices</b> allows to hide information in the tables and overview.</p>");
 
     void DestroySettingsPanel(any user_data)
     {
-	list<symbol> InvertVisibleFields(list<symbol> hidden_fields)
+	list<symbol> InvertVisibleFields(list<symbol> hidden_fields, list <integer> selected)
 	{
-	    list<integer> selected = (list<integer>) UI::QueryWidget(`id(`visible_fields), `SelectedItems);
-
 	    foreach(integer i, Integer::Range(size(visible_fields)), {
 		list<symbol> fields = visible_fields[i, `fields]:[];
 		if (contains(selected, i))
@@ -153,8 +156,19 @@ Devices</b> allows to hide information in the tables and overview.</p>");
 	    return hidden_fields;
 	}
 
-	Storage::SetDefaultMountBy((symbol) UI::QueryWidget(`id(`default_mountby), `Value));
-	Partitions::SetDefaultFs((symbol) UI::QueryWidget(`id(`default_fs), `Value));
-	StorageSettings::SetHiddenFields(InvertVisibleFields(StorageSettings::GetHiddenFields()));
+        list<integer> selected = (list<integer>) UI::QueryWidget(`id(`visible_fields), `SelectedItems);
+	list <string> selected_labels = [];
+
+	foreach( integer i, selected, {
+	    selected_labels= add(selected_labels, visible_fields[i, `label]:"");
+	});
+
+	symbol default_mount = (symbol) UI::QueryWidget(`id(`default_mountby), `Value);
+	symbol default_fs = (symbol) UI::QueryWidget(`id(`default_fs), `Value);
+
+	Storage::SetDefaultMountBy( default_mount );
+	Partitions::SetDefaultFs( default_fs );
+	StorageSettings::SetHiddenFields(InvertVisibleFields(StorageSettings::GetHiddenFields(), selected));
+	StorageSettings::CreateSummary( mount_bys[default_mount]:"", substring( tostring(default_fs), 1), selected_labels);
     }
 }
