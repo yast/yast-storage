@@ -15,6 +15,7 @@ module_DATA =				\
 	StorageControllers.ycp  	\
 	StorageDevices.ycp		\
 	StorageFields.ycp		\
+	StorageIcons.ycp		\
 	StorageSettings.ycp		\
 	StorageIcons.ycp		\
 	TreePanel.ycp			\
