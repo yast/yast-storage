@@ -16,6 +16,7 @@ module_DATA =				\
 	StorageDevices.ycp		\
 	StorageFields.ycp		\
 	StorageSettings.ycp		\
+	StorageIcons.ycp		\
 	TreePanel.ycp			\
 	TabPanel.ycp			\
 	MiniWorkflow.ycp		\
