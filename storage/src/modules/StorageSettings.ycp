@@ -13,15 +13,15 @@
 
     import "Storage";
     import "Partitions";
+    import "Integer";
 
 
     symbol display_name = nil;
 
     list<symbol> hidden_fields = nil;
+    list <string> visible_fields = [];
 
     boolean modified = false;
-
-    string summary = "";
 
     global boolean GetModified()
     {
@@ -126,7 +126,26 @@
 	return filter(symbol field, fields, { return !setcontains(hidden, field); });
     }
 
-    global void CreateSummary( string default_mount, string default_fs, list <string> labels )
+    global void InvertVisibleFields(list < map <symbol, any> >all_fields, list <integer> selected)
+    {
+	    foreach(integer i, Integer::Range(size(all_fields)), {
+		list<symbol> fields = all_fields[i, `fields]:[];
+		string label = all_fields[i, `label]:"";
+		if (contains(selected, i))
+		{
+		    hidden_fields = multiset::difference(hidden_fields, fields);
+		    visible_fields = multiset::union(visible_fields, [label]); 
+		}
+		else
+		{
+		    hidden_fields = multiset::union(hidden_fields, fields);
+		    visible_fields = multiset::difference(visible_fields, [label]); 
+		}
+	    });
+
+    }
+
+    global string Summary()
     {
 	string ListOfVisibleFields( list <string> labels)
 	{
@@ -142,18 +161,13 @@
 
 	string new_summary = "<h1>Storage Settings</h1>" + "<ul>";
 
-	new_summary = new_summary + "<li>" + _("<b>Default Mount-by:</b>  ") +  default_mount   + "</li>";
-	new_summary = new_summary + "<li>" + _("<b>Default Filesystem:</b> ") + toupper( default_fs ) + "</li>";
-	new_summary = new_summary + "<li>" + _("<b>Visible Information on Storage Devices:</b> ") + ListOfVisibleFields(labels) + "</li>";
+	new_summary = new_summary + "<li>" + _("<b>Default Mount-by:</b>  ") +  substring(tostring(Storage::GetDefaultMountBy()), 1) + "</li>";
+	new_summary = new_summary + "<li>" + _("<b>Default Filesystem:</b> ") +  substring(tostring(Partitions::DefaultFs()), 1) + "</li>";
+	new_summary = new_summary + "<li>" + _("<b>Visible Information on Storage Devices:</b> ") + ListOfVisibleFields(visible_fields) + "</li>";
 
 	new_summary = new_summary + "</ul>";
 
-	summary = new_summary;
-    }
-
-    global string Summary()
-    {
-	return summary;
+	return new_summary;
     }
 
     global void Save()
