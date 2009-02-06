@@ -373,21 +373,21 @@ global string ByteToHumanString(integer bytes)
 }
 
 
-global string KByteToHumanString(integer kbytes)
+global string KByteToHumanString(integer bytes_k)
 {
-    return LibStorage::byteToHumanString(kbytes * 1024, false, 2, false);
+    return LibStorage::byteToHumanString(bytes_k * 1024, false, 2, false);
 }
 
 
-global string ByteToHumanStringWithPrecision(integer bytes, integer precision, boolean omit_zeroes)
+global string ByteToHumanStringOmitZeroes(integer bytes)
 {
-    return LibStorage::byteToHumanString(bytes, false, precision, omit_zeroes);
+    return LibStorage::byteToHumanString(bytes, false, 2, true);
 }
 
 
-global string KByteToHumanStringWithPrecision(integer kbytes, integer precision, boolean omit_zeroes)
+global string KByteToHumanStringOmitZeroes(integer bytes_k)
 {
-    return LibStorage::byteToHumanString(kbytes * 1024, false, precision, omit_zeroes);
+    return LibStorage::byteToHumanString(bytes_k * 1024, false, 2, true);
 }
 
 
@@ -400,13 +400,42 @@ global boolean HumanStringToByte(string str, integer& bytes)
 }
 
 
-global boolean HumanStringToKByte(string str, integer& kbytes)
+global boolean HumanStringToKByte(string str, integer& bytes_k)
 {
     integer bytes = 0;		// bnc #408829
     boolean ret = LibStorage::humanStringToByte(str, false, bytes);
-    kbytes = bytes / 1024;
-    y2milestone("HumanStringToKByte ret:%1 str:%2 kbytes:%3", ret, str, kbytes);
+    bytes_k = bytes / 1024;
+    y2milestone("HumanStringToKByte ret:%1 str:%2 bytes_k:%3", ret, str, bytes_k);
     return ret;
+}
+
+
+/**
+ * Converts a string into a integer and checks the allowed range for the
+ * integer. The range check is a bit sloppy to compensate rounding issues but
+ * it's guaranteed that the result lies within the allowed range.
+ */
+global boolean HumanStringToKByteWithRangeCheck(string str, integer& bytes_k, integer min_k,
+						integer max_k)
+{
+    if (!HumanStringToKByte(str, bytes_k))
+	return false;
+
+    if (min_k != nil && bytes_k < min_k)
+    {
+	if (KByteToHumanString(bytes_k) != KByteToHumanString(min_k))
+	    return false;
+	bytes_k = min_k;
+    }
+
+    if (max_k != nil && bytes_k > max_k)
+    {
+	if (KByteToHumanString(bytes_k) != KByteToHumanString(max_k))
+	    return false;
+	bytes_k = max_k;
+    }
+
+    return true;
 }
 
 
