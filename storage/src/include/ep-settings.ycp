@@ -61,12 +61,12 @@
 				  // dialog heading
 				  `IconAndHeading(_("Settings"), StorageIcons::settings_icon),
 				  `VBox(
-				      `Left(`ComboBoxSelected(`id(`default_mountby),
+				      `Left(`ComboBoxSelected(`id(`default_mountby),`opt(`notify),
 							      // combo box label
 							      _("Default Mount by"),
 							      CBItems,
 							      `id(Storage::GetDefaultMountBy()))),
-				      `Left(`ComboBoxSelected(`id(`default_fs),
+				      `Left(`ComboBoxSelected(`id(`default_fs),`opt(`notify),
 							      // combo box label
 							      _("Default File System"),
 							      [
@@ -96,7 +96,7 @@
 				      //This looks extremely ugly, but obviously there are few other means how
 				      //to make MultiSelection widget smaller, yet still readable
 				      `Left(`HBox(
-						`MultiSelectionBox(`id(`visible_fields), `opt(`shrinkable),
+						`MultiSelectionBox(`id(`visible_fields), `opt(`shrinkable, `notify),
 								   // multi selection box label
 							           _("Visible Information On Storage Devices"),
 								   PreselectVisibleFields()),
@@ -138,24 +138,16 @@ Devices</b> allows to hide information in the tables and overview.</p>");
 	    StorageSettings::SetDisplayName((symbol) UI::QueryWidget(`id(`display_name), `Value));
 	    UpdateNavigationTree(nil);
 	}
+	if (!StorageSettings::GetModified())
+	{
+	    StorageSettings::SetModified();
+	    Wizard::SetNextButton(`next, Label::NextButton());
+	}
     }
 
 
     void DestroySettingsPanel(any user_data)
     {
-	list<symbol> InvertVisibleFields(list<symbol> hidden_fields, list <integer> selected)
-	{
-	    foreach(integer i, Integer::Range(size(visible_fields)), {
-		list<symbol> fields = visible_fields[i, `fields]:[];
-		if (contains(selected, i))
-		    hidden_fields = multiset::difference(hidden_fields, fields);
-		else
-		    hidden_fields = multiset::union(hidden_fields, fields);
-	    });
-
-	    return hidden_fields;
-	}
-
         list<integer> selected = (list<integer>) UI::QueryWidget(`id(`visible_fields), `SelectedItems);
 	list <string> selected_labels = [];
 
@@ -168,7 +160,6 @@ Devices</b> allows to hide information in the tables and overview.</p>");
 
 	Storage::SetDefaultMountBy( default_mount );
 	Partitions::SetDefaultFs( default_fs );
-	StorageSettings::SetHiddenFields(InvertVisibleFields(StorageSettings::GetHiddenFields(), selected));
-	StorageSettings::CreateSummary( mount_bys[default_mount]:"", substring( tostring(default_fs), 1), selected_labels);
+	StorageSettings::InvertVisibleFields(visible_fields, selected);
     }
 }
