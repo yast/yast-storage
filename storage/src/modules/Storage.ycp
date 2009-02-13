@@ -678,12 +678,6 @@ define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
 	{
 	ret = [ $[ "disk" : "/dev/nfs", "nr" : device ]];
 	}
-    if( size(ret)>1 )
-	{
-	list<map> a = filter( map m, ret, ``(search(m["disk"]:"","/dev/evms")!=0));
-	list<map> b = filter( map m, ret, ``(search(m["disk"]:"","/dev/evms")==0));
-	ret = (list<map>)merge( a, b );
-	}
     y2debug( "GetDiskPartitionTg device:%1 ret:%2", device, ret );
     return( ret );
     };
@@ -5919,31 +5913,6 @@ global define list GetRootInitrdModules()
 	    initrdmodules = add( initrdmodules, "dm_mod" );
 	    }
 	}
-    if( partition["type"]:`unknown == `evms )
-	{
-	string evmsco = partition["device"]:"";
-	evmsco = substring( evmsco, 0, findlastof( evmsco, "/" ));
-	y2milestone( "GetRootInitrdModules evmsco %1", evmsco );
-	y2milestone( "GetRootInitrdModules evms %1", tg[evmsco]:$[] );
-	list<string> md = filter( string s, tg[evmsco,"devices"]:[], ``(search(s,"/dev/md")==0));
-	y2milestone( "GetRootInitrdModules mddev %1", md );
-	list<string> mod =
-	    (list<string>) maplist(map k, filter(map e, tg["/dev/md","partitions"]:[],
-						 ``(contains(md,e["device"]:""))),
-				   ``(k["raid_type"]:""));
-	y2milestone( "GetRootInitrdModules mod %1", mod );
-	foreach(string e, mod,
-	    ``{
-	    if( size(e)>0 && !contains( initrdmodules, e ) )
-		{
-		initrdmodules = add( initrdmodules, e );
-		}
-	    });
-	if( !contains( initrdmodules, "dm_mod" ) )
-	    {
-	    initrdmodules = add( initrdmodules, "dm_mod" );
-	    }
-	}
     if( size(disk["modules"]:[])>0 )
 	{
 	y2milestone( "adding disk modules %1", disk["modules"]:[] );
@@ -6535,21 +6504,17 @@ global boolean DeviceMatchFstab( string device, string fstab_spec )
 
 
 global boolean IsPersistent( map p )
-    {
+{
     boolean ret = contains( [ `lvm, `sw_raid, `dm ], p["type"]:`unknown );
-    if( !ret && contains( [ `evms, `primary, `logical, `extended ],
-                          p["type"]:`unknown ))
-	{
+    if( !ret && contains( [ `primary, `logical, `extended ], p["type"]:`unknown ))
+    {
 	map d = GetDisk( GetTargetMap(), p["device"]:"" );
-	if( p["type"]:`unknown==`evms )
-	    ret = d["is_container"]:false || p["evms_native"]:false;
-	else 
-	    ret = d["type"]:`CT_UNKNONW==`CT_DMRAID || d["type"]:`CT_UNKNONW==`CT_DMMULTIPATH ||
-	          size(d["udev_id"]:[])>0;
-	}
-    y2milestone( "IsPersistent device:%1 ret:%2", p["device"]:"", ret );
-    return( ret );
+	ret = d["type"]:`CT_UNKNONW==`CT_DMRAID || d["type"]:`CT_UNKNONW==`CT_DMMULTIPATH ||
+	    size(d["udev_id"]:[])>0;
     }
+    y2milestone("IsPersistent device:%1 ret:%2", p["device"]:"", ret);
+    return ret;
+}
 
 
 }
