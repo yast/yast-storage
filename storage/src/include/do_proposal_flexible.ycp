@@ -486,38 +486,28 @@ define map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
     return( ret );
     }
 
-define list<string> restrict_disk_names( list<string> disks )
+
+list<string> restrict_disk_names(list<string> disks)
+{
+    void helper(string s)
     {
-    list<string> ddev = disks;
-    list<string> d1 = filter( string s, ddev, ``(search(s,"/dev/hd")==0));
-    ddev = filter( string s, ddev, ``(search(s,"/dev/hd")!=0));
-    if( size(d1)>2 )
-	{
-	integer count=1;
-	d1 = maplist( string s, d1, 
-	    ``{
-	    return( (count<=2)?s:"" );
-	    count=count+1;
-	    });
-	d1 = filter( string s, d1, ``(size(s)>0));
-	}
-    d1 = (list<string>)merge( d1, filter( string s, ddev, 
-                                          ``(search(s,"/dev/sd")==0)));
-    ddev = filter( string s, ddev, ``(search(s,"/dev/sd")!=0));
-    ddev = (list<string>)merge( d1, ddev );
-    if( size(ddev)>4 )
-	{
-	integer count=1;
-	ddev = maplist( string s, ddev, 
-	    ``{
-	    return( (count<=4)?s:"" );
-	    count=count+1;
-	    });
-	ddev = filter( string s, ddev, ``(size(s)>0));
-	}
-    y2milestone( "restrict_disk_names: ret %1", ddev );
-    return( ddev );
+	integer count = 0;
+	disks = filter(string dist, disks, {
+	    if (search(dist, s) != 0)
+		return true;
+	    count = count + 1;
+	    return count <= 16;
+	});
     }
+
+    helper("/dev/sd");
+    helper("/dev/hd");
+    helper("/dev/cciss/");
+
+    y2milestone("restrict_disk_names: ret %1", disks);
+    return disks;
+}
+
 
 define map do_pflex( map<string,map> target, map conf )
     {
