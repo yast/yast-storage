@@ -65,10 +65,9 @@ define boolean ignore_disk( string dev, map entry, boolean soft )
 	ret = true;
 	}
     if( !ret && soft )
+	{
 	ret = entry["used_by_type"]:`UB_NONE != `UB_NONE;
-    if( !ret && (Storage::ProposalEvms()&&!Storage::BootEvms()) && 
-        entry["label"]:""!="msdos" )
-	ret = true;
+	}
     if( ret )
 	{
 	y2milestone( "ignoring disk %1 soft:%2", dev, soft );
@@ -3047,45 +3046,6 @@ map<string,map> remove_vm( map<string,map> tg, string ky )
 	    tg = Storage::DelPartitionData( tg, d, "used_by_type" );
 	    });
 	}
-    if( haskey( tg, "/dev/evms/lvm/"+ky ) || haskey( tg, "/dev/evms/lvm2/"+ky ))
-	{
-	if( haskey( tg, "/dev/evms/lvm/"+ky ) && tg[key,"lvm2"]:false )
-	    {
-	    key = "/dev/evms/lvm/"+ky;
-	    tg[key,"delete"] = true;
-	    tg[key,"partitions"] = 
-		maplist( map p, tg[key,"partitions"]:[],
-			 ``{
-			 p["delete"] = true;
-			 return(p);
-			 });
-	    y2milestone( "remove_vm removed:%1", tg[key]:$[] );
-	    list<string> dl = tg[key,"devices"]:[];
-	    foreach( string d, dl,
-		``{
-		tg = Storage::DelPartitionData( tg, d, "used_by" );
-		tg = Storage::DelPartitionData( tg, d, "used_by_type" );
-		});
-	    }
-	if( haskey( tg, "/dev/evms/lvm2/"+ky ) && !tg[key,"lvm2"]:false )
-	    {
-	    key = "/dev/evms/lvm2/"+ky;
-	    tg[key,"delete"] = true;
-	    tg[key,"partitions"] = 
-		maplist( map p, tg[key,"partitions"]:[],
-			 ``{
-			 p["delete"] = true;
-			 return(p);
-			 });
-	    y2milestone( "remove_vm removed:%1", tg[key]:$[] );
-	    list<string> dl = tg[key,"devices"]:[];
-	    foreach( string d, dl,
-		``{
-		tg = Storage::DelPartitionData( tg, d, "used_by" );
-		tg = Storage::DelPartitionData( tg, d, "used_by_type" );
-		});
-	    }
-	}
     return( tg );
     }
 
@@ -3093,13 +3053,9 @@ string find_vm( map<string,map> target, string ky, integer min_size )
     {
     string ret = "";
     string key = "/dev/" + ky;
-    string key2 = "/dev/evms/lvm2/" + ky;
     if( Storage::ProposalLvm() && target[key,"lvm2"]:false && 
         target[key,"size_k"]:0 >= min_size )
 	ret = key;
-    else if( Storage::ProposalEvms() && haskey( target, key2 ) && 
-             target[key2,"size_k"]:0 >= min_size )
-	ret = key2;
     y2milestone( "find_vm key:%1 min_size:%2 ret:%3", ky, min_size, ret );
     return( ret );
     }
@@ -3155,12 +3111,12 @@ map extend_vm( map vg, string key, map disk )
     return( vg );
     }
 
-map create_vm( boolean evms, string key, map disk )
+map create_vm( string key, map disk )
     {
-    y2milestone( "create_vm evms %1 key %2 disk %3", evms, key, disk );
-    map ret = $[ "type" : evms?`CT_EVMS:`CT_LVM,
-                 "name" : evms?"lvm2/"+key:key,
-		 "device" : "/dev/"+(evms?"evms/lvm2/":"")+key,
+    y2milestone("create_vm key:%1 disk:%2", key, disk);
+    map ret = $[ "type" : `CT_LVM,
+                 "name" : key,
+		 "device" : "/dev/" + key,
                  "lvm2" : true,
 		 "create" : true,
 		 "partitions" : [],
@@ -3645,10 +3601,9 @@ map get_inst_prop_vm( map<string,map> target, string key )
 	ret["target"] = remove_used_by( ret["target"]:$[], sol_disk );
 	if( size(vg_key)==0 )
 	    {
-	    vg_key = (Storage::ProposalEvms()?"/dev/evms/lvm2/":"/dev/")+key;
+	    vg_key = "/dev/" + key;
 	    map vg = ret["target",vg_key]:$[];
-	    vg = union( vg, create_vm( Storage::ProposalEvms(), key,
-				       solution[sol_disk]:$[] ));
+	    vg = union( vg, create_vm( key, solution[sol_disk]:$[] ));
 	    if( size(vg["devices"]:[])>0 )
 		{
 		vg = remove( vg, "devices" );
@@ -3675,9 +3630,8 @@ map get_inst_prop_vm( map<string,map> target, string key )
 map get_proposal_vm( map<string,map> target, string key, map disk )
     {
     string ddev = disk["device"]:"";
-    y2milestone( "get_proposal_vm ddev:%1 vg:%2 evms:%3 lvm:%4 home:%5", ddev,
-                 key, Storage::ProposalEvms(), Storage::ProposalLvm(),
-		 Storage::ProposalHome() );
+    y2milestone("get_proposal_vm ddev:%1 vg:%2 lvm:%3 home:%4", ddev,
+		key, Storage::ProposalLvm(), Storage::ProposalHome());
     map ret = $[];
     map opts = Storage::GetControlCfg();
     target = remove_mount_points(target);
@@ -3712,9 +3666,9 @@ map get_proposal_vm( map<string,map> target, string key, map disk )
 	else if( haskey( r, "targets" ))
 	    ret["target"] = r["targets"]:$[];
 	ret["target"] = remove_used_by( ret["target"]:$[], ddev );
-	string vg_key = (Storage::ProposalEvms()?"/dev/evms/lvm2/":"/dev/")+key;
+	string vg_key = "/dev/" + key;
 	map vg = ret["target",vg_key]:$[];
-	vg = union( vg, create_vm( Storage::ProposalEvms(), key, disk ));
+	vg = union( vg, create_vm( key, disk ));
 	if( size(vg["devices"]:[])>0 )
 	    {
 	    vg = remove( vg, "devices" );
@@ -3733,9 +3687,8 @@ map get_inst_prop( map<string,map> target )
     {
     map ret = $[];
     string vg = Storage::ProposalVM();
-    y2milestone( "get_inst_prop vg:%1 evms:%2 lvm:%3 home:%4", vg, 
-                 Storage::ProposalEvms(), Storage::ProposalLvm(),
-		 Storage::ProposalHome() );
+    y2milestone("get_inst_prop vg:%1 lvm:%2 home:%3", vg, 
+		Storage::ProposalLvm(), Storage::ProposalHome());
     if( size(vg)==0 )
 	{
         if( has_flex_proposal() )
