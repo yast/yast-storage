@@ -12,6 +12,52 @@
     include "partitioning/ep-lvm-lib.ycp";
 
 
+    void EpContextMenuLvmVg(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`add), _("Add Logical Volume")),
+					      `item(`id(`resize), _("Resize")),
+					      `item(`id(`delete), _("Delete")) ]);
+
+	switch (widget)
+	{  
+	    case `add:
+		EpCreateLogicalVolume(device);
+		break;
+
+	    case `resize:
+		EpResizeVolumeGroup(device);
+		break;
+
+	    case `delete:
+		EpDeleteVolumeGroup(device);
+		break;
+	}
+    }
+
+
+    void EpContextMenuLvmLv(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`edit), _("Edit")),
+					      `item(`id(`resize), _("Resize")),
+					      `item(`id(`delete), _("Delete")) ]);
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditLogicalVolume(device);
+		break;
+
+	    case `resize:
+		EpResizeLogicalVolume(device);
+		break;
+
+	    case `delete:
+		EpDeleteLogicalVolume(device, `table);
+		break;
+	}
+    }
+
+
     void CreateLvmMainPanel(any user_data)
     {
 	symbol Predicate(map disk, map partition)
@@ -33,7 +79,7 @@
 			      `VBox(
 				  // heading
 				  `IconAndHeading(_("Volume Management"), StorageIcons::lvm_icon),
-				  `Table(`id(`table), `opt(`keepSorting, `notify),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `contextMenu),
 					 table_header, table_contents),
 				  `HBox(
 				      // push button text
@@ -58,6 +104,14 @@ their logical volumes.</p>");
 	{
 	    case `add:
 		EpCreateVolumeGroup();
+		break;
+	}
+
+	switch (Event::IsWidgetContextMenuActivated(event))
+	{
+	    case `table:
+		string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+		EpContextMenuDevice(device);
 		break;
 	}
 
@@ -110,6 +164,7 @@ selected volume group.</p>");
 		EpDeleteVolumeGroup(device);
 		break;
 	}
+
 	UI::SetFocus(`id(`text));
     }
 
@@ -134,7 +189,7 @@ selected volume group.</p>");
 
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
-			      `Table(`id(`table), `opt(`keepSorting, `notify),
+			      `Table(`id(`table), `opt(`keepSorting, `notify, `contextMenu),
 				     table_header, table_contents),
 			      `HBox(
 				  // push button text
@@ -181,6 +236,14 @@ selected volume group.</p>");
 		EpDeleteLogicalVolume(lv_device, `table);
 		break;
 	}
+
+	switch (Event::IsWidgetContextMenuActivated(event))
+	{
+	    case `table:
+		EpContextMenuDevice(lv_device);
+		break;
+	}
+
 	UI::SetFocus(`id(`table));
     }
 
