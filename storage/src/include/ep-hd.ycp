@@ -10,6 +10,7 @@
     import "Arch";
     import "PackageCallbacks";
     import "PackageSystem";
+    import "Region";
     import "Mode";
     import "Stage";
 
@@ -347,8 +348,27 @@ selected hard disk.</p>");
 		);
 	}
 
+	map ddata = Storage::GetDisk(target_map, device);
+	list <integer> bits = [];
+	list <string> labels = [];
+
+	foreach (map part, ddata["partitions"]:[], {
+	    if ( part["type"]:`primary != `extended)
+	    {
+	        list <integer> region = part["region"]:[];
+	        integer tmp = 100*Region::Length( region )/ddata["cyl_count"]:1; //in %
+		string descr = part["device"]:"" + "\n" + Storage::KByteToHumanStringOmitZeroes(part["size_k"]:0);
+
+		// Guarantee some minimal share (1%) of total graph width to a segment
+		// It prevents small partitions e.g. swaps from disappearing completely
+		bits = add( bits, (tmp < 1) ? 1 : tmp );
+		labels = add( labels, descr);
+	    }
+	});
+
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
+			      UI::TextMode() ? `Empty() : `BarGraph(`id(`bgraph), bits, labels),
 			      `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 				     table_header, table_contents),
 			      `HBox(
