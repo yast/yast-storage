@@ -32,6 +32,12 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
         //retrieve all filesystems
 	map<symbol, map<symbol, any> > all_filesystems = FileSystems::GetAllFileSystems(true, true);
 
+	void ChangeWidgetIfExists( symbol wid, symbol property, any value)
+	{
+	    if ( UI::WidgetExists(`id(wid)) )
+		UI::ChangeWidget(`id(wid), property, value);
+	}
+
 	list <string> ProposeMountpoints( symbol used_fs, string current_mp )
 	{
 	    map <symbol, any> fs_data = all_filesystems[used_fs]: $[];
@@ -50,6 +56,14 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	   }
 	}
 
+	// disable Options p.b. if no fs options can be set
+	// disable Encrypt box if fs doesn't support encryption
+	void EnableDisableFsOpts( symbol used_fs )
+	{
+	    map <symbol, any> fs_data = all_filesystems[used_fs]: $[];
+	    UI::ChangeWidget(`id(`fs_options), `Enabled, fs_data[`options]:[] != []);
+	    ChangeWidgetIfExists(`crypt_fs, `Enabled, fs_data[`crypt]:true); 
+	}
 
 	boolean do_format = data["format"]:false;
 	symbol used_fs = data["used_fs"]:`unknown;
@@ -84,7 +98,6 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 	    return true;
 	}
-
 
 	/* MiniWorkflowStepPartitionSize data:
 		$["create":true,
@@ -179,8 +192,15 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 	UI::ChangeWidget(`id(`format), `Value, do_format ? `do_format : `do_not_format);
 	UI::ChangeWidget(`id(`do_format_attachment), `Enabled, do_format);
-	UI::ChangeWidget(`id(`crypt_fs), `Value, crypt_fs);
-	UI::ChangeWidget(`id(`do_not_format_attachment), `Enabled, !do_format);
+	//not there in RAID/LVM/loop configuration (#483789)
+	ChangeWidgetIfExists( `do_not_format_attachment, `Enabled, !do_format );
+
+	if( do_format)
+	   EnableDisableFsOpts(used_fs);
+
+	//not there on s390s
+	ChangeWidgetIfExists( `crypt_fs, `Value, crypt_fs );
+
 	UI::ChangeWidget(`id(`mount), `Value, do_mount ? `do_mount : `do_not_mount);
 	UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, do_mount);
 	UI::ChangeWidget(`id(`mount_point), `Value, mount);
@@ -260,7 +280,8 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    data["used_fs"] = (symbol) UI::QueryWidget(`id(`fs), `Value);
 
 		    UI::ChangeWidget(`id(`do_format_attachment), `Enabled, true);
-		    UI::ChangeWidget(`id(`do_not_format_attachment), `Enabled, false);
+		    ChangeWidgetIfExists(`do_not_format_attachment, `Enabled, false);
+		    EnableDisableFsOpts( data["used_fs"]:`none);
 		    UI::SetFocus(`id(`fs));
 		    MiniWorkflow::SetLastStep(!AskPassword());
 		    break;
@@ -268,7 +289,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		case `do_not_format:
 		    do_format = (boolean) UI::QueryWidget(`id(`do_format), `Value);
 		    UI::ChangeWidget(`id(`do_format_attachment), `Enabled, false);
-		    UI::ChangeWidget(`id(`do_not_format_attachment), `Enabled, true);
+		    ChangeWidgetIfExists(`do_not_format_attachment, `Enabled, true);
 		    MiniWorkflow::SetLastStep(!AskPassword());
 		    break;
 
