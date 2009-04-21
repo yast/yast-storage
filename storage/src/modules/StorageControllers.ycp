@@ -15,8 +15,6 @@
     module "StorageControllers";
 
     import "Arch";
-    import "Mode";
-    import "ModulesConf";
     import "ModuleLoading";
     import "HwStatus";
     import "Initrd";
@@ -43,20 +41,6 @@
 
     list controllers = [];	// set by "Probe"
 
-    // remember postinstall modules (like imm and ppa)
-    //   which must be installed *last*
-
-    list postinstall_names = [ "imm", "ppa" ];
-
-    // postinstall modules information
-    // list of [ boolean modprobe,
-    //		 string module_name,
-    //		 string module_arg,
-    //		 string vendor,
-    //		 string device]
-
-    list<list> postinstall_info = [];
-
 
     /**
      * Probe storage controllers
@@ -79,63 +63,6 @@ global define integer Probe ()
     return size (controllers);
 }
 
-
-
-// --------------------------------------------------------------
-
-// parportInitialize
-
-define void parportInitialize ()
-    ``{
-    // post-load parport module
-    if ((size (postinstall_info) == 0) || Mode::test ())
-	{
-	return;
-	}
-
-    boolean parport_loaded = false;
-    boolean parport_pc_loaded = false;
-
-    foreach (list postlist, postinstall_info,
-	``{
-	boolean post_modprobe = postlist[0]:false;
-	string post_name      = postlist[1]:"";
-	string post_arg	      = postlist[2]:"";
-	string post_vendor    = postlist[3]:"";
-	string post_device    = postlist[4]:"";
-	if (!parport_loaded)
-	    {
-	    if( `ok == ModuleLoading::Load( "parport", "", post_vendor, 
-	                                    post_device, Linuxrc::manual (), true ))
-		{
-		ModulesConf::ModuleArgs ("parport", "");
-		parport_loaded = true;
-		}
-	    }
-	if( !parport_pc_loaded)
-	    {
-	    if( `ok == ModuleLoading::Load( "parport_pc", "", post_vendor, 
-	                                    post_device, Linuxrc::manual (), true ))
-		{
-		ModulesConf::ModuleArgs ("parport_pc", "");
-		parport_pc_loaded = true;
-		}
-	    }
-
-	if( `ok == ModuleLoading::Load( post_name, post_arg, post_vendor, 
-	                                post_device, Linuxrc::manual (), post_modprobe))
-	    {
-	    ModulesConf::ModuleArgs (post_name, post_arg);
-	    Kernel::AddModuleToLoad(post_name);
-
-	    moduleNames = add( moduleNames, post_name );
-	    moduleArgs  = add( moduleArgs, post_arg );
-	    y2milestone( "moduleNames %1", moduleNames );
-	    y2milestone( "moduleArgs %1", moduleArgs );
-	    }
-	});
-    return;
-    }
 
 // start a controller (by loading its module)
 // return true if all necessary modules were actually loaded
@@ -205,23 +132,6 @@ define boolean startController (map controller)
 		string module_name = module_entry[0]:"";
 		string module_args = module_entry[1]:"";
 
-		// remember postinstall modules
-
-		if( contains( postinstall_names, module_name) )
-		    {
-		    y2milestone("startController name: %1 args: %2", module_name, module_args);
-
-		    list vendor_device = 
-			ModuleLoading::prepareVendorDeviceInfo(controller);
-
-		    // save data for parportInitialize
-		    postinstall_info = 
-			add( postinstall_info,
-			     [module_modprobe, module_name, module_args,
-			      vendor_device[0]:"", vendor_device[1]:""]);
-		    }
-		else
-		    {
 		    // load module if not yet loaded
 		    if( !contains (moduleNames, module_name) )
 			{
@@ -267,7 +177,6 @@ define boolean startController (map controller)
 			    y2milestone( "startController ModToInitrdLx %1", ModToInitrdLx );
 			    }
 			} // not yet loaded
-		    } // not postinstall
 
 		// break out of module load loop if one module failed
 
@@ -444,10 +353,6 @@ global define void Initialize()
 	``{
 	Initrd::AddModule( s[0]:"", s[1]:"" );
 	});
-
-    y2milestone( "Initialize postinstall_info %1", postinstall_info );
-
-    parportInitialize ();
 
     // load all raid personalities
     SCR::Execute(.target.modprobe, "raid0", "" );
