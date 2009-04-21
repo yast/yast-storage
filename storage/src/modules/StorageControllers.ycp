@@ -39,7 +39,7 @@
     list<list> ModToInitrdLx = [];
     list<list> ModToInitrd = [];
 
-    list controllers = [];	// set by "Probe"
+    list<map> controllers = [];	// set by "Probe"
 
 
     /**
@@ -48,7 +48,7 @@
      *
      * @returns integer	number of controllers, 0 = none found 
      */
-global define integer Probe ()
+global integer Probe()
 {
     y2milestone( "StorageControllers::Probe()" );
 
@@ -68,7 +68,7 @@ global define integer Probe ()
 // return true if all necessary modules were actually loaded
 // return false if loading failed or was not necessary at all
 
-define boolean startController (map controller)
+boolean StartController(map controller)
 {
     // check module information
     // skip controller if no module info available
@@ -200,14 +200,14 @@ define boolean startController (map controller)
 
     HwStatus::Set (unique_key, one_module_failed?`no:`yes);
 
-    return (!one_module_failed);
+    return !one_module_failed;
 }
 
 
 // local function to go through list of resources (list of maps)
 // checking if '"active":true' is set.
 
-define boolean anyActive (list<map> resources)
+boolean AnyActive(list<map> resources)
 {
     boolean active = size(resources)==0;
 
@@ -224,7 +224,7 @@ define boolean anyActive (list<map> resources)
  * Start storage related USB and FireWire stuff
  *
  */
-global define void StartHotplugStorage ()
+global void StartHotplugStorage()
 {
     import "Hotplug";
 
@@ -249,8 +249,6 @@ global define void StartHotplugStorage ()
 	// load sbp2
 	ModuleLoading::Load ("sbp2", "", "", "SBP2 Protocol", Linuxrc::manual (), true);
     }
-
-    return;
 }
 
 /**
@@ -261,7 +259,7 @@ global define void StartHotplugStorage ()
 // O: list of [ loaded modules, module argument ]
  */
 
-global define void Initialize()
+global void Initialize()
 {
     moduleNames = [];
     moduleArgs = [];
@@ -298,8 +296,8 @@ global define void Initialize()
 	    // the controller is disabled in BIOS
 	    // this is done by checking for an active IO or memory resource
 
-	    if( !(anyActive (controller["resource", "io"]:[])
-		  ||  anyActive (controller["resource", "mem"]:[])))
+	    if( !(AnyActive (controller["resource", "io"]:[])
+		  || AnyActive (controller["resource", "mem"]:[])))
 	    {
 		y2milestone( "Initialize controller %1 disabled in BIOS", 
 			     controller["device"]:"" );
@@ -309,7 +307,7 @@ global define void Initialize()
 	    }
 	}
 
-	module_loaded = startController(controller) || module_loaded;
+	module_loaded = StartController(controller) || module_loaded;
 	} // while (controller)
 
     y2milestone( "Initialize module_loaded %1", module_loaded );
@@ -363,16 +361,13 @@ global define void Initialize()
 
     StartHotplugStorage();
 
-    y2milestone("Initialize all controllers initialized module_loaded:%1",
-                module_loaded );
+    y2milestone("Initialize all controllers initialized module_loaded:%1", module_loaded);
+
     StorageDevices::InitDone();
     if( module_loaded )
 	Storage::ReReadTargetMap();
     y2milestone( "Initialize calling EnablePopup()" );
     StorageClients::EnablePopup();
-
-    return;
-
-}; // Initialize ()
+};
 
 }
