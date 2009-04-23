@@ -8,6 +8,7 @@
     textdomain "storage";
 
     import "Arch";
+    import "TreePanel";
     import "Region";
     import "Mode";
     import "Stage";
@@ -68,6 +69,42 @@
 	);
     }
 
+    void HandleHdButtons( string device, map event )
+    {
+	map dev = Storage::GetDiskPartition( device );
+	string disk = (string) dev["disk"]:nil;
+	// FIXME: is this necessary & sufficient condition?
+	boolean is_disk = (dev["nr"]:"" == ""); 
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `add:
+		EpCreatePartition( disk );
+		break;
+	    case `edit:
+		if  ( is_disk )
+		    TreePanel::SwitchToNew( disk );
+		else
+		    EpEditPartition( device );
+		break;
+
+	    case `resize:
+		if  ( is_disk )
+		    Popup::Error(_("Hard disks, BIOS RAIDs and multipath 
+devices cannot be resized.")); 
+		else
+		    EpResizePartition ( device );
+		break;
+
+	    case `delete:
+		if  ( is_disk )
+		    EpDeleteDisk( device );
+		else
+		    EpDeletePartition ( device, UI::WidgetExists(`id(`table)) ? `table : `overview );
+		break;
+	}
+    }
+
     void CreateHdMainPanel(any user_data)
     {
 	symbol Predicate(map disk, map partition)
@@ -113,10 +150,13 @@ iSCSI disks, BIOS RAIDs and Multipath disks and their partitions.</p>");
 
     void HandleHdMainPanel(any user_data, map event)
     {
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+
+	HandleHdButtons( device, event );
+
 	switch (Event::IsWidgetContextMenuActivated(event))
 	{
 	    case `table:
-		string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
 		EpContextMenuDevice(device);
 		break;
 	}
@@ -272,24 +312,7 @@ partitions are shown here.</p>");
 	string disk_device = (string) user_data;
 	string part_device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
 
-	switch (Event::IsWidgetActivated(event))
-	{
-	    case `add:
-		EpCreatePartition(disk_device);
-		break;
-
-	    case `edit:
-		EpEditPartition(part_device);
-		break;
-
-	    case `resize:
-		EpResizePartition(part_device);
-		break;
-
-	    case `delete:
-		EpDeletePartition(part_device, `table);
-		break;
-	}
+	HandleHdButtons( part_device, event );
 
 	switch (Event::IsMenu(event))
 	{
@@ -427,21 +450,7 @@ selected partition.</p>");
     {
 	string part_device = (string) user_data;
 
-	switch (Event::IsWidgetActivated(event))
-	{
-	    case `edit:
-		EpEditPartition(part_device);
-		break;
-
-	    case `resize:
-		EpResizePartition(part_device);
-		break;
-
-	    case `delete:
-		EpDeletePartition(part_device, `overview);
-		break;
-	}
-
+	HandleHdButtons( part_device, event);
 	UI::SetFocus(`id(`text));
     }
 }
