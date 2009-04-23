@@ -69,6 +69,54 @@
 	);
     }
 
+    void HandleLvmButtons( string device, map event )
+    {
+	map dev = Storage::GetDiskPartition( device );
+	string vg = (string) dev["disk"]:nil;
+	// FIXME: is this necessary & sufficient condition?
+	boolean is_vg = (dev["nr"]:"" == ""); 
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `add:
+		EpCreateLogicalVolume( vg );
+		break;
+
+	    case `edit:
+		if  ( is_vg )
+		    TreePanel::SwitchToNew( vg );
+		else
+		    EpEditLogicalVolume( device );
+		break;
+
+	    case `resize:
+		if  ( is_vg )
+		    EpResizeVolumeGroup( device);
+		else
+		    EpResizeLogicalVolume ( device );
+		break;
+
+	    case `delete:
+		if  ( is_vg )
+		    EpDeleteVolumeGroup( device );
+		else
+		    EpDeleteLogicalVolume ( device, UI::WidgetExists(`id(`table)) ? `table : `overview );
+		break;
+	}
+
+	switch (Event::IsMenu( event ))
+	{
+	    case `group:
+		EpCreateVolumeGroup();
+		break;
+
+	    case `volume:
+		EpCreateLogicalVolume( vg );
+		break;
+	}
+    }
+
+
     void CreateLvmMainPanel(any user_data)
     {
 	symbol Predicate(map disk, map partition)
@@ -116,17 +164,14 @@ their logical volumes.</p>");
 
     void HandleLvmMainPanel(any user_data, map event)
     {
-	switch (Event::IsWidgetActivated(event))
-	{
-	    case `add:
-		EpCreateVolumeGroup();
-		break;
-	}
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
 
+	HandleLvmButtons( device, event );
+
+	
 	switch (Event::IsWidgetContextMenuActivated(event))
 	{
 	    case `table:
-		string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
 		EpContextMenuDevice(device);
 		break;
 	}
@@ -162,17 +207,7 @@ selected volume group.</p>");
     {
 	string device = (string) user_data;
 
-	switch (Event::IsWidgetActivated(event))
-	{
-	    case `resize:
-		EpResizeVolumeGroup(device);
-		break;
-
-	    case `delete:
-		EpDeleteVolumeGroup(device);
-		break;
-	}
-
+	HandleLvmButtons( device, event );
 	UI::SetFocus(`id(`text));
     }
 
@@ -221,24 +256,7 @@ selected volume group.</p>");
 	string vg_device = (string) user_data;
 	string lv_device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
 
-	switch (Event::IsWidgetActivated(event))
-	{
-	    case `add:
-		EpCreateLogicalVolume(vg_device);
-		break;
-
-	    case `edit:
-		EpEditLogicalVolume(lv_device);
-		break;
-
-	    case `resize:
-		EpResizeLogicalVolume(lv_device);
-		break;
-
-	    case `delete:
-		EpDeleteLogicalVolume(lv_device, `table);
-		break;
-	}
+	HandleLvmButtons( lv_device, event );
 
 	switch (Event::IsWidgetContextMenuActivated(event))
 	{
@@ -356,19 +374,7 @@ selected logical volume.</p>");
     {
 	string device = (string) user_data;
 
-	switch (Event::IsWidgetActivated(event))
-	{
-	    case `edit:
-		EpEditLogicalVolume(device);
-		break;
-
-	    case `resize:
-		EpResizeLogicalVolume(device);
-		break;
-
-	    case `delete:
-		EpDeleteLogicalVolume(device, `overview);
-		break;
-	}
+	HandleLvmButtons( device, event );
+	UI::SetFocus (`id(`text));
     }
 }
