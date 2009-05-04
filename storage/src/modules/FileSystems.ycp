@@ -32,7 +32,8 @@ global map<string,any> conv_fs =
        "def_int" : LibStorage::FSUNKNOWN(),
        "m" : $[ LibStorage::REISERFS() : `reiser,
                 LibStorage::EXT2() : `ext2,
-                LibStorage::EXT3() : `ext3,
+                LibStorage::EXT3() : `ext3,   
+		LibStorage::EXT4() : `ext4,
                 LibStorage::VFAT() : `vfat,
                 LibStorage::XFS() : `xfs,
                 LibStorage::JFS() : `jfs,
@@ -144,6 +145,7 @@ define map FstabDefaultMap =
 		   `xfs		: true,
 		   `ext2        : true,
 		   `ext3        : true,
+		   `ext4        : true,
 		   `jfs    	: true,
 		   `vfat  	: true,
 		   `ntfs  	: true,
@@ -163,6 +165,7 @@ define map FstabDefaultMap =
 	`xfs		: $[ ],
 	`ext2		: $[ ],
 	`ext3		: $[ ],
+	`ext4		: $[ ],
 	`jfs		: $[ ],
 	`hfs		: $[ ],
 	`vfat		: $[ ],
@@ -171,24 +174,6 @@ define map FstabDefaultMap =
 	`unknown	: $[ ]
     ];
 
-
-    /**
-     * Return a map that contains the mount option for each used_fs (-t)
-     * @return map
-     */
-  /*
-    to mount_string
-    global define used2typeMap()
-    ``{
-	return $[
-		 `ext2   : "ext2",
-		 `ext3   : "ext3",
-		 `reiser : "reiserfs",
-		 `xfs    : "xfs",
-		 `jfs    : "jfs",
-		 `vfat   : "vfat" ];
-    };
-  */
 
 global define list<map<symbol, any> > GetGeneralFstabOptions()
     ``{
@@ -614,9 +599,11 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
   ];
 
   list< map<symbol, any> > ext3_options = (list< map<symbol, any> >)merge( ext2_options, ext3_only_options );
+  list< map<symbol, any> > ext4_options = (list< map<symbol, any> >)merge( ext2_options, ext3_only_options );
 
-  list< map<symbol, any> > ext3_fst_options = [ ];
   list< map<symbol, any> > ext2_fst_options = [ ];
+  list< map<symbol, any> > ext3_fst_options = [ ];
+  list< map<symbol, any> > ext4_fst_options = [ ];
   list< map<symbol, any> > reiser_fst_options = [ ];
 
 
@@ -632,7 +619,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mountpoints 	: SuggestMPoints(),
 				    `mount_option	: "-t ext2",
 				    `mount_string	: "ext2",
-				    `makefstype		: "ext2",
 				    `fst_options  	: ext2_fst_options,
 				    `options  		: ext2_options,
 		      ],
@@ -648,7 +634,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mountpoints 	: SuggestMPoints() ,
 				    `mount_option	: "-t vfat",
 				    `mount_string	: "vfat",
-				    `makefstype		: "fat32",
 				    `needed_modules	: [ "fat", "vfat" ],
 				    `fst_options  	: fat_fst_options,
 				    `options 		: vfat_options
@@ -666,7 +651,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_option 	: "-t reiserfs",
 				    `mount_string	: "reiserfs",
 				    `needed_modules	: [ "reiserfs" ],
-				    `makefstype		: "reiserfs",
 				    `fst_options  	: reiser_fst_options,
 				    `options 		: reiserfs_options
 		      ],
@@ -682,7 +666,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_option 	: "-t xfs",
 				    `mount_string	: "xfs",
 				    `needed_modules	: [ "xfs" ],
-				    `makefstype		: "xfs",
 				    `options 		: xfs_options
 		      ],
 		      `jfs 	: $[
@@ -697,7 +680,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "jfs",
 				    `mount_option	: "-t jfs",
 				    `needed_modules	: [ "jfs" ],
-				    `makefstype		: "jfs",
 				    `options      	: jfs_options
 		      ],
 		      `ext3 	: $[
@@ -712,9 +694,23 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "ext3",
 				    `mount_option	: "-t ext3",
 				    `needed_modules	: [ "jbd",  "ext3" ],
-				    `makefstype		: "ext2", // format ext3 as ext2 !!!!!!!!!!!!!!!
 				    `fst_options  	: ext3_fst_options,
 				    `options      	: ext3_options
+		      ], 
+		      `ext4 	: $[
+				    `name 		: "Ext4",
+				    `fsid 		: Partitions::fsid_native,
+				    `real_fs            : true,
+				    `supports_format 	: true ,
+				    `fsid_item 		: "0x83 Linux " ,
+				    `fstype 		: "Linux native" ,
+				    `crypt		: true,
+				    `mountpoints 	: SuggestMPoints(),
+				    `mount_string	: "ext4",
+				    `mount_option	: "-t ext4",
+				    `needed_modules	: [ "jbd",  "ext4" ],
+				    `fst_options  	: ext4_fst_options,
+				    `options      	: ext4_options
 		      ],
 		      `hfs 	: $[
 				    `name 		: "MacHFS",
@@ -729,7 +725,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "hfs",
 				    `mount_option	: "-t hfs",
 				    `needed_modules	: [ "hfs" ],
-				    `makefstype		: "hfs",
 				    `fst_options  	: [],
 				    `options      	: []
 		      ],
@@ -746,7 +741,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "hfsplus",
 				    `mount_option	: "-t hfsplus",
 				    `needed_modules	: [ "hfsplus" ],
-				    `makefstype		: "",
 				    `fst_options  	: [],
 				    `options      	: []
 		      ],
@@ -763,7 +757,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "ntfs-3g",
 				    `mount_option	: "-t ntfs",
 				    `needed_modules	: [ "ntfs" ],
-				    `makefstype		: "",
 				    `fst_options  	: [],
 				    `options      	: []
 		      ]
@@ -875,11 +868,11 @@ global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
 	{
 	map<symbol, map<symbol, any> > fs = GetAllFileSystems( true, false );
 	ret = fs[fsys,`fst_options]:[];
-	if( contains( [`ext3, `reiser], fsys ) )
+	if( contains( [`ext3, `ext4, `reiser], fsys ) )
 	    {
 	    ret = (list< map<symbol, any> >)union( ret, GetJournalFstabOptions() );
 	    }
-	if( contains( [`ext2, `ext3, `reiser], fsys ) )
+	if( contains( [`ext2, `ext3, `ext4, `reiser], fsys ) )
 	    {
 	    ret = (list< map<symbol, any> >)union( ret, GetAclFstabOptions() );
 	    }
@@ -1158,6 +1151,10 @@ global define symbol FsToSymbol( string type )
 	  {
 	  return_value = `ext3;
 	  }
+	else if( type == "ext4" )
+	  {
+	  return_value = `ext4;
+	  }
     else if( regexpmatch( type, "reiser.*" ) )
 	  {
 	  return_value = `reiser;
@@ -1270,7 +1267,7 @@ global define string DefaultFstabOptions( map part )
     ``{
     symbol fsys = part["used_fs"]:`none;
     string fst_default = "";
-    if( part["format"]:false && contains( [`ext2, `ext3, `reiser ], fsys ) )
+    if( part["format"]:false && contains( [`ext2, `ext3, `ext4, `reiser ], fsys ) )
 	{
 	fst_default = "acl,user_xattr";
 	}
@@ -1337,7 +1334,7 @@ global map <string, map <string, any> > DefaultFormatOptions( map part )
     symbol fsys = part["used_fs"]:`none;
     if( part["format"]:false )
     {
-	if( fsys==`ext3 )
+	if (contains([ `ext3, `ext4 ], fsys))
 	{
 	    ret["opt_dir_index"] = $[ "option_str" : "-O dir_index",
 				      "option_value" : true ];
@@ -1345,12 +1342,12 @@ global map <string, map <string, any> > DefaultFormatOptions( map part )
 				       "option_value" : true,
 				       "option_cmd" : `tunefs ];
 	}
-	if( Arch::board_pegasos() && contains( [`ext2, `ext3], fsys ) ) 
+	if( Arch::board_pegasos() && contains( [`ext2, `ext3, `ext4], fsys ) ) 
 	{
 	    ret["opt_bytes_per_inode"] = $[ "option_str" : "-I",
 					    "option_value" : "128" ];
 	}
-	if( Arch::s390() && contains( [`ext2, `ext3], fsys ) ) 
+	if( Arch::s390() && contains( [`ext2, `ext3, `ext4], fsys ) ) 
 	{
 	    ret["opt_blocksize"] = $[ "option_str" : "-b",
 	                              "option_value" : "4096" ];
@@ -1433,7 +1430,7 @@ global define list GetFstabDefaultList( string key )
 
 global define boolean CanDoQuota( map part )
     ``{
-    list quota_fs = [ `ext2, `ext3, `reiser, `xfs ];
+    list quota_fs = [ `ext2, `ext3, `ext4, `reiser, `xfs ];
     return( contains( quota_fs, part["used_fs"]:`unknown ));
     }
 
@@ -1465,7 +1462,7 @@ global define string RemoveQuotaOpts( string fst_opts )
 global define string AddQuotaOpts( map part, string fst_opts )
     {
     string ret = RemoveQuotaOpts( fst_opts );
-    list journal = [ `ext3, `reiser ];
+    list journal = [ `ext3, `ext4, `reiser ];
     if( contains( journal, part["used_fs"]:`unknown ))
 	ret = ret + ",usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv0";
     else
