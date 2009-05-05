@@ -265,27 +265,38 @@ selected hard disk.</p>");
 		);
 	}
 
-	map ddata = Storage::GetDisk(target_map, device);
-	list <integer> bits = [];
-	list <string> labels = [];
+	term partitions_bargraph = `Empty();
 
-	foreach (map part, ddata["partitions"]:[], {
-	    if ( part["type"]:`primary != `extended)
+	if (UI::HasSpecialWidget(`BarGraph))
+	{
+	    map ddata = Storage::GetDisk(target_map, device);
+
+	    if (ddata["used_by"]:`UB_NONE == `UB_NONE)
 	    {
-	        list <integer> region = part["region"]:[];
-	        integer tmp = 100*Region::Length( region )/ddata["cyl_count"]:1; //in %
-		string descr = part["device"]:"" + "\n" + Storage::KByteToHumanStringOmitZeroes(part["size_k"]:0);
+		list <integer> bits = [];
+		list <string> labels = [];
 
-		// Guarantee some minimal share (1%) of total graph width to a segment
-		// It prevents small partitions e.g. swaps from disappearing completely
-		bits = add( bits, (tmp < 1) ? 1 : tmp );
-		labels = add( labels, descr);
+		foreach (map part, ddata["partitions"]:[], {
+		    if (part["type"]:`primary != `extended)
+		    {
+			list <integer> region = part["region"]:[];
+			integer tmp = 100*Region::Length( region )/ddata["cyl_count"]:1; //in %
+			string descr = part["device"]:"" + "\n" + Storage::KByteToHumanStringOmitZeroes(part["size_k"]:0);
+
+			// Guarantee some minimal share (1%) of total graph width to a segment
+			// It prevents small partitions e.g. swaps from disappearing completely
+			bits = add( bits, (tmp < 1) ? 1 : tmp );
+			labels = add( labels, descr);
+		    }
+		});
+
+		partitions_bargraph = `BarGraph(`id(`bgraph), bits, labels);
 	    }
-	});
+	}
 
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
-			      UI::TextMode() ? `Empty() : `BarGraph(`id(`bgraph), bits, labels),
+			      partitions_bargraph,
 			      `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 				     table_header, table_contents),
 			      `HBox(
