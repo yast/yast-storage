@@ -1518,23 +1518,56 @@ define boolean TargetAllocationDlg( map target, string dev)
     };
 
 
+boolean DDZeroPartitionTable(string del_dev, integer size_k)
+{
+    string default_label = Storage::DefaultDiskLabel(size_k);
 
+    list<string> labels = [ default_label ];
+    if (!contains(labels, "gpt"))
+	labels = add(labels, "gpt");
 
-define boolean DDZeroPartitionTable( string del_dev, integer size_k )
-    ``{
+    string label = default_label;
+    if (size(labels) > 1)
+    {
+	term tmp = `VBox();
+	foreach(string label, labels, {
+	    tmp = add(tmp, `Left(`RadioButton(`id(label), toupper(label), label == default_label)));
+	});
+
+	UI::OpenDialog(`opt(`decorated),
+		       `VBox(
+			   // dialog heading
+			   `Label(sformat(_("Select new partition table type for %1."), del_dev)),
+			   `MarginBox(2, 0.4, `RadioButtonGroup(`id(`labels), `VBox(tmp))),
+			   `HBox(
+			       `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+			       `PushButton(`id(`cancel), Label::CancelButton())
+			       )
+			   )
+	);
+
+	symbol widget = (symbol) UI::UserInput();
+
+	label = (string) UI::QueryWidget(`id(`labels), `Value);
+
+	UI::CloseDialog();
+
+	if (widget != `ok)
+	    return false;
+    }
+
     // popup text
-    if( Popup::YesNo(sformat(_("CAUTION
+    if (!Popup::YesNo(sformat(_("CAUTION
 If you delete the partition table and disk label of
 device %1, data on this device will be lost.
 
 Really do this?
 "), del_dev)))
-	{
-	Storage::DeletePartitionTable(del_dev,size_k);
-	return true;
-	}
-    return false;
-    };
+	return false;
+
+    Storage::CreatePartitionTable(del_dev, label);
+    return true;
+}
 
 
 define symbol ReallyInstPrepdisk( )
