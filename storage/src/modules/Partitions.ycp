@@ -100,12 +100,42 @@ global define void Partitions()
         return ;
     }
 
+
+global boolean EfiBoot()
+{
+    boolean ret = false;
+
+    if (Arch::ia64())
+    {
+	ret = true;
+    }
+    else
+    {
+	if (Stage::initial())
+	{
+	    string tmp = (string) SCR::Read(.etc.install_inf.EFI);
+	    if (tmp != nil && tmp == "1")
+		ret = true;
+	}
+	else
+	{
+	    string tmp = (string) SCR::Read(.etc.bootloader.LOADER_TYPE);
+	    if (tmp != nil && tmp == "elilo")
+		ret = true;
+	}
+    }
+
+    y2milestone("EfiBoot ret:%1", ret);
+    return ret;
+}
+
+
 global define symbol DefaultBootFs()
     ``{
     if( default_boot_fs == `unknown )
 	{
 	default_boot_fs = `ext2;
-	if( Arch::ia64 () )
+	if( EfiBoot () )
 	    {
 	    default_boot_fs = `vfat;
 	    }
@@ -122,7 +152,7 @@ global define string BootMount()
     if( boot_mount_point == "" )
 	{
 	boot_mount_point = "/boot";
-	if( Arch::ia64 () )
+	if( EfiBoot () )
 	    {
 	    boot_mount_point = "/boot/efi";
 	    }
@@ -231,7 +261,7 @@ global define integer FsidBoot()
     if( fsid_boot == 0 )
 	{
 	fsid_boot = fsid_native;
-	if( Arch::ia64 () )
+	if (EfiBoot() || Arch::ia64())
 	    {
 	    fsid_boot = fsid_gpt_boot;
 	    }
@@ -250,7 +280,7 @@ global define integer FsidBoot()
 global define boolean NeedBoot()
     ``{
     boolean ret = false;
-    if( Arch::ia64()||Arch::ppc()||Arch::sparc()||Arch::alpha() )
+    if( EfiBoot()||Arch::ppc()||Arch::sparc()||Arch::alpha() )
 	{
 	ret = true;
 	}

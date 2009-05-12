@@ -91,6 +91,7 @@ Storage::Storage( bool ronly, bool tmode, bool autodetec ) :
     char * tenv = getenv( "YAST_IS_RUNNING" );
     inst_sys = tenv!=NULL && strcmp(tenv,"instsys")==0;
     root_mounted = !inst_sys;
+    efiboot = false;
     hald_pid = 0;
     if( !testmode )
 	testmode = getenv( "YAST2_STORAGE_TMODE" )!=NULL;
@@ -181,6 +182,7 @@ Storage::initialize()
     if( autodetect )
 	{
 	detectArch();
+	efiboot = (arch() == "ia64");
 	}
     if( testmode )
 	{
@@ -928,6 +930,14 @@ void Storage::setDefaultMountBy( MountByType val )
     defaultMountBy = val;
     }
 
+
+void Storage::setEfiBoot(bool val)
+{  
+    y2milestone("val:%d", val);
+    efiboot = val;
+}
+
+
 void Storage::setRootPrefix( const string& root )
     {
     y2milestone( "root:%s", root.c_str() );
@@ -1435,13 +1445,13 @@ Storage::initializeDisk( const string& disk, bool value )
 string
 Storage::defaultDiskLabel() const
     {
-    return( Disk::defaultLabel(0) );
+    return Disk::defaultLabel(this, 0);
     }
 
 string
 Storage::defaultDiskLabelSize( unsigned long long size_k ) const
     {
-    return( Disk::defaultLabel(size_k) );
+    return Disk::defaultLabel(this, size_k);
     }
 
 unsigned long long 

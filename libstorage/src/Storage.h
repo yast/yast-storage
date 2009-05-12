@@ -157,6 +157,7 @@ class Storage : public storage::StorageInterface
 	const string& tDir() const { return( testdir ); }
 	const string& root() const { return( rootprefix ); }
 	const string& tmpDir() const;
+	bool efiBoot() const { return efiboot; }
 	static const string& arch() { return( proc_arch ); }
 	static const string& sysfsDir() { return( sysfs_dir ); }
 	EtcFstab* getFstab() { return fstab; }
@@ -280,6 +281,8 @@ class Storage : public storage::StorageInterface
 	MountByType getDefaultMountBy() const { return defaultMountBy; }
 	void setDetectMountedVolumes( bool val=true );
 	bool getDetectMountedVolumes() const { return detectMounted; }
+	void setEfiBoot(bool val);
+	bool getEfiBoot() const { return efiboot; }
 	void setRootPrefix( const string& root );
 	int removeVolume( const string& device );
 	int removeUsing( const string& device, const storage::usedBy& uby );
@@ -1395,6 +1398,7 @@ class Storage : public storage::StorageInterface
 	string rootprefix;
 	string logdir;
 	unsigned hald_pid;
+	bool efiboot;
 	static string proc_arch;
 	static string sysfs_dir;
 	CCont cont;

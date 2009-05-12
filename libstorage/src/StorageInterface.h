@@ -1277,6 +1277,22 @@ namespace storage
 	virtual MountByType getDefaultMountBy() const = 0;
 
 	/**
+	 * Set value for EFI boot.
+	 *
+	 * Currently this value affects the default disk label.
+	 *
+	 * @param val new efi boot value
+	 */
+	virtual void setEfiBoot(bool val) = 0;
+
+	/**
+	 * Get value for EFI boot.
+	 *
+	 * @return value for efi boot
+	 */
+	virtual bool getEfiBoot() const = 0;
+
+	/**
 	 * Set value for root prefix.
 	 * This value is appended to all mount points of volumes, when
 	 * changes are commited. Config files fstab, cryptotab, raidtab and
