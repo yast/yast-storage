@@ -1197,7 +1197,7 @@ global define boolean CheckBackupState( string who )
 map diskMap( any dinfo, map d )
     {
     d["size_k"] = LibStorage::DiskInfo::swig_sizeK_get(dinfo);
-    d["cyl_size"] = LibStorage::DiskInfo::swig_cylSizeB_get(dinfo);
+    d["cyl_size"] = LibStorage::DiskInfo::swig_cylSize_get(dinfo);
     d["cyl_count"] = LibStorage::DiskInfo::swig_cyl_get(dinfo);
     d["label"] = LibStorage::DiskInfo::swig_disklabel_get(dinfo);
     d["max_logical"] = LibStorage::DiskInfo::swig_maxLogical_get(dinfo);
@@ -1316,7 +1316,7 @@ map volumeMap( any vinfo, map p )
     if( tbool )
 	{
 	p["resize"] = true;
-	p["orig_size_k"] = LibStorage::VolumeInfo::swig_OrigSizeK_get(vinfo);
+	p["orig_size_k"] = LibStorage::VolumeInfo::swig_origSizeK_get(vinfo);
 	}
     tbool = LibStorage::VolumeInfo::swig_ignore_fs_get(vinfo);
     if( tbool )
@@ -1469,8 +1469,8 @@ map getContainerInfo( map c )
 	    {
 	    c["create"] = LibStorage::LvmVgInfo::swig_create_get(infos);
 	    c["size_k"] = LibStorage::LvmVgInfo::swig_sizeK_get(infos);
-	    c["cyl_size"] = 1024*LibStorage::LvmVgInfo::swig_peSize_get(infos);
-	    c["pesize"] = 1024*LibStorage::LvmVgInfo::swig_peSize_get(infos);
+	    c["cyl_size"] = 1024*LibStorage::LvmVgInfo::swig_peSizeK_get(infos);
+	    c["pesize"] = 1024*LibStorage::LvmVgInfo::swig_peSizeK_get(infos);
 	    c["cyl_count"] = LibStorage::LvmVgInfo::swig_peCount_get(infos);
 	    c["pe_free"] = LibStorage::LvmVgInfo::swig_peFree_get(infos);
 	    c["lvm2"] = LibStorage::LvmVgInfo::swig_lvm2_get(infos);
@@ -1492,8 +1492,8 @@ map getContainerInfo( map c )
 	    map p = $[];
 	    vinfo = LibStorage::LvmLvInfo::swig_v_get(info);
 	    p = volumeMap( vinfo, p );
-	    p["stripes"] = LibStorage::LvmLvInfo::swig_stripe_get(info);
-	    t = LibStorage::LvmLvInfo::swig_stripe_size_get(info);
+	    p["stripes"] = LibStorage::LvmLvInfo::swig_stripes_get(info);
+	    t = LibStorage::LvmLvInfo::swig_stripeSizeK_get(info);
 	    if( t>0 )
 		p["stripesize"] = t;
 	    p["type"] = `lvm;
@@ -1524,7 +1524,7 @@ map getContainerInfo( map c )
 		}
 	    p["type"] = `sw_raid;
 	    p["fstype"] = Partitions::raid_name;
-	    t = LibStorage::MdInfo::swig_chunk_get(info);
+	    t = LibStorage::MdInfo::swig_chunkSizeK_get(info);
 	    if( t>0 )
 		{
 		p["chunk_size"] = t;
@@ -2266,7 +2266,7 @@ global boolean ResizeVolume(string device, string disk, integer new_size_k)
 {
     y2milestone("ResizeVolume device:%1 disk:%2 new_size_k:%3", device, disk, new_size_k);
     integer ret = 0;
-    ret = LibStorage::StorageInterface::resizeVolume(sint, device, (new_size_k+1023)/1024);
+    ret = LibStorage::StorageInterface::resizeVolume(sint, device, new_size_k);
     if (ret < 0)
 	y2error("ResizeVolume sint ret:%1", ret);
     UpdateTargetMapDisk(disk);
@@ -2554,14 +2554,14 @@ global boolean ReduceLvmVg( string name, string device )
     }
 
 global boolean CreateLvmLv( string vgname, string lvname, integer sizeK,
-                            integer stripe )
+                            integer stripes )
     {
-    y2milestone( "CreateLvmLv vg:%1 name:%2 sizeK:%3 stripe:%4", vgname,
-                 lvname, sizeK, stripe );
+    y2milestone("CreateLvmLv vg:%1 name:%2 sizeK:%3 stripes:%4", vgname,
+		lvname, sizeK, stripes);
     integer ret = 0;
     string dummy = "";
     ret = LibStorage::StorageInterface::createLvmLv( sint, vgname, lvname,
-                                                     (sizeK+1023)/1024, stripe,
+                                                     sizeK, stripes,
 						     dummy );
     if( ret<0 )
 	y2error( "CreateLvmLv sint ret:%1", ret );
