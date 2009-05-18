@@ -789,31 +789,29 @@ global list SwappingPartitions()
     return ret;
 }
 
-global define list GetDestroyedLvmVgs( map<string,map> target )
-    ``{
-    list vgs = [];
-    foreach(string diskdev, map disk, target,
-	``{
-	foreach( map p, disk["partitions"]:[],
-	    ``{
-	    if( p["used_by_type"]:`UB_NONE==`UB_LVM && p["format"]:false )
-		{
-		vgs = union( vgs, [ p["used_by"]:"" ] );
-		}
-	    });
-	});
-    vgs = sort( vgs );
-    y2milestone( "GetDestroyedLvmVgs %1", vgs );
-    return( vgs );
-    }
 
-global define map<string,map> DeleteDestroyedLvmVgs( map<string,map> target )
-    ``{
-    list<string> vgs = maplist( string s, (list<string>)GetDestroyedLvmVgs( target ),
-				``("/dev/"+s));
+list<string> GetDestroyedLvmVgs(map<string, map> target)
+{
+    list<string> vgs = [];
+    foreach(string diskdev, map disk, target, {
+	foreach( map p, disk["partitions"]:[], {
+	    if( p["used_by_type"]:`UB_NONE==`UB_LVM && p["format"]:false )
+	    {
+		vgs = add(vgs, p["used_by_device"]:"");
+	    }
+	 });
+    });
+    vgs = toset(vgs);
+    y2milestone( "GetDestroyedLvmVgs %1", vgs );
+    return vgs;
+}
+
+
+global map<string, map> DeleteDestroyedLvmVgs(map<string, map> target)
+{
+    list<string> vgs = GetDestroyedLvmVgs(target);
     y2milestone( "DeleteDestroyedLvmVgs %1", vgs );
-    foreach( string dev, vgs,
-	``{
+    foreach(string dev, vgs, {
 	if( haskey( target, dev ))
 	    target[dev,"delete"] = true;
 	target[dev,"partitions"] = maplist( map p, target[dev,"partitions"]:[],
@@ -823,9 +821,10 @@ global define map<string,map> DeleteDestroyedLvmVgs( map<string,map> target )
 					    return( p );
 					    });
 	y2milestone( "DeleteDestroyedLvmVgs %1: %2", dev, target[dev]:$[] );
-	});
-    return( target );
-    }
+    });
+    return target;
+}
+
 
 /**
  * Returns map of free space per partition
