@@ -281,20 +281,68 @@ selected hard disk.</p>");
 	    {
 		list <integer> bits = [];
 		list <string> labels = [];
+		string emptyspace = _("Unpartitioned Space");
 
-		foreach (map part, ddata["partitions"]:[], {
-		    if (part["type"]:`primary != `extended)
+		// Clean disk
+		if (isempty(ddata["partitions"]:[]))
+		{
+		   bits = [100];
+		   labels = [ emptyspace + "\n" + Storage::KByteToHumanString(ddata["size_k"]:0)];
+		}
+		else
+		{
+		    integer i = 0;
+		    integer part_count = size(ddata["partitions"]:[]);
+		    integer ccyl = 0;
+		    integer endcyl = ddata["cyl_count"]:1;
+
+		    while(ccyl < endcyl)
 		    {
-			list <integer> region = part["region"]:[];
+		        map part = ddata["partitions", i]:$[];
+			// skip extended ones
+			if ( part["type"]:`primary == `extended)
+			{
+			    i = i+1;
+			    continue;
+			}
+
+		        list <integer> region = ddata["partitions", i, "region"]:[];
+		        ccyl = Region::Start( region );
+			integer next_cyl = 0;
+
+			// this is the last partition in a row, look at the last cylinder of the disk
+			if ( (i+1) == part_count)
+			{
+			    next_cyl = endcyl;
+			}
+			// somewhere in the middle, look where the next partition starts
+			else
+			{
+			    next_cyl = Region::Start( ddata["partitions", i+1, "region"]:[] );
+			}
+
 			integer tmp = 100*Region::Length( region )/ddata["cyl_count"]:1; //in %
-			string descr = part["device"]:"" + "\n" + Storage::KByteToHumanStringOmitZeroes(part["size_k"]:0);
+			string descr = part["device"]:"" + "\n" + Storage::KByteToHumanString(part["size_k"]:0);
+			y2debug("this cyl: %1 text: %2 end cyl: %3 next cyl: %4",  ccyl, descr, Region::End( region), next_cyl);
 
 			// Guarantee some minimal share (1%) of total graph width to a segment
 			// It prevents small partitions e.g. swaps from disappearing completely
 			bits = add( bits, (tmp < 1) ? 1 : tmp );
 			labels = add( labels, descr);
+
+			// Now there is some xtra space between the end of this partition and the start of the next one
+			// or  the end of the disk
+			if ( (Region::End( region) +1) != next_cyl  )
+			{
+			    integer tmp2 = 100*( next_cyl - Region::End(region))/ddata["cyl_count"]:1; 
+			    bits = add( bits, (tmp2 < 1) ? 1 : tmp2);
+			    labels = add( labels, emptyspace + "\n" + Storage::ByteToHumanString( (next_cyl - Region::End(region)) * ddata["cyl_size"]:1));
+			}
+
+			ccyl = next_cyl;
+			i = i+1;
 		    }
-		});
+		}
 
 		partitions_bargraph = `BarGraph(`id(`bgraph), bits, labels);
 	    }
