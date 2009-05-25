@@ -12,6 +12,7 @@
 
     void DestroySettingsPanel(any user_data);
 
+
     list< map<symbol, any> > visible_fields = [
 	// list entry
 	$[ `label : _("Label"), `fields : [ `label ] ],
@@ -29,7 +30,7 @@
 	$[ `label : _("Fibre Channel information"), `fields : toset([ `fc_wwpn, `fc_fcp_lun, `fc_port_id ]) ]
     ];
 
-    map <symbol, string> mount_bys = $[
+    map<symbol, string> mount_bys = $[
 	// combo box entry
 	`device : _("Device Name"),
 	// combo box entry
@@ -39,8 +40,9 @@
 	// combo box entry
 	`id : _("Device ID"),
 	// combo box entry
-	`path :  _("Device Path")
+	`path : _("Device Path")
     ];
+
 
     void CreateSettingsPanel(any user_data)
     {
@@ -55,9 +57,18 @@
 	    });
 	}
 
-	list <term> CBItems = maplist( symbol item_id, string label, mount_bys, {
+	list <term> mount_by_items = maplist( symbol item_id, string label, mount_bys, {
 	    return `item(`id(item_id), label);
 	});
+
+	list<symbol> filesystems = filter(symbol fs, [ `ext2, `ext3, `ext4, `reiser, `xfs ], {
+		return FileSystems::IsSupported(fs) && !FileSystems::IsUnsupported(fs);
+	});
+
+	list<term> filesystem_items = maplist(symbol fs, filesystems, {
+	    return `item(`id(fs), FileSystems::GetName(fs, "Error"));
+	});
+
 
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
@@ -68,23 +79,12 @@
 				      `Left(`ComboBoxSelected(`id(`default_mountby),`opt(`notify),
 							      // combo box label
 							      _("Default Mount by"),
-							      CBItems,
+							      mount_by_items,
 							      `id(Storage::GetDefaultMountBy()))),
 				      `Left(`ComboBoxSelected(`id(`default_fs),`opt(`notify),
 							      // combo box label
 							      _("Default File System"),
-							      [
-								  // combo box entry
-								  `item(`id(`ext2), "Ext2"),
-								  // combo box entry
-								  `item(`id(`ext3), "Ext3"),
-								  // combo box entry
-								  `item(`id(`ext4), "Ext4"),
-								  // combo box entry
-								  `item(`id(`reiser), "Reiser"),
-								  // combo box entry
-								  `item(`id(`xfs), "XFS")
-							      ],
+							      filesystem_items,
 							      `id(Partitions::DefaultFs()))),
 				      `VSpacing(1),
 				      `Left(`ComboBoxSelected(`id(`display_name), `opt(`notify),
