@@ -296,9 +296,13 @@ selected hard disk.</p>");
 		    integer ccyl = 0;
 		    integer endcyl = ddata["cyl_count"]:1;
 
+		    list <map> partitions = (list <map> ) sort (map m, map n, ddata["partitions"]:[], {
+			return Region::Start( m["region"]:[] ) < Region::Start( n["region"]:[] );
+		    });
+
 		    while(ccyl < endcyl)
 		    {
-		        map part = ddata["partitions", i]:$[];
+		        map part = partitions[ i ]:$[];
 			// skip extended ones
 			if ( part["type"]:`primary == `extended)
 			{
@@ -331,8 +335,12 @@ selected hard disk.</p>");
 			labels = add( labels, descr);
 
 			// Now there is some xtra space between the end of this partition and the start of the next one
-			// or  the end of the disk
-			if ( (Region::End( region) +1) != next_cyl  )
+			// or the end of the disk if
+			// 1. end +1th cyl is not the next one
+			// 2. end cyl is not the same as the next one (yeah, partitions may share a cylinder)
+			if ( (Region::End( region ) != next_cyl) &&
+			     ( (Region::End( region) + 1) != next_cyl )
+			   )
 			{
 			    integer tmp2 = 100*( next_cyl - Region::End(region))/ddata["cyl_count"]:1; 
 			    bits = add( bits, (tmp2 < 1) ? 1 : tmp2);
