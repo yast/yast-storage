@@ -283,8 +283,17 @@ selected hard disk.</p>");
 		list <string> labels = [];
 		string emptyspace = _("Unpartitioned Space");
 
-		// Clean disk
-		if (isempty(ddata["partitions"]:[]))
+		// Filter out extended partitions
+		list <map> partitions = (list <map>) filter ( map one_part, ddata["partitions"]:[], {
+			return ( (one_part["type"]:`none == `primary) || (one_part["type"]:`none == `logical) );
+		});
+		// and sort the remaining ones by start cyl
+		partitions = (list <map> ) sort (map m, map n, partitions, {
+			return Region::Start( m["region"]:[] ) < Region::Start( n["region"]:[] );
+		});
+
+		// Clean disk (or 1 big extended partition)
+		if (isempty(partitions))
 		{
 		   bits = [100];
 		   labels = [ emptyspace + "\n" + Storage::KByteToHumanString(ddata["size_k"]:0)];
@@ -292,25 +301,14 @@ selected hard disk.</p>");
 		else
 		{
 		    integer i = 0;
-		    integer part_count = size(ddata["partitions"]:[]);
+		    integer part_count = size(partitions);
 		    integer ccyl = 0;
 		    integer endcyl = ddata["cyl_count"]:1;
-
-		    list <map> partitions = (list <map> ) sort (map m, map n, ddata["partitions"]:[], {
-			return Region::Start( m["region"]:[] ) < Region::Start( n["region"]:[] );
-		    });
 
 		    while(ccyl < endcyl)
 		    {
 		        map part = partitions[ i ]:$[];
-			// skip extended ones
-			if ( part["type"]:`primary == `extended)
-			{
-			    i = i+1;
-			    continue;
-			}
-
-		        list <integer> region = ddata["partitions", i, "region"]:[];
+		        list <integer> region = partitions[ i, "region" ]:[];
 		        ccyl = Region::Start( region );
 			integer next_cyl = 0;
 
@@ -322,7 +320,7 @@ selected hard disk.</p>");
 			// somewhere in the middle, look where the next partition starts
 			else
 			{
-			    next_cyl = Region::Start( ddata["partitions", i+1, "region"]:[] );
+			    next_cyl = Region::Start( partitions[ i+1, "region" ]:[] );
 			}
 
 			integer tmp = 100*Region::Length( region )/ddata["cyl_count"]:1; //in %
@@ -338,7 +336,7 @@ selected hard disk.</p>");
 			// or the end of the disk if
 			// 1. end +1th cyl is not the next one
 			// 2. end cyl is not the same as the next one (yeah, partitions may share a cylinder)
-			if ( (Region::End( region ) != next_cyl) &&
+			if ( ( Region::End( region ) != next_cyl ) &&
 			     ( (Region::End( region) + 1) != next_cyl )
 			   )
 			{
