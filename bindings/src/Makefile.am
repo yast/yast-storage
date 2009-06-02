@@ -1,15 +1,10 @@
 #
-# Makefile.am for libstorage/src
+# Makefile.am for storage/bindings/src
 #
 
 INCLUDES = -I$(includedir)
 
-storage:
-	ln -sf . storage
-	mkdir .libs
-	ln -sf . .libs/plugin
-
-BUILT_SOURCES = storage StorageCallbacksBuiltinTable.h StorageCallbacksBuiltinCalls.h
+BUILT_SOURCES = StorageCallbacksBuiltinTable.h StorageCallbacksBuiltinCalls.h
 
 StorageCallbacksBuiltinTable.h : StorageCallbacks.h
 	y2tool generateYCPWrappers StorageCallbacks.h StorageCallbacksBuiltinCalls.h StorageCallbacksBuiltinTable.h

@@ -1,5 +1,5 @@
 #
-# Makefile.am for libstorage/bindings/ycp
+# Makefile.am for storage/bindings/ycp
 #
 
 PLUGLIB_MODULE = LibStorage
