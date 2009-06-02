@@ -22,6 +22,8 @@
 
 #define y2log_component "libstorage"
 
+#include <algorithm>
+
 #include <ycp/y2log.h>
 #include <ycp/YExpression.h>
 #include <ycp/YBlock.h>
@@ -36,7 +38,7 @@
 #include <y2/Y2Component.h>
 #include <y2/Y2ComponentBroker.h>
 
-#include <Storage.h>
+#include <storage/StorageInterface.h>
 
 using namespace storage;
 
