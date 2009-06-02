@@ -40,6 +40,15 @@
 
 #include <storage/StorageInterface.h>
 
+namespace storage
+{
+    // workaround for broken YCP bindings
+    extern CallbackProgressBar progress_bar_cb_ycp;
+    extern CallbackShowInstallInfo install_info_cb_ycp;
+    extern CallbackInfoPopup info_popup_cb_ycp;
+    extern CallbackYesNoPopup yesno_popup_cb_ycp;
+}
+
 using namespace storage;
 
 class Y2StorageCallbackFunction : public Y2Function
@@ -298,7 +307,7 @@ StorageCallbacks::ProgressBar (const YCPString & callback)
 	return YCPVoid ();
     }
 
-    Storage::setCallbackProgressBarYcp (progress_bar_callback);
+    storage::progress_bar_cb_ycp = progress_bar_callback;
 
     return YCPVoid ();
 }
@@ -344,7 +353,7 @@ StorageCallbacks::ShowInstallInfo (const YCPString & callback)
 	return YCPVoid ();
     }
 
-    Storage::setCallbackShowInstallInfoYcp (show_install_info_callback);
+    storage::install_info_cb_ycp = show_install_info_callback;
 
     return YCPVoid ();
 }
@@ -390,7 +399,7 @@ StorageCallbacks::InfoPopup (const YCPString & callback)
 	return YCPVoid ();
     }
 
-    Storage::setCallbackInfoPopupYcp (info_popup_callback);
+    storage::info_popup_cb_ycp = info_popup_callback;
 
     return YCPVoid ();
 }
@@ -436,7 +445,7 @@ StorageCallbacks::YesNoPopup (const YCPString & callback)
 	return YCPVoid ();
     }
 
-    Storage::setCallbackYesNoPopupYcp (yesno_popup_callback);
+    storage::yesno_popup_cb_ycp = yesno_popup_callback;
 
     return YCPVoid ();
 }
