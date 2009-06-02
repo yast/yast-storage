@@ -7,9 +7,9 @@
 %include "LiMaL.i"
 
 %{
-#include "../../src/StorageInterface.h"
-#include "../../src/HumanString.h"
-#include "../../src/Graph.h"
+#include <storage/StorageInterface.h>
+#include <storage/HumanString.h>
+#include <storage/Graph.h>
 %}
 
 using namespace std;
@@ -41,7 +41,7 @@ specialize_sequence(storage::CommitInfo, TO_PACK, FROM_PACK, CHECK)
 
 specialize_sequence(storage::Environment, TO_PACK, FROM_PACK, CHECK)
 
-%include "../../src/StorageInterface.h"
-%include "../../src/HumanString.h"
-%include "../../src/Graph.h"
+%include </usr/include/storage/StorageInterface.h>
+%include </usr/include/storage/HumanString.h>
+%include </usr/include/storage/Graph.h>
 
