@@ -3,11 +3,11 @@
 #
 
 PLUGLIB_MODULE = LibStorage
-PLUGLIB_LIBRARY = ../../src/.libs/libstorage.so
+PLUGLIB_LIBRARY = /usr/lib/libstorage.so
 PLUGLIB_DEPEND =					\
-	../../src/StorageInterface.h			\
-	../../src/HumanString.h				\
-	../../src/Graph.h
+	/usr/include/storage/StorageInterface.h		\
+	/usr/include/storage/HumanString.h		\
+	/usr/include/storage/Graph.h
 
 include $(top_srcdir)/pluglib-bindings.ami
 

@@ -2,7 +2,6 @@
 # Makefile.am for libstorage/src
 #
 
-AM_CXXFLAGS =
 INCLUDES = -I$(includedir)
 
 storage:
@@ -27,13 +26,6 @@ libpy2StorageCallbacks_la_SOURCES =					\
 	StorageCallbacks.cc StorageCallbacks.h
 
 libpy2StorageCallbacks_la_LDFLAGS = -version-info 2:0
-libpy2StorageCallbacks_la_LIBADD = -L$(libdir) -ly2 -lycp libstorage.la
-
-pkgincludedir = $(includedir)/storage
-
-pkginclude_HEADERS =			\
-	StorageInterface.h		\
-	HumanString.h			\
-	Graph.h
+libpy2StorageCallbacks_la_LIBADD = -L$(libdir) -ly2 -lycp -lstorage
 
 CLEANFILES = $(BUILT_SOURCES)
