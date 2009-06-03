@@ -3,7 +3,7 @@
 #
 
 PLUGLIB_MODULE = LibStorage
-PLUGLIB_LIBRARY = /usr/lib/libstorage.so
+PLUGLIB_LIBRARY = $(libdir)/libstorage.so
 PLUGLIB_DEPEND =					\
 	/usr/include/storage/StorageInterface.h		\
 	/usr/include/storage/HumanString.h		\
