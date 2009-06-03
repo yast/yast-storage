@@ -4,7 +4,11 @@
 
 INCLUDES = -I$(includedir)
 
-BUILT_SOURCES = StorageCallbacksBuiltinTable.h StorageCallbacksBuiltinCalls.h
+.libs/plugin:
+	mkdir .libs
+	ln -sf . .libs/plugin
+
+BUILT_SOURCES = .libs/plugin StorageCallbacksBuiltinTable.h StorageCallbacksBuiltinCalls.h
 
 StorageCallbacksBuiltinTable.h : StorageCallbacks.h
 	y2tool generateYCPWrappers StorageCallbacks.h StorageCallbacksBuiltinCalls.h StorageCallbacksBuiltinTable.h
