@@ -49,7 +49,6 @@ namespace storage
     extern CallbackYesNoPopup yesno_popup_cb_ycp;
 }
 
-using namespace storage;
 
 class Y2StorageCallbackFunction : public Y2Function
 {
@@ -82,7 +81,7 @@ Y2StorageCallbackFunction::Y2StorageCallbackFunction (StorageCallbacks* instance
       m_param3 ( YCPNull () ),
       m_param4 ( YCPNull () )
 {
-};
+}
 
 bool Y2StorageCallbackFunction::attachParameter (const YCPValue& arg,
 						 const int position)
