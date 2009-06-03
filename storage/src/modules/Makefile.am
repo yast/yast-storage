@@ -2,10 +2,10 @@
 # Makefile.am for storage/storage/src/modules
 #
 
-YCPCFLAGS = -M ../../../libstorage/bindings/ycp
+YCPCFLAGS = -M ../../../bindings/ycp
 
-YCPC_LD_LIBRARY_PATH = ../../../libstorage/src/.libs
-YCPC_Y2DIR = ../../../libstorage/src/.libs
+YCPC_LD_LIBRARY_PATH = ../../../bindings/src/.libs
+YCPC_Y2DIR = ../../../bindings/src/.libs
 
 module_DATA =				\
 	Partitions.ycp			\
