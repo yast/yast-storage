@@ -50,9 +50,9 @@ global void ShowInstallInfo (string text)
     {
     SlideShow::SubProgressStart( text );
     SlideShow::AppendMessageToInstLog(text);
-    
+
     current_action = current_action + 1;
-    
+
     // hack: assume every text change means another action
     y2milestone( "Current action: %1, total stage progress: %2", current_action, current_action * 100 / total_actions );
     SlideShow::StageProgress( current_action * 100 / total_actions, nil );
@@ -71,18 +71,51 @@ global void InfoPopup (string text)
 global boolean YesNoPopup (string text)
     {
     y2milestone( "YesNoPopup txt:%1", text );
-    return Report::AnyQuestion( Popup::NoHeadline(), text, 
+    return Report::AnyQuestion( Popup::NoHeadline(), text,
                                 Label::YesButton(), Label::NoButton(),
 				`yes );
     }
 
+
+    global boolean PasswordPopup(string device, integer attempts, string& password)
+    {
+	y2milestone("PasswordPopup device:%1 attempts:%2", device, attempts);
+
+	UI::OpenDialog(
+	    `opt(`decorated),
+	    `VBox(
+		`Password(`id("pw1"),
+			  // Label: get password for device
+			  // Please use newline if label is longer than 40 characters
+			  sformat(_("&Enter password for device %1:"), device), ""),
+		`ButtonBox(
+		    // Ok button
+		    `PushButton(`id(`continue), `opt(`default),  Label::ContinueButton()),
+		    // Cancel button
+		    `PushButton(`id(`cancel), Label::CancelButton())
+		    )
+		)
+	    );
+
+	symbol ret = (symbol) UI::UserInput();
+
+	if (ret == `continue)
+	    password = (string) UI::QueryWidget(`id(`password), `Value);
+
+	UI::CloseDialog();
+
+	return ret == `continue;
+    }
+
+
 global void InstallCallbacks(any sint)
     {
     y2milestone( "InstallCallbacks" );
-    StorageCallbacks::ProgressBar ("StorageClients::ProgressBar");
-    StorageCallbacks::ShowInstallInfo ("StorageClients::ShowInstallInfo");
-    StorageCallbacks::InfoPopup ("StorageClients::InfoPopup");
-    StorageCallbacks::YesNoPopup ("StorageClients::YesNoPopup");
+    StorageCallbacks::ProgressBar("StorageClients::ProgressBar");
+    StorageCallbacks::ShowInstallInfo("StorageClients::ShowInstallInfo");
+    StorageCallbacks::InfoPopup("StorageClients::InfoPopup");
+    StorageCallbacks::YesNoPopup("StorageClients::YesNoPopup");
+    StorageCallbacks::PasswordPopup("StorageClients::PasswordPopup");
     }
 
 }
