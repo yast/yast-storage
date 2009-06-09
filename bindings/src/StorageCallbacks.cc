@@ -280,9 +280,11 @@ bool password_popup_callback(const string& device, int attempts, string& passwor
 	password_popup->appendParameter(YCPString(password));
 	password_popup->finishParameters();
 
-	YCPValue tmp = password_popup->evaluateCall();
-	if (tmp->isBoolean())
-            ret = tmp->asBoolean()->value();
+	YCPValue tmp1 = password_popup->evaluateCall();
+	YCPList tmp2 = tmp1->asList();
+
+	ret = tmp2->value(0)->asBoolean()->value();
+	password = tmp2->value(1)->asString()->value();	
     }
 
     return ret;
