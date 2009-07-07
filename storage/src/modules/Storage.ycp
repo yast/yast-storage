@@ -181,10 +181,6 @@ map<string, string> ClassifiedSettings = $[];
 map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_DMRAID : 2, `CT_DMMULTIPATH : 3,
                     `CT_LOOP : 4, `CT_DM : 5, `CT_LVM : 6, `CT_NFS : 7 ];
 list<string> hw_packages = [];
-list<string> no_propose_disks = nil;
-boolean proposal_lvm = false;
-boolean proposal_home = false;
-map<string, any> cfg_xml = $[];
 string part_insts = "";
 
 
@@ -5663,116 +5659,6 @@ global define map onepartition2fstab (map part, integer& other_nr)
     };
 
 
-global boolean ProposalHome()
-    {
-    return( proposal_home );
-    }
-
-global void SetProposalHome(boolean val)
-    {
-    proposal_home = val;
-    y2milestone( "SetProposalHome val:%1", proposal_home );
-    }
-
-global void SetProposalLvm(boolean val)
-    {
-    proposal_lvm = val;
-    y2milestone("SetProposalLvm val:%1 lvm:%2", val, proposal_lvm);
-    }
-
-global boolean ProposalLvm()
-    {
-    return( proposal_lvm );
-    }
-
-global void SetProposalDefault( boolean home_only )
-    {
-    SetProposalHome( cfg_xml["home"]:false );
-    if( !home_only )
-	{
-	if( cfg_xml["prop_lvm"]:false )
-	    {
-	    SetProposalLvm(true);
-	    }
-	else
-	    {
-	    SetProposalLvm(false);
-	    }
-	}
-    y2milestone("SetProposalDefault lvm:%1 home:%2 home_only:%3", 
-		proposal_lvm, proposal_home, home_only);
-    }
-
-
-global map<string, any> GetControlCfg()
-{
-    if (size(cfg_xml) == 0)
-    {
-	boolean bt = ProductFeatures::GetBooleanFeature( "partitioning",
-							 "try_separate_home" );
-	cfg_xml["home"] = bt?true:false;
-
-	cfg_xml["root_percent"] = 
-	    tointeger(ProductFeatures::GetStringFeature( "partitioning",
-							 "root_space_percent"));
-	if( cfg_xml["root_percent"]:0 == nil || cfg_xml["root_percent"]:0 <= 0 )
-	    cfg_xml["root_percent"] = 40;
-
-	string tmp = ProductFeatures::GetStringFeature( "partitioning",
-							"limit_try_home");
-	cfg_xml["home_limit"] = ClassicStringToByte(tmp) / (1024*1024);
-	if( cfg_xml["home_limit"]:0 <= 0 )
-	    cfg_xml["home_limit"] = 5*1024;
-
-	tmp = ProductFeatures::GetStringFeature( "partitioning",
-						 "root_base_size");
-	cfg_xml["root_base"] = ClassicStringToByte(tmp) / (1024*1024);
-	if( cfg_xml["root_base"]:0 <= 0 )
-	    cfg_xml["root_base"] = 3*1024;
-
-	tmp = ProductFeatures::GetStringFeature( "partitioning",
-						 "root_max_size");
-	cfg_xml["root_max"] = ClassicStringToByte(tmp) / (1024*1024);
-	if( cfg_xml["root_max"]:0 <= 0 )
-	    cfg_xml["root_max"] = 10*1024;
-
-	tmp = ProductFeatures::GetStringFeature( "partitioning",
-						 "vm_desired_size");
-	cfg_xml["vm_want"] = ClassicStringToByte(tmp) / (1024*1024);
-	if( cfg_xml["vm_want"]:0 <= 0 )
-	    cfg_xml["vm_want"] = 15*1024;
-
-	tmp = ProductFeatures::GetStringFeature( "partitioning",
-						 "vm_home_max_size");
-	cfg_xml["home_max"] = ClassicStringToByte(tmp) / (1024*1024);
-	if( cfg_xml["home_max"]:0 <= 0 )
-	    cfg_xml["home_max"] = 25*1024;
-
-	bt = ProductFeatures::GetBooleanFeature( "partitioning",
-						 "proposal_lvm" );
-	cfg_xml["prop_lvm"] = bt?true:false;
-
-	SetProposalDefault(false);
-	y2milestone("GetControlCfg cfg_xml:%1", cfg_xml);
-    }
-
-    return cfg_xml;
-}
-
-
-global string ProposalVM()
-    {
-    string ret = "";
-    map xml = GetControlCfg();
-    if (proposal_lvm)
-	{
-	ret = "system";
-	}
-    y2milestone("ProposalVM lvm:%1 ret:%2", proposal_lvm, ret);
-    return ret;
-    }
-
-
 global void AddHwPackage( string name )
     {
     y2milestone( "AddHwPackage name %1 list:%2", name, hw_packages );
@@ -5817,49 +5703,6 @@ global void DumpObjectList()
 
     LibStorage::StorageInterface::dumpObjectList(sint);
 }
-
-global define list<string> NoProposeDisks()
-    {
-    if( no_propose_disks == nil )
-	{
-	no_propose_disks = [];
-	if( Stage::initial() && SCR::Read( .target.size, "/etc/install.inf" )>0 )
-	    {
-            string inst = (string) SCR::Read( .etc.install_inf.Partition );
-            y2milestone( "NoProposeDisks .etc.install_inf.Partition \"%1\"",
-                         inst );
-            if( inst!=nil && size(inst)>0 )
-                {
-                if( search( inst, "/dev/" )!=0 )
-                    inst = "/dev/" + inst;
-                map d = GetDiskPartition( inst );
-                y2milestone( "NoProposeDisks inst:%1 disk:%2", inst, d );
-                if( size(d["disk"]:"")>0 )
-                    no_propose_disks = add( no_propose_disks, d["disk"]:"" );
-                }
-	    inst = (string) SCR::Read( .etc.install_inf.Cdrom );
-	    y2milestone( "NoProposeDisks .etc.install_inf.Cdrom \"%1\"", inst );
-	    if( inst!=nil && size(inst)>0 )
-		{
-		if( search( inst, "/dev/" )!=0 )
-		    inst = "/dev/" + inst;
-		map d = GetDiskPartition( inst );
-		y2milestone( "NoProposeDisks inst:%1 disk:%2", inst, d );
-		if( size(d["disk"]:"")>0 )
-		    no_propose_disks = add( no_propose_disks, d["disk"]:"" );
-		}
-	    }
-	if( Stage::initial() )
-	    {
-	    map ret = (map)SCR::Execute( .target.bash_output, "echo $YAST2_STORAGE_NO_PROPOSE_DISKS" );
-	    y2milestone( "NoProposeDisks ret \"%1\"", ret["stdout"]:"" );
-	    list ls = filter( string e, splitstring( ret["stdout"]:"", " \t\n" ), ``(size(e)>0) );
-	    no_propose_disks = (list<string>)merge( no_propose_disks, ls );
-	    }
-	y2milestone( "NoProposeDisks \"%1\"", no_propose_disks );
-	}
-    return( no_propose_disks );
-    }
 
 
 global void SetDefaultMountBy(symbol mby)
