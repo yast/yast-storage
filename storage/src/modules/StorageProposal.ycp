@@ -22,6 +22,7 @@
     import "Storage";
     import "ProductFeatures";
     import "Arch";
+    import "Stage";
 
 map read_partition_config( string fpath );
 map read_partition_xml_config();
@@ -42,6 +43,158 @@ integer cur_weight = -10000;
 map cur_gap = $[];
 integer big_cyl = 4 * 1024 * 1024 * 1024;
 
+    list<string> no_propose_disks = nil;
+
+    boolean proposal_lvm = false;
+    boolean proposal_home = false;
+    map<string, any> cfg_xml = $[];
+
+
+    global boolean GetProposalHome()
+    {
+	return proposal_home;
+    }
+    
+    global void SetProposalHome(boolean val)
+    {
+	proposal_home = val;
+	y2milestone("SetProposalHome val:%1", proposal_home);
+    }
+    
+    global boolean GetProposalLvm()
+    {
+	return proposal_lvm;
+    }
+    
+    global void SetProposalLvm(boolean val)
+    {
+	proposal_lvm = val;
+	y2milestone("SetProposalLvm val:%1 lvm:%2", val, proposal_lvm);
+    }
+    
+    global void SetProposalDefault(boolean home_only)
+    {
+	SetProposalHome(cfg_xml["home"]:false);
+	if (!home_only)
+	{
+	    if (cfg_xml["prop_lvm"]:false)
+	    {
+		SetProposalLvm(true);
+	    }
+	    else
+	    {
+		SetProposalLvm(false);
+	    }
+	}
+	y2milestone("SetProposalDefault lvm:%1 home:%2 home_only:%3", proposal_lvm,
+		    proposal_home, home_only);
+    }
+
+
+    global map<string, any> GetControlCfg()
+    {
+	if (size(cfg_xml) == 0)
+	{
+	    boolean bt = ProductFeatures::GetBooleanFeature("partitioning", "try_separate_home");
+	    cfg_xml["home"] = bt ? true : false;
+
+	    cfg_xml["root_percent"] = 
+		tointeger(ProductFeatures::GetStringFeature("partitioning", "root_space_percent"));
+	    if (cfg_xml["root_percent"]:0 == nil || cfg_xml["root_percent"]:0 <= 0)
+		cfg_xml["root_percent"] = 40;
+
+	    string tmp = ProductFeatures::GetStringFeature("partitioning", "limit_try_home");
+	    cfg_xml["home_limit"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    if (cfg_xml["home_limit"]:0 <= 0)
+		cfg_xml["home_limit"] = 5*1024;
+
+	    tmp = ProductFeatures::GetStringFeature("partitioning", "root_base_size");
+	    cfg_xml["root_base"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    if (cfg_xml["root_base"]:0 <= 0)
+		cfg_xml["root_base"] = 3*1024;
+
+	    tmp = ProductFeatures::GetStringFeature("partitioning", "root_max_size");
+	    cfg_xml["root_max"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    if (cfg_xml["root_max"]:0 <= 0)
+		cfg_xml["root_max"] = 10*1024;
+
+	    tmp = ProductFeatures::GetStringFeature("partitioning", "vm_desired_size");
+	    cfg_xml["vm_want"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    if (cfg_xml["vm_want"]:0 <= 0)
+		cfg_xml["vm_want"] = 15*1024;
+
+	    tmp = ProductFeatures::GetStringFeature("partitioning", "vm_home_max_size");
+	    cfg_xml["home_max"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    if (cfg_xml["home_max"]:0 <= 0)
+		cfg_xml["home_max"] = 25*1024;
+
+	    bt = ProductFeatures::GetBooleanFeature("partitioning", "proposal_lvm");
+	    cfg_xml["prop_lvm"] = bt ? true : false;
+
+	    SetProposalDefault(false);
+	    y2milestone("GetControlCfg cfg_xml:%1", cfg_xml);
+	}
+
+	return cfg_xml;
+    }
+
+
+    global string GetProposalVM()
+    {
+	string ret = "";
+	if (proposal_lvm)
+	{
+	    ret = "system";
+	}
+	y2milestone("ProposalVM lvm:%1 ret:%2", proposal_lvm, ret);
+	return ret;
+    }
+
+
+    list<string> NoProposeDisks()
+    {
+	if (no_propose_disks == nil)
+	{
+	    no_propose_disks = [];
+	    if( Stage::initial() && SCR::Read( .target.size, "/etc/install.inf" )>0 )
+	    {
+		string inst = (string) SCR::Read( .etc.install_inf.Partition );
+		y2milestone( "NoProposeDisks .etc.install_inf.Partition \"%1\"",
+			     inst );
+		if( inst!=nil && size(inst)>0 )
+                {
+		    if( search( inst, "/dev/" )!=0 )
+			inst = "/dev/" + inst;
+		    map d = Storage::GetDiskPartition( inst );
+		    y2milestone( "NoProposeDisks inst:%1 disk:%2", inst, d );
+		    if( size(d["disk"]:"")>0 )
+			no_propose_disks = add( no_propose_disks, d["disk"]:"" );
+                }
+		inst = (string) SCR::Read( .etc.install_inf.Cdrom );
+		y2milestone( "NoProposeDisks .etc.install_inf.Cdrom \"%1\"", inst );
+		if( inst!=nil && size(inst)>0 )
+		{
+		    if( search( inst, "/dev/" )!=0 )
+			inst = "/dev/" + inst;
+		    map d = Storage::GetDiskPartition( inst );
+		    y2milestone( "NoProposeDisks inst:%1 disk:%2", inst, d );
+		    if( size(d["disk"]:"")>0 )
+			no_propose_disks = add( no_propose_disks, d["disk"]:"" );
+		}
+	    }
+	    if( Stage::initial() )
+	    {
+		map ret = (map)SCR::Execute( .target.bash_output, "echo $YAST2_STORAGE_NO_PROPOSE_DISKS" );
+		y2milestone( "NoProposeDisks ret \"%1\"", ret["stdout"]:"" );
+		list ls = filter( string e, splitstring( ret["stdout"]:"", " \t\n" ), ``(size(e)>0) );
+		no_propose_disks = (list<string>)merge( no_propose_disks, ls );
+	    }
+	    y2milestone( "NoProposeDisks \"%1\"", no_propose_disks );
+	}
+	return no_propose_disks;
+    }
+
+
 define boolean ignore_disk( string dev, map entry, boolean soft )
     ``{
     boolean ret = !Storage::IsPartitionable( entry ) || 
@@ -58,7 +211,7 @@ define boolean ignore_disk( string dev, map entry, boolean soft )
 	{
 	ret = true;
 	}
-    if( !ret && soft && contains( Storage::NoProposeDisks(), dev ))
+    if( !ret && soft && contains( NoProposeDisks(), dev ))
 	{
 	ret = true;
 	}
@@ -300,7 +453,7 @@ define map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		    gap[key] = remove( gap[key]:[], 0 );
 		    if( g["cylinders"]:0 > 1 )
 			{
-		        integer vg_size = Storage::GetControlCfg()["vm_want"]:(15*1024);
+		        integer vg_size = GetControlCfg()["vm_want"]:(15*1024);
 		        // get only limited amount of the gap so that there is free
 		        // space left (fate #303594)
 		        y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
@@ -441,7 +594,7 @@ define map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		    string key = g["extended"]:false ? "ext_pnr" : "free_pnr";
 		    // get only limited amount of the gap so that there is free
 		    // space left (fate #303594)
-		    integer vg_size = Storage::GetControlCfg()["vm_want"]:(15*1024);
+		    integer vg_size = GetControlCfg()["vm_want"]:(15*1024);
 		    y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
 		    integer add_cylinders = g["cylinders"]:0; // whole partition as default
 		    if (vg_size != nil && vg_size > 0)
@@ -2316,7 +2469,7 @@ global list<map> get_proposal( boolean have_swap, map disk )
     y2milestone( "get_proposal have_swap:%1 disk %2", have_swap, disk );
     map root = $[ "mount" : "/", "increasable" : true,
                   "fsys" : Partitions::DefaultFs(), "size" : 0 ];
-    map opts = Storage::GetControlCfg();
+    map opts = GetControlCfg();
     map conf = $[ "partitions" : [] ];
     list swap_sizes = [];
     integer avail_size = get_avail_size_mb(disk["partitions"]:[]);
@@ -2330,7 +2483,7 @@ global list<map> get_proposal( boolean have_swap, map disk )
 	}
     conf["partitions"] = add( conf["partitions"]:[], root );
     map old_root = $[];
-    if( Storage::ProposalHome() && opts["home_limit"]:0 < avail_size )
+    if( GetProposalHome() && opts["home_limit"]:0 < avail_size )
 	{
 	map home = $[ "mount" : "/home", "increasable" : true, 
 	              "fsys" : Partitions::DefaultFs(), "size" : 512*1024*1024, 
@@ -2641,7 +2794,7 @@ map get_inst_proposal( map<string,map> target )
     ret["target"] = target;
     map root = $[ "mount" : "/", "increasable" : true,
                   "fsys" : Partitions::DefaultFs(), "size" : 0 ];
-    map opts = Storage::GetControlCfg();
+    map opts = GetControlCfg();
     list<string> ddev = get_disk_try_list( target, true );
     string sol_disk = "";
     list modes = [ `free, `reuse, `remove, `resize, `desparate ];
@@ -2800,7 +2953,7 @@ map get_inst_proposal( map<string,map> target )
 		if( mode == `reuse )
 		    {
 		    list<map> parts = disk["partitions"]:[];
-		    if( Storage::ProposalHome() )
+		    if( GetProposalHome() )
 			{
 			if( avail_size > opts["home_limit"]:0 )
 			    parts = can_mp_reuse( "/home", 4*1024, 0, parts );
@@ -2811,7 +2964,7 @@ map get_inst_proposal( map<string,map> target )
 		    if( size(parts)>0 && avail_size > opts["home_limit"]:0 )
 			{
 			integer mx = 0;
-			if( Storage::ProposalHome() )
+			if( GetProposalHome() )
 			    mx = opts["root_max"]:0;
 			parts = can_mp_reuse( "/", opts["root_base"]:0, 
 					      mx, parts );
@@ -2839,7 +2992,7 @@ map get_inst_proposal( map<string,map> target )
 		if( !have_root )
 		    conf["partitions"] = add( conf["partitions"]:[], root );
 		map old_root = $[];
-		if( !have_home && Storage::ProposalHome() &&
+		if( !have_home && GetProposalHome() &&
 		    opts["home_limit"]:0 < avail_size )
 		    {
 		    map home = $[ "mount" : "/home", "increasable" : true, 
@@ -2906,7 +3059,7 @@ map get_inst_proposal( map<string,map> target )
 		if( ps1["ok"]:false )
 		    {
 		    list mb = [ get_mb_sol( ps1, "/" )];
-		    if( Storage::ProposalHome() )
+		    if( GetProposalHome() )
 			mb = add( mb, get_mb_sol( ps1, "/home" ));
 		    if( mb[0]:0+mb[1]:0 > size_mb[s,0]:0 + size_mb[s,1]:0 )
 			{
@@ -2922,7 +3075,7 @@ map get_inst_proposal( map<string,map> target )
 	string max_disk = "";
 	foreach( string s, list mb, size_mb,
 	    ``{
-	    if( (!Storage::ProposalHome() || mb[1]:0>0 || mode==`resize ) && 
+	    if( (!GetProposalHome() || mb[1]:0>0 || mode==`resize ) && 
 	        mb[1]:0+mb[0]:0 > max_mb )
 		{
 		max_mb = mb[1]:0+mb[0]:0;
@@ -2931,7 +3084,7 @@ map get_inst_proposal( map<string,map> target )
 	    });
 	y2milestone( "get_inst_proposal max_mb %1 size_mb %2", max_mb, size_mb );
 	if( max_mb>0 && size_mb[max_disk,0]:0 > 2*1024 && 
-	    ( !Storage::ProposalHome() || size_mb[max_disk,1]:0 > 1*1024 ))
+	    ( !GetProposalHome() || size_mb[max_disk,1]:0 > 1*1024 ))
 	    {
 	    sol_disk = max_disk;
 	    }
@@ -3052,7 +3205,7 @@ string find_vm( map<string,map> target, string ky, integer min_size )
     {
     string ret = "";
     string key = "/dev/" + ky;
-    if( Storage::ProposalLvm() && target[key,"lvm2"]:false && 
+    if( GetProposalLvm() && target[key,"lvm2"]:false && 
         target[key,"size_k"]:0 >= min_size )
 	ret = key;
     y2milestone( "find_vm key:%1 min_size:%2 ret:%3", ky, min_size, ret );
@@ -3261,7 +3414,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	free = free-swap_pe;
 	y2milestone( "modify_vm pe free %1 root %2 swap %3", 
 	             free, root_pe, swap_pe );
-	if( home==nil && Storage::ProposalHome() &&
+	if( home==nil && GetProposalHome() &&
 	    free>sizek_to_pe( opts["home_limit"]:0*1024, pe, false ) )
 	    {
 	    integer tmp = free * opts["root_percent"]:40 / 100;
@@ -3367,7 +3520,7 @@ map get_inst_prop_vm( map<string,map> target, string key )
     {
     y2milestone( "get_inst_prop_vm start key %1", key );
     map ret = $[];
-    map opts = Storage::GetControlCfg();
+    map opts = GetControlCfg();
     string vg_key = find_vm( target, key, opts["root_base"]:0*1024 );
     target = remove_mount_points(target);
     if( size(vg_key)==0 )
@@ -3619,9 +3772,9 @@ global map get_proposal_vm( map<string,map> target, string key, map disk )
     {
     string ddev = disk["device"]:"";
     y2milestone("get_proposal_vm ddev:%1 vg:%2 lvm:%3 home:%4", ddev,
-		key, Storage::ProposalLvm(), Storage::ProposalHome());
+		key, GetProposalLvm(), GetProposalHome());
     map ret = $[];
-    map opts = Storage::GetControlCfg();
+    map opts = GetControlCfg();
     target = remove_mount_points(target);
     target = remove_vm(target,key);
     ret["target"] = target;
@@ -3674,9 +3827,9 @@ global map get_proposal_vm( map<string,map> target, string key, map disk )
 global map get_inst_prop( map<string,map> target )
     {
     map ret = $[];
-    string vg = Storage::ProposalVM();
+    string vg = GetProposalVM();
     y2milestone("get_inst_prop vg:%1 lvm:%2 home:%3", vg, 
-		Storage::ProposalLvm(), Storage::ProposalHome());
+		GetProposalLvm(), GetProposalHome());
     if( size(vg)==0 )
 	{
         if( has_flex_proposal() )
