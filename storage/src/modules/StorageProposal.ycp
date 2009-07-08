@@ -45,8 +45,11 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 
     list<string> no_propose_disks = nil;
 
-    boolean proposal_lvm = false;
     boolean proposal_home = false;
+    boolean proposal_lvm = false;
+    boolean proposal_encrypt = false;
+    string proposal_password = "";
+
     map<string, any> cfg_xml = $[];
 
 
@@ -54,82 +57,99 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
     {
 	return proposal_home;
     }
-    
+
     global void SetProposalHome(boolean val)
     {
 	proposal_home = val;
 	y2milestone("SetProposalHome val:%1", proposal_home);
     }
-    
+
     global boolean GetProposalLvm()
     {
 	return proposal_lvm;
     }
-    
+
     global void SetProposalLvm(boolean val)
     {
 	proposal_lvm = val;
-	y2milestone("SetProposalLvm val:%1 lvm:%2", val, proposal_lvm);
+	y2milestone("SetProposalLvm val:%1", val);
     }
-    
+
+    global boolean GetProposalEncrypt()
+    {
+	return proposal_encrypt;
+    }
+
+    global void SetProposalEncrypt(boolean val)
+    {
+	proposal_encrypt = val;
+	y2milestone("SetProposalEncrypt val:%1", val);
+    }
+
+    global string GetProposalPassword()
+    {
+	return proposal_password;
+    }
+
+    global void SetProposalPassword(string val)
+    {
+	proposal_password = val;
+	y2milestone("SetProposalPassword");
+    }
+
     global void SetProposalDefault(boolean home_only)
     {
 	SetProposalHome(cfg_xml["home"]:false);
 	if (!home_only)
 	{
-	    if (cfg_xml["prop_lvm"]:false)
-	    {
-		SetProposalLvm(true);
-	    }
-	    else
-	    {
-		SetProposalLvm(false);
-	    }
+	    SetProposalLvm(cfg_xml["prop_lvm"]:false);
+	    SetProposalEncrypt(false);
+	    SetProposalPassword("");
 	}
-	y2milestone("SetProposalDefault lvm:%1 home:%2 home_only:%3", proposal_lvm,
-		    proposal_home, home_only);
+	y2milestone("SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4", proposal_home,
+		    proposal_lvm, proposal_encrypt, home_only);
     }
 
 
     global map<string, any> GetControlCfg()
     {
-	if (size(cfg_xml) == 0)
+	if (isempty(cfg_xml))
 	{
-	    boolean bt = ProductFeatures::GetBooleanFeature("partitioning", "try_separate_home");
-	    cfg_xml["home"] = bt ? true : false;
+	    boolean btmp = ProductFeatures::GetBooleanFeature("partitioning", "try_separate_home");
+	    cfg_xml["home"] = btmp ? true : false;
 
-	    cfg_xml["root_percent"] = 
-		tointeger(ProductFeatures::GetStringFeature("partitioning", "root_space_percent"));
+	    integer itmp = ProductFeatures::GetIntegerFeature("partitioning", "root_space_percent");
+	    cfg_xml["root_percent"] = itmp;
 	    if (cfg_xml["root_percent"]:0 == nil || cfg_xml["root_percent"]:0 <= 0)
 		cfg_xml["root_percent"] = 40;
 
-	    string tmp = ProductFeatures::GetStringFeature("partitioning", "limit_try_home");
-	    cfg_xml["home_limit"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    string stmp = ProductFeatures::GetStringFeature("partitioning", "limit_try_home");
+	    cfg_xml["home_limit"] = Storage::ClassicStringToByte(stmp) / (1024*1024);
 	    if (cfg_xml["home_limit"]:0 <= 0)
 		cfg_xml["home_limit"] = 5*1024;
 
-	    tmp = ProductFeatures::GetStringFeature("partitioning", "root_base_size");
-	    cfg_xml["root_base"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    stmp = ProductFeatures::GetStringFeature("partitioning", "root_base_size");
+	    cfg_xml["root_base"] = Storage::ClassicStringToByte(stmp) / (1024*1024);
 	    if (cfg_xml["root_base"]:0 <= 0)
 		cfg_xml["root_base"] = 3*1024;
 
-	    tmp = ProductFeatures::GetStringFeature("partitioning", "root_max_size");
-	    cfg_xml["root_max"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    stmp = ProductFeatures::GetStringFeature("partitioning", "root_max_size");
+	    cfg_xml["root_max"] = Storage::ClassicStringToByte(stmp) / (1024*1024);
 	    if (cfg_xml["root_max"]:0 <= 0)
 		cfg_xml["root_max"] = 10*1024;
 
-	    tmp = ProductFeatures::GetStringFeature("partitioning", "vm_desired_size");
-	    cfg_xml["vm_want"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    stmp = ProductFeatures::GetStringFeature("partitioning", "vm_desired_size");
+	    cfg_xml["vm_want"] = Storage::ClassicStringToByte(stmp) / (1024*1024);
 	    if (cfg_xml["vm_want"]:0 <= 0)
 		cfg_xml["vm_want"] = 15*1024;
 
-	    tmp = ProductFeatures::GetStringFeature("partitioning", "vm_home_max_size");
-	    cfg_xml["home_max"] = Storage::ClassicStringToByte(tmp) / (1024*1024);
+	    stmp = ProductFeatures::GetStringFeature("partitioning", "vm_home_max_size");
+	    cfg_xml["home_max"] = Storage::ClassicStringToByte(stmp) / (1024*1024);
 	    if (cfg_xml["home_max"]:0 <= 0)
 		cfg_xml["home_max"] = 25*1024;
 
-	    bt = ProductFeatures::GetBooleanFeature("partitioning", "proposal_lvm");
-	    cfg_xml["prop_lvm"] = bt ? true : false;
+	    btmp = ProductFeatures::GetBooleanFeature("partitioning", "proposal_lvm");
+	    cfg_xml["prop_lvm"] = btmp ? true : false;
 
 	    SetProposalDefault(false);
 	    y2milestone("GetControlCfg cfg_xml:%1", cfg_xml);
