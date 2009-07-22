@@ -271,92 +271,9 @@ selected hard disk.</p>");
 		);
 	}
 
-	term partitions_bargraph = `Empty();
-
-	if (UI::HasSpecialWidget(`BarGraph))
-	{
-	    map ddata = Storage::GetDisk(target_map, device);
-
-	    if (ddata["used_by_type"]:`UB_NONE == `UB_NONE)
-	    {
-		list <integer> bits = [];
-		list <string> labels = [];
-		string emptyspace = _("Unpartitioned Space");
-
-		// Filter out extended partitions
-		list <map> partitions = (list <map>) filter ( map one_part, ddata["partitions"]:[], {
-			return ( (one_part["type"]:`none == `primary) || (one_part["type"]:`none == `logical) );
-		});
-		// and sort the remaining ones by start cyl
-		partitions = (list <map> ) sort (map m, map n, partitions, {
-			return Region::Start( m["region"]:[] ) < Region::Start( n["region"]:[] );
-		});
-
-		// Clean disk (or 1 big extended partition)
-		if (isempty(partitions))
-		{
-		   bits = [100];
-		   labels = [ emptyspace + "\n" + Storage::KByteToHumanString(ddata["size_k"]:0)];
-		}
-		else
-		{
-		    integer i = 0;
-		    integer part_count = size(partitions);
-		    integer ccyl = 0;
-		    integer endcyl = ddata["cyl_count"]:1;
-
-		    while(ccyl < endcyl)
-		    {
-		        map part = partitions[ i ]:$[];
-		        list <integer> region = partitions[ i, "region" ]:[];
-		        ccyl = Region::Start( region );
-			integer next_cyl = 0;
-
-			// this is the last partition in a row, look at the last cylinder of the disk
-			if ( (i+1) == part_count)
-			{
-			    next_cyl = endcyl;
-			}
-			// somewhere in the middle, look where the next partition starts
-			else
-			{
-			    next_cyl = Region::Start( partitions[ i+1, "region" ]:[] );
-			}
-
-			integer tmp = 100*Region::Length( region )/ddata["cyl_count"]:1; //in %
-			string descr = part["device"]:"" + "\n" + Storage::KByteToHumanString(part["size_k"]:0);
-			y2debug("this cyl: %1 text: %2 end cyl: %3 next cyl: %4",  ccyl, descr, Region::End( region), next_cyl);
-
-			// Guarantee some minimal share (1%) of total graph width to a segment
-			// It prevents small partitions e.g. swaps from disappearing completely
-			bits = add( bits, (tmp < 1) ? 1 : tmp );
-			labels = add( labels, descr);
-
-			// Now there is some xtra space between the end of this partition and the start of the next one
-			// or the end of the disk if
-			// 1. end +1th cyl is not the next one
-			// 2. end cyl is not the same as the next one (yeah, partitions may share a cylinder)
-			if ( ( Region::End( region ) != next_cyl ) &&
-			     ( (Region::End( region) + 1) != next_cyl )
-			   )
-			{
-			    integer tmp2 = 100*( next_cyl - Region::End(region))/ddata["cyl_count"]:1;
-			    bits = add( bits, (tmp2 < 1) ? 1 : tmp2);
-			    labels = add( labels, emptyspace + "\n" + Storage::ByteToHumanString( (next_cyl - Region::End(region)) * ddata["cyl_size"]:1));
-			}
-
-			ccyl = next_cyl;
-			i = i+1;
-		    }
-		}
-
-		partitions_bargraph = `BarGraph(`id(`bgraph), bits, labels);
-	    }
-	}
-
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
-			      partitions_bargraph,
+			      DiskBarGraph(device),
 			      `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 				     table_header, table_contents),
 			      `HBox(
