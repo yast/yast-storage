@@ -82,6 +82,7 @@ global integer resize_cyl_size = nil;
 
 // end of resizing functions
 
+
 global void UpdateClassified(string key, string pwd);
   
 
@@ -5075,6 +5076,10 @@ global define map BuildDiskmap( map oldv )
     return( DiskMap );
     }
 
+// flag indicates calling Storage::Update()
+global boolean called_update = false;
+
+
 /**
  * Updates fstab on disk
  *
@@ -5088,85 +5093,94 @@ global define map BuildDiskmap( map oldv )
  * ]
  */
 global define void Update( map oldv, map newv )
-    ``{
-    y2milestone( "Update old:%1 new:%2", oldv, newv );
+    {
+    if (!called_update)
+	{
+	y2milestone( "Update old:%1 new:%2", oldv, newv );
 
-    // Enterprise products do not have minor release number
-    // map enterprise releases to corresponding code bases of SL
-    map sles_major_to_minor = $[ 8 : 2, 9 : 1, 10 : 1 ];
-    if( haskey( oldv, "major" ) && !haskey( oldv, "minor" ) )
-	{
-	oldv["minor"] = sles_major_to_minor[oldv["major"]:0]:0;
-	y2milestone( "Update old:%1", oldv );
-	}
-    if( haskey( newv, "major" ) && !haskey( newv, "minor" ) )
-	{
-	newv["minor"] = sles_major_to_minor[newv["major"]:0]:0;
-	y2milestone( "Update new:%1", newv );
-	}
-    if( !haskey( oldv, "major" ) || !haskey( newv, "major" ) )
-	y2error( "Missing key major or minor" );
-
-    if( oldv["major"]:0<=9 )
-	{
-	UpdateFstabSysfs();
-	}
-    if( oldv["major"]:0<9 )
-	{
-	UpdateFstabUsbdevfs();
-	}
-    if( oldv["major"]:0==9 )
-        {
-	UpdateFstabPersistentNames();
-	}
-
-    // remove EVMS
-    // FIXME add appropriate condition if needed (does not seem so)
-    UpdateFstabEvms2Lvm();
-
-    map dm = BuildDiskmap( oldv );
-    if( size(dm)>0 )
-	{
-	UpdateFstabDiskmap( dm );
-	UpdateMdadm();
-	}
-    if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0<=2))
-	{
-	Storage::UpdateCryptoType();
-	}
-    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0==0) )
-	{
-	string of = "/etc/udev/rules.d/20-cdrom.rules";
-	y2milestone( "removing obsolete %1", of );
-	SCR::Execute( .target.remove, of );
-	of = "/etc/udev/rules.d/55-cdrom.rules";
-	y2milestone( "removing obsolete %1", of );
-	SCR::Execute( .target.remove, of );
-	}
-    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0<=2) )
-	{
-	string of = "/etc/udev/rules.d/65-cdrom.rules";
-	y2milestone( "removing obsolete %1", of );
-	SCR::Execute( .target.remove, of );
-	}
-    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0==0))
-	UpdateFstabSubfs();
-    if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
-	{
-	if( Arch::board_iseries () )
+	// Enterprise products do not have minor release number
+	// map enterprise releases to corresponding code bases of SL
+	map sles_major_to_minor = $[ 8 : 2, 9 : 1, 10 : 1 ];
+	if( haskey( oldv, "major" ) && !haskey( oldv, "minor" ) )
 	    {
-	    UpdateFstabIseriesVd();
+	    oldv["minor"] = sles_major_to_minor[oldv["major"]:0]:0;
+	    y2milestone( "Update old:%1", oldv );
 	    }
-	string cmd = "cd / && /sbin/insserv -r /etc/init.d/boot.evms";
-	y2milestone( "Update cmd %1", cmd );
-	map bo = (map)SCR::Execute (.target.bash_output, cmd );
-	y2milestone( "Update bo %1", bo );
-	}
-    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0<=2))
+	if( haskey( newv, "major" ) && !haskey( newv, "minor" ) )
+	    {
+	    newv["minor"] = sles_major_to_minor[newv["major"]:0]:0;
+	    y2milestone( "Update new:%1", newv );
+	    }
+	if( !haskey( oldv, "major" ) || !haskey( newv, "major" ) )
+	    y2error( "Missing key major or minor" );
+
+	if( oldv["major"]:0<=9 )
+	    {
+	    UpdateFstabSysfs();
+	    }
+	if( oldv["major"]:0<9 )
+	    {
+	    UpdateFstabUsbdevfs();
+	    }
+	if( oldv["major"]:0==9 )
+            {
+	    UpdateFstabPersistentNames();
+	    }
+
+	// remove EVMS
+	// FIXME add appropriate condition if needed (does not seem so)
+	UpdateFstabEvms2Lvm();
+
+	map dm = BuildDiskmap( oldv );
+	if( size(dm)>0 )
+	    {
+	    UpdateFstabDiskmap( dm );
+	    UpdateMdadm();
+	    }
+	if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0<=2))
+	    {
+	    Storage::UpdateCryptoType();
+	    }
+	if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0==0) )
+	    {
+	    string of = "/etc/udev/rules.d/20-cdrom.rules";
+	    y2milestone( "removing obsolete %1", of );
+	    SCR::Execute( .target.remove, of );
+	    of = "/etc/udev/rules.d/55-cdrom.rules";
+	    y2milestone( "removing obsolete %1", of );
+	    SCR::Execute( .target.remove, of );
+	    }
+	if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0<=2) )
+	    {
+	    string of = "/etc/udev/rules.d/65-cdrom.rules";
+	    y2milestone( "removing obsolete %1", of );
+	    SCR::Execute( .target.remove, of );
+	    }
+	if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0==0))
+	    UpdateFstabSubfs();
+	if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
+	    {
+	    if( Arch::board_iseries () )
+		{
+		UpdateFstabIseriesVd();
+		}
+	    string cmd = "cd / && /sbin/insserv -r /etc/init.d/boot.evms";
+	    y2milestone( "Update cmd %1", cmd );
+	    map bo = (map)SCR::Execute (.target.bash_output, cmd );
+	    y2milestone( "Update bo %1", bo );
+	    }
+	if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0<=2))
+	    {
+	    string cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto";
+	    map bo = (map)SCR::Execute (.target.bash_output, cmd );
+	    y2milestone( "Update bo %1", bo );
+	    }
+	// set flag -> it indicates that Update was already called
+	called_update = true;
+	} 
+    else 
 	{
-	string cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto";
-	map bo = (map)SCR::Execute (.target.bash_output, cmd );
-	y2milestone( "Update bo %1", bo );
+	y2milestone("Skip calling Update() -> It was already called");
 	}
     }
 
