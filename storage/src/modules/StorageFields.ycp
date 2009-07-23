@@ -337,13 +337,19 @@ volume groups.");
 		ret = ret + _("<b>Mount By</b> indicates how the file system
 is mounted: (Kernel) by Kernel Name, (Label) by File System Label, (UUID) by
 File System UUID, (ID) by Device ID, and (Path) by Device Path.");
+		if (Mode::normal())
+		    // helptext for table column and overview entry
+		    ret = ret + " " + _("A question mark (?) indicates that
+the file system is not listed in <tt>/etc/fstab</tt>. It is either mounted
+manually or by some automount system. When changing setting of this volume
+YaST will not update <tt>/etc/fstab</tt>.");
 		break;
 
 	    case `mount_point:
 		// helptext for table column and overview entry
 		ret = ret + _("<b>Mount Point</b> shows where the file system
 is mounted.");
-		if (Mode::normal() || true)
+		if (Mode::normal())
 		    // helptext for table column and overview entry
 		    ret = ret + " " + _("An asterisk (*) after the mount point
 indicates a file system that is currently not mounted (for example, because it
@@ -449,11 +455,13 @@ Identifier of the file system.");
 	map data = (part == nil ? disk : part);
 	symbol type = ( part == nil ? disk["type"]:`primary : part["type"]:`CT_DISK );
 
+	string device = data["device"]:"";
+
 	switch (field)
 	{
 	    case `device:
 	    {
-		string value = data["device"]:"";
+		string value = device;
 		if (style == `table)
 		    return value;
 		else
@@ -543,7 +551,7 @@ Identifier of the file system.");
 	    {
 		boolean value = data["enc_type"]:`none != `none;
 		if (style == `table)
-		{ 
+		{
 		    if (value)
 		    {
 			if (UI::GetDisplayInfo()["HasIconSupport"]:false)
@@ -574,8 +582,13 @@ Identifier of the file system.");
 	    case `mount_point:
 	    {
 		string value = data["mount"]:"";
-		if (Mode::normal() && data["inactive"]:false )
-		    value = value + " *";
+
+		if (Mode::normal())
+		{
+		    if (data["inactive"]:false )
+			value = value + " *";
+		}
+
 		if (style == `table)
 		    return value;
 		else
@@ -586,11 +599,20 @@ Identifier of the file system.");
 	    case `mount_by:
 	    {
 		string value = "";
+
 		if (data["mount"]:"" != "") {
 		    map tmp = $[ `device : "Kernel", `uuid : "UUID", `label : "Label", `id : "ID", `path : "Path" ];
 		    symbol mount_by = data["mountby"]:`device;
 		    value = tmp[mount_by]:"";
 		}
+
+		if (Mode::normal())
+		{
+		    boolean tmp = false;
+		    if (Storage::GetIgnoreFstab(device, tmp) && tmp)
+			value = "?";
+		}
+
 		if (style == `table)
 		    return value;
 		else
