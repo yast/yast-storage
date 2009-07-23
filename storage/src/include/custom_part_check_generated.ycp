@@ -72,15 +72,16 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     boolean fat_system_boot      = false;
     string raid_type             = "";
 
-    foreach( string disk, map diskinfo, targetMap,
-        ``{
+	foreach (string disk, map diskinfo, targetMap, {
+
 	list<map> part_info     = diskinfo["partitions"]:[];
 	integer cyl_size   = diskinfo["cyl_size"]:1000000;
 
 	if (contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH ], diskinfo["type"]:`CT_UNKNOWN))
 	    diskless = false;
 
-	foreach( map part, part_info, ``{
+	    foreach (map part, part_info, {
+
 	    // All valid partitions ...
 	    integer fsid       = part["fsid"]:0;
 	    string  mountpoint = part["mount"]:"";
@@ -195,7 +196,7 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     y2milestone("root_dmraid:%1 root_raid %2 boot_raid %3 raid_type:%4", 
 		root_dmraid, root_raid, boot_raid, raid_type);
 
-    boolean retval = true;
+	boolean ok = true;
 
     if (( !root_found  && installation ) || show_all_popups  )
 	{
@@ -205,38 +206,36 @@ YaST2 needs a root partition to install.
 Assign the root mount point \"/\" to a partition.
 "));
 
-	retval = false;
+	    ok = false;
 	}
-
-
 
     if( fat_system_mount || show_all_popups )
 	{
         // popup text
 	Popup::Error(_("You tried to mount a fat partition to
 one of the following mount points: / /usr /home /opt /var.
-Use a Linux file system, such as ext3 or reiserfs, for these mount points.
+Use a Linux file system, such as ext3, ext4 or reiserfs, for these mount points.
 "));
 
-	retval = false;
+	    ok = false;
 	}
 
     if( fat_system_boot || show_all_popups )
 	{
         // popup text
 	Popup::Error(_("You tried to mount a fat partition to the mount point /boot.
-Use a Linux file system, such as ext2, ext3 or reiserfs, for this mount point.
+Use a Linux file system, such as ext3, ext4 or reiserfs, for this mount point.
 "));
 
-	retval = false;
+	    ok = false;
 	}
 
     if( (boot_found) && installation || show_all_popups )
 	{
 	if( boot_end >= Partitions::BootCyl() || show_all_popups )
 	    {
-	    // popup text %1 is a number
-	    boolean ret = Popup::YesNo(sformat(_("Warning:
+		// popup text, %1 is a number
+		string message = sformat(_("Warning:
 Your boot partition ends above cylinder %1.
 Your BIOS does not seem able to boot
 partitions above cylinder %1.
@@ -244,23 +243,24 @@ With the current setup, your %2
 installation might not be directly bootable.
 
 Really use this setup?
-"),Partitions::BootCyl(),Product::name));
+"), Partitions::BootCyl(), Product::name);
 
-	    if ( !ret ) retval = false;
+		if (!Popup::YesNo(message))
+		    ok = false;
 	    }
-
 
 	if ( (boot_size_k < 12*1024 && boot_size_check) || show_all_popups )
 	    {
-	    // popup text
-	    boolean ret = Popup::YesNo(_("Warning:
-Your boot partition is less than 12MB.
+		// popup text, %1 is a size
+		string message = sformat(_("Warning:
+Your boot partition is smaller than %1.
 It is recommended to increase the size of /boot.
 
 Really keep this size of boot partition?
-"));
+"), Storage::KByteToHumanStringOmitZeroes(12*1024));
 
-	    if (ret == false) retval = false;
+		if (!Popup::YesNo(message))
+		    ok = false;
 	    }
 	}
 
@@ -268,7 +268,6 @@ Really keep this size of boot partition?
 
     if( (! boot_found && installation ) || show_all_popups )
 	{
-
 	// iSeries does not really need a boot partition
 	// a bootable binary will be written to a kernel slot in /proc
 	if ((Partitions::PrepBoot() && !Arch::board_iseries() && !diskless) || show_all_popups)
@@ -276,25 +275,24 @@ Really keep this size of boot partition?
 	    // popup text
 	    // If the user chooses 'no' here, the system will not be able to
 	    // boot from the hard drive!
-	    boolean ret = Popup::YesNo(_("Warning: There is no partition mounted as /boot.
+		string message = sformat(_("Warning: There is no partition mounted as /boot.
 To boot from your hard disk, a small /boot partition
-(approx. 4MB) is required.  Consider creating one.
+(approx. %1) is required.  Consider creating one.
 (Partitions assigned to /boot will automatically be changed to
 type 0x41 PReP/CHRP).
 
 Really use the setup without /boot partition?
-"));
+"), Storage::KByteToHumanStringOmitZeroes(4*1024));
 
-	    if (ret == false)  retval = false;
-
+		if (!Popup::YesNo(message))
+		    ok = false;
 	    }
-
 
 	// no boot but root
 	if( (root_end >= Partitions::BootCyl() || show_all_popups) && AutoinstData::BootCylWarning )
 	    {
 	    // popup text
-	    boolean ret = Popup::YesNo(sformat(_("Warning: According to your setup, you intend to
+		string message = sformat(_("Warning: According to your setup, you intend to
 boot your machine from the root partition (/), which, unfortunately,
 has an end cylinder above %1. Your BIOS does not seem capable
 of booting partitions beyond the %1 cylinder boundary,
@@ -302,11 +300,11 @@ which means your %2 installation will not be
 directly bootable.
 
 Really use this setup?
-"), Partitions::BootCyl(),Product::name));
+"), Partitions::BootCyl(), Product::name);
 
-	    if (ret == false)  retval = false;
+		if (!Popup::YesNo(message))
+		    ok = false;
 	    }
-
 	}
 
     // iSeries has no problems with this configuration
@@ -316,26 +314,25 @@ Really use this setup?
 	AutoinstData::BootRaidWarning)
 	{
 	// popup text
-	boolean ret = Popup::YesNo(sformat(
-_("Warning: With your current setup, your %1
+	    string message = sformat(_("Warning: With your current setup, your %1
 installation might not be directly bootable, because
 your files below \"/boot\" are on a software RAID device.
 The boot loader setup sometimes fails in this configuration.
 
 Really use this setup?
-"),Product::name));
+"), Product::name);
 
-	if (ret == false) retval = false;
+	    if (!Popup::YesNo(message))
+		ok = false;
 	}
 
 	// iSeries has no problems with this configuration
 	// an initrd will be created and you can boot from a kernel slot
-    if( installation && !Arch::board_iseries () &&
-	((root_lvm && !boot_found) || show_all_popups ) &&
+	if (installation && !Arch::board_iseries() && ((root_lvm && !boot_found) || show_all_popups) &&
 	 AutoinstData::BootLVMWarning )
 	{
 	// popup text
-	boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %1 installation
+	    string message = sformat(_("Warning: With your current setup, your %1 installation
 will encounter problems when booting, because you have no \"boot\"
 partition and your \"root\" partition is an LVM logical volume.
 This does not work.
@@ -345,17 +342,17 @@ If you do not know exactly what you are doing, use a normal
 partition for your files below /boot.
 
 Really use this setup?
-"),Product::name));
+"), Product::name);
 
-	if (ret == false) retval = false;
+	    if (!Popup::YesNo(message))
+		ok = false;
 	}
-
 
     if( ((Partitions::EfiBoot() || Arch::ia64()) && installation && (!boot_found || boot_fs != `vfat)) ||
         show_all_popups )
 	{
 	// popup text
-	boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %2 installation
+	    string message = sformat(_("Warning: With your current setup, your %2 installation
 will encounter problems when booting, because you have no
 FAT partition mounted onto %1.
 
@@ -365,15 +362,16 @@ If you do not know exactly what you are doing, use a normal
 FAT partition for your files below %1.
 
 Really use this setup?
-"), Partitions::BootMount(),Product::name));
+"), Partitions::BootMount(), Product::name);
 
-	if (ret == false) retval = false;
+	    if (!Popup::YesNo(message))
+		ok = false;
 	}
 
     if( (root_dmraid && !boot_found) || show_all_popups )
 	{
 	// popup text
-	boolean ret = Popup::YesNo(sformat(_("Warning: With your current setup, your %2 installation will 
+	    string message = sformat(_("Warning: With your current setup, your %2 installation will
 encounter problems when booting, because you have no 
 separate %1 partition on your RAID disk.
 
@@ -383,24 +381,26 @@ If you do not know exactly what you are doing, use a normal
 partition for your files below %1.
 
 Really use this setup?
-"), Partitions::BootMount(), Product::name));
+"), Partitions::BootMount(), Product::name);
 
-	if (ret == false) retval = false;
+	    if (!Popup::YesNo(message))
+		ok = false;
 	}
 
     if( ((Partitions::EfiBoot() || Arch::ia64()) && installation && boot_found && gpt_boot_ia64) ||
         show_all_popups )
 	{
 	// popup text
-	boolean ret = Popup::YesNo( ia64_gpt_text() + "\n\n" + 
-	                            _("Really use this setup ?") );
-	if (ret == false) retval = false;
+	    string message = ia64_gpt_text() + "\n" + _("Really use this setup ?");
+
+	    if (!Popup::YesNo(message))
+		ok = false;
 	}
 
     if ( (!swap_found && Stage::initial() && root_fs!=`nfs) || show_all_popups )
 	{
 	// popup text
-	boolean ret = Popup::YesNo(_("
+	    string message = _("
 You have not assigned a swap partition. There is nothing wrong with that, but
 in most cases it is highly recommended to create and assign a swap partition.
 Swap partitions on your system are listed in the main window with the
@@ -409,11 +409,11 @@ You can assign more than one swap partition, if desired.
 
 
 Really use the setup without swap partition?
-"));
+");
 
-	if (ret == false) retval = false;
+	    if (!Popup::YesNo(message))
+		ok = false;
 	}
-
 
     if( (partition_mounted_but_not_formated && installation) || show_all_popups )
 	{
@@ -442,12 +442,11 @@ _("If you decide to format the partition, all data on it will be lost.
 Really keep the partition unformatted?
 ");
 
-	boolean ret = Popup::YesNo( message);
-
-	if (ret == false) retval = false;
+	    if (!Popup::YesNo(message))
+		ok = false;
 	}
 
-    return retval;
+	return ok;
 }
 
 
