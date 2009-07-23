@@ -2,6 +2,7 @@
  * Module: 		FileSystems.ycp
  *
  * Authors:		Johannes Buchhold (jbuch@suse.de)
+ *		Arvin Schnell <aschnell@suse.de>
  *
  * Purpose:
  * These module contains the supported filesystems and their settings.
@@ -161,22 +162,6 @@ define map FstabDefaultMap =
   ];
 
   list<symbol> unsupportFs = [ `jfs, `btrfs ];
-
-
-    map<symbol, map<string, any> > capabilities = $[
-	`reiser		: $[ ],
-	`xfs		: $[ ],
-	`ext2		: $[ ],
-	`ext3		: $[ ],
-	`ext4		: $[ ],
-	`btrfs		: $[ ],
-	`jfs		: $[ ],
-	`hfs		: $[ ],
-	`vfat		: $[ ],
-	`ntfs		: $[ ],
-	`swap		: $[ ],
-	`unknown	: $[ ]
-    ];
 
 
 global define list<map<symbol, any> > GetGeneralFstabOptions()
@@ -906,11 +891,8 @@ global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
     };
 
 
-
-
-  /* FileS build fss map with all supported filesystems ( list support ) */
-global define void FileSystems()
-    ``{
+    global void FileSystems()
+    {
     if( Arch::sparc64() || Arch::sparc32() )
 	{
         support[`vfat] = false;
@@ -943,51 +925,10 @@ global define void FileSystems()
     y2milestone( "support %1", support );
     }
 
-global define void InitSlib( any sint )
+
+    global void InitSlib(any sint)
     {
-    boolean bval = false;
-    integer val = 0;
-    lib_id = sint;
-    foreach( symbol fs, map<string,any> cap, capabilities,
-	``{
-	if( fs != `unknown )
-	    {
-	    integer id = fromSymbol( conv_fs, fs );
-	    any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
-	    boolean ret = LibStorage::StorageInterface::getFsCapabilities( sint, id, fsinfo );
-	    if( !ret )
-		y2error( "InitSlib fs:%1 id:%2 ret:%3", fs, id, ret );
-	    else
-		{
-		cap = $[];
-		bval = LibStorage::FsCapabilities::swig_isExtendable_get(fsinfo);
-		if( bval )
-		    cap["extend"] = true;
-		bval = LibStorage::FsCapabilities::swig_isReduceable_get(fsinfo);
-		if( bval )
-		    cap["shrink"] = true;
-		bval = LibStorage::FsCapabilities::swig_isExtendableWhileMounted_get(fsinfo);
-		if( bval )
-		    cap["mount_extend"] = true;
-		bval = LibStorage::FsCapabilities::swig_isReduceableWhileMounted_get(fsinfo);
-		if( bval )
-		    cap["mount_shrink"] = true;
-		bval = LibStorage::FsCapabilities::swig_supportsUuid_get(fsinfo);
-		if( bval )
-		    cap["uuid"] = true;
-		bval = LibStorage::FsCapabilities::swig_supportsLabel_get(fsinfo);
-		if( bval )
-		    cap["label"] = true;
-		bval = LibStorage::FsCapabilities::swig_labelWhileMounted_get(fsinfo);
-		if( bval )
-		    cap["set_label_mount"] = true;
-		if( cap["label"]:false )
-		    cap["label_length"] = LibStorage::FsCapabilities::swig_labelLength_get(fsinfo);
-		cap["min_fs_k"] = LibStorage::FsCapabilities::swig_minimalFsSizeK_get(fsinfo);
-		capabilities[fs] = cap;
-		}
-	    }
-	});
+	lib_id = sint;
     }
 
 
@@ -1101,112 +1042,113 @@ global define map<symbol, any> GetFsMap( symbol used_fs )
   }
 
 
-global define integer MinFsSizeK( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    integer ret = cap["min_fs_k"]:0;
-    y2milestone( "MinFsSizeK fsys:%1 ret:%2", fsys, ret );
-    return( ret );
+    global integer MinFsSizeK(symbol fsys)
+    {
+	integer ret = 0;
+	integer id = fromSymbol(conv_fs, fsys);
+	any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(lib_id, id, fsinfo))
+	    ret = LibStorage::FsCapabilities::swig_minimalFsSizeK_get(fsinfo);
+	y2milestone("MinFsSizeK fsys:%1 ret:%2", fsys, ret);
+	return ret;
     }
 
-global define boolean MountUuid( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    boolean ret = cap["uuid"]:false;
-    y2milestone( "MountUuid fsys:%1 ret:%2", fsys, ret );
-    return( ret );
+
+    global boolean MountUuid(symbol fsys)
+    {
+	boolean ret = false;
+	integer id = fromSymbol(conv_fs, fsys);
+	any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(lib_id, id, fsinfo))
+	    ret = LibStorage::FsCapabilities::swig_supportsUuid_get(fsinfo);
+	y2milestone("MountUuid fsys:%1 ret:%2", fsys, ret);
+	return ret;
     }
 
-global define boolean MountLabel( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    boolean ret = cap["label"]:false;
-    y2milestone( "MountLabel fsys:%1 ret:%2", fsys, ret );
-    return( ret );
+
+    global boolean MountLabel(symbol fsys)
+    {
+	boolean ret = false;
+	integer id = fromSymbol(conv_fs, fsys);
+	any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(lib_id, id, fsinfo))
+	    ret = LibStorage::FsCapabilities::swig_supportsLabel_get(fsinfo);
+	y2milestone("MountLabel fsys:%1 ret:%2", fsys, ret);
+	return ret;
     }
 
-global define boolean ChangeLabelMounted( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    boolean ret = cap["set_label_mount"]:false;
-    y2milestone( "ChangeLabelMounted fsys:%1 ret:%2", fsys, ret );
-    return( ret );
+
+    global boolean ChangeLabelMounted(symbol fsys)
+    {
+	boolean ret = false;
+	integer id = fromSymbol(conv_fs, fsys);
+	any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(lib_id, id, fsinfo))
+	    ret = LibStorage::FsCapabilities::swig_labelWhileMounted_get(fsinfo);
+	y2milestone("ChangeLabelMounted fsys:%1 ret:%2", fsys, ret);
+	return ret;
     }
 
-global define integer LabelLength( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    integer ret = cap["label_length"]:16;
-    y2milestone( "LabelLength fsys:%1 ret:%2", fsys, ret );
-    return( ret );
+
+    global integer LabelLength(symbol fsys)
+    {
+	integer ret = 0;
+	integer id = fromSymbol(conv_fs, fsys);
+	any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(lib_id, id, fsinfo))
+	    ret = LibStorage::FsCapabilities::swig_labelLength_get(fsinfo);
+	y2milestone("LabelLength fsys:%1 ret:%2", fsys, ret);
+	return ret;
     }
 
-global define map IsResizable( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    map ret = $[];
-    ret["extend"] = cap["extend"]:false;
-    ret["shrink"] = cap["shrink"]:false;
-    ret["mount_extend"] = cap["mount_extend"]:false;
-    ret["mount_shrink"] = cap["mount_shrink"]:false;
-    y2milestone( "IsResizable fsys:%1 ret:%2", fsys, ret );
-    return( ret );
-    };
 
-global define symbol FsToSymbol( string type )
-    ``{
-    symbol return_value = `none;
-	if( type == "ext2" )
-	  {
-	  return_value = `ext2;
-	  }
-	else if( type == "ext3" )
-	  {
-	  return_value = `ext3;
-	  }
-	else if( type == "ext4" )
-	  {
-	  return_value = `ext4;
-	  }
-	else if( type == "btrfs" )
-	  {
-	  return_value = `btrfs;
-	  }
-    else if( regexpmatch( type, "reiser.*" ) )
-	  {
-	  return_value = `reiser;
-	  }
-	else if( type == "jfs" )
-	  {
-	  return_value = `jfs;
-	  }
-	else if( type == "xfs" )
-	  {
-	  return_value = `xfs;
-	  }
-    else if( type == "vfat" || regexpmatch( type, "fat.*" ))
-	  {
-	  return_value = `vfat;
-	  }
-	else if( type == "ntfs" )
-	  {
-	  return_value = `ntfs;
-	  }
-	else if( type == "hfs" )
-	  {
-	  return_value = `hfs;
-	  }
-	else if( type == "swap" )
-	  {
-	  return_value = `swap;
-	  }
-    return( return_value );
+    global map<string, boolean> IsResizable(symbol fsys)
+    {
+	map<string, boolean> ret = $[];
+	integer id = fromSymbol(conv_fs, fsys);
+	any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(lib_id, id, fsinfo))
+	{
+	    ret = $[
+		"extend" : LibStorage::FsCapabilities::swig_isExtendable_get(fsinfo),
+		"shrink" : LibStorage::FsCapabilities::swig_isReduceable_get(fsinfo),
+		"mount_extend" : LibStorage::FsCapabilities::swig_isExtendableWhileMounted_get(fsinfo),
+		"mount_shrink" : LibStorage::FsCapabilities::swig_isReduceableWhileMounted_get(fsinfo)
+	    ];
+	}
+	y2milestone("IsResizable fsys:%1 ret:%2", fsys, ret);
+	return ret;
+    }
+
+
+    global symbol FsToSymbol(string type)
+    {
+	symbol ret = `none;
+
+	if (type == "ext2")
+	    ret = `ext2;
+	else if (type == "ext3")
+	    ret = `ext3;
+	else if (type == "ext4")
+	    ret = `ext4;
+	else if (type == "btrfs")
+	    ret = `btrfs;
+	else if (regexpmatch(type, "reiser.*"))
+	    ret = `reiser;
+	else if (type == "jfs")
+	    ret = `jfs;
+	else if (type == "xfs" )
+	    ret = `xfs;
+	else if (type == "vfat" || regexpmatch(type, "fat.*"))
+	    ret = `vfat;
+	else if (type == "ntfs")
+	    ret = `ntfs;
+	else if (type == "hfs")
+	    ret = `hfs;
+	else if (type == "swap")
+	    ret = `swap;
+
+	return ret;
     }
 
 
