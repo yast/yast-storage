@@ -18,6 +18,9 @@
     import "Stage";
     import "AsciiFile";
 
+    import "LibStorage";
+    import "LibStorage::StorageInterface";
+    import "LibStorage::DlabelCapabilities";
 
     // The filesystem ids for the partitions
     global const integer fsid_empty = 0;
@@ -85,6 +88,15 @@
 
            symbol default_fs      = `unknown;
            symbol default_boot_fs = `unknown;
+
+
+    any sint = nil;
+
+
+    global void InitSlib(any value)
+    {
+	sint = value;
+    }
 
 
 global boolean EfiBoot()
@@ -705,44 +717,38 @@ global string FsIdToString(integer fs_id)
 }
 
 
-map capabilities = $[ "msdos" : $[ "extended" : true,
-                                   "max_primary" : 4 ],
-		      "gpt"   : $[ "max_primary" : 16 ],
-		      "mac"   : $[ "max_primary" : 16 ],
-		      "amiga" : $[ "max_primary" : 16 ],
-		      "sun"   : $[ "max_primary" : 8 ],
-		      "bsd"   : $[ "max_primary" : 8 ],
-		      "dasd"  : $[ "max_primary" : 3 ]
-		    ];
-
-global define integer MaxPrimary( string label )
-    ``{
-    integer ret = capabilities[label,"max_primary"]:4;
-    y2milestone( "MaxPrimary label:%1 ret:%2", label, ret );
-    return( ret );
+    global integer MaxPrimary(string dlabel)
+    {
+	integer ret = 0;
+	any caps = LibStorage::DlabelCapabilities::new("LibStorage::DlabelCapabilities");
+	if (LibStorage::StorageInterface::getDlabelCapabilities(sint, dlabel, caps))
+	    ret = LibStorage::DlabelCapabilities::swig_maxPrimary_get(caps);
+	y2milestone("MaxPrimary dlabel:%1 ret:%2", dlabel, ret);
+	return ret;
     }
 
-global define integer MaxLogical( string device )
-    ``{
-    integer ret = 15;
-    if( search( device, "/dev/hd" )==0 )
-	{
-	ret = 63;
-	}
-    else if( search( device, "/dev/rd/c" )==0 )
-	{
-	ret = 7;
-	}
-    y2milestone( "MaxLogical:%1 ret:%2", device, ret );
-    return( ret );
+
+    global boolean HasExtended(string dlabel)
+    {
+	boolean ret = false;
+	any caps = LibStorage::DlabelCapabilities::new("LibStorage::DlabelCapabilities");
+	if (LibStorage::StorageInterface::getDlabelCapabilities(sint, dlabel, caps))
+	    ret = LibStorage::DlabelCapabilities::swig_extendedPossible_get(caps);
+	y2milestone("HasExtended dlabel:%1 ret:%2", dlabel, ret);
+	return ret;
     }
 
-global define boolean HasExtended( string label )
-    ``{
-    boolean ret = capabilities[label,"extended"]:false;
-    y2milestone( "HasExtended label:%1 ret:%2", label, ret );
-    return( ret );
+
+    global integer MaxLogical(string dlabel)
+    {
+	integer ret = 0;
+	any caps = LibStorage::DlabelCapabilities::new("LibStorage::DlabelCapabilities");
+	if (LibStorage::StorageInterface::getDlabelCapabilities(sint, dlabel, caps))
+	    ret = LibStorage::DlabelCapabilities::swig_maxLogical_get(caps);
+	y2milestone("MaxLogical dlabel:%1 ret:%2", dlabel, ret);
+	return ret;
     }
+
 
 global define string RdonlyText( string disk, boolean expert_partitioner )
     ``{
