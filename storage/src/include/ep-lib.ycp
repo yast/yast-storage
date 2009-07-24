@@ -311,11 +311,11 @@ RAID device will be deleted:"), used_by_device),
 	list <integer> bits = [];
 	list <string> labels = [];
 
-	void AddSegment(integer bit, string label, integer size_k)
+	void AddSegment(float bit, string label, integer size_k)
 	{
 	    // Guarantee some minimal share (1%) of total graph width to the segment.
 	    // Prevents small partitions e.g. swaps from disappearing completely.
-	    bits = add(bits, bit < 1 ? 1 : bit);
+	    bits = add(bits, Integer::Clamp(1000 * bit, 10, 1000));
 	    labels = add(labels, label + "\n" + Storage::KByteToHumanString(size_k));
 	}
 
@@ -367,7 +367,7 @@ RAID device will be deleted:"), used_by_device),
 			    next_cyl = Region::Start( partitions[ i+1, "region" ]:[] );
 			}
 
-			integer tmp = 100 * Region::Length(region) / disk["cyl_count"]:1;
+			float tmp = (float) Region::Length(region) / (float) disk["cyl_count"]:1;
 			y2debug("i:%1  this cyl:%2  end cyl:%3  next cyl:%4", i, ccyl, Region::End(region), next_cyl);
 			AddSegment(tmp, part["device"]:"", part["size_k"]:0);
 
@@ -378,7 +378,7 @@ RAID device will be deleted:"), used_by_device),
 			if ( ( Region::End( region ) != next_cyl ) &&
 			     ( (Region::End( region) + 1) != next_cyl ) )
 			{
-			    integer tmp2 = 100*( next_cyl - Region::End(region))/disk["cyl_count"]:1;
+			    float tmp2 = (float) (next_cyl - Region::End(region)) / (float) disk["cyl_count"]:1;
 			    AddSegment(tmp2, emptyspace, ((next_cyl - Region::End(region)) * disk["cyl_size"]:1) / 1024);
 			}
 
@@ -399,11 +399,11 @@ RAID device will be deleted:"), used_by_device),
 		foreach(map partition, partitions, {
 		    integer size_k = partition["size_k"]:0;
 		    disk_free_k = disk_free_k - size_k;
-		    AddSegment(100 * size_k / disk_size_k, partition["device"]:"", size_k);
+		    AddSegment((float) size_k / (float) disk_size_k, partition["device"]:"", size_k);
 		});
 
 		if (disk_free_k > 0)
-		    AddSegment(100 * disk_free_k / disk_size_k, _("Unallocated Space"), disk_free_k);
+		    AddSegment((float) disk_free_k / (float) disk_size_k, _("Unallocated Space"), disk_free_k);
 	    }
 	    break;
 	}
