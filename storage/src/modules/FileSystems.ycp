@@ -885,9 +885,8 @@ global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
 	{
 	ret = swap_fst_options;
 	}
-    y2milestone( "fsys %1", fsys );
-    y2milestone( "ret %1", ret );
-    return( ret );
+    y2milestone("fsys:%1 ret:%2", fsys, ret);
+    return ret;
     };
 
 
@@ -1393,47 +1392,41 @@ global define list GetFstabDefaultList( string key )
               tostring(m["freq"]:0), tostring(m["passno"]:0) ] );
     }
 
-global define boolean CanDoQuota( map part )
-    ``{
-    list quota_fs = [ `ext2, `ext3, `ext4, `reiser, `xfs ];
-    return( contains( quota_fs, part["used_fs"]:`unknown ));
-    }
 
-global define boolean HasQuota( map part )
-    ``{
-    boolean ret = false;
-    list<string> opts = splitstring( part["fstopt"]:"", "," );
-    integer i=0;
-    while( !ret && i<size(opts) )
-	{
-	ret = opts[i]:""=="usrquota" || opts[i]:""=="grpquota" ||
-	      search(opts[i]:"","usrjquota=")==0 ||
-	      search(opts[i]:"","grpjquota=")==0;
-	i = i+1;
-	}
-    return( ret );
-    }
-
-global define string RemoveQuotaOpts( string fst_opts )
+    global boolean CanDoQuota(map part)
     {
-    list<string> opts = splitstring( fst_opts, "," );
-    opts = filter( string o, opts, 
-                   ``( o!="usrquota" && o!="grpquota" &&
-		       search(o,"usrjquota=")!=0 && search(o,"grpjquota=")!=0 &&
-		       search(o,"jqfmt=")!=0 ));
-    return( mergestring( opts, "," ));
+	const list<symbol> quota_fs = [ `ext2, `ext3, `ext4, `btrfs, `reiser, `xfs ];
+	return contains(quota_fs, part["used_fs"]:`unknown);
     }
 
-global define string AddQuotaOpts( map part, string fst_opts )
+    global boolean HasQuota(map part)
     {
-    string ret = RemoveQuotaOpts( fst_opts );
-    list journal = [ `ext3, `ext4, `reiser ];
-    if( contains( journal, part["used_fs"]:`unknown ))
-	ret = ret + ",usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv0";
-    else
-	ret = ret + ",usrquota,grpquota";
-    return( ret );
+	list<string> opts = splitstring(part["fstopt"]:"", ",");
+	return find(string opt, opts, {
+	    return opt == "usrquota" || opt == "grpquota" || search(opt, "usrjquota=") == 0 ||
+		search(opt, "grpjquota=") == 0;
+	}) != nil;
     }
 
+    global string RemoveQuotaOpts(string fst_opts)
+    {
+	list<string> opts = splitstring(fst_opts, ",");
+	opts = filter(string opt, opts, {
+	    return opt != "usrquota" && opt != "grpquota" && search(opt, "usrjquota=") != 0 &&
+		search(opt, "grpjquota=") != 0 && search(opt, "jqfmt=") != 0;
+	});
+	return mergestring(opts, ",");
+    }
+
+    global string AddQuotaOpts(map part, string fst_opts)
+    {
+	const list<symbol> journal = [ `ext3, `ext4, `btrfs, `reiser ];
+	string ret = RemoveQuotaOpts(fst_opts);
+	if (contains(journal, part["used_fs"]:`unknown))
+	    ret = ret + ",usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv0";
+	else
+	    ret = ret + ",usrquota,grpquota";
+	return ret;
+    }
 
 }
