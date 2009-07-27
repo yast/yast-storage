@@ -55,6 +55,7 @@
     include "partitioning/auto_part_prepare.ycp";
     include "partitioning/auto_part_ui.ycp";
     include "partitioning/auto_part_create.ycp";
+    include "partitioning/custom_part_dialogs.ycp";
 
     // Displays a popup with the message (can be dismissed with OK).
     // After that only `abort or `back is allowed
@@ -228,12 +229,18 @@
 	    {
 	    break;
 	    }
-
 	else if (ret == `lvm)
 	{
 	    UI::ChangeWidget(`id(`encrypt), `Enabled, (boolean) UI::QueryWidget(`id(`lvm), `Value));
 	}
-
+	else if (ret == `encrypt)
+	{
+	    if ((boolean) UI::QueryWidget(`id(`encrypt), `Value))
+	    {
+		if (!QueryProposalPassword())
+		    UI::ChangeWidget(`id(`encrypt), `Value, false);
+	    }	    
+	}
 	else if (ret == `full)
 	    {
 	    // Set all checkboxes
@@ -398,20 +405,15 @@ Really delete your Windows partition?
 
 	    y2milestone ("partitions '%1'", partitions);
 
-	    // Check selection for plausability
-	    string reason = nil;
 	    StorageProposal::SetProposalHome( (boolean)UI::QueryWidget( `id(`home), `Value ));
-            if( (boolean)UI::QueryWidget( `id(`lvm), `Value )==true )
-		StorageProposal::SetProposalLvm(true);
-	    else
-		StorageProposal::SetProposalLvm(false);
+	    StorageProposal::SetProposalLvm((boolean) UI::QueryWidget(`id(`lvm), `Value));
 	    StorageProposal::SetProposalEncrypt((boolean) UI::QueryWidget(`id(`encrypt), `Value));
-	    StorageProposal::SetProposalPassword("12345678"); // TODO
+
 	    ok = create_partitions( targetMap, target, partitions );
 	    StorageProposal::SetProposalDefault(true);
 	    if( !ok )
 		{
-		reason = _("Too few partitions are marked for removal
+		string reason = _("Too few partitions are marked for removal
 or the disk is too small. 
 To install Linux, select more partitions to 
 remove or select a larger disk.");
