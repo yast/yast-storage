@@ -34,6 +34,9 @@
   import "Stage";
   
 
+    include "partitioning/custom_part_dialogs.ycp";
+
+
 define boolean AskOverwriteChanges()
     ``{
     boolean ret = true;
@@ -282,8 +285,23 @@ if( !Storage::GetTestsuite() )
 			break;
 
 		    case `encrypt:
-			StorageProposal::SetProposalEncrypt((boolean) UI::QueryWidget(`id(`encrypt), `Value));
-			StorageProposal::SetProposalPassword("12345678"); // TODO
+
+			if ((boolean) UI::QueryWidget(`id(`encrypt), `Value))
+			{
+			    if (QueryProposalPassword())
+			    {
+				StorageProposal::SetProposalEncrypt(true);
+			    }
+			    else
+			    {
+				UI::ChangeWidget(`id(`encrypt), `Value, false);
+				continue;
+			    }
+			}
+			else
+			{
+			    StorageProposal::SetProposalEncrypt(false);
+			}
 			break;
 		}
 
@@ -339,12 +357,13 @@ if( !Storage::GetTestsuite() )
 	    UI::ChangeWidget( `id("richtext"), `Value, changes );
 	    if(  ret==`detailed )
 		{
-		if( StorageProposal::GetProposalLvm() )
-		    UI::ChangeWidget( `id("prop_mode"), `CurrentButton, `lvm );
-		else 
-		    UI::ChangeWidget( `id("prop_mode"), `CurrentButton, `part );
+		UI::ChangeWidget(`id(`part), `Value, !StorageProposal::GetProposalLvm());
+		UI::ChangeWidget(`id(`lvm), `Value, StorageProposal::GetProposalLvm());
+		UI::ChangeWidget(`id(`encrypt), `Enabled, StorageProposal::GetProposalLvm());
+		UI::ChangeWidget(`id(`encrypt), `Value, StorageProposal::GetProposalEncrypt());
 		}
 	    }
+
 	} until ( ret == `next || ret == `back || ret == `cancel );
     }
 Storage::SaveExitKey( ret );

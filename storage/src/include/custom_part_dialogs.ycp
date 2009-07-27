@@ -30,6 +30,7 @@
   import "Arch";
   import "Label";
   import "Popup";
+    import "StorageProposal";
 
   include "partitioning/custom_part_helptexts.ycp";
 
@@ -99,10 +100,8 @@ define string DlgCreateCryptFs( string device, integer minpwlen, boolean format,
 					  `HSpacing(4)
 					 ),
 				    `VSpacing(3),
-				    `HBox(
-					  // Ok button
+				    `ButtonBox(
 					  `PushButton(`id("ok"), `opt(`default),  Label::OKButton()),
-					  // Cancel button
 					  `PushButton(`id("cancel"),   Label::CancelButton())
 					  ),
 				    `VSpacing(0.5)
@@ -110,74 +109,113 @@ define string DlgCreateCryptFs( string device, integer minpwlen, boolean format,
 			   )
 	     ));
 
-      string  ret         = "";
-      boolean input_is_ok = false;
-      string pw1 	  = "";
-      string pw2 	  = "";
+	string password = "";
+        symbol widget = nil;
 
       repeat
       {
 	  // Clear password fields on every round.
-	  UI::ChangeWidget(`id("pw1"), `Value, "");
-	  UI::ChangeWidget(`id("pw2"), `Value, "");
+	    UI::ChangeWidget(`id(`pw1), `Value, "");
+	    UI::ChangeWidget(`id(`pw2), `Value, "");
 
-	  UI::SetFocus(`id("pw1"));
+	    UI::SetFocus(`id(`pw1));
 
-	  ret = (string) UI::UserInput();
+	    widget = (symbol) UI::UserInput();
 
-
-	  if (ret != "cancel")
+	    switch (widget)
 	  {
-	      pw1 = (string)UI::QueryWidget(`id("pw1"), `Value);
-	      pw2 = (string)UI::QueryWidget(`id("pw2"), `Value);
+		case `ok:
 
-	      if ( pw1 != pw2 )
-	      {
-		  // popup text
-		  Popup::Message(_("The first and the second version\nof the password do not match!\nPlease try again."));
-	      }
-	      else if( pw1=="" && !tmpcrypt )
-	      {
-		  // popup text
-		  Popup::Message(_("You did not enter a password.
-Try again.
-"));
-	      }
-	      else if( size(pw1) < minpwlen && !tmpcrypt )
-	      {
-		  // popup text
-		  Popup::Message(sformat(_("The password must have at least %1 characters.
-Try again.
-"),minpwlen));
-	      }
-	      else if( size(pw1)>=minpwlen || tmpcrypt )
-	      {
-		  any ret2 = findfirstnotof( pw1, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#* ,.;:._-+!$%&/|\?{[()]}@^\\<>" );
-		  if ( ret2 != nil && size(pw1)>0 )
-		  {
-		      // popup text
-		      Popup::Message(_("The password may only contain the following characters:
- 0..9, a..z, A..Z, and any of \"@#* ,.;:._-+!$%&/|\?{[()]}^\\<>\".
-Try again."));
-		  }
-		  else
-		  {
-		      input_is_ok = true;
-		  }
-	      }
-	  }
+		    password = (string) UI::QueryWidget(`id(`pw1), `Value);
+		    string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
 
-      } until ( input_is_ok || ret == "cancel" );
+		    if (!Storage::CheckEncryptionPasswords(password, tmp, minpwlen, tmpcrypt))
+			widget = `again;
+
+		    break;
+	      }
+
+	} until (widget == `cancel || widget == `ok);
+
+	UI::CloseDialog();
+
+	if (widget == `ok)
+	      {
+	    return password;
+	      }
+	else
+	      {
+	    return "";
+	      }
+    }
+
+
+    boolean QueryProposalPassword()
+	      {
+	if (!isempty(StorageProposal::GetProposalPassword()))
+	    return true;
+
+	UI::OpenDialog(`VBox(
+			   `Label(_("Enter your password for the proposal encryption.")),
+			   `MinWidth(40,
+				     `Password(`id(`pw1),
+					       // Label: get password for user root
+					       // Please use newline if label is longer than 40 characters
+					       _("Password:"), "")),
+			   `VSpacing(0.5),
+			   `MinWidth(40,
+				     `Password(`id(`pw2),
+					       // Label: get same password again for verification
+					       // Please use newline if label is longer than 40 characters
+					       _("Reenter the password for verification:"), "")),
+			   `Label(_("Don't forget what you enter here!")),
+			   `ButtonBox(
+			       `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+			       `PushButton(`id(`cancel), Label::CancelButton())
+			       )
+			   ));
+
+	string password = "";
+        symbol widget = nil;
+
+	repeat
+		  {
+	    // Clear password fields on every round.
+	    UI::ChangeWidget(`id(`pw1), `Value, "");
+	    UI::ChangeWidget(`id(`pw2), `Value, "");
+
+	    UI::SetFocus(`id(`pw1));
+
+	    widget = (symbol) UI::UserInput();
+
+	    switch (widget)
+		  {
+		case `ok:
+
+		    password = (string) UI::QueryWidget(`id(`pw1), `Value);
+		    string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
+
+		    if (!Storage::CheckEncryptionPasswords(password, tmp, 8, false))
+			widget = `again;
+
+		    break;
+		  }
+
+	} until (widget == `cancel || widget == `ok);
 
       UI::CloseDialog();
 
-      if (ret == "cancel")
+	if (widget == `ok)
 	  {
-	  pw1 = "";
+	    StorageProposal::SetProposalPassword(password);
+	    return true;
 	  }
-    y2milestone( "DlgCreateCryptFs size(ret):%1", size(pw1) );
-    return( pw1 );
+	else
+	{
+	    return false;
   }
+
+    }
 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1478,6 +1516,5 @@ before deleting the device.
     y2milestone( "deleteAllDevPartitions ret:%1", go_on );
     return(go_on);
     };
-
 
 }
