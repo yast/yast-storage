@@ -238,9 +238,12 @@ on %1 and all RAIDs and Volume Groups using partitions on %1."), disk_device)))
 	}
 
 	map<string, map> target_map = Storage::GetTargetMap();
-	map<string, any> data = Storage::GetPartition(target_map, device);
+	map<string, any> part = Storage::GetPartition(target_map, device);
 
-	if (!isempty(data["used_by_device"]:""))
+	if (!Storage::CanEdit(part, true))
+	    return;
+
+	if (!isempty(part["used_by_device"]:""))
 	{
 	    // error popup, %1 is replace by partition device name e.g. /dev/sdb1
 	    Popup::Error(sformat(_("The partition %1 is in use. It cannot be
@@ -248,16 +251,16 @@ edited. To edit %1, make sure it is not used."), device));
 	    return;
 	}
 
-	if (data["type"]:`primary == `extended)
+	if (part["type"]:`primary == `extended)
 	{
 	    // error popup text
 	    Popup::Error(_("An extended partition cannot be edited."));
 	    return;
 	}
 
-	if (DlgEditPartition(data))
+	if (DlgEditPartition(part))
 	{
-	    Storage::ChangeVolumeProperties(data);
+	    Storage::ChangeVolumeProperties(part);
 
 	    UpdateMainStatus();
 	    UpdateNavigationTree(nil);
@@ -278,7 +281,7 @@ edited. To edit %1, make sure it is not used."), device));
 
 	map<string, map> target_map = Storage::GetTargetMap();
 	map<string, any> disk = Storage::GetDisk(target_map, device);
-	map<string, any> data = Storage::GetPartition(target_map, device);
+	map<string, any> part = Storage::GetPartition(target_map, device);
 
 	if (disk["readonly"]:false)
 	{
@@ -286,7 +289,7 @@ edited. To edit %1, make sure it is not used."), device));
 	    return;
 	}
 
-	if (!isempty(data["used_by_device"]:""))
+	if (!isempty(part["used_by_device"]:""))
 	{
 	    // error popup, %1 is replace by partition device name, e.g. /dev/sdb1
 	    Popup::Error(sformat(_("The partition %1 is in use. It cannot be
@@ -294,17 +297,17 @@ resized. To resize %1, make sure it is not used."), device));
 	    return;
 	}
 
-	if (data["type"]:`primary == `extended)
+	if (part["type"]:`primary == `extended)
 	{
 	    // error popup text
 	    Popup::Error(_("An extended partition cannot be resized."));
 	    return;
 	}
 
-	//Need to pass data on the whole disk, to determine free/available space
-	if (DlgResizePartition(data, disk))
+	// Need to pass data on the whole disk, to determine free/available space
+	if (DlgResizePartition(part, disk))
 	{
-	    Storage::ResizePartition(device, disk["device"]:"error", data["region", 1]:0);
+	    Storage::ResizePartition(device, disk["device"]:"error", part["region", 1]:0);
 
 	    UpdateMainStatus();
 	    TreePanel::Create();
@@ -321,6 +324,13 @@ resized. To resize %1, make sure it is not used."), device));
 	    Popup::Error(_("No partition selected."));
 	    return;
 	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> disk = Storage::GetDisk(target_map, device);
+	map<string, any> part = Storage::GetPartition(target_map, device);
+
+	if (!Storage::CanDelete(part, disk, true))
+	    return;
 
 	string parent = ParentDevice(device);
 	string next = NextDeviceAfterDelete(device);
