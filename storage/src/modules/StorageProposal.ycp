@@ -24,6 +24,7 @@
     import "Arch";
     import "Stage";
 
+
 map read_partition_config( string fpath );
 map read_partition_xml_config();
 map get_gap_info( map disk, boolean add_exist_linux );
@@ -248,8 +249,8 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
     }
 
 
-define boolean ignore_disk( string dev, map entry, boolean soft )
-    ``{
+    boolean ignore_disk(string dev, map entry, boolean soft)
+    {
     boolean ret = !Storage::IsPartitionable( entry ) || 
                   entry["readonly"]:false || Arch::s390();
     if( !ret && (Partitions::EfiBoot() || Arch::ia64()) && entry["label"]:"gpt"!="gpt" )
@@ -277,13 +278,14 @@ define boolean ignore_disk( string dev, map entry, boolean soft )
 	y2milestone( "ignoring disk %1 soft:%2", dev, soft );
 	}
     return( ret );
-    };
+    }
 
 
-map swapable = $[];
+map<string, boolean> swapable = $[];
 
-global void flex_init_swapable( map<string,map> tg )
-{
+
+    global void flex_init_swapable(map<string, map> tg)
+    {
     swapable = $[];
     list swaps = Storage::SwappingPartitions();
     foreach(string dev, map disk, tg, {
@@ -301,21 +303,23 @@ global void flex_init_swapable( map<string,map> tg )
 	}
     });
     y2milestone("flex_init_swapable %1", swapable);
-}
+    }
 
 
-define boolean check_swapable( string dev )
+    boolean check_swapable(string dev)
     {
-    return( swapable[dev]:false );
+	return swapable[dev]:false;
     }
-  
-define string pinfo_name()
-    ``{
-    return( "/part.info" );
+
+
+    string pinfo_name()
+    {
+	return "/part.info";
     }
+
 
 global boolean has_flex_proposal()
-    ``{
+    {
     boolean ret = (integer)SCR::Read( .target.size, pinfo_name() )>0;
     if( !ret )
 	{
@@ -329,14 +333,16 @@ global boolean has_flex_proposal()
     return( ret );
     }
 
+
 boolean need_boot( map disk )
     {
     return( Partitions::NeedBoot() ||
 	    disk["type"]:`CT_UNKNOWN == `CT_DMRAID );
     }
 
-define map try_add_boot( map conf, map disk, boolean force )
-    ``{
+
+map try_add_boot( map conf, map disk, boolean force )
+    {
     boolean boot = 
 	size(filter( map e, conf["partitions"]:[], 
 		     ``(e["mount"]:""==Partitions::BootMount()))) > 0;
@@ -366,12 +372,13 @@ define map try_add_boot( map conf, map disk, boolean force )
     return( tc );
     }
 
-global map do_flexible_disk( map disk )
-    ``{
+
+global map<string, any> do_flexible_disk(map disk)
+    {
     string dev = disk["device"]:"";
     y2milestone( "do_flexible_disk dev %1", dev );
     y2milestone( "do_flexible_disk parts %1", disk["partitions"]:[] );
-    map ret = $[];
+    map<string, any> ret = $[];
     ret["ok"] = false;
     map conf = read_partition_config( pinfo_name() );
     map solutions = $[];
@@ -402,9 +409,10 @@ global map do_flexible_disk( map disk )
     return( ret );
     }
 
-define map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
+
+map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
                                   boolean reuse )
-    ``{
+    {
     string dev = disk["device"]:"";
     y2milestone( "do_flexible_disk_conf dev %1 ignore_boot %2 reuse %3", 
                  dev, ignore_boot, reuse );
@@ -448,8 +456,9 @@ define map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
     return( ret );
     }
 
-define map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
-    ``{
+
+map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
+    {
     string dev = disk["device"]:"";
     y2milestone( "do_vm_disk_conf dev %1 vmkey %2 key %3 boot %4", 
                  dev, vmkey, key, boot );
@@ -711,9 +720,9 @@ list<string> restrict_disk_names(list<string> disks)
 }
 
 
-define map do_pflex( map<string,map> target, map conf )
+    map<string, any> do_pflex(map<string, map> target, map conf)
     {
-    map ret = $[];
+    map<string, any> ret = $[];
     ret["ok"] = false;
     list<map> solutions = [];
     cur_mode = `free;
@@ -846,8 +855,8 @@ define map do_pflex( map<string,map> target, map conf )
     }
 
 
-define map do_proposal_flexible( map<string,map> target )
-    ``{
+    map<string, any> do_proposal_flexible(map<string, map> target)
+    {
     map conf = $[];
     if( ProductFeatures::GetBooleanFeature( "partitioning", 
                                             "use_flexible_partitioning"))
@@ -858,8 +867,9 @@ define map do_proposal_flexible( map<string,map> target )
     return( do_pflex( target, conf ) );
     }
 
-define map find_matching_disk( list<string> disks, map target, map conf )
-    ``{
+
+map find_matching_disk( list<string> disks, map target, map conf )
+    {
     map<string,map> solutions = $[];
 
     cur_weight = -100000;
@@ -947,8 +957,9 @@ define map find_matching_disk( list<string> disks, map target, map conf )
     return( ret );
     }
 
-define map process_partition_data( string dev, map solution, string vgname )
-    ``{
+
+map process_partition_data( string dev, map solution, string vgname )
+    {
     map disk = solution["disk"]:$[];
     list<map> partitions = [];
     string value = "";
@@ -1200,8 +1211,9 @@ define map process_partition_data( string dev, map solution, string vgname )
     return( disk );
     }
 
-define map add_cylinder_info( map conf, map gap )
-    ``{
+
+map add_cylinder_info( map conf, map gap )
+    {
     integer cyl_size = gap["cyl_size"]:1;
     conf["partitions"] = 
 	sort( map a, map b, conf["partitions"]:[],
@@ -1270,8 +1282,9 @@ define map add_cylinder_info( map conf, map gap )
     return( conf );
     }
 
-define map get_perfect_list( list ps, map g )
-    ``{
+
+map get_perfect_list( list ps, map g )
+    {
     y2milestone( "get_perfect_list ps %1", ps );
     y2milestone( "get_perfect_list gap %1", g );
     if( size(g["gap"]:[])>0 &&
@@ -1325,8 +1338,9 @@ define map get_perfect_list( list ps, map g )
     return( ret );
     }
 
-define void add_part_recursive( list ps, map g )
-    ``{
+
+void add_part_recursive( list ps, map g )
+    {
     y2milestone( "add_part_recursive pindex %1", g["procpart"]:0 );
     y2milestone( "add_part_recursive ps %1", ps );
     y2milestone( "add_part_recursive gap %1", g );
@@ -1406,8 +1420,9 @@ define void add_part_recursive( list ps, map g )
 	});
     };
 
-define map normalize_gaps( list ps, map g )
-    ``{
+
+map normalize_gaps( list ps, map g )
+    {
     y2milestone( "normalize_gaps gap %1", g );
     integer gindex = 0;
     integer pindex = 0;
@@ -1606,8 +1621,8 @@ define map normalize_gaps( list ps, map g )
     };
 
 
-define map distribute_space( integer rest, list weights, list added, list ps )
-    ``{
+map distribute_space( integer rest, list weights, list added, list ps )
+    {
     integer diff_sum = 0;
     integer sum = 0;
     integer index = 0;
@@ -1668,8 +1683,8 @@ define map distribute_space( integer rest, list weights, list added, list ps )
     }
 
 
-define integer do_weighting( list ps, map g )
-    ``{
+integer do_weighting( list ps, map g )
+    {
     y2milestone( "do_weighting gap %1", g["gap"]:[] );
     integer ret = 0;
     integer index = 0;
@@ -1758,7 +1773,8 @@ define integer do_weighting( list ps, map g )
 	});
     y2milestone( "do_weighting ret %1", ret );
     return( ret );
-    };
+    }
+
 
 global list<map> try_remove_sole_extended( list<map> parts )
     {
@@ -1781,8 +1797,9 @@ global list<map> try_remove_sole_extended( list<map> parts )
     return( ret );
     }
 
-define map remove_possible_partitions( map disk, map conf )
-    ``{
+
+map remove_possible_partitions( map disk, map conf )
+    {
     map ret = (map)eval(disk);
     ret["partitions"] = maplist( map p, ret["partitions"]:[],
 	``{
@@ -1801,10 +1818,11 @@ define map remove_possible_partitions( map disk, map conf )
 	});
     ret["partitions"] = try_remove_sole_extended( ret["partitions"]:[] );
     return( ret );
-    };
+    }
 
-define map try_resize_windows( map disk )
-    ``{
+
+map try_resize_windows( map disk )
+    {
     integer cyl_size = disk["cyl_size"]:1;
     map win = $[];
     map ret = (map)eval(disk);
@@ -1830,11 +1848,12 @@ define map try_resize_windows( map disk )
 	return( p );
 	});
     return( ret );
-    };
+    }
 
-define list<map> get_gaps( integer start, integer end, list<map> part, 
+
+list<map> get_gaps( integer start, integer end, list<map> part, 
 			   boolean add_exist_linux )
-    ``{
+    {
     y2milestone( "get_gaps start %1 end %2 add_exist %3", start, end, 
                  add_exist_linux );
     list<map> ret = [];
@@ -1875,8 +1894,8 @@ define list<map> get_gaps( integer start, integer end, list<map> part,
     }
 
 
-define map get_gap_info( map disk, boolean add_exist_linux )
-    ``{
+map get_gap_info( map disk, boolean add_exist_linux )
+    {
     map ret = $[];
     list<map> gap = [];
     list<map> plist = filter( map p, disk["partitions"]:[], 
@@ -1980,13 +1999,13 @@ define map get_gap_info( map disk, boolean add_exist_linux )
     return( ret );
     }
 
+
 /**
  * Read partition data from XML control file
- * @return map flexible propsal map
+ * @return map flexible proposal map
  */
-define map read_partition_xml_config()
-    ``{
-
+map read_partition_xml_config()
+    {
     map xmlflex = (map)ProductFeatures::GetFeature ("partitioning", "flexible_partitioning");
     y2milestone("xml input: %1", xmlflex );
 
@@ -2134,8 +2153,8 @@ define map read_partition_xml_config()
     }
 
 
-define map read_partition_config( string fpath )
-    ``{
+map read_partition_config( string fpath )
+    {
     integer pos = 0;
     string line = "";
     string rex = "";
@@ -2350,6 +2369,7 @@ define map read_partition_config( string fpath )
     return( conf );
     }
 
+
 global map can_swap_reuse( string disk, list<map> partitions, map<string,map> tgmap )
     {
     map ret = $[];
@@ -2416,6 +2436,7 @@ global map can_swap_reuse( string disk, list<map> partitions, map<string,map> tg
     return( ret );
     }
 
+
 list<map> can_boot_reuse( string disk, string label, boolean boot,
                           integer max_prim, list<map> partitions )
     {
@@ -2459,6 +2480,7 @@ list<map> can_boot_reuse( string disk, string label, boolean boot,
     return( ret );
     }
 
+
 list<map> can_mp_reuse( string mp, integer min, integer max,
                         list<map> partitions )
     {
@@ -2497,6 +2519,7 @@ list<map> can_mp_reuse( string mp, integer min, integer max,
     return( ret );
     }
 
+
 integer get_avail_size_mb( list<map> parts )
     {
     integer ret = 0;
@@ -2509,12 +2532,14 @@ integer get_avail_size_mb( list<map> parts )
     return( ret );
     }
 
-list get_swap_sizes( integer space )
+
+    list<integer> get_swap_sizes(integer space)
     {
-    list l = [ Partitions::SwapSizeMb(0), Partitions::SwapSizeMb(space) ];
-    y2milestone( "get_swap_sizes space %1 ret %2", space, l );
-    return( l );
+	list<integer> l = [ Partitions::SwapSizeMb(0), Partitions::SwapSizeMb(space) ];
+	y2milestone("get_swap_sizes space %1 ret %2", space, l);
+	return l;
     }
+
 
 global list<map> get_proposal( boolean have_swap, map disk )
     {
@@ -2524,7 +2549,7 @@ global list<map> get_proposal( boolean have_swap, map disk )
                   "fsys" : Partitions::DefaultFs(), "size" : 0 ];
     map opts = GetControlCfg();
     map conf = $[ "partitions" : [] ];
-    list swap_sizes = [];
+    list<integer> swap_sizes = [];
     integer avail_size = get_avail_size_mb(disk["partitions"]:[]);
     if( !have_swap )
 	{
@@ -2593,6 +2618,7 @@ global list<map> get_proposal( boolean have_swap, map disk )
     return ret;
     }
 
+
 integer get_usable_size_mb( map disk, boolean reuse_linux )
     {
     integer ret = 0;
@@ -2620,6 +2646,7 @@ integer get_usable_size_mb( map disk, boolean reuse_linux )
     return( ret );
     }
 
+
 integer get_mb_sol( map sol, string mp )
     {
     map pa = find( map p, sol["disk","partitions"]:[], ``(p["mount"]:""==mp));
@@ -2628,6 +2655,7 @@ integer get_mb_sol( map sol, string mp )
     y2milestone( "get_mb_sol ret %1", ret );
     return( ret );
     }
+
 
 integer get_vm_sol( map sol )
     {
@@ -2640,6 +2668,7 @@ integer get_vm_sol( map sol )
     y2milestone( "get_vm_sol ret %1", ret );
     return( ret );
     }
+
 
 list<map> special_boot_proposal_prepare( list<map> partitions )
     {
@@ -2658,6 +2687,7 @@ list<map> special_boot_proposal_prepare( list<map> partitions )
 	}
     return( ret );
     }
+
 
 map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
     {
@@ -2684,6 +2714,7 @@ map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
     return( tg );
     }
 
+
 list<string> get_disk_try_list( map<string,map> tg, boolean soft )
     {
     list<string> ret = [];
@@ -2699,6 +2730,7 @@ list<string> get_disk_try_list( map<string,map> tg, boolean soft )
     return( ret );
     }
 
+
 boolean usable_for_win_resize( map p, boolean assert_cons_fs )
     {
     boolean ret = Partitions::IsDosWinNtPartition( p["fsid"]:0 ) &&
@@ -2713,6 +2745,7 @@ boolean usable_for_win_resize( map p, boolean assert_cons_fs )
 	}
     return( ret );
     }
+
 
 list<map> remove_p_settings( list<map> parts, list<string> mp )
     {
@@ -2734,6 +2767,7 @@ list<map> remove_p_settings( list<map> parts, list<string> mp )
 	    });
     return( parts );
     }
+
 
 list<map> remove_one_partition( map disk )
     {
@@ -2767,6 +2801,7 @@ list<map> remove_one_partition( map disk )
 	}
     return( partitions );
     }
+
 
 list<map> remove_one_partition_vm( map disk )
     {
@@ -2823,6 +2858,7 @@ list<map> remove_one_partition_vm( map disk )
     return( partitions );
     }
 
+
 map remove_used_by( map tg, string disk )
     {
     string uby = tg[disk,"used_by_device"]:"";
@@ -2838,11 +2874,12 @@ map remove_used_by( map tg, string disk )
     return( tg );
     }
 
-map get_inst_proposal( map<string,map> target )
+
+    map<string, any> get_inst_proposal(map<string, map> target)
     {
     y2milestone( "get_inst_proposal start" );
     flex_init_swapable( target );
-    map ret = $[];
+    map<string, any> ret = $[];
     target = Storage::AddWinInfo(target);
     ret["target"] = target;
     map root = $[ "mount" : "/", "increasable" : true,
@@ -2997,7 +3034,7 @@ map get_inst_proposal( map<string,map> target )
 		disk["partitions"] =  r["partitions"]:[];
 	    else if( haskey( r, "targets" ))
 		target = r["targets"]:$[];
-	    list swap_sizes = [];
+	    list<integer> swap_sizes = [];
 	    integer avail_size = get_usable_size_mb(disk,mode==`reuse);
 	    y2milestone( "get_inst_proposal disk %1 mode %2 avail %3", 
 	                 s, mode, avail_size );
@@ -3198,6 +3235,7 @@ map get_inst_proposal( map<string,map> target )
     return( ret );
     }
 
+
 list<map> remove_keys( list<map> pl, list<string> keys )
     {
     pl = maplist( map p, pl,
@@ -3211,6 +3249,7 @@ list<map> remove_keys( list<map> pl, list<string> keys )
 	});
     return( pl );
     }
+
 
 map<string,map> remove_mount_points( map<string,map> target )
     {
@@ -3230,6 +3269,7 @@ map<string,map> remove_mount_points( map<string,map> target )
 	});
     return( target );
     }
+
 
 map<string,map> remove_vm( map<string,map> tg, string ky )
     {
@@ -3254,6 +3294,7 @@ map<string,map> remove_vm( map<string,map> tg, string ky )
     return( tg );
     }
 
+
 string find_vm( map<string,map> target, string ky, integer min_size )
     {
     string ret = "";
@@ -3264,6 +3305,7 @@ string find_vm( map<string,map> target, string ky, integer min_size )
     y2milestone( "find_vm key:%1 min_size:%2 ret:%3", ky, min_size, ret );
     return( ret );
     }
+
 
 boolean did_remove_vg( list<map> partitions, string vg )
     {
@@ -3278,6 +3320,7 @@ boolean did_remove_vg( list<map> partitions, string vg )
     return( ret );
     }
 
+
 integer sizek_to_pe( integer pek, integer pebyte, boolean pvcreate )
     {
     integer ret = (pek-(pvcreate?500:0)) / (pebyte/1024);
@@ -3286,12 +3329,14 @@ integer sizek_to_pe( integer pek, integer pebyte, boolean pvcreate )
     return( ret );
     }
 
+
 integer pe_to_sizek( integer pe, integer pebyte )
     {
     integer ret = pe * (pebyte/1024);
     y2milestone( "pe_to_sizek pe %1 pebyte %2 ret %3", pe, pebyte, ret );
     return( ret );
     }
+
 
 map extend_vm( map vg, string key, map disk )
     {
@@ -3315,6 +3360,7 @@ map extend_vm( map vg, string key, map disk )
     y2milestone( "extend_vm ret %1", vg );
     return( vg );
     }
+
 
 map create_vm( string key, map disk )
     {
@@ -3354,7 +3400,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
     integer free = ret["pe_free"]:0;
     integer pe = ret["pesize"]:1024;
     integer swsize = 0;
-    list swlist = [];
+    list<integer> swlist = [];
     if( need_swap )
 	{
 	swlist = get_swap_sizes( free );
@@ -3569,10 +3615,11 @@ map modify_vm( map vm, map opts, boolean need_swap )
     return( ret );
     }
 
-map get_inst_prop_vm( map<string,map> target, string key )
+
+    map<string, any> get_inst_prop_vm(map<string, map> target, string key)
     {
     y2milestone( "get_inst_prop_vm start key %1", key );
-    map ret = $[];
+    map<string, any> ret = $[];
     map opts = GetControlCfg();
     string vg_key = find_vm( target, key, opts["root_base"]:0*1024 );
     target = remove_mount_points(target);
@@ -3821,12 +3868,13 @@ map get_inst_prop_vm( map<string,map> target, string key )
     return( ret );
     }
 
-global map get_proposal_vm( map<string,map> target, string key, map disk )
+
+    global map<string, any> get_proposal_vm(map<string, map> target, string key, map disk)
     {
     string ddev = disk["device"]:"";
     y2milestone("get_proposal_vm ddev:%1 vg:%2 home:%3 lvm:%4 encrypt:%5", ddev,
 		key, GetProposalHome(), GetProposalLvm(), GetProposalEncrypt());
-    map ret = $[];
+    map<string, any> ret = $[];
     map opts = GetControlCfg();
     target = remove_mount_points(target);
     target = remove_vm(target,key);
@@ -3878,13 +3926,14 @@ global map get_proposal_vm( map<string,map> target, string key, map disk )
     return ret;
     }
 
-global map get_inst_prop( map<string,map> target )
+
+    global map<string, any> get_inst_prop(map<string, map> target)
     {
-    map ret = $[];
+    map<string, any> ret = $[];
     string vg = GetProposalVM();
     y2milestone("get_inst_prop vg:%1 home:%2 lvm:%3 encypt:%4", vg, 
 		GetProposalHome(), GetProposalLvm(), GetProposalEncrypt());
-    if( size(vg)==0 )
+    if (isempty(vg))
 	{
         if( has_flex_proposal() )
 	    ret = do_proposal_flexible( target );
