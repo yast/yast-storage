@@ -205,6 +205,42 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
     }
 
 
+    list<string> GetDestroyedLvmVgs(map<string, map> target)
+    {
+	list<string> vgs = [];
+	foreach(string diskdev, map disk, target, {
+	    foreach( map p, disk["partitions"]:[], {
+		if( p["used_by_type"]:`UB_NONE==`UB_LVM && p["format"]:false )
+		{
+		    vgs = add(vgs, p["used_by_device"]:"");
+		}
+	    });
+	});
+	vgs = toset(vgs);
+	y2milestone( "GetDestroyedLvmVgs %1", vgs );
+	return vgs;
+    }
+
+
+    map<string, map> DeleteDestroyedLvmVgs(map<string, map> target)
+    {
+	list<string> vgs = GetDestroyedLvmVgs(target);
+	y2milestone( "DeleteDestroyedLvmVgs %1", vgs );
+	foreach(string dev, vgs, {
+	    if( haskey( target, dev ))
+		target[dev,"delete"] = true;
+	    target[dev,"partitions"] = maplist( map p, target[dev,"partitions"]:[],
+						``{
+						    if( haskey( p, "mount" ))
+							p = remove( p, "mount" );
+						    return( p );
+						});
+	    y2milestone( "DeleteDestroyedLvmVgs %1: %2", dev, target[dev]:$[] );
+	});
+	return target;
+    }
+
+
     list<string> NoProposeDisks()
     {
 	if (no_propose_disks == nil)
@@ -848,7 +884,7 @@ list<string> restrict_disk_names(list<string> disks)
 		});
 	    ret["ok"] = true;
 	    target = Storage::SpecialBootHandling( target );
-	    ret["target"] = Storage::DeleteDestroyedLvmVgs( target );
+	    ret["target"] = DeleteDestroyedLvmVgs(target);
 	    }
 	}
     return( ret );

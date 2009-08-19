@@ -770,7 +770,7 @@ global define map<string,any> GetDisk( map<string,map> tg, string device )
  * Get List of swap partitions
  * @return list List of swap partitions
  */
-global list SwappingPartitions()
+global list<string> SwappingPartitions()
 {
     SCR::UnmountAgent(.proc.swaps);
     list<map> swaps = (list<map>) SCR::Read(.proc.swaps);
@@ -779,45 +779,9 @@ global list SwappingPartitions()
 	swaps = [];
     }
     swaps = filter(map e, swaps, ``(e["type"]:""=="partition"));
-    list ret = maplist(map e, swaps, ``(Partitions::TranslateMapperName(e["file"]:"")));
+    list<string> ret = maplist(map e, swaps, ``(Partitions::TranslateMapperName(e["file"]:"")));
     y2milestone("SwappingPartitions %1", ret);
     return ret;
-}
-
-
-list<string> GetDestroyedLvmVgs(map<string, map> target)
-{
-    list<string> vgs = [];
-    foreach(string diskdev, map disk, target, {
-	foreach( map p, disk["partitions"]:[], {
-	    if( p["used_by_type"]:`UB_NONE==`UB_LVM && p["format"]:false )
-	    {
-		vgs = add(vgs, p["used_by_device"]:"");
-	    }
-	 });
-    });
-    vgs = toset(vgs);
-    y2milestone( "GetDestroyedLvmVgs %1", vgs );
-    return vgs;
-}
-
-
-global map<string, map> DeleteDestroyedLvmVgs(map<string, map> target)
-{
-    list<string> vgs = GetDestroyedLvmVgs(target);
-    y2milestone( "DeleteDestroyedLvmVgs %1", vgs );
-    foreach(string dev, vgs, {
-	if( haskey( target, dev ))
-	    target[dev,"delete"] = true;
-	target[dev,"partitions"] = maplist( map p, target[dev,"partitions"]:[],
-					    ``{
-					    if( haskey( p, "mount" ))
-						p = remove( p, "mount" );
-					    return( p );
-					    });
-	y2milestone( "DeleteDestroyedLvmVgs %1: %2", dev, target[dev]:$[] );
-    });
-    return target;
 }
 
 
@@ -994,11 +958,13 @@ global define map<string,map> AddWinInfo( map<string,map> targets )
     return( targets );
     };
 
-global define string SaveDumpPath( string name )``{
-    string ret = Directory::tmpdir + "/" + name;
-    y2debug( "name=%1 path=%2", name, ret );
-    return ret;
+
+    global string SaveDumpPath(string name)
+    {
+	string ret = Directory::tmpdir + "/" + name;
+	return ret;
     }
+
 
 //  add mount point for all mounted partitions
 /**
@@ -1765,7 +1731,7 @@ define void UpdateTargetMapDev( string dev )
  * @param map disk
  * @return map disk info
  */
-global define map getDiskInfo( string device, map disk )
+    map getDiskInfo(string device, map disk)
     {
     map c = $[];
     c = find( map p, conts, ``(p["device"]:""==device ));
@@ -1960,11 +1926,9 @@ global define void SetPartDisk( string value )
     }
 
 
-// Constructor
-global define void Storage()
-    ``{
-    map m = (map)SCR::Execute(.target.bash_output, "date +%s.%N" );
-    y2milestone( "constructor Storage() time:%1", m["stdout"]:"" );
+    // Storage Constructor
+    global void Storage()
+    {
     if( Mode::normal() )
 	{
 	Storage::SetPartMode( "CUSTOM" );
@@ -1982,8 +1946,6 @@ global define void Storage()
 	Storage::SetPartMode( "CUSTOM" );
 	Storage::SetPartProposalActive( false  );
 	}
-    m = (map)SCR::Execute(.target.bash_output, "date +%s.%N" );
-    y2milestone( "constructor Storage() end time:%1", m["stdout"]:"" );
     }
 
 
@@ -4830,15 +4792,16 @@ void CallInsserv( boolean on, string name )
 	}
     }
 
+
 global void FinishInstall()
 {
     y2milestone("FinishInstall initial:%1", Stage::initial());
 
-    map<string,map> tg = GetTargetMap();
+    map<string, map> target_map = GetTargetMap();
 
     if( Stage::initial() )
 	{
-	HandleModulesOnBoot( tg );
+	HandleModulesOnBoot(target_map);
 	}
 
     boolean need_crypt = false;
@@ -4847,11 +4810,10 @@ global void FinishInstall()
     boolean need_dmraid = false;
     boolean need_dmmultipath = false;
 
-    foreach( string k, map e, tg, {
-	if( size(filter( map p, e["partitions"]:[],
-			 ``(p["enc_type"]:`none != `none)))>0 )
+    foreach (string k, map e, target_map, {
+	if (find(map part, e["partitions"]:[], { return part["enc_type"]:`none != `none; }) != nil)
 	    need_crypt = true;
-	if( e["type"]:`CT_UNKNOWN==`CT_MD && size(e["partitions"]:[])>0 )
+	if (e["type"]:`CT_UNKNOWN == `CT_MD && !isempty(e["partitions"]:[]))
 	    need_md = true;
 	if( e["type"]:`CT_UNKNOWN==`CT_LVM )
 	    need_lvm = true;
@@ -4875,21 +4837,19 @@ global void FinishInstall()
     y2milestone("FinishInstall done");
 }
 
-global define map GetEntryForMountpoint( string mp )
-    ``{
-    list<map> all_partitions = [];
-    foreach( string dev, map disk, GetTargetMap(),
-	``{
-	all_partitions = (list<map>)union( all_partitions,
-	                                   disk["partitions"]:[] );
+
+    global map GetEntryForMountpoint(string mp)
+    {
+	list<map> partitions = [];
+
+	foreach(string dev, map disk, GetTargetMap(), {
+	    list<map> tmp = filter(map part, disk["partitions"]:[], { return part["mount"]:"" == mp; });
+	    partitions = (list<map>) union(partitions, tmp);
 	});
-    map partition = find( map part, all_partitions, ``(part["mount"]:""==mp) );
-    if( partition==nil || partition["mount"]:"" != mp )
-        {
-	partition = $[];
-	}
-    return partition;
+
+	return partitions[0]:$[];
     }
+
 
 global define list GetRootInitrdModules()
     ``{
@@ -4970,36 +4930,24 @@ global define list GetRootInitrdModules()
     return initrdmodules;
     };
 
-/**
- * CheckForLvmRootFs
- *---------------------------------------------------------------------
- * check if the root filesystem is a lvm logical volume
- *
- **/
-global define boolean CheckForLvmRootFs()
-    ``{
-    map part = GetEntryForMountpoint( "/" );
-    y2milestone( "CheckForLvmRootFs root=%1", part );
-    boolean ret = part["type"]:`primary==`lvm;
-    y2milestone( "CheckForLvmRootFs ret=%1", ret );
-    return ret;
-    };
+
+    global boolean CheckForLvmRootFs()
+    {
+	map part = GetEntryForMountpoint("/");
+	boolean ret = part["type"]:`primary == `lvm;
+	y2milestone("CheckForLvmRootFs root:%1 ret:%2", part, ret);
+	return ret;
+    }
 
 
-  /*---------------------------------------------------------------------
-   * checkForMdRootFs
-   *---------------------------------------------------------------------
-   * check if the root filesystem is a md device
-   *---------------------------------------------------------------------
-   */
-global define boolean CheckForMdRootFs()
-    ``{
-    map part = GetEntryForMountpoint( "/" );
-    boolean ret = part["type"]:`primary==`sw_raid;
-    y2milestone( "CheckForMdRootFs root=%1", part );
-    y2milestone( "CheckForMdRootFs ret=%1", ret );
-    return ret;
-    };
+    global boolean CheckForMdRootFs()
+    {
+	map part = GetEntryForMountpoint("/");
+	boolean ret = part["type"]:`primary == `sw_raid;
+	y2milestone("CheckForMdRootFs root:%1 ret:%2", part, ret);
+	return ret;
+    }
+
 
 global define void AdaptResize( string maindev, list region, integer schange )
     ``{
