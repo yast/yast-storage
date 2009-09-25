@@ -666,8 +666,9 @@ Storage::initDisk( DiskData& data, ProcPart& pp )
 	}
     }
 
+
 void
-Storage::autodetectDisks( ProcPart& ppart )
+    Storage::autodetectDisks(ProcPart& parts)
     {
     DIR *Dir;
     struct dirent *Entry;
@@ -679,68 +680,51 @@ Storage::autodetectDisks( ProcPart& ppart )
 	getUdevMap("/dev/disk/by-id", by_id);
 	list<DiskData> dl;
 	while( (Entry=readdir( Dir ))!=NULL )
-	    {
-	    int Range=0;
-	    unsigned long long Size = 0;
-	    string SysfsDir = string(SYSFSDIR "/") + Entry->d_name;
-	    string SysfsFile = SysfsDir + "/range";
-	    y2mil("autodetectDisks sysfsdir:" << SysfsDir);
-	    y2mil("autodetectDisks Range access:" << access(SysfsFile.c_str(), R_OK));
-	    if( access( SysfsFile.c_str(), R_OK )==0 )
-		{
-		ifstream File( SysfsFile.c_str() );
-		classic(File);
-		File >> Range;
-		}
-	    SysfsFile = SysfsDir+"/size";
-	    if( access( SysfsFile.c_str(), R_OK )==0 )
-		{
-		ifstream File( SysfsFile.c_str() );
-		classic(File);
-		File >> Size;
-		}
+	{
 	    string dn = Entry->d_name;
-	    y2mil( "autodetectDisks Range:" << Range << " Size:" << Size );
-	    if( Range>1 && (Size>0||dn.find( "dasd" )==0) )
+
+	    if (dn == "." || dn == "..")
+		continue;
+
+	    Disk::SysfsInfo sysfsinfo;
+	    if (!Disk::getSysfsInfo(SYSFSDIR "/" + dn, sysfsinfo))
+		continue;
+
+	    if (sysfsinfo.range > 1 && (sysfsinfo.size > 0 || dn.find("dasd") == 0))
+	    {
+		DiskData::DTyp t = (dn.find("dasd") == 0) ? DiskData::DASD : DiskData::DISK;
+		dl.push_back(DiskData(dn, t, sysfsinfo.size / 2));
+	    }
+	    else if (sysfsinfo.range == 1 && sysfsinfo.size > 0)
+	    {
+		if (sysfsinfo.device.find( "/xen/vbd" ) != string::npos && isdigit(dn[dn.size() - 1]))
 		{
-		DiskData::DTyp t = (dn.find( "dasd" )==0)?DiskData::DASD
-		                                         :DiskData::DISK;
-		dl.push_back( DiskData( dn, t, Size/2 ) );
-		}
-	    else if( Range==1 && Size>0 )
-		{
-		SysfsFile = SysfsDir+"/device";
-		string devname;
-		int ret;
-		char lbuf[1024+1];
-		if( access( SysfsFile.c_str(), R_OK )==0 &&
-		    (ret=readlink( SysfsFile.c_str(), lbuf, sizeof(lbuf) ))>0 )
-		    {
-		    devname.append( lbuf, ret );
-		    y2mil( "devname:" << devname );
-		    }
-		if( devname.find( "/xen/vbd" )!=string::npos &&
-	            isdigit(dn[dn.size()-1]) )
-		    {
-		    dl.push_back( DiskData( dn, DiskData::XEN, Size/2 ) );
-		    }
+		    dl.push_back(DiskData(dn, DiskData::XEN, sysfsinfo.size / 2));
 		}
 	    }
+	}
 	closedir( Dir );
 	y2mil( "dl: " << dl );
 	for( list<DiskData>::iterator i = dl.begin(); i!=dl.end(); ++i )
 	    {
-	    initDisk( *i, ppart );
+		initDisk(*i, parts);
 	    }
 	y2mil( "dl: " << dl );
-	for( list<DiskData>::iterator i = dl.begin(); i!=dl.end(); ++i )
+	for( list<DiskData>::const_iterator i = dl.begin(); i!=dl.end(); ++i )
 	    {
 	    if( i->d )
 	        {
-		string tmp;
-		if (!by_path[i->dev].empty())
-		    tmp = by_path[i->dev].front();
-		i->d->setUdevData(tmp, by_id[i->dev]);
+		string tmp1;
+		map<string, list<string>>::const_iterator it1 = by_path.find(i->dev);
+		if (it1 != by_path.end())
+		    tmp1 = it1->second.front();
+
+		list<string> tmp2;
+		map<string, list<string>>::const_iterator it2 = by_id.find(i->dev);			
+		if (it2 != by_id.end())
+		    tmp2 = it2->second;
+
+		i->d->setUdevData(tmp1, tmp2);
 		addToList( i->d );
 		}
 	    }
@@ -750,6 +734,7 @@ Storage::autodetectDisks( ProcPart& ppart )
 	y2err("Failed to open:" SYSFSDIR);
 	}
     }
+
 
 void
 Storage::detectFsData( const VolIterator& begin, const VolIterator& end,
