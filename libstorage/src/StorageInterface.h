@@ -2172,7 +2172,24 @@ namespace storage
     /**
      * Initializes default logging.
      */
-    void initDefaultLogger ();
+    void initDefaultLogger();
+
+
+    /**
+     * Contains basic environment settings controlling the behaviour of libstorage.
+     */
+    struct Environment
+    {
+	Environment(bool readonly) : readonly(readonly), testmode(false), autodetect(true),
+	    instsys(false), logdir("/var/log/YaST2"), testdir("") {}
+
+	bool readonly;
+	bool testmode;
+	bool autodetect;
+	bool instsys;
+	string logdir;
+	string testdir;
+    };
 
 
     /**
@@ -2180,16 +2197,7 @@ namespace storage
      *
      * Throws an exception when locking fails.
      */
-    StorageInterface* createDefaultStorageInterface ();
-
-
-    /**
-     * Factory for creating a concrete StorageInterface object.
-     *
-     * Throws an exception when locking fails.
-     */
-    StorageInterface* createStorageInterface (bool readonly, bool testmode,
-					      bool autodetect);
+    StorageInterface* createStorageInterface(const Environment& env);
 
 
     /**
@@ -2199,14 +2207,13 @@ namespace storage
      * pid of one process holding a conflicting lock. If the pid cannot be
      * determined it is set to 0. The lock holder may run on another system.
      */
-    StorageInterface* createStorageInterfacePid (bool readonly, bool testmode,
-						 bool autodetect, int& locker_pid);
+    StorageInterface* createStorageInterfacePid(const Environment& env, int& locker_pid);
 
 
     /**
      * Destroy a StorageInterface object.
      */
-    void destroyStorageInterface (StorageInterface*);
+    void destroyStorageInterface(StorageInterface*);
 
 }
 

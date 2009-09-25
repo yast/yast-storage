@@ -3,10 +3,12 @@
 #include <iostream>
 #include <iterator>
 
-#include <y2storage/StorageInterface.h>
+#include "common.h"
+
 
 using namespace storage;
 using namespace std;
+
 
 StorageInterface *s = 0;
 
@@ -31,7 +33,7 @@ void print_md_info()
 
 void createMD( MdType type, deque<string> devs )
 {
-    s = createStorageInterface( false, true, false );
+    s = createStorageInterface(TestEnvironment());
 
     int ret = s->createMd( "/dev/md0", type, devs );
     if( ret==0 )
@@ -49,7 +51,6 @@ void createMD( MdType type, deque<string> devs )
 int main( int argc_iv, char** argv_ppcv )
 {
     system ("mkdir -p tmp");
-    setenv ("YAST2_STORAGE_TDIR", "tmp", 1);
 
     system ("rm -rf tmp/*");
     

@@ -1,9 +1,13 @@
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
 #include <iterator>
 
-#include <y2storage/StorageInterface.h>
+#include <StorageInterface.h>
+
+#include "common.h"
+
 
 using namespace std;
 using namespace storage;
@@ -57,7 +61,7 @@ test ()
 {
     printf ("test\n");
 
-    s = createStorageInterface (false, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     cout << s->changeFormatVolume ("/dev/hda1", true, REISERFS) << '\n';
     cout << s->changeFormatVolume ("/dev/hda2", true, EXT2) << '\n';
@@ -76,7 +80,6 @@ int
 main ()
 {
     system ("mkdir -p tmp");
-    setenv ("YAST2_STORAGE_TDIR", "tmp", 1);
 
     system ("cp data/disk_hda tmp/disk_hda");
     system ("rm -f tmp/volume_info");

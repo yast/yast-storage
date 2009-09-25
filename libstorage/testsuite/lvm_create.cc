@@ -1,17 +1,22 @@
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
 #include <iterator>
 #include <sstream>
 
-#include <y2storage/StorageInterface.h>
+#include "common.h"
+
 
 using namespace storage;
 using namespace std;
 
+
 StorageInterface *s = 0;
 
-void print_num_lvs(const string& disk, const string& vg) {
+
+void print_num_lvs(const string& disk, const string& vg)
+{
     deque<LvmLvInfo> plist;
     s->getLvmLvInfo( vg, plist );
 
@@ -24,7 +29,7 @@ void print_num_lvs(const string& disk, const string& vg) {
  */
 deque<string> getDevs( deque<string> disks )
 {
-    StorageInterface *siface = createStorageInterface( false, true, false );
+    StorageInterface *siface = createStorageInterface(TestEnvironment());
 
     deque<string> devs;
     deque<PartitionInfo> pInfos;
@@ -61,7 +66,7 @@ void createLvs( const string& vg, int n, deque<string>& disks )
 {
     printf("createLvs\n");
 
-    s = createStorageInterface( false, true, false );
+    s = createStorageInterface(TestEnvironment());
 
     /* create volume group with the above disks */
     cout << s->createLvmVg( vg, 4, false, getDevs(disks) ) << endl;
@@ -95,7 +100,7 @@ void createExtendedLv( const string& vg, const string& dev )
 {
     printf("createExtendedLv\n");
 
-    s = createStorageInterface( false, true, false );
+    s = createStorageInterface(TestEnvironment());
 
     deque<string> devs;
     devs.push_back(dev); // add extended partition
@@ -110,7 +115,6 @@ void createExtendedLv( const string& vg, const string& dev )
 int main( int argc_iv, char** argv_ppcv )
 {
     system ("mkdir -p tmp");
-    setenv ("YAST2_STORAGE_TDIR", "tmp", 1);
 
     system ("rm -rf tmp/*");
 

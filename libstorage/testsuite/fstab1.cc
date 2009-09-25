@@ -3,7 +3,8 @@
 #include <iostream>
 #include <iterator>
 
-#include <y2storage/StorageInterface.h>
+#include "common.h"
+
 
 using namespace std;
 using namespace storage;
@@ -17,7 +18,7 @@ mountpoint1 ()
 {
     cout << "mountpoint1\n";
 
-    s = createStorageInterface (false, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     string mountpoint;
 
@@ -38,7 +39,7 @@ mountby1 ()
 {
     cout << "mountby1\n";
 
-    s = createStorageInterface (false, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     MountByType mountby;
 
@@ -63,7 +64,7 @@ options1 ()
 {
     cout << "options1\n";
 
-    s = createStorageInterface (false, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     string options;
 
@@ -100,7 +101,7 @@ crypt1 ()
 {
     cout << "crypt1\n";
 
-    s = createStorageInterface (false, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     bool val = false;
 
@@ -127,7 +128,7 @@ combined1 ()
 {
     cout << "combined1\n";
 
-    s = createStorageInterface (false, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     string mountpoint;
 
@@ -145,7 +146,6 @@ int
 main ()
 {
     system ("mkdir -p tmp");
-    setenv ("YAST2_STORAGE_TDIR", "tmp", 1);
 
     system ("cp data/volume_info tmp");
     system ("cp data/disk_hda tmp");

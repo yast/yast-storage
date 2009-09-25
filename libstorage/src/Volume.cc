@@ -704,7 +704,7 @@ int Volume::doFormat()
 	ret = umount( orig_mp );
 	needMount = ret==0;
 	}
-    if( ret==0 && !cont->getStorage()->test() )
+    if( ret==0 && !cont->getStorage()->testmode() )
 	{
 	ret = checkDevice();
 	}
@@ -716,7 +716,7 @@ int Volume::doFormat()
 	{
 	ret = cont->getStorage()->zeroDevice(mountDevice(), size_k, true);
 	}
-    if( ret==0 && mountDevice()!=dev && !cont->getStorage()->test() )
+    if( ret==0 && mountDevice()!=dev && !cont->getStorage()->testmode() )
 	{
 	ret = checkDevice(mountDevice());
 	}
@@ -848,7 +848,7 @@ int Volume::doFormat()
 	{
 	format = false;
 	detected_fs = fs;
-	if( fs != SWAP && !cont->getStorage()->test() )
+	if( fs != SWAP && !cont->getStorage()->testmode() )
 	    {
 	    FsType old=fs;
 	    updateFsData();
@@ -1139,7 +1139,7 @@ int Volume::doMount()
 	{
 	ret = VOLUME_ALREADY_IN_USE;
 	}
-    if( ret==0 && !mp.empty() && !cont->getStorage()->test() )
+    if( ret==0 && !mp.empty() && !cont->getStorage()->testmode() )
 	{
 	if( fs!=NFS )
 	    {
@@ -1643,7 +1643,7 @@ EncryptType Volume::detectEncryption()
     {
     EncryptType ret = ENC_UNKNOWN;
 
-    if( getContainer()->getStorage()->test() )
+    if( getContainer()->getStorage()->testmode() )
 	{
 	ret = encryption = orig_encryption = ENC_TWOFISH;
 	y2milestone( "ret:%s", encTypeString(ret).c_str() );

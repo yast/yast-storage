@@ -1,9 +1,13 @@
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
 #include <iterator>
 
-#include <y2storage/StorageInterface.h>
+#include <StorageInterface.h>
+
+#include "common.h"
+
 
 using namespace std;
 using namespace storage;
@@ -40,7 +44,7 @@ msdos (const string& disk, int n)
 {
     printf ("msdos %s %d\n", disk.c_str(), n);
 
-    s = createStorageInterface (false, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     s->destroyPartitionTable (disk, "msdos");
 
@@ -69,7 +73,7 @@ gpt (const string& disk, int n)
 {
     printf ("gpt %s %d\n", disk.c_str(), n);
 
-    s = createStorageInterface (false, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     s->destroyPartitionTable (disk, "gpt");
 
@@ -91,7 +95,6 @@ int
 main ()
 {
     system ("mkdir -p tmp");
-    setenv ("YAST2_STORAGE_TDIR", "tmp", 1);
 
     /*
      * Check that we can create 3 primary, 1 extended and 59 logical partitions
