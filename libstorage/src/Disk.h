@@ -108,6 +108,17 @@ class Disk : public Container
 	static std::pair<string,unsigned> getDiskPartition( const string& dev );
 	static unsigned long long maxSizeLabelK( const string& label );
 
+	struct SysfsInfo
+	{
+	    unsigned long mjr;
+	    unsigned long mnr;
+	    string device;
+	    unsigned long range;
+	    unsigned long long size;
+	};
+
+	static bool getSysfsInfo(const string& sysfsdir, SysfsInfo& sysfsinfo);
+
     protected:
 
 	// iterators over partitions

@@ -37,6 +37,8 @@ std::map<string,string> makeMap( const std::list<string>& l,
                                  const string& delim = "=",
 				 const string& removeSur = " \t\n" );
 
+    bool readlink(const string& path, string& buf);
+
 void getUdevMap(const char* path, std::map<string, std::list<string>>& m);
 void getRevUdevMap(const char* path, std::map<string, string>& m);
 
