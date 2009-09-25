@@ -912,11 +912,22 @@ void Storage::setDefaultMountBy( MountByType val )
     defaultMountBy = val;
     }
 
-void Storage::setEfiBoot(bool val)
-{  
-    y2milestone("val:%d", val);
+
+void
+Storage::setEfiBoot(bool val)
+{
+    assertInit();
+    y2mil("val:" << val);
     efiboot = val;
 }
+
+bool
+Storage::getEfiBoot()
+{
+    assertInit();
+    return efiboot;
+}
+
 
 void Storage::setRootPrefix( const string& root )
     {
