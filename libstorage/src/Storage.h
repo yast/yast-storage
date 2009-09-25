@@ -363,7 +363,7 @@ class Storage : public storage::StorageInterface
 	void setDetectMountedVolumes( bool val=true );
 	bool getDetectMountedVolumes() const { return detectMounted; }
 	void setEfiBoot(bool val);
-	bool getEfiBoot() const { return efiboot; }
+	bool getEfiBoot();
 	void setRootPrefix( const string& root );
 	string getRootPrefix() const { return rootprefix; }
 	int removeVolume( const string& device );
