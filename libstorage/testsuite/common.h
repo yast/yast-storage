@@ -1,13 +1,19 @@
 
-#include <string>
-
-using namespace std;
+#include <StorageInterface.h>
 
 
-extern bool testmode;
+namespace storage
+{
 
-extern string disk;
+    struct TestEnvironment : public Environment
+    {
+	TestEnvironment() : Environment(false)
+	{
+	    testmode = true;
+	    autodetect = false;
+	    logdir = testdir = "tmp";
+	}
+    };
 
-void
-parse_command_line (int argc, char* argv[]);
+}
 

@@ -209,15 +209,20 @@ class Storage : public storage::StorageInterface
 
 	static void initDefaultLogger ();
 
-	Storage( bool ronly=false, bool testmode=false, bool autodetect=true );
-	bool test() const { return( testmode ); }
-	bool instsys() const { return( inst_sys ); }
+	Storage(const Environment& env);
+
+	bool readonly() const { return env.readonly; }
+	bool testmode() const { return env.testmode; }
+	bool autodetect() const { return env.autodetect; }
+	bool instsys() const { return env.instsys; }
+	string logdir() const { return env.logdir; }
+	string testdir() const { return env.testdir; }
+
 	void setCacheChanges( bool val=true ) { cache = val; }
 	bool isCacheChanges() const { return( cache ); }
 	void assertInit() { if( !initialized ) initialize(); }
 	void rescanEverything();
 	int checkCache();
-	const string& tDir() const { return( testdir ); }
 	const string& root() const { return( rootprefix ); }
 	string prependRoot(const string& mp) const;
 	const string& tmpDir() const;
@@ -1716,22 +1721,17 @@ class Storage : public storage::StorageInterface
 			 bool& resize_ok );
 
 	// protected internal member variables
+	const Environment env;
 	Lock lock;
-	bool readonly;
-	bool testmode;
-	bool inst_sys;
 	bool cache;
 	bool initialized;
-	bool autodetect;
 	bool recursiveRemove;
 	bool zeroNewPartitions;
 	MountByType defaultMountBy;
 	bool detectMounted;
 	bool root_mounted;
-	string testdir;
 	string tempdir;
 	string rootprefix;
-	string logdir;
 	unsigned hald_pid;
 	bool efiboot;
 	static string proc_arch;

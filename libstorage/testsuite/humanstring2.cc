@@ -1,13 +1,16 @@
 
+#include <stdlib.h>
 #include <iostream>
 #include <locale>
 
-#include <y2storage/StorageInterface.h>
+#include <StorageInterface.h>
+
+#include "common.h"
 
 using namespace std;
 using namespace storage;
 
-
+ 
 // Don't bother setting up locale for gettext since we don't have translations
 // during package build.
 
@@ -32,7 +35,7 @@ test(const char* loc, const char* str, bool classic)
 int
 main()
 {
-    s = createStorageInterface(true, true, false);
+    s = createStorageInterface(TestEnvironment());
 
     test("en_GB.UTF-8", "42", true);			// FAILS: classic=true needs a suffix
     test("en_GB.UTF-8", "42B", true);

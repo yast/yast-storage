@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <iostream>
 
-#include <y2storage/StorageInterface.h>
+#include <StorageInterface.h>
 
 using namespace storage;
 using namespace std;
@@ -11,7 +11,7 @@ using namespace std;
 void
 doit ()
 {
-    StorageInterface* s = createDefaultStorageInterface ();
+    StorageInterface* s = createStorageInterface(Environment(false));
 
 
     cout << s->destroyPartitionTable ("hdb", s->defaultDiskLabel ()) << '\n';
