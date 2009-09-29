@@ -3,6 +3,7 @@
 #
 
 client_DATA =			\
+	storage.ycp		\
 	disk.ycp		\
 	disk_worker.ycp
 
