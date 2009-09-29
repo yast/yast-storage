@@ -41,6 +41,27 @@
     }
 
 
+    void SplitDevice(map<string, map> target_map, string device, map& disk, map& part)
+    {
+	map disk_tmp = target_map[device]:nil;
+	map part_tmp = nil;
+
+	if (disk_tmp == nil)
+	{
+	    foreach(string s, map d, target_map, {
+		part_tmp = find(map p, d["partitions"]:[], { return p["device"]:"" == device; });
+		if (part_tmp != nil) {
+		    disk_tmp = d;
+		    break;
+		}
+	    });
+	}
+
+	disk = disk_tmp;
+	part = part_tmp;
+    }
+
+
     /**
      * Must be called before removing device.
      */
@@ -48,22 +69,14 @@
     {
 	map<string, map> target_map = Storage::GetTargetMap();
 
-	map disk = target_map[device]:nil;
+	map disk = nil;
 	map part = nil;
 
-	if (disk == nil)
-	{
-	    foreach(string s, map d, target_map, {
-		part = find(map p, d["partitions"]:[], { return p["device"]:"" == device; });
-		if (part != nil) {
-		    disk = d;
-		    break;
-		}
-	    });
-	}
+	SplitDevice(target_map, device, disk, part);
 
 	return disk["device"]:"";
     }
+
 
     boolean ConfirmDeletingUsedDevice( map tg, map <string, any> part, symbol used_by )
     {
