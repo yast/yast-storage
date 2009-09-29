@@ -71,6 +71,7 @@
 	);
     }
 
+
     void HandleLvmButtons( any user_data, string device, map event )
     {
 	string vg = "";
@@ -78,10 +79,15 @@
 
 	if (user_data == nil)
 	{
-	    map dev = Storage::GetDiskPartition( device );
-	    vg = (string) dev["disk"]:nil;
-	    // FIXME: is this necessary & sufficient condition?
-	    is_vg = (dev["nr"]:"" == "");
+	    map<string, map> target_map = Storage::GetTargetMap();
+
+	    map disk = nil;
+	    map part = nil;
+
+	    SplitDevice(target_map, device, disk, part);
+
+	    vg = disk["device"]:"";
+	    is_vg = part == nil;
 	}
 	else
 	{
@@ -95,21 +101,21 @@
 		break;
 
 	    case `edit:
-		if  ( is_vg )
+		if (is_vg)
 		    TreePanel::SwitchToNew( vg );
 		else
 		    EpEditLogicalVolume( device );
 		break;
 
 	    case `resize:
-		if  ( is_vg )
+		if (is_vg)
 		    EpResizeVolumeGroup( device);
 		else
 		    EpResizeLogicalVolume ( device );
 		break;
 
 	    case `delete:
-		if  ( is_vg )
+		if (is_vg)
 		    EpDeleteVolumeGroup( device );
 		else
 		    EpDeleteLogicalVolume ( device, UI::WidgetExists(`id(`table)) ? `table : `overview );
