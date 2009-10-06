@@ -318,6 +318,26 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
     }
 
 
+    map<string, map> AddWinInfo(map<string, map> targets)
+    {
+	y2milestone("AddWinInfo called");
+	foreach(string disk, map data, targets, {
+	    targets[disk, "partitions"] =
+		maplist(map p, data["partitions"]:[], {
+		    if (Partitions::IsDosWinNtPartition(p["fsid"]:0) &&
+			contains([ `ntfs, `vfat ], p["used_fs"]:`none))
+		    {
+			p["winfo"] = Storage::GetFreeSpace(p["device"]:"", 0,
+							   p["used_fs"]:`none, false);
+			y2milestone("AddWinInfo %1", p);
+		    }
+		    return p;
+		});
+	});
+	return targets;
+    }
+
+
 map<string, boolean> swapable = $[];
 
 
@@ -2917,7 +2937,7 @@ map remove_used_by( map tg, string disk )
     y2milestone( "get_inst_proposal start" );
     flex_init_swapable( target );
     map<string, any> ret = $[];
-    target = Storage::AddWinInfo(target);
+    target = AddWinInfo(target);
     ret["target"] = target;
     map root = $[ "mount" : "/", "increasable" : true,
                   "fsys" : Partitions::DefaultFs(), "size" : 0 ];
@@ -3662,7 +3682,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
     target = remove_mount_points(target);
     if( size(vg_key)==0 )
 	target = remove_vm(target,key);
-    target = Storage::AddWinInfo(target);
+    target = AddWinInfo(target);
     ret["target"] = target;
     map boot = $[ "mount" : Partitions::BootMount(), 
                   "size" : Partitions::MinimalNeededBootsize(),
