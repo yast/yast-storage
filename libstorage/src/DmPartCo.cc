@@ -336,6 +336,7 @@ DmPartCo::getVolumes( ProcPart& ppart )
 	{
 	newP( p, i->nr(), &(*i) );
 	p->updateSize( ppart );
+	i->setSize(p->sizeK());
 	num_part++;
 	addToList( p );
 	++i;

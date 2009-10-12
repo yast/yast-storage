@@ -5897,8 +5897,7 @@ Storage::zeroDevice(const string& device, unsigned long long sizeK, bool random,
     endK = min(endK, sizeK);
     cmd = DDBIN " if=" + source + " of=" + quote(device) + " seek=" + decString(sizeK - endK) +
 	" bs=1k count=" + decString(endK);
-    if (c.execute(cmd) != 0)
-	ret = STORAGE_ZERO_DEVICE_FAILED;
+    c.execute(cmd);
 
     y2mil("ret:" << ret);
     return ret;
