@@ -518,7 +518,7 @@ int Dasd::getToCommit( CommitStage stage, list<Container*>& col,
 	}
     else if( stage==INCREASE )
 	{
-	VolPair p = volPair( stageCreate );
+	VolPair p = volPair(stageIncrease);
 	if( !p.empty() )
 	    vol.push_back( &(*(p.begin())) );
 	}

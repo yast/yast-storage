@@ -1326,7 +1326,9 @@ int Volume::resizeFs()
     return( ret );
     }
 
-int Volume::setEncryption( bool val, EncryptType typ )
+
+    int
+    Volume::setEncryption(bool val, EncryptType typ, bool force)
     {
     int ret = 0;
     y2milestone( "val:%d typ:%d", val, typ );
@@ -1340,6 +1342,7 @@ int Volume::setEncryption( bool val, EncryptType typ )
 	    {
 	    is_loop = false;
 	    encryption = ENC_NONE;
+	    dmcrypt_dev.clear();
 	    crypt_pwd.erase();
 	    }
 	else
@@ -1348,15 +1351,22 @@ int Volume::setEncryption( bool val, EncryptType typ )
 		ret = VOLUME_CRYPT_NO_PWD;
 	    if( ret == 0 && cType()==NFSC )
 		ret = VOLUME_CRYPT_NFS_IMPOSSIBLE;
-	    if( ret==0 && (format||loop_active) )
+	    if (ret == 0 && (create || format || loop_active))
 		{
 		encryption = typ;
 		is_loop = cont->type()==LOOP;
+		dmcrypt_dev = getDmcryptName();
 		}
-	    if( ret==0 && !format && !loop_active )
-		{
-		if( detectEncryption()==ENC_UNKNOWN )
+	    if (ret == 0 && !create && !format && !loop_active)
+	        {
+		if( detectEncryption()==ENC_UNKNOWN && !force)
 		    ret = VOLUME_CRYPT_NOT_DETECTED;
+		else if (force)
+		{
+		    encryption = typ;
+		    is_loop = cont->type()==LOOP;
+		    dmcrypt_dev = getDmcryptName();
+		}
 		}
 	    }
 	}
@@ -1906,7 +1916,7 @@ int Volume::doCryptsetup()
 	    pwdfile << crypt_pwd;
 	    pwdfile.close();
 	    SystemCmd cmd;
-	    if( format || (isTmpCryptMp(mp)&&crypt_pwd.empty()) )
+	    if( (encryption != orig_encryption) || format || (isTmpCryptMp(mp)&&crypt_pwd.empty()) )
 		{
 		string cmdline = getCryptsetupCmd( encryption, dmcrypt_dev, mp, fname, true,
 						   crypt_pwd.empty() );
@@ -1944,7 +1954,11 @@ int Volume::doCryptsetup()
 		replaceAltName( "/dev/dm-", Dm::dmDeviceName(mnr) );
 		}
 	    else
+	    {
 		getMajorMinor( dmcrypt_dev, dummy, minor );
+		replaceAltName("/dev/dm-", Dm::dmDeviceName(minor));
+	    }
+
 	    ProcPart p;
 	    unsigned long long sz;
 	    if( p.getSize( Dm::dmDeviceName(minor), sz ))
@@ -1975,10 +1989,16 @@ int Volume::doCrsetup()
 	if( ret!=0 && losetup_done )
 	    loUnsetup();
 	}
-    if( ret==0 )
-	updateFsData();
+    if (ret == 0)
+    {
+	updateFsData(); 
+    }
+    if (ret == 0 && encryption != ENC_NONE)
+    {
+	doFstabUpdate();
+    }
     y2mil("ret:" << ret);
-    return( ret );
+    return ret;
     }
 
 string Volume::labelText( bool doing ) const
@@ -2285,6 +2305,10 @@ void Volume::getCommitActions( list<commitAction*>& l ) const
 	l.push_back( new commitAction( FORMAT, cont->type(),
 				       formatText(false), this, true ));
 	}
+    else if (encryption != orig_encryption)
+	{
+	    l.push_back(new commitAction(FORMAT, cont->type(), crsetupText(false), this, true));
+	}
     else if( mp != orig_mp || 
              (cont->getStorage()->instsys()&&mp=="swap") )
 	{
@@ -2420,22 +2444,23 @@ int Volume::doFstabUpdate()
 	{
 	EtcFstab* fstab = cont->getStorage()->getFstab();
 	FstabEntry entry;
-	if( !orig_mp.empty() && (deleted()||mp.empty()) &&
-	    (fstab->findDevice( dev, entry ) ||
-	     fstab->findDevice( alt_names, entry ) ||
-	     (cType()==LOOP && fstab->findMount( orig_mp, entry )) ||
-	     (cType()==LOOP && fstab->findMount( mp, entry )) ))
+	if ((!orig_mp.empty() || orig_encryption != ENC_NONE) &&
+	    (deleted() || (mp.empty() && encryption == ENC_NONE)) &&
+	     (fstab->findDevice( dev, entry ) ||
+	      fstab->findDevice( alt_names, entry ) ||
+	      (cType()==LOOP && fstab->findMount( orig_mp, entry )) ||
+	      (cType()==LOOP && fstab->findMount( mp, entry )) ))
 	    {
 	    changed = true;
 	    if( !silent() )
 		{
 		cont->getStorage()->showInfoCb(
-		    fstab->removeText( true, entry.crypto, entry.mount ));
+		    fstab->removeText(true, entry.cryptotab, entry.mount));
 		}
 	    y2milestone( "before removeEntry" );
 	    ret = fstab->removeEntry( entry );
 	    }
-	else if( !mp.empty() && !deleted() )
+	else if ((!mp.empty() || encryption != ENC_NONE) && !deleted())
 	    {
 	    string fname;
 	    if( fstab->findDevice( dev, entry ) ||

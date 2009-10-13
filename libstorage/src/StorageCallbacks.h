@@ -79,6 +79,8 @@ public:
     YCPValue InfoPopup (const YCPString& func);
     /* TYPEINFO: void(string) */
     YCPValue YesNoPopup (const YCPString& func);
+    /* TYPEINFO: void(string) */
+    YCPValue PasswordPopup (const YCPString& func);
 
     /**
      * Constructor.

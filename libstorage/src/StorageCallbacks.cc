@@ -66,6 +66,16 @@
 
 using namespace storage;
 
+namespace storage
+{
+    // workaround for broken YCP bindings
+    extern CallbackProgressBar progress_bar_cb_ycp;
+    extern CallbackShowInstallInfo install_info_cb_ycp;
+    extern CallbackInfoPopup info_popup_cb_ycp;
+    extern CallbackYesNoPopup yesno_popup_cb_ycp;
+    extern CallbackPasswordPopup password_popup_cb_ycp;
+}
+
 class Y2StorageCallbackFunction : public Y2Function
 {
     unsigned int m_position;
@@ -226,6 +236,7 @@ static Y2Function* progress_bar = NULL;
 static Y2Function* show_install_info = NULL;
 static Y2Function* info_popup = NULL;
 static Y2Function* yesno_popup = NULL;
+static Y2Function* password_popup = NULL;
 
 void progress_bar_callback( const string& id, unsigned cur, unsigned max )
 {
@@ -280,6 +291,28 @@ bool yesno_popup_callback( const string& text )
     return ret;
 }
 
+bool password_popup_callback(const string& device, int attempts, string& password)
+{
+    bool ret = false;
+
+    if (password_popup)
+    {
+	password_popup->reset();
+	password_popup->appendParameter(YCPString(device));
+	password_popup->appendParameter(YCPInteger(attempts));
+	password_popup->appendParameter(YCPString(password));
+	password_popup->finishParameters();
+
+	YCPValue tmp1 = password_popup->evaluateCall();
+	YCPList tmp2 = tmp1->asList();
+
+	ret = tmp2->value(0)->asBoolean()->value();
+	password = tmp2->value(1)->asString()->value(); 
+    }
+
+    return ret;
+}
+
 
 YCPValue
 StorageCallbacks::ProgressBar (const YCPString & callback)
@@ -322,7 +355,7 @@ StorageCallbacks::ProgressBar (const YCPString & callback)
 	return YCPVoid ();
     }
 
-    Storage::setCallbackProgressBarYcp (progress_bar_callback);
+    storage::progress_bar_cb_ycp = progress_bar_callback;
 
     return YCPVoid ();
 }
@@ -368,7 +401,7 @@ StorageCallbacks::ShowInstallInfo (const YCPString & callback)
 	return YCPVoid ();
     }
 
-    Storage::setCallbackShowInstallInfoYcp (show_install_info_callback);
+    storage::install_info_cb_ycp = show_install_info_callback;
 
     return YCPVoid ();
 }
@@ -414,7 +447,7 @@ StorageCallbacks::InfoPopup (const YCPString & callback)
 	return YCPVoid ();
     }
 
-    Storage::setCallbackInfoPopupYcp (info_popup_callback);
+    storage::info_popup_cb_ycp = info_popup_callback;
 
     return YCPVoid ();
 }
@@ -460,7 +493,54 @@ StorageCallbacks::YesNoPopup (const YCPString & callback)
 	return YCPVoid ();
     }
 
-    Storage::setCallbackYesNoPopupYcp (yesno_popup_callback);
+    storage::yesno_popup_cb_ycp = yesno_popup_callback;
+
+    return YCPVoid ();
+}
+
+
+YCPValue
+StorageCallbacks::PasswordPopup (const YCPString & callback)
+{
+    string name_r = callback->value ();
+
+    y2debug ("Registering callback %s", name_r.c_str ());
+    string::size_type colonpos = name_r.find("::");
+
+    if ( colonpos == string::npos )
+    {
+        ycp2error ("Specify namespace and the fuction name for a callback");
+        return YCPVoid ();
+    }
+
+    string module = name_r.substr ( 0, colonpos );
+    string name = name_r.substr ( colonpos + 2 );
+
+    Y2Component *c = Y2ComponentBroker::getNamespaceComponent (module.c_str ());
+    if (c == NULL)
+    {
+        ycp2error ("No component can provide namespace %s for a callback of %s",
+                   module.c_str (), name.c_str ());
+        return YCPVoid ();
+    }
+
+    Y2Namespace *ns = c->import (module.c_str ());
+    if (ns == NULL)
+    {
+        y2error ("No namespace %s for a callback of %s", module.c_str (),
+                 name.c_str ());
+        return YCPVoid ();
+    }
+
+    password_popup = ns->createFunctionCall (name, Type::Unspec);
+    if (password_popup == NULL)
+    {
+        ycp2error ("Cannot find function %s in module %s as a callback",
+                   name.c_str(), module.c_str () );
+        return YCPVoid ();
+    }
+
+    storage::password_popup_cb_ycp = password_popup_callback;
 
     return YCPVoid ();
 }

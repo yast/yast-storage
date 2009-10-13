@@ -69,10 +69,26 @@ bool Container::isEmpty() const
     return( p.empty() );
     }
 
-static bool stageFormat( const Volume& v )
-    { return( v.getFormat()||v.needCrsetup()||v.needLabel()); }
-static bool stageMount( const Volume& v )
-    { return( v.needRemount()||v.needFstabUpdate()); }
+
+    bool Container::stageDecrease(const Volume& v)
+    {
+	return v.deleted() || v.needShrink();
+    }
+
+    bool Container::stageIncrease(const Volume& v)
+    {
+	return v.created() || v.needExtend() || v.needCrsetup();
+    }
+
+    bool Container::stageFormat(const Volume& v)
+    {
+	return v.getFormat() || v.needLabel();
+    }
+
+    bool Container::stageMount(const Volume& v)
+    {
+	return v.needRemount() || v.needFstabUpdate();
+    }
 
 int Container::getToCommit( CommitStage stage, list<Container*>& col,
                             list<Volume*>& vol )
@@ -93,7 +109,7 @@ int Container::getToCommit( CommitStage stage, list<Container*>& col,
 	    break;
 	case INCREASE:
 	    {
-	    VolPair p = volPair( stageCreate );
+	    VolPair p = volPair(stageIncrease);
 	    for( VolIterator i=p.begin(); i!=p.end(); ++i )
 		vol.push_back( &(*i) );
 	    if( created() )
@@ -132,24 +148,31 @@ int Container::commitChanges( CommitStage stage, Volume* vol )
 	{
 	case DECREASE:
 	    if( vol->deleted() )
+	    {
+		if (vol->getEncryption() != ENC_NONE)
+		    vol->doFstabUpdate();
 		ret = doRemove( vol );
+	    }
 	    else if( vol->needShrink() )
 		ret = doResize( vol );
 	    break;
+
 	case INCREASE:
 	    if( vol->created() )
 		ret = doCreate( vol );
 	    else if( vol->needExtend() )
 		ret = doResize( vol );
-	    break;
-	case FORMAT:
-	    if( vol->needCrsetup() )
+	    if (vol->needCrsetup())
 		ret = vol->doCrsetup();
+	    break;
+
+	case FORMAT:
 	    if( ret==0 && vol->getFormat() )
 		ret = vol->doFormat();
 	    if( ret==0 && vol->needLabel() )
 		ret = vol->doSetLabel();
 	    break;
+
 	case MOUNT:
 	    if( vol->needRemount() )
 		ret = vol->doMount();
@@ -160,6 +183,7 @@ int Container::commitChanges( CommitStage stage, Volume* vol )
 		    vol->fstabUpdateDone();
 		}
 	    break;
+
 	default:
 	    ret = VOLUME_COMMIT_UNKNOWN_STAGE;
 	}

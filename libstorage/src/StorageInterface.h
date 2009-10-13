@@ -142,27 +142,34 @@ namespace storage
     /**
      * typedef for a pointer to a function that is called on progress bar events
      */
-    typedef void (*CallbackProgressBar)( const string& id, unsigned cur, unsigned max );
+    typedef void (*CallbackProgressBar)(const string& id, unsigned cur, unsigned max);
 
     /**
      * typedef for a pointer to a function that is called with strings
      * telling the user what is currently going on
      */
-    typedef void (*CallbackShowInstallInfo)( const string& id );
+    typedef void (*CallbackShowInstallInfo)(const string& id);
 
     /**
      * typedef for a pointer to a function that displays a popup with
      * the given text and waits for user confirmation
      */
-    typedef void (*CallbackInfoPopup)( const string& text );
+    typedef void (*CallbackInfoPopup)(const string& text);
 
     /**
-     * typedef for a pointer to a function that displays a popup with
-     * the given text and two buttons labels "Yes" and "No". The user
-     * has to press on of these buttons. If he presses "Yes" true is
-     * returned, false otherwise.
+     * typedef for a pointer to a function that displays a popup with the
+     * given text and two buttons labels "Yes" and "No". The user has to press
+     * on of these buttons. If the user presses "Yes" true is returned, false
+     * otherwise.
      */
-    typedef bool (*CallbackYesNoPopup)( const string& text );
+    typedef bool (*CallbackYesNoPopup)(const string& text);
+
+    /**
+     * typedef for a pointer to a function that ask for the password of the
+     * given device. If the user does not want to decrypt the device false is
+     * returned, true otherwise.
+     */
+    typedef bool (*CallbackPasswordPopup)(const string& device, int attempts, string& password);
 
 
     /**
@@ -1898,7 +1905,7 @@ namespace storage
 	 *
 	 * @param pfnc pointer to function
 	 */
-	virtual void setCallbackProgressBar( CallbackProgressBar pfnc ) = 0;
+	virtual void setCallbackProgressBar(CallbackProgressBar pfnc) = 0;
 
 	/**
 	 * Query the callback function called on progress bar events
@@ -1913,7 +1920,7 @@ namespace storage
 	 *
 	 * @param pfnc pointer to function
 	 */
-	virtual void setCallbackShowInstallInfo( CallbackShowInstallInfo pfnc ) = 0;
+	virtual void setCallbackShowInstallInfo(CallbackShowInstallInfo pfnc) = 0;
 
 	/**
 	 * Query the callback function called to display install info
@@ -1929,7 +1936,7 @@ namespace storage
 	 *
 	 * @param pfnc pointer to function
 	 */
-	virtual void setCallbackInfoPopup( CallbackInfoPopup pfnc ) = 0;
+	virtual void setCallbackInfoPopup(CallbackInfoPopup pfnc) = 0;
 
 	/**
 	 * Query the callback function called to display info popup to the
@@ -1946,7 +1953,7 @@ namespace storage
 	 *
 	 * @param pfnc pointer to function
 	 */
-	virtual void setCallbackYesNoPopup( CallbackYesNoPopup pfnc ) = 0;
+	virtual void setCallbackYesNoPopup(CallbackYesNoPopup pfnc) = 0;
 
 	/**
 	 * Query the callback function called to get a Yes/No decision by
@@ -1955,6 +1962,22 @@ namespace storage
 	 * @return pointer to function currently called for progress bar events
 	 */
 	virtual CallbackYesNoPopup getCallbackYesNoPopup() const = 0;
+
+
+	/**
+	 * Sets the callback function called to query a password by the user.
+	 *
+	 * @param pfnc pointer to function.
+	 */
+	virtual void setCallbackPasswordPopup(CallbackPasswordPopup pfnc) = 0;
+
+	/**
+	 * Query the callback function called to query a password from the
+	 * user.
+	 *
+	 * @return pointer to function currently called for password queries.
+	 */
+	virtual CallbackPasswordPopup getCallbackPasswordPopup() const = 0;
 
 #endif
 
