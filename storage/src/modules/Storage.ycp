@@ -170,8 +170,12 @@ map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_DMRAID : 2, `CT_DMMULTIPATH : 
                     `CT_LOOP : 4, `CT_DM : 5, `CT_LVM : 6, `CT_NFS : 7 ];
 list<string> hw_packages = [];
 list<string> no_propose_disks = nil;
-boolean proposal_lvm = false;
+
 boolean proposal_home = false;
+boolean proposal_lvm = false;
+boolean proposal_encrypt = false;
+string proposal_password = "";
+
 map<string, any> cfg_xml = $[];
 string part_insts = "";
 
@@ -6276,31 +6280,55 @@ global define map onepartition2fstab (map part, integer& other_nr)
 
 
 global boolean ProposalHome()
-    {
+{
     return( proposal_home );
-    }
+}
 
 global void SetProposalHome(boolean val)
-    {
+{
     proposal_home = val;
     y2milestone( "SetProposalHome val:%1", proposal_home );
-    }
+}
+
+global boolean ProposalLvm()
+{
+    return proposal_lvm;
+}
 
 global void SetProposalLvm(boolean val)
-    {
+{
     proposal_lvm = val;
-    y2milestone("SetProposalLvm val:%1 lvm:%2", val, proposal_lvm);
-    }
+    y2milestone("SetProposalLvm val:%1", proposal_lvm);
+}
+
+global boolean ProposalEncrypt()
+{
+    return proposal_encrypt;
+}
+
+global void SetProposalEncrypt(boolean val)
+{
+    proposal_encrypt = val;
+    y2milestone("SetProposalEncrypt val:%1", val);
+}
+
+global string ProposalPassword()
+{
+    return proposal_password;
+}
+
+global void SetProposalPassword(string val)
+{
+    proposal_password = val;
+    y2milestone("SetProposalPassword");
+}
+
 
 global boolean ProposalEvms()
     {
     return false;
     }
 
-global boolean ProposalLvm()
-    {
-    return( proposal_lvm );
-    }
 
 global void SetProposalDefault( boolean home_only )
     {
@@ -6310,14 +6338,16 @@ global void SetProposalDefault( boolean home_only )
 	if( cfg_xml["prop_lvm"]:false )
 	    {
 	    SetProposalLvm(true);
+	    SetProposalEncrypt(false);
+	    SetProposalPassword("");
 	    }
 	else
 	    {
 	    SetProposalLvm(false);
 	    }
 	}
-    y2milestone("SetProposalDefault lvm:%1 home:%2 home_only:%3", 
-		proposal_lvm, proposal_home, home_only);
+    y2milestone("SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4", proposal_home,
+		proposal_lvm, proposal_encrypt, home_only);
     }
 
 
@@ -6557,6 +6587,50 @@ global integer ActionsCount()
   {
         return size(LibStorage::StorageInterface::getCommitActions( sint, true ));
   }
+
+    global boolean CheckEncryptionPasswords(string pw1, string pw2, integer min_length, boolean empty_allowed)
+    {
+	if (pw1 != pw2)
+	{
+	    // popup text
+	    Popup::Message(_("The first and the second version\nof the password do not match.
+Try again."));
+	    return false;
+}
+
+	if (size(pw1) == 0 && !empty_allowed)
+	{
+	    // popup text
+	    Popup::Message(_("You did not enter a password.
+Try again.
+"));
+	    return false;
+	}
+
+	if (size(pw1) < min_length && !empty_allowed)
+	{
+	    // popup text
+	    Popup::Message(sformat(_("The password must have at least %1 characters.
+Try again.
+"), min_length));
+	    return false;
+	}
+
+	if (size(pw1) >= min_length || empty_allowed)
+	{
+	    any tmp = findfirstnotof( pw1, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#* ,.;:._-+!$%&/|\?{[()]}@^\\<>" );
+	    if (tmp != nil && size(pw1) > 0)
+	    {
+		// popup text
+		Popup::Message(_("The password may only contain the following characters:
+ 0..9, a..z, A..Z, and any of \"@#* ,.;:._-+!$%&/|\?{[()]}^\\<>\".
+Try again."));
+		return false;
+	    }
+	}
+
+	return true;
+    }
 
 }
 

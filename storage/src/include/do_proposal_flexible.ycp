@@ -166,6 +166,36 @@ define map try_add_boot( map conf, map disk, boolean force )
     return( tc );
     }
 
+
+map<string, map> EncryptDevices(map<string, map> target, string vg)
+{
+    if (!Storage::ProposalLvm() || !Storage::ProposalEncrypt())
+	return target;
+
+    list<string> devices = target[vg, "devices_add"]:[];
+    y2milestone("devices:%1", devices);
+
+    // go through target map and set enc_type and password for all devices used by
+    // our volume group
+    target = mapmap(string disk_device, map data, target, {
+	list<map> partitions = data["partitions"]:[];
+	partitions = maplist(map partition, partitions, {
+	    string part_device = partition["device"]:"";
+	    if (contains(devices, part_device))
+	    {
+		partition["enc_type"] = `luks;
+		Storage::UpdateClassified(part_device, Storage::ProposalPassword());
+	    }
+	    return partition;
+	    });
+	data["partitions"] = partitions;
+	return $[ disk_device : data ];
+	});
+
+    return target;
+}
+
+
 define map do_flexible_disk( map disk )
     ``{
     string dev = disk["device"]:"";
@@ -3702,6 +3732,7 @@ map get_proposal_vm( map<string,map> target, string key, map disk )
 	y2milestone( "get_proposal_vm vkey %1", vg );
 	ret["target",vg_key] = modify_vm( vg, opts, size(r)==0 );
 	ret["target",ddev] = disk;
+	ret["target"] = EncryptDevices(ret["target"]:$[], vg_key);
 	ret["target"] = Storage::SpecialBootHandling( ret["target"]:$[] );
 	y2milestone( "get_proposal_vm sol:%1", disk );
 	}
@@ -3713,9 +3744,8 @@ map get_inst_prop( map<string,map> target )
     {
     map ret = $[];
     string vg = Storage::ProposalVM();
-    y2milestone( "get_inst_prop vg:%1 evms:%2 lvm:%3 home:%4", vg, 
-                 Storage::ProposalEvms(), Storage::ProposalLvm(),
-		 Storage::ProposalHome() );
+    y2milestone("get_inst_prop vg:%1 home:%2 lvm:%3 encypt:%4", vg, 
+		Storage::ProposalHome(), Storage::ProposalLvm(), Storage::ProposalEncrypt());
     if( size(vg)==0 )
 	{
         if( has_flex_proposal() )
@@ -3727,6 +3757,7 @@ map get_inst_prop( map<string,map> target )
 	{
 	y2milestone( "target:%1", target );
 	ret = get_inst_prop_vm( target, vg );
+	ret["target"] = EncryptDevices(ret["target"]:$[], "/dev/" + vg);
 	}
     return( ret );
     }

@@ -171,6 +171,11 @@ LvmVg::extendVg( const list<string>& devs )
 	    pe = (s - 500)/pe_size;
 	    pvn.num_pe = pvn.free_pe = pe;
 	    pvn.device = d;
+
+	    const Volume* v;
+	    if (getStorage()->findVolume(d, v) && v->dmcrypt())
+		pvn.dmcryptDevice = v->dmcryptDevice();
+
 	    pv_add.push_back( pvn );
 	    if( !getStorage()->isDisk(d))
 		getStorage()->changeFormatVolume( d, false, FSNONE );
@@ -197,16 +202,17 @@ LvmVg::reduceVg( const string& dev )
     return( reduceVg( l ) );
     }
 
+
 int
 LvmVg::reduceVg( const list<string>& devs )
     {
     int ret = 0;
-    y2mil( "name:" << name() << " devices:" << devs );
-    y2mil( "this:" << *this );
+    y2mil("name:" << name() << " devices:" << devs);
+    y2mil("this:" << *this);
+    y2mil("add:" << pv_add.size() << " pv:" << pv.size() << " remove:" << pv_remove.size());
 
     checkConsistency();
-    list<string>::const_iterator i=devs.begin();
-    list<Pv>::iterator p;
+
     list<Pv> pl = pv;
     list<Pv> pladd = pv_add;
     list<Pv> plrem = pv_remove;
@@ -215,13 +221,15 @@ LvmVg::reduceVg( const list<string>& devs )
 	{
 	ret = LVM_CHANGE_READONLY;
 	}
+
+    list<string>::const_iterator i = devs.begin();
     while( ret==0 && i!=devs.end() )
 	{
 	string d = normalizeDevice( *i );
 	ret = tryUnusePe( d, pl, pladd, plrem, rem_pe );
 	++i;
 	}
-    y2mil( "add:" << pv_add.size() << " pv:" << pv.size() << " remove:" << pv_remove.size() );
+
     if( ret==0 && pv_add.size()+pv.size()-devs.size()<=0 )
 	ret = LVM_VG_HAS_NONE_PV;
     if( ret == 0 )
@@ -234,9 +242,11 @@ LvmVg::reduceVg( const list<string>& devs )
 	}
     if( ret==0 )
 	checkConsistency();
-    y2mil( "this:" << *this );
+
+    y2mil("this:" << *this);
+    y2mil("add:" << pv_add.size() << " pv:" << pv.size() << " remove:" << pv_remove.size());
     y2mil("ret:" << ret);
-    return( ret );
+    return ret;
     }
 
 
@@ -785,6 +795,14 @@ void LvmVg::getVgData( const string& name, bool exists )
 			addPv( p );
 			}
 		    p->device = extractNthWord( 2, line );
+
+		    const Volume* v;
+		    if (getStorage()->findVolume(p->device, v))
+		    {
+			p->device = v->device();
+			p->dmcryptDevice = v->dmcryptDevice();
+		    }
+		    
 		    }
 		else if( line.find( "PV UUID" ) == 0 )
 		    {
@@ -1173,13 +1191,13 @@ LvmVg::doCreateVg()
 	string devices;
 	if( pv_add.size()+pv.size()-pv_remove.size()<=0 )
 	    ret = LVM_VG_HAS_NONE_PV;
-	list<Pv>::iterator p = pv_add.begin();
+	list<Pv>::const_iterator p = pv_add.begin();
 	while( ret==0 && p!=pv_add.end() )
 	    {
 	    if( !devices.empty() )
 		devices += " ";
-	    devices += quote(p->device);
-	    ret = doCreatePv( p->device );
+	    devices += quote(p->realDevice());
+	    ret = doCreatePv(*p);
 	    ++p;
 	    }
 	if( ret==0 )
@@ -1252,24 +1270,21 @@ LvmVg::doExtendVg()
     y2milestone( "Vg:%s", name().c_str() );
     y2mil( "this:" << *this );
     int ret = 0;
-    list<string> devs;
     if( !active )
 	activate(true);
-    list<Pv>::iterator p;
-    for( p=pv_add.begin(); p!=pv_add.end(); ++p )
-	devs.push_back( p->device );
-    list<string>::iterator d = devs.begin();
+    list<Pv> devs = pv_add;
+    list<Pv>::const_iterator d = devs.begin();
     while( ret==0 && d!=devs.end() )
 	{
 	checkConsistency();
 	if( !silent )
 	    {
-	    getStorage()->showInfoCb( extendVgText(true,*d) );
+	    getStorage()->showInfoCb(extendVgText(true, d->device));
 	    }
-	ret = doCreatePv( *d );
+	ret = doCreatePv(*d);
 	if( ret==0 )
 	    {
-	    string cmd = VGEXTENDBIN " " + instSysString() + quote(name()) + " " + quote(*d);
+	    string cmd = VGEXTENDBIN " " + instSysString() + quote(name()) + " " + quote(d->realDevice());
 	    SystemCmd c( cmd );
 	    if( c.retcode()!=0 )
 		{
@@ -1282,7 +1297,7 @@ LvmVg::doExtendVg()
 	    getVgData( name() );
 	    checkConsistency();
 	    }
-	p = find( pv_add.begin(), pv_add.end(), *d );
+	list<Pv>::iterator p = find(pv_add.begin(), pv_add.end(), d->device);
 	if( p!=pv_add.end() )
 	    {
 	    pv_add.erase( p );
@@ -1295,7 +1310,7 @@ LvmVg::doExtendVg()
 	checkCreateConstraints();
     y2mil( "this:" << *this );
     y2mil("ret:" << ret);
-    return( ret );
+    return ret;
     }
 
 int
@@ -1306,19 +1321,16 @@ LvmVg::doReduceVg()
     int ret = 0;
     if( !active )
 	activate(true);
-    list<string> devs;
-    list<Pv>::iterator p;
-    for( p=pv_remove.begin(); p!=pv_remove.end(); ++p )
-	devs.push_back( p->device );
-    list<string>::iterator d = devs.begin();
+    list<Pv> devs = pv_remove;
+    list<Pv>::const_iterator d = devs.begin();
     while( ret==0 && d!=devs.end() )
 	{
 	checkConsistency();
 	if( !silent )
 	    {
-	    getStorage()->showInfoCb( reduceVgText(true,*d) );
+	    getStorage()->showInfoCb(reduceVgText(true, d->device));
 	    }
-	string cmd = VGREDUCEBIN " " + instSysString() + quote(name()) + " " + quote(*d);
+	string cmd = VGREDUCEBIN " " + instSysString() + quote(name()) + " " + quote(d->realDevice());
 	SystemCmd c( cmd );
 	if( c.retcode()!=0 )
 	    {
@@ -1330,7 +1342,7 @@ LvmVg::doReduceVg()
 	    getVgData( name() );
 	    checkConsistency();
 	    }
-	p = find( pv_remove.begin(), pv_remove.end(), *d );
+	list<Pv>::iterator p = find(pv_remove.begin(), pv_remove.end(), d->device);
 	if( p!=pv_remove.end() )
 	    pv_remove.erase( p );
 	else if( ret==0 )
@@ -1339,7 +1351,7 @@ LvmVg::doReduceVg()
 	}
     y2mil( "this:" << *this );
     y2mil("ret:" << ret);
-    return( ret );
+    return ret;
     }
 
 int
@@ -1508,7 +1520,7 @@ int LvmVg::doResize( Volume* v )
     return( ret );
     }
 
-string LvmVg::metaString()
+string LvmVg::metaString() const
     {
     return( (lvm1)?"-M1 ":"-M2 " );
     }
@@ -1521,20 +1533,22 @@ string LvmVg::instSysString()
     return( ret );
     }
 
-int LvmVg::doCreatePv( const string& device )
+
+    int
+    LvmVg::doCreatePv(const Pv& pv) const
     {
     int ret = 0;
-    y2milestone( "dev:%s", device.c_str() );
+    y2mil("device:" << pv.device << " realDevice:" << pv.realDevice());
     SystemCmd c;
-    string cmd = MDADMBIN " --zero-superblock " + quote(device);
+    string cmd = MDADMBIN " --zero-superblock " + quote(pv.realDevice());
     c.execute( cmd );
-    getStorage()->removeDmTableTo( device );
-    if( getStorage()->isDisk(device) )
+    getStorage()->removeDmTableTo(pv.realDevice());
+    if (getStorage()->isDisk(pv.realDevice()))
 	{
-	cmd = PARTEDCMD + quote(device) + " mklabel msdos";
+	cmd = PARTEDCMD + quote(pv.realDevice()) + " mklabel msdos";
 	c.execute( cmd );
 	}
-    cmd = "echo y | " PVCREATEBIN " -ff " + metaString() + quote(device);
+    cmd = "echo y | " PVCREATEBIN " -ff " + metaString() + quote(pv.realDevice());
     c.execute( cmd );
     if( c.retcode()!=0 )
 	{
@@ -1542,8 +1556,9 @@ int LvmVg::doCreatePv( const string& device )
 	setExtError( c );
 	}
     y2mil("ret:" << ret);
-    return( ret );
+    return ret;
     }
+
 
 void LvmVg::normalizeDmDevices()
     {

@@ -123,6 +123,8 @@ Storage::Storage(const Environment& env)
     install_info_cb = NULL;
     info_popup_cb = NULL;
     yesno_popup_cb = NULL;
+    password_popup_cb = NULL;
+
     recursiveRemove = false;
     zeroNewPartitions = false;
     defaultMountBy = MOUNTBY_ID;
@@ -232,11 +234,12 @@ void Storage::detectObjects()
 	delete ppart;
 	ppart = new ProcPart;
 	}
-    detectMds();
     detectDmraid( *ppart );
     detectDmmultipath( *ppart );
+    detectMds();
+    detectDm(*ppart, true);
     detectLvmVgs();
-    detectDm( *ppart );
+    detectDm(*ppart, false);
 
     LvmVgPair p = lvgPair();
     y2mil( "p length:" << p.length() );
@@ -587,7 +590,7 @@ Storage::detectDmmultipath(ProcPart& ppart)
 
 
 void
-Storage::detectDm( ProcPart& ppart )
+Storage::detectDm(ProcPart& ppart, bool only_crypt)
     {
     if( testmode() )
 	{
@@ -601,14 +604,22 @@ Storage::detectDm( ProcPart& ppart )
 	}
     else if( getenv( "YAST2_STORAGE_NO_DM" )==NULL )
 	{
-	DmCo * v = new DmCo( this, true, ppart );
-	if( !v->isEmpty() )
+	    DmCo* v = NULL;
+	    if (haveDm(v))
 	    {
-	    addToList( v );
-	    v->updateDmMaps();
+		v->second(true, ppart, only_crypt);
 	    }
-	else
-	    delete v;
+	    else
+	    {
+		v = new DmCo(this, true, ppart, only_crypt);
+		if (!v->isEmpty() )
+		{
+		    addToList( v );
+		    v->updateDmMaps();
+		}
+		else
+		    delete v;
+	    }
 	}
     }
 
@@ -2266,7 +2277,7 @@ Storage::setCryptType( const string& device, bool val, EncryptType typ )
 	}
     else if( findVolume( device, cont, vol ) )
 	{
-	ret = vol->setEncryption( val, typ );
+	ret = vol->setEncryption(val, typ, true);
 	}
     else
 	{
@@ -3293,6 +3304,21 @@ bool Storage::haveMd( MdCo*& md )
 	md = static_cast<MdCo*>(&(*i));
     return( i != p.end() );
     }
+
+
+    bool
+    Storage::haveDm(DmCo*& dm)
+    {
+	dm = NULL;
+	CPair p = cPair();
+	ContIterator i = p.begin();
+	while (i != p.end() && i->type() != DM)
+	    ++i;
+	if (i != p.end())
+	    dm = static_cast<DmCo*>(&(*i));
+	return i != p.end();
+    }
+
 
 bool Storage::haveNfs( NfsCo*& co )
     {
@@ -4909,7 +4935,8 @@ UsedByType Storage::usedBy( const string& dev )
     return( ub.type() );
     }
 
-void Storage::progressBarCb( const string& id, unsigned cur, unsigned max )
+
+void Storage::progressBarCb(const string& id, unsigned cur, unsigned max) const
     {
     y2milestone( "id:%s cur:%d max:%d", id.c_str(), cur, max );
     CallbackProgressBar cb = getCallbackProgressBarTheOne();
@@ -4917,7 +4944,7 @@ void Storage::progressBarCb( const string& id, unsigned cur, unsigned max )
 	(*cb)( id, cur, max );
     }
 
-void Storage::showInfoCb( const string& info )
+void Storage::showInfoCb(const string& info)
     {
     y2milestone( "INSTALL INFO:%s", info.c_str() );
     CallbackShowInstallInfo cb = getCallbackShowInstallInfoTheOne();
@@ -4926,7 +4953,7 @@ void Storage::showInfoCb( const string& info )
 	(*cb)( info );
     }
 
-void Storage::infoPopupCb( const string& info )
+void Storage::infoPopupCb(const string& info) const
     {
     y2milestone( "INFO POPUP:%s", info.c_str() );
     CallbackInfoPopup cb = getCallbackInfoPopupTheOne();
@@ -4934,13 +4961,13 @@ void Storage::infoPopupCb( const string& info )
 	(*cb)( info );
     }
 
-void Storage::addInfoPopupText( const string& disk, const string txt )
+void Storage::addInfoPopupText(const string& disk, const string& txt)
     {
     y2mil( "d:" << disk << " txt:" << txt );
     infoPopupTxts.push_back( make_pair(disk,txt) );
     }
 
-bool Storage::yesnoPopupCb( const string& info )
+bool Storage::yesnoPopupCb(const string& info) const
     {
     y2milestone( "YESNO POPUP:%s", info.c_str() );
     CallbackYesNoPopup cb = getCallbackYesNoPopupTheOne();
@@ -4949,6 +4976,18 @@ bool Storage::yesnoPopupCb( const string& info )
     else
 	return( true );
     }
+
+bool
+Storage::passwordPopupCb(const string& device, int attempts, string& password) const
+{
+    y2mil("PASSWORD POPUP device:" << device << " attempts:" << attempts);
+    CallbackPasswordPopup cb = getCallbackPasswordPopupTheOne();
+    if (cb)
+	return (*cb)(device, attempts, password);
+    else
+	return false;
+}
+
 
 Storage::DiskIterator Storage::findDisk( const string& disk )
     {
@@ -5930,7 +5969,12 @@ std::ostream& operator<< (std::ostream& s, Storage &v )
 
 Storage::SkipDeleted Storage::SkipDel;
 
-storage::CallbackProgressBar Storage::progress_bar_cb_ycp;
-storage::CallbackShowInstallInfo Storage::install_info_cb_ycp;
-storage::CallbackInfoPopup Storage::info_popup_cb_ycp;
-storage::CallbackYesNoPopup Storage::yesno_popup_cb_ycp;
+namespace storage
+{
+    // workaround for broken YCP bindings
+    CallbackProgressBar progress_bar_cb_ycp = NULL;
+    CallbackShowInstallInfo install_info_cb_ycp = NULL;
+    CallbackInfoPopup info_popup_cb_ycp = NULL;
+    CallbackYesNoPopup yesno_popup_cb_ycp = NULL;
+    CallbackPasswordPopup password_popup_cb_ycp = NULL;
+}

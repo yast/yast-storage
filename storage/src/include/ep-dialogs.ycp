@@ -16,6 +16,10 @@
 formatted and the desired file system type.</p>");
 
 	// helptext
+	helptext = helptext + _("<p>Changing the encryption on an existing
+volume will delete all data on it.</p>");
+
+	// helptext
 	helptext = helptext + _("<p>Then, choose whether the partition should
 be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
@@ -61,13 +65,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	// returns true also when password can be omitted (e.g. encrypted swap)
 	boolean NeedPassword()
 	{
-	    if (!crypt_fs)
-		return false;
-
-	    if (data["create"]:false && !do_format)
-		return false;
-
-	    return true;
+	    return crypt_fs;
 	}
 
 
@@ -146,7 +144,9 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 								   `VSpacing(0.45),
 								   `LeftRadioButtonWithAttachment(`id(`do_not_format), `opt(`notify),
 												  _("Do not format partition"),
-												  tmp1)
+												  tmp1),
+								   `VSpacing(0.45),
+								   CryptButton(data)
 								   )
 							)
 					  ),
@@ -481,9 +481,7 @@ Do not forget this password!
 	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepPasswordHelptext(data));
 	MiniWorkflow::SetLastStep(true);
 
-	string pw1 = "";
-	string pw2 = "";
-
+	string password = "";
 	symbol widget = nil;
 
 	//don't put those inside the loop - they'd be reset after each unsuccesful try
@@ -496,57 +494,24 @@ Do not forget this password!
 
 	    if (widget == `next)
 	    {
-		pw1 = (string) UI::QueryWidget(`id(`pw1), `Value);
-		pw2 = (string) UI::QueryWidget(`id(`pw2), `Value);
+		password = (string) UI::QueryWidget(`id(`pw1), `Value);
+		string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
 
-		if ( pw1 != pw2 )
+		if (!Storage::CheckEncryptionPasswords(password, tmp, min_pw_len, empty_pw_allowed))
 		{
-		    // popup text
-		    Popup::Message(_("The first and the second version\nof the password do not match!\nPlease try again."));
 		    UI::SetFocus(`id(`pw1) );
 		    widget = `again;
 		}
-		else if (pw1 == "" && !empty_pw_allowed)
-		{
-		    // popup text
-		    Popup::Message(_("You did not enter a password.
-Try again.
-"));
-		    UI::SetFocus(`id(`pw1) );
-		    widget = `again;
 		}
-		else if (size(pw1) < min_pw_len && !empty_pw_allowed)
-		{
-		    // popup text
-		    Popup::Message(sformat(_("The password must have at least %1 characters.
-Try again.
-"), min_pw_len));
-		    UI::SetFocus(`id(`pw1) );
-		    widget = `again;
 		}
-		else if (size(pw1) >= min_pw_len || empty_pw_allowed)
-		{
-		    any ret2 = findfirstnotof( pw1, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ#* ,.;:._-+!$%&/|\?{[()]}@^\\<>" );
-		    if ( ret2 != nil && size(pw1)>0 )
-		    {
-			// popup text
-			Popup::Message(_("The password may only contain the following characters:
-0..9, a..z, A..Z, and any of \"@#* ,.;:._-+!$%&/|\?{[()]}^\\<>\".
-Try again."));
-		        UI::SetFocus(`id(`pw1) );
-			widget = `again;
-		    }
-		}
-	    }
-	}
 	until (widget == `abort || widget == `back || widget == `next);
 
 	if (widget == `next)
 	{
 	    if (data["type"]:`unknown != `loop)
-		Storage::UpdateClassified(data["device"]:"", pw1);
+		Storage::UpdateClassified(data["device"]:"", password);
 	    else
-		Storage::UpdateClassified(data["fpath"]:"", pw1);
+		Storage::UpdateClassified(data["fpath"]:"", password);
 	    widget = `finish;
 	}
 

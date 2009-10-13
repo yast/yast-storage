@@ -32,7 +32,7 @@
 #include "y2storage/Container.h"
 #include "y2storage/AppUtil.h"
 #include "y2storage/Storage.h"
-#include "y2storage/SystemCmd.h"
+
 
 using namespace storage;
 using namespace std;

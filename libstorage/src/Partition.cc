@@ -452,22 +452,42 @@ string Partition::createText( bool doing ) const
 		}
 	    }
 	else if( idt != ID_SWAP && idt != ID_LINUX && idt<256 )
+	{
+	    if (encryption == ENC_NONE)
 	    {
-	    // displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-	    // %2$s is replaced by size (e.g. 623.5 MB)
-	    // %3$s is replaced by hexadecimal number (e.g. 8E)
-	    txt = sformat( _("Create partition %1$s (%2$s) with id=%3$X"),
-			   d.c_str(), sizeString().c_str(), idt );
+		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
+		// %2$s is replaced by size (e.g. 623.5 MB)
+		// %3$s is replaced by hexadecimal number (e.g. 8E)
+		txt = sformat(_("Create partition %1$s (%2$s) with id=%3$X"), d.c_str(),
+			      sizeString().c_str(), idt);
 	    }
-	else
-	    {
-	    // displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-	    // %2$s is replaced by size (e.g. 623.5 MB)
-	    txt = sformat( _("Create partition %1$s (%2$s)"),
-			   d.c_str(), sizeString().c_str() );
+	    else
+	    {   
+		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
+		// %2$s is replaced by size (e.g. 623.5 MB)
+		// %3$s is replaced by hexadecimal number (e.g. 8E)
+		txt = sformat(_("Create encrypted partition %1$s (%2$s) with id=%3$X"), d.c_str(),
+			      sizeString().c_str(), idt);
 	    }
 	}
-    return( txt );
+	else
+	{
+	    if (encryption == ENC_NONE)
+	    {
+		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
+		// %2$s is replaced by size (e.g. 623.5 MB)
+		txt = sformat(_("Create partition %1$s (%2$s)"), d.c_str(), sizeString().c_str());
+	    }
+	    else
+	    {
+		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
+		// %2$s is replaced by size (e.g. 623.5 MB)
+		txt = sformat(_("Create encrypted partition %1$s (%2$s)"), d.c_str(),
+			      sizeString().c_str());
+	    }
+	}
+	}
+    return txt;
     }
 
 string Partition::formatText( bool doing ) const
