@@ -29,12 +29,12 @@
     global void IterateTargetMap(map<string, map> target_map, void(map<string, map>, map) callback)
     {
 	const map disk_order = $[ `CT_DMRAID : 0, `CT_DMMULTIPATH : 1, `CT_DISK : 2,
-				  `CT_MD : 3, `CT_LOOP : 4, `CT_LVM : 5, `CT_DM : 6, `CT_NFS : 8 ];
+				  `CT_MD : 3, `CT_LOOP : 4, `CT_LVM : 5, `CT_DM : 6, `CT_NFS : 7 ];
 
 	list<string> keys = maplist(string dev, map disk, target_map, { return dev; });
 	keys = sort(string a, string b, keys, {
-	    integer oa = disk_order[target_map[a,"type"]:`CT_UNKNOWN]:8;
-	    integer ob = disk_order[target_map[b,"type"]:`CT_UNKNOWN]:8;
+	    integer oa = disk_order[target_map[a, "type"]:`CT_UNKNOWN]:8;
+	    integer ob = disk_order[target_map[b, "type"]:`CT_UNKNOWN]:8;
 	    return (oa==ob) ? (a<b) : (oa<ob);
 	});
 
@@ -56,22 +56,25 @@
     }
 
 
-    string UsedByString(symbol used_by_type, string used_by_device)
+    string UsedByString(map<string, any> used_by)
     {
-	switch (used_by_type)
+	symbol type = used_by["type"]:`UB_NONE;
+	string device = used_by["device"]:"";
+
+	switch (type)
 	{
 	    case `UB_LVM:
-		return "LVM " + used_by_device;
+		return "LVM " + device;
 	    case `UB_DM:
-		return "DM " + used_by_device;
+		return "DM " + device;
 	    case `UB_DMRAID:
-		return "DM RAID " + used_by_device;
+		return "DM RAID " + device;
 	    case `UB_DMMULTIPATH:
-		return "DM Multipath " + used_by_device;
+		return "DM Multipath " + device;
 	    case `UB_MD:
-		return "RAID " + used_by_device;
+		return "RAID " + device;
 	    default:
-		return used_by_device;
+		return device;
 	}
     }
 
@@ -622,12 +625,16 @@ Identifier of the file system.");
 
 	    case `used_by:
 	    {
-		string value = UsedByString(data["used_by_type"]:`UB_NONE, data["used_by_device"]:"");
 		if (style == `table)
-		    return value;
+		    return UsedByString(data["used_by", 0]:$[]);
 		else
-		    // row label, %1 is replace by used by device name e.g. /dev/system
-		    return sformat(_("Used By: %1"), String::EscapeTags(value));
+		{
+		    integer n = size(data["used_by"]:[]);
+		    return mergestring(maplist(integer i, Integer::Range(n == 0 ? 1 : n), {
+			// row label, %1 is replaced by number, %2 is replace by device name e.g. /dev/system
+			return sformat(_("Used By %1: %2"), i+1, String::EscapeTags(UsedByString(data["used_by", i]:$[])));
+		    }), HTML::Newline());
+		}
 	    }
 
 	    case `uuid:
@@ -1048,14 +1055,14 @@ Identifier of the file system.");
     {
 	if (partition == nil)
 	{
-	    if (contains(devices, disk["used_by_device"]:""))
+	    if (find(map used_by, disk["used_by"]:[], { return contains(devices, used_by["device"]:""); }) != nil)
 		return `showandfollow;
 	    else
 		return `follow;
 	}
 	else
 	{
-	    if (contains(devices, partition["used_by_device"]:""))
+	    if (find(map used_by, partition["used_by"]:[], { return contains(devices, used_by["device"]:""); }) != nil)
 		return `show;
 	    else
 		return `ignore;
