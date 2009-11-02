@@ -25,6 +25,25 @@
 
     y2milestone( "func:%1 param:%2", func, param );
 
+    // check if /home partition keeps unformatted in order to warn for
+    // possible incorrectly set file ownership (fate#306325)
+    boolean home_not_formatted() {
+        map<string,map> tm = Storage::GetTargetMap();
+        boolean ret = false;
+        foreach (string disk, map info, tm, {
+            list<map> partitions = info["partitions"]:[];
+            foreach (map p, partitions, {
+                if (p["mount"]:"" == "/home" && ! p["format"]:false)
+                {
+                    y2milestone ("The /home partition will not be formatted.");
+                    ret = true;
+                    break;
+                }
+            });
+        });
+       return ret;
+    }
+
     if( func == "MakeProposal" && Mode::autoinst() )
 	{
 	ret["preformatted_proposal"] = Storage::ChangeText();
@@ -65,6 +84,17 @@
 	    !Storage::GetPartProposalActive() )
 	    {
 	    ret["preformatted_proposal"] = Storage::ChangeText();
+            // detect non-formated /home together with remote authentication - Fate#306325
+            if (home_not_formatted())
+              {
+                import "UsersSimple";
+                if (UsersSimple::AfterAuth() != "users")
+                {
+                    ret["warning"] = _("The /home partition will not be formatted. After installation,
+ensure that the permissions to home directories are set properly.");
+                    ret["warning_level"] = `warning;
+                }
+              }
 	    }
 	else
 	    {
