@@ -345,4 +345,98 @@ displayed.
 	UpdateNavigationTree(nil);
 	TreePanel::Create();
     }
+
+    void EpCloneDisk( string device )
+    {
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	integer mysize = target_map[ device, "size_k"]:0;
+	list <map> myparts = target_map[ device, "partitions"]:[];
+
+	list <string> AvailableTargetDisks() {
+	    list <string> items = [];
+
+	    foreach(string dev, map props, target_map, {
+		if( dev != device && props["type"]:`CT_UNKNOWN == `CT_DISK 
+		    && props["size_k"]:0 >= mysize )
+		    items = add(items, dev); 
+		else {
+		    if( props["type"]:`CT_UNKNOWN != `CT_DISK)
+			y2milestone("%1 is not a disk , skipping it", device);
+		    else
+			y2milestone("%1 is smaller than needed, skipping it", device);
+		}
+	    });
+	    return items;
+	}
+
+	if (size(myparts) == 0) {
+	    Popup::Error(_("There are no partitions on this disk (a clonable 
+disk must have at least one partition).
+Create some partitions before cloning the disk."));
+	    return;
+	}
+
+	list <string> mydisks = AvailableTargetDisks();
+
+	if( size( mydisks ) == 0 ){
+	    Popup::Error("This disk cannot be cloned. There are no suitable 
+disks that could have the same partitioning layout.");
+	   return;
+	}
+
+	list<term> ui_items = maplist( string one_disk, mydisks, {
+	    return `item(`id(one_disk), sformat("%1 (%2)",one_disk, 
+			  Storage::KByteToHumanString( target_map[one_disk, "size_k"]:42)));
+	});
+
+	ui_items = prepend(ui_items, `item(`id(`none), _("--none--")));
+
+	UI::OpenDialog ( `VBox(
+	    `Heading(sformat(_("Clone partition layout of %1"), device)),
+	    `Left(`ComboBox(`id(`tdisk), `opt(`notify), _("Target disk:"), ui_items )),
+	    `VSpacing(1),
+	    `RichText(`id(`summary), _("some sample text")),
+	    `ButtonBox(
+		`PushButton(`id(`help), Label::HelpButton()),
+	        `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+	        `PushButton(`id(`cancel), Label::CancelButton())
+	        )
+	));
+
+	any ret = nil;
+	boolean run_raid_setup = false;
+
+	while(ret != `ok && ret != `cancel) {
+	    ret = UI::UserInput();
+	    any this_disk =  UI::QueryWidget(`id(`tdisk), `Value);
+	    boolean any_disk_selected = this_disk != `none;
+
+	    if (ret == `tdisk) {
+
+		boolean has_any_partitions =  any_disk_selected ? 
+					      size(target_map[(string)this_disk, "partitions"]:[]) > 0
+					      : false;
+
+		if ( has_any_partitions && 
+		    !Popup::YesNo( sformat(_("There are some partitions on %1. If you 
+proceed, these partitions will be deleted and
+all data on them will be lost.\n
+Really use this target disk?"), this_disk))) {
+		    UI::ChangeWidget(`id(`tdisk), `Value, `none);
+		    continue;
+		}
+	    }
+	    else if( ret == `ok) {
+		if (!any_disk_selected) {
+		    Popup::Error(_("Select some target disk for creating a clone"));
+		    UI::SetFocus(`id(`tdisk));
+		    ret = nil;
+		    continue;
+		}
+	   }
+	}
+	UI::CloseDialog();
+
+    }
 }
