@@ -7,6 +7,7 @@
 {
     textdomain "storage";
 
+    import "Map";
 
     void EpCreatePartitionTable(string disk_device)
     {
@@ -356,17 +357,22 @@ displayed.
 	list <string> AvailableTargetDisks() {
 	    list <string> items = [];
 
-	    foreach(string dev, map props, target_map, {
-		if( dev != device && props["type"]:`CT_UNKNOWN == `CT_DISK 
-		    && props["size_k"]:0 >= mysize )
+	    map <string, map> filtered_target_map =
+		filter( string dev, map props, target_map, {
+		    return ( dev != device &&
+			     props["type"]:`CT_UNKNOWN == `CT_DISK &&
+			     props["used_by_device"]:"" == "");
+		});
+
+	    y2milestone("Available and unused disks (other than %1): %2", device, Map::Keys(filtered_target_map));
+
+	    foreach( string dev, map props, filtered_target_map,{
+		if( props["size_k"]:0 >= mysize )
 		    items = add(items, dev); 
-		else {
-		    if( props["type"]:`CT_UNKNOWN != `CT_DISK)
-			y2milestone("%1 is not a disk , skipping it", device);
-		    else
-			y2milestone("%1 is smaller than needed, skipping it", device);
-		}
+		else 
+		    y2milestone("%1 is smaller than needed, skipping it", device);
 	    });
+
 	    return items;
 	}
 
