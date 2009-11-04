@@ -410,14 +410,12 @@ disks that could have the same partitioning layout.");
 	while(ret != `ok && ret != `cancel) {
 	    ret = UI::UserInput();
 	    any this_disk =  UI::QueryWidget(`id(`tdisk), `Value);
+
 	    boolean any_disk_selected = this_disk != `none;
-
+	    boolean has_any_partitions =  any_disk_selected ? 
+					  size(target_map[(string)this_disk, "partitions"]:[]) > 0
+					  : false;
 	    if (ret == `tdisk) {
-
-		boolean has_any_partitions =  any_disk_selected ? 
-					      size(target_map[(string)this_disk, "partitions"]:[]) > 0
-					      : false;
-
 		if ( has_any_partitions && 
 		    !Popup::YesNo( sformat(_("There are some partitions on %1. If you 
 proceed, these partitions will be deleted and
@@ -434,9 +432,31 @@ Really use this target disk?"), this_disk))) {
 		    ret = nil;
 		    continue;
 		}
+
+	        map <string,any> disk_info = Storage::GetDisk( target_map, (string) this_disk );
+
+		if( has_any_partitions &&
+		   !deleteAllDevPartitions( disk_info, Stage::initial(), false) ) 
+		    break;
+
+		//FIXME: CreatePartitionTable, if different from cloned disk
+
+		foreach( map one_partition, myparts, {
+		    map next = Storage::NextPartition( (string) this_disk, one_partition["type"]:`none);
+		    Storage::CreatePartition( (string) this_disk, next["device"]:"error", 
+					      one_partition["type"]:`primary,
+					      one_partition["fsid"]: Partitions::fsid_native,
+					      one_partition["region",0]:0, one_partition["region",1]:0, 
+					      one_partition["mountby"]:Storage::GetMountBy(device) );
+		    //FIXME: ChangeVolumeProperties too?
+		});
 	   }
 	}
+
 	UI::CloseDialog();
 
+	UpdateMainStatus();
+	UpdateNavigationTree(nil);
+	TreePanel::Create();
     }
 }
