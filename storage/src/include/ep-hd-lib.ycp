@@ -8,6 +8,7 @@
     textdomain "storage";
 
     import "Map";
+    import "HTML";
 
     void EpCreatePartitionTable(string disk_device)
     {
@@ -376,6 +377,26 @@ displayed.
 	    return items;
 	}
 
+	boolean ConfirmDeletePartitions( list <string> to_delete) {
+
+	    UI::OpenDialog( `VBox(
+		    `Label(_("The following partitions will be deleted\n and all data on them will be lost:")),
+		    `VSpacing(1),
+		    `RichText(HTML::List( to_delete)),
+		    `Left(`Label(_("Really delete these partitions?"))),
+		    `VSpacing(1),
+		    `ButtonBox(
+			`PushButton(`id(`ok), `opt(`default), Label::DeleteButton()),
+			`PushButton(`id(`cancel), Label::CancelButton())
+		    )
+		)
+	    );
+	    symbol ret = (symbol) UI::UserInput();
+	    UI::CloseDialog();
+
+	    return (ret == `ok);
+	}
+
 	if (size(myparts) == 0) {
 	    Popup::Error(_("There are no partitions on this disk (a clonable 
 disk must have at least one partition).
@@ -396,18 +417,17 @@ disks that could have the same partitioning layout.");
 			  Storage::KByteToHumanString( target_map[one_disk, "size_k"]:42)));
 	});
 
-	ui_items = prepend(ui_items, `item(`id(`none), _("--none--")));
-
-	UI::OpenDialog ( `VBox(
+	UI::OpenDialog (`MinSize( 60, 20, `VBox(
 	    `Heading(sformat(_("Clone partition layout of %1"), device)),
-	    `Left(`ComboBox(`id(`tdisk), `opt(`notify), _("Target disk:"), ui_items )),
 	    `VSpacing(1),
-	    `RichText(`id(`summary), _("some sample text")),
+	    `MultiSelectionBox(`id(`tdisk), _("Available target disks:"), ui_items ),
+	    `VSpacing(1),
 	    `ButtonBox(
 		`PushButton(`id(`help), Label::HelpButton()),
 	        `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
 	        `PushButton(`id(`cancel), Label::CancelButton())
 	        )
+	    )
 	));
 
 	any ret = nil;
@@ -415,23 +435,11 @@ disks that could have the same partitioning layout.");
 
 	while(ret != `ok && ret != `cancel) {
 	    ret = UI::UserInput();
-	    any this_disk =  UI::QueryWidget(`id(`tdisk), `Value);
 
-	    boolean any_disk_selected = this_disk != `none;
-	    boolean has_any_partitions =  any_disk_selected ? 
-					  size(target_map[(string)this_disk, "partitions"]:[]) > 0
-					  : false;
-	    if (ret == `tdisk) {
-		if ( has_any_partitions && 
-		    !Popup::YesNo( sformat(_("There are some partitions on %1. If you 
-proceed, these partitions will be deleted and
-all data on them will be lost.\n
-Really use this target disk?"), this_disk))) {
-		    UI::ChangeWidget(`id(`tdisk), `Value, `none);
-		    continue;
-		}
-	    }
-	    else if( ret == `ok) {
+	    if( ret == `ok) {
+	        list <string> selected_disks = (list <string>) UI::QueryWidget(`id(`tdisk), `SelectedItems);
+		boolean any_disk_selected = size(selected_disks) > 0;
+
 		if (!any_disk_selected) {
 		    Popup::Error(_("Select some target disk for creating a clone"));
 		    UI::SetFocus(`id(`tdisk));
@@ -439,30 +447,66 @@ Really use this target disk?"), this_disk))) {
 		    continue;
 		}
 
-	        map <string,any> disk_info = Storage::GetDisk( target_map, (string) this_disk );
+		list <string> partitions_to_delete = [];
 
-		if( has_any_partitions &&
-		   !deleteAllDevPartitions( disk_info, Stage::initial(), false) ) 
-		    break;
+		//collect partitions to delete
+		foreach (string this_disk, selected_disks, {
+		    list <map> partitions = target_map[ this_disk, "partitions" ]:[];
 
-		//FIXME: CreatePartitionTable, if different from cloned disk
+		    if ( size( partitions ) > 0 ) {
+			list <string> tmp = maplist( map one_part, partitions, {
+			    return one_part["device"]:"";
+			});
+			partitions_to_delete = (list <string>) union( partitions_to_delete, tmp);
+		    }
+		});
 
-		foreach( map one_partition, myparts, {
-		    map next = Storage::NextPartition( (string) this_disk, one_partition["type"]:`none);
-		    Storage::CreatePartition( (string) this_disk, next["device"]:"error", 
+		if (!ConfirmDeletePartitions( partitions_to_delete )){
+		    ret = nil;
+		    continue;
+		}
+
+		//We'll be deleting recursively, so that no longer valid
+		//LVMs and RAIDs are not left behind
+		boolean recursive = Storage::GetRecursiveRemoval();
+		Storage::SetRecursiveRemoval(true);
+
+		foreach (string this_disk, selected_disks, {
+		    map <string,any> disk_info = Storage::GetDisk( target_map, this_disk );
+		    list <map> partitions = target_map[ this_disk, "partitions" ]:[];
+		    list<string> pnames = maplist(map part, partitions, { return part["device"]:""; });
+
+		    y2milestone("Deleting these partitions: %1", pnames);
+
+		    if( size(partitions) > 0) {
+			foreach( string one_partition, pnames,{
+			    Storage::DeleteDevice( disk_info["device"]:"", one_partition );
+			});
+		    }
+
+		    //FIXME: CreatePartitionTable, if different from cloned disk
+
+		    foreach( map one_partition, myparts, {
+		        map next = Storage::NextPartition( this_disk, one_partition["type"]:`none);
+		        Storage::CreatePartition( this_disk, next["device"]:"error", 
 					      one_partition["type"]:`primary,
 					      one_partition["fsid"]: Partitions::fsid_native,
 					      one_partition["region",0]:0, one_partition["region",1]:0, 
 					      one_partition["mountby"]:Storage::GetMountBy(device) );
-		    //FIXME: ChangeVolumeProperties too?
+		        //FIXME: ChangeVolumeProperties too?
+		    });
 		});
+
+		Storage::SetRecursiveRemoval( recursive );
 	   }
 	}
 
 	UI::CloseDialog();
 
-	UpdateMainStatus();
-	UpdateNavigationTree(nil);
-	TreePanel::Create();
+	if( ret == `ok ) {
+	    UpdateMainStatus();
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	}
     }
 }
