@@ -354,6 +354,7 @@ displayed.
 
 	integer mysize = target_map[ device, "size_k"]:0;
 	list <map> myparts = target_map[ device, "partitions"]:[];
+	symbol mypart_table_type = target_map[ device, "label" ]:Storage::DefaultDiskLabel( mysize );
 
 	list <string> AvailableTargetDisks() {
 	    list <string> items = [];
@@ -475,6 +476,7 @@ disks that could have the same partitioning layout.");
 		    map <string,any> disk_info = Storage::GetDisk( target_map, this_disk );
 		    list <map> partitions = target_map[ this_disk, "partitions" ]:[];
 		    list<string> pnames = maplist(map part, partitions, { return part["device"]:""; });
+		    symbol part_table_type = disk_info["label"]:Storage::DefaultDiskLabel(disk_info["size_k"]:0;
 
 		    y2milestone("Deleting these partitions: %1", pnames);
 
@@ -484,7 +486,11 @@ disks that could have the same partitioning layout.");
 			});
 		    }
 
-		    //FIXME: CreatePartitionTable, if different from cloned disk
+		    if( mypart_table_type != part_table_type ) {
+			y2milestone("%1 has different type of partition table: %2, will create a new one",
+			    this_disk, part_table_type);
+			Storage::CreatePartitionTable( disk_info["device"]:"", mypart_table_type );
+		    }
 
 		    foreach( map one_partition, myparts, {
 		        map next = Storage::NextPartition( this_disk, one_partition["type"]:`none);
