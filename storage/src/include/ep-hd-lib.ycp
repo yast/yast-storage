@@ -353,6 +353,7 @@ displayed.
 	map<string, map> target_map = Storage::GetTargetMap();
 
 	integer mysize = target_map[ device, "size_k"]:0;
+	integer mycyl_size = target_map[ device, "cyl_size"]:0;
 	list <map> myparts = target_map[ device, "partitions"]:[];
 	string mypart_table_type = target_map[ device, "label" ]:Storage::DefaultDiskLabel( mysize );
 
@@ -382,7 +383,8 @@ partitions will be deleted.");
 		filter( string dev, map props, target_map, {
 		    return ( dev != device &&
 			     props["type"]:`CT_UNKNOWN == `CT_DISK &&
-			     props["used_by_device"]:"" == "");
+			     props["used_by_device"]:"" == "" && 
+			     props["cyl_size"]:0 == mycyl_size );
 		});
 
 	    y2milestone("Available and unused disks (other than %1): %2", device, Map::Keys(filtered_target_map));
@@ -484,7 +486,9 @@ disks that could have the same partitioning layout.");
 		    }
 		});
 
-		if (!ConfirmDeletePartitions( partitions_to_delete )){
+		//if there is anything to delete, ask user if s/he really wants to delete
+		if ( size(partitions_to_delete) > 0 && 
+		     !ConfirmDeletePartitions( partitions_to_delete )) {
 		    ret = nil;
 		    continue;
 		}
