@@ -356,6 +356,25 @@ displayed.
 	list <map> myparts = target_map[ device, "partitions"]:[];
 	string mypart_table_type = target_map[ device, "label" ]:Storage::DefaultDiskLabel( mysize );
 
+	string helptext = _("Select one or more (if available) hard disks 
+that will have the same partition layout as 
+this disk. 
+Disks marked with '*' sign contain one or
+more partitions.After cloning, these 
+partitions will be deleted.");
+
+	void HelpDialog() {
+	    UI::OpenDialog( `MinSize( 40,10,`VBox(
+		`RichText(helptext),
+		`VSpacing(1),
+		`PushButton(`id(`ok), Label::CloseButton())
+	        )
+	    ));
+
+	    UI::UserInput();
+	    UI::CloseDialog();
+	}
+
 	list <string> AvailableTargetDisks() {
 	    list <string> items = [];
 
@@ -414,7 +433,10 @@ disks that could have the same partitioning layout.");
 	}
 
 	list<term> ui_items = maplist( string one_disk, mydisks, {
-	    return `item(`id(one_disk), sformat("%1 (%2)",one_disk, 
+	    boolean any_partitions = size( target_map[ one_disk, "partitions" ]:[]) > 0;
+
+	    return `item(`id(one_disk), sformat("%1%2 (%3)",one_disk,
+			  any_partitions ? "*" : "",
 			  Storage::KByteToHumanString( target_map[one_disk, "size_k"]:42)));
 	});
 
@@ -476,7 +498,7 @@ disks that could have the same partitioning layout.");
 		    map <string,any> disk_info = Storage::GetDisk( target_map, this_disk );
 		    list <map> partitions = target_map[ this_disk, "partitions" ]:[];
 		    list<string> pnames = maplist(map part, partitions, { return part["device"]:""; });
-		    string part_table_type = disk_info["label"]:Storage::DefaultDiskLabel(disk_info["size_k"]:0;
+		    string part_table_type = disk_info["label"]:Storage::DefaultDiskLabel(disk_info["size_k"]:0);
 
 		    y2milestone("Deleting these partitions: %1", pnames);
 
@@ -504,6 +526,10 @@ disks that could have the same partitioning layout.");
 		});
 
 		Storage::SetRecursiveRemoval( recursive );
+	   }
+	   else if (ret == `help) {
+		HelpDialog();
+		continue;
 	   }
 	}
 
