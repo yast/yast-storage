@@ -49,6 +49,7 @@
 #include "y2storage/Disk.h"
 #include "y2storage/Dasd.h"
 #include "y2storage/MdCo.h"
+#include "y2storage/MdPartCo.h"
 #include "y2storage/DmCo.h"
 #include "y2storage/LoopCo.h"
 #include "y2storage/LvmVg.h"
@@ -56,6 +57,7 @@
 #include "y2storage/ProcMounts.h"
 #include "y2storage/ProcPart.h"
 #include "y2storage/EtcFstab.h"
+#include "y2storage/EtcRaidtab.h"
 #include "y2storage/AsciiFile.h"
 #include "y2storage/StorageDefines.h"
 
@@ -129,6 +131,9 @@ Storage::Storage(const Environment& env)
     zeroNewPartitions = false;
     defaultMountBy = MOUNTBY_ID;
     detectMounted = true;
+
+    fstab = NULL;
+    raidtab = NULL;
 
     logSystemInfo();
 }
@@ -225,17 +230,32 @@ void Storage::detectObjects()
     detectDisks( *ppart );
     if( instsys() )
 	{
+         if( discoverMdPVols() == true )
+           {
+           // if 'yes' then activate md prior to dm
+           MdPartCo::activate( true, tmpDir() );
+           waitForDevice();
+           }
+        //Note:
+        //dmraid will not activate devices that were activated by
+        //mdadm. So this is safe.
 	DmraidCo::activate( true );
 	waitForDevice();
-	MdCo::activate( true, tmpDir() );
-	waitForDevice();
+	//If user said No then this is the way it was before.
+	if( MdPartCo::isHandlingDev() == false )
+	  {
+	  MdPartCo::activate(true, tmpDir() );
+	  waitForDevice();
+	  }
 	LvmVg::activate( true );
 	waitForDevice();
 	delete ppart;
 	ppart = new ProcPart;
 	}
+
     detectDmraid( *ppart );
     detectDmmultipath( *ppart );
+    detectMdParts(*ppart);
     detectMds();
     detectDm(*ppart, true);
     detectLvmVgs();
@@ -251,6 +271,7 @@ void Storage::detectObjects()
 	SystemCmd::testmode = true;
  	rootprefix = testdir();
  	fstab = new EtcFstab( rootprefix );
+	raidtab = new EtcRaidtab(rootprefix);
 	string t = testdir() + "/volume_info";
 	if( access( t.c_str(), R_OK )==0 )
 	    {
@@ -260,6 +281,8 @@ void Storage::detectObjects()
     else
 	{
 	fstab = new EtcFstab( "/etc", isRootMounted() );
+	if (!instsys())
+	    raidtab = new EtcRaidtab(root());
 	detectLoops( *ppart );
 	ProcMounts pm( this );
 	if( !instsys() )
@@ -405,6 +428,32 @@ Storage::detectDisks( ProcPart& ppart )
 	}
     }
 
+// Detect MD Partitionable Volumes.
+void Storage::detectMdParts(ProcPart& ppart)
+{
+  if( testmode() )
+    {
+    string file = testdir()+"/md";
+    if( access( file.c_str(), R_OK )==0 )
+      {
+      y2mil("MD PART CO in test mode not available yet");
+      }
+    }
+  else
+    {
+    list<string> l = MdPartCo::getMdRaids();
+    list<string> mdpartlist = MdPartCo::filterMdPartCo(l,ppart, instsys());
+    //
+    for( list<string>::const_iterator i = mdpartlist.begin();
+        i != mdpartlist.end();
+        i++)
+      {
+      MdPartCo * v = new MdPartCo( this, *i, &ppart );
+      // check for valid?
+      addToList( v );
+      }
+    }
+}
 
 void Storage::detectMds()
     {
@@ -425,6 +474,76 @@ void Storage::detectMds()
 	    delete v;
 	}
     }
+
+bool Storage::discoverMdPVols()
+{
+  if( !instsys() )
+    {
+    return false;
+    }
+  string mdDevs = "";
+  bool ret = MdPartCo::isImsmPlatform();
+  if( ret == true )
+    {
+    y2mil("Intel SW RAID Platform detected.");
+
+    list <string> l;
+    if( MdPartCo::scanForRaid(l) != 0 )
+      {
+      MdPartCo::activate( true, tmpDir() );
+      waitForDevice();
+      l = MdPartCo::getMdRaids();
+      MdPartCo::activate( false, "" );
+      }
+    if (!l.empty())
+      {
+      // At least ONE Volume must be detected
+      mdDevs.clear();
+      for( list<string>::const_iterator i=l.begin(); i!=l.end(); ++i )
+        {
+        mdDevs += " " + *i;
+        }
+      y2mil(" md raids:" + mdDevs);
+      if( !mdDevs.empty())
+        {
+        string txt = sformat(
+            // popup text %1$s is replaced by disk name e.g. /dev/hda
+            _("You are running on the Intel(R) Matrix Storage Manager compatible platform.\n"
+                "\n"
+                "Following MD compatible RAID devices were detected:\n"
+                "%1$s\n"
+                "If they are clean devices or contain partitions then you can choose to use\n"
+                "MD Partitionable RAID sysbsystem to handle them. In case of clean device you\n"
+                "will be able to install system on it and boot from such RAID.\n"
+                "Do you want MD Partitionable RAID subsystem to manage those partitions?"
+            ), mdDevs.c_str() );
+
+        if( yesnoPopupCb(txt) )
+          {
+          ret = true;
+          MdPartCo::setHandlingDev(true);
+          }
+        else
+          {
+          ret = false;
+          }
+        }
+      else
+        {
+        /* No mdDevs */
+        ret = false;
+        }
+      }
+    else
+      {
+      /* No RAIDs at all */
+      ret = false;
+      }
+    }
+  y2mil(" Exiting with status: " << ret);
+  return ret;
+}
+
 
 void Storage::detectLoops( ProcPart& ppart )
     {
@@ -456,7 +575,7 @@ void Storage::detectNfs( ProcMounts& mounts )
 	    addToList( new NfsCo( this, file ) );
 	    }
 	}
-    else
+    else if (getenv("YAST2_STORAGE_NO_NFS") == NULL)
 	{
 	NfsCo * v = new NfsCo( this, mounts );
 	if( !v->isEmpty() )
@@ -518,8 +637,7 @@ Storage::detectDmraid(ProcPart& ppart)
     }
     else if( getenv( "YAST2_STORAGE_NO_DMRAID" )==NULL )
     {
-	list<string> l;
-	DmraidCo::getRaids(l);
+	const list<string> l = DmraidCo::getRaids();
 	if (!l.empty())
 	{
 	    map<string, list<string>> by_id;
@@ -527,19 +645,10 @@ Storage::detectDmraid(ProcPart& ppart)
 	    for( list<string>::const_iterator i=l.begin(); i!=l.end(); ++i )
 	    {
 		DmraidCo * v = new DmraidCo( this, *i, ppart );
-		if( v->isValid() )
-		{
 		    list<string> nm = by_id["dm-"+decString(v->minorNr())];
 		    if( !nm.empty() )
 			v->setUdevData( nm );
 		    addToList( v );
-		}
-		else
-		{
-		    y2milestone( "inactive DMRAID %s", i->c_str() );
-		    v->unuseDev();
-		    delete( v );
-		}
 	    }
 	}
     }
@@ -561,8 +670,7 @@ Storage::detectDmmultipath(ProcPart& ppart)
     }
     else if( getenv( "YAST2_STORAGE_NO_DMMULTIPATH" )==NULL )
     {
-	list<string> l;
-	DmmultipathCo::getMultipaths(l);
+	const list<string> l = DmmultipathCo::getMultipaths();
 	if (!l.empty())
 	{
 	    map<string, list<string>> by_id;
@@ -570,19 +678,10 @@ Storage::detectDmmultipath(ProcPart& ppart)
 	    for( list<string>::const_iterator i=l.begin(); i!=l.end(); ++i )
 	    {
 		DmmultipathCo * v = new DmmultipathCo( this, *i, ppart );
-		if( v->isValid() )
-		{
 		    list<string> nm = by_id["dm-"+decString(v->minorNr())];
 		    if (!nm.empty())
 			v->setUdevData( nm );
 		    addToList( v );
-		}
-		else
-		{
-		    y2mil("inactive DMMULTIPATH " << *i);
-		    v->unuseDev();
-		    delete v;
-		}
 	    }
 	}
     }
@@ -717,6 +816,12 @@ void
 
 	    if (dn == "." || dn == "..")
 		continue;
+
+	    // Do not allow to detect MD Device as 'disk'
+	    if( MdPartCo::isMdName(dn) )
+	      {
+	      continue;
+	      }
 
 	    Disk::SysfsInfo sysfsinfo;
 	    if (!Disk::getSysfsInfo(SYSFSDIR "/" + dn, sysfsinfo))
@@ -1044,6 +1149,20 @@ Storage::createPartition( const string& disk, PartitionType type, unsigned long 
 		}
 	    }
 	}  
+    if( ret==0 && !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            if( i->getUsedByType() != UB_NONE )
+                ret = STORAGE_DISK_USED_BY;
+            else
+                {
+                ret = i->createPartition( type, start, size, device, true );
+                }
+            }
+        }
     if( !done && ret==0 )
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
@@ -1113,6 +1232,27 @@ Storage::createPartitionKb( const string& disk, PartitionType type,
 	    }
 	}
     if( ret==0 && !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            if( i->getUsedByType() != UB_NONE )
+                ret = STORAGE_DISK_USED_BY;
+            else
+                {
+                unsigned long num_cyl = i->kbToCylinder( sizeK );
+                unsigned long long tmp_start = start;
+                if( tmp_start > i->kbToCylinder(1)/2 )
+                    tmp_start -= i->kbToCylinder(1)/2;
+                else
+                    tmp_start = 0;
+                unsigned long start_cyl = i->kbToCylinder( tmp_start )+1;
+                ret = i->createPartition( type, start_cyl, num_cyl, device, true );
+                }
+            }
+        }
+    if( ret==0 && !done )
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
 	}
@@ -1163,6 +1303,21 @@ Storage::createPartitionAny( const string& disk, unsigned long long sizeK,
 	    }
 	}
     if( ret==0 && !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            if( i->getUsedByType() != UB_NONE )
+                ret = STORAGE_DISK_USED_BY;
+            else
+                {
+                unsigned long num_cyl = i->kbToCylinder( sizeK );
+                ret = i->createPartition( num_cyl, device, true );
+                }
+            }
+        }
+    if( ret==0 && !done )
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
 	}
@@ -1193,6 +1348,15 @@ Storage::nextFreePartition( const string& disk, PartitionType type,
 	    ret = i->nextFreePartition( type, nr, device );
 	    }
 	}
+    if( !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            ret = i->nextFreePartition( type, nr, device );
+            }
+        }
     if( !done )
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
@@ -1243,6 +1407,20 @@ Storage::createPartitionMax( const string& disk, PartitionType type,
 	    }
 	}
     if( ret==0 && !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            if( i->getUsedByType() != UB_NONE )
+                ret = STORAGE_DISK_USED_BY;
+            else
+                {
+                ret = i->createPartition( type, device );
+                }
+            }
+        }
+    if( ret==0 && !done )
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
 	}
@@ -1272,6 +1450,15 @@ Storage::cylinderToKb( const string& disk, unsigned long size )
 	    ret = i->cylinderToKb( size );
 	    }
 	}
+    if( !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            ret = i->cylinderToKb( size );
+            }
+        }
     y2milestone( "ret:%lld", ret );
     return( ret );
     }
@@ -1298,6 +1485,16 @@ Storage::kbToCylinder( const string& disk, unsigned long long sizeK )
 	    ret = i->kbToCylinder( sizeK );
 	    }
 	}
+    if( !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            ret = i->kbToCylinder( sizeK );
+            }
+        }
+
     y2milestone( "ret:%ld", ret );
     return( ret );
     }
@@ -1356,6 +1553,28 @@ Storage::removePartition( const string& partition )
 		ret = STORAGE_REMOVE_PARTITION_INVALID_CONTAINER;
 		}
 	    }
+	else if( cont->type() == MDPART )
+	  {
+	  MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
+	  if( disk != NULL)
+	    {
+	    if( vol->getUsedByType() == UB_NONE || recursiveRemove )
+	      {
+	      if( vol->getUsedByType() != UB_NONE )
+	        ret = removeUsing( vol->device(), vol->getUsedBy() );
+	      if( ret==0 )
+	        {
+	        ret = disk->removePartition( vol->nr() );
+	        }
+	      }
+	    else
+	      ret = STORAGE_REMOVE_USED_VOLUME;
+	    }
+	  else
+	    {
+	    ret = STORAGE_REMOVE_PARTITION_INVALID_CONTAINER;
+	    }
+	  }
 	else
 	    {
 	    ret = STORAGE_REMOVE_PARTITION_INVALID_CONTAINER;
@@ -1413,6 +1632,18 @@ Storage::updatePartitionArea( const string& partition, unsigned long start,
 		ret = STORAGE_CHANGE_AREA_INVALID_CONTAINER;
 		}
 	    }
+	else if( cont->type() == MDPART )
+	  {
+	  MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
+	  if( disk!=NULL )
+	    {
+	    ret = disk->changePartitionArea( vol->nr(), start, size );
+	    }
+	  else
+	    {
+	    ret = STORAGE_CHANGE_AREA_INVALID_CONTAINER;
+	    }
+	  }
 	else
 	    {
 	    ret = STORAGE_CHANGE_AREA_INVALID_CONTAINER;
@@ -1467,6 +1698,19 @@ Storage::freeCylindersAfterPartition(const string& partition, unsigned long& fre
 		ret = STORAGE_RESIZE_INVALID_CONTAINER;
 	    }
 	}
+	else if ( cont->type() == MDPART )
+	  {
+          MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
+          MdPart* p = dynamic_cast<MdPart *>(&(*vol));
+          if( disk!=NULL && p!=NULL )
+          {
+              ret = disk->freeCylindersAfterPartition(p, freeCyls);
+          }
+          else
+          {
+              ret = STORAGE_RESIZE_INVALID_CONTAINER;
+          }
+	  }
 	else
 	{
 	    ret = STORAGE_RESIZE_INVALID_CONTAINER;
@@ -1519,6 +1763,18 @@ Storage::changePartitionId( const string& partition, unsigned id )
 		ret = STORAGE_CHANGE_PARTITION_ID_INVALID_CONTAINER;
 		}
 	    }
+	else if ( cont->type()==MDPART  )
+	  {
+          MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
+          if( disk!=NULL )
+              {
+              ret = disk->changePartitionId( vol->nr(), id );
+              }
+          else
+              {
+              ret = STORAGE_CHANGE_PARTITION_ID_INVALID_CONTAINER;
+              }
+	  }
 	else
 	    {
 	    ret = STORAGE_CHANGE_PARTITION_ID_INVALID_CONTAINER;
@@ -1594,6 +1850,21 @@ Storage::resizePartition( const string& partition, unsigned long sizeCyl,
 		ret = STORAGE_RESIZE_INVALID_CONTAINER;
 		}
 	    }
+	else if( cont->type()== MDPART )
+	  {
+          MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
+          MdPart* p = dynamic_cast<MdPart *>(&(*vol));
+          if( disk!=NULL && p!=NULL )
+              {
+              if( ignoreFs )
+                  p->setIgnoreFs();
+              ret = disk->resizePartition( p, sizeCyl );
+              }
+          else
+              {
+              ret = STORAGE_RESIZE_INVALID_CONTAINER;
+              }
+	  }
 	else
 	    {
 	    ret = STORAGE_RESIZE_INVALID_CONTAINER;
@@ -1649,6 +1920,19 @@ Storage::forgetChangePartitionId( const string& partition )
 		ret = STORAGE_CHANGE_PARTITION_ID_INVALID_CONTAINER;
 		}
 	    }
+	else if( cont->type() == MDPART )
+	  {
+          MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
+          if( disk!=NULL )
+              {
+              ret = disk->forgetChangePartitionId( vol->nr() );
+              }
+          else
+              {
+              ret = STORAGE_CHANGE_PARTITION_ID_INVALID_CONTAINER;
+              }
+
+	  }
 	else
 	    {
 	    ret = STORAGE_CHANGE_PARTITION_ID_INVALID_CONTAINER;
@@ -1678,6 +1962,7 @@ Storage::getUnusedPartitionSlots(const string& disk, list<PartitionSlotInfo>& sl
 
     DiskIterator i1 = findDisk( disk );
     DmPartCoIterator i2 = findDmPartCo( disk );
+    MdPartCoIterator i3 = findMdPartCo( disk );
 
     if (i1 != dEnd())
     {
@@ -1761,6 +2046,47 @@ Storage::getUnusedPartitionSlots(const string& disk, list<PartitionSlotInfo>& sl
 	    slots.push_back(slot);
 	}
     }
+    else if (i3 != mdpCoEnd())
+    {
+        // maxPrimary() and maxLogical() include limits from partition table type and
+        // minor number range
+
+        bool primaryPossible = i3->numPrimary() + (i3->hasExtended() ? 1 : 0) < i3->maxPrimary();
+        bool extendedPossible = primaryPossible && i3->extendedPossible() && !i3->hasExtended();
+        bool logicalPossible = i3->hasExtended() && i3->numLogical() < (i3->maxLogical() - i3->maxPrimary());
+
+        list<Region> regions;
+
+        i3->getUnusedSpace(regions, false, false);
+        for (list<Region>::const_iterator region=regions.begin(); region!=regions.end(); region++)
+        {
+            PartitionSlotInfo slot;
+            slot.cylStart = region->start();
+            slot.cylSize = region->len();
+            slot.primarySlot = true;
+            slot.primaryPossible = primaryPossible;
+            slot.extendedSlot = true;
+            slot.extendedPossible = extendedPossible;
+            slot.logicalSlot = false;
+            slot.logicalPossible = false;
+            slots.push_back(slot);
+        }
+
+        i3->getUnusedSpace(regions, false, true);
+        for (list<Region>::const_iterator region=regions.begin(); region!=regions.end(); region++)
+        {
+            PartitionSlotInfo slot;
+            slot.cylStart = region->start();
+            slot.cylSize = region->len();
+            slot.primarySlot = false;
+            slot.primaryPossible = false;
+            slot.extendedSlot = false;
+            slot.extendedPossible = false;
+            slot.logicalSlot = true;
+            slot.logicalPossible = logicalPossible;
+            slots.push_back(slot);
+        }
+    }
     else
     {
 	ret = STORAGE_DISK_NOT_FOUND;
@@ -1800,6 +2126,15 @@ Storage::destroyPartitionTable( const string& disk, const string& label )
 	    ret = i->destroyPartitionTable( label );
 	    }
 	}
+    if( ret==0 && !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            ret = i->destroyPartitionTable( label );
+            }
+        }
     if( ret==0 && !done )
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
@@ -1842,6 +2177,15 @@ Storage::initializeDisk( const string& disk, bool value )
 	    ret = DISK_INIT_NOT_POSSIBLE;
 	    }
 	}
+    if( ret==0 && !done )
+        {
+        MdPartCoIterator i = findMdPartCo( disk );
+        if( i != mdpCoEnd() )
+            {
+            done = true;
+            ret = DISK_INIT_NOT_POSSIBLE;
+            }
+        }
     if( ret==0 && !done )
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
@@ -3115,6 +3459,7 @@ int Storage::shrinkMd( const string& name, const string& dev )
     return( ret );
     }
 
+
 int Storage::changeMdType( const string& name, MdType rtype )
     {
     int ret = 0;
@@ -3243,6 +3588,26 @@ int Storage::getMdStateInfo(const string& name, MdStateInfo& info)
     return ret;
 }
 
+// Find container 'name' and return its state.
+int Storage::getMdPartCoStateInfo(const string& name, MdPartCoStateInfo& info)
+{
+  CPair p = cPair();
+  ContIterator i = p.begin();
+
+  for( i=p.begin(); i!=p.end(); i++)
+    {
+    if( i->type()==MDPART )
+      {
+      MdPartCo* mdp = static_cast<MdPartCo*>(&(*i));
+      if( mdp->matchMdName(name) )
+        {
+         mdp->getMdPartCoState(info);
+         break;
+        }
+      }
+    }
+  return( i != p.end() );
+}
 
 int
 Storage::computeMdSize(MdType md_type, list<string> devices, unsigned long long& sizeK)
@@ -4089,6 +4454,7 @@ Storage::getContVolInfo( const string& device, ContVolInfo& info)
 	DiskIterator d;
 	DmraidCoIterator r;
 	DmmultipathCoIterator m;
+	MdPartCoIterator md;
 	std::pair<string,unsigned> p = Disk::getDiskPartition( dev );
 	if( p.first=="/dev/md" )
 	    {
@@ -4130,6 +4496,14 @@ Storage::getContVolInfo( const string& device, ContVolInfo& info)
 	    info.numeric = true;
 	    info.nr = p.second;
 	    }
+        else if( (md=findMdPartCo(p.first))!=mdpCoEnd() )
+            {
+            info.cname = md->device();
+            info.vname = dev.substr( dev.find_last_of('/')+1 );
+            info.type = MDPART;
+            info.numeric = true;
+            info.nr = p.second;
+            }
 	else if( (m=findDmmultipathCo(p.first))!=dmmCoEnd() )
 	    {
 	    info.cname = m->device();
@@ -4242,10 +4616,12 @@ int Storage::getContDiskInfo( const string& disk, ContainerInfo& cinfo,
     return( ret );
     }
 
+
 int Storage::getPartitionInfo( const string& disk,
 			       deque<storage::PartitionInfo>& plist )
     {
     int ret = 0;
+    bool done = false;
     plist.clear();
     assertInit();
     DiskIterator i = findDisk( disk );
@@ -4257,9 +4633,21 @@ int Storage::getPartitionInfo( const string& disk,
 	    plist.push_back( PartitionInfo() );
 	    i2->getInfo( plist.back() );
 	    }
+	done = true;
 	}
-    else
+    if( done == false )
+      {
+      MdPartCoIterator i = findMdPartCo( disk );
+      if( i != mdpCoEnd() )
+        {
+        ret = i->getPartitionInfo( plist );
+        done = false;
+        }
+      }
+    if( done == false)
+      {
 	ret = STORAGE_DISK_NOT_FOUND;
+      }
     return( ret );
     }
 
@@ -4392,6 +4780,61 @@ int Storage::getMdInfo( deque<storage::MdInfo>& plist )
 	}
     return( ret );
     }
+
+int Storage::getMdPartCoInfo( const string& name, MdPartCoInfo& info)
+{
+  int ret = 0;
+  assertInit();
+  MdPartCoIterator i = findMdPartCo( name );
+  if( i != mdpCoEnd() )
+      {
+      i->getInfo( info );
+      }
+  else
+      ret = STORAGE_MDPART_CO_NOT_FOUND;
+  return( ret );
+}
+
+int Storage::getContMdPartCoInfo( const string& name, ContainerInfo& cinfo,
+                                 MdPartCoInfo& info)
+{
+  int ret = 0;
+  assertInit();
+  MdPartCoIterator i = findMdPartCo( name );
+  if( i != mdpCoEnd() )
+      {
+      ((const Container*)&(*i))->getInfo( cinfo );
+      i->getInfo( info );
+      }
+  else
+      ret = STORAGE_MDPART_CO_NOT_FOUND;
+  return( ret );
+
+}
+
+
+int Storage::getMdPartInfo( const string& device, deque<MdPartInfo>& plist )
+{
+  int ret = 0;
+  plist.clear();
+  assertInit();
+  MdPartCoIterator it = findMdPartCo(device);
+
+  if( it != mdpCoEnd() )
+    {
+    MdPartCo::MdPartPair p = it->mdpartPair(MdPart::notDeleted);
+
+    for( MdPartCo::MdPartIter i2 = p.begin(); i2 != p.end(); ++i2 )
+      {
+      plist.push_back( MdPartInfo() );
+      i2->getInfo( plist.back() );
+      }
+    }
+  else
+    ret = STORAGE_MDPART_CO_NOT_FOUND;
+  return( ret );
+}
+
 
 int Storage::getNfsInfo( deque<storage::NfsInfo>& plist )
     {
@@ -5081,6 +5524,17 @@ Storage::DmPartCoIterator Storage::findDmPartCo( const string& name )
     return( ret );
     }
 
+Storage::MdPartCoIterator Storage::findMdPartCo( const string& name )
+{
+  assertInit();
+  MdPartCoPair p = mdpCoPair();
+  MdPartCoIterator ret=p.begin();
+  string tname = MdPartCo::undevName(name);
+  while( ret!=p.end() && (ret->deleted() || ret->name()!=tname))
+    ++ret;
+  return( ret );
+}
+
 bool Storage::knownDevice( const string& dev, bool disks_allowed )
     {
     bool ret=true;
@@ -5263,6 +5717,10 @@ int Storage::removeUsing(const string& device, const storage::usedBy& uby)
 	case UB_DMRAID:
 	    //ret = removeDmraidCo( name );
 	    break;
+	case UB_MDPART:
+	  y2war(device << " used by MD PART");
+	  // ret = removeMdPartCo( name );
+	  break;
 	case UB_DMMULTIPATH:
 	    break;
 	case UB_NONE:
@@ -5279,12 +5737,35 @@ int Storage::removeUsing(const string& device, const storage::usedBy& uby)
 
 void Storage::rootMounted()
     {
-    MdCo* md;
     root_mounted = true;
     if( !root().empty() )
 	{
-    	if( haveMd(md) )
-	    md->syncRaidtab();
+	string d = root() + "/etc";
+	if (!checkDir(d))
+	    createPath(d);
+
+	bool have_mds = false;
+
+	MdCo* md;
+	if (haveMd(md))
+	    have_mds = true;
+
+	MdPartCoPair p = mdpCoPair();
+	if (!p.empty())
+	    have_mds = true;
+
+	if (have_mds)
+	{
+	    delete raidtab;
+	    raidtab = new EtcRaidtab(root());
+
+	    if (haveMd(md))
+		md->syncRaidtab();
+
+	    for (MdPartCoIterator it = p.begin(); it != p.end(); ++it)
+		it->syncRaidtab();
+	}
+
 	if( instsys() )
 	    {
 	    string path = root()+"/etc/fstab";
@@ -5795,14 +6276,24 @@ Storage::activateHld(bool val)
     y2mil("val:" << val);
     if (val)
     {
-	Dm::activate(val);
-	MdCo::activate(val, tmpDir());
+        if( MdPartCo::isHandlingDev() == true)
+          {
+          MdPartCo::activate(val, tmpDir());
+          Dm::activate(val);
+          }
+        else
+          {
+          Dm::activate(val);
+          MdPartCo::activate(val, tmpDir());
+          }
+
+
     }
     LvmVg::activate(val);
     if (!val)
     {
 	Dm::activate(val);
-	MdCo::activate(val, tmpDir());
+	MdPartCo::activate(val, tmpDir());
     }
 }
 

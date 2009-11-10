@@ -120,7 +120,9 @@ class DmmultipathCo : public DmPartCo
 	static void activate( bool val=true );
 	static bool isActive() { return active; }
 
-	static void getMultipaths( std::list<string>& l );
+	static bool isActivated(const string& name);
+	static list<string> getMultipaths();
+
 	static bool multipathNotDeleted( const Dmmultipath&d ) { return( !d.deleted() ); }
 
 	void logData( const string& Dir );

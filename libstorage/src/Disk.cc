@@ -1106,6 +1106,11 @@ bool Disk::needP( const string& disk )
     {
     bool need_p = false;
     unsigned i=0;
+    static Regex mdpart( "md[0123456789]+$" );
+    if ( mdpart.match( disk ) == true )
+      {
+      return true;
+      }
     while( !need_p && i<lengthof(p_disks) )
 	{
 	string::size_type p = disk.find(p_disks[i]);

@@ -73,5 +73,7 @@
 
 #define MODPROBEBIN "/sbin/modprobe"
 
+#define BLKIDBIN "/sbin/blkid"
+
 
 #endif
