@@ -33,6 +33,7 @@ liby2storage_la_SOURCES =				\
 	      DmraidCo.cc	DmraidCo.h		\
 	      DmmultipathCo.cc	DmmultipathCo.h		\
 	    DmCo.cc		DmCo.h			\
+	  MdPartCo.cc		MdPartCo.h		\
 	  MdCo.cc		MdCo.h			\
 	  LoopCo.cc		LoopCo.h		\
 	  NfsCo.cc		NfsCo.h			\
@@ -43,6 +44,7 @@ liby2storage_la_SOURCES =				\
 	    DmPart.cc		DmPart.h		\
 	      Dmraid.cc		Dmraid.h		\
 	      Dmmultipath.cc	Dmmultipath.h		\
+	  MdPart.cc		MdPart.h		\
 	  Md.cc			Md.h			\
 	  Loop.cc		Loop.h			\
 	  Nfs.cc		Nfs.h			\

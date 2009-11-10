@@ -28,6 +28,7 @@
 
 #include "y2storage/MdCo.h"
 #include "y2storage/Md.h"
+#include "y2storage/MdPartCo.h"
 #include "y2storage/SystemCmd.h"
 #include "y2storage/AppUtil.h"
 #include "y2storage/Storage.h"
@@ -56,43 +57,30 @@ MdCo::MdCo( Storage * const s, const string& file ) :
 MdCo::~MdCo()
     {
     y2deb("destructed MdCo");
-    delete tab;
     }
 
 void
 MdCo::init()
     {
-    tab = NULL;
     mjr = Md::mdMajor();
-    initTab();
     }
 
-void
-MdCo::initTab()
-    {
-    if( tab==NULL && !getStorage()->instsys() )
-	tab = new EtcRaidtab( getStorage()->root() );
-    }
 
 void
 MdCo::syncRaidtab()
-    {
-    delete tab;
-    string d = getStorage()->root()+"/etc";
-    if( !checkDir( d ) )
-	createPath( d );
-    tab = new EtcRaidtab( getStorage()->root() );
+{
     MdPair p=mdPair(Md::notDeleted);
     for( MdIter i=p.begin(); i!=p.end(); ++i )
-	{
+    {
 	updateEntry( &(*i) );
-	}
     }
+}
+
 
 void MdCo::updateEntry( const Md* m )
     {
-    initTab();
-    if( tab )
+    EtcRaidtab* tab = getStorage()->getRaidtab();
+    if (tab)
 	{
 	list<string> lines;
 	list<string> devices;
@@ -109,20 +97,23 @@ MdCo::getMdData()
     string line;
     std::ifstream file( "/proc/mdstat" );
     classic(file);
-    unsigned dummy;
     getline( file, line );
     while( file.good() )
 	{
-	y2mil( "mdstat line:" << line );
-	if( Md::mdStringNum(extractNthWord( 0, line ),dummy) ) 
-	    {
-	    string line2;
-	    getline( file, line2 );
-	    y2mil( "mdstat line:" << line2 );
-	    Md* m = new Md( *this, line, line2 );
-	    addMd( m );
-	    }
-	getline( file, line );
+      string mdDev = extractNthWord( 0, line );
+      string line2;
+      getline(file,line2);
+
+      if( canHandleDev(mdDev,line2) )
+        {
+        Md* m = new Md( *this, line, line2 );
+        addMd( m );
+        getline(file,line);
+        }
+      else
+        {
+        line = line2;
+        }
 	}
     file.close();
     file.clear();
@@ -170,7 +161,10 @@ MdCo::getMdData()
 	list<string> devs;
 	i->getDevs( devs );
 	for( list<string>::iterator s=devs.begin(); s!=devs.end(); ++s )
+	  {
+	    y2mil( " Setting device " << *s << " as used by UB_MD" );
 	    getStorage()->setUsedBy( *s, UB_MD, num );
+	  }
 	}
     }
 
@@ -669,7 +663,7 @@ MdCo::doRemove( Volume* v )
     if( m != NULL )
 	{
 	if( !active )
-	    activate(true, getStorage()->tmpDir());
+	    MdPartCo::activate(true, getStorage()->tmpDir());
 	if( !silent )
 	    {
 	    getStorage()->showInfoCb( m->removeText(true) );
@@ -697,7 +691,7 @@ MdCo::doRemove( Volume* v )
 	    }
 	if( ret==0 )
 	    {
-	    initTab();
+	    EtcRaidtab* tab = getStorage()->getRaidtab();
 	    if( tab!=NULL )
 		{
 		tab->removeEntry( m->nr() );
@@ -800,7 +794,6 @@ MdCo::MdCo( const MdCo& rhs ) : Container(rhs)
     {
     y2deb("constructed MdCo by copy constructor from " << rhs.nm);
     *this = rhs;
-    this->tab = NULL;
     ConstMdPair p = rhs.mdPair();
     for( ConstMdIter i=p.begin(); i!=p.end(); ++i )
 	 {
@@ -811,6 +804,50 @@ MdCo::MdCo( const MdCo& rhs ) : Container(rhs)
 
 
 void MdCo::logData( const string& Dir ) {;}
+
+// Not a class member. Just check function.
+static bool showMdPartContainers(const Container& c )
+    {
+    return( c.deleted()==false && c.type()==MDPART);
+    }
+
+// No '/dev/' please.
+bool MdCo::isHandledByMdPart(const string& name)
+{
+  if( sto )
+    {
+    Storage::ConstContPair p = sto->contPair( showMdPartContainers );
+    for( Storage::ConstContIterator i = p.begin(); i != p.end(); ++i)
+      {
+      if( i->name() == name )
+        {
+        return true;
+        }
+      }
+    }
+  return false;
+}
+
+bool MdCo::canHandleDev(const string& name, const string& line2)
+{
+  unsigned dummy;
+  //If this is a valid MD name.
+  if( Md::mdStringNum(name,dummy) )
+    {
+    // if it's not used by Md Part
+    if (!isHandledByMdPart(name))
+       {
+      //Exclude 'container'
+       if( line2.find("external:imsm") == string::npos &&
+           line2.find("external:ddf") == string::npos )
+         {
+         y2mil("Device : " << name << " can be handled by Md.");
+         return true;
+         }
+       }
+    }
+  return false;
+}
 
 bool MdCo::active = false;
 

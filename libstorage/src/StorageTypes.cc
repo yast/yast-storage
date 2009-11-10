@@ -82,6 +82,7 @@ bool commitAction::operator<( const commitAction& rhs ) const
 
 	    case UB_LVM:
 	    case UB_MD:
+	    case UB_MDPART:
 		return "/dev/" + ub_name;
 
 	    case UB_DM:
@@ -104,6 +105,9 @@ bool commitAction::operator<( const commitAction& rhs ) const
 		    break;
 		case storage::UB_MD:
 		    st = "md";
+		    break;
+		case storage::UB_MDPART:
+		    st = "mdpart";
 		    break;
 		case storage::UB_DM:
 		    st = "dm";

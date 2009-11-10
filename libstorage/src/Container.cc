@@ -462,5 +462,5 @@ Container::Container( const Container& rhs ) : sto(rhs.sto)
     }
 
 const string Container::type_names[] = { "UNKNOWN", "DISK", "MD", "LOOP", "LVM", 
-					 "DM", "DMRAID", "NFS", "DMMULTIPATH" };
+					 "DM", "DMRAID", "NFS", "DMMULTIPATH", "MDPART" };
 

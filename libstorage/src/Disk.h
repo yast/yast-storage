@@ -40,6 +40,7 @@ class Disk : public Container
     {
     friend class Storage;
     friend class DmPartCo;
+    friend class MdPartCo;
 
     struct label_info
 	{
