@@ -184,6 +184,10 @@ string proposal_password = "";
 map<string, any> cfg_xml = $[];
 string part_insts = "";
 
+// bnc#477778 - Updating SLES 10 SP2 (GA+) to SLES 11 RC4 produces multiple identical grub boot menu entries
+// flag indicates calling StorageUpdate::Update()
+boolean called_update = false;
+
 
   /**
    * Returns Device Name
@@ -5503,6 +5507,10 @@ global define map BuildDiskmap( map oldv )
  */
 global define void Update( map oldv, map newv )
     ``{
+    // bnc#477778 - Updating SLES 10 SP2 (GA+) to SLES 11 RC4 produces multiple identical grub boot menu entries
+    // called_update is flag which indicates if Update() was already called
+    if (!called_update)
+        {
     y2milestone( "Update old:%1 new:%2", oldv, newv );
 
     // Enterprise products do not have minor release number
@@ -5581,6 +5589,13 @@ global define void Update( map oldv, map newv )
 	string cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto";
 	map bo = (map)SCR::Execute (.target.bash_output, cmd );
 	y2milestone( "Update bo %1", bo );
+	}
+	// set flag -> it indicates that Update was already called
+	called_update = true;
+    }
+    else
+	{
+	y2milestone("Skip calling Update() -> It was already called");
 	}
     }
 
