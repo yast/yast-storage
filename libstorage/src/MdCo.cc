@@ -72,7 +72,8 @@ MdCo::syncRaidtab()
     MdPair p=mdPair(Md::notDeleted);
     for( MdIter i=p.begin(); i!=p.end(); ++i )
     {
-	updateEntry( &(*i) );
+	//updateEntry( &(*i) );
+      i->updateEntry(getStorage()->getRaidtab());
     }
 }
 

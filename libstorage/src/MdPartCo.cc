@@ -495,10 +495,11 @@ string MdPartCo::numToName( unsigned mdNum ) const
     return( ret );
     }
 
-int MdPartCo::nr()
+int MdPartCo::nr(const string& name)
 {
+  string tmp = name;
   int n;
-  nm.erase(0,2) >> n;
+  tmp.erase(0,2) >> n;
   return n;
 }
 
@@ -1150,6 +1151,12 @@ void MdPartCo::logDifference( const MdPartCo& d ) const
         }
     if( parent_container!=d.parent_container )
         log += " ParentContainer:" + parent_container + "-->" + d.parent_container;
+    if( parent_md_name!=d.parent_md_name )
+        log += " ParentContMdName:" + parent_md_name + "-->" + d.parent_md_name;
+    if( parent_metadata!=d.parent_metadata )
+        log += " ParentContMetadata:" + parent_metadata + "-->" + d.parent_metadata;
+    if( parent_uuid!=d.parent_uuid )
+        log += " ParentContUUID:" + parent_uuid + "-->" + d.parent_uuid;
 
     y2mil(log);
     ConstMdPartPair pp=mdpartPair();
@@ -1191,6 +1198,10 @@ bool MdPartCo::equalContent( const Container& rhs ) const
     if( ret )
       {
       const MdPartCo* mdp = dynamic_cast<const MdPartCo*>(&rhs);
+      if( mdp == 0 )
+        {
+        return false;
+        }
       ret = ret &&
           active==mdp->active &&
           del_ptable==mdp->del_ptable;
@@ -1208,9 +1219,13 @@ bool MdPartCo::equalContent( const Container& rhs ) const
               md_name == mdp->md_name);
       if( ret )
         {
-        if( sb_ver == "imsm" || sb_ver == "ddf" )
+        if( has_container )
           {
-          ret = ret && (parent_container == mdp->parent_container);
+          ret = ret &&
+              (parent_container == mdp->parent_container &&
+               parent_md_name == mdp->parent_md_name &&
+               parent_metadata == mdp->parent_metadata &&
+               parent_uuid == mdp->parent_uuid);
           }
         }
       if( ret )
@@ -1240,7 +1255,14 @@ MdPartCo::MdPartCo( const MdPartCo& rhs ) : Container(rhs)
     md_type = rhs.md_type;
     md_parity = rhs.md_parity;
     md_state = rhs.md_state;
-    parent_container = rhs.parent_container;
+    has_container = rhs.has_container;
+    if( has_container )
+      {
+      parent_container = rhs.parent_container;
+      parent_md_name = rhs.parent_md_name;
+      parent_metadata = rhs.parent_metadata;
+      parent_uuid = rhs.parent_uuid;
+      }
     md_uuid = rhs.md_uuid;
     sb_ver = rhs.sb_ver;
     destrSb = rhs.destrSb;
@@ -1429,8 +1451,14 @@ void MdPartCo::getMdProps()
     setMdParity();
     setMdDevs();
     setSpares();
-    readMdMap();
     setMetaData();
+    MdPartCo::getUuidName(nm,md_uuid,md_name);
+    if( has_container )
+      {
+      MdPartCo::getUuidName(parent_container,parent_uuid,parent_md_name);
+      y2mil("md_name="<<md_name<<", parent_container="<<parent_container
+          <<", parent_uuid="<<parent_uuid<<", parent_md_name"<<parent_md_name);
+      }
     y2mil("Done");
 }
 
@@ -1506,13 +1534,13 @@ MdPartCo::getParent()
   string::size_type pos2;
 
   parent_container.clear();
-
+  has_container = false;
   if( md_metadata.empty() )
     {
       (void)readProp(METADATA, md_metadata);
       con = md_metadata;
-    }
 
+    }
   if( con.find("external:")==0 )
     {
       if( (pos1=con.find_first_of("/")) != string::npos )
@@ -1524,6 +1552,7 @@ MdPartCo::getParent()
             //Typically: external:/md127/0
             parent_container.clear();
             parent_container = con.substr(pos1+1,pos2-pos1-1);
+            has_container = true;
             }
           }
         }
@@ -1545,10 +1574,11 @@ void MdPartCo::setMetaData()
     {
     getParent();
     }
-  if( parent_container.empty() )
+  if( has_container == false )
     {
     // No parent container.
     sb_ver = md_metadata;
+    parent_metadata.clear();
     return;
     }
 
@@ -1568,6 +1598,7 @@ void MdPartCo::setMetaData()
     if( pos != string::npos )
       {
       sb_ver = val.erase(0,pos+1);
+      parent_metadata = sb_ver;
       }
     }
   return;
@@ -1609,7 +1640,7 @@ void MdPartCo::setSpares()
   list<string>::const_iterator it2;
 
   getParent();
-  if( parent_container.empty() )
+  if( has_container == false )
     {
     spare.clear();
     return;
@@ -1660,7 +1691,7 @@ bool MdPartCo::findMdMap(std::ifstream& file)
         {
           i++;
         }
-    }
+  }
   y2war(" Map File not found");
   return false;
 }
@@ -1668,34 +1699,69 @@ bool MdPartCo::findMdMap(std::ifstream& file)
 
 /* Will try to set: UUID, Name.*/
 /* Format: mdX metadata uuid /dev/md/md_name */
-bool MdPartCo::readMdMap()
+bool MdPartCo::getUuidName(const string dev,string& uuid, string& mdName)
 {
   std::ifstream file;
   string line;
   classic(file);
 
+  uuid.clear();
+  mdName.clear();
   /* Got file, now parse output. */
-  if( findMdMap(file) )
+  if( MdPartCo::findMdMap(file) )
   {
     while( !file.eof() )
       {
       string val;
       getline(file,line);
       val = extractNthWord( MAP_DEV, line );
-      if( val == nm )
+      if( val == dev )
         {
-        size_t found;
-        md_uuid = extractNthWord( MAP_UUID, line );
+        size_t pos;
+        uuid = extractNthWord( MAP_UUID, line );
         val = extractNthWord( MAP_NAME, line );
-        found = val.find_last_of("/");
-        md_name = val.substr(found+1);
+        // if md_name then /dev/md/name other /dev/mdxxx
+        if( val.find("/md/")!=string::npos)
+          {
+          pos = val.find_last_of("/");
+          mdName = val.substr(pos+1);
+          }
         file.close();
         return true;
         }
       }
       file.close();
   }
-  return true;
+  else
+    {
+    string tmp;
+    string::size_type pos;
+    //No file, employ mdadm -D name --export
+    SystemCmd c(MDADMBIN " --detail " + quote(dev) + " --export");
+    if( c.retcode() != 0 )
+      {
+      return false;
+      }
+    if(c.select( "MD_UUID" ) > 0)
+      {
+      tmp = *c.getLine(0,true);
+      pos = tmp.find("=");
+      tmp.erase(0,pos+1);
+      uuid = tmp;
+      }
+    if( c.select( "MD_DEVNAME" ) > 0)
+      {
+      tmp = *c.getLine(0,true);
+      pos = tmp.find("=");
+      tmp.erase(0,pos+1);
+      mdName = tmp;
+      }
+    if( !mdName.empty() && !uuid.empty() )
+      {
+      return true;
+      }
+    }
+  return false;
 }
 
 
@@ -1909,18 +1975,48 @@ MdPartCo::syncRaidtab()
     updateEntry();
 }
 
-
+int MdPartCo::getContMember()
+{
+  string::size_type pos = md_metadata.find_last_of("/");
+  if( pos != string::npos )
+    {
+    unsigned mem;
+    string tmp = md_metadata;
+    tmp.erase(0,pos+1);
+    tmp >> mem;
+    return mem;
+    }
+  return -1;
+}
 void MdPartCo::updateEntry()
     {
     EtcRaidtab* tab = getStorage()->getRaidtab();
     if( tab )
+      {
+      EtcRaidtab::mdconf_info info;
+      if( !md_name.empty() )
         {
-        list<string> lines;
-        list<string> devices;
-        raidtabLines(lines);
-        getDevs( devices );
-        tab->updateEntry( nr(), lines, mdadmLine(), devices );
+        //Raid name is preferred.
+        info.fs_name = "/dev/md/" + md_name;
         }
+      else
+        {
+        info.fs_name = dev;
+        }
+      info.md_uuid = md_uuid;
+      if( has_container )
+        {
+        info.container_present = true;
+        info.container_info.md_uuid = parent_uuid;
+        info.container_info.metadata = parent_metadata;
+        info.member = getContMember();
+        }
+      else
+        {
+        info.container_present = false;
+        }
+      tab->updateEntry( info );
+      }
     }
 
 string MdPartCo::mdadmLine() const
