@@ -28,7 +28,7 @@
 
 namespace storage
 {
-
+class EtcRaidtab;
 class MdCo;
 
 class Md : public Volume
@@ -78,6 +78,8 @@ class Md : public Volume
 	void logDifference( const Md& d ) const;
 	void getState(MdStateInfo& info) const;
 
+	int updateEntry(EtcRaidtab* tab);
+
     protected:
 	void init();
 	void computeSize();
@@ -87,6 +89,9 @@ class Md : public Volume
 	static storage::MdType toMdType( const string& val );
 	static storage::MdParity toMdParity( const string& val );
 
+	void getParent();
+	void setMetadata();
+
 	storage::MdType md_type;
 	storage::MdParity md_parity;
 	unsigned long chunk;
@@ -95,6 +100,16 @@ class Md : public Volume
 	bool destrSb;
 	std::list<string> devs;
 	std::list<string> spare;
+	string md_name; // line in /dev/md/*
+
+	//in case of IMSM and DDF raids there is 'container'.
+	bool   has_container;
+	string md_metadata;
+	string parent_container;
+	string parent_uuid;
+	string parent_md_name;
+	string parent_metadata;
+	int    md_member;
 	static string md_names[storage::MULTIPATH+1];
 	static string par_names[storage::RIGHT_SYMMETRIC+1];
 	static unsigned md_major;

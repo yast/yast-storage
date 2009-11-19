@@ -131,7 +131,7 @@ class MdPartCo : public Container
 
     void syncRaidtab();
 
-    int nr();
+    int nr(const string& name);
     /* RAID Related functionality */
     unsigned long chunkSize() const { return chunk_size; }
 
@@ -189,6 +189,9 @@ class MdPartCo : public Container
                                        ProcPart& ppart,
                                        bool isInst);
 
+    /* Returns uuid and possibly mdName for given MD Device.
+     * Input parameter: dev name - like md1 */
+    static bool getUuidName(const string dev,string& uuid, string& mdName);
 
     protected:
     // iterators over partitions
@@ -317,9 +320,10 @@ class MdPartCo : public Container
 
     /* fields in 'map' file */
     enum mdMap { MAP_DEV=0, MAP_META, MAP_UUID, MAP_NAME, };
-    bool findMdMap(std::ifstream& file);
-    bool readMdMap();
+    static bool findMdMap(std::ifstream& file);
 
+
+    int getContMember();
 
     //Input: 'mdXXX' device.
     static storage::CType envSelection(const string& name);
@@ -338,7 +342,11 @@ class MdPartCo : public Container
     storage::MdArrayState md_state;
 
     /* Md Container - */
+    bool   has_container;
     string parent_container;
+    string parent_uuid;
+    string parent_metadata;
+    string parent_md_name;
     string md_metadata;
     string md_uuid;
     string sb_ver;
