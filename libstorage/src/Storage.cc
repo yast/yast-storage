@@ -444,12 +444,18 @@ void Storage::detectMdParts(ProcPart& ppart)
     list<string> l = MdPartCo::getMdRaids();
     list<string> mdpartlist = MdPartCo::filterMdPartCo(l,ppart, instsys());
     //
+    map<string, list<string>> by_id;
+    getUdevMap("/dev/disk/by-id", by_id);
     for( list<string>::const_iterator i = mdpartlist.begin();
         i != mdpartlist.end();
         i++)
       {
       MdPartCo * v = new MdPartCo( this, *i, &ppart );
-      // check for valid?
+      list<string> nm = by_id[v->name()];
+      if( !nm.empty() )
+        {
+        v->setUdevData(nm);
+        }
       addToList( v );
       }
     }
