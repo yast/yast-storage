@@ -3715,6 +3715,7 @@ global list<map> GetCommitInfos()
     LibStorage::StorageInterface::getCommitInfos(sint, infos);
     list<map> ret = maplist(any info, infos, {
 	return $[ `destructive : LibStorage::CommitInfo::swig_destructive_get(info),
+		  `native : LibStorage::CommitInfo::swig_native_get(info),
 		  `text : LibStorage::CommitInfo::swig_text_get(info) ];
     });
     return ret;
@@ -3725,19 +3726,28 @@ string save_chtxt = "";
 
 global string ChangeText()
 {
-    list<string> texts = maplist(map info, GetCommitInfos(), {
+    list<map> commit_infos = GetCommitInfos();
+
+    list<string> natives = maplist(map info, commit_infos, {
+	string native = String::EscapeTags(info[`native]:"");
+	if (info[`destructive]:false)
+	    native = "<font color=red>" + native + "</font>";
+	return native;
+    });
+
+    list<string> texts = maplist(map info, commit_infos, {
 	string text = String::EscapeTags(info[`text]:"");
 	if (info[`destructive]:false)
 	    text = "<font color=red>" + text + "</font>";
 	return text;
     });
 
-    string ret = (size(texts) == 0) ? "" : HTML::List(texts);
+    string ret = isempty(texts) ? "" : HTML::List(texts);
 
     if (ret != save_chtxt)
     {
-	foreach(string text, texts, {
-	    y2milestone("ChangeText %1", text);
+	foreach(string native, natives, {
+	    y2milestone("ChangeText %1", native);
 	});
 	save_chtxt = ret;
     }
