@@ -1328,7 +1328,7 @@ int Volume::resizeFs()
 
 
     int
-    Volume::setEncryption(bool val, EncryptType typ, bool force)
+    Volume::setEncryption(bool val, EncryptType typ)
     {
     int ret = 0;
     y2milestone( "val:%d typ:%d", val, typ );
@@ -1351,25 +1351,19 @@ int Volume::resizeFs()
 		ret = VOLUME_CRYPT_NO_PWD;
 	    if( ret == 0 && cType()==NFSC )
 		ret = VOLUME_CRYPT_NFS_IMPOSSIBLE;
-	    if (ret == 0 && (create || format || loop_active))
+	    if (ret == 0 && (create || format || loop_active || mp.empty()))
 		{
 		encryption = typ;
 		is_loop = cont->type()==LOOP;
 		dmcrypt_dev = getDmcryptName();
 		}
-	    if (ret == 0 && !create && !format && !loop_active)
+	    if (ret == 0 && !create && !format && !loop_active && !mp.empty())
 	        {
-		if( detectEncryption()==ENC_UNKNOWN && !force)
+		if( detectEncryption()==ENC_UNKNOWN )
 		    ret = VOLUME_CRYPT_NOT_DETECTED;
-		else if (force)
-		{
-		    encryption = typ;
-		    is_loop = cont->type()==LOOP;
-		    dmcrypt_dev = getDmcryptName();
 		}
 		}
 	    }
-	}
     if( ret==0 )
 	{
 	updateFstabOptions();
@@ -1887,8 +1881,8 @@ void Volume::replaceAltName( const string& prefix, const string& newn )
 int Volume::doCryptsetup()
     {
     int ret = 0;
-    y2milestone( "device:%s mp:%s dmcrypt:%d active:%d",
-                 dev.c_str(), mp.c_str(), dmcrypt(), dmcrypt_active );
+    y2mil("device:" << dev << " mp:" << mp << " dmcrypt:" << dmcrypt() << 
+          " active:" << dmcrypt_active << " format:" << format );
     if( !silent() && dmcrypt() )
 	{
 	cont->getStorage()->showInfoCb( crsetupText(true) );
@@ -1916,7 +1910,8 @@ int Volume::doCryptsetup()
 	    pwdfile << crypt_pwd;
 	    pwdfile.close();
 	    SystemCmd cmd;
-	    if( (encryption != orig_encryption) || format || (isTmpCryptMp(mp)&&crypt_pwd.empty()) )
+	    if( format || (isTmpCryptMp(mp)&&crypt_pwd.empty()) ||
+	        (encryption!=ENC_NONE&&mp.empty()) )
 		{
 		string cmdline = getCryptsetupCmd( encryption, dmcrypt_dev, mp, fname, true,
 						   crypt_pwd.empty() );
@@ -2305,9 +2300,10 @@ void Volume::getCommitActions( list<commitAction*>& l ) const
 	l.push_back( new commitAction( FORMAT, cont->type(),
 				       formatText(false), this, true ));
 	}
-    else if (encryption != orig_encryption)
+    else if ( encryption != ENC_NONE )
 	{
-	    l.push_back(new commitAction(FORMAT, cont->type(), crsetupText(false), this, true));
+	l.push_back(new commitAction(mp.empty()?INCREASE:FORMAT, cont->type(),
+				     crsetupText(false), this, mp.empty()));
 	}
     else if( mp != orig_mp || 
              (cont->getStorage()->instsys()&&mp=="swap") )
