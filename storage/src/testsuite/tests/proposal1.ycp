@@ -1,0 +1,60 @@
+{
+    include "testsuite.ycp";
+
+    map READ = $[
+	"probe" : $[
+	    "architecture" : "i385",
+	    "cdrom" : []
+	    ],
+	"proc" : $[
+	    "swaps" : []
+	],
+        "sysconfig" : $[
+	    "storage" : $[
+		"DEFAULT_FS" : "ext4"
+	    ],
+	    "bootloader" : $[
+		"LOADER_TYPE" : "grub"
+	    ],
+            "language" : $[
+                "RC_LANG"               : "en_US.UTF-8",
+                "RC_LC_MESSAGES"        : "",
+            ],
+        ],
+        "target" : $[
+            "size"              : 0,
+            "bash_output"       : $[],
+            "yast2"             : $[],
+            "dir"               : [],
+        ],
+    ];
+
+    TESTSUITE_INIT([READ, $[], READ], nil);
+
+
+    import "Storage";
+    import "StorageProposal";
+
+    map<string, map> target_map = Storage::GetTargetMap();
+
+    map<string, any> prop = StorageProposal::get_inst_prop(target_map);
+
+    if (prop["ok"]:false)
+    {
+	Storage::SetTargetMap(prop["target"]:$[]);
+
+	list<map> infos = Storage::GetCommitInfos();
+
+	DUMP("Proposal:");
+	foreach(map info, infos, {
+	    string text = info["text"]:"";
+	    if (info["destructive"]:false)
+		text = text + " [destructive]";
+	    DUMP(text);
+	});
+    }
+    else
+    {
+	DUMP("No proposal.");
+    }
+}
