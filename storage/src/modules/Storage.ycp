@@ -3463,56 +3463,32 @@ global boolean Mount( string dev, string mp )
     return( MountOpt( dev, mp, "" ) );
     }
 
-global define map DetectHomeFs( map p )
+
+boolean DetectHomeFs( map p )
     {
     y2milestone( "DetectHomeFs p:%1", p );
-    map ret = $[];
-    boolean home = false;
-    list poss_fs = [ `ext2, `ext3, `ext4, `btrfs, `reiser, `xfs, `jfs ];
+    boolean ret = false;
+    list<symbol> poss_fs = [ `ext2, `ext3, `ext4, `btrfs, `reiser, `xfs, `jfs ];
+    string device = p["device"]:"";
     if( !p["created"]:false && contains( poss_fs, p["detected_fs"]:`unknown ) &&
-        size(p["device"]:"")>0 )
-	{
-	boolean mount_ok = false;
-	string tmpdir = (string) SCR::Read(.target.tmpdir) + "/tmp-home-mp";
-	SCR::Execute(.target.mkdir, tmpdir );
-	string fsto = FileSystems::DefaultFstabOptions( p );
-	mount_ok = Storage::MountOpt( p["device"]:"", tmpdir, fsto );
-	if( !mount_ok )
-	    mount_ok = Storage::Mount( p["device"]:"", tmpdir );
-	else
-	    ret["fstopt"] = fsto;
-	if( mount_ok )
-	    {
-	    list skip = [ ".", "..", "root" ];
-	    list tfile = [ ".profile", ".ssh", ".bashrc", ".kde2", ".gnome2", ".kde", ".gnome" ];
-	    list<string> files = (list<string>)SCR::Read (.target.dir, tmpdir);
-	    y2milestone( "DetectHomeFs files:%1", files );
-	    integer count=0;
+	!isempty(device) )
+    {
+	integer used = 0;
+	integer resize_free = 0;
+	integer df_free = 0;
+	boolean win_disk = false;
+	boolean efi = false;
+	boolean home = false;
 
-	    while( !home && count<size(files) )
-		{
-		string td = tmpdir + "/" + files[count]:"";
-		if( !contains( skip, files[count]:"" ) &&
-		    FileUtils::IsDirectory( td ) )
-		    {
-		    integer i=0;
-		    while( !home && i<size(tfile) )
-			{
-			string tname = td + "/" + tfile[i]:"";
-			home = FileUtils::GetSize( tname )>0;
-			i = i+1;
-			}
-		    }
-		count = count+1;
-		}
-	    Storage::Umount( p["device"]:"" );
-	    }
-	SCR::Execute( .target.bash, "rmdir " + tmpdir );
-	}
-    ret["ishome"] = home;
-    y2milestone( "DetectHomeFs ret:%1", ret );
-    return( ret );
+	if (LibStorage::StorageInterface::getFreeInfo(sint, device, resize_free,
+						      df_free, used, win_disk,
+						      efi, home, true))
+	    ret = home;
     }
+    y2milestone("DetectHomeFs device:%1 ret:%2", device, ret);
+    return ret;
+    }
+
 
 global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
                                  string fstab_opts, string label )
@@ -3543,14 +3519,13 @@ global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
 	ret["detected_fs"]:`unknown != `unknown && mnt=="/home" )
 	{
 	boolean lvm = p["type"]:`primary == `lvm;
-	map h = DetectHomeFs( ret );
 	if( ( lvm && ret["name"]:""=="home") ||
-	    (!lvm && h["ishome"]:false ) )
+	    (!lvm && DetectHomeFs(ret)))
 	    {
 	    ret["format"] = false;
 	    ret["used_fs"] = ret["detected_fs"]:`unknown;
-	    if( size(fstab_opts)==0 )
-		fstab_opts = h["fstopt"]:"";
+	    if (isempty(fstab_opts))
+		fstab_opts = FileSystems::DefaultFstabOptions(ret);
 	    }
 	}
     if( ret["format"]:false && !ret["create"]:false &&
