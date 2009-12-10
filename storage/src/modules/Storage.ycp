@@ -80,9 +80,6 @@ global integer resize_cyl_size = nil;
 // end of resizing functions
 
 
-global void UpdateClassified(string key, string pwd);
-  
-
 map<string,any> conv_ctype =
     $[ "def_sym" : `CT_UNKNOWN,
        "def_int" : LibStorage::CUNKNOWN(),
@@ -175,7 +172,6 @@ map<string,integer> conv_parstring =
 
 map DiskMapVersion = $[];
 map DiskMap = $[];
-map<string, string> ClassifiedSettings = $[];
 map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_DMRAID : 2, `CT_DMMULTIPATH : 3,
                     `CT_LOOP : 4, `CT_DM : 5, `CT_LVM : 6, `CT_NFS : 7 ];
 list<string> hw_packages = [];
@@ -2315,21 +2311,6 @@ global boolean ChangeVolumeProperties( map part )
 	else
 	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
 	}
-    if( ret==0 &&
-        part["enc_type"]:`none != `none && haskey( ClassifiedSettings, dev ) )
-	{
-	changed = true;
-        if( size(ClassifiedSettings[dev]:"")>0 )
-	    {
-	    string pwd = ClassifiedSettings[dev]:"";
-	    ret = LibStorage::StorageInterface::setCryptPassword( sint, dev,
-								  pwd );
-	    if( ret<0 )
-		y2error( "ChangeVolumeProperties sint ret:%1", ret );
-	    else
-		y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
-	    }
-	}
     if( ret==0 && part["enc_type"]:`none != curr["enc_type"]:`none )
 	{
 	changed = true;
@@ -2674,40 +2655,59 @@ global integer ComputeMdSize(symbol md_type, list<string> devices, integer& size
     return ret;
 }
 
+global string GetCryptPwd( string device )
+    {
+    string pwd="";
+    y2milestone( "GetCryptPwd device:%1", device );
+    integer ret = 0;
+    ret = LibStorage::StorageInterface::getCryptPassword( sint, device,
+							  pwd );
+    if( ret<0 )
+	y2error( "GetCryptPwd sint ret:%1", ret );
+    else
+	y2milestone( "GetCryptPwd empty:%1", size(pwd)==0 );
+    return( pwd );
+    }
+
+global boolean SetCryptPwd( string device, string pwd )
+    {
+    y2milestone( "SetCryptPwd device:%1", device );
+    integer ret = 0;
+    ret = LibStorage::StorageInterface::setCryptPassword( sint, device,
+							  pwd );
+    if( ret<0 )
+	y2error( "SetCryptPwd sint ret:%1", ret );
+    else
+	y2milestone( "SetCryptPwd sint ret:%1", ret );
+    return( ret==0 );
+    }
+
+global boolean NeedCryptPwd( string device )
+    {
+    boolean ret = false;
+    ret = LibStorage::StorageInterface::needCryptPassword( sint, device );
+    y2milestone( "NeedCryptPwd device:%1 ret:%2", device, ret );
+    return( ret );
+    }
+
+
 global string CreateLoop( string file, boolean create, integer sizeK,
                           string mp )
     {
     y2milestone( "CreateLoop file:%1 create:%2 sizeK:%3 mp:%4", file, create,
                  sizeK, mp );
     string dev = "";
-    integer ret = -9999;
-    if( haskey( ClassifiedSettings, file ))
-	{
-	string pwd = ClassifiedSettings[file]:"";
-	ret = LibStorage::StorageInterface::createFileLoop( sint, file, !create,
-							    sizeK, mp, pwd,
-							    dev );
-	UpdateClassified(dev, pwd);
-	}
+    integer ret = 0;
+    string pwd = GetCryptPwd( file );
+    ret = LibStorage::StorageInterface::createFileLoop( sint, file, !create,
+							sizeK, mp, pwd, dev );
     if( ret<0 )
 	y2error( "CreateLoop sint ret:%1", ret );
+    LibStorage::StorageInterface::forgetCryptPassword( sint, file );
     UpdateTargetMapDisk( "/dev/loop" );
     y2milestone( "CreateLoop dev:%1", dev );
     return( dev );
     }
-
-
-global void UpdateClassified( string key, string pwd )
-    {
-    ClassifiedSettings[key] = pwd;
-    //y2milestone( "ClassifiedSettings %1", ClassifiedSettings );
-    }
-
-
-global boolean HasClassified(string key)
-{
-    return haskey(ClassifiedSettings, key);
-}
 
 
 define void HandleModulesOnBoot( map<string,map> targetMap );
@@ -2736,42 +2736,6 @@ global boolean DeleteLoop( string disk, string file, boolean remove_file )
     if( ret<0 )
 	y2error( "DeleteLoop sint ret:%1", ret );
     UpdateTargetMapDisk( disk );
-    return( ret==0 );
-    }
-
-global string GetCryptPwd( string device )
-    {
-    string pwd="";
-    y2milestone( "GetCryptPwd device:%1", device );
-    if( size(ClassifiedSettings[device]:"")>0 )
-	pwd = ClassifiedSettings[device]:"";
-    else
-	{
-	integer ret = 0;
-	ret = LibStorage::StorageInterface::getCryptPassword( sint, device,
-							      pwd );
-	if( ret<0 )
-	    y2error( "GetCryptPwd sint ret:%1", ret );
-	}
-    y2milestone( "GetCryptPwd empty:%1", size(pwd)==0 );
-    return( pwd );
-    }
-
-global boolean SetCryptPwd( string device, string pwd )
-    {
-    y2milestone( "SetCryptPwd device:%1", device );
-    integer ret = LibStorage::StorageInterface::setCryptPassword( sint, device,
-                                                                  pwd );
-    y2milestone( "SetCryptPwd sint ret:%1", ret );
-    map p = GetPartition( GetTargetMap(), device );
-    if( ret==LibStorage::STORAGE_VOLUME_NOT_FOUND() || p["create"]:false )
-	{
-	ClassifiedSettings[device] = pwd;
-	y2milestone( "setting classified %1 pwd size %2", device, size(pwd) );
-	ret = 0;
-	}
-    else if( ret<0 )
-	y2error( "SetCryptPwd sint ret:%1", ret );
     return( ret==0 );
     }
 
@@ -3404,7 +3368,6 @@ global integer CommitChanges()
     integer ret = LibStorage::StorageInterface::commit( sint );
     if( ret<0 )
 	y2error( "CommitChanges sint ret:%1", ret );
-    ClassifiedSettings = $[];
     return( ret );
     }
 
@@ -5351,6 +5314,20 @@ Try again."));
 	}
 
 	return true;
+    }
+
+global boolean CheckCryptOk( string dev, string fs_passwd )
+    {
+    integer i = LibStorage::StorageInterface::verifyCryptPassword( sint, dev, fs_passwd );
+    if( i!=0 )
+	Popup::Error( sformat(_("Could not set encryption.
+System error code is %1.
+
+The crypt password provided could be incorrect.
+"), i ));
+    y2milestone( "CheckCryptOk dev:%1 pwlen:%2 ret:%3", 
+                 dev, size(fs_passwd), i==0 );
+    return( i==0 );
     }
 
 }
