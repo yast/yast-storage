@@ -90,15 +90,13 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 	boolean AskPassword()
 	{
-	    if (!NeedPassword())
-		return false;
-
-	    // TODO: this is ugly
-	    string key = (data["type"]:`unknown != `loop) ? (data["device"]:"error") : (data["fpath"]:"error");
-	    if (Storage::HasClassified(key))
-		return false;
-
-	    return true;
+	    boolean ret = NeedPassword();
+	    if( ret && !do_format && size(data["mount"]:"")>0 )
+		{
+		string key = (data["type"]:`unknown != `loop) ? (data["device"]:"error") : (data["fpath"]:"error");
+		ret = Storage::NeedCryptPwd(key);
+		}
+	    return( ret );
 	}
 
 	/* MiniWorkflowStepPartitionSize data:
@@ -514,6 +512,8 @@ Do not forget this password!
 	UI::ChangeWidget(`id(`pw1), `Value, "");
 	UI::ChangeWidget(`id(`pw2), `Value, "");
 
+	string dev = (data["type"]:`unknown != `loop) ? data["device"]:"" 
+						      : data["fpath"]:"";
 	repeat
 	{
 	    widget = MiniWorkflow::UserInput();
@@ -522,8 +522,11 @@ Do not forget this password!
 	    {
 		password = (string) UI::QueryWidget(`id(`pw1), `Value);
 		string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
+		boolean need_verify = !data["format"]:false &&
+		                      size(data["mount"]:"")>0;
 
-		if (!Storage::CheckEncryptionPasswords(password, tmp, min_pw_len, empty_pw_allowed))
+		if (!Storage::CheckEncryptionPasswords(password, tmp, min_pw_len, empty_pw_allowed) ||
+		    (need_verify && !Storage::CheckCryptOk(dev, password)) )
 		{
 		    UI::SetFocus(`id(`pw1) );
 		    widget = `again;
@@ -534,10 +537,7 @@ Do not forget this password!
 
 	if (widget == `next)
 	{
-	    if (data["type"]:`unknown != `loop)
-		Storage::UpdateClassified(data["device"]:"", password);
-	    else
-		Storage::UpdateClassified(data["fpath"]:"", password);
+	    Storage::SetCryptPwd(dev, password);
 	    widget = `finish;
 	}
 
