@@ -117,7 +117,7 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	if (isempty(cfg_xml))
 	{
 	    boolean btmp = ProductFeatures::GetBooleanFeature("partitioning", "try_separate_home");
-	    cfg_xml["home"] = btmp ? true : false;
+	    cfg_xml["home"] = btmp;
 
 	    integer itmp = ProductFeatures::GetIntegerFeature("partitioning", "root_space_percent");
 	    cfg_xml["root_percent"] = itmp;
@@ -138,6 +138,9 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	    cfg_xml["root_max"] = Storage::ClassicStringToByte(stmp) / (1024*1024);
 	    if (cfg_xml["root_max"]:0 <= 0)
 		cfg_xml["root_max"] = 10*1024;
+
+	    btmp = ProductFeatures::GetBooleanFeature("partitioning", "vm_keep_unpartitioned_region");
+	    cfg_xml["vm_keep_unpartitioned_region"] = btmp;
 
 	    stmp = ProductFeatures::GetStringFeature("partitioning", "vm_desired_size");
 	    cfg_xml["vm_want"] = Storage::ClassicStringToByte(stmp) / (1024*1024);
@@ -576,7 +579,7 @@ map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		        // space left (fate #303594)
 		        y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
 			integer add_cylinders = g["cylinders"]:0;  // whole partition as default
-			if (vg_size != nil && vg_size > 0)
+			if (vg_size != nil && vg_size > 0 && GetControlCfg()["vm_keep_unpartitioned_region"]:false)
 			{
 			    integer cyl_size = g["size"]:0 / g["cylinders"]:0;
 			    add_cylinders = (vg_size * 1024 * 1024) / cyl_size;
@@ -715,7 +718,7 @@ map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		    integer vg_size = GetControlCfg()["vm_want"]:(15*1024);
 		    y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
 		    integer add_cylinders = g["cylinders"]:0; // whole partition as default
-		    if (vg_size != nil && vg_size > 0)
+		    if (vg_size != nil && vg_size > 0 && GetControlCfg()["vm_keep_unpartitioned_region"]:false)
 		    {
 		        integer cyl_size = g["size"]:0 / g["cylinders"]:0;
 		        add_cylinders = (vg_size * 1024 * 1024) / cyl_size;
