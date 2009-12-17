@@ -77,11 +77,7 @@ parse() {
   rm -f "$file"
 }
 
-dump_only() {
-    grep -E "^Dump" | sed "s/^Dump\t//"
-}
-
-( $Y2BASE -l - -c "$logconf" $OPTIONS "$1" UI 2>&1 ) | parse | dump_only >"$2" 2>"$3"
+( $Y2BASE -l - -c "$logconf" $OPTIONS "$1" UI 2>&1 ) | parse >"$2" 2>"$3"
 
 retcode="$PIPESTATUS"
 if [ "$retcode" -gt 0 ]; then
