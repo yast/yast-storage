@@ -77,7 +77,7 @@ parse() {
   rm -f "$file"
 }
 
-( $Y2BASE -l - -c "$logconf" $OPTIONS "$1" UI 2>&1 ) | parse >"$2" 2>"$3"
+( Y2DIR=$Y2DIR:$Y2BASE_Y2DIR LD_LIBRARY_PATH=$Y2BASE_LD_LIBRARY_PATH $Y2BASE -l - -c "$logconf" $Y2BASEFLAGS $OPTIONS "$1" UI 2>&1 ) | parse >"$2" 2>"$3"
 
 retcode="$PIPESTATUS"
 if [ "$retcode" -gt 0 ]; then
