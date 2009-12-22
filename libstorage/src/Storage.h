@@ -382,6 +382,9 @@ class Storage : public storage::StorageInterface
 	int addFstabOptions( const string&, const string& options );
 	int removeFstabOptions( const string&, const string& options );
 	int setCryptPassword( const string& device, const string& pwd );
+	int verifyCryptPassword( const string& device, const string& pwd );
+	int verifyCryptFilePassword( const string& file, const string& pwd );
+	bool needCryptPassword( const string& device );
 	int forgetCryptPassword( const string& device );
 	int getCryptPassword( const string& device, string& pwd );
 	int setCrypt( const string& device, bool val );
@@ -1875,6 +1878,7 @@ class Storage : public storage::StorageInterface
 	                 bool also_del=false );
 	bool findContainer( const string& device, ContIterator& c );
 
+	void checkPwdBuf( const string& device );
 	bool haveMd( MdCo*& md );
 	bool haveDm(DmCo*& dm);
 	bool haveNfs( NfsCo*& co );
@@ -1935,6 +1939,7 @@ class Storage : public storage::StorageInterface
 	string extendedError;
 	std::map<string,CCont> backups;
 	std::map<string,FreeInfo> freeInfo;
+	std::map<string,string> pwdBuf;
 	std::list<std::pair<string,string> > infoPopupTxts;
     };
 

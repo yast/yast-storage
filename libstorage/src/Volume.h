@@ -92,19 +92,20 @@ class Volume
 	bool dmcrypt() const { return encryption != ENC_NONE && encryption != ENC_UNKNOWN; }
 	bool loopActive() const { return( is_loop&&loop_active ); }
 	bool dmcryptActive() const { return( dmcrypt()&&dmcrypt_active ); }
-	bool needCrsetup() const; 
+	bool needCrsetup( bool urgent=true ) const; 
 	const string& getUuid() const { return uuid; }
 	const string& getLabel() const { return label; }
 	int setLabel( const string& val );
 	int eraseLabel() { label.erase(); orig_label.erase(); return 0; }
 	bool needLabel() const { return( label!=orig_label ); }
 	storage::EncryptType getEncryption() const { return encryption; }
-	void setEncryption( storage::EncryptType val=storage::ENC_LUKS )
+	void initEncryption( storage::EncryptType val=storage::ENC_LUKS )
 	    { encryption=orig_encryption=val; }
 	virtual int setEncryption(bool val, storage::EncryptType typ = storage::ENC_LUKS );
 	const string& getCryptPwd() const { return crypt_pwd; }
 	int setCryptPwd( const string& val );
-	void clearCryptPwd() { crypt_pwd.erase(); }
+	void clearCryptPwd() { crypt_pwd.erase(); orig_crypt_pwd.erase(); }
+	bool needCryptPwd() const; 
 	const string& getMount() const { return mp; }
 	bool hasOrigMount() const { return !orig_mp.empty(); }
 	bool needRemount() const;
@@ -244,12 +245,14 @@ class Volume
 	bool getLoopFile( string& fname ) const;
 	void setExtError( const SystemCmd& cmd, bool serr=true );
 	string getDmcryptName();
-	bool needLosetup() const; 
+	bool needLosetup( bool urgent ) const; 
 	bool needCryptsetup() const; 
 	int doLosetup();
 	int doCryptsetup();
 	int loUnsetup( bool force=false );
 	int cryptUnsetup( bool force=false );
+	bool pwdLengthOk( storage::EncryptType typ, const string& val, 
+	                  bool format ) const;
 
 	std::ostream& logVolume( std::ostream& file ) const;
 	string getLosetupCmd( storage::EncryptType, const string& pwdfile ) const;
@@ -292,6 +295,7 @@ class Volume
 	string dmcrypt_dev;
 	string fstab_loop_dev;
 	string crypt_pwd;
+	string orig_crypt_pwd;
 	string nm;
 	std::list<string> alt_names;
 	unsigned num;
