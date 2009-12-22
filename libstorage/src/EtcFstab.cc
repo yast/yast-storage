@@ -24,7 +24,6 @@
   Textdomain    "storage"
 */
 
-
 #include <fstream>
 #include <algorithm>
 
@@ -94,6 +93,8 @@ EtcFstab::readFiles()
 	    if( i!=l.end() )
 		*i++ >> p->old.passno;
 	    p->old.calcDependent();
+	    if( checkNormalFile(p->old.device) )
+		p->old.loop = true;
 	    p->nnew = p->old;
 	    co.push_back( *p );
 	    delete p;
@@ -494,14 +495,15 @@ list<string> EtcFstab::makeStringList(const FstabEntry& e) const
 	{
 	ls.push_back( e.loop_dev );
 	}
-    ls.push_back( e.dentry );
+    if( e.dmcrypt && e.optUser() )
+	ls.push_back( e.device );
+    else
+	ls.push_back( e.dentry );
     ls.push_back( e.mount );
-    if( e.dmcrypt && e.noauto )
+    if( e.dmcrypt && e.optUser() )
 	ls.push_back( "crypt" );
     else
-	{
 	ls.push_back( (e.fs!="ntfs")?e.fs:"ntfs-3g" );
-	}
     if( e.cryptotab )
 	{
 	ls.push_back( Volume::encTypeString(e.encr) );
@@ -545,8 +547,7 @@ string EtcFstab::createLine( const list<string>& ls, unsigned fields,
 
 string EtcFstab::createTabLine( const FstabEntry& e ) const
     {
-	y2mil("dentry:" << e.dentry << " mount:" << e.mount << "device:" << e.device);
-    y2mil( "entry:" << e );
+    y2mil("dentry:" << e.dentry << " mount:" << e.mount << " device:" << e.device);
     const list<string> ls = makeStringList(e);
     y2mil( "list:" << ls );
     unsigned max_fields = e.cryptotab ? lengthof(cryptotabFields)
@@ -759,6 +760,15 @@ int EtcFstab::flush()
 		    i->old = i->nnew;
 		    i->op = Entry::NONE;
 		    }
+		else if( findCrtab( i->nnew, crypttab, lineno ))
+		    {
+		    string line = createTabLine( i->nnew );
+		    if (!i->nnew.mount.empty())
+			fstab->append( line );
+		    if( i->old.crypttab > i->nnew.crypttab && 
+		        findCrtab( i->old, crypttab, lineno ))
+			crypttab.remove( lineno, 1 );
+		    }
 		else
 		    ret = FSTAB_UPDATE_ENTRY_NOT_FOUND;
 		break;
@@ -896,7 +906,11 @@ string EtcFstab::removeText( bool doing, bool crypto, const string& mp ) const
     return( txt );
     }
 
-
+bool
+FstabEntry::optUser() const
+    {
+    return find( opts.begin(), opts.end(), "user" ) != opts.end();
+    }
 
 unsigned EtcFstab::fstabFields[] = { 20, 20, 10, 21, 1, 1 };
 unsigned EtcFstab::cryptotabFields[] = { 11, 15, 20, 10, 10, 1 };
