@@ -357,6 +357,206 @@ resized. To resize %1, make sure it is not used."), device));
     }
 
 
+    void EpCloneDisk(string device)
+    {
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	integer mysize = target_map[ device, "size_k"]:0;
+	integer mycyl_size = target_map[ device, "cyl_size"]:0;
+	list <map> myparts = target_map[ device, "partitions"]:[];
+	string mypart_table_type = target_map[ device, "label" ]:Storage::DefaultDiskLabel( mysize );
+
+	string helptext = _("<p>Select one or more (if available) hard disks 
+that will have the same partition layout as 
+this disk.</p> 
+<p>Disks marked with '*' sign contain one or
+more partitions. After cloning, these 
+partitions will be deleted.</p>");
+
+	void HelpDialog() {
+	    UI::OpenDialog( `MinSize( 40,10,`VBox(
+		`RichText(helptext),
+		`VSpacing(1),
+		`PushButton(`id(`ok), Label::CloseButton())
+	        )
+	    ));
+
+	    UI::UserInput();
+	    UI::CloseDialog();
+	}
+
+	list <string> AvailableTargetDisks() {
+	    list <string> items = [];
+
+	    map <string, map> filtered_target_map =
+		filter( string dev, map props, target_map, {
+		    return ( dev != device &&
+			     Storage::IsDiskType( props["type"]:`CT_UNKNOWN ) &&
+			     props["used_by_device"]:"" == "" && 
+			     props["cyl_size"]:0 == mycyl_size );
+		});
+
+	    y2milestone("Available, suitable and unused disks (other than %1): %2", device, Map::Keys(filtered_target_map));
+
+	    foreach( string dev, map props, filtered_target_map,{
+		if( props["size_k"]:0 >= mysize )
+		    items = add(items, dev); 
+		else 
+		    y2milestone("%1 is smaller than needed, skipping it", device);
+	    });
+
+	    return items;
+	}
+
+	boolean ConfirmDeletePartitions( list <string> to_delete) {
+
+	    UI::OpenDialog( `opt(`warncolor), `VBox(
+		    `Left(`Label(_("The following partitions will be deleted\nand all data on them will be lost:"))),
+		    `VSpacing(1),
+		    `RichText(HTML::List( to_delete)),
+		    `Left(`Label(_("Really delete these partitions?"))),
+		    `VSpacing(1),
+		    `ButtonBox(
+			`PushButton(`id(`ok), `opt(`default), Label::DeleteButton()),
+			`PushButton(`id(`cancel), Label::CancelButton())
+		    )
+		)
+	    );
+	    symbol ret = (symbol) UI::UserInput();
+	    UI::CloseDialog();
+
+	    return (ret == `ok);
+	}
+
+	if (isempty(myparts)) {
+	    Popup::Error(_("There are no partitions on this disk (a clonable 
+disk must have at least one partition).
+Create some partitions before cloning the disk."));
+	    return;
+	}
+
+	list <string> mydisks = AvailableTargetDisks();
+
+	if (isempty(mydisks)) {
+	    Popup::Error("This disk cannot be cloned. There are no suitable 
+disks that could have the same partitioning layout.");
+	   return;
+	}
+
+	list<term> ui_items = maplist( string one_disk, mydisks, {
+	    boolean any_partitions = !isempty(target_map[ one_disk, "partitions" ]:[]);
+
+	    return `item(`id(one_disk), sformat("%1%2 (%3)",one_disk,
+			  any_partitions ? "*" : "",
+			  Storage::KByteToHumanString( target_map[one_disk, "size_k"]:42)));
+	});
+
+	UI::OpenDialog (`MinSize( 60, 20, `VBox(
+	    `Heading(sformat(_("Clone partition layout of %1"), device)),
+	    `VSpacing(1),
+	    `MultiSelectionBox(`id(`tdisk), _("Available target disks:"), ui_items ),
+	    `VSpacing(1),
+	    `ButtonBox(
+		`PushButton(`id(`help), Label::HelpButton()),
+	        `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+	        `PushButton(`id(`cancel), Label::CancelButton())
+	        )
+	    )
+	));
+
+	any ret = nil;
+	boolean run_raid_setup = false;
+
+	while(ret != `ok && ret != `cancel)
+	{
+	    ret = UI::UserInput();
+
+	    if( ret == `ok) {
+	        list <string> selected_disks = (list <string>) UI::QueryWidget(`id(`tdisk), `SelectedItems);
+		boolean any_disk_selected = !isempty(selected_disks);
+
+		if (!any_disk_selected) {
+		    Popup::Error(_("Select some target disk for creating a clone"));
+		    UI::SetFocus(`id(`tdisk));
+		    ret = nil;
+		    continue;
+		}
+
+		list <string> partitions_to_delete = [];
+
+		//collect partitions to delete
+		foreach (string this_disk, selected_disks, {
+		    list <map> partitions = target_map[ this_disk, "partitions" ]:[];
+
+		    if (!isempty(partitions)) {
+			list <string> tmp = maplist( map one_part, partitions, {
+			    return one_part["device"]:"";
+			});
+			partitions_to_delete = (list <string>) union( partitions_to_delete, tmp);
+		    }
+		});
+
+		//if there is anything to delete, ask user if s/he really wants to delete
+		if ( !isempty(partitions_to_delete) && 
+		     !ConfirmDeletePartitions( partitions_to_delete )) {
+		    ret = nil;
+		    continue;
+		}
+
+		//We'll be deleting recursively, so that no longer valid
+		//LVMs and RAIDs are not left behind
+		boolean recursive = Storage::GetRecursiveRemoval();
+		Storage::SetRecursiveRemoval(true);
+
+		foreach (string this_disk, selected_disks, {
+		    map <string,any> disk_info = Storage::GetDisk( target_map, this_disk );
+		    list <map> partitions = target_map[ this_disk, "partitions" ]:[];
+		    list<string> pnames = maplist(map part, partitions, { return part["device"]:""; });
+		    string part_table_type = disk_info["label"]:Storage::DefaultDiskLabel(disk_info["size_k"]:0);
+
+		    y2milestone("Deleting these partitions: %1", pnames);
+
+		    if (!isempty(partitions)) {
+			foreach( string one_partition, pnames,{
+			    Storage::DeleteDevice( disk_info["device"]:"", one_partition );
+			});
+		    }
+
+		    if( mypart_table_type != part_table_type ) {
+			y2milestone("%1 has different type of partition table: %2, will create a new one",
+			    this_disk, part_table_type);
+			Storage::CreatePartitionTable( disk_info["device"]:"", mypart_table_type );
+		    }
+
+		    foreach( map one_partition, myparts, {
+		        map next = Storage::NextPartition( this_disk, one_partition["type"]:`none);
+		        Storage::CreatePartition( this_disk, next["device"]:"error", 
+					      one_partition["type"]:`primary,
+					      one_partition["fsid"]: Partitions::fsid_native,
+					      one_partition["region",0]:0, one_partition["region",1]:0, 
+					      one_partition["mountby"]:Storage::GetMountBy(device) );
+		        //FIXME: ChangeVolumeProperties too?
+		    });
+		});
+
+		Storage::SetRecursiveRemoval( recursive );
+	   }
+	   else if (ret == `help) {
+		HelpDialog();
+		continue;
+	   }
+	}
+
+	UI::CloseDialog();
+
+	if( ret == `ok ) {
+	    UpdateMainStatus();
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	}
+    }
+
+
     void EpDasdfmtDisk(string device)
     {
 	map<string, map> target_map = Storage::GetTargetMap();
