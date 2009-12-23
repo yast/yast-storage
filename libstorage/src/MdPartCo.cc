@@ -158,8 +158,7 @@ MdPartCo::createPartition( storage::PartitionType type,
                            string& device,
                            bool checkRelaxed )
     {
-    y2milestone( "begin type %d at %ld len %ld relaxed:%d", type, start, len,
-                 checkRelaxed );
+    y2mil("begin type:" << type << " start:" << start << " len:" << len << " relaxed:" << checkRelaxed);
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
     if( ret==0 && readonly() )
         ret = MDPART_CHANGE_READONLY;
@@ -178,7 +177,7 @@ MdPartCo::createPartition( storage::PartitionType type,
 int
 MdPartCo::createPartition( long unsigned len, string& device, bool checkRelaxed )
     {
-    y2milestone( "len %ld relaxed:%d", len, checkRelaxed );
+    y2mil("len:" << len << " relaxed:" << checkRelaxed);
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
     if( ret==0 && readonly() )
         ret = MDPART_CHANGE_READONLY;
@@ -193,7 +192,7 @@ MdPartCo::createPartition( long unsigned len, string& device, bool checkRelaxed 
 int
 MdPartCo::createPartition( storage::PartitionType type, string& device )
     {
-    y2milestone( "type %u", type );
+    y2mil("type:" << type);
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
     if( ret==0 && readonly() )
         ret = MDPART_CHANGE_READONLY;
@@ -401,7 +400,7 @@ MdPartCo::getVolumes( ProcPart* ppart )
 void MdPartCo::handleWholeDevice()
     {
     Disk::PartPair pp = disk->partPair( Partition::notDeleted );
-    y2milestone( "empty:%d", pp.empty() );
+    y2mil("empty:" << pp.empty());
 
     if( pp.empty() )
         {
@@ -517,7 +516,7 @@ string MdPartCo::undevName( const string& name )
 
 int MdPartCo::destroyPartitionTable( const string& new_label )
     {
-    y2milestone( "begin" );
+    y2mil("begin");
     int ret = disk->destroyPartitionTable( new_label );
     if( ret==0 )
         {
@@ -621,8 +620,7 @@ void MdPartCo::activate_part( bool val )
 
 int MdPartCo::doSetType( MdPart* md )
     {
-    y2milestone( "doSetType container %s name %s", name().c_str(),
-                 md->name().c_str() );
+    y2mil("doSetType container:" << name() << " name:" << md->name());
     Partition * p = md->getPtr();
     int ret = p?0:MDPART_PARTITION_NOT_FOUND;
     if( ret==0 )
@@ -639,7 +637,7 @@ int MdPartCo::doSetType( MdPart* md )
 
 int MdPartCo::doCreateLabel()
     {
-    y2milestone( "label:%s", labelName().c_str() );
+    y2mil("label:" << labelName());
     int ret = 0;
     if( !silent )
         {
@@ -663,7 +661,7 @@ int
 MdPartCo::removeMdPart()
     {
     int ret = 0;
-    y2milestone( "begin" );
+    y2mil("begin");
     if( readonly() )
         {
         ret = MDPART_CHANGE_READONLY;
@@ -739,7 +737,7 @@ int MdPartCo::getToCommit( CommitStage stage, list<Container*>& col,
                            list<Volume*>& vol )
     {
     int ret = 0;
-    y2milestone( "ret:%d col:%zd vol:%zd", ret, col.size(), vol.size());
+    y2mil("ret:" << ret << " col:" << col.size() << " << vol:" << vol.size());
     getStorage()->logCo( this );
     unsigned long oco = col.size();
     unsigned long ovo = vol.size();
@@ -754,14 +752,14 @@ int MdPartCo::getToCommit( CommitStage stage, list<Container*>& col,
     if( del_ptable && find( col.begin(), col.end(), this )==col.end() )
         col.push_back( this );
     if( col.size()!=oco || vol.size()!=ovo )
-        y2milestone( "ret:%d col:%zd vol:%zd", ret, col.size(), vol.size());
+        y2mil("ret:" << ret << " col:" << col.size() << " vol:" << vol.size());
     return( ret );
     }
 
 
 int MdPartCo::commitChanges( CommitStage stage, Volume* vol )
     {
-    y2milestone( "name %s stage %d", name().c_str(), stage );
+    y2mil("name:" << name() << " stage:" << stage);
     int ret = Container::commitChanges( stage, vol );
     if( ret==0 && stage==INCREASE )
         {
@@ -781,7 +779,7 @@ int MdPartCo::commitChanges( CommitStage stage, Volume* vol )
 
 int MdPartCo::commitChanges( CommitStage stage )
     {
-    y2milestone( "name %s stage %d", name().c_str(), stage );
+    y2mil("name:" << name() << " stage:" << stage);
     int ret = 0;
     if( stage==DECREASE && deleted() )
         {
@@ -826,7 +824,7 @@ void MdPartCo::getCommitActions( list<commitAction*>& l ) const
 int
 MdPartCo::doCreate( Volume* v )
     {
-    y2milestone( "Raid:%s part:%s", name().c_str(), v->name().c_str() );
+    y2mil("name:" << name() << " v->name:" << v->name());
     MdPart * l = dynamic_cast<MdPart *>(v);
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
     if( ret==0 && l == NULL )
@@ -871,7 +869,7 @@ int MdPartCo::doRemove()
 
 int MdPartCo::doRemove( Volume* v )
     {
-    y2milestone( "Raid:%s name:%s", name().c_str(), v->name().c_str() );
+    y2mil("name:" << name() << " v->name:" << v->name());
     MdPart * l = dynamic_cast<MdPart *>(v);
     bool save_act = false;
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
@@ -914,7 +912,7 @@ int MdPartCo::doRemove( Volume* v )
 
 int MdPartCo::doResize( Volume* v )
     {
-    y2milestone( "MdPart:%s name:%s", name().c_str(), v->name().c_str() );
+    y2mil("name:" << name() << " v->name:" << v->name());
     MdPart * l = dynamic_cast<MdPart *>(v);
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
     if( ret==0 && l == NULL )
