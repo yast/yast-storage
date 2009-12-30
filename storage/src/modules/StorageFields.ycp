@@ -28,13 +28,13 @@
      */
     global void IterateTargetMap(map<string, map> target_map, void(map<string, map>, map) callback)
     {
-	const map disk_order = $[ `CT_DMRAID : 0, `CT_DMMULTIPATH : 1, `CT_DISK : 2,
-				  `CT_MD : 3, `CT_LOOP : 4, `CT_LVM : 5, `CT_DM : 6, `CT_NFS : 7 ];
+	const map disk_order = $[ `CT_DMRAID : 0, `CT_DMMULTIPATH : 1, `CT_MDPART : 2, `CT_DISK : 3,
+				  `CT_MD : 4, `CT_LOOP : 5, `CT_LVM : 6, `CT_DM : 7, `CT_NFS : 8 ];
 
 	list<string> keys = maplist(string dev, map disk, target_map, { return dev; });
 	keys = sort(string a, string b, keys, {
-	    integer oa = disk_order[target_map[a, "type"]:`CT_UNKNOWN]:8;
-	    integer ob = disk_order[target_map[b, "type"]:`CT_UNKNOWN]:8;
+	    integer oa = disk_order[target_map[a, "type"]:`CT_UNKNOWN]:9;
+	    integer ob = disk_order[target_map[b, "type"]:`CT_UNKNOWN]:9;
 	    return (oa==ob) ? (a<b) : (oa<ob);
 	});
 
@@ -72,6 +72,7 @@
 	    case `UB_DMMULTIPATH:
 		return "DM Multipath " + device;
 	    case `UB_MD:
+	    case `UB_MDPART:
 		return "RAID " + device;
 	    default:
 		return device;
@@ -503,17 +504,21 @@ Identifier of the file system.");
 			{
 			    value = "RAID " + disk_device;
 			}
-			else if(disk["type"]:`CT_UNKNOWN==`CT_LVM)
+			else if (disk["type"]:`CT_UNKNOWN == `CT_LVM)
 			{
 			    value = "LVM" + (disk["lvm2"]:false ? "2 " : " ") + disk["name"]:"";
 			}
-			else if(disk["type"]:`CT_UNKNOWN==`CT_DMRAID)
+			else if (disk["type"]:`CT_UNKNOWN == `CT_DMRAID)
 			{
 			    value = "DM RAID " + disk["name"]:"";
 			}
-			else if(disk["type"]:`CT_UNKNOWN==`CT_DMMULTIPATH)
+			else if (disk["type"]:`CT_UNKNOWN == `CT_DMMULTIPATH)
 			{
 			    value = "DM Multipath " + disk["name"]:"";
+			}
+			else if (disk["type"]:`CT_UNKNOWN == `CT_MDPART)
+			{
+			    value = "MD " + disk["name"]:"";
 			}
 			else
 			{
@@ -963,7 +968,7 @@ Identifier of the file system.");
 	if (type == `CT_DISK && !real_disk)
 	    return true;
 
-	if (!contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH, `CT_LVM ], type))
+	if (!contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH, `CT_MDPART, `CT_LVM ], type))
 	    return true;
 
 	return false;
