@@ -55,6 +55,8 @@
   import "LibStorage::DmPartInfo";
   import "LibStorage::DmraidInfo";
   import "LibStorage::DmmultipathInfo";
+  import "LibStorage::MdPartCoInfo";
+  import "LibStorage::MdPartInfo";
   import "LibStorage::NfsInfo";
   import "LibStorage::ContainerInfo";
   import "LibStorage::DiskInfo";
@@ -90,6 +92,7 @@ map<string,any> conv_ctype =
                 LibStorage::DMRAID() : `CT_DMRAID,
                 LibStorage::DMMULTIPATH() : `CT_DMMULTIPATH,
                 LibStorage::DM() : `CT_DM,
+		LibStorage::MDPART() : `CT_MDPART,
                 LibStorage::NFSC() : `CT_NFS
 	      ]
      ];
@@ -101,6 +104,7 @@ map<string,any> conv_usedby =
                 LibStorage::UB_MD() : `UB_MD,
                 LibStorage::UB_DMRAID() : `UB_DMRAID,
                 LibStorage::UB_DMMULTIPATH() : `UB_DMMULTIPATH,
+		LibStorage::UB_MDPART() : `UB_MDPART,
                 LibStorage::UB_DM() : `UB_DM
 	      ]
      ];
@@ -172,8 +176,9 @@ map<string,integer> conv_parstring =
 
 map DiskMapVersion = $[];
 map DiskMap = $[];
-map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_DMRAID : 2, `CT_DMMULTIPATH : 3,
-                    `CT_LOOP : 4, `CT_DM : 5, `CT_LVM : 6, `CT_NFS : 7 ];
+map type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_MDPART : 2, `CT_DMRAID : 3,
+		    `CT_DMMULTIPATH : 4, `CT_LOOP : 5, `CT_DM : 6, `CT_LVM : 7,
+		    `CT_NFS : 8 ];
 list<string> hw_packages = [];
 string part_insts = "";
 
@@ -577,7 +582,12 @@ define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
 	    }
 	else if( search( device, "/dev/md" )==0 && size(ls)==2 )
 	    {
-	    dlen = 7;
+	    integer pos = find(device, "p");
+	    y2milestone("device:%1 pos:%2", device, pos);
+	    if (pos == -1)
+		dlen = 7;
+	    else
+		dlen = pos;
 	    }
 	else if( search( device, "/dev/loop" )==0 )
 	    {
@@ -1290,6 +1300,21 @@ map dmPartMap( any info, map p )
     return( p );
     }
 
+map mdPartMap(any info, map p)
+{
+    any vinfo = LibStorage::MdPartInfo::swig_v_get(info);
+    p = volumeMap(vinfo, p);
+    p["nr"] = 0;
+    boolean part = LibStorage::MdPartInfo::swig_part_get(info);
+    if (part)
+    {
+	any pinfo = LibStorage::MdPartInfo::swig_p_get(info);
+	p = partAddMap(pinfo, p);
+    }
+    y2milestone("mdPartMap ret:%1", p);
+    return p;
+}
+
 map getContainerInfo( map c )
     {
     y2milestone( "getContainerInfo %1", c );
@@ -1385,6 +1410,50 @@ map getContainerInfo( map c )
 		c["partitions"] = add( c["partitions"]:[], p );
 	    });
 	}
+    else if( c["type"]:`CT_UNKNOWN == `CT_MDPART )
+    {
+	list<any> pinfos = [];
+	any infos = LibStorage::MdPartCoInfo::new("LibStorage::MdPartCoInfo");
+	string d = c["device"]:"";
+	ret = LibStorage::StorageInterface::getMdPartCoInfo(sint, d, infos);
+	if (ret == 0)
+	{
+	    any dinfo = LibStorage::MdPartCoInfo::swig_d_get(infos);
+	    c = diskMap(dinfo, c);
+	}
+	else
+	    y2warning( "disk \"%1\" ret:%2", c["device"]:"", ret );
+
+	list<string> ls = splitstring(LibStorage::MdPartCoInfo::swig_devices_get(infos), " ");
+	y2milestone( "ls=%1", ls );
+	c["devices"] = ls;
+
+	integer t = LibStorage::MdPartCoInfo::swig_level_get(infos);
+	c["raid_type"] = substring(sformat("%1", toSymbol(conv_mdtype, t)), 1);
+	if (c["raid_type"]:"" == "raid5")
+	{
+	    t = LibStorage::MdPartCoInfo::swig_parity_get(infos);
+	    symbol pt = toSymbol(conv_mdparity, t);
+	    if (pt != `par_none)
+		c["parity_algorithm"] = substring(sformat("%1", pt), 1);
+	}
+	t = LibStorage::MdPartCoInfo::swig_chunk_get(infos);
+	if (t > 0)
+	{
+	    c["chunk_size"] = t;
+	}
+	c["sb_ver"] = LibStorage::MdPartCoInfo::swig_sb_ver_get(infos);
+
+	c["partitions"] = [];
+	ret = LibStorage::StorageInterface::getMdPartInfo(sint, d, pinfos);
+	foreach(any info, pinfos, {
+	    map p = $[];
+	    p = mdPartMap(info, p);
+	    p["fstype"] = Partitions::raid_name;
+	    if (p["nr"]:-1 != 0)
+		c["partitions"] = add(c["partitions"]:[], p);
+	});
+    }
     else if( c["type"]:`CT_UNKNOWN == `CT_LVM )
 	{
 	list<any> pinfos = [];
@@ -1572,7 +1641,7 @@ integer count=0;
 
 global boolean IsDiskType(symbol t)
 {
-    return contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH ], t);
+    return contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH, `CT_MDPART ], t);
 }
 
 /**
@@ -2817,7 +2886,7 @@ global define boolean InitializeDisk(string disk, boolean value)
 
 global boolean IsPartType(symbol t)
 {
-    return t == `CT_DMRAID || t == `CT_DMMULTIPATH || t == `CT_DISK;
+    return t == `CT_DMRAID || t == `CT_DMMULTIPATH || t == `CT_DISK || t == `CT_MDPART;
 }
 
     
@@ -3067,7 +3136,7 @@ global map<string, map> GetTargetMap()
 	    ``{
 	    map dtmp = Storage::GetDiskPartitionTg( dev, $[] )[0]:$[];
 	    y2milestone( "probing dev %1 disk %2", dev, dtmp );
-	    if( search( dev, "/dev/dm-" )==0 )
+	    if( search( dev, "/dev/dm-" )==0 || search( dev, "/dev/md" )==0 )
 		{
 		if( size(disk["bios_id"]:"")>0 )
 		    bios_id_raid[dev] = disk["bios_id"]:"";
@@ -3080,6 +3149,8 @@ global map<string, map> GetTargetMap()
 	    });
 	tmp = filter( string dev, map disk, tmp,
 	              ``(search( dev, "/dev/dm-" )!=0));
+	tmp = filter( string dev, map disk, tmp,
+	              ``(search( dev, "/dev/md" )!=0));
 	if( size(rename)>0 )
 	    {
 	    foreach( string old, string new, rename,
@@ -3129,6 +3200,11 @@ global map<string, map> GetTargetMap()
 		    y2milestone( "pos:%1 minor:%2", pos, minor );
 		    foreach (string dev, map c, tmp, {
 			if (c["type"]:`CT_UNKNOWN == `CT_DMRAID && c["minor"]:0 == minor)
+			{
+			    y2milestone("addind bios_id %1 to %2", bios, dev);
+			    tmp[dev, "bios_id"] = bios;
+			}
+			if (c["type"]:`CT_UNKNOWN == `CT_MDPART && c["device"]:"" == dm)
 			{
 			    y2milestone("addind bios_id %1 to %2", bios, dev);
 			    tmp[dev, "bios_id"] = bios;
@@ -3221,8 +3297,8 @@ global define void SetTargetMap( map<string,map> target )
 	});
     keys = maplist( string k, any e, tg, ``(k));
     keys = sort( string a, string b, keys,
-                 ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:6 >
-		     type_order[tg[b,"type"]:`CT_UNKNOWN]:6 ));
+                 ``( type_order[tg[a,"type"]:`CT_UNKNOWN]:9 >
+		     type_order[tg[b,"type"]:`CT_UNKNOWN]:9 ));
     y2milestone( "SetTargetMap keys %1", keys );
     foreach( string k, keys,
 	``{
@@ -3252,8 +3328,8 @@ global define void SetTargetMap( map<string,map> target )
 	});
     keys = maplist( string k, any e, target, ``(k));
     keys = sort( string a, string b, keys,
-                 ``( type_order[target[a,"type"]:`CT_UNKNOWN]:6 >
-		     type_order[target[b,"type"]:`CT_UNKNOWN]:6 ));
+                 ``( type_order[target[a,"type"]:`CT_UNKNOWN]:9 >
+		     type_order[target[b,"type"]:`CT_UNKNOWN]:9 ));
     y2milestone( "SetTargetMap keys %1", keys );
     foreach( string k, keys,
 	``{
@@ -3286,8 +3362,8 @@ global define void SetTargetMap( map<string,map> target )
 	});
     keys = maplist( string k, any e, target, ``(k));
     keys = sort( string a, string b, keys,
-                 ``( type_order[target[a,"type"]:`CT_UNKNOWN]:6 <
-		     type_order[target[b,"type"]:`CT_UNKNOWN]:6 ));
+                 ``( type_order[target[a,"type"]:`CT_UNKNOWN]:9 <
+		     type_order[target[b,"type"]:`CT_UNKNOWN]:9 ));
     y2milestone( "SetTargetMap keys %1", keys );
     foreach( string k, keys,
 	``{
@@ -3879,7 +3955,7 @@ global define boolean IsRealDisk( map entry )
 global boolean IsPartitionable( map entry )
 {
     return entry["type"]:`CT_UNKNOWN==`CT_DMRAID || entry["type"]:`CT_UNKNOWN==`CT_DMMULTIPATH ||
-	IsRealDisk( entry );
+	entry["type"]:`CT_UNKNOWN==`CT_MDPART || IsRealDisk( entry );
 }
 
 global define boolean DeviceRealDisk( string device )
@@ -4737,6 +4813,8 @@ global void FinishInstall()
 	if (find(map part, e["partitions"]:[], { return part["enc_type"]:`none != `none; }) != nil)
 	    need_crypt = true;
 	if (e["type"]:`CT_UNKNOWN == `CT_MD && !isempty(e["partitions"]:[]))
+	    need_md = true;
+	if( e["type"]:`CT_UNKNOWN==`CT_MDPART )
 	    need_md = true;
 	if( e["type"]:`CT_UNKNOWN==`CT_LVM )
 	    need_lvm = true;
