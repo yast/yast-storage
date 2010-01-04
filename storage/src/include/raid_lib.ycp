@@ -52,14 +52,17 @@ define list<map> get_possible_rds( map<string,map> targetMap )
     // no RAID devices (this is for experts only, by hand)
 
     list<map> allret = [];
+
+    list<symbol> allowed_ctypes = [ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH ];
     list types_no = [ `lvm, `sw_raid ];
     list fsids = [ Partitions::fsid_lvm, Partitions::fsid_raid, 
                    Partitions::fsid_native ];
     list ubs = [ `UB_NONE, `UB_MD ];
     list allowed_enc_types = [ `none ];
 
-    foreach( string dev, map devmap, targetMap,
-	``{
+    foreach (string dev, map devmap, targetMap, {
+	if (contains(allowed_ctypes, devmap["type"]:`CT_UNKNOWN))
+	{
 	ret = filter( map p, devmap["partitions"]:[],
 		      ``( size(p["mount"]:"")==0 &&
 			  !contains( types_no, p["type"]:`primary ) &&
@@ -67,6 +70,7 @@ define list<map> get_possible_rds( map<string,map> targetMap )
 			  contains( ubs, p["used_by_type"]:`UB_NONE ) && 
 			  (!haskey(p,"fsid")||contains( fsids, p["fsid"]:0 ))));
         allret = (list<map>)merge(allret, ret );
+	}
 	});
     return( allret );
     };
