@@ -53,6 +53,7 @@
 	}
     }
 
+
     term HdButtonBox()
     {
 	return `HBox(
@@ -65,37 +66,48 @@
 	);
     }
 
+
     void HandleHdButtons( any user_data, string device, map event )
     {
-	string disk = "";
+	string disk_device = "";
 	boolean is_disk = false;
 
 	if (user_data == nil)
 	{
-	    map dev = Storage::GetDiskPartition( device );
-	    disk = (string) dev["disk"]:nil;
-	    // FIXME: is this necessary & sufficient condition?
-	    is_disk =  dev["nr"]:nil == "";
+	    map disk = nil;
+	    map part = nil;
+
+	    map<string, map> target_map = Storage::GetTargetMap();
+	    SplitDevice(target_map, device, disk, part);
+	    disk_device = (string) disk["device"]:"";
+	    is_disk = part == nil;
 	}
 	else
 	{
-	    disk = (string) user_data;
+	    disk_device = (string) user_data;
 	}
 
 	switch (Event::IsWidgetActivated(event))
 	{
 	    case `add:
-		EpCreatePartition( disk );
+		if (is_disk)
+		    EpCreatePartition(disk_device);
+		else
+		    // error popup
+		    Popup::Error(_("Select a hard disks, BIOS RAIDs or multipath
+devices to add a partition."));
 		break;
+
 	    case `edit:
-		if  ( is_disk )
-		    TreePanel::SwitchToNew( disk );
+		if (is_disk)
+		    TreePanel::SwitchToNew( disk_device );
 		else
 		    EpEditPartition( device );
 		break;
 
 	    case `resize:
-		if  ( is_disk )
+		if (is_disk)
+		    // error popup
 		    Popup::Error(_("Hard disks, BIOS RAIDs and multipath
 devices cannot be resized."));
 		else
@@ -103,13 +115,14 @@ devices cannot be resized."));
 		break;
 
 	    case `delete:
-		if  ( is_disk )
-		    EpDeleteDisk( device );
+		if (is_disk)
+		    EpDeleteDisk(disk_device);
 		else
 		    EpDeletePartition ( device, UI::WidgetExists(`id(`table)) ? `table : `overview );
 		break;
 	}
     }
+
 
     void CreateHdMainPanel(any user_data)
     {
