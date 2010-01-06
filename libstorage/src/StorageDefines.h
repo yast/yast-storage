@@ -75,5 +75,7 @@
 
 #define BLKIDBIN "/sbin/blkid"
 
+#define LSBIN "/bin/ls"
+
 
 #endif

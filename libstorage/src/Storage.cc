@@ -148,6 +148,8 @@ Storage::logSystemInfo() const
     getline( File, line );
     File.close();
     y2mil( "kernel version:" << line );
+
+    SystemCmd(LSBIN " -1 /lib/modules");    
 }
 
 
