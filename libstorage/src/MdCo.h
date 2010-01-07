@@ -56,6 +56,10 @@ class MdCo : public Container
 	bool equalContent( const Container& rhs ) const;
 	void logDifference( const Container& d ) const;
 
+	/* This function is deprecated and should not be used.
+	 * It returns first free 'md' number for Non-partitionable MD RAIDs
+	 * Regardless from Partitionable RAIDs and this can lead to errors.
+	 */
 	unsigned unusedNumber();
 	void syncRaidtab();
 	void changeDeviceName( const string& old, const string& nw );
@@ -63,6 +67,9 @@ class MdCo : public Container
 	static void activate( bool val, const string& tmpDir  );
 	int removeVolume( Volume* v );
 	
+	/* returns in 'nums' numbers that are used by Md */
+	int usedNumbers(list<int>& nums);
+
     protected:
 	// iterators over MD volumes
 	// protected typedefs for iterators over MD volumes
