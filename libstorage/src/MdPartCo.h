@@ -131,7 +131,10 @@ class MdPartCo : public Container
 
     void syncRaidtab();
 
+    /* Returns number from MD name */
     int nr(const string& name);
+    /* Returns Md number. */
+    int nr();
     /* RAID Related functionality */
     unsigned long chunkSize() const { return chunk_size; }
 

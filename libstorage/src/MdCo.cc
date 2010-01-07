@@ -277,6 +277,19 @@ MdCo::unusedNumber()
     return( i );
     }
 
+int
+MdCo::usedNumbers(list<int>& nums)
+{
+  MdPair p=mdPair(Md::notDeleted);
+  MdIter i;
+  nums.clear();
+  for(i=p.begin(); i!=p.end(); i++ )
+    {
+      nums.push_back(i->nr());
+    }
+  return 0;
+}
+
 int 
 MdCo::createMd( unsigned num, MdType type, const list<string>& devs )
     {

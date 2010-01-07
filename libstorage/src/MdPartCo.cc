@@ -502,6 +502,11 @@ int MdPartCo::nr(const string& name)
   return n;
 }
 
+int MdPartCo::nr()
+{
+  return mnr;
+}
+
 
 //
 // Assumption is that we're using /dev not /dev/md
