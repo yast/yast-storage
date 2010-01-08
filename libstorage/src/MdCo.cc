@@ -268,14 +268,6 @@ MdCo::findMd( const string& dev )
     return( findMd( dev, i ));
     }
 
-unsigned 
-MdCo::unusedNumber()
-    {
-    unsigned i=0;
-    while( findMd(i) && i<1000 )
-	i++;
-    return( i );
-    }
 
 int
 MdCo::usedNumbers(list<int>& nums)
