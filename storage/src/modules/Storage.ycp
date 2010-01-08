@@ -68,6 +68,8 @@
   import "LibStorage::PartitionSlotInfo";
   import "LibStorage::CommitInfo";
   import "LibStorage::DlabelCapabilities";
+  import "LibStorage::ResizeInfo";
+  import "LibStorage::ContentInfo";
   import "LibStorage::Environment";
 
 
@@ -796,6 +798,45 @@ global list<string> SwappingPartitions()
 }
 
 
+boolean GetFreeInfo(string device, boolean get_resize, map<symbol, any>& resize_info,
+		    boolean get_content, map<symbol, any>& content_info, boolean use_cache)
+{
+    resize_info = $[];
+    content_info = $[];
+
+    any tmp1 = LibStorage::ResizeInfo::new("LibStorage::ResizeInfo");
+    any tmp2 = LibStorage::ContentInfo::new("LibStorage::ContentInfo");
+
+    boolean ret = LibStorage::StorageInterface::getFreeInfo(sint, device, get_resize, tmp1,
+							    get_content, tmp2, use_cache);
+
+    if (ret)
+    {
+	if (get_resize)
+	{
+	    resize_info = $[
+		`df_free_k : LibStorage::ResizeInfo::swig_df_freeK_get(tmp1),
+		`resize_free_k : LibStorage::ResizeInfo::swig_resize_freeK_get(tmp1),
+		`used_k : LibStorage::ResizeInfo::swig_usedK_get(tmp1),
+		`resize_ok : LibStorage::ResizeInfo::swig_resize_ok_get(tmp1)
+	    ];
+	}
+
+	if (get_content)
+	{
+	    content_info = $[
+		`windows : LibStorage::ContentInfo::swig_windows_get(tmp2),
+		`efi : LibStorage::ContentInfo::swig_efi_get(tmp2),
+		`home : LibStorage::ContentInfo::swig_home_get(tmp2)
+	    ];
+	}
+    }
+
+    y2milestone("GetFreeInfo device:%1 ret:%2", device, ret);
+    return ret;
+}
+
+
 /**
  * Returns map of free space per partition
  *
@@ -806,23 +847,20 @@ global list<string> SwappingPartitions()
  */
 global map GetFreeSpace(string device, integer testsize, symbol used_fs, boolean verbose)
 {
-    integer used = 0;
-    integer resize_free = 0;
-    integer df_free = 0;
-    boolean win_disk = false;
-    boolean efi = false;
-    boolean home = false;
+    map<symbol, any> resize_info = $[];
+    map<symbol, any> content_info = $[];
 
-    boolean r = false;
-    r = LibStorage::StorageInterface::getFreeInfo( sint, device, resize_free,
-                                                   df_free, used, win_disk,
-						   efi, home, used_fs==`ntfs );
+    boolean r = GetFreeInfo(device, true, resize_info, true, content_info, used_fs == `ntfs);
 
-    resize_free = resize_free * 1024;	// Byte
-    df_free = df_free * 1024;	// Byte
-    used = used * 1024;	// Byte
+    integer used = 1024 * resize_info[`used_k]:0;
+    integer resize_free = 1024 * resize_info[`resize_free_k]:0;
+    integer df_free = 1024 * resize_info[`df_free_k]:0;
+    boolean resize_ok = resize_info[`resize_ok]:false;
 
-    if( used_fs == `ntfs && !r && verbose )
+    boolean win_disk = content_info[`windows]:false;
+    boolean efi = content_info[`efi]:false;
+
+    if( used_fs == `ntfs && (!r || !resize_ok) && verbose )
 	{
 	string cmd = sformat("/usr/sbin/ntfsresize -f -i '%1'", device);
 	y2milestone( "GetFreeSpace Executing cmd:%1", cmd );
@@ -3510,17 +3548,14 @@ boolean DetectHomeFs( map p )
     if( !p["created"]:false && contains( poss_fs, p["detected_fs"]:`unknown ) &&
 	!isempty(device) )
     {
-	integer used = 0;
-	integer resize_free = 0;
-	integer df_free = 0;
-	boolean win_disk = false;
-	boolean efi = false;
-	boolean home = false;
+	map<symbol, any> resize_info = $[];
+	map<symbol, any> content_info = $[];
 
-	if (LibStorage::StorageInterface::getFreeInfo(sint, device, resize_free,
-						      df_free, used, win_disk,
-						      efi, home, true))
-	    ret = home;
+	if (GetFreeInfo(device, false, resize_info, true, content_info, true) &&
+	    content_info[`home]:false)
+	{
+	    ret = true;
+	}
     }
     y2milestone("DetectHomeFs device:%1 ret:%2", device, ret);
     return ret;
@@ -4058,8 +4093,6 @@ global boolean CheckSwapOn(string disk)
 list<map> GetPrimPartitions(map<string, map> targets, boolean foreign_os)
     {
     list<map> ret = [];
-    map entry = $[];
-    string text = "";
     integer num_dos = 0;
     integer num_win = 0;
     integer num_os2 = 0;
@@ -4078,10 +4111,15 @@ list<map> GetPrimPartitions(map<string, map> targets, boolean foreign_os)
 	        SCR::Execute (.target.bash,
 		              "/usr/lib/YaST2/bin/check.boot "+device) == 0)
 		{
-		text = "";
+		string text = "";
 	        if( Partitions::IsDosWinNtPartition( part["fsid"]:0 ) &&
-		    data["used_by_type"]:`UB_NONE==`UB_NONE &&
-		    GetFreeSpace( device, 0, part["used_fs"]:`none, false )["win_disk"]:false )
+		    data["used_by_type"]:`UB_NONE==`UB_NONE )
+		{
+		    map<symbol, any> resize_info = $[];
+		    map<symbol, any> content_info = $[];
+
+		    if (GetFreeInfo(device, false, resize_info, true, content_info, true) &&
+			content_info[`windows]:false)
 		    {
 		    if( contains( Partitions::fsid_dostypes, part["fsid"]:0 ) )
 			{
@@ -4094,6 +4132,7 @@ list<map> GetPrimPartitions(map<string, map> targets, boolean foreign_os)
 			text = win_text;
 			}
 		    }
+		}
 		else if( part["fsid"]:0 == 0x12 && !foreign_os )
 		    {
 		    text = "Vendor diagnostic";
@@ -4109,18 +4148,18 @@ list<map> GetPrimPartitions(map<string, map> targets, boolean foreign_os)
 		    text = linux_text;
 		    num_linux = num_linux+1;
 		    }
-		if( size(text)>0 )
+		if (!isempty(text))
 		    {
-		    entry["device"] = device;
-		    entry["string"] = text;
-		    ret = add( ret, eval(entry) );
-		    y2milestone( "new entry %1", entry );
+		    map entry = $[ "device" : device, "text" : text ];
+		    y2milestone( "new entry %1", entry );			
+		    ret = add(ret, entry);
 		    }
 		}
 	    });
 	});
     y2milestone( "GetPrimPartitions foreign_os:%5 num_linux %1 num_win %2 num_dos %3 num_os2 %4",
                  num_linux, num_win, num_dos, num_os2, foreign_os );
+
     integer num = 1;
     if( num_linux>1 )
 	{

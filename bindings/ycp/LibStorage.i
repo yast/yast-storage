@@ -41,6 +41,8 @@ specialize_sequence(storage::DmraidInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::DmmultipathInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::PartitionSlotInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::CommitInfo, TO_PACK, FROM_PACK, CHECK)
+specialize_sequence(storage::ResizeInfo, TO_PACK, FROM_PACK, CHECK)
+specialize_sequence(storage::ContentInfo, TO_PACK, FROM_PACK, CHECK)
 
 specialize_sequence(storage::Environment, TO_PACK, FROM_PACK, CHECK)
 
