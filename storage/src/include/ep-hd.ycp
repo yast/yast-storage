@@ -369,8 +369,8 @@ partitions are shown here.</p>");
 
 	// helptext
 	string helptext = _("<p>This view shows all devices used by the
-selected hard disk. The table is non-empty only for BIOS RAIDs and Multipath
-Disks.</p>");
+selected hard disk. The view is only available for BIOS RAIDs, partitioned
+software RAIDs and Multipath Disks.</p>");
 
 	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
     }
@@ -391,19 +391,27 @@ Disks.</p>");
 				   `devices : $[ `create : CreateHdDiskDevicesTab,
 						 `user_data : user_data ] ];
 
+	symbol ctype = target_map[device, "type"]:`CT_DISK;
+
+	list<term> tabs = [
+	    // tab heading
+	    `item(`id(`overview), _("&Overview")),
+	    // tab heading
+	    `item(`id(`partitions), _("&Partitions"))
+	];
+
+	if (contains([ `CT_DMRAID, `CT_DMMULTIPATH, `CT_MDPART ], ctype))
+	{
+	    // tab heading
+	    tabs = add(tabs, `item(`id(`devices), _("&Used Devices")));
+	}
+
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // heading
 				  `IconAndHeading(sformat(_("Hard Disk: %1"), device), StorageIcons::hd_icon),
-				  `DumbTab(`id(`tab), [
-					       // tab heading
-					       `item(`id(`overview), _("&Overview")),
-					       // tab heading
-					       `item(`id(`partitions), _("&Partitions")),
-					       // tab heading
-					       `item(`id(`devices), _("&Used Devices"))
-					       ],
+				  `DumbTab(`id(`tab), tabs,
 					   `ReplacePoint(`id(`tab_panel), TabPanel::empty_panel)
 				      )
 				  )
