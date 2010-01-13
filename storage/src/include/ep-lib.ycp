@@ -273,19 +273,20 @@ RAID device will be deleted:"), used_by_device),
 
     void ImportMountPoints()
     {
-	map<string,map> od = (map<string,map>)Storage::GetOndiskTarget();
-	list<list> fstab = scanAndReadExistingFstab( od );
+	Storage::CreateTargetBackup("import");
+	Storage::ResetOndiskTarget();
+
+	map<string, map> target_map = Storage::GetOndiskTarget();
+	list<list> fstab = scanAndReadExistingFstab(target_map);
 	y2milestone( "adapt_mp fstab %1", fstab );
-	list ti = maplist( list e, fstab, ``(AddFstabToData( od, (list<map>)e)[1]:$[]));
+	list ti = maplist( list e, fstab, ``(AddFstabToData( target_map, (list<map>)e)[1]:$[]));
 	y2milestone( "adapt_mp ti %1", ti );
 
 	integer idx = FstabAddDialog( ti );
 	if( idx>=0 )
 	{
-	    od = (map<string,map>)Storage::GetOndiskTarget();
 	    y2milestone( "adapt_mp use fstab idx %1", idx );
-	    ti = AddFstabToData( od, (list<map>)fstab[idx]:[] );
-	    Storage::ResetOndiskTarget();
+	    ti = AddFstabToData( target_map, (list<map>)fstab[idx]:[] );
 	    foreach( string d, map disk, ti[0]:$[],
 		     ``{
 			 foreach( map p, disk["partitions"]:[],
@@ -299,7 +300,13 @@ RAID device will be deleted:"), used_by_device),
 				      }
 				  });
 		     });
+
 	    Storage::SetTargetMap(ti[0]:$[]);
+	    Storage::DisposeTargetBackup("import");
+	}
+	else
+	{
+	    Storage::RestoreTargetBackup("import");
 	}
     }
 
