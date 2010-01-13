@@ -584,11 +584,11 @@ define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
 	    }
 	else if( search( device, "/dev/md" )==0 && size(ls)==2 )
 	    {
-	    integer pos = find(device, "p");
-	    if (pos == -1)
-		dlen = 7;
-	    else
+	    integer pos = search(device, "p");
+	    if (pos > 0)
 		dlen = pos;
+	    else
+		dlen = 7;
 	    }
 	else if( search( device, "/dev/loop" )==0 )
 	    {
@@ -1218,9 +1218,11 @@ map volumeMap( any vinfo, map p )
     p["name"] = LibStorage::VolumeInfo::swig_name_get(vinfo);
     integer t = LibStorage::VolumeInfo::swig_fs_get(vinfo);
     symbol fs = toSymbol( FileSystems::conv_fs, t );
-    p["detected_fs"] = fs;
-    if( fs != `unknown )
+    if( fs!=`unknown )
 	p["used_fs"] = fs;
+    t = LibStorage::VolumeInfo::swig_detected_fs_get(vinfo);
+    fs = toSymbol( FileSystems::conv_fs, t );
+    p["detected_fs"] = fs;
     boolean tbool = LibStorage::VolumeInfo::swig_format_get(vinfo);
     if( tbool )
 	p["format"] = true;
@@ -1257,7 +1259,7 @@ map volumeMap( any vinfo, map p )
 	{
 	p["mkfs_opt"] = tmp;
 	p["fs_options"] = 
-	    convertStringToFsOptionMap( tmp, p["detected_fs"]:`unknown, `mkfs );
+	    convertStringToFsOptionMap( tmp, p["used_fs"]:`unknown, `mkfs );
 	}
     else
 	{
@@ -1269,7 +1271,7 @@ map volumeMap( any vinfo, map p )
 	{
 	p["tunefs_opt"] = tmp;
 	p["fs_options"] = union(p["fs_options"]:$[],
-	    convertStringToFsOptionMap( tmp, p["detected_fs"]:`unknown, `tunefs ));
+	    convertStringToFsOptionMap( tmp, p["used_fs"]:`unknown, `tunefs ));
 	}
     tmp = LibStorage::VolumeInfo::swig_dtxt_get(vinfo);
     if( size(tmp)>0 )
@@ -3613,9 +3615,11 @@ global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
 	    (!lvm && DetectHomeFs(ret)))
 	    {
 	    ret["format"] = false;
-	    ret["used_fs"] = ret["detected_fs"]:`unknown;
-	    if (isempty(fstab_opts))
+	    if( ret["used_fs"]:`unknown!=ret["detected_fs"]:`unknown )
+		{
+		ret["used_fs"] = ret["detected_fs"]:`unknown;
 		fstab_opts = FileSystems::DefaultFstabOptions(ret);
+		}
 	    }
 	}
     if( ret["format"]:false && !ret["create"]:false &&
