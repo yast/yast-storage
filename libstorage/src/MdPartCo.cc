@@ -669,27 +669,39 @@ MdPartCo::removeMdPart()
     y2mil("begin");
     if( readonly() )
         {
+        y2war("Read-Only RAID.");
         ret = MDPART_CHANGE_READONLY;
         }
     if( ret==0 && !created() )
         {
+        list<string> rdevs;
+        getDevs( rdevs );
+        for( list<string>::const_iterator s=rdevs.begin();
+            s!=rdevs.end(); ++s )
+          {
+          getStorage()->clearUsedBy(*s);
+          }
+        //Remove partitions
         MdPartPair p=mdpartPair(MdPart::notDeleted);
         for( MdPartIter i=p.begin(); i!=p.end(); ++i )
             {
             if( i->nr()>0 )
+              {
                 ret = removePartition( i->nr() );
+              }
             }
+        //Remove 'whole device' it was created when last partition was deleted.
         p=mdpartPair(MdPart::notDeleted);
         if( p.begin()!=p.end() && p.begin()->nr()==0 )
             {
             if( !removeFromList( &(*p.begin()) ))
+              {
                 y2err( "not found:" << *p.begin() );
+              }
             }
         setDeleted( true );
-        }
-    if( ret==0 )
-        {
-        //unuseDev(); - In PeContainer.
+        destrSb = true;
+        del_ptable = true;
         }
     y2mil("ret:" << ret);
     return( ret );
@@ -867,16 +879,90 @@ MdPartCo::doCreate( Volume* v )
     return( ret );
     }
 
+//Remove MDPART unless:
+//1. It's IMSM or DDF SW RAID
+//2. It contains partitions.
 int MdPartCo::doRemove()
     {
-    return( MDPART_NO_REMOVE );
+    y2mil("begin");
+    // 1. Check Metadata.
+    if( sb_ver == "imsm" || sb_ver == "ddf" )
+      {
+      if( !silent )
+        {
+        getStorage()->showInfoCb( noRemoveTextFormat(true) );
+        }
+      y2error("Cannot remove IMSM or DDF SW RAIDs.");
+      return (MDPART_NO_REMOVE);
+      }
+    // 2. Check for partitions.
+    if( disk!=NULL && disk->numPartitions()>0 )
+      {
+      int permitRemove=1;
+      //handleWholeDevice: partition 0.
+      if( disk->numPartitions() == 1 )
+        {
+        //Find partition '0' if it exists then this 'whole device'
+        MdPartIter i;
+        if( findMdPart( 0, i ) == true)
+          {
+          //Single case when removal is allowed.
+          permitRemove = 0;
+          }
+        }
+      if( permitRemove == 1 )
+        {
+        if( !silent )
+          {
+          getStorage()->showInfoCb( noRemoveTextPartitions(true) );
+          }
+        y2error("Cannot remove RAID with partitions.");
+        return (MDPART_NO_REMOVE);
+        }
+      }
+    /* Try to remove this. */
+    y2milestone( "Raid:%s is going to be removed permanently.", name().c_str() );
+    int ret = 0;
+    if( deleted() )
+      {
+      string cmd = MDADMBIN " --stop " + quote(device());
+      SystemCmd c( cmd );
+      if( c.retcode()!=0 )
+        {
+        ret = MD_REMOVE_FAILED;
+        setExtError( c );
+        }
+      if( !silent )
+        {
+        getStorage()->showInfoCb( removeText(true) );
+        }
+      if( ret==0 && destrSb )
+        {
+        SystemCmd c;
+        list<string> d;
+        getDevs( d );
+        for( list<string>::const_iterator i=d.begin(); i!=d.end(); ++i )
+          {
+          c.execute(MDADMBIN " --zero-superblock " + quote(*i));
+          }
+        }
+      if( ret==0 )
+        {
+        EtcRaidtab* tab = getStorage()->getRaidtab();
+        if( tab!=NULL )
+          {
+          tab->removeEntry( nr() );
+          }
+        }
+      }
+    y2mil("Done, ret:" << ret);
+    return( ret );
     }
 
 int MdPartCo::doRemove( Volume* v )
     {
     y2mil("name:" << name() << " v->name:" << v->name());
     MdPart * l = dynamic_cast<MdPart *>(v);
-    bool save_act = false;
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
     if( ret==0 && l == NULL )
         ret = MDPART_INVALID_VOLUME;
@@ -890,28 +976,28 @@ int MdPartCo::doRemove( Volume* v )
         }
     if( ret==0 )
         {
-        save_act = active;
-        if( active )
-            activate_part(false);
         Partition *p = l->getPtr();
         if( p==NULL )
+          {
+            y2error("Partition not found");
             ret = MDPART_PARTITION_NOT_FOUND;
-        else if( !deleted() )
-            ret = disk->doRemove( p );
+          }
+        else
+          {
+          ret = disk->doRemove( p );
+          }
         }
     if( ret==0 )
         {
         if( !removeFromList( l ) )
+          {
+            y2warning("Couldn't remove parititon from list.");
             ret = MDPART_REMOVE_PARTITION_LIST_ERASE;
-        }
-    if( save_act && !deleted() )
-        {
-        activate_part(true);
-        updateMinor();
+          }
         }
     if( ret==0 )
         getStorage()->waitForDevice();
-    y2mil("ret:" << ret);
+    y2mil("Done, ret:" << ret);
     return( ret );
     }
 
@@ -1004,8 +1090,36 @@ string MdPartCo::removeText( bool doing ) const
         }
     return( txt );
     }
-
-
+string MdPartCo::noRemoveTextFormat( bool doing ) const
+    {
+    string txt;
+    if( doing )
+        {
+        // displayed text during action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
+        txt = sformat( _("Cannot remove %1$s. It is IMSM or DDF RAID."), name().c_str() );
+        }
+    else
+        {
+        // displayed text before action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
+        txt = sformat( _("Couldn't remove %1$s. It is IMSM or DDF RAID."), name().c_str() );
+        }
+    return( txt );
+    }
+string MdPartCo::noRemoveTextPartitions( bool doing ) const
+    {
+    string txt;
+    if( doing )
+        {
+        // displayed text during action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
+        txt = sformat( _("Cannot remove %1$s because it contains at least 1 partition."), name().c_str() );
+        }
+    else
+        {
+        // displayed text before action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
+        txt = sformat( _("Couldn't remove %1$s because it contains at least 1 partition."), name().c_str() );
+        }
+    return( txt );
+    }
 void
 MdPartCo::setUdevData(const list<string>& id)
 {
