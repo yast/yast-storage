@@ -277,6 +277,8 @@ class MdPartCo : public Container
     int doCreateLabel();
     virtual int doRemove();
     virtual string removeText( bool doing ) const;
+    virtual string noRemoveTextFormat( bool doing ) const;
+    virtual string noRemoveTextPartitions( bool doing ) const;
     virtual string setDiskLabelText( bool doing ) const;
 
     void getMajorMinor(void);
