@@ -113,9 +113,13 @@
             target_map = Storage::GetTargetMap();
 	    list<map> nfs_list = target_map["/dev/nfs", "partitions"]:[];
 
-	    integer sizeK = Storage::CheckNfsVolume (entry["device"]:"", entry["fstopt"]:"");
+	    string device = entry["device"]:"";
+	    string mount = entry["mount"]:"";
+	    string opts = entry["fstopt"]:"";
+	    boolean nfs4 = entry["vfstype"]:"nfs" == "nfs4";
 
-	    if ( sizeK <= 0)
+	    integer sizeK = Storage::CheckNfsVolume(device, opts, nfs4);
+	    if (sizeK <= 0)
 	    {
 		//rollback only if user does not want to save (#450060)
 		//the mount might fail later if the errors are not corrected, but the user has been warned
@@ -130,7 +134,7 @@
 		//real size - Perl then wants to die in addNfsVolume call
 		sizeK = 0;
 	    }
-	    Storage::AddNfsVolume( entry["device"]:"", entry["fstopt"]:"", sizeK, entry["mount"]:"");
+	    Storage::AddNfsVolume(device, opts, sizeK, mount, nfs4);
         }
 
 	void EditShare( map <string, any> entry )
@@ -156,6 +160,7 @@
 		    {
 		        m["fstopt"] = entry["fstopt"]:"";
 	                m["mount"] = entry["mount"]:"";
+			m["vfstype"] = entry["used_fs"]:`nfs == `nfs ? "nfs" : "nfs4";
 		    }
 		    return m;
 	        });
@@ -210,8 +215,6 @@
 	//a hack - we don't have overviews for nfs dirs, so let's switch to the main panel ...
 	CreateNfsMainPanel( user_data );
 	UI::ChangeWidget(`tree, `CurrentItem, `nfs );
-
     }
 
-
- }
+}
