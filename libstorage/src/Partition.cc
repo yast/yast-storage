@@ -354,6 +354,26 @@ bool Partition::isWindows() const
 	    idt==ID_NTFS || idt==0x17 );
     }
 
+
+int
+Partition::zeroIfNeeded() const
+{
+    int ret = 0;
+
+    bool zero_new = getContainer()->getStorage()->getZeroNewPartitions();
+    bool used_as_pv = getUsedByType() == UB_LVM;
+
+    y2milestone( "zero_new:%d used_as_pv:%d", zero_new, used_as_pv );
+
+    if (zero_new || used_as_pv)
+    {
+	ret = getContainer()->getStorage()->zeroDevice(device(), sizeK());
+    }
+
+    return ret;
+}
+
+
 string Partition::removeText( bool doing ) const
     {
     string txt;
