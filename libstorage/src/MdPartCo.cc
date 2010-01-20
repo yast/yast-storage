@@ -674,13 +674,6 @@ MdPartCo::removeMdPart()
         }
     if( ret==0 && !created() )
         {
-        list<string> rdevs;
-        getDevs( rdevs );
-        for( list<string>::const_iterator s=rdevs.begin();
-            s!=rdevs.end(); ++s )
-          {
-          getStorage()->clearUsedBy(*s);
-          }
         //Remove partitions
         MdPartPair p=mdpartPair(MdPart::notDeleted);
         for( MdPartIter i=p.begin(); i!=p.end(); ++i )
@@ -688,6 +681,12 @@ MdPartCo::removeMdPart()
             if( i->nr()>0 )
               {
                 ret = removePartition( i->nr() );
+                if( ret != 0 )
+                  {
+                  // Error. Break.
+                  break;
+                  }
+
               }
             }
         //Remove 'whole device' it was created when last partition was deleted.
@@ -697,15 +696,34 @@ MdPartCo::removeMdPart()
             if( !removeFromList( &(*p.begin()) ))
               {
                 y2err( "not found:" << *p.begin() );
+                ret = MDPART_PARTITION_NOT_FOUND;
               }
             }
-        setDeleted( true );
-        destrSb = true;
-        del_ptable = true;
         }
+    if( ret==0 )
+      {
+      unuseDevs();
+      setDeleted( true );
+      destrSb = true;
+      del_ptable = true;
+      }
     y2mil("ret:" << ret);
     return( ret );
     }
+
+int MdPartCo::unuseDevs(void)
+{
+  list<string> rdevs;
+  getDevs( rdevs );
+  for( list<string>::const_iterator s=rdevs.begin();
+      s!=rdevs.end(); s++ )
+    {
+    getStorage()->clearUsedBy(*s);
+    }
+  return 0;
+}
+
+
 
 void MdPartCo::removePresentPartitions()
     {
@@ -888,10 +906,6 @@ int MdPartCo::doRemove()
     // 1. Check Metadata.
     if( sb_ver == "imsm" || sb_ver == "ddf" )
       {
-      if( !silent )
-        {
-        getStorage()->showInfoCb( noRemoveTextFormat(true) );
-        }
       y2error("Cannot remove IMSM or DDF SW RAIDs.");
       return (MDPART_NO_REMOVE);
       }
@@ -912,10 +926,6 @@ int MdPartCo::doRemove()
         }
       if( permitRemove == 1 )
         {
-        if( !silent )
-          {
-          getStorage()->showInfoCb( noRemoveTextPartitions(true) );
-          }
         y2error("Cannot remove RAID with partitions.");
         return (MDPART_NO_REMOVE);
         }
@@ -1087,36 +1097,6 @@ string MdPartCo::removeText( bool doing ) const
         {
         // displayed text before action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
         txt = sformat( _("Remove %1$s"), name().c_str() );
-        }
-    return( txt );
-    }
-string MdPartCo::noRemoveTextFormat( bool doing ) const
-    {
-    string txt;
-    if( doing )
-        {
-        // displayed text during action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
-        txt = sformat( _("Cannot remove %1$s. It is IMSM or DDF RAID."), name().c_str() );
-        }
-    else
-        {
-        // displayed text before action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
-        txt = sformat( _("Couldn't remove %1$s. It is IMSM or DDF RAID."), name().c_str() );
-        }
-    return( txt );
-    }
-string MdPartCo::noRemoveTextPartitions( bool doing ) const
-    {
-    string txt;
-    if( doing )
-        {
-        // displayed text during action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
-        txt = sformat( _("Cannot remove %1$s because it contains at least 1 partition."), name().c_str() );
-        }
-    else
-        {
-        // displayed text before action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
-        txt = sformat( _("Couldn't remove %1$s because it contains at least 1 partition."), name().c_str() );
         }
     return( txt );
     }

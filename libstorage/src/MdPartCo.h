@@ -277,8 +277,6 @@ class MdPartCo : public Container
     int doCreateLabel();
     virtual int doRemove();
     virtual string removeText( bool doing ) const;
-    virtual string noRemoveTextFormat( bool doing ) const;
-    virtual string noRemoveTextPartitions( bool doing ) const;
     virtual string setDiskLabelText( bool doing ) const;
 
     void getMajorMinor(void);
@@ -299,6 +297,8 @@ class MdPartCo : public Container
     void getMdProps(void);
 
     void setSpares(void);
+    /* Clear UsedBy for Disks. */
+    int unuseDevs(void);
 
     void logData( const string& Dir );
     string udev_path;
