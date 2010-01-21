@@ -269,6 +269,52 @@ edited. To edit %1, make sure it is not used."), device));
     }
 
 
+    void EpMovePartition(string device)
+    {
+	if (device == nil)
+	{
+	    // error popup
+	    Popup::Error(_("No partition selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> disk = Storage::GetDisk(target_map, device);
+	map<string, any> part = Storage::GetPartition(target_map, device);
+
+	if (disk["readonly"]:false)
+	{
+	    Popup::Error(Partitions::RdonlyText(disk["device"]:"", true));
+	    return;
+	}
+
+	if (!part["create"]:false)
+	{
+	    // error popup, %1 is replace by partition device name, e.g. /dev/sdb1
+	    Popup::Error(sformat(_("The partition %1 is already created on disk
+and cannot be moved."), device));
+	    return;
+	}
+
+	if (part["type"]:`primary == `extended)
+	{
+	    // error popup text
+	    Popup::Error(_("An extended partition cannot be moved."));
+	    return;
+	}
+
+	if (DlgMovePartition(part))
+	{
+	    if (Storage::UpdatePartition(device, part["region", 0]:0, part["region", 1]:0))
+	    {
+		UpdateMainStatus();
+		TreePanel::Create();
+		UpdateTableFocus(device);
+	    }
+	}
+    }
+
+
     void EpResizePartition(string device)
     {
 	if (device == nil)
@@ -366,11 +412,11 @@ resized. To resize %1, make sure it is not used."), device));
 	string mypart_table_type = target_map[ device, "label" ]:Storage::DefaultDiskLabel( mysize );
 
 	// helptext
-	string helptext = _("<p>Select one or more (if available) hard disks 
-that will have the same partition layout as 
-this disk.</p> 
+	string helptext = _("<p>Select one or more (if available) hard disks
+that will have the same partition layout as
+this disk.</p>
 <p>Disks marked with '*' sign contain one or
-more partitions. After cloning, these 
+more partitions. After cloning, these
 partitions will be deleted.</p>");
 
 	list <string> AvailableTargetDisks()
@@ -379,7 +425,7 @@ partitions will be deleted.</p>");
 		filter( string dev, map props, target_map, {
 		    return dev != device &&
 			Storage::IsDiskType( props["type"]:`CT_UNKNOWN ) &&
-			isempty(props["used_by"]:[]) && 
+			isempty(props["used_by"]:[]) &&
 			props["cyl_size"]:0 == mycyl_size;
 		});
 
@@ -389,8 +435,8 @@ partitions will be deleted.</p>");
 
 	    foreach( string dev, map props, filtered_target_map,{
 		if( props["size_k"]:0 >= mysize )
-		    items = add(items, dev); 
-		else 
+		    items = add(items, dev);
+		else
 		    y2milestone("%1 is smaller than needed, skipping it", device);
 	    });
 
@@ -418,7 +464,7 @@ partitions will be deleted.</p>");
 	}
 
 	if (isempty(myparts)) {
-	    Popup::Error(_("There are no partitions on this disk (a clonable 
+	    Popup::Error(_("There are no partitions on this disk (a clonable
 disk must have at least one partition).
 Create some partitions before cloning the disk."));
 	    return;
@@ -427,7 +473,7 @@ Create some partitions before cloning the disk."));
 	list <string> mydisks = AvailableTargetDisks();
 
 	if (isempty(mydisks)) {
-	    Popup::Error("This disk cannot be cloned. There are no suitable 
+	    Popup::Error("This disk cannot be cloned. There are no suitable
 disks that could have the same partitioning layout.");
 	   return;
 	}
@@ -486,7 +532,7 @@ disks that could have the same partitioning layout.");
 		});
 
 		//if there is anything to delete, ask user if s/he really wants to delete
-		if ( !isempty(partitions_to_delete) && 
+		if ( !isempty(partitions_to_delete) &&
 		     !ConfirmDeletePartitions( partitions_to_delete )) {
 		    ret = nil;
 		    continue;
@@ -519,10 +565,10 @@ disks that could have the same partitioning layout.");
 
 		    foreach( map one_partition, myparts, {
 		        map next = Storage::NextPartition( this_disk, one_partition["type"]:`none);
-		        Storage::CreatePartition( this_disk, next["device"]:"error", 
+		        Storage::CreatePartition( this_disk, next["device"]:"error",
 					      one_partition["type"]:`primary,
 					      one_partition["fsid"]: Partitions::fsid_native,
-					      one_partition["region",0]:0, one_partition["region",1]:0, 
+					      one_partition["region",0]:0, one_partition["region",1]:0,
 					      one_partition["mountby"]:Storage::GetMountBy(device) );
 		        //FIXME: ChangeVolumeProperties too?
 		    });

@@ -340,10 +340,98 @@
     }
 
 
+    boolean DlgMovePartition(map<string, any>& part)
+    {
+	string device = part["device"]:"error";
+
+	integer free_cyl_before = 0;
+	integer free_cyl_after = 0;
+
+	Storage::FreeCylindersAroundPartition(device, free_cyl_before, free_cyl_after);
+
+	if (free_cyl_before == 0 && free_cyl_after == 0)
+	{
+	    // error popup text, %1 is replace with name of partition
+	    Popup::Error(sformat(_("No space to moved partition %1."), device));
+	    return false;
+	}
+
+	integer move = 0;
+
+	if (free_cyl_before > 0 && free_cyl_after == 0)
+	{
+	    // popup text, %1 is replace with name of partition
+	    if (!Popup::YesNo(sformat(_("Move partition %1 forward?"), device)))
+		return false;
+
+	    move = -free_cyl_before;
+	}
+	else if (free_cyl_before == 0 && free_cyl_after > 0)
+	{
+	    // popup text, %1 is replace with name of partition
+	    if (!Popup::YesNo(sformat(_("Move partition %1 backward?"), device)))
+		return false;
+
+	    move = free_cyl_after;
+	}
+	else if (free_cyl_before > 0 && free_cyl_after > 0)
+	{
+	    UI::OpenDialog(`opt(`decorated),
+			   Greasemonkey::Transform(
+			       `VBox(
+				   `MarginBox(2, 0.4,
+					      `RadioButtonGroup(`id(`directions),
+								`VBox(
+								    // popup text, %1 is replace with name of partition
+								    `Label(sformat(_("Move partition %1?"), device)),
+								    // radio button text
+								    `LeftRadioButton(`id(`forward), _("Forward"), true),
+								    // radio button text
+								    `LeftRadioButton(`id(`backward), _("Backward"))
+								    ))),
+				   `ButtonBox(
+				       `PushButton(`id(`cancel), `opt(`cancelButton), Label::CancelButton()),
+				       `PushButton(`id(`ok), `opt(`default, `okButton), Label::OKButton())
+				       )
+				   )
+			       )
+		);
+
+	    symbol widget = (symbol) UI::UserInput();
+
+	    symbol direction = (symbol) UI::QueryWidget(`id(`directions), `Value);
+
+	    UI::CloseDialog();
+
+	    if (widget != `ok)
+		return false;
+
+	    switch (direction)
+	    {
+		case `forward:
+		    move = -free_cyl_before;
+		    break;
+
+		case `backward:
+		    move = free_cyl_after;
+		    break;
+	    }
+	}
+
+	if (move == 0)
+	    return false;
+
+	part["region", 0] = part["region", 0]:0 + move;
+	y2milestone("part:%1", part);
+	return true;
+    }
+
+
     boolean DlgResizePartition(map<string, any> &data, map <string, any> disk)
     {
 	return DlgResize(data, disk);
     }
+
 
     boolean ConfirmPartitionsDelete( string disk, list<string> pnames )
     {
