@@ -2153,6 +2153,7 @@ global boolean CreatePartition( string disk, string device, symbol ptype,
     return( ret==0 );
     }
 
+
 global boolean UpdatePartition( string device, integer start, integer len )
     {
     y2milestone( "UpdatePartition device:%1 start:%2 len:%3",
@@ -4388,29 +4389,12 @@ global define map IsResizable( map part )
     }
 
 
-global integer FreeCylindersAfterPartition(string device)
+global boolean FreeCylindersAroundPartition(string device, integer& free_before, integer& free_after)
 {
-    integer ret = 0;
-    if (LibStorage::StorageInterface::freeCylindersAfterPartition(sint, device, ret) != 0)
-	ret = 0;
-    y2milestone("FreeCylindersAfterPartition ret:%1", ret);
+    boolean ret = LibStorage::StorageInterface::freeCylindersAroundPartition(sint, device, free_before, free_after) == 0;
+    y2milestone("FreeCylindersAfterPartition ret:%1 free_before:%2 free_after:%3", ret, free_before, free_after);
     return ret;
 }
-
-
-global define boolean CheckNextCreated( map disk, list region )
-    ``{
-    boolean ret = false;
-    integer cylinder = region[0]:0 + region[1]:0;
-    foreach(map part, disk["partitions"]:[], ``{
-	if( part["region",0]:0 == cylinder && part["create"]:false )
-	    {
-	    ret = true;
-	    }
-	});
-    y2milestone( "CheckNextCreated region:%1 ret:%2", region, ret );
-    return( ret );
-    }
 
 
     global string PathToDestdir(string p)
@@ -5010,125 +4994,6 @@ global define list GetRootInitrdModules()
 	boolean ret = part["type"]:`primary == `sw_raid;
 	y2milestone("CheckForMdRootFs root:%1 ret:%2", part, ret);
 	return ret;
-    }
-
-
-global define void AdaptResize( string maindev, list region, integer schange )
-    ``{
-    map<string,map> tg = GetTargetMap();
-    list<map> partitions = tg[maindev,"partitions"]:[];
-    integer cylinder = region[0]:0 + region[1]:0;
-    boolean found = false;
-    integer index = -1;
-    integer e_idx = -1;
-    list<integer> idx_list = [];
-    map part = (map) find(map p, partitions,
-                          ``(p["region",0]:0 == cylinder && p["create"]:false));
-    y2milestone( "AdaptResize %1 reg %2 change %3", maindev, region, schange );
-    if( part != nil )
-	{
-	found = false;
-	index = 0;
-	foreach(map p, partitions,
-	    ``{
-	    if( p["region",0]:0 == cylinder && p["create"]:false )
-		{
-		found = true;
-		}
-	    else if( !found )
-		{
-		index = index + 1;
-		}
-	    });
-	if( partitions[index,"type"]:`primary == `extended )
-	    {
-	    e_idx = index;
-	    found = false;
-	    index = 0;
-	    foreach(map p, partitions,
-		``{
-		if( p["region",0]:0 == cylinder && p["create"]:false &&
-		    p["type"]:`primary != `extended )
-		    {
-		    found = true;
-		    part = p;
-		    }
-		else if( !found )
-		    {
-		    index = index + 1;
-		    }
-		});
-	    }
-	cylinder = part["region",0]:0 + part["region",1]:0;
-	y2milestone( "AdaptResize part:%1", part );
-	y2milestone( "AdaptResize index:%1 e_idx:%2 cylinder:%3", index, e_idx,
-	             cylinder );
-	map pnew = (map) find( map p, partitions,
-	                       ``( p["region",0]:0 == cylinder &&
-				   p["create"]:false ));
-	y2milestone( "AdaptResize pnew:%1", pnew );
-	while( pnew != nil &&
-	       (part["mount"]:"" == Partitions::BootMount() ||
-	        part["fsid"]:0==Partitions::fsid_swap ||
-		part["region",1]:0 < (schange<0?(-1*schange):schange)) )
-	    {
-	    y2milestone( "AdaptResize pnew:%1", pnew );
-	    part = pnew;
-	    idx_list = add( idx_list, index );
-	    y2milestone( "AdaptResize index:%1 idx_list:%2", index, idx_list );
-	    found = false;
-	    index = 0;
-	    foreach(map p, partitions, ``{
-	        y2milestone( "found:%1 index:%2 p=%3", found, index, p );
-		if( p["nr"]:0 == pnew["nr"]:0 )
-		    {
-		    found = true;
-		    }
-		else if( !found )
-		    {
-		    index = index + 1;
-		    }
-		});
-	    cylinder = part["region",0]:0 + part["region",1]:0;
-	    pnew = (map) find( map p, partitions,
-	                       ``( p["region",0]:0 == cylinder &&
-				   p["create"]:false ));
-	    }
-	y2milestone( "AdaptResize idx:%1 list:%2", index, idx_list );
-
-	foreach(integer num, idx_list, ``{
-	    partitions[num,"region",0] = partitions[num,"region",0]:0 - schange;
-	    UpdatePartition( partitions[num,"device"]:"", partitions[num,"region",0]:0,
-			     partitions[num,"region",1]:1 );
-	    });
-	partitions[index,"region",0] = partitions[index,"region",0]:0 - schange;
-	partitions[index,"region",1] = partitions[index,"region",1]:0 + schange;
-	if( partitions[index,"region",1]:0 <= 0 )
-	    {
-	    partitions[index,"region",1] = 1;
-	    }
-	y2milestone( "AdaptResize increase p:%1", partitions[index]:$[] );
-	UpdatePartition( partitions[index,"device"]:"", partitions[index,"region",0]:0,
-	                 partitions[index,"region",1]:1 );
-	if( e_idx>=0 )
-	    {
-	    partitions[e_idx,"region",0] = partitions[e_idx,"region",0]:0 - schange;
-	    partitions[e_idx,"region",1] = partitions[e_idx,"region",1]:0 + schange;
-	    if( partitions[e_idx,"region",1]:0 <= 0 )
-		{
-		partitions[e_idx,"region",1] = 1;
-		}
-	    UpdatePartition( partitions[e_idx,"device"]:"", partitions[e_idx,"region",0]:0,
-			     partitions[e_idx,"region",1]:1 );
-	    }
-	}
-    else
-	{
-	y2error( "AdaptResize this should not happen %1", partitions );
-	}
-    y2milestone( "AdaptResize partitions:%1", partitions );
-    y2milestone( "AdaptResize maindev:%1 region:%2 change:%3", maindev,
-                 region, schange );
     }
 
 
