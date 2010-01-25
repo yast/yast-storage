@@ -2523,11 +2523,33 @@ Storage::getMountBy( const string& device, MountByType& mby )
 	mby = defaultMountBy;
 	pair<string,unsigned> dp = Disk::getDiskPartition(device);
 	y2mil( "dp:" << dp );
-	DiskIterator i = findDisk( dp.first );
-	if( (i==dEnd()) || (mby == MOUNTBY_ID && i->udevId().empty()) ||
-	    (mby == MOUNTBY_PATH && i->udevPath().empty()))
-	    mby = MOUNTBY_DEVICE;
-	ret = STORAGE_VOLUME_NOT_FOUND;
+
+	DiskIterator i1 = findDisk(dp.first);
+	DmPartCoIterator i2 = findDmPartCo(dp.first);
+	MdPartCoIterator i3 = findMdPartCo(dp.first);
+
+	if (i1 != dEnd())
+	{ 
+	    if ((mby == MOUNTBY_ID && i1->udevId().empty()) ||
+		(mby == MOUNTBY_PATH && i1->udevPath().empty()))
+		mby = MOUNTBY_DEVICE;
+	}
+	else if (i2 != dmpCoEnd())
+	{
+	    if ((mby == MOUNTBY_ID && i2->udevId().empty()) ||
+		(mby == MOUNTBY_PATH && i2->udevPath().empty()))
+		mby = MOUNTBY_DEVICE;
+	}
+	else if (i3 != mdpCoEnd())
+	{
+	    if ((mby == MOUNTBY_ID && i3->udevId().empty()) ||
+		(mby == MOUNTBY_PATH && i3->udevPath().empty()))
+		mby = MOUNTBY_DEVICE;
+	}
+	else
+	{
+	    ret = STORAGE_VOLUME_NOT_FOUND;
+	}
 	}
     y2milestone( "ret:%d mby:%s", ret, Volume::mbyTypeString(mby).c_str());
     return( ret );
