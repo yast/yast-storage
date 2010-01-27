@@ -58,7 +58,6 @@ class MdPartCo : public Container
 
     virtual ~MdPartCo();
 
-
     unsigned long long sizeK() const { return size_k; }
     const string& labelName() const { return disk->labelName(); }
     const string& udevPath() const { return udev_path; }
@@ -170,10 +169,6 @@ class MdPartCo : public Container
     static bool hasPartitionTable(const string& name );
     /* Return true if there is no Filesystem on device (it can contain partition table). */
     static bool hasFileSystem(const string& name);
-
-
-    static void setHandlingDev(bool val) { handlingMd = val; }
-    static bool isHandlingDev() { return handlingMd; }
 
     static bool isImsmPlatform();
 
@@ -390,7 +385,7 @@ class MdPartCo : public Container
     mutable storage::MdPartCoInfo info;
 
     static bool active;
-    static bool handlingMd;
+
     };
 }
 

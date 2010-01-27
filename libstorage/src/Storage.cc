@@ -135,6 +135,8 @@ Storage::Storage(const Environment& env)
     fstab = NULL;
     raidtab = NULL;
 
+    imsm_driver = IMSM_UNDECIDED;
+
     logSystemInfo();
 }
 
@@ -244,7 +246,7 @@ void Storage::detectObjects()
 	DmraidCo::activate( true );
 	waitForDevice();
 	//If user said No then this is the way it was before.
-	if( MdPartCo::isHandlingDev() == false )
+	if (getImsmDriver() != IMSM_MDADM)
 	  {
 	  MdPartCo::activate(true, tmpDir() );
 	  waitForDevice();
@@ -529,11 +531,12 @@ bool Storage::discoverMdPVols()
         if( yesnoPopupCb(txt) )
           {
           ret = true;
-          MdPartCo::setHandlingDev(true);
+          setImsmDriver(IMSM_MDADM);
           }
         else
           {
           ret = false;
+	  setImsmDriver(IMSM_DMRAID);
           }
         }
       else
@@ -6547,7 +6550,7 @@ Storage::activateHld(bool val)
     y2mil("val:" << val);
     if (val)
     {
-        if( MdPartCo::isHandlingDev() == true)
+        if (getImsmDriver() == IMSM_MDADM)
           {
           MdPartCo::activate(val, tmpDir());
           Dm::activate(val);
