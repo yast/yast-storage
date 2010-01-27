@@ -516,6 +516,8 @@ bool Storage::discoverMdPVols()
       y2mil(" md raids:" + mdDevs);
       if( !mdDevs.empty())
         {
+	if (getImsmDriver() == IMSM_UNDECIDED)
+	{
         string txt = sformat(
             // popup text %1$s is replaced by disk name e.g. /dev/hda
             _("You are running on the Intel(R) Matrix Storage Manager compatible platform.\n"
@@ -538,7 +540,12 @@ bool Storage::discoverMdPVols()
           ret = false;
 	  setImsmDriver(IMSM_DMRAID);
           }
-        }
+	}
+	else
+	{
+	    ret = getImsmDriver() == IMSM_MDADM;
+	}
+	}
       else
         {
         /* No mdDevs */
