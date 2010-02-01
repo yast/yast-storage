@@ -198,16 +198,26 @@ iSCSI disks, BIOS RAIDs and Multipath disks and their partitions.</p>");
 
 	map<string, map> target_map = Storage::GetTargetMap();
 
-	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `udev_path,
-								`udev_id, `used_by, `heading_hd, `vendor,
-								`model, `num_cyl, `cyl_size, `bus, `bios_id,
-								`disk_label, `heading_fc, `fc_wwpn, `fc_port_id,
-								`fc_fcp_lun ]);
+	symbol ctype = target_map[device, "type"]:`CT_DISK;
+
+	list<symbol> fields = [ `heading_device, `device, `size, `udev_path, `udev_id, `used_by,
+				`heading_hd, `vendor, `model, `num_cyl, `cyl_size, `bus, `bios_id,
+				`disk_label ];
+
+	if (contains([ `CT_MDPART ], ctype))
+	{
+	    fields = (list<symbol>) merge(fields, [ `heading_md, `raid_type, `chunk_size, `parity_algorithm ]);
+	}
+
+	if (contains([ `CT_DISK ], ctype))
+	{
+	    fields = (list<symbol>) merge(fields, [`heading_fc, `fc_wwpn, `fc_port_id, `fc_fcp_lun ]);
+	}
 
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
 			      `HStretch(),
-			      StorageFields::Overview(fields, target_map, device),
+			      StorageFields::Overview(StorageSettings::FilterOverview(fields), target_map, device),
 			      `HBox(
 				  // push button text (do not translate 'SMART', it is the name of the tool)
 				  `PushButton(`id(`smart), _("Health Test (SMART)...")),
