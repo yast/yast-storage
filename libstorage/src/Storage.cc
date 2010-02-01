@@ -447,7 +447,9 @@ void Storage::detectMdParts(ProcPart& ppart)
     {
     list<string> l = MdPartCo::getMdRaids();
     list<string> mdpartlist = MdPartCo::filterMdPartCo(l,ppart, instsys());
-    //
+
+    if (!mdpartlist.empty())
+    {
     map<string, list<string>> by_id;
     getUdevMap("/dev/disk/by-id", by_id);
     for( list<string>::const_iterator i = mdpartlist.begin();
@@ -462,6 +464,7 @@ void Storage::detectMdParts(ProcPart& ppart)
         }
       addToList( v );
       }
+    }
     }
 }
 
