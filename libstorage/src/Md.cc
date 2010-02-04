@@ -49,6 +49,7 @@ Md::Md( const MdCo& d, unsigned PNr, MdType Type,
 	y2err("constructed md with wrong container");
     init();
     md_type = Type;
+    has_container = false;
     for( list<string>::const_iterator i=devices.begin(); i!=devices.end(); ++i )
 	devs.push_back( normalizeDevice( *i ) );
     computeSize();
@@ -733,6 +734,15 @@ Md& Md::operator= ( const Md& rhs )
     destrSb = rhs.destrSb;
     devs = rhs.devs;
     spare = rhs.spare;
+
+    has_container = rhs.has_container;
+    md_metadata = rhs.md_metadata;
+    parent_container = rhs.parent_container;
+    parent_uuid = rhs.parent_uuid;
+    parent_md_name = rhs.parent_md_name;
+    parent_metadata = rhs.parent_metadata;
+    md_member = rhs.md_member;
+
     return( *this );
     }
 
@@ -799,10 +809,10 @@ int Md::updateEntry(EtcRaidtab* tab)
   info.md_uuid = md_uuid;
   if( has_container )
     {
-    stringstream ss;
     info.container_present = true;
     info.container_info.md_uuid = parent_uuid;
     info.container_info.metadata = parent_metadata;
+    stringstream ss;
     ss << md_member;
     info.member = ss.str();
     }
