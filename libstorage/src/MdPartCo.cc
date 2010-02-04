@@ -1364,13 +1364,10 @@ MdPartCo::MdPartCo( const MdPartCo& rhs ) : Container(rhs)
     md_parity = rhs.md_parity;
     md_state = rhs.md_state;
     has_container = rhs.has_container;
-    if( has_container )
-      {
       parent_container = rhs.parent_container;
       parent_md_name = rhs.parent_md_name;
       parent_metadata = rhs.parent_metadata;
       parent_uuid = rhs.parent_uuid;
-      }
     md_uuid = rhs.md_uuid;
     sb_ver = rhs.sb_ver;
     destrSb = rhs.destrSb;
