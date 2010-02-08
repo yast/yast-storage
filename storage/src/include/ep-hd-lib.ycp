@@ -89,7 +89,7 @@ on %1 and all RAIDs and Volume Groups using partitions on %1."), disk_device)))
 	}
 
 	map<string, map> target_map = Storage::GetTargetMap();
-	map<string, any> disk = Storage::GetDisk(target_map, device);
+	map<string, any> disk = (map<string, any>) target_map[device]:$[];
 
 	if (disk["type"]:`CT_UNKNOWN == `CT_DMRAID)
 	{
@@ -98,6 +98,19 @@ on %1 and all RAIDs and Volume Groups using partitions on %1."), disk_device)))
 	    {
 		if (deleteAllDevPartitions(disk, Stage::initial(), false))
 		    Storage::DeleteDmraid(device);
+
+		UpdateMainStatus();
+		UpdateNavigationTree(`hd);
+		TreePanel::Create();
+	    }
+	}
+	else if (disk["type"]:`CT_UNKNOWN == `CT_MDPART && disk["sb_ver"]:"" != "imsm")
+	{
+	    // popup text
+	    if (Popup::YesNo(sformat(_("Really delete Partitioned RAID %1?"), device)))
+	    {
+		if (deleteAllDevPartitions(disk, Stage::initial(), false))
+		    Storage::DeleteMdPartCo(device);
 
 		UpdateMainStatus();
 		UpdateNavigationTree(`hd);
