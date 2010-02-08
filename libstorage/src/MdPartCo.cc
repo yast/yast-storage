@@ -1092,12 +1092,12 @@ string MdPartCo::removeText( bool doing ) const
     if( doing )
         {
         // displayed text during action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
-        txt = sformat( _("Removing %1$s"), name().c_str() );
+	txt = sformat( _("Removing software RAID %1$s"), name().c_str() );
         }
     else
         {
         // displayed text before action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
-        txt = sformat( _("Remove %1$s"), name().c_str() );
+	txt = sformat( _("Remove software RAID %1$s"), name().c_str() );
         }
     return( txt );
     }
