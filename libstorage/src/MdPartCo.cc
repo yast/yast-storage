@@ -36,6 +36,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <stdlib.h>
+#include <boost/algorithm/string.hpp>
 
 #include "y2storage/MdPartCo.h"
 #include "y2storage/MdPart.h"
@@ -1129,23 +1130,9 @@ void MdPartCo::getInfo( MdPartCoInfo& tinfo ) const
         }
     info.minor = mnr;
 
-    info.devices.clear();
-    for(list<string>::const_iterator i=devs.begin();
-        i != devs.end();
-        i++)
-      {
-      info.devices += *i;
-      info.devices += " ";
-      }
+    info.devices = boost::join(devs, " ");
+    info.spares = boost::join(devs, " ");
 
-    info.spares.clear();
-    for(list<string>::const_iterator i=spare.begin();
-        i != spare.end();
-        i++)
-      {
-      info.spares += *i;
-      info.spares += " ";
-      }
     info.level = md_type;
     info.nr = mnr;
     info.parity = md_parity;
