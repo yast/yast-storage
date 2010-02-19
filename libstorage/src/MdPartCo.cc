@@ -2067,19 +2067,22 @@ MdPartCo::syncRaidtab()
     updateEntry();
 }
 
-int MdPartCo::getContMember()
+
+string
+MdPartCo::getContMember() const
 {
-  string::size_type pos = md_metadata.find_last_of("/");
-  if( pos != string::npos )
+    y2mil("md_metadata:" << md_metadata);
+    string::size_type pos = md_metadata.find_last_of("/");
+    if (pos != string::npos)
     {
-    unsigned mem;
-    string tmp = md_metadata;
-    tmp.erase(0,pos+1);
-    tmp >> mem;
-    return mem;
+	string tmp = md_metadata;
+	tmp.erase(0, pos + 1);
+	return tmp;
     }
-  return -1;
+    return string();
 }
+
+
 void MdPartCo::updateEntry()
     {
     EtcRaidtab* tab = getStorage()->getRaidtab();
