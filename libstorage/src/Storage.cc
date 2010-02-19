@@ -106,18 +106,19 @@ namespace storage
 
 
 Storage::Storage(const Environment& env)
-    : env(env), lock(readonly(), testmode()), initialized(false)
+    : env(env), lock(readonly(), testmode()), initialized(false), fstab(NULL), raidtab(NULL),
+      imsm_driver(IMSM_UNDECIDED)
 {
     y2mil("constructed Storage with " << env);
     y2mil("package string \"" PACKAGE_STRING "\"");
-    char * tenv = getenv( "YAST_IS_RUNNING" );
+
     root_mounted = !instsys();
     efiboot = false;
     hald_pid = 0;
 
     max_log_num = 5;
-    tenv = getenv( "Y2MAXLOGNUM" );
-    if( tenv!=0 )
+    const char* tenv = getenv("Y2MAXLOGNUM");
+    if (tenv)
 	string(tenv) >> max_log_num;
     y2mil("max_log_num:" << max_log_num);
 
@@ -132,10 +133,14 @@ Storage::Storage(const Environment& env)
     defaultMountBy = MOUNTBY_ID;
     detectMounted = true;
 
-    fstab = NULL;
-    raidtab = NULL;
-
-    imsm_driver = IMSM_UNDECIDED;
+    tenv = getenv("LIBSTORAGE_IMSM_DRIVER");
+    if (tenv)
+    {
+	if (boost::iequals(tenv, "DMRAID", locale::classic()))
+	    imsm_driver = IMSM_DMRAID;
+	else if (boost::iequals(tenv, "MDADM", locale::classic()))
+	    imsm_driver = IMSM_MDADM;
+    }
 
     logSystemInfo();
 }
