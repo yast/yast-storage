@@ -357,6 +357,17 @@ Storage::~Storage()
 void Storage::rescanEverything()
     {
     y2mil("rescan everything");
+
+    if (instsys())
+    {
+	LvmVg::activate(false);
+	MdCo::activate(false, tmpDir());
+	MdPartCo::activate(false, tmpDir());
+	DmraidCo::activate(false);
+	DmmultipathCo::activate(false);
+	Dm::activate(false);
+    }
+
     deleteClist(cont);
     detectObjects();
     }
