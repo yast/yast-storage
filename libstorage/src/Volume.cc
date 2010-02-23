@@ -2485,6 +2485,11 @@ static bool haveQuota( const string& fstopt )
     return( ret );
     }
 
+bool Volume::pvEncryption() const
+    {
+    return( encryption==ENC_LUKS && getUsedByType()==UB_LVM );
+    }
+
 int Volume::doFstabUpdate()
     {
     int ret = 0;
@@ -2495,7 +2500,7 @@ int Volume::doFstabUpdate()
 	EtcFstab* fstab = cont->getStorage()->getFstab();
 	FstabEntry entry;
 	if ((!orig_mp.empty() || orig_encryption != ENC_NONE) &&
-	    (deleted() || (mp.empty() && encryption == ENC_NONE)) &&
+	    (deleted() || (mp.empty() && !pvEncryption())) &&
 	     (fstab->findDevice( dev, entry ) ||
 	      fstab->findDevice( alt_names, entry ) ||
 	      (cType()==LOOP && fstab->findMount( orig_mp, entry )) ||
@@ -2510,7 +2515,7 @@ int Volume::doFstabUpdate()
 	    y2milestone( "before removeEntry" );
 	    ret = fstab->removeEntry( entry );
 	    }
-	else if ((!mp.empty() || encryption != ENC_NONE) && !deleted())
+	else if ((!mp.empty() || pvEncryption()) && !deleted())
 	    {
 	    string fname;
 	    if( fstab->findDevice( dev, entry ) ||
