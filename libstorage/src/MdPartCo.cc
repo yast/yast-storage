@@ -1166,7 +1166,7 @@ int MdPartCo::getPartitionInfo(deque<storage::PartitionInfo>& plist)
 std::ostream& operator<< (std::ostream& s, const MdPartCo& d )
     {
     s << *((Container*)&d);
-    s << " Name:" << d.md_name
+    s << " md_name:" << d.md_name
       << " MdNr:" << d.mnr
       << " PNum:" << d.num_part;
     if( !d.udev_id.empty() )
