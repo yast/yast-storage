@@ -1355,6 +1355,7 @@ MdPartCo::MdPartCo( const MdPartCo& rhs ) : Container(rhs)
       parent_md_name = rhs.parent_md_name;
       parent_metadata = rhs.parent_metadata;
       parent_uuid = rhs.parent_uuid;
+    md_metadata = rhs.md_metadata;
     md_uuid = rhs.md_uuid;
     sb_ver = rhs.sb_ver;
     destrSb = rhs.destrSb;
@@ -1479,7 +1480,7 @@ void MdPartCo::setSize(unsigned long long size )
 
 void MdPartCo::getMdProps()
 {
-  y2mil("Called");
+    y2mil("Called dev:" << dev);
 
   string property;
 
@@ -1487,6 +1488,7 @@ void MdPartCo::getMdProps()
     {
       y2war("Failed to read metadata");
     }
+    y2mil("md_metadata:" << md_metadata);
 
    property.clear();
    if( !readProp(COMPONENT_SIZE, property) )
@@ -1539,12 +1541,13 @@ void MdPartCo::getMdProps()
       md_type = toMdType(property);
       }
 
-    //
     setMdParity();
     setMdDevs();
     setSpares();
     setMetaData();
     MdPartCo::getUuidName(nm,md_uuid,md_name);
+
+    y2mil("md_metadata:" << md_metadata);
     if( has_container )
       {
       MdPartCo::getUuidName(parent_container,parent_uuid,parent_md_name);
@@ -1675,12 +1678,11 @@ void MdPartCo::setMetaData()
     }
 
   string path = sysfs_path + parent_container + "/md/" + md_props[METADATA];
-  string val;
-
   if( access( path.c_str(), R_OK )==0 )
     {
     std::ifstream file( path.c_str() );
     classic(file);
+    string val;
     file >> val;
     file.close();
     file.clear();
@@ -1693,7 +1695,6 @@ void MdPartCo::setMetaData()
       parent_metadata = sb_ver;
       }
     }
-  return;
 }
 
 void MdPartCo::setMdParity()
