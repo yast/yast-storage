@@ -261,6 +261,7 @@ class Storage : public storage::StorageInterface
 	string prependRoot(const string& mp) const;
 	const string& tmpDir() const;
 	bool efiBoot() const { return efiboot; }
+	bool hasIScsiDisks() const;
 	static const string& arch() { return( proc_arch ); }
 	static bool isPPCMac() { return( is_ppc_mac ); }
 	static bool isPPCPegasos() { return( is_ppc_pegasos ); }

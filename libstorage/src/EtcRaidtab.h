@@ -26,6 +26,9 @@
 #include <string>
 #include <map>
 
+#include "y2storage/Storage.h"
+
+
 namespace storage
 {
 
@@ -36,7 +39,7 @@ class MdPartCo;
 class EtcRaidtab
     {
     public:
-	EtcRaidtab( const string& prefix="" );
+	EtcRaidtab( const Storage* sto, const string& prefix="" );
 	~EtcRaidtab();
 	void updateEntry( unsigned num, const std::list<string>& entries,
 	                  const string&, const std::list<string>& devs );
@@ -101,8 +104,14 @@ class EtcRaidtab
 	string ArrayLine(const mdconf_info& info);
 	bool updateContainer(const mdconf_info& info);
 
+	void setDeviceLine(const string& line);
+	void setAutoLine(const string& line);
+
+	const Storage* sto;
+
 	string mdadmname;
 	int mdadm_dev_line;
+	int mdadm_auto_line;
 	std::map<unsigned,entry> mtab;
 	std::map<string,entry> uuidtab; // search by uuid, only for ARRAY lines.
 	AsciiFile* mdadm;
