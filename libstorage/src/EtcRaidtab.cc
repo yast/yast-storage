@@ -37,7 +37,7 @@ using namespace std;
 using namespace storage;
 
 EtcRaidtab::EtcRaidtab( const Storage* sto, const string& prefix )
-    : sto(sto), mdadm_dev_line(-1), mdadm_auto_line(-1)
+    : sto(sto)
     {
     mdadmname = prefix+"/etc/mdadm.conf";
     mdadm = new AsciiFile( mdadmname ); 
@@ -116,30 +116,24 @@ bool EtcRaidtab::updateEntry(const mdconf_info& info)
 void
 EtcRaidtab::setDeviceLine(const string& line)
 {
-    if (mdadm_dev_line < 0)
-    {
-	mdadm_dev_line = mdadm->numLines();
+    Regex rx("^DEVICE");
+    int i = mdadm->find(0, rx);
+    if (i < 0)
 	mdadm->insert(0, line);
-    }
     else
-    {
-	(*mdadm)[mdadm_dev_line] = line;
-    }
+	mdadm->replace(i, 1, line);
 }
 
 
 void
 EtcRaidtab::setAutoLine(const string& line)
 {
-    if (mdadm_auto_line < 0)
-    {
-	mdadm_auto_line = mdadm->numLines();
+    Regex rx("^AUTO");
+    int i = mdadm->find(0, rx);
+    if (i < 0)
 	mdadm->insert(0, line);
-    }
     else
-    {
-	(*mdadm)[mdadm_auto_line] = line;
-    }
+	mdadm->replace(i, 1, line);
 }
 
 
@@ -275,17 +269,11 @@ EtcRaidtab::buildMdadmMap()
     {
     unsigned lineno = 0;
     unsigned mdnum;
-    mdadm_dev_line = -1;
-    mdadm_auto_line = -1;
     entry e;
     while( lineno<mdadm->numLines() )
 	{
 	string key = extractNthWord( 0, (*mdadm)[lineno] );
-	if( mdadm_dev_line<0 && key == "DEVICE"  )
-	    mdadm_dev_line = lineno;
-	else if (mdadm_auto_line < 0 && key == "AUTO")
-	    mdadm_auto_line = lineno;
-	else if( key == "ARRAY" &&
+	if( key == "ARRAY" &&
 		 Md::mdStringNum( extractNthWord( 1, (*mdadm)[lineno] ), mdnum ))
 	    {
 	    e.first = lineno++;
