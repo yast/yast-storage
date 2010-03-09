@@ -281,7 +281,7 @@ void Storage::detectObjects()
 	SystemCmd::testmode = true;
  	rootprefix = testdir();
  	fstab = new EtcFstab( rootprefix );
-	raidtab = new EtcRaidtab(rootprefix);
+	raidtab = new EtcRaidtab(this, rootprefix);
 	string t = testdir() + "/volume_info";
 	if( access( t.c_str(), R_OK )==0 )
 	    {
@@ -292,7 +292,7 @@ void Storage::detectObjects()
 	{
 	fstab = new EtcFstab( "/etc", isRootMounted() );
 	if (!instsys())
-	    raidtab = new EtcRaidtab(root());
+	    raidtab = new EtcRaidtab(this, root());
 	detectLoops( *ppart );
 	ProcMounts pm( this );
 	if( !instsys() )
@@ -1118,6 +1118,24 @@ void Storage::setDetectMountedVolumes( bool val )
 string Storage::proc_arch;
 bool Storage::is_ppc_mac = false;
 bool Storage::is_ppc_pegasos = false;
+
+
+bool
+Storage::hasIScsiDisks() const
+{
+    bool ret = false;
+
+    ConstDiskPair dp = diskPair();
+    for (ConstDiskIterator i = dp.begin(); i != dp.end(); ++i)
+    {
+	if (i->isIScsi())
+	    ret = true;
+	break;
+    }
+
+    y2mil("ret:" << ret);
+    return ret;
+}
 
 
 namespace storage
@@ -6065,7 +6083,7 @@ void Storage::rootMounted()
 	if (have_mds)
 	{
 	    delete raidtab;
-	    raidtab = new EtcRaidtab(root());
+	    raidtab = new EtcRaidtab(this, root());
 
 	    if (haveMd(md))
 		md->syncRaidtab();
