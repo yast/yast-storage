@@ -110,8 +110,7 @@ class EtcRaidtab
 	const Storage* sto;
 
 	string mdadmname;
-	int mdadm_dev_line;
-	int mdadm_auto_line;
+
 	std::map<unsigned,entry> mtab;
 	std::map<string,entry> uuidtab; // search by uuid, only for ARRAY lines.
 	AsciiFile* mdadm;
