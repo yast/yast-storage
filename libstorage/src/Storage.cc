@@ -883,7 +883,7 @@ void
 	    }
 	    else if (sysfsinfo.range == 1 && sysfsinfo.size > 0)
 	    {
-		if (sysfsinfo.device.find( "/xen/vbd" ) != string::npos && isdigit(dn[dn.size() - 1]))
+		if (sysfsinfo.device.find( "/vbd" ) != string::npos && isdigit(dn[dn.size() - 1]))
 		{
 		    dl.push_back(DiskData(dn, DiskData::XEN, sysfsinfo.size / 2));
 		}
