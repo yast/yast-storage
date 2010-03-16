@@ -68,6 +68,7 @@
   import "LibStorage::PartitionSlotInfo";
   import "LibStorage::CommitInfo";
   import "LibStorage::DlabelCapabilities";
+  import "LibStorage::ContVolInfo";
   import "LibStorage::ResizeInfo";
   import "LibStorage::ContentInfo";
   import "LibStorage::Environment";
@@ -185,7 +186,8 @@ const map<symbol, integer> type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_MDPART 
     `CT_NFS : 8 ];
 
 list<string> hw_packages = [];
-string part_insts = "";
+
+string part_insts = nil;
 
 
 global boolean IsKernelDeviceName(string device)
@@ -2020,21 +2022,49 @@ global define void SetPartDisk( string value )
 	}
     if( Stage::initial() )
 	{
-	string inst = (string) SCR::Read( .etc.install_inf.Partition );
-	if (inst != nil && !isempty(inst))
-	    {
-	    part_insts = "/dev/" + inst;
-	    y2milestone( "Storage .etc.install_inf.Partition \"%1\" part_insts:%2",
-	                 inst, part_insts );
-	    }
 	Storage::SetPartMode( "CUSTOM" );
 	Storage::SetPartProposalActive( false  );
 	}
     }
 
 
+    global boolean GetContVolInfo(string device, map<string, any>& info)
+    {
+	any tmp = LibStorage::ContVolInfo::new("LibStorage::ContVolInfo");
+	if (LibStorage::StorageInterface::getContVolInfo(sint, device, tmp) != 0)
+	    return false;
+
+	info = $[ "cname" : LibStorage::ContVolInfo::swig_cname_get(tmp),
+		  "cdevice" : LibStorage::ContVolInfo::swig_cdevice_get(tmp),
+		  "vname" : LibStorage::ContVolInfo::swig_vname_get(tmp),
+		  "vdevice" : LibStorage::ContVolInfo::swig_vdevice_get(tmp) ];
+
+	y2milestone("GetContVolInfo device:%1 info:%2", device, info);
+	return true;
+    }
+
+
     global boolean IsInstallationSource(string device)
     {
+	if (part_insts == nil)
+	{
+	    if (Stage::initial())
+	    {
+		string tmp = (string) SCR::Read(.etc.install_inf.Partition);
+		if (tmp != nil && !isempty(tmp))
+		{
+		    map<string, any> info = $[];
+		    if (GetContVolInfo("/dev/" + tmp, info))
+			part_insts = info["vdevice"]:"";
+		    else
+			y2error("unknown device %1", "/dev/" + tmp);
+		}
+
+		y2milestone("IsInstallationSource .etc.install_inf.Partition \"%1\" part_insts:%2",
+			    tmp, part_insts);
+	    }
+	}
+
 	return !isempty(device) && device == part_insts;
     }
 
@@ -3691,7 +3721,6 @@ that is needed to run the installation.
 	if (IsInstallationSource(p["device"]:""))
 	    {
 	    ret = false;
-	    y2milestone( "CanEdit part_insts:%1 p:%2", part_insts, p );
 	    if( verbose )
 		{
 		string txt = sformat( _("
