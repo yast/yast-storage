@@ -3197,6 +3197,74 @@ global map<string, map> AddSwapMp( map<string, map> target )
     }
 
 
+map<string, map> AddProposalName(map<string, map> target_map)
+{
+    integer ide_disk_count = 0;
+    integer scsi_disk_count = 0;
+    integer generic_disk_count = 0;
+    integer dm_raid_count = 0;
+    integer md_raid_count = 0;
+
+    return mapmap(string device, map disk, target_map, {
+
+	string s = Storage::KByteToHumanString(disk["size_k"]:0);
+
+	switch (disk["type"]:`CT_UNKNOWN)
+	{
+	    case `CT_DISK:
+	    {
+		string proposal_name = "";
+
+		string bus = disk["bus"]:"";
+		if (bus == "IDE") {
+		    ide_disk_count = ide_disk_count + 1;
+		    proposal_name = sformat("%1. ", ide_disk_count) + _("IDE Disk");
+		} else if (bus == "SCSI") {
+		    scsi_disk_count = scsi_disk_count + 1;
+		    proposal_name = sformat("%1. ", scsi_disk_count) + _("SCSI Disk");
+		} else {
+		    generic_disk_count = generic_disk_count + 1;
+		    proposal_name = sformat("%1. ", generic_disk_count) + _("Disk");
+		}
+
+		proposal_name = proposal_name + ", " + s + ", " + device + ", ";
+
+		if (!isempty(disk["vendor"]:""))
+		    proposal_name = proposal_name + disk["vendor"]:"" + "-";
+		proposal_name = proposal_name + disk["model"]:"";
+
+		disk["proposal_name"] = proposal_name;
+	    }
+	    break;
+
+	    case `CT_DMRAID:
+	    {
+		dm_raid_count = dm_raid_count + 1;
+		string proposal_name = sformat("%1. ", dm_raid_count) + _("DM RAID");
+
+		proposal_name = proposal_name + ", " + s + ", " + device;
+
+		disk["proposal_name"] = proposal_name;
+	    }
+	    break;
+
+	    case `CT_MDPART:
+	    {
+		md_raid_count = md_raid_count + 1;
+		string proposal_name = sformat("%1. ", md_raid_count) + _("MD RAID");
+
+		proposal_name = proposal_name + ", " + s + ", " + device;
+
+		disk["proposal_name"] = proposal_name;
+	    }
+	    break;
+	}
+
+	return $[ device : disk ];
+    });
+}
+
+
 /**
  * Returns a system target map.
  *
@@ -3270,29 +3338,16 @@ global map<string, map> GetTargetMap()
 	    {
 	    probe_done = true;
 	    changed = true;
-	    foreach( string dev, map disk, tmp,
-		``{
-		disk = getDiskInfo( dev, disk );
-		integer s = disk["size_k"]:0 * 1024;
-		string proposal_name = disk["dname"]:"" +
-		   Storage::ByteToHumanString( s ) + ", " +
-		   disk["device"]:"" + ", ";
-		if( size( disk["vendor"]:"")>0 )
-		    proposal_name = proposal_name + disk["vendor"]:"" + "-";
-		proposal_name = proposal_name + disk["model"]:"";
-		disk["proposal_name"] = proposal_name;
-		if( haskey( disk, "dname" ))
-		    disk = remove( disk, "dname" );
-		tmp[dev] = disk;
+	    foreach (string dev, map disk, tmp, {
+		tmp[dev] = getDiskInfo(dev, disk);
 		if( disk["dasdfmt"]:false )
 		    Storage::InitializeDisk( dev, true );
 		});
-	    foreach( map c, conts,
-		``{
+	    foreach (map c, conts, {
 		if( c["type"]:`CT_UNKNOWN!=`CT_DISK )
 		    tmp[c["device"]:""] = getContainerInfo( c );
 		});
-	    if( size(bios_id_raid)>0 )
+	    if (!isempty(bios_id_raid))
 		{
 		y2milestone( "bios_id_raid:%1", bios_id_raid );
 		foreach( string dm, string bios, bios_id_raid, {
@@ -3313,6 +3368,8 @@ global map<string, map> GetTargetMap()
 		    });
 		});
 		}
+	    if (Stage::initial())
+		tmp = AddProposalName(tmp);
 	    StorageMap[targets_key] = tmp;
 	    }
 	}
