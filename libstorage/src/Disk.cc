@@ -386,16 +386,20 @@ bool Disk::detectGeometry()
 	    mjr = sysfsinfo.mjr;
 	    mnr = sysfsinfo.mnr;
 
-	    if (boost::contains(sysfsinfo.device, "/session"))
-		iscsi = true;
+	    string link;
+	    if (readlink(sysfs_dir, link))
+	    {
+		y2mil("link:" << link);
+		iscsi = boost::contains(link, "/session");
+	    }
 	}
 	else
 	{
 	    ret = false;
 	}
 
-	y2mil("ret:" << ret << " range:" << range << " major:" << mjr << " minor:" << mnr <<
-	      " iscsi:" << iscsi);
+	y2mil("dev:" << dev << " ret:" << ret << " range:" << range << " major:" << mjr <<
+	      " minor:" << mnr << " iscsi:" << iscsi);
 
 	return ret;
     }
