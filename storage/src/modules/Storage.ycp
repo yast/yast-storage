@@ -3190,10 +3190,14 @@ global map<string, map> AddSwapMp( map<string, map> target )
 		  search( diskdev, "/dev/evms" )!=0 ) ||
 		 (contains( swaps, part["device"]:"" )))
 		 {
+		 y2milestone( "AddSwapMp %1", part );
 		 boolean ok = true;
 		 if( !contains( swaps, part["device"]:"" ))
 		     {
-		     ok = CheckSwapable( part["device"]:"" );
+		     string dev = part["device"]:"";
+		     if( !isempty(part["crypt_device"]:""))
+			 dev = part["crypt_device"]:"";
+		     ok = CheckSwapable( dev );
 		     y2milestone( "AddSwapMp initial ok:%1", ok );
 		     }
 		 if( ok )
@@ -3434,10 +3438,10 @@ map GetCryptLists( map<string, map> target )
 				``(p["enc_type"]:`none==`luks ));
 	in_cr = (list<map>)merge( in_cr, 
 				  filter( map p, tmp,
-					  ``(size(p["crypt_device"]:"")==0)));
+					  ``(isempty(p["crypt_device"]:""))));
 	ac_cr = (list<map>)merge( ac_cr, 
 				  filter( map p, tmp,
-					  ``(size(p["crypt_device"]:"")>0)));
+					  ``(!isempty(p["crypt_device"]:""))));
 	});
     y2milestone( "GetCryptLists inactive:%1", in_cr );
     y2milestone( "GetCryptLists active:%1", ac_cr );
@@ -3452,6 +3456,7 @@ map<string, map> AskCryptPasswords( map<string, map> target )
     {
     map crvol = GetCryptLists( target );
     boolean ret = true;
+    boolean rescan_done = false;
     // text in help field
     string helptext =  _(
 "Enter encryption password for any of the
@@ -3510,9 +3515,16 @@ Password will be tried for all devices.");
 		    crvol["inactive"] = filter( string s, crvol["inactive"]:[],
 		                                ``(!contains(rl,s)));
 		    RescanCrypted();
+		    rescan_done = true;
 		    }
 		}
 	    }
+	}
+    if( rescan_done )
+	{
+	StorageMap[targets_key] = target;
+	UpdateTargetMap();
+	target = StorageMap[targets_key]:$[];
 	}
     return( target );
     }
@@ -3691,7 +3703,7 @@ global map<string, map> GetTargetMap()
 	    if (Stage::initial())
 		{
 		tmp = AddProposalName(tmp);
-		AskCryptPasswords( tmp );
+		tmp = AskCryptPasswords( tmp );
 		}
 	    StorageMap[targets_key] = tmp;
 	    }
