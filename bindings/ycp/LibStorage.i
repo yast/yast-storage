@@ -7,6 +7,9 @@
 %include "LiMaL.i"
 
 %{
+// workaround for bnc #593954
+#undef seed
+
 #include <storage/StorageInterface.h>
 #include <storage/HumanString.h>
 #include <storage/Graph.h>
