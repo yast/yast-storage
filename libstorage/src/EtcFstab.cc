@@ -172,7 +172,7 @@ EtcFstab::readFiles()
 	    list<string>::iterator li =  p->old.opts.begin();
 	    while( li != p->old.opts.end() )
 		{
-		if( *li == "noauto" )
+		if( *li == "noauto" || *li == "nofail" )
 		    li = p->old.opts.erase(li);
 		else
 		    ++li;
@@ -509,13 +509,19 @@ list<string> EtcFstab::makeStringList(const FstabEntry& e) const
 	ls.push_back( Volume::encTypeString(e.encr) );
 	}
     ls.push_back( mergeString( e.opts, "," ) );
-    if( (e.dmcrypt&&e.mount!="swap") &&
-        find( e.opts.begin(), e.opts.end(), "noauto" )==e.opts.end() )
+    if( e.dmcrypt && e.mount!="swap" ) 
 	{
-	if( ls.back() == "defaults" )
-	    ls.back() = "noauto";
-	else
-	    ls.back() += ",noauto";
+	if( find( e.opts.begin(), e.opts.end(), "noauto" )==e.opts.end() )
+	    {
+	    if( ls.back() == "defaults" )
+		ls.back() = "noauto";
+	    else
+		ls.back() += ",noauto";
+	    }
+	if( find( e.opts.begin(), e.opts.end(), "nofail" )==e.opts.end() )
+	    {
+	    ls.back() += ",nofail";
+	    }
 	}
     if( !e.cryptotab )
 	{
