@@ -61,6 +61,8 @@ std::map<string,string> makeMap( const std::list<string>& l,
 
     bool readlink(const string& path, string& buf);
 
+    string udevAppendPart(const string&, unsigned num);
+
 void getUdevMap(const char* path, std::map<string, std::list<string>>& m);
 void getRevUdevMap(const char* path, std::map<string, string>& m);
 
