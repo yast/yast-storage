@@ -479,6 +479,13 @@ readlink(const string& path, string& buf)
 }
 
 
+    string
+    udevAppendPart(const string& s, unsigned num)
+    {
+	return s + "-part" + decString(num);
+    }
+
+
 map<string, string>
 getUdevLinks(const char* path)
 {
