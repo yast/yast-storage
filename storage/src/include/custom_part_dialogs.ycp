@@ -1161,8 +1161,8 @@ Shrink the file system now?");
   * @return targetMap new or unmodified targetMap
   *---------------------------------------------------------------------
   */
-define integer FstabAddDialog( list table_input )
-    ``{
+integer FstabAddDialog(list table_input, boolean& format_sys)
+    {
     y2milestone( "FstabAddDialog start %1", table_input );
     if( table_input == [] || table_input == nil )
 	{
@@ -1184,9 +1184,7 @@ _("<P>To use these mount points, <BR>press <B>Yes</B>.</P>")+
 _("<P>To ignore these mount points, <BR> press <B>No</B>.</P>");
 
     UI::OpenDialog(
-	`opt(`decorated ),
-        `HBox(
-	    `VBox( `HSpacing(20), `RichText(help_text)),
+	`opt(`decorated),
 	    `VBox( `VSpacing(1),
 		   `ReplacePoint( `id(`heading), `Empty() ),
 		   `HBox(
@@ -1197,15 +1195,31 @@ _("<P>To ignore these mount points, <BR> press <B>No</B>.</P>");
 			    ),
 		       `HSpacing(3.0)
 		       ),
-
+		   `ReplacePoint(`id(`select), `Empty()),
+		   `VSpacing(1),
+		   `Left(`CheckBox(`id(`format_sys), _("Format system volumes"), true)),
 		   `VSpacing(1),
 		   // popup text
 		   `Heading(_("Would you like to use these mount points
 for your new installation?")),
 		   `VSpacing(1),
-		   `ReplacePoint( `id(`bbox), `Empty() )
-		 ))
+		   `ButtonBox(
+		       `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
+		       `PushButton(`id(`ok), `opt(`default), Label::YesButton()),
+		       `PushButton(`id(`cancel), Label::NoButton())
+		       )
+		 )
 	     );
+
+    UI::ChangeWidget(`help, `HelpText, help_text);
+
+    if (size(table_input) > 1)
+    {
+	UI::ReplaceWidget(`id(`select), `HBox(
+			      `PushButton(`id(`show_prev), _("Show &Previous")),
+			      `PushButton(`id(`show_next), _("Show &Next"))
+			      ));
+    }
 
     symbol userinput = `none;
     integer idx = 0;
@@ -1217,50 +1231,41 @@ _("A previous system with the following mount points was detected:
 /etc/fstab found on %1"), table_input[idx,"root"]:"/dev/emil" );
 	UI::ReplaceWidget( `id(`heading), `Heading( tmp ) );
 
-	UI::ChangeWidget( `id(`table), `Items, table_input[idx,"tbl"]:[] );
+	UI::ChangeWidget(`id(`table), `Items, table_input[idx, "tbl"]:[]);
+	UI::ChangeWidget(`id(`table), `CurrentItem, nil);
 
-	term bbox = `HBox( `PushButton( `id(`ok), `opt(`default),
-					Label::YesButton() ),
-			   `PushButton(`id(`cancel), Label::NoButton())
-			 );
-	if( size(table_input)>0 )
-	    {
-	    bbox = add( bbox, `HSpacing(5) );
-	    if( idx>0 )
-		{
-		bbox = add( bbox,
-		            `PushButton( `id(`show_p), _("Show &Previous") ));
-		}
-	    if( idx<size(table_input)-1 )
-		{
-		bbox = add( bbox,
-		            `PushButton( `id(`show_n), _("Show &Next") ));
-		}
-	    }
-	y2milestone( "userinput UI::ReplaceWidget" );
-	UI::ReplaceWidget( `id(`bbox), bbox );
-	y2milestone( "after UI::ReplaceWidget" );
+	if (size(table_input) > 1)
+	{
+	    UI::ChangeWidget(`id(`show_prev), `Enabled, idx > 0);
+	    UI::ChangeWidget(`id(`show_next), `Enabled, idx < size(table_input) - 1);
+	}
 
-	userinput = (symbol)UI::UserInput();
-	y2milestone( "userinput %1", userinput );
+	userinput = (symbol) UI::UserInput();
+	y2milestone("userinput %1", userinput);
 
-	if( userinput == `show_n )
-	    {
-	    idx = idx+1;
-	    }
-	else if( userinput == `show_p )
-	    {
-	    idx = idx-1;
-	    }
+	switch (userinput)
+	{
+	    case `show_next:
+		idx = idx + 1;
+		break;
+
+	    case `show_prev:
+		idx = idx - 1;
+		break;
+	}
 	y2milestone( "idx %1", idx );
 	}
     until( userinput == `ok || userinput == `cancel );
+
+    format_sys = (boolean) UI::QueryWidget(`id(`format_sys), `Value);
+
     UI::CloseDialog();
 
     integer ret = userinput == `ok ? idx : -1;
     y2milestone( "ret %1", ret );
     return ret;
-    };
+    }
+
 
 //FIXME: y2-repair uses this, need to find
 //a better place for it
