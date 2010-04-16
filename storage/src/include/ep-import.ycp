@@ -12,6 +12,60 @@
     textdomain "storage";
 
 
+    string MountVar(map var, map root, string rdev, string mp, map<string, map> target_map)
+    {
+    string ret = "";
+    boolean mount_success = false;
+    y2milestone("MountVar rdev:%1 mp:%2 var:%3 root:%4", rdev, mp, var, root);
+    if( var["size_k"]:0>0 )
+	{
+	ret = var["device"]:"";
+	}
+    else
+	{
+	list<string> ds = maplist( string d, map disk, target_map, ``(d));
+	y2milestone("MountVar ds:%1", ds);
+	ds = filter( string d, ds, ``(target_map[d,"type"]:`CT_UNKNOWN==`CT_DISK));
+	y2milestone("MountVar ds:%1", ds);
+	map rootm = Storage::GetDiskPartition( rdev );
+	map rootf = Storage::GetDiskPartition( root["device"]:"" );
+	map varf = Storage::GetDiskPartition( var["device"]:"" );
+	if( rootf["disk"]:""==varf["disk"]:"" )
+	    {
+	    ret = Storage::GetDeviceName( rootm["disk"]:"", varf["nr"]:(any)0 );
+	    }
+	else if( size(ds)==1 )
+	    {
+	    ret = Storage::GetDeviceName( ds[0]:"", varf["nr"]:(any)0 );
+	    }
+	else if( size(ds)>1 )
+	    {
+	    integer i = 0;
+	    while( i<size(ds) && isempty(ret) )
+		{
+		ret = Storage::GetDeviceName( ds[i]:"", varf["nr"]:(any)0 );
+		if( !isempty(Storage::GetPartition( target_map, ret )) &&
+		    Storage::Mount( ret, mp ) )
+		    {
+		    map d = (map)SCR::Read( .target.stat, mp+"/lib/hardware" );
+		    y2milestone("MountVar d:%1", d);
+		    if( !d["isdir"]:false )
+			ret = "";
+		    Storage::Umount( ret );
+		    }
+		else 
+		    ret = "";
+		i = i+1;
+		}
+	    }
+	}
+    if( !isempty(ret) && !Storage::Mount( ret, mp ))
+	ret = "";
+    y2milestone("MountVar ret:%1", ret);
+    return ret;
+    }
+
+
     /**
      * Find and read fstab by installation. Scan existing partitions.
      * @parm target_map all targets
@@ -21,17 +75,20 @@
     list<list> FindExistingFstabs(map<string, map> target_map, string search_point)
     {
     list<list> fstabs = [];
-    list<symbol> skip_fs = [ `unknown, `swap, `vfat, `ntfs ];
+    list<symbol> skip_fs = [ `none, `unknown, `swap, `vfat, `ntfs ];
 
-    foreach( string dev, map disk, target_map, {
-	foreach( map part,
-	         filter( map p, disk["partitions"]:[],
-				``(!contains( skip_fs,
-				              p["detected_fs"]:`unknown) )), {
+    foreach( string disk_device, map disk, target_map, {
+
+	list<map> partitions = filter(map part, disk["partitions"]:[], {
+	    return !contains(skip_fs, part["detected_fs"]:`unknown);
+	});
+
+	foreach(map part, partitions, {
+
+	    string part_device = part["device"]:"";
 
 	    // try to mount
-	    boolean mount_success = Storage::Mount( part["device"]:"",
-	                                            search_point );
+	    boolean mount_success = Storage::Mount(part_device, search_point);
 
 	    if( mount_success &&
 		SCR::Read(.target.size, search_point+"/etc/fstab") > 0 )
@@ -48,7 +105,7 @@
 			y2milestone("FindExistingFstabs var:%1", var);
 			if( var != nil )
 			    {
-			    vardev = mountVar( var, root, part["device"]:"",
+			    vardev = MountVar( var, root, part_device,
 			                       search_point+"/var", target_map );
 			    y2milestone("FindExistingFstabs vardev:%1", vardev);
 			    }
@@ -79,7 +136,7 @@
 
 	    // unmount
 	    if( mount_success )
-		Storage::Umount( part["device"]:"" );
+		Storage::Umount(part_device);
 	    });
 	});
     y2milestone("FindExistingFstabs size(fstabs):%1", size(fstabs));
@@ -120,7 +177,7 @@
 
 	map<string, map> new_target_map = target_map;
 
-    foreach( string dev, map disk, target_map, {
+    foreach( string disk_device, map disk, target_map, {
 
 	list new_partitions = [];
 
@@ -157,7 +214,7 @@
 	    new_partitions = add( new_partitions, new_partition);
 	    });
 	disk["partitions"] = new_partitions;
-	new_target_map[dev] = disk;
+	new_target_map[disk_device] = disk;
 	});
 
 	map<string, any> ret = $[
@@ -286,7 +343,7 @@ _("A previous system with the following mount points was detected:
     UI::CloseDialog();
 
     integer ret = userinput == `ok ? idx : -1;
-    y2milestone("ret:%1", ret);
+    y2milestone("FstabAddDialog ret:%1", ret);
     return ret;
     }
 
