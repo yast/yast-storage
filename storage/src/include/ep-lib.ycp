@@ -271,50 +271,6 @@ RAID device will be deleted:"), used_by_device),
     }
 
 
-    void ImportMountPoints()
-    {
-	Storage::CreateTargetBackup("import");
-	Storage::ResetOndiskTarget();
-
-	map<string, map> target_map = Storage::GetOndiskTarget();
-	list<list> fstabs = scanAndReadExistingFstab(target_map);
-	y2milestone("adapt_mp fstabs %1", fstabs);
-	list ti = maplist(list fstab, fstabs, ``(AddFstabToData(target_map, (list<map>) fstab, false)[1]:$[]));
-	y2milestone( "adapt_mp ti %1", ti );
-
-	boolean format_sys = true;
-	integer idx = FstabAddDialog(ti, format_sys);
-	if( idx>=0 )
-	{
-	    y2milestone( "adapt_mp use fstab idx %1", idx );
-	    list<map> fstab = (list<map>) fstabs[idx]:[];
-
-	    ti = AddFstabToData(target_map, fstab, format_sys);
-	    foreach( string d, map disk, ti[0]:$[],
-		     ``{
-			 foreach( map p, disk["partitions"]:[],
-				  ``{
-				      if( size(p["mount"]:"")>0 && p["enc_type"]:`none!=`none &&
-					  !p["tmpcrypt"]:false )
-				      {
-					  string pwd = DlgCreateCryptFs( p["device"]:"", 1, false, false );
-					  if( pwd != nil && size(pwd)>0 )
-					      Storage::SetCryptPwd( p["device"]:"", pwd );
-				      }
-				  });
-		     });
-
-	    Storage::SetTargetMap(ti[0]:$[]);
-	}
-	else
-	{
-	    Storage::RestoreTargetBackup("import");
-	}
-
-	Storage::DisposeTargetBackup("import");
-    }
-
-
     term DiskBarGraph(string device)
     {
 	if (!UI::HasSpecialWidget(`BarGraph))
