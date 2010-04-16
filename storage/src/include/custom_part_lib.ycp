@@ -27,60 +27,6 @@
 
   include "partitioning/partition_defines.ycp";
 
-define string mountVar( map var, map root, string rdev, string mp, 
-                        map<string,map> targetMap )
-    ``{
-    string ret = "";
-    boolean mount_success = false;
-    y2milestone( "mountVar rdev:%1 mp:%2 var:%3 root:%4", rdev, mp, var, root );
-    if( var["size_k"]:0>0 )
-	{
-	ret = var["device"]:"";
-	}
-    else
-	{
-	list<string> ds = maplist( string d, map disk, targetMap, ``(d));
-	y2milestone( "mountVar ds:%1", ds );
-	ds = filter( string d, ds, ``(targetMap[d,"type"]:`CT_UNKNOWN==`CT_DISK));
-	y2milestone( "mountVar ds:%1", ds );
-	map rootm = Storage::GetDiskPartition( rdev );
-	map rootf = Storage::GetDiskPartition( root["device"]:"" );
-	map varf = Storage::GetDiskPartition( var["device"]:"" );
-	if( rootf["disk"]:""==varf["disk"]:"" )
-	    {
-	    ret = Storage::GetDeviceName( rootm["disk"]:"", varf["nr"]:(any)0 );
-	    }
-	else if( size(ds)==1 )
-	    {
-	    ret = Storage::GetDeviceName( ds[0]:"", varf["nr"]:(any)0 );
-	    }
-	else if( size(ds)>1 )
-	    {
-	    integer i = 0;
-	    while( i<size(ds) && size(ret)==0 )
-		{
-		ret = Storage::GetDeviceName( ds[i]:"", varf["nr"]:(any)0 );
-		if( size(Storage::GetPartition( targetMap, ret ))>0 &&
-		    Storage::Mount( ret, mp ) )
-		    {
-		    map d = (map)SCR::Read( .target.stat, mp+"/lib/hardware" );
-		    y2milestone( "mountVar d:%1", d );
-		    if( !d["isdir"]:false )
-			ret = "";
-		    Storage::Umount( ret );
-		    }
-		else 
-		    ret = "";
-		i = i+1;
-		}
-	    }
-	}
-    if( size(ret)>0 && !Storage::Mount( ret, mp ))
-	ret = "";
-    y2milestone( "mountVar ret:%1", ret );
-    return( ret );
-    }
-
 
   /**
    * Check lvm mount points
