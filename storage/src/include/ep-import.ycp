@@ -70,11 +70,12 @@
      * Find and read fstab by installation. Scan existing partitions.
      * @parm target_map all targets
      * @parm search_point mount point where partitions can be mounted
-     * @return list list with fstab data found
+     * @return map<string, list> map with device and fstab data found
      */
-    list<list> FindExistingFstabs(map<string, map> target_map, string search_point)
+    map<string, list> FindExistingFstabs(map<string, map> target_map, string search_point)
     {
-    list<list> fstabs = [];
+	map<string, list> fstabs = $[];
+
     list<symbol> skip_fs = [ `none, `unknown, `swap, `vfat, `ntfs ];
 
     foreach( string disk_device, map disk, target_map, {
@@ -130,7 +131,7 @@
 			}
 
 		    if (!isempty(fstab))
-			fstabs = add(fstabs, fstab);
+			fstabs[part_device] = fstab;
 		    }
 		}
 
@@ -146,82 +147,67 @@
 
 
     /**
-     * Scan and Read and return fstab.
+     * Scan and Read and return fstabs.
      * @parm target_map all targets
-     * @parm file_systems filesystem map
-     * @return list list with fstab
+     * @return map<string, list> map with device and fstab data found
      */
-    list<list> ScanAndReadExistingFstabs(map<string, map> target_map)
+    map<string, list> ScanAndReadExistingFstabs(map<string, map> target_map)
     {
 	string search_point = Directory::tmpdir + "/tmp-mp";
 
 	if (!((map) SCR::Read(.target.stat, search_point))["isdir"]:false)
 	    SCR::Execute(.target.mkdir, search_point);
 
-    list<list> fstabs = FindExistingFstabs(target_map, search_point);
+	map<string, list> fstabs = FindExistingFstabs(target_map, search_point);
 
-    return fstabs;
+	return fstabs;
     }
 
 
     /**
      * Merge fstab with target_map.
      */
-    map<string, any> AddFstabToTargetMap(map<string, map> target_map, list<map> fstab, boolean format_sys)
+    map<string, map> AddFstabToTargetMap(map<string, map> target_map, list<map> fstab, boolean format_sys)
     {
 	y2milestone("AddFstabToTargetMap fstab:%1", fstab);
 
-	string root = "";
+	map<string, map> new_target_map = mapmap(string disk_device, map disk, target_map, {
 
-	map<string, map> new_target_map = target_map;
+	    disk["partitions"] = maplist(map partition, disk["partitions"]:[], {
 
-    foreach( string disk_device, map disk, target_map, {
+		string part_device = partition["device"]:"";
 
-	list new_partitions = [];
-
-	foreach( map partition, disk["partitions"]:[], {
-
-	    map new_partition = partition;
-
-	    string part_device = partition["device"]:"";
-
-	    foreach( map fstab_entry, fstab, {
-
-		string dev_fstab   = fstab_entry["device"]:"";
-		string mount_fstab = fstab_entry["mount"]:"";
-
-		if (dev_fstab == part_device && !Storage::IsInstallationSource(part_device))
+		if (!Storage::IsInstallationSource(part_device))
 		{
-		    new_partition["mount"] = mount_fstab;
-		    if (format_sys && FileSystems::IsSystemMp(mount_fstab, false))
-			new_partition["format"] = true;
-		    if( !isempty(fstab_entry["fstopt"]:"") &&
-			fstab_entry["fstopt"]:"" != "default" )
-			{
-			new_partition["fstopt"] = fstab_entry["fstopt"]:"";
-			}
-		    if( fstab_entry["mountby"]:`device != `device )
-			new_partition["mountby"] = fstab_entry["mountby"]:`device;
-		    if( fstab_entry["enc_type"]:`none != `none )
-			new_partition["enc_type"] = fstab_entry["enc_type"]:`none;
+		    foreach(map fstab_entry, fstab, {
 
-		    if (mount_fstab == "/")
-			root = dev_fstab;
-		    }
-		});
-	    new_partitions = add( new_partitions, new_partition);
+			string dev_fstab = fstab_entry["device"]:"";
+			string mount_fstab = fstab_entry["mount"]:"";
+
+			if (dev_fstab == part_device)
+			{
+			    partition["mount"] = mount_fstab;
+			    if (format_sys && FileSystems::IsSystemMp(mount_fstab, false))
+				partition["format"] = true;
+			    if (!isempty(fstab_entry["fstopt"]:"") && fstab_entry["fstopt"]:"" != "default")
+				partition["fstopt"] = fstab_entry["fstopt"]:"";
+			    if (fstab_entry["mountby"]:`device != `device)
+				partition["mountby"] = fstab_entry["mountby"]:`device;
+			    if (fstab_entry["enc_type"]:`none != `none)
+				partition["enc_type"] = fstab_entry["enc_type"]:`none;
+			}
+		    });
+		}
+
+		return partition;
 	    });
-	disk["partitions"] = new_partitions;
-	new_target_map[disk_device] = disk;
+
+	    return $[ disk_device : disk ];
 	});
 
-	map<string, any> ret = $[
-	    "root" : root,
-	    "new_target_map" : new_target_map
-	];
+	y2milestone("AddFstabToTargetMap new_target_map:%1", new_target_map);
 
-	y2milestone("AddFstabToTargetMap ret:%1", ret);
-	return ret;
+	return new_target_map;
     }
 
 
@@ -231,7 +217,7 @@
      * Ask the user if he like to use the new or old target_map
      * (with or without found mountpoints)
      */
-    integer FstabAddDialog(map<string, map> target_map, list<list> fstabs, boolean& format_sys)
+    string FstabAddDialog(map<string, map> target_map, map<string, list> fstabs, boolean& format_sys)
     {
 	y2milestone("FstabAddDialog target_map:%1", target_map);
 	y2milestone("FstabAddDialog fstabs:%1", fstabs);
@@ -240,8 +226,10 @@
 	{
 	    // popup text
 	    Popup::Message(_("No previous system with mount points was detected."));
-	    return -1;
+	    return "";
 	}
+
+	list<string> devices = maplist(string device, list fstab, fstabs, { return device; });
 
 	list<symbol> fields = StorageSettings::FilterTable([ `device, `size, `type, `fs_type,
 							     `label, `mount_point ]);
@@ -298,17 +286,19 @@ for your new installation?")),
 
     repeat
     {
-	list<map> fstab = (list<map>) fstabs[idx]:[];
+	string device = devices[idx]:"";
 
-	map<string, any> tmp = AddFstabToTargetMap(target_map, fstab, format_sys);
+	list<map> fstab = (list<map>) fstabs[device]:[];
+
+	map<string, map> new_target_map = AddFstabToTargetMap(target_map, fstab, format_sys);
 
 	// popup text %1 is replaced by a device name (e.g. /dev/hda1)
 	string str = sformat(
 _("A previous system with the following mount points was detected:
-/etc/fstab found on %1"), tmp["root"]:"error");
+/etc/fstab found on %1"), device);
 	UI::ReplaceWidget( `id(`heading), `Heading( str ) );
 
-	list<term> table_contents = StorageFields::TableContents(fields, tmp["new_target_map"]:$[],
+	list<term> table_contents = StorageFields::TableContents(fields, new_target_map,
 								 StorageFields::PredicateMountpoint);
 	UI::ChangeWidget(`id(`table), `Items, table_contents);
 	UI::ChangeWidget(`id(`table), `CurrentItem, nil);
@@ -340,9 +330,9 @@ _("A previous system with the following mount points was detected:
 
     UI::CloseDialog();
 
-    integer ret = userinput == `ok ? idx : -1;
-    y2milestone("FstabAddDialog ret:%1", ret);
-    return ret;
+    string device = userinput == `ok ? devices[idx]:"" : "";
+    y2milestone("FstabAddDialog device:%1", device);
+    return device;
     }
 
 
@@ -353,19 +343,17 @@ _("A previous system with the following mount points was detected:
 
 	map<string, map> target_map = Storage::GetOndiskTarget();
 
-	list<list> fstabs = ScanAndReadExistingFstabs(target_map);
+	map<string, list> fstabs = ScanAndReadExistingFstabs(target_map);
 	y2milestone("ImportMountPoints fstabs:%1", fstabs);
 
 	boolean format_sys = true;
-	integer idx = FstabAddDialog(target_map, fstabs, format_sys);
-	if( idx>=0 )
+	string device = FstabAddDialog(target_map, fstabs, format_sys);
+	if (!isempty(device))
 	{
-	    y2milestone("ImportMountPoints idx:%1", idx);
-	    list<map> fstab = (list<map>) fstabs[idx]:[];
+	    y2milestone("ImportMountPoints device:%1", device);
+	    list<map> fstab = (list<map>) fstabs[device]:[];
 
-	    map<string, any> tmp = AddFstabToTargetMap(target_map, fstab, format_sys);
-
-	    map<string, map> new_target_map = tmp["new_target_map"]:$[];
+	    map<string, map> new_target_map = AddFstabToTargetMap(target_map, fstab, format_sys);
 
 	    foreach(string d, map disk, new_target_map, {
 		foreach(map p, disk["partitions"]:[], {
