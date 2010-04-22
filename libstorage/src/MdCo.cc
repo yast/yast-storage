@@ -597,6 +597,8 @@ void MdCo::activate( bool val, const string& tmpDir )
 	    c.execute( cmd );
 	    cmd = MDADMBIN " --examine --scan --config=partitions >" + mdconf;
 	    c.execute( cmd );
+	    cmd = "cat " + mdconf;
+	    c.execute( cmd );
 	    cmd = MDADMBIN " --assemble --scan --config=" + mdconf;
 	    c.execute( cmd );
 	    }
