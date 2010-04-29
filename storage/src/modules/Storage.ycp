@@ -804,6 +804,7 @@ global list<string> SwappingPartitions()
     list<map> swaps = (list<map>) SCR::Read(.proc.swaps);
     if (swaps == nil) {
 	y2error("SCR::Read(.proc.swaps) returned nil");
+	y2milestone("/proc/swaps is %1", SCR::Execute(.target.bash_output, "cat /proc/swaps"));
 	swaps = [];
     }
     swaps = filter(map e, swaps, ``(e["type"]:""=="partition"));
@@ -2080,22 +2081,19 @@ global define void SetPartDisk( string value )
     symbol extended_type_key= `extended;
 
 
-global map NextPartition( string disk, symbol ptype )
+global map<string, any> NextPartition( string disk, symbol ptype )
     {
     y2milestone( "NextPartition disk:%1 ptype:%2", disk, ptype );
-    map ret = $[];
     integer pt = fromSymbol(conv_ptype,ptype);
     y2milestone( "NextPartition type:%1 pt:%2", ptype, pt );
     integer num = 0;
     string dev = "";
-    integer r = LibStorage::StorageInterface::nextFreePartition( sint, disk,
-                                                                 pt, num, dev );
+    integer r = LibStorage::StorageInterface::nextFreePartition( sint, disk, pt, num, dev );
     if( r<0 )
 	y2error( "NextPartition ret %1", r );
-    ret["device"] = dev;
-    ret["nr"] = num;
+    map<string, any> ret = $[ "device" : dev, "nr" : num ];
     y2milestone( "NextPartition sint ret:%1 map:%2", r, ret );
-    return( ret );
+    return ret;
     }
 
 
@@ -3143,7 +3141,7 @@ global boolean CheckSwapable( string dev )
  * @param target Disk map
  * @return map<string,map> modified target
  */
-global map<string, map> AddSwapMp( map<string, map> target )
+map<string, map> AddSwapMp( map<string, map> target )
     {
     list<string> swaps = SwappingPartitions();
     y2milestone( "AddSwapMp swaps %1", swaps );
