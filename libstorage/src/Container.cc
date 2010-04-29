@@ -120,9 +120,11 @@ int Container::commitChanges( CommitStage stage, Volume* vol )
 		ret = doCreate( vol );
 	    else if( vol->needExtend() )
 		ret = doResize( vol );
+	    if (vol->needCrsetup(false))
+		ret = vol->doCrsetup();
 	    break;
 	case FORMAT:
-	    if( vol->needCrsetup() )
+	    if (vol->needCrsetup(true))
 		ret = vol->doCrsetup();
 	    if( ret==0 && vol->getFormat() )
 		ret = vol->doFormat();
@@ -131,7 +133,11 @@ int Container::commitChanges( CommitStage stage, Volume* vol )
 	    break;
 	case MOUNT:
 	    if( vol->needRemount() )
+		{
+		if (vol->needCrsetup(true))
+		    vol->doCrsetup();
 		ret = vol->doMount();
+		}
 	    if( ret==0 && vol->needFstabUpdate() )
 		{
 		ret = vol->doFstabUpdate();

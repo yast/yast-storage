@@ -53,7 +53,7 @@ Loop::Loop(const LoopCo& d, const string& LoopDev, const string& LoopFile,
     else
 	{
 	numeric = false;
-	setEncryption( ENC_LUKS );
+	initEncryption( ENC_LUKS );
 	if( !dm_dev.empty() )
 	    {
 	    setDmcryptDev( dm_dev );
@@ -102,7 +102,7 @@ Loop::Loop(const LoopCo& d, const string& file, bool reuseExisting,
     else
 	{
 	numeric = false;
-	setEncryption( ENC_LUKS );
+	initEncryption( ENC_LUKS );
 	if( dmcrypt_dev.empty() )
 	    dmcrypt_dev = getDmcryptName();
 	setDmcryptDev( dmcrypt_dev, false );
@@ -122,13 +122,15 @@ Loop::~Loop()
 void
 Loop::init()
     {
-    reuseFile = delFile = false;
+    delFile = false;
+    reuseFile = true;
     }
 
 void
 Loop::setDmcryptDev( const string& dm_dev, bool active )
     {
     dev = dm_dev;
+    y2mil( "dm_dev:" << dm_dev << " active:" << active );
     nm = dm_dev.substr( dm_dev.find_last_of( '/' )+1);
     if( active )
 	{
