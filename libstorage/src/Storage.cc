@@ -1005,6 +1005,8 @@ Storage::createPartition( const string& disk, PartitionType type, unsigned long 
 	    else
 		{
 		ret = i->createPartition( type, start, size, device, true );
+		if( ret==0 )
+		    checkPwdBuf( device );
 		}
 	    }
 	}
@@ -1019,6 +1021,8 @@ Storage::createPartition( const string& disk, PartitionType type, unsigned long 
 	    else
 		{
 		ret = i->createPartition( type, start, size, device, true );
+		if( ret==0 )
+		    checkPwdBuf( device );
 		}
 	    }
 	}  
@@ -1934,6 +1938,40 @@ Storage::eraseLabelVolume( const string& device )
     }
 
 int
+Storage::verifyCryptFilePassword( const string& file, const string& pwd )
+    {
+    int ret = VOLUME_CRYPT_NOT_DETECTED;
+    assertInit();
+    y2mil("file:" << file << " l:" << pwd.length());
+#ifdef DEBUG_LOOP_CRYPT_PASSWORD
+    y2mil("password:" << pwd);
+#endif
+
+    VolIterator vol;
+    if (readonly)
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    else
+	{
+	ProcPart ppart;
+	LoopCo* co = new LoopCo(this, false, ppart);
+	if( co )
+	    {
+	    Loop* loop = new Loop( *co, file, true, 0, true );
+	    if( loop && loop->setCryptPwd( pwd )==0 && 
+		loop->detectEncryption()!=ENC_UNKNOWN )
+		ret = 0;
+	    if( loop )
+		delete loop;
+	    delete co;
+	    }
+	}
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+int
 Storage::changeMkfsOptVolume( const string& device, const string& opts )
     {
     int ret = 0;
@@ -2265,6 +2303,8 @@ Storage::setCryptType( const string& device, bool val, EncryptType typ )
 	{
 	ret = STORAGE_VOLUME_NOT_FOUND;
 	}
+    if( !val )
+	pwdBuf.erase(device);
     if( ret==0 )
 	{
 	ret = checkCache();
@@ -2294,7 +2334,7 @@ Storage::getCrypt( const string& device, bool& val )
     }
 
 int
-Storage::setCryptPassword( const string& device, const string& pwd )
+Storage::verifyCryptPassword( const string& device, const string& pwd )
     {
     int ret = 0;
     assertInit();
@@ -2311,10 +2351,43 @@ Storage::setCryptPassword( const string& device, const string& pwd )
     else if( findVolume( device, vol ) )
 	{
 	ret = vol->setCryptPwd( pwd );
+	if( ret==0 && vol->detectEncryption()==ENC_UNKNOWN )
+	    ret = VOLUME_CRYPT_NOT_DETECTED;
+	vol->clearCryptPwd();
 	}
     else
 	{
-	ret = STORAGE_VOLUME_NOT_FOUND;
+	ret = verifyCryptFilePassword( device, pwd );
+	}
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+int
+Storage::setCryptPassword( const string& device, const string& pwd )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("device:" << device << " l:" << pwd.length());
+#ifdef DEBUG_LOOP_CRYPT_PASSWORD
+    y2mil("password:" << pwd);
+#endif
+
+    VolIterator vol;
+    map<string,string>::iterator i = pwdBuf.find(device);
+    if (readonly)
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    else if( findVolume( device, vol ) )
+	{
+	ret = vol->setCryptPwd( pwd );
+	if( i!=pwdBuf.end() )
+	    pwdBuf.erase(i);
+	}
+    else
+	{
+	mapInsertOrReplace( pwdBuf, device, pwd );
 	}
     if( ret==0 )
 	{
@@ -2342,11 +2415,45 @@ Storage::forgetCryptPassword( const string& device )
 	}
     else
 	{
-	ret = STORAGE_VOLUME_NOT_FOUND;
+	map<string,string>::iterator i = pwdBuf.find(device);
+	if( i!=pwdBuf.end() )
+	    pwdBuf.erase(i);
+	else
+	    ret = STORAGE_VOLUME_NOT_FOUND;
 	}
-    if( ret==0 )
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+bool
+Storage::needCryptPassword( const string& device )
+    {
+    bool ret = true;
+    bool volFound = false;
+    assertInit();
+    y2mil("device:" << device);
+
+    VolIterator vol;
+    if( checkNormalFile(device) )
 	{
-	ret = checkCache();
+	ConstLoopPair p = loopPair(Loop::notDeleted);
+	ConstLoopIterator i = p.begin(); 
+	while( i != p.end() && i->loopFile()!=device )
+	    ++i;
+	if( i != p.end() )
+	    {
+	    ret = i->needCryptPwd();
+	    volFound = true;
+	    }
+	}
+    else if( findVolume( device, vol ) )
+	{
+	ret = vol->needCryptPwd();
+	volFound = true;
+	}
+    if( !volFound )
+	{
+	ret = pwdBuf.find( device )==pwdBuf.end();
 	}
     y2mil("ret:" << ret);
     return( ret );
@@ -2367,11 +2474,11 @@ Storage::getCryptPassword( const string& device, string& pwd )
 	}
     else
 	{
-	ret = STORAGE_VOLUME_NOT_FOUND;
-	}
-    if( ret==0 )
-	{
-	ret = checkCache();
+	map<string,string>::const_iterator i = pwdBuf.find(device);
+	if( i!=pwdBuf.end() )
+	    pwd = i->second;
+	else
+	    ret = STORAGE_VOLUME_NOT_FOUND;
 	}
 #ifdef DEBUG_LOOP_CRYPT_PASSWORD
     y2milestone( "password:%s", pwd.c_str() );
@@ -2694,6 +2801,8 @@ Storage::createLvmLv( const string& vg, const string& name,
     else if( i != lvgEnd() )
 	{
 	ret = i->createLv( name, sizeM*1024, stripe, device );
+	if( ret==0 )
+	    checkPwdBuf( device );
 	}
     else
 	{
@@ -2937,6 +3046,8 @@ Storage::createMd( const string& name, MdType rtype,
 	list<string> d;
 	d.insert( d.end(), devs.begin(), devs.end() );
 	ret = md->createMd( num, rtype, d );
+	if( ret==0 )
+	    checkPwdBuf( Md::mdDevice(num) );
 	}
     if( !have_md )
 	{
@@ -2981,6 +3092,8 @@ int Storage::createMdAny( MdType rtype, const deque<string>& devs,
 	list<string> d;
 	d.insert( d.end(), devs.begin(), devs.end() );
 	ret = md->createMd( num, rtype, d );
+	if( ret==0 )
+	    checkPwdBuf( Md::mdDevice(num) );
 	}
     if( !have_md )
 	{
@@ -5867,6 +5980,20 @@ void Storage::checkDeviceExclusive( const string& device, unsigned secs )
     }
 }
 
+void Storage::checkPwdBuf( const string& device )
+    {
+    if( !pwdBuf.empty() )
+	{
+	map<string,string>::iterator i=pwdBuf.find(device);
+	if( i!=pwdBuf.end() )
+	    {
+	    VolIterator vol;
+	    if( findVolume( device, vol ) )
+		vol->setCryptPwd( i->second );
+	    pwdBuf.erase(i);
+	    }
+	}
+    }
 
 int
 Storage::zeroDevice(const string& device, unsigned long long sizeK, bool random,

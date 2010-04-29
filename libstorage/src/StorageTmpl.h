@@ -122,6 +122,16 @@ void pointerIntoSortedList( std::list<C*>& l, C* e )
     l.insert( i, e );
     }
 
+template<typename Map, typename Key, typename Value>
+typename Map::iterator mapInsertOrReplace(Map& m, const Key& k, const Value& v)
+    {
+    typename Map::iterator pos = m.lower_bound(k);
+    if (pos != m.end() && !typename Map::key_compare()(k, pos->first))
+	pos->second = v;
+    else
+	pos = m.insert(pos, typename Map::value_type(k, v));
+    return pos;
+    }
 
 template<class Num> string decString(Num number)
 {

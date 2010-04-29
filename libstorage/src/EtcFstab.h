@@ -41,6 +41,7 @@ struct FstabEntry
     storage::MountByType mount_by;
 
     void calcDependent();
+    bool optUser() const;
     };
 
 inline std::ostream& operator<< (std::ostream& s, const FstabEntry &v )

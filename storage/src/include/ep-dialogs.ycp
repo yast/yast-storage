@@ -73,15 +73,13 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 	boolean AskPassword()
 	{
-	    if (!NeedPassword())
-		return false;
-
-	    // TODO: this is ugly
-	    string key = (data["type"]:`unknown != `loop) ? (data["device"]:"error") : (data["fpath"]:"error");
-	    if (Storage::HasClassified(key))
-		return false;
-
-	    return true;
+	    boolean ret = NeedPassword();
+	    if( ret && !do_format && size(data["mount"]:"")>0 )
+		{
+		string key = (data["type"]:`unknown != `loop) ? (data["device"]:"error") : (data["fpath"]:"error");
+		ret = Storage::NeedCryptPwd(key);
+		}
+	    return ret;
 	}
 
 
@@ -490,6 +488,8 @@ Do not forget this password!
 	UI::ChangeWidget(`id(`pw1), `Value, "");
 	UI::ChangeWidget(`id(`pw2), `Value, "");
 
+	string dev = (data["type"]:`unknown != `loop) ? data["device"]:"" 
+						      : data["fpath"]:"";
 	repeat
 	{
 	    widget = MiniWorkflow::UserInput();
@@ -543,10 +543,7 @@ Try again."));
 
 	if (widget == `next)
 	{
-	    if (data["type"]:`unknown != `loop)
-		Storage::UpdateClassified(data["device"]:"", pw1);
-	    else
-		Storage::UpdateClassified(data["fpath"]:"", pw1);
+	    Storage::SetCryptPwd(dev, pw1);
 	    widget = `finish;
 	}
 
