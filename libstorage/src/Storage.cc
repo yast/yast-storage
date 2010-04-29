@@ -794,51 +794,63 @@ std::ostream& operator<< ( std::ostream& s, const storage::DiskData& d )
 
 
 void
-Storage::initDisk( DiskData& data, ProcPart& pp )
+Storage::initDisk( list<DiskData>& dl, ProcPart& pp )
     {
-    y2mil( "data:" << data );
-    data.dev = data.name;
-    string::size_type pos = data.dev.find('!');
-    while( pos!=string::npos )
+    y2mil( "dl: " << dl );
+    for( list<DiskData>::iterator i = dl.begin(); i!=dl.end(); ++i )
 	{
-	data.dev[pos] = '/';
-	pos = data.dev.find('!',pos+1);
-	}
-    y2milestone( "name sysfs:%s parted:%s", data.name.c_str(), 
-                 data.dev.c_str() );
-    Disk * d = NULL;
-    switch( data.typ )
-	{
-	case DiskData::DISK:
-	    d = new Disk( this, data.dev, data.s );
-	    break;
-	case DiskData::DASD:
-	    d = new Dasd( this, data.dev, data.s );
-	    break;
-	case DiskData::XEN:
+	DiskData& data( *i );
+	y2mil( "data:" << data );
+	data.dev = data.name;
+	string::size_type pos = data.dev.find('!');
+	while( pos!=string::npos )
 	    {
-	    string::size_type p = data.dev.find_last_not_of( "0123456789" );
-	    int nr = -1;
-	    data.dev.substr( p+1 ) >> nr;
-	    data.dev.erase( p+1 );
-	    if( nr>=0 )
-		{
-		d = new Disk( this, data.dev, (unsigned)nr, data.s, pp );
-		}
-	    break;
+	    data.dev[pos] = '/';
+	    pos = data.dev.find('!',pos+1);
 	    }
-	}
-    if( d && 
-        (d->getSysfsInfo(SYSFSDIR "/" + data.name)||data.typ==DiskData::XEN) &&
-	(data.typ==DiskData::XEN||d->detect(pp)))
-	{
-	if( max_log_num>0 )
-	    d->logData( logdir() );
-	data.d = d;
-	}
-    else if( d )
-	{
-	delete d;
+	y2milestone( "name sysfs:%s parted:%s", data.name.c_str(), 
+		     data.dev.c_str() );
+	Disk * d = NULL;
+	switch( data.typ )
+	    {
+	    case DiskData::DISK:
+		d = new Disk( this, data.dev, data.s );
+		break;
+	    case DiskData::DASD:
+		d = new Dasd( this, data.dev, data.s );
+		break;
+	    case DiskData::XEN:
+		{
+		string::size_type p = data.dev.find_last_not_of( "0123456789" );
+		int nr = -1;
+		data.dev.substr( p+1 ) >> nr;
+		data.dev.erase( p+1 );
+		y2mil( "data dev:" << data.dev << " nr:" << nr );
+		if( nr>=0 )
+		    {
+		    list<DiskData>::iterator j = dl.begin(); 
+		    while( j!=dl.end() && j->dev!=data.dev )
+			++j;
+		    if( j!=dl.end() && j->d )
+			j->d->addPartition( (unsigned)nr, data.s, pp );
+		    else
+			d = new Disk( this, data.dev, (unsigned)nr, data.s, pp );
+		    }
+		break;
+		}
+	    }
+	if( d && 
+	    (d->getSysfsInfo(SYSFSDIR "/" + data.name)||data.typ==DiskData::XEN) &&
+	    (data.typ==DiskData::XEN||d->detect(pp)))
+	    {
+	    if( max_log_num>0 )
+		d->logData( logdir() );
+	    data.d = d;
+	    }
+	else if( d )
+	    {
+	    delete d;
+	    }
 	}
     }
 
@@ -890,11 +902,7 @@ void
 	    }
 	}
 	closedir( Dir );
-	y2mil( "dl: " << dl );
-	for( list<DiskData>::iterator i = dl.begin(); i!=dl.end(); ++i )
-	    {
-		initDisk(*i, parts);
-	    }
+	initDisk(dl, parts);
 	y2mil( "dl: " << dl );
 	for( list<DiskData>::const_iterator i = dl.begin(); i!=dl.end(); ++i )
 	    {
