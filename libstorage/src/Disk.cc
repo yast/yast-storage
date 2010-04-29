@@ -77,15 +77,9 @@ Disk::Disk( Storage * const s, const string& Name,
     size_k = SizeK;
     head = new_head = 16;
     sector = new_sector = 32;
-    cyl = new_cyl = std::max( size_k*2 / head / sector, 1ULL );
     byte_cyl = head * sector * 512;
-    unsigned long long sz = size_k;
-    Partition *p = new Partition( *this, num, sz, 0, cyl, PRIMARY );
-    if( ppart.getSize( p->device(), sz ) && sz>0 )
-	{
-	p->setSize( sz );
-	}
-    addToList( p );
+    cyl = new_cyl = 0;
+    addPartition( num, size_k, ppart );
     }
 
 Disk::Disk( Storage * const s, const string& fname ) :
@@ -1840,15 +1834,17 @@ Disk::changePartitionId(unsigned nr, unsigned id)
 	}
     if( readonly() )
 	{
-	ret = DISK_CHANGE_READONLY;
+	y2war( "trying to chang partition id on readonly disk - ignoring" );
+	i->changeIdDone();
+	ret = 0;
 	}
-    if( ret==0 )
+    else
 	{
 	ret = i->changeId( id );
 	}
     y2mil("ret:" << ret);
     return ret;
-}
+    }
 
 
 int Disk::forgetChangePartitionId( unsigned nr )
@@ -2711,6 +2707,21 @@ const Partition * Disk::getPartitionAfter( const Partition * p )
     else
 	y2mil( "ret:" << *ret );
     return( ret );
+    }
+
+void Disk::addPartition( unsigned num, unsigned long long sz,
+		         ProcPart& ppart )
+    {
+    y2mil( "dev:" << device() << " num:" << num << " sizek" << sz );
+    unsigned long cyl_inc = std::max( sz*2 / head / sector, 1ULL );
+    Partition *p = new Partition( *this, num, sz, cyl, cyl_inc, PRIMARY );
+    cyl += cyl_inc;
+    new_cyl = cyl;
+    if( ppart.getSize( p->device(), sz ) && sz>0 )
+	{
+	p->setSize( sz );
+	}
+    addToList( p );
     }
 
 unsigned Disk::numPartitions() const
