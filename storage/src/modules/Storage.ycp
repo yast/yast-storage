@@ -1152,6 +1152,7 @@ map diskMap( any dinfo, map d )
     d["size_k"] = LibStorage::DiskInfo::swig_sizeK_get(dinfo);
     d["cyl_size"] = LibStorage::DiskInfo::swig_cylSize_get(dinfo);
     d["cyl_count"] = LibStorage::DiskInfo::swig_cyl_get(dinfo);
+    d["sector_size"] = LibStorage::DiskInfo::swig_sectorSize_get(dinfo);
     d["label"] = LibStorage::DiskInfo::swig_disklabel_get(dinfo);
     d["max_logical"] = LibStorage::DiskInfo::swig_maxLogical_get(dinfo);
     d["max_primary"] = LibStorage::DiskInfo::swig_maxPrimary_get(dinfo);
@@ -1603,7 +1604,7 @@ map getContainerInfo( map c )
 
 map toDiskMap( map disk, map cinfo )
     {
-    list<string> l = [ "size_k", "cyl_size", "cyl_count", "label", "name", "device",
+    list<string> l = [ "size_k", "cyl_size", "cyl_count", "sector_size", "label", "name", "device",
 		       "max_logical", "max_primary", "type", "readonly",
 		       "used_by", "used_by_type", "used_by_device", "partitions", "dasdfmt",
 		       "udev_id", "udev_path" ];
@@ -2073,7 +2074,7 @@ global map<string, any> NextMd()
 
 global integer MaxCylLabel( map disk, integer start_cyl )
     {
-    integer ret = Partitions::MaxSizeK(disk["label"]:"");
+    integer ret = Partitions::MaxSectors(disk["label"]:"") * disk["sector_size"]:512 / 1024;
     y2milestone( "MaxCylLabel val_k:%1 cyl_size:%2", ret, disk["cyl_size"]:1 );
     integer cylk2 = disk["cyl_size"]:1/512;
     if( cylk2<2 )
@@ -2840,11 +2841,10 @@ global boolean DeleteLoop( string disk, string file, boolean remove_file )
     }
 
 
-global string DefaultDiskLabel(integer size_k)
-{  
-    y2milestone("DefaultDiskLabel size_k:%1", size_k );
-    string label = LibStorage::StorageInterface::defaultDiskLabelSize(sint, size_k);
-    y2milestone("DefaultDiskLabel label:%1", label);
+global string DefaultDiskLabel(string disk)
+{
+    string label = LibStorage::StorageInterface::defaultDiskLabel(sint, disk);
+    y2milestone("DefaultDiskLabel disk:%1 label:%2", disk, label);
     return label;
 }
 
@@ -2854,15 +2854,11 @@ global string DefaultDiskLabel(integer size_k)
  * @param string the disk to deleted the partition table from
  * @return boolean
  */
-global define boolean DeletePartitionTable(string disk, integer size_k)
-    ``{
-    y2milestone( "DeletePartitionTable %1 size_k:%2", disk, size_k );
-    string label = 
-	LibStorage::StorageInterface::defaultDiskLabelSize( sint, size_k );
-    y2milestone( "DeletePartitionTable label:%1", label );
-    integer ret =
-	LibStorage::StorageInterface::destroyPartitionTable( sint, disk,
-	                                                     label );
+global boolean DeletePartitionTable(string disk)
+    {
+    y2milestone("DeletePartitionTable disk:%1", disk);
+    string label = DefaultDiskLabel(disk);
+    integer ret = LibStorage::StorageInterface::destroyPartitionTable(sint, disk, label);
     if( ret<0 )
 	y2error( "DeletePartitionTable sint ret:%1", ret );
     UpdateTargetMap();
@@ -3787,14 +3783,14 @@ global define void SetTargetMap( map<string,map> target )
 	    if( target[k,"type"]:`CT_UNKNOWN==`CT_LVM )
 		DeleteLvmVg( target[k,"name"]:"" );
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_DISK )
-		DeletePartitionTable( k, target[k,"size_k"]:0 );
+		DeletePartitionTable( k );
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_DMRAID )
 		DeleteDmraid( k );
 	    }
 	if( target[k,"del_ptable"]:false && 
 	    IsPartType( target[k,"type"]:`CT_UNKNOWN ) )
 	    {
-	    DeletePartitionTable( k, target[k,"size_k"]:0 );
+	    DeletePartitionTable( k );
 	    }
 	});
     keys = maplist( string k, any e, target, ``(k));
