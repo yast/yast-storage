@@ -480,7 +480,7 @@ Do not forget this password!
 
 	integer min_pw_len = data["format"]:false ? 8 : 1;
 	boolean empty_pw_allowed = EmptyCryptPwdAllowed(data);
-	boolean two_pw = data["format"]:false || size(data["mount"]:"")==0;
+	boolean two_pw = data["format"]:false || isempty(data["mount"]:"");
 
 	string label = "";
 
@@ -521,7 +521,8 @@ Do not forget this password!
 
 	//don't put those inside the loop - they'd be reset after each unsuccesful try
 	UI::ChangeWidget(`id(`pw1), `Value, "");
-	UI::ChangeWidget(`id(`pw2), `Value, "");
+	if (two_pw)
+	    UI::ChangeWidget(`id(`pw2), `Value, "");
 
 	string dev = (data["type"]:`unknown != `loop) ? data["device"]:"" 
 						      : data["fpath"]:"";
@@ -532,9 +533,12 @@ Do not forget this password!
 	    if (widget == `next)
 	    {
 		password = (string) UI::QueryWidget(`id(`pw1), `Value);
-		string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
-		boolean need_verify = !data["format"]:false &&
-		                      size(data["mount"]:"")>0;
+
+		string tmp = password;
+		if (two_pw)
+		    tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
+
+		boolean need_verify = !data["format"]:false && !isempty(data["mount"]:"");
 
 		if (!Storage::CheckEncryptionPasswords(password, tmp, min_pw_len, empty_pw_allowed) ||
 		    (need_verify && !Storage::CheckCryptOk(dev, password, false, false)) )
