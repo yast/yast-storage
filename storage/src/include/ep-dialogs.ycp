@@ -76,21 +76,19 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	symbol used_fs = data["used_fs"]:`unknown;
 	symbol default_crypt_fs = data["type"]:`unknown == `loop ? `luks : `none;
 	boolean crypt_fs = data["enc_type"]:default_crypt_fs != `none;
+	boolean orig_crypt_fs = crypt_fs;
 	string mount = data["mount"]:"";
 	boolean do_mount = mount != "";
 
 
-	// returns true also when password can be omitted (e.g. encrypted swap)
-	boolean NeedPassword()
-	{
-	    return crypt_fs;
-	}
-
-
 	boolean AskPassword()
 	{
-	    boolean ret = NeedPassword();
-	    if( ret && !do_format /*&& size(data["mount"]:"")>0*/ )
+	    y2milestone( "AskPassword data:%1", data );
+	    boolean ret = crypt_fs;
+	    if( ret )
+		ret = do_format || orig_crypt_fs!=crypt_fs || 
+		      size(data["mount"]:"")>0;
+	    if( ret && !do_format )
 		{
 		string key = (data["type"]:`unknown != `loop) ? (data["device"]:"error") : (data["fpath"]:"error");
 		ret = Storage::NeedCryptPwd(key);
@@ -388,7 +386,7 @@ Also check the format option.
 
 	if (widget == `next)
 	{
-	    if (NeedPassword())
+	    if( crypt_fs )
 		data["enc_type"] = data["format"]:false ? `luks : `twofish;
 	    else
 		data["enc_type"] = `none;
