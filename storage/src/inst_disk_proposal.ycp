@@ -35,10 +35,11 @@
   
 
     include "partitioning/custom_part_dialogs.ycp";
+    include "partitioning/ep-import.ycp";
 
 
-define boolean AskOverwriteChanges()
-    ``{
+boolean AskOverwriteChanges()
+    {
     boolean ret = true;
     string target_is = Storage::GetPartMode();
     y2milestone( "AskOverwriteChanges target_is %1", target_is );
@@ -53,9 +54,17 @@ done so far. Continue with computing proposal?"));
     return( ret );
     }
 
-define void execSubscreens( boolean detailed )
-    ``{
-    y2milestone( "execSubscreens detailed %1", detailed );
+
+void execSubscreens(symbol mode)
+    {
+    y2milestone( "execSubscreens mode:%1", mode );
+
+    if (Mode::autoinst())
+	{
+	Storage::SetPartMode("PROP_MODIFY");
+	}
+    else
+	{
     map aliases =
 	$[ "disk" :
 		``(WFM::CallFunction("inst_disk", [true, true])),
@@ -66,15 +75,15 @@ define void execSubscreens( boolean detailed )
 	   "resize_ui" :
 		``(WFM::CallFunction("inst_resize_ui", [true, true])),
 	  ];
+
     map seq = $[];
     seq["disk"] = $[ `abort : `abort, `cancel: `cancel, `next: `next ];
-    if (Mode::autoinst())
-	{
-	Storage::SetPartMode("PROP_MODIFY");
-	seq["ws_start"] = "disk";
-	}
-    else
-	{
+
+	    switch (mode)
+	    {
+		case `modify:
+		case `detailed:
+		{
 	y2milestone( "ProposalActive %1 ProposalMode %2 PartMode %3",
 		     Storage::GetPartProposalActive(),
 		     Storage::GetPartProposalMode(), Storage::GetPartMode() );
@@ -90,7 +99,7 @@ define void execSubscreens( boolean detailed )
 	    }
 	seq["disk"] = $[ `abort : `abort, `cancel: `cancel, `next : `next ];
 	y2milestone( "execSubscreens GetPartMode %1", Storage::GetPartMode() );
-	if( detailed && Storage::GetPartMode()!="CUSTOM" )
+	if( mode == `detailed && Storage::GetPartMode()!="CUSTOM" )
 	    seq["ws_start"] = "target_sel";
 	else
 	    seq["ws_start"] = "disk";
@@ -100,7 +109,17 @@ define void execSubscreens( boolean detailed )
 	Wizard::OpenNextBackDialog();
 	symbol result = Sequencer::Run(aliases, seq);
 	Wizard::CloseDialog();
-	Storage::HandleProposalPackages();
+		}
+		break;
+
+		case `import:
+		{
+		    ImportMountPoints();
+		}
+		break;
+	    }
+
+	Storage::HandleProposalPackages();    
 	}
     }
 
@@ -120,6 +139,8 @@ string title = _("Suggested Partitioning");
 string modify_str   = _("&Edit Partition Setup...");
 // Radiobutton for partition dialog
 string detailed_str = _("&Create Partition Setup...");
+// Radiobutton for partition dialog
+string import_str = _("&Import Partition Setup...");
 // Radiobutton for partition dialog
 string part_str = _("&Partition Based");
 // Radiobutton for partition dialog
@@ -178,11 +199,12 @@ term rframe =
 	);
 
 term bframe = 
-    `HBox(
+    `VBox(
 	`PushButton( `id(`detailed), detailed_str ),
-	`HSpacing(5),
-	`PushButton( `id(`modify), modify_str ),
-	`HSpacing(5)
+	`VSpacing(0.45),
+	`PushButton( `id(`import), import_str ),
+	`VSpacing(0.45),
+	`PushButton( `id(`modify), modify_str )
 	);
 
 
@@ -192,10 +214,10 @@ term contents =
 	`HBox(
 	    `HSpacing(2),
 	    `VBox(
-		 `MinHeight( 7, `RichText( `id("richtext"), changes )),
+		 `MinHeight(8, `RichText(`id(`richtext), changes)),
 		 `VSpacing(1),
 		 `RadioButtonGroup( `id("prop_mode"), rframe ),
-		 `VSpacing(4),
+		 `VSpacing(2),
 		 bframe,
 		 `VStretch()
 		 ),
@@ -217,6 +239,14 @@ setup (like e.g. changing filesystem types), choose
 <b>%1</b> and do these modification in the expert
 partitioner dialog.</p>
 "), deletechars(modify_str,"&"));
+
+// help text continued
+// %1 is replaced by button text
+help_text = help_text + sformat(_("<p>
+To import the mount points from an existing Linux
+system choose <b>%1</b>. You can still make modification
+afterwards in the expert partitioner dialog.</p>
+"), deletechars(import_str, "&"));
 
 // help text continued
 help_text =  help_text + sformat(_("<p>
@@ -317,14 +347,14 @@ if( !Storage::GetTestsuite() )
 		Storage::SetPartMode( target_is );
 		Storage::SetTargetMap( targetMap );
 		changes = Storage::ChangeText();
-		UI::ChangeWidget( `id("richtext"), `Value, changes );
+		UI::ChangeWidget(`id(`richtext), `Value, changes);
 		}
 	    else
 		{
 		UI::ChangeWidget( `id("prop_mode"), `CurrentButton, old_mode );
 		}
 	    }
-	else if (contains([ `modify, `detailed ], ret))
+	else if (contains([ `modify, `detailed, `import ], ret))
 	    {
 	    Storage::SetPartProposalFirst( false );
 	    Storage::SetPartProposalActive( false );
@@ -352,12 +382,19 @@ if( !Storage::GetTestsuite() )
 		Storage::SetPartProposalMode( "detailed" );
 		}
 		break;
+
+		case `import:
+		{
+		    target_is = "PROP_MODIFY";
+		    Storage::SetPartProposalMode("modify");
+		}
+		break;
 	    }
 
 	    Storage::SetPartMode( target_is );
-	    execSubscreens( ret==`detailed );
+	    execSubscreens( ret );
 	    changes = Storage::ChangeText();
-	    UI::ChangeWidget( `id("richtext"), `Value, changes );
+	    UI::ChangeWidget(`id(`richtext), `Value, changes);
 	    if(  ret==`detailed )
 		{
 		UI::ChangeWidget(`id(`part), `Value, !StorageProposal::GetProposalLvm());
