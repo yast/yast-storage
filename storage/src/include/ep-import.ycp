@@ -209,6 +209,22 @@
     }
 
 
+    string FstabAddDialogHelptext()
+    {
+	// help text, richtext format
+	string helptext = _("<p>YaST2 has scanned your hard disks and found
+one or several old Linux systems with mount points. The old mount points are
+shown in the table.</p>");
+
+	// help text, richtext format
+	helptext = helptext + _("<p>You can choose whether the old system
+volumes, e.g. / and /usr, will be formatted during the
+installation. Non-system volumes, e.g. /home, will not be formatted.</p>");
+
+	return helptext;
+    }
+
+
     /**
      * Scan exiting partitions for fstab files and if one found read the mountpoints
      * from the fstab file and build a new target_map.
@@ -234,15 +250,6 @@
 
 	term table_header = StorageFields::TableHeader(fields);
 
-    // help text, richtext format
-    string help_text = _("<P><B><BIG>Attention:</BIG></B><BR>YaST2 has scanned your hard disks and found an old Linux system
-with mount points. On the right, see a list with the mount points found. </P>
-")+
-    // help text, richtext format
-_("<P>To use these mount points, <BR>press <B>Yes</B>.</P>")+
-    // help text, richtext format
-_("<P>To ignore these mount points, <BR> press <B>No</B>.</P>");
-
 	term navigate_buttons = `Empty();
 	if (size(fstabs) > 1)
 	{
@@ -255,29 +262,29 @@ _("<P>To ignore these mount points, <BR> press <B>No</B>.</P>");
     UI::OpenDialog(
 	`opt(`decorated),
 	    `VBox( `VSpacing(0.45),
-		   `ReplacePoint( `id(`heading), `Empty() ),
-		   `MarginBox(2, 1,
+		   // dialog heading
+		   `Left(`Heading(_("Import Mount Points from old System:"))),
+		   `MarginBox(1, 0.5,
 			      `VBox(
+				  `Left(`ReplacePoint(`id(`device), `Empty())),
 				  `MinSize(60, 8, `Table(`id(`table), `opt(`keepSorting), table_header, [])),
 				  `VSpacing(0.45),
 				  navigate_buttons,
 				  `VSpacing(0.45),
+				  // checkbox label
 				  `Left(`CheckBox(`id(`format_sys), _("Format system volumes"), true))
 				  )
 		       ),
-		   // popup text
-		   `Heading(_("Would you like to use these mount points
-for your new installation?")),
-		   `VSpacing(0.45),
 		   `ButtonBox(
 		       `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
-		       `PushButton(`id(`ok), `opt(`default), Label::YesButton()),
-		       `PushButton(`id(`cancel), Label::NoButton())
+		       // pushbutton label
+		       `PushButton(`id(`ok), `opt(`default), _("Import")),
+		       `PushButton(`id(`cancel), Label::CancelButton())
 		       )
 		 )
 	     );
 
-    UI::ChangeWidget(`help, `HelpText, help_text);
+    UI::ChangeWidget(`help, `HelpText, FstabAddDialogHelptext());
 
     symbol userinput = `none;
     integer idx = 0;
@@ -291,10 +298,8 @@ for your new installation?")),
 	map<string, map> new_target_map = AddFstabToTargetMap(target_map, fstab, format_sys);
 
 	// popup text %1 is replaced by a device name (e.g. /dev/hda1)
-	string str = sformat(
-_("A previous system with the following mount points was detected:
-/etc/fstab found on %1"), device);
-	UI::ReplaceWidget( `id(`heading), `Heading( str ) );
+	string str = sformat(_("/etc/fstab found on %1 contains:"), device);
+	UI::ReplaceWidget(`id(`device), `Label(str));
 
 	list<term> table_contents = StorageFields::TableContents(fields, new_target_map,
 								 StorageFields::PredicateMountpoint);
@@ -308,7 +313,6 @@ _("A previous system with the following mount points was detected:
 	}
 
 	userinput = (symbol) UI::UserInput();
-	y2milestone("userinput %1", userinput);
 
 	switch (userinput)
 	{
