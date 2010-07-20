@@ -1360,6 +1360,11 @@ map mdPartMap(any info, map p)
     return p;
 }
 
+global boolean HasRaidParity( string rt )
+    {
+    return( contains( [ "raid5", "raid6", "raid10" ], rt  ));
+    }
+
 map getContainerInfo( map c )
     {
     y2milestone( "getContainerInfo %1", c );
@@ -1469,13 +1474,13 @@ map getContainerInfo( map c )
 
 	integer t = LibStorage::MdPartCoInfo::swig_type_get(infos);
 	c["raid_type"] = substring(sformat("%1", toSymbol(conv_mdtype, t)), 1);
-	if (c["raid_type"]:"" == "raid5")
-	{
+	if( HasRaidParity( c["raid_type"]:"" ))
+	    {
 	    t = LibStorage::MdPartCoInfo::swig_parity_get(infos);
 	    symbol pt = toSymbol(conv_mdparity, t);
-	    if (pt != `par_none)
-		c["parity_algorithm"] = substring(sformat("%1", pt), 1);
-	}
+	    if( pt != `par_default )
+		c["parity_algorithm"] = rev_conv_parstring[t]:"";
+	    }
 	t = LibStorage::MdPartCoInfo::swig_chunkSizeK_get(infos);
 	if (t > 0)
 	{
@@ -1549,12 +1554,12 @@ map getContainerInfo( map c )
 	    p["nr"] = LibStorage::MdInfo::swig_nr_get(info);
 	    integer t = LibStorage::MdInfo::swig_type_get(info);
 	    p["raid_type"] = substring( sformat( "%1", toSymbol( conv_mdtype, t )), 1 );
-	    if( p["raid_type"]:""=="raid5" )
+	    if( HasRaidParity( p["raid_type"]:"" ))
 		{
 		t = LibStorage::MdInfo::swig_parity_get(info);
 		symbol pt = toSymbol( conv_mdparity, t );
-		if( pt != `par_none )
-		    p["parity_algorithm"] = substring( sformat( "%1", pt), 1 );
+		if( pt != `par_default )
+		    p["parity_algorithm"] = rev_conv_parstring[t]:"";
 		}
 	    p["type"] = `sw_raid;
 	    p["fstype"] = Partitions::raid_name;
@@ -2962,7 +2967,7 @@ boolean CreateAny( symbol ctype, map d, map& p )
 	ret = Storage::CreateMd( p["nr"]:0, p["raid_type"]:"raid1" );
 	if( ret && haskey( p, "chunk_size" ))
 	    Storage::ChangeMdChunk( p["nr"]:0, p["chunk_size"]:4 );
-	if( ret && p["raid_type"]:""=="raid5" &&
+	if( ret && HasRaidParity( p["raid_type"]:"" ) &&
 	    haskey( p, "parity_algorithm" ))
 	    Storage::ChangeMdParity( p["nr"]:0,
 	                             p["parity_algorithm"]:"" );
