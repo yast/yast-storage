@@ -357,31 +357,59 @@ installation. Non-system volumes, e.g. /home, will not be formatted.</p>");
 
 	boolean format_sys = true;
 	string device = FstabAddDialog(target_map, fstabs, format_sys);
+	map<string, map> new_target_map = $[];
+	boolean import_ok = false;
 	if (!isempty(device))
 	{
 	    y2milestone("ImportMountPoints device:%1", device);
 	    list<map> fstab = (list<map>) fstabs[device]:[];
+	    import_ok = true;
 
-	    map<string, map> new_target_map = AddFstabToTargetMap(target_map, fstab, format_sys);
+	    new_target_map = AddFstabToTargetMap(target_map, fstab, format_sys);
 
 	    foreach(string d, map disk, new_target_map, {
 		foreach(map p, disk["partitions"]:[], {
+		    string key = (p["type"]:`unknown != `loop) ? (p["device"]:"error") : (p["fpath"]:"error");
 		    if (!isempty(p["mount"]:"") && p["enc_type"]:`none!=`none &&
-			!p["tmpcrypt"]:false)
+			!p["tmpcrypt"]:false && Storage::NeedCryptPwd(key) )
 		    {
-			string pwd = DlgCreateCryptFs( p["device"]:"", 1, false, false );
-			if( pwd != nil && !isempty(pwd) )
-			    Storage::SetCryptPwd( p["device"]:"", pwd );
+			boolean ok = false;
+			string dev = p["device"]:"";
+			string pwd = "";
+			do
+			    {
+			    ok = false;
+			    pwd = DlgPasswdCryptFs( dev, 1, false, false );
+			    if( pwd != nil && !isempty(pwd) )
+				{
+				if( Storage::CheckCryptOk( dev, pwd, true, 
+				                           false ) )
+				    {
+				    ok = Storage::SetCryptPwd( dev, pwd ) &&
+					 Storage::SetCrypt( dev, true, false );
+				    }
+				else
+				    {
+				    Popup::Error(_("Wrong Password provided."));
+				    }
+				}
+			    else if( size(pwd)==0 )
+				{
+				ok = true;
+				import_ok = false;
+				}
+			    }
+			while( !ok );
+
 		    }
 		});
 	    });
 
+	}
+	if( import_ok )
 	    Storage::SetTargetMap(new_target_map);
-	}
 	else
-	{
 	    Storage::RestoreTargetBackup("import");
-	}
 
 	Storage::DisposeTargetBackup("import");
     }
