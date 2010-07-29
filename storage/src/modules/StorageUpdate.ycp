@@ -288,6 +288,35 @@
 	AsciiFile::RewriteFile( crtab, tabpath );
     }
 
+void UpdateFstabCryptNofail()
+    {
+    y2milestone( "UpdateFstabCryptNofail called" );
+    string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    boolean update = false;
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	if( search( l["fields",0]:"", "/dev/mapper/cr_" )==0 )
+	    {
+	    list<string> ls = splitstring( l["fields",3]:"", "," );
+	    ls = filter( string s, ls, ``(s!="noauto"));
+	    if( size(filter( string s, ls, ``(s=="nofail")))==0 )
+		{
+		ls = add( ls, "nofail" );
+		AsciiFile::ChangeLineField( fstab, line, 3, 
+		                            mergestring( ls, "," ));
+		update = true;
+		}
+	    }
+	line = line+1;
+	}
+    if( update )
+	{
+	AsciiFile::RewriteFile( fstab, tabpath );
+	}
+    }
 
     /**
      * Updates fstab on disk
@@ -388,6 +417,8 @@
 		bo = (map)SCR::Execute (.target.bash_output, cmd );
 		y2milestone( "Update bo %1", bo );
 	    }
+	    if( oldv["major"]:0<11 || (oldv["major"]:0==11 && oldv["minor"]:0<=2))
+		UpdateFstabCryptNofail();
 	    // set flag -> it indicates that Update was already called
 	    called_update = true;
 	}
