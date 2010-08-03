@@ -83,8 +83,7 @@
     global const list<integer> no_windows = [ 0x12, 0x82, 0xde, fsid_gpt_boot, fsid_gpt_service,
 					      fsid_gpt_msftres ];
 
-
-           integer minimal_needed_bootsize = 0; 
+    map<symbol, integer> boot_size_k = $[];
 
            symbol default_fs      = `unknown;
            symbol default_boot_fs = `unknown;
@@ -160,47 +159,57 @@ global string BootMount()
 }
 
 
-global define integer MinimalNeededBootsize()
-    ``{
-    if( minimal_needed_bootsize == 0 )
+map<symbol, integer> BootSizeK()
+{
+    if (isempty(boot_size_k))
+    {
+	boot_size_k = $[ `proposed : 64 * 1024,
+			 `minimal : 64 * 1024,
+			 `maximal : 750 * 1024 ];
+
+	if (Arch::ia64())
 	{
-	minimal_needed_bootsize = 64 * 1024 * 1024;
-	if( Arch::ia64() )
-	    {
-	    minimal_needed_bootsize = 200*1024*1024;
-	    }
-	else if( Arch::board_chrp() )
-	    {
-	    minimal_needed_bootsize = 200*1024*1024;
-	    }
-	else if( Arch::board_prep() )
-	    {
-	    minimal_needed_bootsize = 200*1024*1024;
-	    }
-	else if( Arch::board_iseries() )
-	    {
-	    minimal_needed_bootsize = 200*1024*1024;
-	    }
-	else if( Arch::board_mac() )
-	    {
-	    minimal_needed_bootsize = 32*1024*1024;
-	    }
+	    boot_size_k[`proposed] = 200 * 1024;
+	    boot_size_k[`minimal] = 180 * 1024;
 	}
-    return( minimal_needed_bootsize );
+	else if (Arch::board_chrp() || Arch::board_prep() || Arch::board_iseries())
+	{
+	    boot_size_k[`proposed] = 200 * 1024;
+	    boot_size_k[`minimal] = 180 * 1024;
+	}
+	else if (Arch::board_mac())
+	{
+	    boot_size_k[`proposed] = 32 * 1024;
+	    boot_size_k[`minimal] = 800;
+	}
+
+	y2milestone("BootSizeK boot_size_k:%1", boot_size_k);
     }
 
-global define integer MinimalRequiredBootsize()
-    ``{
-    integer need = MinimalNeededBootsize();
-    integer ret = need;
-    if( Arch::ia64() )
-	ret = ret / 10 * 9;
-    else if( Arch::board_mac() )
-	ret = 800 * 1024;
-    if( ret!=need )
-	y2milestone( "MinimalRequiredBootsize ret %1 Req:%2", ret, need  );
-    return( ret );
-    }
+    return boot_size_k;
+}
+
+
+global integer MinimalNeededBootsize()
+{
+    return 1024 * BootSizeK()[`proposed]:0;
+}
+
+global integer ProposedBootsize()
+{
+    return 1024 * BootSizeK()[`proposed]:0;
+}
+
+global integer MinimalBootsize()
+{
+    return 1024 * BootSizeK()[`minimal]:0;
+}
+
+global integer MaximalBootsize()
+{
+    return 1024 * BootSizeK()[`maximal]:0;
+}
+
 
 global define integer BootCyl()
     ``{
