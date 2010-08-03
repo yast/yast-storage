@@ -419,13 +419,13 @@ map try_add_boot( map conf, map disk, boolean force )
 	{
 	map pb = $[];
 	pb["mount"] = Partitions::BootMount();
-	pb["size"] = Partitions::MinimalNeededBootsize();
+	pb["size"] = Partitions::ProposedBootsize();
 	pb["fsys"] = Partitions::DefaultBootFs();
 	pb["id"] = Partitions::FsidBoot();
 	pb["auto_added"] = true;
 	pb["max_cyl"] = Partitions::BootCyl();
 	pb["primary"] = Partitions::BootPrimary();
-	pb["maxsize"] = 500*1024*1024;
+	pb["maxsize"] = Partitions::MaximalBootsize();
 	tc["partitions"] = add( tc["partitions"]:[], pb );
 	y2milestone( "try_add_boot disk_cyl %1 boot_cyl %2 need_boot %3 typ %4",
 	             disk["cyl_count"]:0, Partitions::BootCyl(), 
@@ -2179,7 +2179,7 @@ map read_partition_xml_config()
 		{
 		if( partition["size"]:0 == -1 )
 		    {
-		    partition["size"] = Partitions::MinimalNeededBootsize();
+		    partition["size"] = Partitions::ProposedBootsize();
 		    }
 		if( partition["fsys"]:`none == `none )
 		    {
@@ -2398,7 +2398,7 @@ map read_partition_config( string fpath )
 	    {
 	    if( part["size"]:0 == -1 )
 		{
-		part["size"] = Partitions::MinimalNeededBootsize();
+		part["size"] = Partitions::ProposedBootsize();
 		}
 	    if( part["fsys"]:`none == `none )
 		{
@@ -2513,11 +2513,11 @@ list<map> can_boot_reuse( string disk, string label, boolean boot,
 	pl = filter( map p, partitions, 
 		     ``(!p["delete"]:false &&
 			p["size_k"]:0*1024 >= 
-			    Partitions::MinimalRequiredBootsize()));
+			    Partitions::MinimalBootsize()));
 	map boot = find( map p, pl,
 			 ``((p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
 			    (p["fsid"]:0 == Partitions::FsidBoot() && 
-			     p["size_k"]:0<500*1024)||
+			     p["size_k"]:0*1024 <= Partitions::MaximalBootsize()) ||
 			    (p["detected_fs"]:`unknown==`hfs && 
 			     p["boot"]:false && label=="mac") ||
 			    (p["fsid"]:0 == Partitions::fsid_prep_chrp_boot &&
@@ -2764,7 +2764,7 @@ map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
 		if( contains( linux_pid, p["fsid"]:0 ) ||
 		    (p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
 		    (p["fsid"]:0 == Partitions::FsidBoot() && 
-		     p["size_k"]:0<500*1024)||
+		     p["size_k"]:0*1024 <= Partitions::MaximalBootsize()) ||
 		    (Partitions::PrepBoot() && 
 		     (p["fsid"]:0 == Partitions::fsid_prep_chrp_boot||
 		      p["fsid"]:0 == 0x06)))
@@ -3690,7 +3690,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
     target = AddWinInfo(target);
     ret["target"] = target;
     map boot = $[ "mount" : Partitions::BootMount(), 
-                  "size" : Partitions::MinimalNeededBootsize(),
+                  "size" : Partitions::ProposedBootsize(),
                   "fsys" : Partitions::DefaultBootFs(),
 		  "id" : Partitions::FsidBoot(),
 		  "max_cyl" : Partitions::BootCyl() ];
@@ -3942,7 +3942,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
     target = remove_vm(target,key);
     ret["target"] = target;
     map boot = $[ "mount" : Partitions::BootMount(), 
-                  "size" : Partitions::MinimalNeededBootsize(),
+                  "size" : Partitions::ProposedBootsize(),
                   "fsys" : Partitions::DefaultBootFs(),
 		  "id" : Partitions::FsidBoot(),
 		  "max_cyl" : Partitions::BootCyl() ];
