@@ -65,9 +65,12 @@ class Container
 	    { return( !(*this<rhs) ); }
 	bool operator> ( const Container& rhs ) const
 	    { return( !(*this<=rhs) ); }
+	bool sameDevice( const string& device ) const;
 	virtual bool equalContent( const Container& rhs ) const;
 	virtual string getDiffString( const Container& c ) const;
 	virtual void logDifference( const Container& c ) const;
+
+	const std::list<string>& altNames() const { return( alt_names ); }
 
 	virtual void getCommitActions( std::list<storage::commitAction*>& l ) const;
 	virtual int getToCommit( storage::CommitStage stage,
@@ -219,6 +222,7 @@ class Container
 	bool silent;
 	bool ronly;
 	storage::usedBy uby;
+	std::list<string> alt_names;
 	unsigned long long size_k;
 	unsigned long mnr;
 	unsigned long mjr;

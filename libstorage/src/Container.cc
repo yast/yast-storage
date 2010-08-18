@@ -69,6 +69,14 @@ bool Container::isEmpty() const
     return( p.empty() );
     }
 
+bool Container::sameDevice( const string& device ) const
+    {
+    string d = normalizeDevice(device);
+    return( d==dev ||
+	    find( alt_names.begin(), alt_names.end(), d )!=alt_names.end() );
+    }
+
+
 
     bool Container::stageDecrease(const Volume& v)
     {

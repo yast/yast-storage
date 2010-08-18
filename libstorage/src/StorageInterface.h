@@ -145,6 +145,8 @@ namespace storage
 
     enum ImsmDriver { IMSM_UNDECIDED, IMSM_DMRAID, IMSM_MDADM };
 
+    enum PartAlign { ALIGN_OPTIMAL, ALIGN_CYLINDER };
+
 
     /**
      * typedef for a pointer to a function that is called on progress bar events
@@ -197,6 +199,19 @@ namespace storage
     };
 
     /**
+     * Contains capabilities of a disk label.
+     */
+    struct DlabelCapabilities
+    {
+	DlabelCapabilities() {}
+	unsigned maxPrimary;
+	bool extendedPossible;
+	unsigned maxLogical;
+	unsigned long long maxSectors;
+    };
+
+
+    /**
      * Contains info about a generic container.
      */
     struct ContainerInfo
@@ -223,6 +238,7 @@ namespace storage
 	unsigned long cyl;
 	unsigned long heads;
 	unsigned long sectors;
+	unsigned int sectorSize;
 	string disklabel;
 	string udevPath;
 	string udevId;
@@ -1005,6 +1021,12 @@ namespace storage
 	virtual bool getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const = 0;
 
 	/**
+	 * Query capabilities of a disk label.
+	 */
+	virtual bool getDlabelCapabilities(const string& dlabel,
+					   DlabelCapabilities& dlabelcapabilities) const = 0;
+
+	/**
 	 * Get list of filesystem types present on any block devices.
 	 */
 	virtual list<string> getAllUsedFs() const = 0;
@@ -1082,13 +1104,15 @@ namespace storage
 					 unsigned long sizeCyl ) = 0;
 
 	/**
-	 * Return the number of free cylinders after a partition.
+	 * Return the number of free cylinders before and after a partition.
 	 *
 	 * @param device device name of partition, e.g. /dev/sda1
-	 * @param freeCyls is set to the number of free cylinders
+	 * @param freeCylsBefore is set to the number of free cylinders before the partition
+	 * @param freeCylsAfter is set to the number of free cylinders after the partition
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int freeCylindersAfterPartition(const string& device, unsigned long& freeCyls) = 0;
+	virtual int freeCylindersAroundPartition(const string& device, unsigned long& freeCylsBefore,
+						 unsigned long& freeCylsAfter) = 0;
 
 	/**
 	 * Determine the device name of the next created partition
@@ -1194,9 +1218,6 @@ namespace storage
 	/**
 	 * Query unused slots on a disk suitable for creating partitions.
 	 *
-	 * This functions ignores size limitations of the partition table type,
-	 * e.g. on MSDOS labels partitions cannot exceed 2TB.
-	 *
 	 * @param disk name of disk, e.g. /dev/hda1
 	 * @param slots list of records that get filled with partition slot specific info
 	 * @return zero if all is ok, a negative number to indicate an error
@@ -1225,31 +1246,15 @@ namespace storage
 	 */
 	virtual int initializeDisk( const string& disk, bool value ) = 0;
 
-	/**
-	 * Query the default disk label of the architecture of the
-	 * machine (e.g. msdos for ix86, gpt for ia64, ...)
-	 *
-	 * @return default disk label of the architecture
-	 */
-	virtual string defaultDiskLabel() const = 0;
-
-	/**
+        /**
 	 * Query the default disk label of the architecture of the
 	 * machine (e.g. msdos for ix86, gpt for ia64, ...) for a disk
-	 * with certain size
 	 *
-	 * @param size_k size of disk in kilobyte
+	 * @param device device of disk
 	 *
 	 * @return default disk label of the disk
 	 */
-	virtual string defaultDiskLabelSize( unsigned long long size_k ) const = 0;
-
-	/**
-	 * Query the maximal allowed size the given disk label supports.
-	 *
-	 * @return maximal supported size of disk label
-	 */
-	virtual unsigned long long maxSizeLabelK( const string& label ) const = 0;
+        virtual string defaultDiskLabel(const string& device) = 0;
 
 	/**
 	 * Sets or unsets the format flag for the given volume.
@@ -1566,6 +1571,26 @@ namespace storage
 	 * @return value of the flag for zeroing newly created partitions
 	 */
 	virtual bool getZeroNewPartitions() const = 0;
+
+	/**
+	 * Set alignment of newly created partitions.
+	 * PartAlign has value ALIGN_OPTIMAL or ALIGN_CYLINDER.
+	 * ALIGN_CYLINDER aligns partiton start to cylinder boundaries like
+	 *     it was traditionally for a long time.
+	 * ALIGN_OPTIMAL aligns according to values provided by kernel.
+	 *     Default alignment is to multiples of 2048 sectors which is
+	 *     compatible to partition layout of Windows Vista and Windows 7.
+	 *
+	 * @param val value of new alignment type
+	 */
+	virtual void setPartitionAlignment( PartAlign val ) = 0;
+
+	/**
+	 * Get value for the alignment of newly created partitions
+	 *
+	 * @return value for the alignment
+	 */
+	virtual PartAlign getPartitionAlignment() const = 0;
 
 	/**
 	 * Set default value for mount by.

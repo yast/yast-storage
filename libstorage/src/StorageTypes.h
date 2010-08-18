@@ -23,7 +23,10 @@
 #ifndef STORAGE_TYPES_H
 #define STORAGE_TYPES_H
 
+#include <vector>
+#include <string>
 #include <iostream>
+#include <boost/algorithm/string.hpp>
 
 #include "y2storage/Regex.h"
 #include "y2storage/AppUtil.h"
@@ -31,6 +34,8 @@
 
 namespace storage
 {
+    using std::string;
+    using std::vector;
 
 inline bool operator<(CType a, CType b)
 {
@@ -152,6 +157,34 @@ private:
     string ub_name;
 };
 
+    struct string_starts_with
+    {
+        string_starts_with(const string& t) : val(t) {}
+        bool operator()(const string& s) const { return boost::starts_with(s, val); }
+        const string& val;
+    };
+
+    struct string_contains
+    {
+        string_contains(const string& t) : val(t) {}
+        bool operator()(const string& s) const { return boost::contains(s, val); }
+        const string& val;
+    };
+
+
+template <class Pred>
+vector<string>::iterator
+find_if(vector<string>& lines, Pred pred)
+    {
+    return std::find_if(lines.begin(), lines.end(), pred);
+    }
+
+template <class Pred>
+vector<string>::const_iterator
+find_if(const vector<string>& lines, Pred pred)
+    {
+    return std::find_if(lines.begin(), lines.end(), pred);
+    }
 
 struct match_string
     {

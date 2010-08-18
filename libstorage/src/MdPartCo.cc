@@ -284,13 +284,14 @@ MdPartCo::removeVolume( Volume* v )
 
 
 int
-MdPartCo::freeCylindersAfterPartition(const MdPart* dm, unsigned long& freeCyls) const
+MdPartCo::freeCylindersAroundPartition(const MdPart* dm, unsigned long& freeCylsBefore,
+				       unsigned long& freeCylsAfter) const
 {
     const Partition* p = dm->getPtr();
     int ret = p ? 0 : MDPART_PARTITION_NOT_FOUND;
     if (ret == 0)
     {
-        ret = disk->freeCylindersAfterPartition(p, freeCyls);
+        ret = disk->freeCylindersAroundPartition(p, freeCylsBefore, freeCylsAfter);
     }
     y2mil("ret:" << ret);
     return ret;
@@ -1560,23 +1561,8 @@ void MdPartCo::getMdProps()
 bool MdPartCo::readProp(enum MdProperty prop, string& val)
 {
   string path = sysfs_path + nm + "/md/" + md_props[prop];
-
-  if( access( path.c_str(), R_OK )==0 )
-  {
-    std::ifstream file( path.c_str() );
-    classic(file);
-    file >> val;
-    file.close();
-    file.clear();
-  }
-  else
-  {
-    y2war("File: " << sysfs_path << md_props[prop] << " = FAILED");
-     return false;
-  }
-  return true;
+    return read_sysfs_property(path, val);
 }
-
 
 
 void MdPartCo::getSlaves(const string name, std::list<string>& devs_list )

@@ -29,6 +29,8 @@
 
 #define PARTEDBIN "/usr/sbin/parted"
 #define PARTEDCMD PARTEDBIN " -s "	// blank at end !!
+#define ADDPARTBIN "/usr/sbin/addpart"
+#define DELPARTBIN "/usr/sbin/delpart"
 
 #define FDISKBIN "/sbin/fdisk"
 
