@@ -7,6 +7,7 @@
 {
     textdomain "storage";
 
+    void DestroySettingsPanel(any user_data);
 
     list< map<symbol, any> > visible_fields = [
 	// list entry
@@ -26,6 +27,11 @@
 	// list entry
 	$[ `label : _("Encryption"), `fields : [ `encrypted ] ]
     ];
+
+
+    list<term> partalign_items = maplist(symbol pal, [ `align_optimal, `align_cylinder ], {
+	    return `item(`id(pal), substring( sformat( "%1", pal ), 7 ));
+	});
 
 
     void CreateSettingsPanel(any user_data)
@@ -79,6 +85,11 @@
 								  `item(`id(`xfs), "XFS")
 							      ],
 							      `id(Partitions::DefaultFs()))),
+				      `Left(`ComboBoxSelected(`id(`part_align),`opt(`notify),
+				                              // combo box label
+							      _("Alignment of Newly Created Partitions"),
+							      partalign_items,
+							      `id(Storage::GetPartitionAlignment()))),
 				      `VSpacing(1),
 				      `Left(`ComboBoxSelected(`id(`display_name), `opt(`notify),
 							      // combo box label
@@ -104,7 +115,6 @@
 				      ),
 				  `VStretch()
 				  )));
-
 
 	// helptext
 	string helptext = _("<p>This view shows general storage
@@ -137,6 +147,10 @@ Devices</b> allows to hide information in the tables and overview.</p>");
 	    StorageSettings::SetDisplayName((symbol) UI::QueryWidget(`id(`display_name), `Value));
 	    UpdateNavigationTree(nil);
 	}
+	if (widget == `next)
+	{
+	    DestroySettingsPanel(user_data);
+	}
     }
 
 
@@ -159,6 +173,8 @@ Devices</b> allows to hide information in the tables and overview.</p>");
 
 	Storage::SetDefaultMountBy((symbol) UI::QueryWidget(`id(`default_mountby), `Value));
 	Partitions::SetDefaultFs((symbol) UI::QueryWidget(`id(`default_fs), `Value));
+	symbol part_align = (symbol) UI::QueryWidget(`id(`part_align), `Value);
+	Storage::SetPartitionAlignment( part_align );
 	StorageSettings::SetHiddenFields(InvertVisibleFields(StorageSettings::GetHiddenFields()));
     }
 }

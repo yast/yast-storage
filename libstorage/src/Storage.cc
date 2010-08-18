@@ -130,8 +130,10 @@ Storage::Storage(const Environment& env)
 
     recursiveRemove = false;
     zeroNewPartitions = false;
+    partAlignment = ALIGN_OPTIMAL;
     defaultMountBy = MOUNTBY_ID;
     detectMounted = true;
+
 
     tenv = getenv("LIBSTORAGE_IMSM_DRIVER");
     if (tenv)
@@ -195,6 +197,18 @@ Storage::initialize()
 		setDefaultMountBy( MOUNTBY_UUID );
 	    else if( val == "label" )
 		setDefaultMountBy( MOUNTBY_LABEL );
+	}
+	Regex rx3('^' + Regex::ws + "PARTITION_ALIGN" + '=' + "(['\"]?)([^'\"]*)\\1" + Regex::ws + '$');
+	line = sc.find( 0, rx3 );
+	if( line >= 0 )
+	{
+	    string val = boost::to_lower_copy(rx3.cap(2), locale::classic());
+	    if (val == "cylinder")
+		setPartitionAlignment(ALIGN_CYLINDER);
+	    else if(val == "optimal")
+		setPartitionAlignment(ALIGN_OPTIMAL);
+	    else
+		y2war("unknown partition alignment '" << val << "' in /etc/sysconfig/storage");
 	}
     }
 
@@ -1080,6 +1094,12 @@ void Storage::setZeroNewPartitions( bool val )
     zeroNewPartitions = val;
     }
 
+void Storage::setPartitionAlignment( PartAlign val )
+    {
+    y2mil("val:" << val);
+    partAlignment = val;
+    }
+
 void Storage::setDefaultMountBy( MountByType val )
     {
     y2mil( "val:" << Volume::mbyTypeString(val) );
@@ -1740,7 +1760,8 @@ Storage::updatePartitionArea( const string& partition, unsigned long start,
 
 
 int
-Storage::freeCylindersAfterPartition(const string& partition, unsigned long& freeCyls)
+Storage::freeCylindersAroundPartition(const string& partition, unsigned long& freeCylsBefore,
+				      unsigned long& freeCylsAfter)
 {
     int ret = 0;
     assertInit();
@@ -1751,11 +1772,11 @@ Storage::freeCylindersAfterPartition(const string& partition, unsigned long& fre
     {
 	if( cont->type()==DISK )
 	{
-	    Disk* disk = dynamic_cast<Disk *>(&(*cont));
-	    Partition* p = dynamic_cast<Partition *>(&(*vol));
+	    const Disk* disk = dynamic_cast<const Disk*>(&(*cont));
+	    const Partition* p = dynamic_cast<const Partition*>(&(*vol));
 	    if( disk!=NULL && p!=NULL )
 	    {
-		ret = disk->freeCylindersAfterPartition(p, freeCyls);
+		ret = disk->freeCylindersAroundPartition(p, freeCylsBefore, freeCylsAfter);
 	    }
 	    else
 	    {
@@ -1764,11 +1785,11 @@ Storage::freeCylindersAfterPartition(const string& partition, unsigned long& fre
 	}
 	else if( cont->type()==DMRAID || cont->type()==DMMULTIPATH )
 	{
-	    DmPartCo* disk = dynamic_cast<DmPartCo *>(&(*cont));
-	    DmPart* p = dynamic_cast<DmPart *>(&(*vol));
+	    const DmPartCo* disk = dynamic_cast<const DmPartCo*>(&(*cont));
+	    const DmPart* p = dynamic_cast<const DmPart*>(&(*vol));
 	    if( disk!=NULL && p!=NULL )
 	    {
-		ret = disk->freeCylindersAfterPartition(p, freeCyls);
+		ret = disk->freeCylindersAroundPartition(p, freeCylsBefore, freeCylsAfter);
 	    }
 	    else
 	    {
@@ -1777,11 +1798,11 @@ Storage::freeCylindersAfterPartition(const string& partition, unsigned long& fre
 	}
 	else if ( cont->type() == MDPART )
 	  {
-          MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
-          MdPart* p = dynamic_cast<MdPart *>(&(*vol));
+          const MdPartCo* disk = dynamic_cast<const MdPartCo*>(&(*cont));
+          const MdPart* p = dynamic_cast<const MdPart*>(&(*vol));
           if( disk!=NULL && p!=NULL )
           {
-              ret = disk->freeCylindersAfterPartition(p, freeCyls);
+              ret = disk->freeCylindersAroundPartition(p, freeCylsBefore, freeCylsAfter);
           }
           else
           {
@@ -2277,23 +2298,27 @@ Storage::initializeDisk( const string& disk, bool value )
 
 
 string
-Storage::defaultDiskLabel() const
+Storage::defaultDiskLabel(const string& device)
 {
-    return Disk::defaultLabel(efiBoot(), 0);
+    assertInit();
+
+    unsigned long long num_sectors = 0;
+
+    DiskIterator i1 = findDisk(device);
+    if (i1 != dEnd())
+	num_sectors = i1->kbToSector(i1->size_k);
+
+    DmPartCoIterator i2 = findDmPartCo(device);
+    if (i2 != dmpCoEnd())
+	num_sectors = i2->disk->kbToSector(i2->size_k);
+
+    MdPartCoIterator i3 = findMdPartCo(device);
+    if (i3 != mdpCoEnd())
+	num_sectors = i3->disk->kbToSector(i3->size_k);
+
+    return Disk::defaultLabel(efiBoot(), num_sectors);
 }
 
-string
-Storage::defaultDiskLabelSize( unsigned long long size_k ) const
-{
-    return Disk::defaultLabel(efiBoot(), size_k);
-}
-
-
-unsigned long long 
-Storage::maxSizeLabelK( const string& label ) const
-    {
-    return( Disk::maxSizeLabelK(label) );
-    }
 
 int
 Storage::changeFormatVolume( const string& device, bool format, FsType fs )
@@ -5388,6 +5413,13 @@ Storage::getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const
     }
 }
 
+bool
+Storage::getDlabelCapabilities(const string& dlabel, DlabelCapabilities& dlabelcapabilities) const
+{
+    return Disk::getDlabelCapabilities(dlabel, dlabelcapabilities);
+}
+
+
 
 void Storage::removeDmTableTo( const Volume& vol )
     {
@@ -5566,7 +5598,7 @@ bool Storage::findContainer( const string& device, ContIterator& c )
     {
     CPair cp = cPair();
     c = cp.begin();
-    while( c!=cp.end() && c->device()!=device )
+    while( c!=cp.end() && c->sameDevice(device))
 	++c;
     return( c!=cp.end() );
     }
@@ -6690,7 +6722,7 @@ void Storage::setExtError( const string& txt )
     }
 
 
-int Storage::waitForDevice() const
+int Storage::waitForDevice()
 {
     int ret = 0;
     if (access(UDEVADM, X_OK) == 0)
@@ -6705,7 +6737,7 @@ int Storage::waitForDevice() const
 }
 
 
-int Storage::waitForDevice( const string& device ) const
+int Storage::waitForDevice( const string& device )
     {
     int ret = 0;
     waitForDevice();

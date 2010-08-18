@@ -53,6 +53,7 @@ liby2storage_la_SOURCES =				\
 	Regex.cc		Regex.h			\
 	AsciiFile.cc		AsciiFile.h		\
 	  ProcPart.cc		ProcPart.h		\
+	ProcParts.cc		ProcParts.h		\
 	EtcRaidtab.cc		EtcRaidtab.h		\
 	ProcMounts.cc		ProcMounts.h		\
 	EtcFstab.cc		EtcFstab.h		\

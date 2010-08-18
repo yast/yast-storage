@@ -336,6 +336,8 @@ class Storage : public storage::StorageInterface
 
 	bool getFsCapabilities( storage::FsType fstype,
 	                        storage::FsCapabilities& fscapabilities) const;
+	bool getDlabelCapabilities(const string& dlabel,
+				   storage::DlabelCapabilities& dlabelcapabilities) const;
 	list<string> getAllUsedFs() const;
 	void setExtError( const string& txt );
 	int createPartition( const string& disk, storage::PartitionType type,
@@ -347,7 +349,8 @@ class Storage : public storage::StorageInterface
 	                       unsigned &nr, string& device );
 	int updatePartitionArea( const string& device,
 				 unsigned long start, unsigned long size );
-	int freeCylindersAfterPartition(const string& device, unsigned long& freeCyls);
+	int freeCylindersAroundPartition(const string& device, unsigned long& freeCylsBefore,
+					 unsigned long& freeCylsAfter);
 	int createPartitionKb( const string& disk, storage::PartitionType type,
 	                       unsigned long long start,
 			       unsigned long long sizek, string& device );
@@ -363,9 +366,7 @@ class Storage : public storage::StorageInterface
 	int getUnusedPartitionSlots(const string& disk, list<PartitionSlotInfo>& slots);
 	int destroyPartitionTable( const string& disk, const string& label );
 	int initializeDisk( const string& disk, bool value );
-	string defaultDiskLabel() const;
-	string defaultDiskLabelSize( unsigned long long size_k ) const;
-	unsigned long long maxSizeLabelK( const string& label ) const;
+	string defaultDiskLabel(const string& device);
 
 	int changeFormatVolume( const string& device, bool format,
 	                        storage::FsType fs );
@@ -403,6 +404,10 @@ class Storage : public storage::StorageInterface
 	bool getRecursiveRemoval() const { return recursiveRemove; }
 	void setZeroNewPartitions( bool val=true );
 	bool getZeroNewPartitions() const { return zeroNewPartitions; }
+
+	void setPartitionAlignment( PartAlign val );
+	PartAlign getPartitionAlignment() const { return partAlignment; }
+
 	void setDefaultMountBy (MountByType mby = MOUNTBY_DEVICE);
 	MountByType getDefaultMountBy() const { return defaultMountBy; }
 	void setDetectMountedVolumes( bool val=true );
@@ -506,8 +511,8 @@ class Storage : public storage::StorageInterface
 	const string& getExtendedErrorMessage() const { return extendedError; }
 	void eraseFreeInfo( const string& device );
 
-	int waitForDevice() const;
-	int waitForDevice( const string& device ) const;
+	static int waitForDevice();
+	static int waitForDevice( const string& device );
 	void checkDeviceExclusive( const string& device, unsigned secs );
 	int zeroDevice(const string& device, unsigned long long sizeK, bool random = false, 
 		       unsigned long long beginK = 200, unsigned long long endK = 10);
@@ -1918,6 +1923,7 @@ class Storage : public storage::StorageInterface
 	bool initialized;
 	bool recursiveRemove;
 	bool zeroNewPartitions;
+	PartAlign partAlignment;
 	MountByType defaultMountBy;
 	bool detectMounted;
 	bool root_mounted;

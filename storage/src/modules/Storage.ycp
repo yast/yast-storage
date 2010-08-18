@@ -189,6 +189,14 @@ string part_insts = "";
 // flag indicates calling StorageUpdate::Update()
 boolean called_update = false;
 
+map<string,any> conv_partalign =
+    $[ "def_sym" : `align_optimal,
+       "def_int" : LibStorage::ALIGN_OPTIMAL(),
+       "m" : $[ LibStorage::ALIGN_OPTIMAL() : `align_optimal,
+                LibStorage::ALIGN_CYLINDER() : `align_cylinder
+	      ]
+     ];
+
 
   /**
    * Returns Device Name
@@ -881,6 +889,7 @@ global list SwappingPartitions()
     list<map> swaps = (list<map>) SCR::Read(.proc.swaps);
     if (swaps == nil) {
 	y2error("SCR::Read(.proc.swaps) returned nil");
+	y2milestone("/proc/swaps is %1", SCR::Execute(.target.bash_output, "cat /proc/swaps"));
 	swaps = [];
     }
     swaps = filter(map e, swaps, ``(e["type"]:""=="partition"));
@@ -1425,6 +1434,7 @@ map diskMap( any dinfo, map d )
     d["size_k"] = LibStorage::DiskInfo::swig_sizeK_get(dinfo);
     d["cyl_size"] = LibStorage::DiskInfo::swig_cylSizeB_get(dinfo);
     d["cyl_count"] = LibStorage::DiskInfo::swig_cyl_get(dinfo);
+    d["sector_size"] = LibStorage::DiskInfo::swig_sectorSize_get(dinfo);
     d["label"] = LibStorage::DiskInfo::swig_disklabel_get(dinfo);
     d["max_logical"] = LibStorage::DiskInfo::swig_maxLogical_get(dinfo);
     d["max_primary"] = LibStorage::DiskInfo::swig_maxPrimary_get(dinfo);
@@ -1884,7 +1894,7 @@ map getContainerInfo( map c )
 
 map toDiskMap( map disk, map cinfo )
     {
-    list<string> l = [ "size_k", "cyl_size", "cyl_count", "label",
+    list<string> l = [ "size_k", "cyl_size", "cyl_count", "sector_size", "label",
 		       "max_logical", "max_primary", "type", "readonly",
 		       "used_by_type", "used_by", "used_by_device", "partitions", "dasdfmt",
 		       "udev_id", "udev_path" ];
@@ -2334,62 +2344,19 @@ global define void Storage()
     }
 
 
-    /* Dev definitions
-
-       dev     = maindev  | subdev
-       maindev = "disk"   | "vg"	| "md" (raiddev)
-       subdev  = "part"   | "lv" 	| "raid"
-
-       e.g.: 	"disk" = "/dev/hda"	| "dev/sda"	| "/dev/hdd"  | ...
-                "vg"   = "/dev/system" 	| "dev/group"   | ...
-		"md"   = "/dev/md"  (only)
-		"part" = "1//dev/hda"	| "2//dev/sda"	| ..
-		"lv"   = "usr//dev/system" | "home//dev/system"
-    */
-
-
-    /* Key definitions
-
-       key = maindevkey | subdevkey + maindevkey
-
-       maindevkey	= key( disk | vg | md   )
-       subdevkey	= key( part | lv | raid )
-       subdevkey        = maindevkey + subdevindex | "all"
-
-       subdevindex 	= 1 | 2 | "home" | "usr" | ..
-
-       e.g.:
-       maindevkey	= "/dev/hda"	| "/dev/md"	| "/dev/system"		| "all"
-       subdevkey	= "1//dev/hda"	| "1//dev/md"	| "home//dev/system" 	| "all"
-
-
-   */
-
-    /* MainDev defines ------------------------------------------------------------------
-    /* partition_defines -> isDisk */
-    /* partition_defines -> isRaid */
-    /* partition_defines -> isLVM  */
-    symbol sw_raid_type_key = `sw_raid;
-    symbol lvm_type_key	    = `lvm;
-    symbol extended_type_key= `extended;
-
-
-global map NextPartition( string disk, symbol ptype )
+global map<string, any> NextPartition( string disk, symbol ptype )
     {
     y2milestone( "NextPartition disk:%1 ptype:%2", disk, ptype );
-    map ret = $[];
     integer pt = fromSymbol(conv_ptype,ptype);
     y2milestone( "NextPartition type:%1 pt:%2", ptype, pt );
     integer num = 0;
     string dev = "";
-    integer r = LibStorage::StorageInterface::nextFreePartition( sint, disk,
-                                                                 pt, num, dev );
+    integer r = LibStorage::StorageInterface::nextFreePartition( sint, disk, pt, num, dev );
     if( r<0 )
 	y2error( "NextPartition ret %1", r );
-    ret["device"] = dev;
-    ret["nr"] = num;
+    map<string, any> ret = $[ "device" : dev, "nr" : num ];
     y2milestone( "NextPartition sint ret:%1 map:%2", r, ret );
-    return( ret );
+    return ret;
     }
 
 
@@ -2406,18 +2373,9 @@ global map<string, any> NextMd()
     return ret;
 }
 
-global integer MaxSizeLabelK( map disk )
-    {
-    integer ret = 0;
-    string tmp = disk["label"]:"";
-    ret = LibStorage::StorageInterface::maxSizeLabelK( sint, tmp );
-    y2milestone( "MaxSizeLabelK %1 is %2", disk["label"]:"", ret );
-    return( ret );
-    }
-
 global integer MaxCylLabel( map disk, integer start_cyl )
     {
-    integer ret = MaxSizeLabelK(disk);
+    integer ret = Partitions::MaxSectors(disk["label"]:"") * disk["sector_size"]:512 / 1024;
     y2milestone( "MaxCylLabel val_k:%1 cyl_size:%2", ret, disk["cyl_size"]:1 );
     integer cylk2 = disk["cyl_size"]:1/512;
     if( cylk2<2 )
@@ -3195,11 +3153,10 @@ global boolean DeleteLoop( string disk, string file, boolean remove_file )
     return( ret==0 );
     }
 
-global string DefaultDiskLabel(integer size_k)
-{  
-    y2milestone("DefaultDiskLabel size_k:%1", size_k );
-    string label = LibStorage::StorageInterface::defaultDiskLabelSize(sint, size_k);
-    y2milestone("DefaultDiskLabel label:%1", label);
+global string DefaultDiskLabel(string disk)
+{
+    string label = LibStorage::StorageInterface::defaultDiskLabel(sint, disk);
+    y2milestone("DefaultDiskLabel disk:%1 label:%2", disk, label);
     return label;
 }
 
@@ -3209,15 +3166,11 @@ global string DefaultDiskLabel(integer size_k)
  * @param string the disk to deleted the partition table from
  * @return boolean
  */
-global define boolean DeletePartitionTable(string disk, integer size_k)
-    ``{
-    y2milestone( "DeletePartitionTable %1 size_k:%2", disk, size_k );
-    string label = 
-	LibStorage::StorageInterface::defaultDiskLabelSize( sint, size_k );
-    y2milestone( "DeletePartitionTable label:%1", label );
-    integer ret =
-	LibStorage::StorageInterface::destroyPartitionTable( sint, disk,
-	                                                     label );
+global boolean DeletePartitionTable(string disk)
+    {
+    y2milestone("DeletePartitionTable disk:%1", disk);
+    string label = DefaultDiskLabel(disk);
+    integer ret = LibStorage::StorageInterface::destroyPartitionTable(sint, disk, label);
     if( ret<0 )
 	y2error( "DeletePartitionTable sint ret:%1", ret );
     UpdateTargetMap();
@@ -3719,14 +3672,14 @@ global define void SetTargetMap( map<string,map> target )
 	    if( target[k,"type"]:`CT_UNKNOWN==`CT_LVM )
 		DeleteLvmVg( target[k,"name"]:"" );
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_DISK )
-		DeletePartitionTable( k, target[k,"size_k"]:0 );
+		DeletePartitionTable( k );
 	    else if( target[k,"type"]:`CT_UNKNOWN==`CT_DMRAID )
 		DeleteDmraid( k );
 	    }
 	if( target[k,"del_ptable"]:false && 
 	    IsPartType( target[k,"type"]:`CT_UNKNOWN ) )
 	    {
-	    DeletePartitionTable( k, target[k,"size_k"]:0 );
+	    DeletePartitionTable( k );
 	    }
 	});
     keys = maplist( string k, any e, target, ``(k));
@@ -4181,6 +4134,21 @@ global void SetZeroNewPartitions( boolean val )
     {
     y2milestone( "SetZeroNewPartitions val:%1", val );
     LibStorage::StorageInterface::setZeroNewPartitions( sint, val );
+    }
+
+global void SetPartitionAlignment( symbol pal )
+    {
+    y2milestone( "SetPartitionAlignment val:%1", pal );
+    integer val = fromSymbol( conv_partalign, pal );
+    LibStorage::StorageInterface::setPartitionAlignment( sint, val );
+    }
+
+global symbol GetPartitionAlignment()
+    {
+    integer val = LibStorage::StorageInterface::getPartitionAlignment( sint );
+    symbol pal = toSymbol( conv_partalign, val );
+    y2milestone( "GetPartitionAlignment val:%1", pal );
+    return( pal );
     }
 
 /**
@@ -4763,10 +4731,19 @@ global define map IsResizable( map part )
 
 global integer FreeCylindersAfterPartition(string device)
 {
-    integer ret = 0;
-    if (LibStorage::StorageInterface::freeCylindersAfterPartition(sint, device, ret) != 0)
+    integer free_before = 0;
+    integer free_after = 0;
+    integer ret = LibStorage::StorageInterface::freeCylindersAroundPartition(sint, device, free_before, free_after);
+    if( ret >= 0 )
+	{
+	ret = free_after;
+	y2milestone("FreeCylindersAfterPartition after:%1 before:%2", free_after, free_before );
+	}
+    else
+	{
+	y2milestone("FreeCylindersAfterPartition ret:%1", ret);
 	ret = 0;
-    y2milestone("FreeCylindersAfterPartition ret:%1", ret);
+	}
     return ret;
 }
 

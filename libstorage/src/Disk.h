@@ -48,7 +48,7 @@ class Disk : public Container
 	bool extended;
 	unsigned primary;
 	unsigned logical;
-	unsigned long long max_size_k;
+	unsigned long long max_sectors;
 	};
 
     public:
@@ -61,6 +61,9 @@ class Disk : public Container
 	unsigned long cylinders() const { return cyl; }
 	unsigned heads() const { return head; }
 	unsigned sectors() const { return sector; }
+
+	Region usableCylRegion() const;
+
 	unsigned long numMinor() const { return range; }
 	unsigned long cylSizeB() const { return byte_cyl; }
 	unsigned maxPrimary() const { return max_primary; }
@@ -70,6 +73,7 @@ class Disk : public Container
 	const string& udevPath() const { return udev_path; }
 	const std::list<string>& udevId() const { return udev_id; }
 	void setSlave( bool val=true ) { dmp_slave=val; }
+	void setAddpart( bool val=true ) { no_addpart=!val; }
 	void setNumMinor( unsigned long val ) { range=val; }
 	const string& sysfsDir() const { return sysfs_dir; }
 	unsigned numPartitions() const;
@@ -108,7 +112,8 @@ class Disk : public Container
 				 std::list<Volume*>& vol );
 	virtual int commitChanges( storage::CommitStage stage );
 	int commitChanges( storage::CommitStage stage, Volume* vol );
-	int freeCylindersAfterPartition(const Partition* p, unsigned long& freeCyls) const;
+	int freeCylindersAroundPartition(const Partition* p, unsigned long& freeCylsBefore,
+					 unsigned long& freeCylsAfter) const;
 	virtual int resizePartition( Partition* p, unsigned long newCyl );
 	int resizeVolume( Volume* v, unsigned long long newSize );
 	int removeVolume( Volume* v );
@@ -118,8 +123,13 @@ class Disk : public Container
 	bool hasExtended() const;
 	unsigned int numLogical() const;
 	string setDiskLabelText( bool doing=true ) const;
+
 	unsigned long long cylinderToKb( unsigned long ) const;
 	unsigned long kbToCylinder( unsigned long long ) const;
+
+	unsigned long long sectorToKb(unsigned long long sector) const;
+	unsigned long long kbToSector(unsigned long long kb) const;
+
 	string getPartName( unsigned nr ) const;
 	void getInfo( storage::DiskInfo& info ) const;
 	bool equalContent( const Container& rhs ) const;
@@ -130,7 +140,8 @@ class Disk : public Container
 	static string getPartName( const string& disk, unsigned nr );
 	static string getPartName( const string& disk, const string& nr );
 	static std::pair<string,unsigned> getDiskPartition( const string& dev );
-	static unsigned long long maxSizeLabelK( const string& label );
+	static bool getDlabelCapabilities(const string& dlabel,
+					  storage::DlabelCapabilities& dlabelcapabilities);
 
 	struct SysfsInfo
 	{
@@ -200,15 +211,22 @@ class Disk : public Container
 	virtual bool detectPartitions( ProcPart& ppart );
 	bool getSysfsInfo( const string& SysFsDir );
 	int checkSystemError( const string& cmd_line, const SystemCmd& cmd );
-	int execCheckFailed( const string& cmd_line );
-	int execCheckFailed( SystemCmd& cmd, const string& cmd_line );
+	int execCheckFailed( const string& cmd_line, bool stop_hald=true );
+	int execCheckFailed( SystemCmd& cmd, const string& cmd_line,
+			     bool stop_hald=true );
 	bool checkPartedOutput( const SystemCmd& cmd, ProcPart& ppart );
 	bool scanPartedLine( const string& Line, unsigned& nr,
 	                     unsigned long& start, unsigned long& csize,
 			     storage::PartitionType& type, 
 			     unsigned& id, bool& boot );
+	bool scanPartedSectors( const string& Line, unsigned& nr,
+				unsigned long long& start,
+				unsigned long long& ssize ) const;
 	bool checkPartedValid( const ProcPart& pp, const string& diskname,
 	                       std::list<Partition*>& pl, unsigned long& rng );
+	int callDelpart( unsigned nr ) const;
+	int callAddpart( unsigned nr, unsigned long long sstart,
+			 unsigned long long ssize ) const;
 	bool getPartedValues( Partition *p );
 	bool getPartedSectors( const Partition *p, unsigned long long& start,
 	                       unsigned long long& end );
@@ -239,9 +257,12 @@ class Disk : public Container
 	void logData( const string& Dir );
 	void setLabelData( const string& );
 
-	static string defaultLabel(bool efiboot, unsigned long long size_k);
-	static label_info labels[];
-	static string p_disks[];
+	static string defaultLabel(bool efiboot, unsigned long long num_sectors);
+
+	static const label_info labels[];
+	static const string p_disks[];
+
+	unsigned int logical_sector_size;
 
 	unsigned long cyl;
 	unsigned head;
@@ -262,6 +283,7 @@ class Disk : public Container
 	bool init_disk;
 	bool iscsi;
 	bool dmp_slave;
+	bool no_addpart;
 	bool gpt_enlarge;
 	unsigned long byte_cyl;
 	unsigned long range;

@@ -64,6 +64,7 @@ class AsciiFile
 	int find( unsigned int Start_iv, const string& Pat_Cv ) const;
 	int find( unsigned int Start_iv, Regex& Pat_Cv ) const;
 	unsigned numLines() const; 
+	std::vector<string>& lines() { return Lines_C; }
 	const string& fileName() const;
 	unsigned differentLine( const AsciiFile& File_Cv ) const;
 	bool removeIfEmpty();

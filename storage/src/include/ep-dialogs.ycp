@@ -455,10 +455,27 @@ Do not forget this password!
 
 	integer min_pw_len = data["format"]:false ? 8 : 1;
 	boolean empty_pw_allowed = EmptyCryptPwdAllowed(data);
+	boolean two_pw = data["format"]:false || size(data["mount"]:"")==0;
 
-	string label = _("Don't forget what you enter here!");
+	string label = "";
+
+	if( two_pw )
+	    {
+	    label = _("All data previously present on the volume will be lost!");
+	    label = label + "\n";
+	    label = label + _("Don't forget what you enter here!");
+	    label = label + "\n";
+	    }
 	if (empty_pw_allowed)
-	    label = label + "\n" + _("Empty password allowed.");
+	    label = label + _("Empty password allowed.");
+
+	term ad = `Empty();
+	if( two_pw )
+	    ad = `Password( `id(`pw2), `opt(`hstretch),
+			    // Label: get same password again for verification
+			    // Please use newline if label is longer than 40 characters
+			    _("Reenter the password for &verification:"), "");
+
 
 	term contents = `HVSquash(`FrameWithMarginBox(_("Password"),
 					 `VBox(
@@ -466,10 +483,7 @@ Do not forget this password!
 						       // Label: get password for user root
 						       // Please use newline if label is longer than 40 characters
 						       _("&Enter a password for your file system:"), ""),
-					     `Password(`id(`pw2), `opt(`hstretch),
-						       // Label: get same password again for verification
-						       // Please use newline if label is longer than 40 characters
-						       _("Reenter the password for &verification:"), ""),
+					     ad,
 					     `VSpacing(0.5),
 					     `Left(`Label(label))
 					     )
@@ -484,7 +498,8 @@ Do not forget this password!
 
 	//don't put those inside the loop - they'd be reset after each unsuccesful try
 	UI::ChangeWidget(`id(`pw1), `Value, "");
-	UI::ChangeWidget(`id(`pw2), `Value, "");
+	if (two_pw)
+	    UI::ChangeWidget(`id(`pw2), `Value, "");
 
 	string dev = (data["type"]:`unknown != `loop) ? data["device"]:"" 
 						      : data["fpath"]:"";
@@ -495,9 +510,12 @@ Do not forget this password!
 	    if (widget == `next)
 	    {
 		password = (string) UI::QueryWidget(`id(`pw1), `Value);
-		string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
-		boolean need_verify = !data["format"]:false &&
-				      size(data["mount"]:"")>0;
+
+		string tmp = password;
+		if (two_pw)
+		    tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
+
+		boolean need_verify = !data["format"]:false && size(data["mount"]:"")>0;
 
 		if (!Storage::CheckEncryptionPasswords(password, tmp, min_pw_len, empty_pw_allowed) ||
 		    (need_verify && !Storage::CheckCryptOk(dev, password)) )

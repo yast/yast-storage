@@ -178,20 +178,42 @@
 	    y2milestone( "adapt_mp use fstab idx %1", idx );
 	    ti = AddFstabToData( od, (list<map>)fstab[idx]:[] );
 	    Storage::ResetOndiskTarget();
+	    boolean import_ok = true;
 	    foreach( string d, map disk, ti[0]:$[],
 		     ``{
 			 foreach( map p, disk["partitions"]:[],
 				  ``{
+				      string key = (p["type"]:`unknown != `loop) ? (p["device"]:"error") : (p["fpath"]:"error");
 				      if( size(p["mount"]:"")>0 && p["enc_type"]:`none!=`none &&
-					  !p["tmpcrypt"]:false )
+					  !p["tmpcrypt"]:false && Storage::NeedCryptPwd(key) )
 				      {
-					  string pwd = DlgCreateCryptFs( p["device"]:"", 1, false, false );
-					  if( pwd != nil && size(pwd)>0 )
-					      Storage::SetCryptPwd( p["device"]:"", pwd );
+					  boolean ok = false;
+					  string dev = p["device"]:"";
+					  string pwd = "";
+					  do
+					      {
+					      ok = false;
+					      pwd = DlgCreateCryptFs( dev, 1, false, false );
+					      if( pwd != nil && size(pwd)>0 )
+						  {
+						  if( Storage::CheckCryptOk( dev, pwd ) )
+						      {
+						      ok = Storage::SetCryptPwd( dev, pwd ) &&
+							   Storage::SetCrypt( dev, true, false );
+						      }
+						  }
+					      else if( size(pwd)==0 )
+						  {
+						  ok = true;
+						  import_ok = false;
+						  }
+					      }
+					  while( !ok );
 				      }
 				  });
 		     });
-	    Storage::SetTargetMap(ti[0]:$[]);
+	    if( import_ok )
+		Storage::SetTargetMap(ti[0]:$[]);
 	}
     }
 }
