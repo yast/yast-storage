@@ -64,6 +64,14 @@ ProcPart::getInfo( const string& Dev, unsigned long long& SizeK,
     return( ret );
     }
 
+
+    bool
+    ProcPart::findDevice(const string& device) const
+    {
+	return co.find(devName(device)) != co.end();
+    }
+
+
 bool 
 ProcPart::getSize( const string& Dev, unsigned long long& SizeK ) const
     {

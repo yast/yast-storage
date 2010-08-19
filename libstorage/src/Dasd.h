@@ -52,7 +52,6 @@ class Dasd : public Disk
 	int getToCommit( storage::CommitStage stage, std::list<Container*>& col,
 			 std::list<Volume*>& vol );
 	int commitChanges( storage::CommitStage stage );
-	bool detectGeometry();
 
     protected:
 	enum DasdFormat { DASDF_NONE, DASDF_LDL, DASDF_CDL };
