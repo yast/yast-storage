@@ -36,7 +36,6 @@
 #include "y2storage/Region.h"
 #include "y2storage/Partition.h"
 #include "y2storage/ProcPart.h"
-#include "y2storage/ProcParts.h"
 #include "y2storage/Disk.h"
 #include "y2storage/Storage.h"
 #include "y2storage/AsciiFile.h"
@@ -2280,7 +2279,7 @@ Disk::getPartedValues( Partition *p )
 	    scanPartedLine( *cmd.getLine(0), nr, start, csize, type,
 			    id, boot ))
 	    {
-	    ProcParts ppart;
+	    ProcPart ppart;
 	    y2milestone( "really created at cyl:%ld csize:%ld", start, csize );
 	    p->changeRegion( start, csize, cylinderToKb(csize) );
 	    unsigned long long s=0;
@@ -2581,7 +2580,7 @@ int Disk::doRemove( Volume* v )
 		{
 		ret = DISK_REMOVE_PARTITION_PARTED_FAILED;
 		}
-	    ProcParts parts;
+	    ProcPart parts;
 	    if( parts.findDevice(getPartName(device(), p->OrigNr())) )
 		callDelpart( p->OrigNr() );
 	    getStorage()->handleHald(false);
@@ -3122,6 +3121,7 @@ Disk& Disk::operator= ( const Disk& rhs )
     logfile_name = rhs.logfile_name;
     sysfs_dir = rhs.sysfs_dir;
     dmp_slave = rhs.dmp_slave;
+    no_addpart = rhs.no_addpart;
     gpt_enlarge = rhs.gpt_enlarge;
     return( *this );
     }

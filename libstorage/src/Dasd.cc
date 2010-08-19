@@ -299,15 +299,6 @@ void Dasd::getGeometry( SystemCmd& cmd, unsigned long& c,
     y2milestone( "c:%lu h:%u s:%u", c, h, s );
     }
 
-bool Dasd::detectGeometry()
-    {
-    Disk::detectGeometry();
-    sector *= 8;
-    byte_cyl *= 8;
-    cyl /= 8;
-    y2milestone( "cyl:%lu sector:%u byte_cyl:%lu", cyl, sector, byte_cyl  );
-    return( true );
-    }
 
 int Dasd::doResize( Volume* v ) 
     { 

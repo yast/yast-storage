@@ -39,6 +39,7 @@ class ProcPart : public AsciiFile
 	bool getInfo( const string& Dev, unsigned long long& SizeK, 
 	              unsigned long& Major, unsigned long& Minor ) const;
 	bool getSize( const string& Dev, unsigned long long& SizeK ) const;
+	bool findDevice(const string& device) const;
 	std::list<string> getMatchingEntries( const string& regexp ) const;
     protected:
 	static string devName( const string& Dev );
