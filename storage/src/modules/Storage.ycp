@@ -2690,7 +2690,7 @@ global boolean CreateMd( integer nr, string type )
     integer tmp = conv_mdstring[type]:0;
     list<string> dummy = [];
     string rd = sformat("/dev/md%1", nr );
-    ret = LibStorage::StorageInterface::createMd( sint, rd, tmp, dummy );
+    ret = LibStorage::StorageInterface::createMd(sint, rd, tmp, dummy, dummy);
     if( ret<0 )
 	y2error( "CreateMd sint ret:%1", ret );
     UpdateTargetMapDisk( "/dev/md" );
@@ -2707,33 +2707,36 @@ global boolean CreateMdWithDevs(integer nr, symbol type, list<string> devices)
 	if (v == type)
 	    tmp = k;
     });
-    
+
+    list<string> dummy = [];
     string rd = sformat("/dev/md%1", nr );
-    ret = LibStorage::StorageInterface::createMd(sint, rd, tmp, devices);
+    ret = LibStorage::StorageInterface::createMd(sint, rd, tmp, devices, dummy);
     if( ret<0 )
 	y2error( "CreateMdWithDevs sint ret:%1", ret );
     UpdateTargetMap();
     return ret==0;
 }
 
-global boolean ExtendMd( integer nr, string dev )
+global boolean ExtendMd( integer nr, list<string> devs )
     {
-    y2milestone( "ExtendMd nr:%1 dev:%2", nr, dev );
+    y2milestone( "ExtendMd nr:%1 devs:%2", nr, devs );
     integer ret = 0;
+    list<string> dummy = [];
     string rd = sformat("/dev/md%1", nr );
-    ret = LibStorage::StorageInterface::extendMd( sint, rd, dev );
+    ret = LibStorage::StorageInterface::extendMd( sint, rd, devs, dummy );
     if( ret<0 )
 	y2error( "ExtendMd sint ret:%1", ret );
     UpdateTargetMap();
     return( ret==0 );
     }
 
-global boolean ShrinkMd( integer nr, string dev )
+global boolean ShrinkMd( integer nr, list<string> devs )
     {
-    y2milestone( "ShrinkMd nr:%1 dev:%2", nr, dev );
+    y2milestone( "ShrinkMd nr:%1 devs:%2", nr, devs );
     integer ret = 0;
+    list<string> dummy = [];
     string rd = sformat("/dev/md%1", nr );
-    ret = LibStorage::StorageInterface::shrinkMd( sint, rd, dev );
+    ret = LibStorage::StorageInterface::shrinkMd( sint, rd, devs, dummy );
     if( ret<0 )
 	y2error( "ShrinkMd sint ret:%1", ret );
     UpdateTargetMap();
@@ -2812,7 +2815,8 @@ global integer ComputeMdSize(symbol md_type, list<string> devices, integer& size
 	    tmp = k;
     });
 
-    ret = LibStorage::StorageInterface::computeMdSize(sint, tmp, devices, sizeK);
+    list<string> dummy = [];
+    ret = LibStorage::StorageInterface::computeMdSize(sint, tmp, devices, dummy, sizeK);
     if( ret!=0 )
 	y2milestone( "ComputeMdSize sint ret:%1", ret );
     return ret;
@@ -3007,12 +3011,10 @@ boolean CreateAny( symbol ctype, map d, map& p )
 	ret = Storage::CreateMd( p["nr"]:0, p["raid_type"]:"raid1" );
 	if( ret && haskey( p, "chunk_size" ))
 	    Storage::ChangeMdChunk( p["nr"]:0, p["chunk_size"]:4 );
-	if( ret && HasRaidParity( p["raid_type"]:"" ) &&
-	    haskey( p, "parity_algorithm" ))
-	    Storage::ChangeMdParity( p["nr"]:0,
-	                             p["parity_algorithm"]:"" );
-	foreach( string d, p["devices"]:[],
-		 ``{ret=Storage::ExtendMd( p["nr"]:0, d )&&ret;});
+	if( ret && HasRaidParity( p["raid_type"]:"" ) && haskey( p, "parity_algorithm" ))
+	    Storage::ChangeMdParity(p["nr"]:0, p["parity_algorithm"]:"");
+	if (ret)
+	    ret = Storage::ExtendMd(p["nr"]:0, p["devices"]:[]);
 	}
     else if( ctype == `CT_LOOP )
 	{
