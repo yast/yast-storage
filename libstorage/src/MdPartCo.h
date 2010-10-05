@@ -319,10 +319,6 @@ class MdPartCo : public Container
     /* returns devices listed as slaves in sysfs directory */
     void getSlaves(const string name, std::list<string>& devs_list );
 
-    /* fields in 'map' file */
-    enum mdMap { MAP_DEV=0, MAP_META, MAP_UUID, MAP_NAME, };
-    static bool findMdMap(std::ifstream& file);
-
 	string getContMember() const;
 
     //Input: 'mdXXX' device.

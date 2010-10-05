@@ -1751,30 +1751,6 @@ void MdPartCo::setSpares()
     }
 }
 
-bool MdPartCo::findMdMap(std::ifstream& file)
-{
-  const char* mdadm_map[] = {"/var/run/mdadm/map",
-                        "/var/run/mdadm.map",
-                        "/dev/.mdadm.map",
-                        0};
-  classic(file);
-  int i=0;
-  while( mdadm_map[i] )
-  {
-    file.open( mdadm_map[i] );
-      if( file.is_open() )
-        {
-         return true;
-        }
-        else
-        {
-          i++;
-        }
-  }
-  y2war(" Map File not found");
-  return false;
-}
-
 
 /* Will try to set: UUID, Name.*/
 /* Format: mdX metadata uuid /dev/md/md_name */
@@ -1786,33 +1762,7 @@ bool MdPartCo::getUuidName(const string dev,string& uuid, string& mdName)
 
   uuid.clear();
   mdName.clear();
-  /* Got file, now parse output. */
-  if( MdPartCo::findMdMap(file) )
-  {
-    while( !file.eof() )
-      {
-      string val;
-      getline(file,line);
-      val = extractNthWord( MAP_DEV, line );
-      if( val == dev )
-        {
-        size_t pos;
-        uuid = extractNthWord( MAP_UUID, line );
-        val = extractNthWord( MAP_NAME, line );
-        // if md_name then /dev/md/name other /dev/mdxxx
-        if( val.find("/md/")!=string::npos)
-          {
-          pos = val.find_last_of("/");
-          mdName = val.substr(pos+1);
-          }
-        file.close();
-        return true;
-        }
-      }
-      file.close();
-  }
-  else
-    {
+
     string tmp;
     string::size_type pos;
     //No file, employ mdadm -D name --export
@@ -1839,7 +1789,7 @@ bool MdPartCo::getUuidName(const string dev,string& uuid, string& mdName)
       {
       return true;
       }
-    }
+
   return false;
 }
 
