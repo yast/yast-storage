@@ -1,9 +1,9 @@
 #
-# Makefile.am for storage/storage/data
+# Makefile.am for storage/data
 #
 
-ydata_DATA = \
-	test_target_map.ycp	\
-	demo_target_map.ycp
+fillup_DATA = sysconfig.storage-yast2-storage
 
-EXTRA_DIST = $(ydata_DATA)
+EXTRA_DIST = $(fillup_DATA)
+
+include $(top_srcdir)/Makefile.am.common
