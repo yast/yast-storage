@@ -963,8 +963,7 @@ Disk::checkPartedValid(const ProcPart& pp, const string& diskname,
 	    }
 	}
     string reg = diskname;
-    if( !reg.empty() && reg.find( '/' )!=string::npos && 
-        isdigit(reg[reg.length()-1]) )
+    if( !reg.empty() && isdigit(reg[reg.length()-1]) )
 	reg += "p";
     reg += "[0-9]+";
     list<string> ps = pp.getMatchingEntries( reg );
@@ -1106,6 +1105,11 @@ bool Disk::needP( const string& disk )
     unsigned i=0;
     static Regex mdpart( "md[0123456789]+$" );
     if ( mdpart.match( disk ) == true )
+      {
+      return true;
+      }
+    static Regex mmcblkpart( "mmcblk[0123456789]+$" );
+    if ( mmcblkpart.match( disk ) == true )
       {
       return true;
       }
