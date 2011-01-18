@@ -550,14 +550,14 @@ number of inodes on a file system after its creation, so be sure to enter a reas
 				   `query_key	: "opt_reserved_blocks",
 				   `option_str  : "-m",
 				   //`default 	: 5,
-				   `between	: [ 0 , 99 ], //  -> -1 = infinite
-				   `str_length	: 2,
-				   `valid_chars : "0123456789",
+				   `below	: 99,
+				   `str_length	: 6,
+				   `valid_chars : "0123456789.",
 				   // popup text
-				   `error_text  : _("The \"Percentage of blocks reserved for root\" value is incorrect.\nPlease use a value between 0 and 99."),
+				   `error_text  : _("The \"Percentage of blocks reserved for root\" value is incorrect.\nAllowed are float numbers not larger than 99. (e.g. 0.5)"),
 				   // xgettext: no-c-format
 	     // help text, richtext format
-				   `help_text  	: _("<p><b>Percentage of blocks reserved for root:</b> Specify the percentage of blocks reserved for the super user. This value defaults to 5%.</p>")
+				   `help_text  	: _("<p><b>Percentage of blocks reserved for root:</b> Specify the percentage of blocks reserved for the super user. The default is computed so that normally 1 Gig is reserved. Upper limit for reserved default is 5.0, lowest reserved default is 0.1.</p>")
 				 ],
 			         $[
 				   // checkbox text
@@ -1328,6 +1328,21 @@ global map <string, map <string, any> > DefaultFormatOptions( map part )
 	{
 	    ret["opt_blocksize"] = $[ "option_str" : "-b",
 	                              "option_value" : "4096" ];
+	}
+	if( contains( [`ext2, `ext3, `ext4], fsys ) ) 
+	{
+	    if( Arch::s390() )
+	    {
+		ret["opt_blocksize"] = $[ "option_str" : "-b",
+					  "option_value" : "4096" ];
+	    }
+	    float f = (1048576.0 / (part["size_k"]:0)) * 100;
+	    if( f > 5 )
+		f = 5;
+	    if( f < 0.1 )
+		f = 0.1;
+	    ret["opt_reserved_blocks"] = $[ "option_str" : "-m",
+					    "option_value" : tostring( f, 1 ) ];
 	}
     }
     y2milestone( "DefaultFormatOptions fsys %1 fmt %2 is %3", fsys, 
