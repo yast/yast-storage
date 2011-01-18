@@ -86,6 +86,27 @@
     }
 
 
+global define void UpdateFstabOptions() 
+    {
+	y2milestone( "UpdateFstabOptions" );
+	string tabpath = PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	string n = "";
+	while( line<=AsciiFile::NumLines( fstab ) )
+	    {
+	    map l = AsciiFile::GetLine( fstab, line );
+	    string options = l["fields", 3]:"";
+	    if (regexpmatch (options, "^\(.*,\)\?hotplug\(,.*\)\?$")) {
+		options = regexpsub (options, "^\(.*,\)\?hotplug\(,.*\)\?$", "\\1nofail\\2");
+		AsciiFile::ChangeLineField( fstab, line, 3, options );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( fstab, tabpath );
+    }
+
+
     void UpdateFstabPersistentNames()
     {
 	y2milestone( "UpdateFstabPersistentDevNames updating to SLES10 names" );
@@ -364,6 +385,8 @@ void UpdateFstabCryptNofail()
             {
 		UpdateFstabPersistentNames();
 	    }
+
+	    UpdateFstabOptions();
 
 	    // remove EVMS
 	    // FIXME add appropriate condition if needed (does not seem so)
