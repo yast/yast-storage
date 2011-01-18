@@ -319,7 +319,7 @@ any CreateInterface(boolean readonly)
 	any env = LibStorage::Environment::new("LibStorage::Environment", readonly);
 	LibStorage::Environment::swig_testmode_set(env, Mode::test());
 	LibStorage::Environment::swig_autodetect_set(env, true);
-	LibStorage::Environment::swig_instsys_set(env, Mode::installation() || Mode::repair());
+	LibStorage::Environment::swig_instsys_set(env, Stage::initial() || Mode::repair());
 
 	integer locker_pid = 0;
 	sint = LibStorage::createStorageInterfacePid(env, locker_pid);
@@ -5164,6 +5164,25 @@ global define void UpdateFstabSysfs()
 	}
     }
 
+global define void UpdateFstabOptions() {
+    y2milestone( "UpdateFstabOptions" );
+    string tabpath = PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    string n = "";
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+        string options = l["fields", 3]:"";
+        if (regexpmatch (options, "^\(.*,\)\?hotplug\(,.*\)\?$")) {
+            options = regexpsub (options, "^\(.*,\)\?hotplug\(,.*\)\?$", "\\1nofail\\2");
+	    AsciiFile::ChangeLineField( fstab, line, 3, options );
+        }
+	line = line+1;
+    }
+    AsciiFile::RewriteFile( fstab, tabpath );
+}
+
 global string HdToIseries( string input )
     ``{
     string ret = input;
@@ -5549,6 +5568,10 @@ global define void Update( map oldv, map newv )
         {
 	UpdateFstabPersistentNames();
 	}
+
+
+    // FIXME: proper fix
+    UpdateFstabOptions();
 
     // remove EVMS
     // FIXME add appropriate condition if needed (does not seem so)
