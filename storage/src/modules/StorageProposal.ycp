@@ -19,6 +19,7 @@
 
     import "FileSystems";
     import "Partitions";
+    import "Label";
     import "Storage";
     import "ProductFeatures";
     import "Arch";
@@ -49,6 +50,7 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
     boolean proposal_home = false;
     boolean proposal_lvm = false;
     boolean proposal_encrypt = false;
+    boolean proposal_btrfs = false;
     string proposal_password = "";
 
     map<string, any> cfg_xml = $[];
@@ -87,6 +89,17 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	y2milestone("SetProposalEncrypt val:%1", val);
     }
 
+    global boolean GetProposalBtrfs()
+    {
+	return proposal_btrfs;
+    }
+
+    global void SetProposalBtrfs(boolean val)
+    {
+	proposal_btrfs = val;
+	y2milestone("SetProposalBtrfs val:%1", val);
+    }
+
     global string GetProposalPassword()
     {
 	return proposal_password;
@@ -107,8 +120,10 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	    SetProposalEncrypt(false);
 	    SetProposalPassword("");
 	}
-	y2milestone("SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4", proposal_home,
-		    proposal_lvm, proposal_encrypt, home_only);
+	SetProposalBtrfs(cfg_xml["btrfs"]:false);
+	y2milestone("SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 btrfs:%5", 
+	            proposal_home, proposal_lvm, proposal_encrypt, home_only, 
+		    proposal_btrfs);
     }
 
 
@@ -162,7 +177,6 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	return cfg_xml;
     }
 
-
     global string GetProposalVM()
     {
 	string ret = "";
@@ -172,6 +186,14 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	}
 	y2milestone("ProposalVM lvm:%1 ret:%2", proposal_lvm, ret);
 	return ret;
+    }
+
+symbol PropDefaultFs()
+    {
+    symbol ret = Partitions::DefaultFs();
+    if( GetProposalBtrfs() )
+	ret = `btrfs;
+    return( ret );
     }
 
 
@@ -399,7 +421,10 @@ global boolean has_flex_proposal()
 
 boolean need_boot( map disk )
     {
-    return( Partitions::NeedBoot() ||
+    y2milestone( "need_boot NeedBoot:%1 GetProposalBtrfs:%2 type:%3", 
+                 Partitions::NeedBoot(), GetProposalBtrfs(), 
+		 disk["type"]:`CT_UNKNOWN );
+    return( Partitions::NeedBoot() || GetProposalBtrfs() ||
 	    disk["type"]:`CT_UNKNOWN == `CT_DMRAID );
     }
 
@@ -413,7 +438,8 @@ map try_add_boot( map conf, map disk, boolean force )
 				``(e["mount"]:""=="/"))) > 0;
     map tc = conf;
     y2milestone( "try_add_boot conf %1", conf );
-    y2milestone( "try_add_boot boot %1 root %2 force %3", boot, root, force );
+    y2milestone( "try_add_boot boot %1 root %2 force %3 need_boot:%4", 
+                 boot, root, force, need_boot(disk) );
     if( !boot && (root||force) && 
         (disk["cyl_count"]:0>Partitions::BootCyl() || need_boot(disk)) )
 	{
@@ -2543,7 +2569,6 @@ list<map> can_boot_reuse( string disk, string label, boolean boot,
     return( ret );
     }
 
-
 list<map> can_mp_reuse( string mp, integer min, integer max,
                         list<map> partitions )
     {
@@ -2571,8 +2596,7 @@ list<map> can_mp_reuse( string mp, integer min, integer max,
 		       if( !p["delete"]:false &&
 			   p["device"]:""==pl[0,"device"]:"" )
 			   {
-			   p = Storage::SetVolOptions( p, mp, 
-			                               Partitions::DefaultFs(),
+			   p = Storage::SetVolOptions( p, mp, PropDefaultFs(),
 						       "", "", "" );
 			   }
 		       return( p );
@@ -2609,7 +2633,7 @@ global list<map> get_proposal( boolean have_swap, map disk )
     list<map> ret = [];
     y2milestone( "get_proposal have_swap:%1 disk %2", have_swap, disk );
     map root = $[ "mount" : "/", "increasable" : true,
-                  "fsys" : Partitions::DefaultFs(), "size" : 0 ];
+                  "fsys" : PropDefaultFs(), "size" : 0 ];
     map opts = GetControlCfg();
     map conf = $[ "partitions" : [] ];
     list<integer> swap_sizes = [];
@@ -2627,7 +2651,7 @@ global list<map> get_proposal( boolean have_swap, map disk )
     if( GetProposalHome() && opts["home_limit"]:0 < avail_size )
 	{
 	map home = $[ "mount" : "/home", "increasable" : true, 
-	              "fsys" : Partitions::DefaultFs(), "size" : 512*1024*1024, 
+	              "fsys" : PropDefaultFs(), "size" : 512*1024*1024, 
 		      "pct" : 100-opts["root_percent"]:40 ];
 	conf["partitions"] = maplist( map p, conf["partitions"]:[],
 				      ``{
@@ -2946,7 +2970,7 @@ map remove_used_by( map tg, string disk )
     target = AddWinInfo(target);
     ret["target"] = target;
     map root = $[ "mount" : "/", "increasable" : true,
-                  "fsys" : Partitions::DefaultFs(), "size" : 0 ];
+                  "fsys" : PropDefaultFs(), "size" : 0 ];
     map opts = GetControlCfg();
     list<string> ddev = get_disk_try_list( target, true );
     string sol_disk = "";
@@ -3149,7 +3173,7 @@ map remove_used_by( map tg, string disk )
 		    opts["home_limit"]:0 < avail_size )
 		    {
 		    map home = $[ "mount" : "/home", "increasable" : true, 
-				  "fsys" : Partitions::DefaultFs(), 
+				  "fsys" : PropDefaultFs(), 
 				  "size" : 512*1024*1024, 
 				  "pct" : 100-opts["root_percent"]:40 ];
 		    conf["partitions"] = 
@@ -3609,8 +3633,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	map p = $[ "create":true, "name" : "root", 
 		   "device" : ret["device"]:"" + "/root",
 	           "size_k" : pe_to_sizek(root_pe,pe) ];
-        p = Storage::SetVolOptions( p, "/", Partitions::DefaultFs(),
-				    "", "", "" );
+        p = Storage::SetVolOptions( p, "/", PropDefaultFs(), "", "", "" );
 	y2milestone( "modify_vm created %1", p );
 	ret["partitions"] = add( ret["partitions"]:[], p );
 	}
@@ -3620,7 +3643,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	    ``{
 	    if( p["name"]:"" == "root" )
 		{
-		p = Storage::SetVolOptions( p, "/", Partitions::DefaultFs(),
+		p = Storage::SetVolOptions( p, "/", PropDefaultFs(),
 					    "", "", "" );
 		y2milestone( "modify_vm reuse %1", p );
 		}
@@ -3655,8 +3678,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	map p = $[ "create":true, "name" : "home", 
 		   "device" : ret["device"]:"" + "/home",
 	           "size_k" : pe_to_sizek(home_pe,pe) ];
-	p = Storage::SetVolOptions( p, "/home", Partitions::DefaultFs(),
-				    "", "", "" );
+	p = Storage::SetVolOptions( p, "/home", PropDefaultFs(), "", "", "" );
 	y2milestone( "modify_vm created %1", p );
 	ret["partitions"] = add( ret["partitions"]:[], p );
 	}
@@ -3666,7 +3688,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	    ``{
 	    if( p["name"]:"" == "home" )
 		{
-		p = Storage::SetVolOptions( p, "/home", Partitions::DefaultFs(),
+		p = Storage::SetVolOptions( p, "/home", PropDefaultFs(),
 					    "", "", "" );
 		y2milestone( "modify_vm reuse %1", p );
 		}
@@ -4012,4 +4034,144 @@ map modify_vm( map vm, map opts, boolean need_swap )
     return ret;
     }
 
+global term AddCommonWidgets()
+    {
+    term vb = `VBox();
+    vb = add( vb,
+	      `Left(`HBox(`HSpacing(3), `CheckBox(`id(`lvm), `opt(`notify),
+	            // Label text
+		    _("Create &LVM Based Proposal"), GetProposalLvm() ))));
+    vb = add( vb,
+	      `Left(`HBox(`HSpacing(7), `CheckBox(`id(`encrypt), `opt(`notify),
+	            // Label text 
+		    _("Encr&ypt Volume Group"), GetProposalEncrypt()))));
+    vb = add( vb, `VSpacing(0.5) );
+    vb = add( vb,
+	      `Left(`HBox(`HSpacing(3), `CheckBox( `id(`home), `opt(`notify),
+		    // Label text
+		    _("Propose Separate &Home Partition"),
+		    GetProposalHome() ))));
+    vb = add( vb, `VSpacing(0.5) );
+    vb = add( vb,
+	      `Left(`HBox(`HSpacing(3), `CheckBox(`id(`btrfs), `opt(`notify),
+	            // Label text
+		    _("Use &Btrfs as default Filesystem"), 
+		    GetProposalBtrfs() ))));
+    term frame = `VBox( `VSpacing(1.5), 
+                        `HVCenter( `VBox( `Left(`Label( `opt(`boldFont), _("Proposal settings"))), `VSpacing(0.3), `HVCenter(vb)) ));
+                        //`HVCenter(`Frame( _("Proposal settings"), `HVCenter(vb) )));
+    y2milestone( "AddCommonWidgets Home:%1 Btrfs:%2", GetProposalHome(),
+                 GetProposalBtrfs() );
+    return( frame );
+    }
+
+boolean QueryProposalPassword()
+    {
+    if (!isempty(StorageProposal::GetProposalPassword()))
+	return true;
+
+    UI::OpenDialog(`VBox(
+		       `Label(_("Enter your password for the proposal encryption.")),
+		       `MinWidth(40,
+				 `Password(`id(`pw1),
+					   // Label: get password for user root
+					   // Please use newline if label is longer than 40 characters
+					   _("Password:"), "")),
+		       `VSpacing(0.5),
+		       `MinWidth(40,
+				 `Password(`id(`pw2),
+					   // Label: get same password again for verification
+					   // Please use newline if label is longer than 40 characters
+					   _("Reenter the password for verification:"), "")),
+		       `Label(_("Don't forget what you enter here!")),
+		       `ButtonBox(
+			   `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+			   `PushButton(`id(`cancel), Label::CancelButton())
+			   )
+		       ));
+
+	string password = "";
+        symbol widget = nil;
+
+	repeat
+	    {
+	    // Clear password fields on every round.
+	    UI::ChangeWidget(`id(`pw1), `Value, "");
+	    UI::ChangeWidget(`id(`pw2), `Value, "");
+
+	    UI::SetFocus(`id(`pw1));
+
+	    widget = (symbol) UI::UserInput();
+
+	    switch (widget)
+		{
+		case `ok:
+
+		    password = (string) UI::QueryWidget(`id(`pw1), `Value);
+		    string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
+
+		    if (!Storage::CheckEncryptionPasswords(password, tmp, 8, false))
+			widget = `again;
+
+		    break;
+		}
+	    } until (widget == `cancel || widget == `ok);
+
+    UI::CloseDialog();
+
+    if (widget == `ok)
+	{
+	StorageProposal::SetProposalPassword(password);
+	return true;
+	}
+    else
+	{
+	return false;
+	}
+    }
+
+global boolean HandleCommonWidgets( symbol id )
+    {
+    boolean ret = false;
+    boolean val = (boolean) UI::QueryWidget(`id(id), `Value);
+    y2milestone( "id:%1 val:%2", ret, val );
+    switch( id )
+	{
+	case `lvm:
+	    StorageProposal::SetProposalLvm(val);
+	    UI::ChangeWidget(`id(`encrypt), `Enabled, val);
+	    ret = true;
+	    break;
+
+	case `encrypt:
+	    if( val )
+		{
+		if (QueryProposalPassword())
+		    {
+		    StorageProposal::SetProposalEncrypt(true);
+		    }
+		else
+		    {
+		    UI::ChangeWidget(`id(`encrypt), `Value, false);
+		    }
+		}
+	    else
+		{
+		StorageProposal::SetProposalEncrypt(false);
+		}
+	    ret = true;
+	    break;
+
+	case `btrfs:
+	    StorageProposal::SetProposalBtrfs(val);
+	    ret = true;
+	    break;
+
+	case `home:
+	    StorageProposal::SetProposalHome(val);
+	    ret = true;
+	    break;
+	}
+    return( ret );
+    }
 }
