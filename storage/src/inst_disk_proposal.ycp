@@ -141,12 +141,6 @@ string modify_str   = _("&Edit Partition Setup...");
 string detailed_str = _("&Create Partition Setup...");
 // Radiobutton for partition dialog
 string import_str = _("&Import Partition Setup...");
-// Radiobutton for partition dialog
-string part_str = _("&Partition Based");
-// Radiobutton for partition dialog
-string lvm_str = _("&LVM Based");
-// Checkbox for partition dialog
-string encrypt_str = _("Encrypt Volume Group");
 
 string target_is = "";
 
@@ -185,18 +179,10 @@ Specify mount points manually in the 'Partitioner' dialog.");
 
 y2milestone( "current proposal: %1", changes );
 
-term rframe = 
-    `HBox(
-	`HSpacing(3),
-	`Top(`MinWidth(20, `Left(`RadioButton(`id(`part), `opt(`notify), part_str, 
-					      !StorageProposal::GetProposalLvm())))),
-	`HSpacing(3),
-	`Top(`MinWidth(20, `VBox(`Left(`RadioButton(`id(`lvm), `opt(`notify), lvm_str, 
-						    StorageProposal::GetProposalLvm())),
-				 `Left(`HBox(`HSpacing(4), `CheckBox(`id(`encrypt), `opt(`notify), encrypt_str,
-								     StorageProposal::GetProposalEncrypt())))))),
-	`HSpacing(3)
-	);
+term rframe =
+    `HBox( `HSpacing(20), 
+           StorageProposal::AddCommonWidgets(),
+	   `HSpacing(3) );
 
 term bframe = 
     `VBox(
@@ -215,8 +201,7 @@ term contents =
 	    `HSpacing(2),
 	    `VBox(
 		 `MinHeight(8, `RichText(`id(`richtext), changes)),
-		 `VSpacing(1),
-		 `RadioButtonGroup( `id("prop_mode"), rframe ),
+		 rframe,
 		 `VSpacing(2),
 		 bframe,
 		 `VStretch()
@@ -282,8 +267,7 @@ if( !Storage::GetTestsuite() )
 
     repeat
 	{
-	symbol old_mode = (symbol) UI::QueryWidget(`id("prop_mode"), `CurrentButton);
-	y2milestone( "old_mode %1", old_mode );
+	boolean val = false;
 	Wizard::SetFocusToNextButton();
 	ret = (symbol)Wizard::UserInput();
 	y2milestone( "USERINPUT %1", ret );
@@ -291,45 +275,13 @@ if( !Storage::GetTestsuite() )
 	if( ret == `abort && Popup::ReallyAbort(true) )
 	    return `abort;
 
-	if( contains( [ `lvm, `part, `encrypt ], ret ) )
+	if( contains( [ `lvm, `home, `btrfs, `encrypt ], ret ) )
 	    {
+	    val = (boolean) UI::QueryWidget(`id(ret), `Value);
 	    if( AskOverwriteChanges() )
 		{
 		target_is = "SUGGESTION";
-
-		switch (ret)
-		{
-		    case `part:
-			StorageProposal::SetProposalLvm(false);
-			UI::ChangeWidget(`id(`encrypt), `Enabled, false);
-			break;
-
-		    case `lvm:
-			StorageProposal::SetProposalLvm(true);
-			UI::ChangeWidget(`id(`encrypt), `Enabled, true);
-			break;
-
-		    case `encrypt:
-
-			if ((boolean) UI::QueryWidget(`id(`encrypt), `Value))
-			{
-			    if (QueryProposalPassword())
-			    {
-				StorageProposal::SetProposalEncrypt(true);
-			    }
-			    else
-			    {
-				UI::ChangeWidget(`id(`encrypt), `Value, false);
-				continue;
-			    }
-			}
-			else
-			{
-			    StorageProposal::SetProposalEncrypt(false);
-			}
-			break;
-		}
-
+		StorageProposal::HandleCommonWidgets( ret );
 		Storage::ResetOndiskTarget();
 		Storage::AddMountPointsForWin(Storage::GetTargetMap());
 		map prop = StorageProposal::get_inst_prop(Storage::GetTargetMap());
@@ -350,9 +302,7 @@ if( !Storage::GetTestsuite() )
 		UI::ChangeWidget(`id(`richtext), `Value, changes);
 		}
 	    else
-		{
-		UI::ChangeWidget( `id("prop_mode"), `CurrentButton, old_mode );
-		}
+		UI::ChangeWidget(`id(ret), `Value, !val);
 	    }
 	else if (contains([ `modify, `detailed, `import ], ret))
 	    {
@@ -395,13 +345,15 @@ if( !Storage::GetTestsuite() )
 	    execSubscreens( ret );
 	    changes = Storage::ChangeText();
 	    UI::ChangeWidget(`id(`richtext), `Value, changes);
-	    if(  ret==`detailed )
-		{
-		UI::ChangeWidget(`id(`part), `Value, !StorageProposal::GetProposalLvm());
-		UI::ChangeWidget(`id(`lvm), `Value, StorageProposal::GetProposalLvm());
-		UI::ChangeWidget(`id(`encrypt), `Enabled, StorageProposal::GetProposalLvm());
-		UI::ChangeWidget(`id(`encrypt), `Value, StorageProposal::GetProposalEncrypt());
-		}
+	    val = StorageProposal::GetProposalLvm();
+	    UI::ChangeWidget(`id(`lvm), `Value, val );
+	    UI::ChangeWidget(`id(`encrypt), `Enabled, val );
+	    UI::ChangeWidget( `id(`encrypt), `Value, 
+	                      val && StorageProposal::GetProposalEncrypt() );
+	    UI::ChangeWidget(`id(`home), `Value, 
+	                      StorageProposal::GetProposalHome() );
+	    UI::ChangeWidget(`id(`btrfs), `Value, 
+	                      StorageProposal::GetProposalBtrfs() );
 	    }
 
 	} until ( ret == `next || ret == `back || ret == `cancel );

@@ -17,6 +17,7 @@
     import "Mode";
     import "Popup";
     import "Storage";
+    import "StorageProposal";
     import "Partitions";
     import "Product";
     import "Label";
@@ -160,7 +161,7 @@
 	    // this is the resize case
 	    //
 	    vbox = create_resize_dialog (partitions, target["cyl_size"]:1 );
-	    vbox = add_common_widgets( vbox );
+	    vbox = add( vbox, StorageProposal::AddCommonWidgets());
 	    y2milestone ("can resize !");
 	    }
 	else
@@ -170,7 +171,7 @@
 	    map tmp = construct_partition_dialog( partitions, 
 	                                          target["label"]:"",
 						  target["cyl_size"]:1 );
-	    vbox = add_common_widgets( tmp["term"]:`Empty() );
+	    vbox = add( tmp["term"]:`VBox(), StorageProposal::AddCommonWidgets());
 	    }
 	}
 
@@ -179,7 +180,7 @@
     else 
 	{
 	vbox = create_whole_disk_dialog();
-	vbox = add_common_widgets( vbox );
+	vbox = add( vbox, StorageProposal::AddCommonWidgets());
 	}
 
     // Since resize case and normal case have different help texts we need
@@ -220,18 +221,10 @@
 	    {
 	    break;
 	    }
-	else if (ret == `lvm)
-	{
-	    UI::ChangeWidget(`id(`encrypt), `Enabled, (boolean) UI::QueryWidget(`id(`lvm), `Value));
-	}
-	else if (ret == `encrypt)
-	{
-	    if ((boolean) UI::QueryWidget(`id(`encrypt), `Value))
+	else if( contains( [ `lvm, `home, `btrfs, `encrypt ], ret ) )
 	    {
-		if (!QueryProposalPassword())
-		    UI::ChangeWidget(`id(`encrypt), `Value, false);
-	    }	    
-	}
+	    StorageProposal::HandleCommonWidgets(ret);
+	    }
 	else if (ret == `full)
 	    {
 	    // Set all checkboxes
@@ -396,12 +389,7 @@ Really delete your Windows partition?
 
 	    y2milestone ("partitions '%1'", partitions);
 
-	    StorageProposal::SetProposalHome( (boolean)UI::QueryWidget( `id(`home), `Value ));
-	    StorageProposal::SetProposalLvm((boolean) UI::QueryWidget(`id(`lvm), `Value));
-	    StorageProposal::SetProposalEncrypt((boolean) UI::QueryWidget(`id(`encrypt), `Value));
-
 	    ok = create_partitions( targetMap, target, partitions );
-	    StorageProposal::SetProposalDefault(true);
 	    if( !ok )
 		{
 		string reason = _("Too few partitions are marked for removal
