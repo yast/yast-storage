@@ -66,6 +66,7 @@
   import "LibStorage::DmPartCoInfo";
   import "LibStorage::DmraidCoInfo";
   import "LibStorage::DmmultipathCoInfo";
+  import "LibStorage::BtrfsInfo";
   import "LibStorage::PartitionSlotInfo";
   import "LibStorage::CommitInfo";
   import "LibStorage::DlabelCapabilities";
@@ -97,7 +98,8 @@ map<string,any> conv_ctype =
                 LibStorage::DMMULTIPATH() : `CT_DMMULTIPATH,
                 LibStorage::DM() : `CT_DM,
 		LibStorage::MDPART() : `CT_MDPART,
-                LibStorage::NFSC() : `CT_NFS
+                LibStorage::NFSC() : `CT_NFS,
+                LibStorage::BTRFSC() : `CT_BTRFS
 	      ]
      ];
 
@@ -237,8 +239,8 @@ map DiskMapVersion = $[];
 map DiskMap = $[];
 
 const map<symbol, integer> type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_MDPART : 2,
-    `CT_DMRAID : 3, `CT_DMMULTIPATH : 4, `CT_LOOP : 5, `CT_DM : 6, `CT_LVM : 7,
-    `CT_NFS : 8 ];
+    `CT_DMRAID : 3, `CT_DMMULTIPATH : 4, `CT_LOOP : 5, `CT_DM : 6, `CT_LVM : 7, 
+    `CT_BTRFS : 8, `CT_NFS : 9 ];
 
 list<string> hw_packages = [];
 
@@ -507,6 +509,9 @@ global boolean HumanStringToKByteWithRangeCheck(string str, integer& bytes_k, in
 
 
 global define map<string,map> GetTargetMap();
+global define void SetTargetMap( map<string,map> target );
+global define map<string,map> SetPartitionData( map<string,map> target, string device,
+                                                string key, any value );
 
 
 define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
@@ -781,7 +786,7 @@ define list<map> GetPartitionLst( map<string,map> tg, string device )
 	list<map> part = filter( map p, tg[disk,"partitions"]:[],
 				 ``(p["device"]:""==device ));
 	part = filter( map p, part, ``(!p["delete"]:false));
-	if( size(part)==0 )
+	if( size(part)==0 && is( m["nr"]:0, integer ))
 	    {
 	    part = filter( map p, tg[disk,"partitions"]:[],
 			   ``(p["nr"]:-1==m["nr"]:0 ));
@@ -1672,6 +1677,31 @@ map getContainerInfo( map c )
 	    c["partitions"] = add( c["partitions"]:[], p );
 	    });
 	}
+    else if( c["type"]:`CT_UNKNOWN == `CT_BTRFS )
+	{
+	list<any> pinfos = [];
+	y2milestone( "before getBtrfsInfo" );
+	ret = LibStorage::StorageInterface::getBtrfsInfo( sint, pinfos );
+	y2milestone( "after getBtrfsInfo" );
+	if( ret<0 )
+	    y2warning( "getBtrfsInfo ret:%1", ret );
+	foreach( any info, pinfos,
+	    ``{
+	    map p = $[];
+	    vinfo = LibStorage::BtrfsInfo::swig_v_get(info);
+	    p = volumeMap( vinfo, p );
+	    p["type"] = `btrfs;
+	    p["fstype"] = Partitions::btrfs_name;
+	    list<string> ls = splitstring(LibStorage::BtrfsInfo::swig_devices_get(info), "\n");
+	    p["devices"] = ls;
+	    ls = splitstring(LibStorage::BtrfsInfo::swig_subvol_get(info), "\n");
+	    if( !isempty(ls) )
+		p["subvol"] = maplist( string s, ls, ``{ map m = $[ "name" : s ]; return( m ); });
+	    if( size(p["devices"]:[])>1 )
+		p["device"] = "UUID=" + p["uuid"]:"";
+	    c["partitions"] = add( c["partitions"]:[], p );
+	    });
+	}
     //y2milestone ("getContainerInfo container %1", remove( c, "partitions" ) );
     y2milestone ("getContainerInfo container %1", c );
     return( c );
@@ -1737,6 +1767,24 @@ global boolean IsDiskType(symbol t)
     return contains([ `CT_DISK, `CT_DMRAID, `CT_DMMULTIPATH, `CT_MDPART ], t);
 }
 
+map<string,map> HandleBtrfsSimpleVolumes( map<string,map> tg )
+    {
+    if( haskey( tg, "/dev/btrfs" ))
+	{
+	list<map> simple = filter( map p, tg["/dev/btrfs","partitions"]:[],
+	                           ``(size(p["devices"]:[])<=1));
+	tg["/dev/btrfs","partitions"] =
+	    filter( map p, tg["/dev/btrfs","partitions"]:[],
+		    ``(size(p["devices"]:[])>1));
+	y2milestone( "simple %1", simple );
+	foreach( map p, simple,
+	    {
+	    tg = SetPartitionData( tg, p["device"]:"", "subvol", p["subvol"]:[] );
+	    });
+	}
+    return( tg );
+    }
+
 /**
  * Updates target map
  *
@@ -1764,6 +1812,20 @@ void UpdateTargetMap()
 	    }
 	y2milestone( "UpdateTargetMap dev:%1 is:%2", dev, tg[dev]:$[] );
 	});
+    tg = HandleBtrfsSimpleVolumes( tg );
+    if( haskey( tg, "/dev/btrfs" ))
+	{
+	list<map> simple = filter( map p, tg["/dev/btrfs","partitions"]:[],
+	                           ``(size(p["devices"]:[])<=1));
+	tg["/dev/btrfs","partitions"] =
+	    filter( map p, tg["/dev/btrfs","partitions"]:[],
+		    ``(size(p["devices"]:[])>1));
+	y2milestone( "simple %1", simple );
+	foreach( map p, simple,
+	    {
+	    tg = SetPartitionData( tg, p["device"]:"", "subvol", p["subvol"]:[] );
+	    });
+	}
     y2milestone( "UpdateTargetMap rem_keys:%1", rem_keys );
     foreach( string dev, rem_keys, ``{tg=remove(tg,dev);});
     foreach( map c, conts,
@@ -2510,6 +2572,40 @@ global boolean ChangeVolumeProperties( map part )
 	    y2error( "ChangeVolumeProperties sint ret:%1", ret );
 	else
 	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+	}
+    if( ret==0 && size(part["subvol"]:[])>0 )
+	{
+	string d = part["device"]:"";
+	list<map> rem = filter( map p, part["subvol"]:[], ``(p["delete"]:false));
+	list<map> cre = filter( map p, part["subvol"]:[], ``(p["create"]:false));
+	y2milestone( "ChangeVolumeProperties rem:%1", rem );
+	y2milestone( "ChangeVolumeProperties cre:%1", cre );
+	while( ret==0 && size(rem)>0 )
+	    {
+	    changed = true;
+	    string pth = rem[0,"name"]:"";
+	    ret = LibStorage::StorageInterface::removeSubvolume( sint, d, pth );
+	    if( ret<0 )
+		y2error( "ChangeVolumeProperties sint ret:%1", ret );
+	    else
+		{
+		y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+		rem = remove( rem, 0 );
+		}
+	    }
+	while( ret==0 && size(cre)>0 )
+	    {
+	    changed = true;
+	    string pth = cre[0,"name"]:"";
+	    ret = LibStorage::StorageInterface::createSubvolume( sint, d, pth );
+	    if( ret<0 )
+		y2error( "ChangeVolumeProperties sint ret:%1", ret );
+	    else
+		{
+		y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+		cre = remove( cre, 0 );
+		}
+	    }
 	}
     if( ret==0 )
 	{
@@ -3680,6 +3776,7 @@ global map<string, map> GetTargetMap()
 		if( c["type"]:`CT_UNKNOWN!=`CT_DISK )
 		    tmp[c["device"]:""] = getContainerInfo( c );
 		});
+	    tmp = HandleBtrfsSimpleVolumes( tmp );
 	    if (!isempty(bios_id_raid))
 		{
 		y2milestone( "bios_id_raid:%1", bios_id_raid );
@@ -4091,6 +4188,12 @@ global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
 	ret["format"] = false;
 	ret["used_fs"] = `swap;
 	}
+    if( ret["format"]:false && ret["used_fs"]:`unknown==`btrfs && mnt=="/" )
+	{
+	list<string> def_subvol = [ "tmp", "var/tmp", "var/run" ];
+	ret["subvol"] = maplist( string s, def_subvol, 
+				 { return $[ "create" :true, "name" :s ]; });
+	}
     if( size(fstab_opts)>0 )
 	ret["fstopt"] = fstab_opts;
     else
@@ -4108,6 +4211,28 @@ global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
 	ret["label"] = "";
 
     y2milestone( "SetVolOptions ret:%1", ret );
+    return( ret );
+    }
+
+map FindBtrfsUuid( string uuid )
+    {
+    map btrfs = GetTargetMap()["/dev/btrfs"]:$[];
+    map ret = filter( map p, btrfs["partitions"]:[], ``(p["uuid"]:""==uuid ))[0]:$[];
+    y2milestone( "FindBtrfsUuid uuid:%1 ret:%2", uuid, ret );
+    return( ret );
+    }
+
+global boolean IsUsedBy( map p )
+    {
+    boolean ret = !isempty(p["used_by"]:[]);
+    if( ret && p["used_by",0,"type"]:`UB_NONE==`UB_BTRFS )
+	{
+	map b = FindBtrfsUuid( p["used_by",0,"device"]:"" );
+	if( size(b["devices"]:[])<=1 )
+	    ret=false;
+	}
+    y2milestone( "IsUsedBy %1 by %2 ret:%3", p["device"]:"", 
+                 p["used_by"]:[], ret );
     return( ret );
     }
 
@@ -4210,7 +4335,7 @@ device %2 which contains data needed to perform the installation.
     {
 	if (find(map partition, disk["partitions"]:[], {
 		    return partition["device"]:"" != p["device"]:"" &&
-			!isempty(partition["used_by"]:[]); }) != nil)
+			IsUsedBy(partition); }) != nil)
 	{
 	    txt = sformat(_("
 Partition %1 cannot be removed since other partitions on the
@@ -4431,19 +4556,13 @@ global define map<string,map> SetPartitionData( map<string,map> tg,
     map tmp = GetDiskPartitionTg( device, tg )[0]:$[];
     string disk = tmp["disk"]:"";
     string dev = GetDeviceName( tmp["disk"]:"", tmp["nr"]:(any)0 );
-    list r_part = filter(map part, tg[disk,"partitions"]:[],
-			  ``(part["device"]:"" != dev ));
-    if( size(r_part)!=size(tg[disk,"partitions"]:[]) )
-	{
-	map p = filter( map part, tg[disk,"partitions"]:[],
-		        ``(part["device"]:"" == dev ))[0]:$[];
-	if( size(p)>0 )
+    tg[disk,"partitions"] =
+	maplist( map p, tg[disk,"partitions"]:[],
 	    {
-	    p[key] = value;
-	    r_part    = add( r_part, p );
-	    tg[disk,"partitions"] = r_part;
-	    }
-	}
+	    if( p["device"]:"" == dev )
+		p[key] = value;
+	    return p;
+	    });
     return( tg );
     }
 
@@ -4455,19 +4574,13 @@ global define map<string,map> DelPartitionData( map<string,map> tg,
     map tmp = GetDiskPartitionTg( device, tg )[0]:$[];
     string disk = tmp["disk"]:"";
     string dev = GetDeviceName( tmp["disk"]:"", tmp["nr"]:(any)0 );
-    list r_part = filter(map part, tg[disk,"partitions"]:[],
-			  ``(part["device"]:"" != dev ));
-    if( size(r_part)!=size(tg[disk,"partitions"]:[]) )
-	{
-	map p = filter( map part, tg[disk,"partitions"]:[],
-			``(part["device"]:"" == dev ))[0]:$[];
-	if( size(p)>0 )
+    tg[disk,"partitions"] =
+	maplist( map p, tg[disk,"partitions"]:[],
 	    {
-	    p = filter(string k, any e, (map<string,any>)p, ``(k != key) );
-	    r_part    = add( r_part, p );
-	    tg[disk,"partitions"] = r_part;
-	    }
-	}
+	    if( p["device"]:"" == dev )
+		p = filter(string k, any e, (map<string,any>)p, ``(k != key) );
+	    return p;
+	    });
     return( tg );
     }
 
@@ -4625,7 +4738,7 @@ list<map> GetPrimPartitions(map<string, map> targets, boolean foreign_os)
 		{
 		string text = "";
 	        if( Partitions::IsDosWinNtPartition( part["fsid"]:0 ) &&
-		    data["used_by_type"]:`UB_NONE==`UB_NONE )
+		    !IsUsedBy(data) )
 		{
 		    map<symbol, any> resize_info = $[];
 		    map<symbol, any> content_info = $[];
@@ -5513,7 +5626,7 @@ global define map onepartition2fstab (map part, integer& other_nr)
 	(contains( [ `lvm, `sw_raid, `evms ], part["type"]:`unknown ) &&
 	 size(part["mount"]:"")==0) ||
 	(part["enc_type"]:`none!=`none && !part["noauto"]:false) ||
-	part["used_by_type"]:`UB_NONE != `UB_NONE ||
+	!IsUsedBy(part) ||
 	(contains( [ Partitions::fsid_prep_chrp_boot, Partitions::fsid_lvm,
 	             Partitions::fsid_raid ], part["fsid"]:0 ) &&
 	 size(part["mount"]:"")==0))

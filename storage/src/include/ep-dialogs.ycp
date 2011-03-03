@@ -39,6 +39,11 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
         //retrieve all filesystems
 	map<symbol, map<symbol, any> > all_filesystems = FileSystems::GetAllFileSystems(true, true);
+	if( data["type"]:`primary==`btrfs )
+	    {
+	    // multi volume btrfs filesystem can only be formatted as btrfs 
+	    all_filesystems = (map<symbol, map<symbol, any> >)filter( symbol s, map p, all_filesystems, ``(s==`btrfs) );
+	    }
 
 	void ChangeWidgetIfExists( symbol wid, symbol property, any value)
 	{
@@ -70,7 +75,8 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	{
 	    map <symbol, any> fs_data = all_filesystems[used_fs]: $[];
 	    UI::ChangeWidget(`id(`fs_options), `Enabled, fs_data[`options]:[] != []);
-	    ChangeWidgetIfExists(`crypt_fs, `Enabled, fs_data[`crypt]:true);
+	    ChangeWidgetIfExists(`crypt_fs, `Enabled, 
+	                         fs_data[`crypt]:true&&data["type"]:`primary!=`btrfs);
 	}
 
 	boolean do_format = data["format"]:false;
@@ -143,6 +149,14 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    );
 	}
 
+	term subvol = `Empty();
+	if( data["used_fs"]:`unknown==`btrfs )
+	    {
+	    subvol = `FrameWithMarginBox("", `PushButton( `id(`subvol), `opt(`hstretch),
+							  // button text 
+							  _("Subvolume Handling")));
+	    }
+
 	list mountpoints = ProposeMountpoints( used_fs, mount );
 
 	term contents = `HVSquash(`VStackFrames(
@@ -181,7 +195,8 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 										    _("Do not mount partition"))
 								   )
 						 )
-					  )
+					  ),
+				      subvol
 				      )
 	    );
 

@@ -1258,4 +1258,124 @@ before deleting the device.
     return(go_on);
     }
 
+list<string> SubvolNames( map<string,any> data )
+    {
+    list<string> items = maplist( map p, 
+                                  filter( map s, data["subvol"]:[], ``(!s["delete"]:false)),
+				  {return p["name"]:"";});
+    y2milestone( "items:%1", items );
+    return( items );
+    }
+
+  /**
+   * Dialog: Subvolume handling
+   * @parm old map with original partition
+   * @parm new map with changes filled in
+   */
+define map<string,any> SubvolHandling( map<string,any> old, map<string,any> new )
+    ``{
+    // help text, richtext format
+    string helptext = _("<p>
+Here it is possible to create and remove subvolumes 
+from an BTRFS filesystem.</p>");
+
+    list<map> old_subvol = new["subvol"]:[];
+
+    list<string> items = SubvolNames( new );
+
+    term contents = `VBox(
+			// label text
+			`MinHeight(10,`SelectionBox( `id(`subvol), _("Existing Subvolumes:"), items )),
+			`TextEntry( `id(`new_path), `opt(`hstretch),
+				    // label text
+				    _("New Subvolume")),
+			`HBox( 
+			    `PushButton( `id(`add), 
+					 // button text
+					 _("Add new")),
+			    `HSpacing(2),
+			    `PushButton( `id(`remove), 
+					 // button text
+					 _("Remove"))
+			    )
+			);
+		 
+    UI::OpenDialog(`opt(`decorated),
+		   `VBox(
+		       `HSpacing(50),
+		       // heading text
+		       `Heading(_("Subvolume Handling")),
+		       `VStretch(),
+		       `VSpacing(1),
+		       `HBox(`HStretch(),
+			     `HSpacing(1),
+			     contents,
+			     `HStretch(),
+			     `HSpacing(1)),
+		       `VSpacing(1),
+		       `VStretch(),
+		       `ButtonBox(
+			   `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
+			   `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+			   `PushButton(`id(`cancel), Label::CancelButton())
+			   )
+		       )
+	);
+
+    UI::ChangeWidget(`help, `HelpText, helptext);
+
+    any ret = `ok;
+    boolean changed = false;
+    repeat
+	{
+	ret = UI::UserInput();
+	y2milestone( "SubvolHandling ret %1", ret );
+	if( ret == `remove )
+	    {
+	    string pth = (string)UI::QueryWidget(`id(`subvol), `CurrentItem);
+	    y2milestone( "SubvolHandling remove path:%1", pth );
+	    new["subvol"] = maplist( map p, new["subvol"]:[], 
+				     {
+				     if( p["name"]:""==pth )
+					p["delete"] = true;
+				     return p;
+				     });
+	    items = SubvolNames( new );
+	    changed = true;
+	    UI::ChangeWidget( `id(`subvol), `Items, items );
+	    }
+	if( ret == `add )
+	    {
+	    string pth = (string)UI::QueryWidget( `id(`new_path), `Value );
+	    y2milestone( "SubvolHandling add path:%1", pth );
+	    if( pth==nil || size(pth)==0 )
+		Popup::Message(_("Empty subvolume name noit allowed."));
+	    else if( size(filter( map p, new["subvol"]:[], ``(p["name"]:""==pth)))>0 )
+		Popup::Message(sformat(_("Subvolume name %1 alread exists."),pth));
+	    else
+		{
+		new["subvol"] = add( new["subvol"]:[], $[ "create" : true, "name" : pth ] );
+		changed = true;
+		}
+	    items = SubvolNames( new );
+	    UI::ChangeWidget( `id(`subvol), `Items, items );
+	    UI::ChangeWidget( `id(`new_path), `Value, "" );
+	    }
+	if( ret == `cancel )
+	    {
+	    if( changed )
+		{
+		if( Popup::YesNo( _("Modifications done so far in Dialog get lost!")) )
+		    new["subvol"] = old_subvol;
+		else
+		    ret = `again;
+		}
+	    }
+	} until ( ret == `ok || ret == `cancel );
+
+    UI::CloseDialog();
+    y2milestone( "SubvolHandling subvol %1", new["subvol"]:[] );
+    return( new );
+    };
+
 }

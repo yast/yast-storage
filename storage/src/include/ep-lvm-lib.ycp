@@ -42,7 +42,7 @@
     void EpCreateVolumeGroup()
     {
 	map<string, map> target_map = Storage::GetTargetMap();
-	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return isempty(pv["used_by"]:[]); });
+	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return !Storage::IsUsedBy(pv); });
 
 	if (size(unused_pvs) < 1)
 	{
@@ -237,6 +237,14 @@ RAID device is required. Change your partition table accordingly."));
 
 	map<string, map> target_map = Storage::GetTargetMap();
 	map<string, any> data = Storage::GetPartition(target_map, device);
+
+	if (Storage::IsUsedBy(data))
+	    {
+	    // error popup, %1 is replace by partition device name e.g. /dev/sdb1
+	    Popup::Error(sformat(_("The volume %1 is in use. It cannot be
+edited. To edit %1, make sure it is not used."), device));
+	    return;
+	    }
 
 	if (DlgEditLogicalVolume(data))
 	{

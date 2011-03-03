@@ -86,7 +86,6 @@ define list<map> get_possible_pvs( map<string,map> targetMap )
     list types_no = [ `lvm, `extended ];
     list fsids = [ Partitions::fsid_lvm, Partitions::fsid_raid,
 		   Partitions::fsid_native ];
-    list ubs = [ `UB_NONE, `UB_LVM ];
     list allowed_enc_types = [ `none, `luks ];
 
     foreach( string dev, map devmap, targetMap,
@@ -97,7 +96,7 @@ define list<map> get_possible_pvs( map<string,map> targetMap )
 		    ``( size(part["mount"]:"")==0 &&
 			!contains( types_no, part["type"]:`primary ) &&
 			contains(allowed_enc_types, part["enc_type"]:`none) &&
-			contains( ubs, part["used_by_type"]:`UB_NONE ) &&
+			(!Storage::IsUsedBy(part) || part["used_by_type"]:`UB_NONE==`UB_LVM) &&
 			(part["type"]:`primary==`sw_raid||
 			 part["type"]:`primary==`dm||
 			contains( fsids, part["fsid"]:0 ))));
@@ -110,7 +109,7 @@ define list<map> get_possible_pvs( map<string,map> targetMap )
 	    }
 	if( size(devmap["partitions"]:[])==0 && 
 	    Storage::IsPartType(devmap["type"]:`CT_UNKNOWN) &&
-	    contains( ubs, devmap["used_by_type"]:`UB_NONE ))
+	    (!Storage::IsUsedBy(devmap) || devmap["used_by_type"]:`UB_NONE==`UB_LVM))
 	    {
 	    map p = $[ "device":dev, "maindev":dev, 
 	               "size_k":devmap["size_k"]:0 ];

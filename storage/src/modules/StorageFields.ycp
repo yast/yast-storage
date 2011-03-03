@@ -29,12 +29,13 @@
     global void IterateTargetMap(map<string, map> target_map, void(map<string, map>, map) callback)
     {
 	const map disk_order = $[ `CT_DMRAID : 0, `CT_DMMULTIPATH : 1, `CT_MDPART : 2, `CT_DISK : 3,
-				  `CT_MD : 4, `CT_LOOP : 5, `CT_LVM : 6, `CT_DM : 7, `CT_NFS : 8 ];
+				  `CT_MD : 4, `CT_LOOP : 5, `CT_LVM : 6, `CT_DM : 7, `CT_NFS : 8,
+				  `CT_BTRFS : 9 ];
 
 	list<string> keys = maplist(string dev, map disk, target_map, { return dev; });
 	keys = sort(string a, string b, keys, {
-	    integer oa = disk_order[target_map[a, "type"]:`CT_UNKNOWN]:9;
-	    integer ob = disk_order[target_map[b, "type"]:`CT_UNKNOWN]:9;
+	    integer oa = disk_order[target_map[a, "type"]:`CT_UNKNOWN]:10;
+	    integer ob = disk_order[target_map[b, "type"]:`CT_UNKNOWN]:10;
 	    return (oa==ob) ? (a<b) : (oa<ob);
 	});
 
@@ -1119,6 +1120,26 @@ Identifier of the file system.");
 		return `ignore;
 	}
     }
+
+    /**
+      * Predicate function for Table and TableContents.
+      */
+    global symbol PredicateBtrfs(map disk, map partition)
+    {
+	if (partition == nil)
+	{
+	    return `follow;
+	}
+	else
+	{
+	    if (partition["used_fs"]:`unknown==`btrfs && 
+	        !Storage::IsUsedBy(partition))
+		return `show;
+	    else
+		return `ignore;
+	}
+    }
+
 
 
     /**

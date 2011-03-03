@@ -336,7 +336,7 @@ symbol PropDefaultFs()
 	}
     if( !ret && soft )
 	{
-	ret = entry["used_by_type"]:`UB_NONE != `UB_NONE;
+	ret = Storage::IsUsedBy(entry);
 	}
     if( ret )
 	{
@@ -374,7 +374,7 @@ map<string, boolean> swapable = $[];
     swapable = $[];
     list<string> swaps = Storage::SwappingPartitions();
     foreach(string dev, map disk, tg, {
-	if (disk["used_by_type"]:`UB_NONE == `UB_NONE)
+	if (!Storage::IsUsedBy(disk))
 	{
 	    list<map> sw = filter(map p, disk["partitions"]:[],
 				  ``(p["type"]:`unknown!=`extended &&
@@ -2581,7 +2581,7 @@ list<map> can_mp_reuse( string mp, integer min, integer max,
 		 ``(!p["delete"]:false &&
 		    p["fsid"]:Partitions::fsid_native == 
 		        Partitions::fsid_native &&
-		    p["used_by_type"]:`UB_NONE == `UB_NONE &&
+		    !Storage::IsUsedBy(p) &&
 		    size(p["mount"]:"")==0 &&
 		    p["size_k"]:0/1024 >= min &&
 		    (max==0 || p["size_k"]:0/1024 <= max) &&
@@ -2868,8 +2868,8 @@ list<map> remove_one_partition( map disk )
 	pl = sort( map a, map b, pl, 
 		   ``(a["size_k"]:0>b["size_k"]:0));
 	pl = (list<map>) union( 
-	    filter( map p, pl, ``(p["used_by_type"]:`UB_NONE==`UB_NONE) ),
-	    filter( map p, pl, ``(p["used_by_type"]:`UB_NONE!=`UB_NONE) ));
+	    filter( map p, pl, ``(!Storage::IsUsedBy(p)) ),
+	    filter( map p, pl, ``(Storage::IsUsedBy(p)) ));
 
 	partitions = 
 	    maplist( map p, partitions,
@@ -2905,8 +2905,8 @@ list<map> remove_one_partition_vm( map disk )
 	    filter( map p, pl, ``(p["type"]:`primary==`logical) ),
 	    filter( map p, pl, ``(p["type"]:`primary!=`logical) ));
 	pl = (list<map>) union( 
-	    filter( map p, pl, ``(p["used_by_type"]:`UB_NONE==`UB_NONE) ),
-	    filter( map p, pl, ``(p["used_by_type"]:`UB_NONE!=`UB_NONE) ));
+	    filter( map p, pl, ``(!Storage::IsUsedBy(p)) ),
+	    filter( map p, pl, ``(Storage::IsUsedBy(p)) ));
 	y2milestone( "remove_one_partition_vm pl %1", pl );
 
 	integer nr = 0;
