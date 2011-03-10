@@ -1,0 +1,97 @@
+/**
+ * File:	ep-btrfs-lib.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Thomas Fehr <fehr@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
+ */
+{
+    textdomain "storage";
+
+
+    void EpEditBtrfsDevice(string device)
+    {
+	if (device == nil)
+	{
+	    // error popup
+	    Popup::Error(_("No BTRFS device selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+	y2milestone( "EpEditBtrfsDevice device:%1 data:%2", device, data );
+
+	if (Storage::IsUsedBy(data))
+	{
+	    // error popup
+	    Popup::Error(sformat(_("The Btrfs %1 is in use. It cannot be
+edited. To edit %1, make sure it is not used."), data["uuid"]:""));
+	    return;
+	}
+
+	if (DlgEditBtrfsVolume(data))
+	{
+	    Storage::ChangeVolumeProperties(data);
+
+	    UpdateMainStatus();
+	    UpdateNavigationTree(nil);
+	    TreePanel::Create();
+	    UpdateTableFocus(device);
+	}
+    }
+
+    void EpDeleteBtrfsDevice(string device)
+    {
+	if (device == nil)
+	{
+	    // error popup
+	    Popup::Error(_("No BTRFS device selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+	y2milestone( "EpDeletBtrfsDevice device:%1 data:%2", device, data );
+
+	if (!Storage::CanDelete(data, target_map["/dev/btrfs"]:$[], true))
+	    return;
+
+	if (EpDeleteDevice(device))
+	    {
+	    any new_focus = nil;
+	    if (UI::QueryWidget(`tree, `CurrentItem) == device)
+		new_focus = `md;
+	    UpdateMainStatus();
+	    UpdateNavigationTree(new_focus);
+	    TreePanel::Create();
+	}
+
+    }
+
+    void EpResizeBtrfsDevice(string device)
+    {
+	if (device == nil)
+	{
+	    // error popup
+	    Popup::Error(_("No BTRFS device selected."));
+	    return;
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map<string, any> data = Storage::GetPartition(target_map, device);
+	y2milestone( "EpResizetrfsDevice device:%1 data:%2", device, data );
+
+	if (true/*EpDeleteDevice(device)*/)
+	    {
+	    any new_focus = nil;
+	    if (UI::QueryWidget(`tree, `CurrentItem) == device)
+		new_focus = `btrfs;
+	    UpdateMainStatus();
+	    UpdateNavigationTree(new_focus);
+	    TreePanel::Create();
+	}
+
+    }
+}
