@@ -1694,10 +1694,16 @@ map getContainerInfo( map c )
 	    p["fstype"] = Partitions::btrfs_name;
 	    list<string> ls = splitstring(LibStorage::BtrfsInfo::swig_devices_get(info), "\n");
 	    p["devices"] = ls;
+	    ls = splitstring( LibStorage::BtrfsInfo::swig_devices_add_get(info), "\n" );
+	    if( size(ls)>0 )
+		c["devices_add"] = ls;
+	    ls = splitstring( LibStorage::BtrfsInfo::swig_devices_rem_get(info), "\n" );
+	    if( size(ls)>0 )
+		c["devices_rem"] = ls;
 	    ls = splitstring(LibStorage::BtrfsInfo::swig_subvol_get(info), "\n");
 	    if( !isempty(ls) )
 		p["subvol"] = maplist( string s, ls, ``{ map m = $[ "name" : s ]; return( m ); });
-	    if( size(p["devices"]:[])>1 )
+	    if( size(p["devices"]:[])+size(p["devices_add"]:[])>1 )
 		p["device"] = "UUID=" + p["uuid"]:"";
 	    c["partitions"] = add( c["partitions"]:[], p );
 	    });
@@ -2751,6 +2757,30 @@ global boolean ChangeLvStripeCount( string vgname, string lvname,
     if( ret<0 )
 	y2error( "ChangeLvStripeCount sint ret:%1", ret );
     UpdateTargetMapDisk( "/dev/"+vgname );
+    return( ret==0 );
+    }
+
+global boolean ExtendBtrfsVolume( string uuid, string device )
+    {
+    y2milestone( "ExtendBtrfsVolume uuid:%1 device:%2", uuid, device );
+    integer ret = 0;
+    list<string> devs = [ device ];
+    ret = LibStorage::StorageInterface::extendBtrfsVolume( sint, uuid, devs );
+    if( ret<0 )
+	y2error( "ExtendBtrfsVolume sint ret:%1", ret );
+    UpdateTargetMap();
+    return( ret==0 );
+    }
+
+global boolean ReduceBtrfsVolume( string uuid, string device )
+    {
+    y2milestone( "ReduceBtrfsVolume uuid:%1 device:%2", uuid, device );
+    integer ret = 0;
+    list<string> devs = [ device ];
+    ret = LibStorage::StorageInterface::shrinkBtrfsVolume( sint, uuid, devs );
+    if( ret<0 )
+	y2error( "ReduceBtrfsVolume sint ret:%1", ret );
+    UpdateTargetMap();
     return( ret==0 );
     }
 
