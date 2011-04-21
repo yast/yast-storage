@@ -43,6 +43,7 @@ global map<string,any> conv_fs =
                 LibStorage::SWAP() : `swap,
                 LibStorage::NFS() : `nfs,
 		LibStorage::NFS4() : `nfs4,
+		LibStorage::TMPFS() : `tmpfs,
                 LibStorage::FSNONE() : `none
               ]
      ];
@@ -69,6 +70,7 @@ integer fromSymbol( map<string,any> conv, symbol val )
     global const list<string> tmp_m_points = [ "/tmp", "/var/tmp" ];
 
     list<string> suggest_m_points = [];
+    list<string> suggest_tmp_points = [];
 
 
   global string nchars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -84,6 +86,16 @@ global list<string> SuggestMPoints()
 	y2milestone( "SuggestMPoints init:%1", suggest_m_points );
 	}
     return( suggest_m_points );
+    }
+
+global list<string> SuggesTmpfsMPoints()
+    {
+    if( size(suggest_tmp_points)==0 )
+	{
+	suggest_tmp_points = [ "/run", "/var/run", "/tmp", "/var/lock" ];
+	y2milestone( "SuggesTmpfsMPoints init:%1", suggest_tmp_points );
+	}
+    return( suggest_tmp_points );
     }
 
     any sint = nil;
@@ -317,6 +329,25 @@ Multiple options are separated by commas.</p>
 	   ];
     return( opt );
     };
+
+  list< map<symbol, any> > tmpfs_fst_options = [
+	$[ `widget 	    : `TextEntry( `id("size"), `opt(`hstretch),
+			      // label text
+			      _("Tmpfs &Size"), "" ),
+	   `query_key   : "size",
+	   `between	: [ 1, 200 ],
+	   `empty_allowed : true,
+	   `valid_chars : "0123456789kKmMgG%",
+	   // popup text
+	   `error_text  : _("Value must be larger than 0. Try again."),
+	   `type : `text,
+	   `str_opt : "size=%1",
+	   `str_scan : "size=\(.*\)",
+	   // help text, richtext format
+	   `help_text   : _("<p><b>Tmpfs Size:</b>
+Size may be either entered as a number followed by K,M,G for Kilo-, Mega- or Gigabyte or
+as a number followeb by a percent sign meaning percentage of memory.</p>")
+     ]];
 
 define map<symbol, map<symbol, any> > GetNormalFilesystems()``{
 
@@ -788,6 +819,13 @@ know what you are doing.</p>\n")
 				    `needed_modules	: [ "ntfs" ],
 				    `fst_options  	: [],
 				    `options      	: []
+		      ],
+		      `tmpfs 	: $[
+				    `name 		: "TmpFS",
+				    `mountpoints 	: SuggesTmpfsMPoints(),
+				    `mount_string	: "tmpfs",
+				    `mount_option	: "-t tmpfs",
+				    `fst_options  	: tmpfs_fst_options,
 		      ]
   ];
 
@@ -889,11 +927,19 @@ global define map<symbol, map<symbol, any> > GetAllFileSystems(boolean add_swap,
     return ret;
     }
 
+global define map<symbol,any> GetTmpfsFilesystem()
+    {
+    return( GetNormalFilesystems()[`tmpfs]:$[] );
+    }
 
 global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
     ``{
     list< map<symbol, any> > ret = [];
-    if( fsys != `swap )
+    if( fsys == `swap )
+	ret = swap_fst_options;
+    else if( fsys == `tmpfs )
+	ret = tmpfs_fst_options;
+    else
 	{
 	map<symbol, map<symbol, any> > fs = GetAllFileSystems( true, false );
 	ret = fs[fsys,`fst_options]:[];
@@ -905,10 +951,6 @@ global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
 	    {
 	    ret = (list< map<symbol, any> >)union( ret, GetAclFstabOptions() );
 	    }
-	}
-    else
-	{
-	ret = swap_fst_options;
 	}
     y2milestone("fsys:%1 ret:%2", fsys, ret);
     return ret;
@@ -1415,6 +1457,12 @@ global define map CheckFstabOptions( string option_list )
 		 tostring(m["freq"]:0), tostring(m["passno"]:0) ];
     }
 
+
+    global boolean CanMountRo(map part)
+    {
+	const list<symbol> no_fs = [ `tmpfs, `swap ];
+	return !contains(no_fs, part["used_fs"]:`unknown);
+    }
 
     global boolean CanDoQuota(map part)
     {

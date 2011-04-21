@@ -44,6 +44,10 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	    // multi volume btrfs filesystem can only be formatted as btrfs 
 	    all_filesystems = (map<symbol, map<symbol, any> >)filter( symbol s, map p, all_filesystems, ``(s==`btrfs) );
 	    }
+	if( data["type"]:`primary==`tmpfs )
+	    {
+	    all_filesystems[`tmpfs] = FileSystems::GetTmpfsFilesystem();
+	    }
 
 	void ChangeWidgetIfExists( symbol wid, symbol property, any value)
 	{
@@ -74,7 +78,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	void EnableDisableFsOpts( symbol used_fs )
 	{
 	    map <symbol, any> fs_data = all_filesystems[used_fs]: $[];
-	    UI::ChangeWidget(`id(`fs_options), `Enabled, fs_data[`options]:[] != []);
+	    ChangeWidgetIfExists(`fs_options, `Enabled, fs_data[`options]:[] != []);
 	    ChangeWidgetIfExists(`crypt_fs, `Enabled, 
 	                         fs_data[`crypt]:true&&data["type"]:`primary!=`btrfs);
 	}
@@ -86,6 +90,8 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	boolean orig_crypt_fs = crypt_fs;
 	string mount = data["mount"]:"";
 	boolean do_mount = mount != "";
+	if( data["type"]:`unknown == `loop || data["type"]:`unknown == `tmpfs)
+	    do_mount = true;
 
 
 	boolean AskPassword()
@@ -136,7 +142,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	    mount = mount_point_proposal;
 	    do_mount = mount != "";
 
-	    if (data["type"]:`unknown == `loop)
+	    if (data["type"]:`unknown == `loop || data["type"]:`unknown == `tmpfs)
 		do_mount = true;
 	}
 
@@ -149,6 +155,32 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    );
 	}
 
+	term fmt = `Empty();
+	if( data["type"]:`none != `tmpfs )
+	    {
+	    fmt = `FrameWithMarginBox( _("Formatting Options"),
+		      `RadioButtonGroup(`id(`format),
+			  `VBox(
+			      `LeftRadioButtonWithAttachment(`id(`do_format), `opt(`notify),
+			                                     _("Format partition"),
+			      `VBox(`id(`do_format_attachment), 
+			            FileSystemsComboBox(data, all_filesystems)
+			      )),
+			  `VSpacing(0.45),
+			  `LeftRadioButtonWithAttachment(`id(`do_not_format), `opt(`notify), 
+			                                 _("Do not format partition"), tmp1),
+			  `VSpacing(0.45),
+			  CryptButton(data)
+		   )));
+	    }
+
+	term notmnt = `Empty();
+	if( data["type"]:`none != `tmpfs )
+	    {
+	    notmnt = `LeftRadioButton(`id(`do_not_mount), `opt(`notify), 
+	                              _("Do not mount partition"));
+	    }
+
 	term subvol = `Empty();
 	if( data["used_fs"]:`unknown==`btrfs )
 	    {
@@ -160,23 +192,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	list mountpoints = ProposeMountpoints( used_fs, mount );
 
 	term contents = `HVSquash(`VStackFrames(
-				      `FrameWithMarginBox(_("Formatting Options"),
-					     `RadioButtonGroup(`id(`format),
-							       `VBox(
-								   `LeftRadioButtonWithAttachment(`id(`do_format), `opt(`notify),
-												  _("Format partition"),
-												  `VBox(`id(`do_format_attachment),
-												      FileSystemsComboBox(data, all_filesystems)
-												      )),
-								   `VSpacing(0.45),
-								   `LeftRadioButtonWithAttachment(`id(`do_not_format), `opt(`notify),
-												  _("Do not format partition"),
-												  tmp1),
-								   `VSpacing(0.45),
-								   CryptButton(data)
-								   )
-							)
-					  ),
+				      fmt,
 				      `FrameWithMarginBox(_("Mounting Options"),
 					     `RadioButtonGroup(`id(`mount),
 							       `VBox(
@@ -191,10 +207,8 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 														  _("Fs&tab Options..."))
 												      )),
 								   `VSpacing(0.45),
-								   `LeftRadioButton(`id(`do_not_mount), `opt(`notify),
-										    _("Do not mount partition"))
-								   )
-						 )
+								   notmnt
+						 ))
 					  ),
 				      subvol
 				      )
@@ -204,8 +218,8 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 	MiniWorkflow::SetLastStep(!AskPassword());
 
-	UI::ChangeWidget(`id(`format), `Value, do_format ? `do_format : `do_not_format);
-	UI::ChangeWidget(`id(`do_format_attachment), `Enabled, do_format);
+	ChangeWidgetIfExists( `format, `Value, do_format ? `do_format : `do_not_format);
+	ChangeWidgetIfExists( `do_format_attachment, `Enabled, do_format);
 	//not there in RAID/LVM/loop configuration (#483789)
 	ChangeWidgetIfExists( `do_not_format_attachment, `Enabled, !do_format );
 
@@ -327,8 +341,14 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 		    break;
 
 		case `next:
-		    do_format = (boolean) UI::QueryWidget(`id(`do_format), `Value);
-		    crypt_fs = (boolean) UI::QueryWidget(`id(`crypt_fs), `Value);
+		    if( UI::WidgetExists(`id(`do_format)))
+			do_format = (boolean) UI::QueryWidget(`id(`do_format), `Value);
+		    else
+			do_format = true;
+		    if( UI::WidgetExists(`id(`crypt_fs)))
+			crypt_fs = (boolean) UI::QueryWidget(`id(`crypt_fs), `Value);
+		    else
+			crypt_fs = false;
 		    do_mount = (boolean) UI::QueryWidget(`id(`do_mount), `Value);
 		    mount = (string) UI::QueryWidget(`id(`mount_point), `Value);
 
@@ -367,6 +387,22 @@ Also check the format option.
 			{
 			    // error popup
 			    Popup::Error(_("Crypt files require a mount point."));
+			    UI::ChangeWidget(`id(`do_mount), `Value, true);
+			    UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, true);
+			    UI::SetFocus(`id(`mount_point));
+			    widget = `again;
+			    continue;
+			}
+		    }
+
+		    //tmpfs specific checks
+		    if (data["type"]:`unknown == `tmpfs)
+		    {
+			//enforce specifying mountpoint
+			if (!do_mount)
+			{
+			    // error popup
+			    Popup::Error(_("Tmpfs requires a mount point."));
 			    UI::ChangeWidget(`id(`do_mount), `Value, true);
 			    UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, true);
 			    UI::SetFocus(`id(`mount_point));

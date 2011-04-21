@@ -67,6 +67,7 @@
   import "LibStorage::DmraidCoInfo";
   import "LibStorage::DmmultipathCoInfo";
   import "LibStorage::BtrfsInfo";
+  import "LibStorage::TmpfsInfo";
   import "LibStorage::PartitionSlotInfo";
   import "LibStorage::CommitInfo";
   import "LibStorage::DlabelCapabilities";
@@ -99,7 +100,8 @@ map<string,any> conv_ctype =
                 LibStorage::DM() : `CT_DM,
 		LibStorage::MDPART() : `CT_MDPART,
                 LibStorage::NFSC() : `CT_NFS,
-                LibStorage::BTRFSC() : `CT_BTRFS
+                LibStorage::BTRFSC() : `CT_BTRFS,
+                LibStorage::TMPFSC() : `CT_TMPFS
 	      ]
      ];
 
@@ -240,7 +242,7 @@ map DiskMap = $[];
 
 const map<symbol, integer> type_order = $[ `CT_DISK : 0, `CT_MD : 1, `CT_MDPART : 2,
     `CT_DMRAID : 3, `CT_DMMULTIPATH : 4, `CT_LOOP : 5, `CT_DM : 6, `CT_LVM : 7, 
-    `CT_BTRFS : 8, `CT_NFS : 9 ];
+    `CT_BTRFS : 8, `CT_NFS : 9, `CT_TMPFS : 10 ];
 
 list<string> hw_packages = [];
 
@@ -786,7 +788,7 @@ define list<map> GetPartitionLst( map<string,map> tg, string device )
 	list<map> part = filter( map p, tg[disk,"partitions"]:[],
 				 ``(p["device"]:""==device ));
 	part = filter( map p, part, ``(!p["delete"]:false));
-	if( size(part)==0 && is( m["nr"]:0, integer ))
+	if( size(part)==0 && is( m["nr"]:(any)0, integer ))
 	    {
 	    part = filter( map p, tg[disk,"partitions"]:[],
 			   ``(p["nr"]:-1==m["nr"]:0 ));
@@ -1705,6 +1707,25 @@ map getContainerInfo( map c )
 		p["subvol"] = maplist( string s, ls, ``{ map m = $[ "name" : s ]; return( m ); });
 	    if( size(p["devices"]:[])+size(p["devices_add"]:[])>1 )
 		p["device"] = "UUID=" + p["uuid"]:"";
+	    c["partitions"] = add( c["partitions"]:[], p );
+	    });
+	}
+    else if( c["type"]:`CT_UNKNOWN == `CT_TMPFS )
+	{
+	list<any> pinfos = [];
+	y2milestone( "before getTmpfsInfo" );
+	ret = LibStorage::StorageInterface::getTmpfsInfo( sint, pinfos );
+	y2milestone( "after getTmpfsInfo" );
+	if( ret<0 )
+	    y2warning( "getTmpfsInfo ret:%1", ret );
+	foreach( any info, pinfos,
+	    ``{
+	    map p = $[];
+	    vinfo = LibStorage::TmpfsInfo::swig_v_get(info);
+	    p = volumeMap( vinfo, p );
+	    p["type"] = `tmpfs;
+	    p["fstype"] = Partitions::tmpfs_name;
+	    p["device"] = "tmpfs";
 	    c["partitions"] = add( c["partitions"]:[], p );
 	    });
 	}
@@ -2809,6 +2830,30 @@ global integer CheckNfsVolume(string nfsdev, string opts, boolean nfs4)
 	ret = sz;
     y2milestone( "CheckNfsVolume ret:%1", ret );
     return( ret );
+    }
+
+global boolean AddTmpfsVolume( string mount, string opts )
+    {
+    y2milestone("AddTmpfsVolume mount:%1 opts:%2", mount, opts );
+    integer ret = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::addTmpfsMount(sint, mount, opts );
+    if( ret<0 )
+	y2error( "AddTmpfsVolume sint ret:%1", ret );
+    UpdateTargetMapDisk( "/dev/tmpfs" );
+    return( ret==0 );
+    }
+
+global boolean DelTmpfsVolume( string mount )
+    {
+    y2milestone("DelTmpfsVolume mount:%1", mount );
+    integer ret = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::removeTmpfsMount(sint, mount);
+    if( ret<0 )
+	y2error( "DelTmpfsVolume sint ret:%1", ret );
+    UpdateTargetMapDisk( "/dev/tmpfs" );
+    return( ret==0 );
     }
 
 global boolean CreateMd( integer nr, string type )
