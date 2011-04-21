@@ -30,7 +30,7 @@
     {
 	const map disk_order = $[ `CT_DMRAID : 0, `CT_DMMULTIPATH : 1, `CT_MDPART : 2, `CT_DISK : 3,
 				  `CT_MD : 4, `CT_LOOP : 5, `CT_LVM : 6, `CT_DM : 7, `CT_NFS : 8,
-				  `CT_BTRFS : 9 ];
+				  `CT_BTRFS : 9, `CT_TMPFS : 10 ];
 
 	list<string> keys = maplist(string dev, map disk, target_map, { return dev; });
 	keys = sort(string a, string b, keys, {
@@ -976,6 +976,8 @@ Identifier of the file system.");
     term TableRow(list<symbol> fields, map disk, map part)
     {
 	string device = (part == nil) ? disk["device"]:"" : part["device"]:"";
+	if( disk["type"]:`CT_UNKNOWN == `CT_TMPFS )
+	    device = "tmpfs:"+part["mount"]:"";
 
 	term row = list::reduce(term tmp, symbol field, `item(`id(device)), fields, {
 	    return add(tmp, MakeSubInfo(disk, part, field, `table));
@@ -1136,6 +1138,24 @@ Identifier of the file system.");
 	        !Storage::IsUsedBy(partition) &&
 		(partition["used_by",0,"type"]:`UB_NONE==`UB_BTRFS ||
 		 search( partition["device"]:"", "UUID=" ) == 0))
+		return `show;
+	    else
+		return `ignore;
+	}
+    }
+
+    /**
+      * Predicate function for Table and TableContents.
+      */
+    global symbol PredicateTmpfs(map disk, map partition)
+    {
+	if (partition == nil)
+	{
+	    return `follow;
+	}
+	else
+	{
+	    if (partition["used_fs"]:`unknown==`tmpfs)
 		return `show;
 	    else
 		return `ignore;

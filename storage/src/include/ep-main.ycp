@@ -73,6 +73,7 @@
     include "partitioning/ep-dm.ycp";
     include "partitioning/ep-nfs.ycp";
     include "partitioning/ep-btrfs.ycp";
+    include "partitioning/ep-tmpfs.ycp";
     include "partitioning/ep-unused.ycp";
 
     include "partitioning/ep-graph.ycp";
@@ -105,6 +106,7 @@
 		  `dm : $[ `create : CreateDmMainPanel, `handle : HandleDmMainPanel ],
 		  `nfs : $[ `create : CreateNfsMainPanel, `handle : HandleNfsMainPanel ],
 		  `btrfs : $[ `create : CreateBtrfsMainPanel, `handle : HandleBtrfsMainPanel ],
+		  `tmpfs : $[ `create : CreateTmpfsMainPanel, `handle : HandleTmpfsMainPanel ],
 		  `unused : $[ `create : CreateUnusedPanel, `handle : HandleUnusedPanel ],
 		  `devicegraph : $[ `create : CreateDeviceGraphPanel, `refresh : RefreshDeviceGraphPanel, `handle : HandleDeviceGraphPanel ],
 		  `mountgraph : $[ `create : CreateMountGraphPanel, `refresh : RefreshDeviceGraphPanel, `handle : HandleMountGraphPanel ],
@@ -185,6 +187,9 @@
 		case `CT_BTRFS:
 		    huhu(disk, `btrfs, $[ `create : CreateBtrfsPanel, `handle: HandleBtrfsPanel ], nil);
 		    break;
+		case `CT_TMPFS:
+		    huhu(disk, `tmpfs, $[ `create : CreateTmpfsPanel, `handle: HandleTmpfsPanel ], nil);
+		    break;
 	    }
 	}
 
@@ -209,6 +214,8 @@
 			   `item(`id(`nfs), `icon(StorageIcons::nfs_icon), _("NFS"), open(`nfs)),
 			   // tree node label
 			   `item(`id(`btrfs), `icon(StorageIcons::nfs_icon), _("BTRFS"), open(`btrfs)),
+			   // tree node label
+			   `item(`id(`tmpfs), `icon(StorageIcons::nfs_icon), _("TMPFS"), open(`tmpfs)),
 			   // tree node label
 			   `item(`id(`unused), `icon(StorageIcons::unused_icon), _("Unused Devices"), open(`unused))
 			   ])
@@ -252,7 +259,10 @@
 	map disk = nil;
 	map part = nil;
 
-	SplitDevice(target_map, device, disk, part);
+	if( substring(device,0,5)=="tmpfs" )
+	    disk = target_map["/dev/tmpfs"]:$[];
+	else
+	    SplitDevice(target_map, device, disk, part);
 
 	switch (disk["type"]:`unknown)
 	{
@@ -291,6 +301,10 @@
 	    case `CT_BTRFS:
 		if (part != nil)
 		    EpContextMenuBtrfs(device);
+		break;
+
+	    case `CT_TMPFS:
+		EpContextMenuTmpfs(device);
 		break;
 	}
     }
