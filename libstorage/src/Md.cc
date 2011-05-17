@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,269 +19,243 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
 #include <boost/algorithm/string.hpp>
-#include <boost/tokenizer.hpp>
 
-#include "y2storage/Md.h"
-#include "y2storage/StorageTypes.h"
-#include "y2storage/Storage.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/Regex.h"
-#include "y2storage/Container.h"
-#include "y2storage/EtcRaidtab.h"
-#include "y2storage/StorageDefines.h"
-#include "y2storage/MdPartCo.h"
+#include "storage/Md.h"
+#include "storage/StorageTypes.h"
+#include "storage/Storage.h"
+#include "storage/AppUtil.h"
+#include "storage/SystemCmd.h"
+#include "storage/Regex.h"
+#include "storage/Container.h"
+#include "storage/EtcMdadm.h"
+#include "storage/StorageDefines.h"
+#include "storage/SystemInfo.h"
 
-using namespace storage;
-using namespace std;
 
-Md::Md( const MdCo& d, unsigned PNr, MdType Type,
-        const list<string>& devices ) : Volume( d, PNr, 0 )
+namespace storage
+{
+    using namespace std;
+
+
+    Md::Md(const MdCo& c, const string& name, const string& device, MdType Type,
+	   const list<string>& devices, const list<string>& spares)
+	: Volume(c, name, device), md_type(Type), md_parity(PAR_DEFAULT), chunk_k(0),
+	  sb_ver("01.00.00"), destrSb(false), devs(devices), spare(spares), has_container(false)
     {
-    y2deb("constructed md " << dev << " on container " << cont->name());
-    if( d.type() != MD )
-	y2err("constructed md with wrong container");
-    init();
-    md_type = Type;
-    has_container = false;
-    for( list<string>::const_iterator i=devices.begin(); i!=devices.end(); ++i )
-	devs.push_back( normalizeDevice( *i ) );
-    computeSize();
+	y2deb("constructed Md " << dev << " on " << cont->device());
+
+	assert(c.type() == MD);
+
+	numeric = true;
+	mdStringNum(name, num);
+
+	getStorage()->addUsedBy(devs, UB_MD, dev);
+	getStorage()->addUsedBy(spares, UB_MD, dev);
+
+	computeSize();
     }
 
-Md::Md( const MdCo& d, const string& line1, const string& line2 )
-    : Volume( d, 0, 0 )
+
+    Md::Md(const MdCo& c, const string& name, const string& device, SystemInfo& systeminfo)
+	: Volume(c, name, device, systeminfo), md_type(RAID_UNK), md_parity(PAR_DEFAULT),
+	  chunk_k(0), sb_ver("01.00.00"), destrSb(false), has_container(false)
     {
-    y2mil("constructed md line1:\"" << line1 << "\" line2:\"" << line2 << "\"");
-    if( d.type() != MD )
-	y2err("constructed md with wrong container");
-    init();
-    if( mdStringNum( extractNthWord( 0, line1 ), num ))
-	{
-	nm.clear();
-	setNameDev();
-	getMajorMinor( dev, mjr, mnr );
-	}
-    SystemCmd c(MDADMBIN " --detail " + quote(device()));
-    c.select( "UUID : " );
-    string::size_type pos;
-    if( c.retcode()==0 && c.numLines(true)>0 )
-	{
-	md_uuid = *c.getLine(0,true);
-	if( (pos=md_uuid.find( "UUID : " ))!=string::npos )
-	    md_uuid.erase( 0, pos+7 );
-	md_uuid = extractNthWord( 0, md_uuid );
-	}
-    // "Container" raid: IMSM, DDF
-    // "Version" with persistent block
-    has_container=false;
-    if( c.retcode()==0 )
-      {
-      if( c.select( "Version : " ) )
-        {
-        sb_ver = extractNthWord( 2, *c.getLine(0,true) );
-        }
-      else if ( c.select( "Container : " ) )
-        {
-        string tmpLine = *c.getLine(0,true);
-        string::size_type tmpPos;
-        // Line like: Container : /dev/md/imsm0, member 0
-        sb_ver = extractNthWord( 2, tmpLine );
-        //remove ',' after word.
-        tmpPos = sb_ver.find(",");
-        sb_ver.erase(tmpPos,tmpPos+1);
-        // get Member number
-        string member = extractNthWord( 4, tmpLine );
-            y2mil("Md " << nm << " has container. Member " << member);
-         member >> md_member;
-        has_container = true;
-        }
-      else
-        {
-        y2war("Did not found neither Version nor Container line!");
-        }
-      }
-    if (c.retcode()==0 && c.numLines(true)>0 )
-    {
-	y2mil( "line:\"" << *c.getLine(0,true) << "\"" );
-	y2mil( "sb_ver:\"" << sb_ver << "\"" );
-	y2mil( "word0:\"" << extractNthWord( 0, *c.getLine(0,true)) << "\"" );
-	y2mil( "word1:\"" << extractNthWord( 1, *c.getLine(0,true)) << "\"" );
-	y2mil( "word2:\"" << extractNthWord( 2, *c.getLine(0,true)) << "\"" );
-    }
-    string tmp;
-    string line = line1;
-    if( (pos=line.find( ':' ))!=string::npos )
-	line.erase( 0, pos+1 );
-    boost::trim_left(line, locale::classic());
-    if( (pos=line.find_first_of( app_ws ))!=string::npos )
-    {
-	if (line.substr(0, pos) == "active")
-	    line.erase(0, pos);
-    }
-    boost::trim_left(line, locale::classic());
-    if( (pos=line.find_first_of( app_ws ))!=string::npos )
-	{
-	tmp = line.substr( 0, pos );
-	if( tmp=="(read-only)" || tmp=="(auto-read-only)" || tmp=="inactive" )
-	    {
+	y2deb("constructed Md " << device << " on " << cont->device());
+
+	assert(c.type() == MD);
+
+	numeric = true;
+	mdStringNum(name, num);
+
+	getMajorMinor();
+	getStorage()->fetchDanglingUsedBy(dev, uby);
+
+	ProcMdstat::Entry entry;
+	if (!systeminfo.getProcMdstat().getEntry(nm, entry))
+	    y2err("not found in mdstat nm:" << nm);
+
+	md_type = entry.md_type;
+	md_parity = entry.md_parity;
+
+	setSize(entry.size_k);
+	chunk_k = entry.chunk_k;
+
+	devs = entry.devices;
+	spare = entry.spares;
+
+	if (entry.readonly)
 	    setReadonly();
-	    y2war("readonly or inactive md device " << nr());
-	    line.erase( 0, pos );
-	    boost::trim_left(line, locale::classic());
+
+	if (entry.has_container)
+	{
+	    has_container = true;
+	    parent_container = entry.container_name;
+
+	    MdadmDetails details;
+	    if (getMdadmDetails("/dev/" + entry.container_name, details))
+	    {
+		parent_uuid = details.uuid;
+		parent_md_name = details.devname;
+		parent_metadata = details.metadata;
 	    }
+
+	    parent_member = entry.container_member;
+
+	    sb_ver = parent_metadata;
 	}
-    boost::trim_left(line, locale::classic());
-    if( (pos=line.find_first_of( app_ws ))!=string::npos )
-	{
-	if( line.substr( 0, pos ).find( "active" )!=string::npos )
-	    line.erase( 0, pos );
-	}
-    boost::trim_left(line, locale::classic());
-    tmp = extractNthWord( 0, line );
-    md_type = toMdType( tmp );
-    if( md_type == RAID_UNK )
-	{
-	y2war("unknown raid type " << tmp);
-	}
-    if( (pos=line.find_first_of( app_ws ))!=string::npos )
-	line.erase( 0, pos );
-    if( (pos=line.find_first_not_of( app_ws ))!=string::npos && pos!=0 )
-	line.erase( 0, pos );
-    while( (pos=line.find_first_not_of( app_ws ))==0 )
-	{
-	tmp = extractNthWord( 0, line );
-	string::size_type bracket = tmp.find( '[' );
-	if( bracket!=string::npos )
-	    devs.push_back( normalizeDevice(tmp.substr( 0, bracket )));
 	else
-	    {
-	    normalizeDevice(tmp);
-	    devs.push_back( tmp );
-	    }
-	line.erase( 0, tmp.length() );
-	if( (pos=line.find_first_not_of( app_ws ))!=string::npos && pos!=0 )
-	    line.erase( 0, pos );
-	}
-    unsigned long long longnum;
-    extractNthWord( 0, line2 ) >> longnum;
-    setSize( longnum );
-    chunk = 0;
-    pos = line2.find( "chunk" );
-    if( pos != string::npos )
 	{
-	pos = line2.find_last_not_of( app_ws, pos-1 );
-	pos = line2.find_last_of( app_ws, pos );
-	line2.substr( pos+1 ) >> chunk;
+	    sb_ver = entry.super;
 	}
-    md_parity = PAR_NONE;
-    pos = line2.find( "algorithm" );
-    if( pos != string::npos )
+
+	setUdevData(systeminfo);
+
+	MdadmDetails details;
+	if (getMdadmDetails(dev, details))
 	{
-	unsigned alg = 999;
-	pos = line2.find_first_of( app_ws, pos );
-	pos = line2.find_first_not_of( app_ws, pos );
-	line2.substr( pos ) >> alg;
-	switch( alg )
-	    {
-	    case 0:
-		md_parity = LEFT_ASYMMETRIC;
-		break;
-	    case 1:
-		md_parity = RIGHT_ASYMMETRIC;
-		break;
-	    case 2:
-		md_parity = LEFT_SYMMETRIC;
-		break;
-	    case 3:
-		md_parity = RIGHT_SYMMETRIC;
-		break;
-	    default:
-		y2war("unknown parity " << line2.substr(pos));
-		break;
-	    }
+	    md_uuid = details.uuid;
+	    md_name = details.devname;
 	}
-    if( has_container )
-      {
-      getParent();
-      }
-    // Get md_name. It's important.
-    string tmpUuid;
-    MdPartCo::getUuidName(nm,tmpUuid,md_name);
+
+	getStorage()->addUsedBy(devs, UB_MD, dev);
+	getStorage()->addUsedBy(spare, UB_MD, dev);
     }
 
-Md::~Md()
+
+    Md::Md(const MdCo& c, const Md& v)
+	: Volume(c, v), md_type(v.md_type), md_parity(v.md_parity),
+	  chunk_k(v.chunk_k), md_uuid(v.md_uuid), md_name(v.md_name),
+	  sb_ver(v.sb_ver), destrSb(v.destrSb), devs(v.devs), spare(v.spare),
+	  udev_id(udev_id),
+	  has_container(v.has_container), parent_container(v.parent_container),
+	  parent_uuid(v.parent_uuid), parent_md_name(v.parent_md_name),
+	  parent_metadata(v.parent_metadata), parent_member(v.parent_member)
     {
-    y2deb("destructed md " << dev);
+	y2deb("copy-constructed Md from " << v.dev);
     }
 
-void
-Md::init()
+
+    Md::~Md()
     {
-    destrSb = false;
-    md_parity = PAR_NONE;
-    chunk = 0;
-    sb_ver = "01.00.00";
-    md_type = RAID_UNK;
+	y2deb("destructed Md " << dev);
     }
 
-void
-Md::getDevs( list<string>& devices, bool all, bool spares ) const
+
+    void
+    Md::updateData(SystemInfo& systeminfo)
     {
-    if( !all )
-	devices = spares ? spare : devs;
-    else
+	ProcMdstat::Entry entry;
+	if (systeminfo.getProcMdstat().getEntry(nm, entry))
 	{
-	devices = devs;
-	devices.insert( devices.end(), spare.begin(), spare.end() );
+	    if (md_type != entry.md_type)
+		y2war("inconsistent md_type my:" << toString(md_type) << " kernel:" << toString(entry.md_type));
+	    if (md_parity != PAR_DEFAULT && md_parity != entry.md_parity)
+		y2war("inconsistent md_parity my:" << toString(md_parity) << " kernel:" << toString(entry.md_parity));
+	    if (chunk_k > 0 && chunk_k != entry.chunk_k)
+		y2war("inconsistent chunk my:" << chunk_k << " kernel:" << entry.chunk_k);
+
+	    md_type = entry.md_type;
+	    md_parity = entry.md_parity;
+
+	    setSize(entry.size_k);
+	    chunk_k = entry.chunk_k;
+	}
+	else
+	{
+	    y2err("not found in mdstat nm:" << nm);
+	}
+
+	MdadmDetails details;
+	if (getMdadmDetails("/dev/" + nm, details))
+	{
+	    setMdUuid(details.uuid);
 	}
     }
+
+
+    void
+    Md::setUdevData(SystemInfo& systeminfo)
+    {
+	const UdevMap& by_id = systeminfo.getUdevMap("/dev/disk/by-id");
+	UdevMap::const_iterator it = by_id.find(nm);
+	if (it != by_id.end())
+	{
+	    udev_id = it->second;
+	    partition(udev_id.begin(), udev_id.end(), string_starts_with("md-uuid-"));
+	}
+	else
+	{
+	    udev_id.clear();
+	}
+
+	y2mil("dev:" << dev << " udev_id:" << udev_id);
+
+	alt_names.remove_if(string_starts_with("/dev/disk/by-id/"));
+	for (list<string>::const_iterator i = udev_id.begin(); i != udev_id.end(); ++i)
+	    alt_names.push_back("/dev/disk/by-id/" + *i);
+    }
+
+
+    list<string>
+    Md::getDevs(bool all, bool spares) const
+    {
+	list<string> ret;
+	if (!all)
+	{
+	    ret = spares ? spare : devs;
+	}
+	else
+	{
+	    ret = devs;
+	    ret.insert(ret.end(), spare.begin(), spare.end());
+	}
+	return ret;
+    }
+
 
 int
-Md::addDevice( const string& dev, bool to_spare )
+Md::addDevice(const string& new_dev, bool to_spare)
     {
     int ret = 0;
-    string d = normalizeDevice( dev );
-    if( find( devs.begin(), devs.end(), dev )!=devs.end() ||
-        find( spare.begin(), spare.end(), dev )!=spare.end() )
+    if (find(devs.begin(), devs.end(), new_dev) != devs.end() ||
+        find(spare.begin(), spare.end(), new_dev) != spare.end())
 	{
 	ret = MD_ADD_DUPLICATE;
 	}
     if( ret==0 )
 	{
-	if( to_spare )
-	    {
-	    spare.push_back(d);
-	    }
+	if (!to_spare)
+	    devs.push_back(new_dev);
 	else
-	    {
-	    devs.push_back(d);
-	    computeSize();
-	    }
+	    spare.push_back(new_dev);
+	getStorage()->addUsedBy(new_dev, UB_MD, dev);
+	computeSize();
 	}
-    y2mil("dev:" << dev << " spare:" << to_spare << " ret:" << ret);
-    return( ret );
+    y2mil("new_dev:" << new_dev << " to_spare:" << to_spare << " ret:" << ret);
+    return ret;
     }
+
 
 int
 Md::removeDevice( const string& dev )
     {
     int ret = 0;
-    string d = normalizeDevice( dev );
     list<string>::iterator i;
     if( (i=find( devs.begin(), devs.end(), dev ))!=devs.end() )
 	{
 	devs.erase(i);
+	getStorage()->clearUsedBy(dev);
 	computeSize();
 	}
     else if( (i=find( spare.begin(), spare.end(), dev ))!=spare.end() )
+        {
 	spare.erase(i);
+	getStorage()->clearUsedBy(dev);
+	computeSize();
+	}
     else
 	ret = MD_REMOVE_NONEXISTENT;
     y2mil("dev:" << dev << " ret:" << ret);
@@ -304,60 +278,36 @@ Md::checkDevices()
 	    break;
 	}
     int ret = devs.size()<nmin ? MD_TOO_FEW_DEVICES : 0;
-    y2mil("type:" << md_type << " min:" << nmin << " size:" << devs.size() <<
+
+    if (ret == 0 && md_type == RAID0 && !spare.empty())
+	ret = MD_TOO_MANY_SPARES;
+
+    y2mil("type:" << toString(md_type) << " min:" << nmin << " size:" << devs.size() <<
 	  " ret:" << ret);
     return( ret );
     }
 
-void
+
+int
 Md::getState(MdStateInfo& info) const
 {
-    SystemCmd c(MDADMBIN " --detail " + quote(device()));
+    string value;
+    if (read_sysfs_property(sysfsPath() + "/md/array_state", value))
+	if (toValue(value, info.state))
+	    return STORAGE_NO_ERROR;
 
-    c.select("State : ");
-    if( c.retcode()==0 && c.numLines(true)>0 )
-    {
-	string state = *c.getLine(0,true);
-	string::size_type pos;
-	if( (pos=state.find( "State : " ))!=string::npos )
-	    state.erase( 0, pos+8 );
-
-	typedef boost::tokenizer<boost::char_separator<char>> char_tokenizer;
-	char_tokenizer toker(state, boost::char_separator<char>(","));
-
-	info.active = false;
-	info.degraded = false;
-	for (char_tokenizer::const_iterator it = toker.begin(); it != toker.end(); it++)
-	{
-	    string s = boost::trim_copy(*it, locale::classic());
-	    if (s == "active")
-		info.active = true;
-	    else if (s == "degraded")
-		info.degraded = true;
-	}
-    }
+    return MD_GET_STATE_FAILED;
 }
+
 
 void
 Md::computeSize()
 {
-    unsigned long long size_k;
-    getContainer()->getStorage()->computeMdSize(md_type, devs, size_k);
+    unsigned long long size_k = 0;
+    getStorage()->computeMdSize(md_type, devs, spare, size_k);
     setSize(size_k);
 }
 
-void
-Md::addSpareDevice( const string& dev )
-    {
-    string d = normalizeDevice(dev);
-    if( find( spare.begin(), spare.end(), d )!=spare.end() ||
-        find( devs.begin(), devs.end(), d )!=devs.end() )
-	{
-	y2war("spare " << dev << " already present");
-	}
-    else
-	spare.push_back(d);
-    }
 
 void Md::changeDeviceName( const string& old, const string& nw )
     {
@@ -373,16 +323,15 @@ void Md::changeDeviceName( const string& old, const string& nw )
 string
 Md::createCmd() const
 {
-    string cmd = "ls -l --full-time " + quote(devs) + " " + quote(spare) + "; ";
-    cmd += MODPROBEBIN " " + pName() + "; " MDADMBIN " --create " + quote(device()) +
-	" --run --level=" + pName() + " -e 1.0";
-    if (pName() == "raid1" || pName() == "raid5" || pName() == "raid6" ||
-        pName() == "raid10")
+    string cmd = LSBIN " -l --full-time " + quote(devs) + " " + quote(spare) + "; "
+	MODPROBEBIN " " + toString(md_type) + "; " MDADMBIN " --create " + quote(device()) +
+	" --run --level=" + toString(md_type) + " -e 1.0";
+    if (md_type == RAID1 || md_type == RAID5 || md_type == RAID6 || md_type == RAID10)
 	cmd += " -b internal";
-    if (chunk > 0)
-	cmd += " --chunk=" + decString(chunk);
-    if (md_parity != PAR_NONE)
-	cmd += " --parity=" + ptName();
+    if (chunk_k > 0)
+	cmd += " --chunk=" + decString(chunk_k);
+    if (md_parity != PAR_DEFAULT)
+	cmd += " --parity=" + toString(md_parity);
     cmd += " --raid-devices=" + decString(devs.size());
     if (!spare.empty())
 	cmd += " --spare-devices=" + decString(spare.size());
@@ -392,197 +341,123 @@ Md::createCmd() const
 }
 
 
-string Md::mdadmLine() const
-    {
-    string line = "ARRAY " + device() + " level=" + pName();
-    line += " UUID=" + md_uuid;
-    y2mil("line:" << line);
-    return( line );
-    }
-
-void Md::raidtabLines( list<string>& lines ) const
-    {
-    lines.clear();
-    lines.push_back( "raiddev " + device() );
-    string tmp = "   raid-level            ";
-    switch( md_type )
-	{
-	case RAID1:
-	    tmp += "1";
-	    break;
-	case RAID5:
-	    tmp += "5";
-	    break;
-	case RAID6:
-	    tmp += "6";
-	    break;
-	case RAID10:
-	    tmp += "10";
-	    break;
-	case MULTIPATH:
-	    tmp += "multipath";
-	    break;
-	default:
-	    tmp += "0";
-	    break;
-	}
-    lines.push_back( tmp );
-    lines.push_back( "   nr-raid-disks         " + decString(devs.size()));
-    lines.push_back( "   nr-spare-disks        " + decString(spare.size()));
-    lines.push_back( "   persistent-superblock 1" );
-    if( md_parity!=PAR_NONE )
-	lines.push_back( "   parity-algorithm      " + ptName());
-    if( chunk>0 )
-	lines.push_back( "   chunk-size            " + decString(chunk));
-    unsigned cnt = 0;
-    for( list<string>::const_iterator i=devs.begin(); i!=devs.end(); ++i )
-	{
-	lines.push_back( "   device                " + *i);
-	lines.push_back( "   raid-disk             " + decString(cnt++));
-	}
-    cnt = 0;
-    for( list<string>::const_iterator i=spare.begin(); i!=spare.end(); ++i )
-	{
-	lines.push_back( "   device                " + *i);
-	lines.push_back( "   spare-disk            " + decString(cnt++));
-	}
-    }
-
-string Md::removeText( bool doing ) const
-    {
-    string txt;
-    string d = dev;
+Text Md::removeText( bool doing ) const
+{
+    Text txt;
     if( doing )
-	{
+    {
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/md0
-	txt = sformat( _("Deleting software RAID %1$s"), d.c_str() );
-	}
+	txt = sformat(_("Deleting software RAID %1$s"), dev.c_str());
+    }
     else
-	{
+    {
 	// displayed text before action, %1$s is replaced by device name e.g. md0
 	// %2$s is replaced by size (e.g. 623.5 MB)
-	txt = sformat( _("Delete software RAID %1$s (%2$s)"), d.c_str(),
-		       sizeString().c_str() );
-	}
-    return( txt );
+	txt = sformat(_("Delete software RAID %1$s (%2$s)"), dev.c_str(),
+		      sizeString().c_str());
     }
+    return txt;
+}
 
-string Md::createText( bool doing ) const
-    {
-    string txt;
-    string d = dev;
+
+Text Md::createText( bool doing ) const
+{
+    Text txt;
     if( doing )
-	{
+    {
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/md0
-	txt = sformat( _("Creating software RAID %1$s"), d.c_str() );
-	}
+	// %2$s is replaced by one or more devices (e.g /dev/sda1 /dev/sda2)
+	txt = sformat(_("Creating software RAID %1$s from %2$s"), dev.c_str(), 
+		      boost::join(devs, " ").c_str());
+    }
     else
-	{
+    {
 	if( !mp.empty() )
-	    {
+	{
 	    if( encryption==ENC_NONE )
-		{
-		// displayed text before action, %1$s is replaced by device name e.g. md0
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		// %3$s is replaced by file system type (e.g. reiserfs)
-		// %4$s is replaced by mount point (e.g. /usr)
-		txt = sformat( _("Create software RAID %1$s (%2$s) for %4$s with %3$s"),
-			       d.c_str(), sizeString().c_str(), fsTypeString().c_str(),
-			       mp.c_str() );
-		}
-	    else
-		{
-		// displayed text before action, %1$s is replaced by device name e.g. md0
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		// %3$s is replaced by file system type (e.g. reiserfs)
-		// %4$s is replaced by mount point (e.g. /usr)
-		txt = sformat( _("Create encrypted software RAID %1$s (%2$s) for %4$s with %3$s"),
-			       d.c_str(), sizeString().c_str(), fsTypeString().c_str(),
-			       mp.c_str() );
-		}
-	    }
-	else
 	    {
+		// displayed text before action, %1$s is replaced by device name e.g. md0
+		// %2$s is replaced by size (e.g. 623.5 MB)
+		// %3$s is replaced by file system type (e.g. reiserfs)
+		// %4$s is replaced by mount point (e.g. /usr)
+		// %5$s is replaced by one or more devices (e.g /dev/sda1 /dev/sda2)
+		txt = sformat(_("Create software RAID %1$s (%2$s) from %5$s for %4$s with %3$s"),
+			      dev.c_str(), sizeString().c_str(), fsTypeString().c_str(),
+			      mp.c_str(), boost::join(devs, " ").c_str());
+	    }
+	    else
+	    {
+		// displayed text before action, %1$s is replaced by device name e.g. md0
+		// %2$s is replaced by size (e.g. 623.5 MB)
+		// %3$s is replaced by file system type (e.g. reiserfs)
+		// %4$s is replaced by mount point (e.g. /usr)
+		// %5$s is replaced by one or more devices (e.g /dev/sda1 /dev/sda2)
+		txt = sformat(_("Create encrypted software RAID %1$s (%2$s) from %5$s for %4$s with %3$s"),
+			      dev.c_str(), sizeString().c_str(), fsTypeString().c_str(),
+			      mp.c_str(), boost::join(devs, " ").c_str());
+	    }
+	}
+	else
+	{
 	    // displayed text before action, %1$s is replaced by device name e.g. md0
 	    // %2$s is replaced by size (e.g. 623.5 MB)
-	    txt = sformat( _("Create software RAID %1$s (%2$s)"),
-			   dev.c_str(), sizeString().c_str() );
-	    }
+	    // %3$s is replaced by one or more devices (e.g /dev/sda1 /dev/sda2)
+	    txt = sformat(_("Create software RAID %1$s (%2$s) from %3$s"), dev.c_str(),
+			  sizeString().c_str(), boost::join(devs, " ").c_str());
 	}
-    return( txt );
     }
+    return txt;
+}
 
-string Md::formatText( bool doing ) const
-    {
-    string txt;
-    string d = dev;
+
+Text Md::formatText( bool doing ) const
+{
+    Text txt;
     if( doing )
-	{
+    {
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/md0
 	// %2$s is replaced by size (e.g. 623.5 MB)
 	// %3$s is replaced by file system type (e.g. reiserfs)
-	txt = sformat( _("Formatting software RAID %1$s (%2$s) with %3$s "),
-		       d.c_str(), sizeString().c_str(), fsTypeString().c_str() );
-	}
+	txt = sformat(_("Formatting software RAID %1$s (%2$s) with %3$s "),
+		      dev.c_str(), sizeString().c_str(), fsTypeString().c_str());
+    }
     else
-	{
+    {
 	if( !mp.empty() )
-	    {
+	{
 	    if( encryption==ENC_NONE )
-		{
-		// displayed text before action, %1$s is replaced by device name e.g. /dev/md0
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		// %3$s is replaced by file system type (e.g. reiserfs)
-		// %4$s is replaced by mount point (e.g. /usr)
-		txt = sformat( _("Format software RAID %1$s (%2$s) for %4$s with %3$s"),
-			       d.c_str(), sizeString().c_str(),
-			       fsTypeString().c_str(), mp.c_str() );
-		}
-	    else
-		{
-		// displayed text before action, %1$s is replaced by device name e.g. /dev/md0
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		// %3$s is replaced by file system type (e.g. reiserfs)
-		// %4$s is replaced by mount point (e.g. /usr)
-		txt = sformat( _("Format encrypted software RAID %1$s (%2$s) for %4$s with %3$s"),
-			       d.c_str(), sizeString().c_str(),
-			       fsTypeString().c_str(), mp.c_str() );
-		}
-	    }
-	else
 	    {
+		// displayed text before action, %1$s is replaced by device name e.g. /dev/md0
+		// %2$s is replaced by size (e.g. 623.5 MB)
+		// %3$s is replaced by file system type (e.g. reiserfs)
+		// %4$s is replaced by mount point (e.g. /usr)
+		txt = sformat(_("Format software RAID %1$s (%2$s) for %4$s with %3$s"),
+			      dev.c_str(), sizeString().c_str(), fsTypeString().c_str(),
+			      mp.c_str());
+	    }
+	    else
+	    {
+		// displayed text before action, %1$s is replaced by device name e.g. /dev/md0
+		// %2$s is replaced by size (e.g. 623.5 MB)
+		// %3$s is replaced by file system type (e.g. reiserfs)
+		// %4$s is replaced by mount point (e.g. /usr)
+		txt = sformat(_("Format encrypted software RAID %1$s (%2$s) for %4$s with %3$s"),
+			      dev.c_str(), sizeString().c_str(), fsTypeString().c_str(),
+			      mp.c_str());
+	    }
+	}
+	else
+	{
 	    // displayed text before action, %1$s is replaced by device name e.g. /dev/md0
 	    // %2$s is replaced by size (e.g. 623.5 MB)
 	    // %3$s is replaced by file system type (e.g. reiserfs)
-	    txt = sformat( _("Format software RAID %1$s (%2$s) with %3$s"),
-			   d.c_str(), sizeString().c_str(),
-			   fsTypeString().c_str() );
-	    }
+	    txt = sformat(_("Format software RAID %1$s (%2$s) with %3$s"),
+			  dev.c_str(), sizeString().c_str(), fsTypeString().c_str());
 	}
-    return( txt );
     }
+    return txt;
+}
 
-MdType
-Md::toMdType( const string& val )
-    {
-    enum MdType ret = MULTIPATH;
-    while( ret!=RAID_UNK && val!=md_names[ret] )
-	{
-	ret = MdType(ret-1);
-	}
-    return( ret );
-    }
-
-MdParity
-Md::toMdParity( const string& val )
-    {
-    enum MdParity ret = RIGHT_SYMMETRIC;
-    while( ret!=PAR_NONE && val!=par_names[ret] )
-	{
-	ret = MdParity(ret-1);
-	}
-    return( ret );
-    }
 
 bool Md::matchRegex( const string& dev )
     {
@@ -615,220 +490,130 @@ void Md::setPersonality( MdType val )
     computeSize();
     }
 
+int Md::setParity( MdParity val )
+    {
+    int ret = 0;
+    list<int> pars = getStorage()->getMdAllowedParity( md_type, devs.size() );
+    if( find( pars.begin(), pars.end(), val )!=pars.end() )
+	md_parity=val;
+    else
+	ret = MD_INVALID_PARITY;
+    return( ret );
+    }
+
 unsigned Md::mdMajor()
     {
     if( md_major==0 )
-	getMdMajor();
+    {
+	md_major = getMajorDevices("md");
+	y2mil("md_major:" << md_major);
+    }
     return( md_major );
     }
 
-void Md::getMdMajor()
+
+    string
+    Md::sysfsPath() const
     {
-    md_major = getMajorDevices( "md" );
-    y2mil("md_major:" << md_major);
+	return SYSFSDIR "/" + procName();
     }
 
 
 void Md::getInfo( MdInfo& tinfo ) const
     {
-    ((Volume*)this)->getInfo( info.v );
+    Volume::getInfo(info.v);
     info.nr = num;
     info.type = md_type;
     info.uuid = md_uuid;
     info.sb_ver = sb_ver;
-    info.chunk = chunk;
+    info.chunkSizeK = chunk_k;
     info.parity = md_parity;
 
     info.devices = boost::join(devs, " ");
+    info.spares = boost::join(spare, " ");
 
     tinfo = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const Md& m )
     {
-    s << "Md " << *(Volume*)&m
-      << " Personality:" << m.pName();
-    if( m.chunk>0 )
-	s << " Chunk:" << m.chunk;
-    if( m.md_parity!=storage::PAR_NONE )
-	s << " Parity:" << m.ptName();
+    s << "Md " << dynamic_cast<const Volume&>(m)
+      << " Personality:" << toString(m.md_type);
+    if (m.chunk_k > 0)
+	s << " ChunkK:" << m.chunk_k;
+    if (m.md_parity != PAR_DEFAULT)
+	s << " Parity:" << toString(m.md_parity);
     if( !m.sb_ver.empty() )
 	s << " SbVer:" << m.sb_ver;
-    if( !m.md_uuid.empty() )
-	s << " MD UUID:" << m.md_uuid;
+    if (!m.md_uuid.empty())
+	s << " md_uuid:" << m.md_uuid; 
+    if (!m.md_name.empty())
+	s << " md_name:" << m.md_name;
     if( m.destrSb )
 	s << " destroySb";
     s << " Devices:" << m.devs;
     if( !m.spare.empty() )
 	s << " Spares:" << m.spare;
-    return( s );
+    return s;
     }
 
-}
 
 bool Md::equalContent( const Md& rhs ) const
     {
     return( Volume::equalContent(rhs) &&
             md_type==rhs.md_type && md_parity==rhs.md_parity &&
-	    chunk==rhs.chunk && md_uuid==rhs.md_uuid && sb_ver==rhs.sb_ver &&
+	    chunk_k==rhs.chunk_k && md_uuid==rhs.md_uuid && sb_ver==rhs.sb_ver &&
 	    destrSb==rhs.destrSb && devs == rhs.devs && spare==rhs.spare );
     }
 
-void Md::logDifference( const Md& rhs ) const
+
+    void
+    Md::logDifference(std::ostream& log, const Md& rhs) const
     {
-    string log = Volume::logDifference( rhs );
-    if( md_type!=rhs.md_type )
-	log += " Personality:" + md_names[md_type] + "-->" +
-	       md_names[rhs.md_type];
-    if( md_parity!=rhs.md_parity )
-	log += " Parity:" + par_names[md_parity] + "-->" +
-	       par_names[rhs.md_parity];
-    if( chunk!=rhs.chunk )
-	log += " Chunk:" + decString(chunk) + "-->" + decString(rhs.chunk);
-    if( sb_ver!=rhs.sb_ver )
-	log += " SbVer:" + sb_ver + "-->" + rhs.sb_ver;
-    if( md_uuid!=rhs.md_uuid )
-	log += " MD-UUID:" + md_uuid + "-->" + rhs.md_uuid;
-    if( destrSb!=rhs.destrSb )
-	{
-	if( rhs.destrSb )
-	    log += " -->destrSb";
+	Volume::logDifference(log, rhs);
+
+	logDiffEnum(log, "md_type", md_type, rhs.md_type);
+	logDiffEnum(log, "md_parity", md_parity, rhs.md_parity);
+	logDiff(log, "chunk_k", chunk_k, rhs.chunk_k);
+	logDiff(log, "sb_ver", sb_ver, rhs.sb_ver);
+	logDiff(log, "md_uuid", md_uuid, rhs.md_uuid);
+	logDiff(log, "md_name", md_name, rhs.md_name);
+	logDiff(log, "destrSb", destrSb, rhs.destrSb);
+	logDiff(log, "devices", devs, rhs.devs);
+	logDiff(log, "spares", spare, rhs.spare);
+
+	logDiff(log, "parent_container",  parent_container, rhs.parent_container);
+	logDiff(log, "parent_md_name", parent_md_name, rhs.parent_md_name);
+	logDiff(log, "parent_metadata", parent_metadata, rhs.parent_metadata);
+	logDiff(log, "parent_uuid", parent_uuid, rhs.parent_uuid);
+    }
+
+
+    bool
+    Md::updateEntry(EtcMdadm* mdadm) const
+    {
+	EtcMdadm::mdconf_info info;
+
+	if (!md_name.empty())
+	    info.device = "/dev/md/" + md_name;
 	else
-	    log += " destrSb-->";
-	}
-    if( devs!=rhs.devs )
+	    info.device = dev;
+
+	info.uuid = md_uuid;
+
+	if (has_container)
 	{
-	std::ostringstream b;
-	classic(b);
-	b << " Devices:" << devs << "-->" << rhs.devs;
-	log += b.str();
+	    info.container_present = true;
+	    info.container_uuid = parent_uuid;
+	    info.container_metadata = parent_metadata;
+	    info.container_member = parent_member;
 	}
-    if( spare!=rhs.spare )
-	{
-	std::ostringstream b;
-	classic(b);
-	b << " Spares:" << spare << "-->" << rhs.spare;
-	log += b.str();
-	}
-    y2mil(log);
-    }
 
-Md& Md::operator= ( const Md& rhs )
-    {
-    y2deb("operator= from " << rhs.nm);
-    *((Volume*)this) = rhs;
-    md_type = rhs.md_type;
-    md_parity = rhs.md_parity;
-    chunk = rhs.chunk;
-    md_uuid = rhs.md_uuid;
-    sb_ver = rhs.sb_ver;
-    destrSb = rhs.destrSb;
-    devs = rhs.devs;
-    spare = rhs.spare;
-
-    has_container = rhs.has_container;
-    md_metadata = rhs.md_metadata;
-    parent_container = rhs.parent_container;
-    parent_uuid = rhs.parent_uuid;
-    parent_md_name = rhs.parent_md_name;
-    parent_metadata = rhs.parent_metadata;
-    md_member = rhs.md_member;
-
-    return( *this );
-    }
-
-Md::Md( const MdCo& d, const Md& rhs ) : Volume(d)
-    {
-    y2deb("constructed md by copy constructor from " << rhs.dev);
-    *this = rhs;
+	return mdadm->updateEntry(info);
     }
 
 
-void Md::getParent()
-{
-  //in this case sb_ver will contain something like /dev/md/imsm0
-  string tmp;
-  string::size_type pos;
-  SystemCmd c(MDADMBIN " --detail " + quote(sb_ver) + " --export");
-  if( c.retcode() != 0 )
-    {
-    return;
-    }
-  parent_container = sb_ver;
-  if( c.select( "MD_METADATA" ) > 0 )
-    {
-    md_metadata = sb_ver;
-    tmp = *c.getLine(0,true);
-    pos = tmp.find("=");
-    tmp.erase(0,pos+1);
-    parent_metadata = sb_ver = tmp;
-    }
-  if(c.select( "MD_UUID" ) > 0)
-    {
-    tmp = *c.getLine(0,true);
-    pos = tmp.find("=");
-    tmp.erase(0,pos+1);
-    parent_uuid = tmp;
-    }
-  if( c.select( "MD_DEVNAME" ) > 0)
-    {
-    tmp = *c.getLine(0,true);
-    pos = tmp.find("=");
-    tmp.erase(0,pos+1);
-    parent_md_name = tmp;
-    }
-  y2mil("parent_container="<<parent_container<<", sb_ver="<<sb_ver<<", parent_uuid="<<parent_uuid
-      <<", parent_md_name="<<parent_md_name<<", member="<<md_member);
-}
-
-int Md::updateEntry(EtcRaidtab* tab)
-{
-  if( !tab )
-    {
-    return -1;
-    }
-  EtcRaidtab::mdconf_info info;
-  if( !md_name.empty() )
-    {
-    //Raid name is preferred.
-    info.fs_name = "/dev/md/" + md_name;
-    }
-  else
-    {
-    info.fs_name = dev;
-    }
-  info.md_uuid = md_uuid;
-  if( has_container )
-    {
-    info.container_present = true;
-    info.container_info.md_uuid = parent_uuid;
-    info.container_info.metadata = parent_metadata;
-    stringstream ss;
-    ss << md_member;
-    info.member = ss.str();
-    }
-  else
-    {
-    info.container_present = false;
-    }
-  if( tab->updateEntry( info ) )
-    {
-    return 0;
-    }
-  else
-    {
-    return -1;
-    }
-}
-
-
-
-string Md::md_names[] = { "unknown", "raid0", "raid1", "raid5", "raid6",
-                          "raid10", "multipath" };
-string Md::par_names[] = { "none", "left-asymmetric", "left-symmetric",
-                           "right-asymmetric", "right-symmetric" };
 unsigned Md::md_major = 0;
 
+}

@@ -19,56 +19,49 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
 
-#include "y2storage/DmPart.h"
-#include "y2storage/DmPartCo.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/ProcPart.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-
-using namespace storage;
-using namespace std;
+#include "storage/DmPart.h"
+#include "storage/DmPartCo.h"
+#include "storage/SystemCmd.h"
+#include "storage/ProcParts.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
 
 
-DmPart::DmPart(const DmPartCo& d, unsigned nr, Partition* pa)
-    : Dm(d, "")
+namespace storage
 {
-    init( d.numToName(nr) );
+    using namespace std;
+
+
+    DmPart::DmPart(const DmPartCo& c, const string& name, const string& device, unsigned nr,
+		   Partition* pa)
+	: Dm(c, name, device, name), p(pa)
+    {
+	Dm::init();
+
     numeric = true;
     num = nr;
     getTableInfo();
-    p = pa;
     if( pa )
 	setSize( pa->sizeK() );
-    y2mil("constructed DmPart " << dev << " on co " << cont->name());
+    y2mil("constructed DmPart " << dev << " on " << cont->device());
 }
 
 
-DmPart::~DmPart()
-{
-    y2deb("destructed DmPart " << dev);
-}
-
-
-void DmPart::init( const string& name )
+    DmPart::DmPart(const DmPartCo& c, const DmPart& v)
+	: Dm(c, v)
     {
-    p = NULL;
-    nm = name;
-    dev = "/dev/mapper/" + name;
-    string::size_type pos =  name.find_last_of( "/" );
-    if( pos!=string::npos )
-	nm = name.substr( pos+1 );
-    else
-	nm = name;
-    tname = nm;
-    Dm::init();
+	y2deb("copy-constructed DmPart from " << v.dev);
     }
+
+
+    DmPart::~DmPart()
+    {
+	y2deb("destructed DmPart " << dev);
+    }
+
 
 const DmPartCo* DmPart::co() const
     {
@@ -80,21 +73,18 @@ void DmPart::updateName()
     if( p && p->nr() != num )
 	{
 	num = p->nr();
-	nm = co()->numToName(num);
-	dev = "/dev/mapper/" + nm;
+	setNameDevice(co()->getPartName(num), co()->getPartDevice(num));
 	}
     }
 
 void DmPart::updateMinor()
     {
-    unsigned long mj=mjr;
-    unsigned long mi=mnr;
-    getMajorMinor( dev, mj, mi );
-    if( mi!=mnr || mj!=mjr )
+    unsigned long old_mjr = mjr;
+    unsigned long old_mnr = mnr;
+    getMajorMinor();
+    if (mjr != old_mjr || mnr != old_mnr)
 	{
-	mnr = mi;
-	mjr = mj;
-	replaceAltName( "/dev/dm-", "/dev/dm-"+decString(mnr) );
+	replaceAltName("/dev/dm-", "/dev/dm-" + decString(mnr));
 	getTableInfo();
 	}
     }
@@ -108,75 +98,64 @@ void DmPart::updateSize()
 	}
     }
 
-void DmPart::updateSize( ProcPart& pp )
+
+    void
+    DmPart::updateSize(const ProcParts& parts)
     {
     unsigned long long si = 0;
     updateSize();
-    if( mjr>0 && pp.getSize( "dm-"+decString(mnr), si ))
+	if (mjr > 0 && parts.getSize("/dev/dm-" + decString(mnr), si))
 	setSize( si );
     }
+
 
 void DmPart::addUdevData()
     {
     addAltUdevId( num );
     }
 
-static string udevCompleteIdPath( const string& s, unsigned nr )
+
+    void
+    DmPart::addAltUdevId(unsigned num)
     {
-    return( "/dev/disk/by-id/" + s + "-part" + decString(nr) );
+	alt_names.remove_if(string_contains("/by-id/"));
+
+	const list<string> tmp = co()->udevId();
+	for (list<string>::const_iterator i = tmp.begin(); i != tmp.end(); ++i)
+	    alt_names.push_back("/dev/disk/by-id/" + udevAppendPart(*i, num));
+
+	mount_by = orig_mount_by = defaultMountBy();
+    }
+
+
+    list<string>
+    DmPart::udevId() const
+    {
+	list<string> ret;
+	const list<string> tmp = co()->udevId();
+	for (list<string>::const_iterator i = tmp.begin(); i != tmp.end(); ++i)
+	    ret.push_back(udevAppendPart(*i, num));
+	return ret;
     }
 
 
 void
-DmPart::addAltUdevId( unsigned num )
-{
-    list<string>::iterator i = alt_names.begin();
-    while( i!=alt_names.end() )
-	{
-	if( i->find( "/by-id/" ) != string::npos )
-	    i = alt_names.erase( i );
-	else
-	    ++i;
-	}
-    list<string>::const_iterator j = co()->udevId().begin();
-    while( j!=co()->udevId().end() )
-	{
-	alt_names.push_back( udevCompleteIdPath( *j, num ));
-	++j;
-	}
-    mount_by = orig_mount_by = defaultMountBy();
-}
-
-
-const std::list<string>
-DmPart::udevId() const
-{
-    list<string> ret;
-    for (list<string>::const_iterator i = alt_names.begin(); 
-	 i != alt_names.end(); i++)
-    {
-	if (i->find("/by-id/") != string::npos)
-	    ret.push_back(*i);
-    }
-    return ret;
-}
-
-
-void DmPart::getCommitActions( std::list<storage::commitAction*>& l ) const
+DmPart::getCommitActions(list<commitAction>& l) const
     {
     unsigned s = l.size();
     Dm::getCommitActions(l);
     if( p )
 	{
 	if( s==l.size() && Partition::toChangeId( *p ) )
-	    l.push_back( new commitAction( INCREASE, cont->staticType(),
-					   setTypeText(false), this, false ));
+	    l.push_back(commitAction(INCREASE, cont->type(),
+				     setTypeText(false), this, false));
 	}
     }
 
-string DmPart::setTypeText( bool doing ) const
+
+Text DmPart::setTypeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev;
     if( doing )
         {
@@ -197,7 +176,7 @@ string DmPart::setTypeText( bool doing ) const
 
 void DmPart::getInfo( DmPartInfo& tinfo ) const
     {
-    ((Volume*)this)->getInfo( info.v );
+    Volume::getInfo(info.v);
     if( p )
 	p->getInfo( info.p );
     info.part = p!=NULL;
@@ -206,40 +185,24 @@ void DmPart::getInfo( DmPartInfo& tinfo ) const
     tinfo = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const DmPart &p )
     {
-    s << *(Dm*)&p;
+    s << dynamic_cast<const Dm&>(p);
     return( s );
     }
 
-}
 
 bool DmPart::equalContent( const DmPart& rhs ) const
     {
     return( Dm::equalContent(rhs) );
     }
 
-void DmPart::logDifference( const DmPart& rhs ) const
-{
-    string log = stringDifference(rhs);
-    y2mil(log);
-}
 
+    void
+    DmPart::logDifference(std::ostream& log, const DmPart& rhs) const
+    {
+	Dm::logDifference(log, rhs);
+    }
 
-DmPart& DmPart::operator=(const DmPart& rhs)
-{
-    y2deb("operator= from " << rhs.nm);
-    *((Dm*)this) = rhs;
-    return *this;
-}
-
-
-DmPart::DmPart(const DmPartCo& d, const DmPart& rhs)
-    : Dm(d, rhs)
-{
-    y2deb("constructed dmraid by copy constructor from " << rhs.dev);
-    *this = rhs;
 }

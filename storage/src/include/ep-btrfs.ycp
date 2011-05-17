@@ -1,0 +1,233 @@
+/**
+ * File:	ep-btrfs.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Thomas Fehr <fehr@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
+ */
+{
+    textdomain "storage";
+
+    include "partitioning/ep-btrfs-dialogs.ycp";
+    include "partitioning/ep-btrfs-lib.ycp";
+
+
+    void EpContextMenuBtrfs(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`edit), _("Edit")),
+	                                      `item(`id(`delete), _("Delete")),
+	                                      `item(`id(`resize), _("Resize"))]);
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditBtrfsDevice(device);
+		break;
+	    case `delete:
+		EpDeleteBtrfsDevice(device);
+		break;
+	    case `resize:
+		EpResizeBtrfsDevice(device);
+		break;
+	}
+    }
+
+    void HandleBtrfsButtons( any user_data, string device, map event )
+	{
+	y2milestone( "HandleBtrfsButtons device:%1 user_data:%2 event:%3",
+	             device, event, user_data );
+	string disk_device = "";
+
+	if (user_data == nil)
+	    {
+	    map disk = nil;
+	    map part = nil;
+
+	    map<string, map> target_map = Storage::GetTargetMap();
+	    SplitDevice(target_map, device, disk, part);
+	    disk_device = (string) disk["device"]:"";
+	    }
+	else
+	    {
+	    disk_device = (string) user_data;
+	    }
+
+	switch (Event::IsWidgetActivated(event))
+	    {
+	    case `edit:
+		EpEditBtrfsDevice(device);
+		break;
+
+	    case `resize:
+		EpResizeBtrfsDevice(device);
+		break;
+	    }
+	}
+
+    void CreateBtrfsMainPanel(any user_data)
+	{
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `size, `format, `encrypted, `type,
+							     `fs_type, `label, `mount_point, `mount_by ]);
+							     
+	map<string, map> target_map = Storage::GetTargetMap();
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, StorageFields::PredicateBtrfs);
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `HStretch(),
+				  // heading
+				  `IconAndHeading(_("Btrfs Volumes (BTRFS)"), StorageIcons::dm_icon ),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
+				         table_header, table_contents),
+				  ArrangeButtons([ // push button text
+						   `PushButton(`id(`edit),`opt(`key_F4), _("Edit...")),
+						   // push button text
+						   `PushButton(`id(`resize),`opt(`key_F8), _("Resize...")),
+                                                   `HStretch() ])
+				  )
+			      ));
+
+	// helptext
+	string helptext = _("<p>This view shows all BTRFS volumes.</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+	}
+
+    void HandleBtrfsMainPanel(any user_data, map event)
+	{
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+	HandleBtrfsButtons( user_data, device, event );
+	switch (Event::IsWidgetContextMenuActivated(event))
+	    {
+	    case `table:
+		EpContextMenuDevice(device);
+		break;
+	    }
+	UI::SetFocus(`id(`table));
+	}
+
+
+    void CreateBtrfsOverviewTab(any user_data)
+    {
+	string device = (string) user_data;
+	y2milestone( "CreateBtrfsOverviewTab user_data:%1", user_data );
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `used_by,
+								`heading_filesystem, `fs_type, `mount_point,
+								`mount_by, `uuid, `label ]);
+
+	UI::ReplaceWidget(`tab_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  StorageFields::Overview(fields, target_map, device),
+				  `HBox(
+				      // push button text
+				      `PushButton(`id(`edit), _("Edit...")),
+				      `HStretch()
+				      )
+				  )
+			      )
+	    );
+
+	// helptext
+	string helptext = _("<p>This view shows detailed information about the
+selected BTRFS volume.</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::OverviewHelptext(fields));
+    }
+
+
+    void HandleBtrfsOverviewTab(any user_data, map event)
+    {
+	string device = (string) user_data;
+	y2milestone( "HandleBtrfsOverviewTab user_data:%1", user_data );
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `edit:
+		EpEditBtrfsDevice(device);
+		break;
+	    case `delete:
+		EpDeleteBtrfsDevice(device);
+		break;
+	    case `resize:
+		EpResizeBtrfsDevice(device);
+		break;
+	}
+    }
+
+
+    void CreateBtrfsDevicesTab(any user_data)
+    {
+	string part_device = (string) user_data;
+	integer pos = search( part_device, "=" );
+	if( pos != nil )
+	    part_device = substring( part_device, pos+1 );
+	y2milestone( "CreateBtrfsDevicesTab user_data:%1 part_device:%2", user_data, part_device );
+
+	symbol Predicate(map disk, map partition)
+	{
+	    return StorageFields::PredicateUsedByDevice(disk, partition, [ part_device ]);
+	}
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size,
+							     `format, `encrypted, `type ]);
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+
+	UI::ReplaceWidget(`tab_panel,
+			  `VBox(
+			      `Table(`id(`table), `opt(`keepSorting, `notify),
+				     table_header, table_contents)
+			      )
+	    );
+
+	// helptext
+	string helptext = _("<p>This view shows all devices used by the
+selected BTRFS volume.</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
+    void CreateBtrfsPanel(any user_data)
+    {
+	string device = (string) user_data;
+	y2milestone( "CreateBtrfsPanel user_data:%1 device:%2", user_data, device );
+
+	map<symbol, map> data = $[ `overview : $[ `create : CreateBtrfsOverviewTab, `handle : HandleBtrfsOverviewTab, `user_data : user_data ],
+				   `devices : $[ `create : CreateBtrfsDevicesTab, `user_data : user_data ] ];
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  // heading
+				  `IconAndHeading(sformat(_("Btrfs Device: %1"), device), StorageIcons::lvm_lv_icon),
+				  `DumbTab(`id(`tab), [
+					       // push button text
+					       `item(`id(`overview), _("&Overview")),
+					       // push button text
+					       `item(`id(`devices), _("&Used Devices"))
+					       ],
+					   `ReplacePoint(`id(`tab_panel), TabPanel::empty_panel)
+				      )
+				  )
+			      )
+	    );
+
+	TabPanel::Init(data, `overview);
+    }
+
+
+    void HandleBtrfsPanel(any user_data, map event)
+    {
+	TabPanel::Handle(event);
+    }
+}

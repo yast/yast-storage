@@ -3,13 +3,27 @@
  * Package:	yast2-storage
  * Summary:	Expert Partitioner
  * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
 
-
     include "partitioning/ep-dm-dialogs.ycp";
     include "partitioning/ep-dm-lib.ycp";
+
+
+    void EpContextMenuDm(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`edit), _("Edit")) ]);
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditDmDevice(device);
+		break;
+	}
+    }
 
 
     void CreateDmMainPanel(any user_data)
@@ -33,8 +47,8 @@
 			      `VBox(
 				  `HStretch(),
 				  // heading
-				  `IconAndHeading(_("Device Mapper (DM)"), dm_icon),
-				  `Table(`id(`table), `opt(`keepSorting, `notify),
+				  `IconAndHeading(_("Device Mapper (DM)"), StorageIcons::dm_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 					 table_header, table_contents)
 				  )
 			      )
@@ -46,6 +60,21 @@ except for those already included in some other view. Thus Multipath Disks,
 BIOS RAIDs and LVM logical volumes are not shown here.</p>");
 
 	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+    }
+
+
+    void HandleDmMainPanel(any user_data, map event)
+    {
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+
+	switch (Event::IsWidgetContextMenuActivated(event))
+	{
+	    case `table:
+		EpContextMenuDevice(device);
+		break;
+	}
+
+	UI::SetFocus(`id(`table));
     }
 
 
@@ -80,11 +109,11 @@ selected Device Mapper device.</p>");
     }
 
 
-    void HandleDmOverviewTab(any user_data, symbol widget)
+    void HandleDmOverviewTab(any user_data, map event)
     {
 	string dm_device = (string) user_data;
 
-	switch (widget)
+	switch (Event::IsWidgetActivated(event))
 	{
 	    case `edit:
 		EpEditDmDevice(dm_device);
@@ -136,7 +165,7 @@ selected Device Mapper device.</p>");
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // heading
-				  `IconAndHeading(sformat(_("DM Device: %1"), device), dm_icon),
+				  `IconAndHeading(sformat(_("DM Device: %1"), device), StorageIcons::dm_icon),
 				  `DumbTab(`id(`tab), [
 					       // push button text
 					       `item(`id(`overview), _("&Overview")),
@@ -153,8 +182,8 @@ selected Device Mapper device.</p>");
     }
 
 
-    void HandleDmPanel(any user_data, symbol widget)
+    void HandleDmPanel(any user_data, map event)
     {
-	TabPanel::Handle(widget);
+	TabPanel::Handle(event);
     }
 }

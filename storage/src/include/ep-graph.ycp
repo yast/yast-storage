@@ -1,0 +1,196 @@
+/**
+ * File:	ep-graph.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
+ */
+{
+    textdomain "storage";
+
+
+    void EpContextMenuDeviceGraph()
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`add_raid), `icon(StorageIcons::raid_icon), _("Add RAID")),
+					      `item(`id(`add_lvmvg), `icon(StorageIcons::lvm_icon), _("Add Volume Group")) ]);
+
+	switch (widget)
+	{
+	    case `add_raid:
+		EpCreateRaid();
+		break;
+
+	    case `add_lvmvg:
+		EpCreateVolumeGroup();
+		break;
+	}
+    }
+
+
+    void CreateDeviceGraphPanel(any user_data)
+    {
+	string filename = Directory::tmpdir + "/device.gv";
+	Storage::SaveDeviceGraph(filename);
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  // dialog heading, graph is the mathematic term for
+				  // a set of notes connected with edges
+				  `IconAndHeading(_("Device Graph"), StorageIcons::graph_icon),
+				  `Graph(`id(`graph), `opt(`notify, `notifyContextMenu), filename, "dot"),
+				  `HBox(
+				      // button text
+				      `PushButton(`id(`export), _("Export Device Graph...")),
+				      `HStretch()
+				      )
+				  ))
+	    );
+
+	SCR::Execute(.target.remove, filename);
+
+	// helptext
+	string helptext = _("<p>This view shows a graph of devices.</p>");
+
+	Wizard::RestoreHelp(helptext);
+    }
+
+
+    void RefreshDeviceGraphPanel(any user_data)
+    {
+	string filename = Directory::tmpdir + "/device.gv";
+	Storage::SaveDeviceGraph(filename);
+
+	UI::ChangeWidget(`id(`graph), `Filename, filename);
+    }
+
+
+    void HandleDeviceGraphPanel(any user_data, map event)
+    {
+	void GotoDevice(string device)
+	{
+	    TreePanel::SwitchToNew(device);
+	    UI::SetFocus(UI::WidgetExists(`id(`table)) ? `id(`table) : `id(`text));
+	}
+
+	switch (Event::IsWidgetContextMenuActivated(event))
+	{
+	    case `graph:
+	    {
+		string node = (string) UI::QueryWidget(`id(`graph), `Item);
+
+		if (isempty(node))
+		    EpContextMenuDeviceGraph();
+		else if (String::StartsWith(node, "device:"))
+		    EpContextMenuDevice(substring(node, 7));
+
+		// TODO: update graph
+	    }
+	    break;
+	}
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `graph:
+	    {
+		string node = (string) UI::QueryWidget(`id(`graph), `Item);
+
+		if (String::StartsWith(node, "device:"))
+		    GotoDevice(substring(node, 7));
+		else if (String::StartsWith(node, "mountpoint:"))
+		    GotoDevice(substring(node, 11));
+	    }
+	    break;
+
+	    case `export:
+	    {
+		string filename = UI::AskForSaveFileName("/tmp", "*.gv", "Save as...");
+		if (filename != nil)
+		{
+		    if (!Storage::SaveDeviceGraph(filename))
+		    {
+			// error popup
+			Popup::Error(_("Saving graph file failed."));
+		    }
+		}
+	    }
+	    break;
+	}
+    }
+
+
+    void CreateMountGraphPanel(any user_data)
+    {
+	string filename = Directory::tmpdir + "/mount.gv";
+	Storage::SaveMountGraph(filename);
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  // dialog heading, graph is the mathematic term for
+				  // a set of notes connected with edges
+				  `IconAndHeading(_("Mount Graph"), StorageIcons::graph_icon),
+				  `Graph(`id(`graph), `opt(`notify, `notifyContextMenu), filename, "dot"),
+				  `HBox(
+				      // button text
+				      `PushButton(`id(`export), _("Export Mount Graph...")),
+				      `HStretch()
+				      )
+				  ))
+	    );
+
+	SCR::Execute(.target.remove, filename);
+
+	// helptext
+	string helptext = _("<p>This view shows a graph of mount points.</p>");
+
+	Wizard::RestoreHelp(helptext);
+    }
+
+
+    void RefreshMountGraphPanel(any user_data)
+    {
+	string filename = Directory::tmpdir + "/mount.gv";
+	Storage::SaveMountGraph(filename);
+
+	UI::ChangeWidget(`id(`graph), `Filename, filename);
+    }
+
+
+    void HandleMountGraphPanel(any user_data, map event)
+    {
+	void GotoDevice(string device)
+	{
+	    TreePanel::SwitchToNew(device);
+	    UI::SetFocus(UI::WidgetExists(`id(`table)) ? `id(`table) : `id(`text));
+	}
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `graph:
+	    {
+		string node = (string) UI::QueryWidget(`id(`graph), `Item);
+
+		if (String::StartsWith(node, "mountpoint:"))
+		    GotoDevice(substring(node, 11));
+	    }
+	    break;
+
+	    case `export:
+	    {
+		string filename = UI::AskForSaveFileName("/tmp", "*.gv", "Save as...");
+		if (filename != nil)
+		{
+		    if (!Storage::SaveMountGraph(filename))
+		    {
+			// error popup
+			Popup::Error(_("Saving graph file failed."));
+		    }
+		}
+	    }
+	    break;
+	}
+    }
+
+}

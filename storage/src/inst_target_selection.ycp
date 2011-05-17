@@ -56,13 +56,11 @@
     boolean custom_val = (Storage::GetPartMode() == "CUSTOM");
     y2milestone( "custom_val %1", custom_val );
 
-    if( size(targetMap) > 0) 
+    if (!isempty(targetMap))
 	{
 	// loop over targetMap and build radio buttons for selection
 	// dont use foreach here since we need a counter (as a shortcut)
 	// anyway
-
-	term buttonbox = `VBox();
 
 	map<string, map> usable_target_map = filter(string d, map e, targetMap, {
 	    return Storage::IsPartitionable(e) && 
@@ -70,29 +68,28 @@
 	});
 
 	integer dskcnt = size(usable_target_map);
-	y2milestone( "dskcnt %1", dskcnt );
+	y2milestone("dskcnt:%1", dskcnt);
 
-	if (dskcnt > 10)
+	term buttonbox = `VBox();
+
+	if (dskcnt >= 10)
 	{
-	    integer i = 1;
-	    list disklist = [];
+	    list<term> disklist = [];
 	    foreach(string tname, map tdata, usable_target_map, {
-		disklist = add(disklist, `item(`id(tname), sformat("%1: %2", i, tname)));
-		i = i + 1;
+		string tlinename = tdata["proposal_name"]:tdata["device"]:"?";
+		string tline = sformat("%1", tlinename);
+		disklist = add(disklist, `item(`id(tname), tline));
 	    });
-	    buttonbox = add(buttonbox, `SelectionBox(`id(`disklist), `opt(`notify),
-						     _("Available &Disks"), disklist));
+	    buttonbox = add(buttonbox, `MinWidth(40, `SelectionBox(`id(`disklist), `opt(`notify),
+								   _("Available &Disks"), disklist)));
 	}
 	else
 	{
 	    integer i = 1;
 	    foreach(string tname, map tdata, usable_target_map, {
-		string tlinename = tdata["name"]:"?";
-		if( tdata["type"]:`CT_UNKNOWN==`CT_DMRAID )
-		    tlinename = "BIOS RAID " + tdata["name"]:"?";
-		string tline = "&" + i + ":    " + tlinename;
-		boolean sel = Storage::GetPartDisk()==tname && 
-		    !custom_val;
+		string tlinename = tdata["proposal_name"]:tdata["device"]:"?";
+		string tline = sformat("&%1:    %2", i, tlinename);
+		boolean sel = Storage::GetPartDisk() == tname && !custom_val;
 		buttonbox = add(buttonbox, `Left(`RadioButton(`id(tname), tline, sel)));
 		i = i + 1;
 	    });
@@ -133,7 +130,7 @@
 
     // There are several hard disks found. Linux is completely installed on
     // one hard disk - this selection is done here
-    // "Preparing Hard Disk - Step 1" is the description of the dialog what to 
+    // "Preparing Hard Disk" is the description of the dialog what to 
     // do while the following locale is the help description
     // help part 1 of 3
     string helptext = _("<p>
@@ -157,7 +154,7 @@ partitions to mount points when installing &product;.
 
 
     // first step of hd prepare, select a single disk or "expert" partitioning
-    Wizard::SetContents( _("Preparing Hard Disk: Step 1"),
+    Wizard::SetContents( _("Preparing Hard Disk"),
 			 contents, helptext, (boolean)WFM::Args(0), 
 			 (boolean)WFM::Args(1));
     if ( Stage::initial () )

@@ -1,0 +1,417 @@
+/**
+ * File:	ep-import.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Michael Hager <mike@suse.de>
+ *		Johannes Buchhold <jbuch@suse.de>
+ *		Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    import "Directory";
+    import "FileSystems";
+    import "Label";
+    import "Popup";
+    import "Storage";
+    import "StorageFields";
+    import "StorageSettings";
+
+
+    string MountVar(map var, map root, string rdev, string mp, map<string, map> target_map)
+    {
+    string ret = "";
+    boolean mount_success = false;
+    y2milestone("MountVar rdev:%1 mp:%2 var:%3 root:%4", rdev, mp, var, root);
+    if( var["size_k"]:0>0 )
+	{
+	ret = var["device"]:"";
+	}
+    else
+	{
+	list<string> ds = maplist( string d, map disk, target_map, ``(d));
+	y2milestone("MountVar ds:%1", ds);
+	ds = filter( string d, ds, ``(target_map[d,"type"]:`CT_UNKNOWN==`CT_DISK));
+	y2milestone("MountVar ds:%1", ds);
+	map rootm = Storage::GetDiskPartition( rdev );
+	map rootf = Storage::GetDiskPartition( root["device"]:"" );
+	map varf = Storage::GetDiskPartition( var["device"]:"" );
+	if( rootf["disk"]:""==varf["disk"]:"" )
+	    {
+	    ret = Storage::GetDeviceName( rootm["disk"]:"", varf["nr"]:(any)0 );
+	    }
+	else if( size(ds)==1 )
+	    {
+	    ret = Storage::GetDeviceName( ds[0]:"", varf["nr"]:(any)0 );
+	    }
+	else if( size(ds)>1 )
+	    {
+	    integer i = 0;
+	    while( i<size(ds) && isempty(ret) )
+		{
+		ret = Storage::GetDeviceName( ds[i]:"", varf["nr"]:(any)0 );
+		if( !isempty(Storage::GetPartition( target_map, ret )) &&
+		    Storage::Mount( ret, mp ) )
+		    {
+		    map d = (map)SCR::Read( .target.stat, mp+"/lib/hardware" );
+		    y2milestone("MountVar d:%1", d);
+		    if( !d["isdir"]:false )
+			ret = "";
+		    Storage::Umount( ret );
+		    }
+		else
+		    ret = "";
+		i = i+1;
+		}
+	    }
+	}
+    if( !isempty(ret) && !Storage::Mount( ret, mp ))
+	ret = "";
+    y2milestone("MountVar ret:%1", ret);
+    return ret;
+    }
+
+
+    /**
+     * Find and read fstab by installation. Scan existing partitions.
+     * @parm target_map all targets
+     * @parm search_point mount point where partitions can be mounted
+     * @return map<string, list> map with device and fstab data found
+     */
+    map<string, list> FindExistingFstabs(map<string, map> target_map, string search_point)
+    {
+	map<string, list> fstabs = $[];
+
+    foreach( string disk_device, map disk, target_map, {
+
+	list<map> partitions = filter(map part, disk["partitions"]:[], {
+	    return contains(FileSystems::possible_root_fs, part["detected_fs"]:`unknown);
+	});
+
+	foreach(map part, partitions, {
+
+	    string part_device = part["device"]:"";
+
+	    // try to mount
+	    boolean mount_success = Storage::Mount(part_device, search_point);
+
+	    if( mount_success &&
+		SCR::Read(.target.size, search_point+"/etc/fstab") > 0 )
+		{
+		list<map> fstab = Storage::ReadFstab( search_point+"/etc" );
+		y2milestone("FindExistingFstabs fstab:%1", fstab);
+		if (!isempty(fstab))
+		    {
+		    if( find( map p, fstab, ``(p["size_k"]:0==0 ))!=nil )
+			{
+			string vardev = "";
+			map var = find( map p, fstab, ``(p["mount"]:""=="/var"));
+			map root = find( map p, fstab, ``(p["mount"]:""=="/"));
+			y2milestone("FindExistingFstabs var:%1", var);
+			if( var != nil )
+			    {
+			    vardev = MountVar( var, root, part_device,
+			                       search_point+"/var", target_map );
+			    y2milestone("FindExistingFstabs vardev:%1", vardev);
+			    }
+			map dmap = Storage::BuildDiskmap( $[] );
+			if (!isempty(dmap))
+			    {
+			    y2milestone("FindExistingFstabs dmap:%1", dmap);
+			    y2milestone("FindExistingFstabs fstab:%1", fstab);
+			    fstab = maplist( map p, fstab, {
+				if( p["size_k"]:0 == 0 )
+				    p["device"] = Storage::HdDiskMap( p["device"]:"", dmap );
+				return( p );
+				});
+			    y2milestone("FindExistingFstabs fstab:%1", fstab);
+			    }
+			integer s = size(fstab);
+			fstab = filter( map p, fstab, ``(Storage::CanEdit(p,false)));
+			if (s != size(fstab))
+			    y2milestone("FindExistingFstabs fstab:%1", fstab);
+			if (!isempty(vardev))
+			    Storage::Umount( vardev );
+			}
+
+		    if (!isempty(fstab))
+			fstabs[part_device] = fstab;
+		    }
+		}
+
+	    // unmount
+	    if( mount_success )
+		Storage::Umount(part_device);
+	    });
+	});
+    y2milestone("FindExistingFstabs size(fstabs):%1", size(fstabs));
+    y2milestone("FindExistingFstabs fstabs:%1", fstabs);
+    return fstabs;
+    }
+
+
+    /**
+     * Scan and Read and return fstabs.
+     * @parm target_map all targets
+     * @return map<string, list> map with device and fstab data found
+     */
+    map<string, list> ScanAndReadExistingFstabs(map<string, map> target_map)
+    {
+	string search_point = Directory::tmpdir + "/tmp-mp";
+
+	if (!((map) SCR::Read(.target.stat, search_point))["isdir"]:false)
+	    SCR::Execute(.target.mkdir, search_point);
+
+	map<string, list> fstabs = FindExistingFstabs(target_map, search_point);
+
+	return fstabs;
+    }
+
+
+    /**
+     * Merge fstab with target_map.
+     */
+    map<string, map> AddFstabToTargetMap(map<string, map> target_map, list<map> fstab, boolean format_sys)
+    {
+	y2milestone("AddFstabToTargetMap fstab:%1", fstab);
+
+	map<string, map> new_target_map = mapmap(string disk_device, map disk, target_map, {
+
+	    disk["partitions"] = maplist(map partition, disk["partitions"]:[], {
+
+		string part_device = partition["device"]:"";
+
+		if (!Storage::IsInstallationSource(part_device))
+		{
+		    foreach(map fstab_entry, fstab, {
+
+			string dev_fstab = fstab_entry["device"]:"";
+			string mount_fstab = fstab_entry["mount"]:"";
+
+			if (dev_fstab == part_device)
+			{
+			    partition["mount"] = mount_fstab;
+			    if (format_sys && FileSystems::IsSystemMp(mount_fstab, false))
+				partition["format"] = true;
+			    if (!isempty(fstab_entry["fstopt"]:"") && fstab_entry["fstopt"]:"" != "default")
+				partition["fstopt"] = fstab_entry["fstopt"]:"";
+			    if (fstab_entry["mountby"]:`device != `device)
+				partition["mountby"] = fstab_entry["mountby"]:`device;
+			    if (fstab_entry["enc_type"]:`none != `none)
+				partition["enc_type"] = fstab_entry["enc_type"]:`none;
+			}
+		    });
+		}
+
+		return partition;
+	    });
+
+	    return $[ disk_device : disk ];
+	});
+
+	y2milestone("AddFstabToTargetMap new_target_map:%1", new_target_map);
+
+	return new_target_map;
+    }
+
+
+    string FstabAddDialogHelptext()
+    {
+	// help text, richtext format
+	string helptext = _("<p>YaST2 has scanned your hard disks and found
+one or several existing Linux systems with mount points. The old mount points
+are shown in the table.</p>");
+
+	// help text, richtext format
+	helptext = helptext + _("<p>You can choose whether the existing system
+volumes, e.g. / and /usr, will be formatted during the
+installation. Non-system volumes, e.g. /home, will not be formatted.</p>");
+
+	return helptext;
+    }
+
+
+    /**
+     * Scan exiting partitions for fstab files and if one found read the mountpoints
+     * from the fstab file and build a new target_map.
+     * Ask the user if he like to use the new or old target_map
+     * (with or without found mountpoints)
+     */
+    string FstabAddDialog(map<string, map> target_map, map<string, list> fstabs, boolean& format_sys)
+    {
+	y2milestone("FstabAddDialog target_map:%1", target_map);
+	y2milestone("FstabAddDialog fstabs:%1", fstabs);
+
+	if (isempty(fstabs))
+	{
+	    // popup text
+	    Popup::Message(_("No previous system with mount points was detected."));
+	    return "";
+	}
+
+	list<string> devices = maplist(string device, list fstab, fstabs, { return device; });
+
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `size, `type, `fs_type,
+							     `label, `mount_point ]);
+
+	term table_header = StorageFields::TableHeader(fields);
+
+	term navigate_buttons = `Empty();
+	if (size(fstabs) > 1)
+	{
+	    navigate_buttons = `HBox(
+		`PushButton(`id(`show_prev), _("Show &Previous")),
+		`PushButton(`id(`show_next), _("Show &Next"))
+	    );
+	}
+
+    UI::OpenDialog(
+	`opt(`decorated),
+	    `VBox( `VSpacing(0.45),
+		   // dialog heading
+		   `Left(`Heading(_("Import Mount Points from existing System:"))),
+		   `MarginBox(1, 0.5,
+			      `VBox(
+				  `Left(`ReplacePoint(`id(`device), `Empty())),
+				  `MinSize(60, 8, `Table(`id(`table), `opt(`keepSorting), table_header, [])),
+				  `VSpacing(0.45),
+				  navigate_buttons,
+				  `VSpacing(0.45),
+				  // checkbox label
+				  `Left(`CheckBox(`id(`format_sys), _("Format system volumes"), true))
+				  )
+		       ),
+		   `ButtonBox(
+		       `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
+		       // pushbutton label
+		       `PushButton(`id(`ok), `opt(`default), _("Import")),
+		       `PushButton(`id(`cancel), Label::CancelButton())
+		       )
+		 )
+	     );
+
+    UI::ChangeWidget(`help, `HelpText, FstabAddDialogHelptext());
+
+    symbol userinput = `none;
+    integer idx = 0;
+
+    repeat
+    {
+	string device = devices[idx]:"";
+
+	list<map> fstab = (list<map>) fstabs[device]:[];
+
+	map<string, map> new_target_map = AddFstabToTargetMap(target_map, fstab, format_sys);
+
+	// popup text %1 is replaced by a device name (e.g. /dev/hda1)
+	string str = sformat(_("/etc/fstab found on %1 contains:"), device);
+	UI::ReplaceWidget(`id(`device), `Label(str));
+
+	list<term> table_contents = StorageFields::TableContents(fields, new_target_map,
+								 StorageFields::PredicateMountpoint);
+	UI::ChangeWidget(`id(`table), `Items, table_contents);
+	UI::ChangeWidget(`id(`table), `CurrentItem, nil);
+
+	if (size(fstabs) > 1)
+	{
+	    UI::ChangeWidget(`id(`show_prev), `Enabled, idx > 0);
+	    UI::ChangeWidget(`id(`show_next), `Enabled, idx < size(fstabs) - 1);
+	}
+
+	userinput = (symbol) UI::UserInput();
+
+	switch (userinput)
+	{
+	    case `show_next:
+		idx = idx + 1;
+		break;
+
+	    case `show_prev:
+		idx = idx - 1;
+		break;
+	}
+	y2milestone( "idx %1", idx );
+	}
+    until( userinput == `ok || userinput == `cancel );
+
+    format_sys = (boolean) UI::QueryWidget(`id(`format_sys), `Value);
+
+    UI::CloseDialog();
+
+    string device = userinput == `ok ? devices[idx]:"" : "";
+    y2milestone("FstabAddDialog device:%1", device);
+    return device;
+    }
+
+
+    void ImportMountPoints()
+    {
+	Storage::CreateTargetBackup("import");
+	Storage::ResetOndiskTarget();
+
+	map<string, map> target_map = Storage::GetOndiskTarget();
+
+	map<string, list> fstabs = ScanAndReadExistingFstabs(target_map);
+	y2milestone("ImportMountPoints fstabs:%1", fstabs);
+
+	boolean format_sys = true;
+	string device = FstabAddDialog(target_map, fstabs, format_sys);
+	map<string, map> new_target_map = $[];
+	boolean import_ok = false;
+	if (!isempty(device))
+	{
+	    y2milestone("ImportMountPoints device:%1", device);
+	    list<map> fstab = (list<map>) fstabs[device]:[];
+	    import_ok = true;
+
+	    new_target_map = AddFstabToTargetMap(target_map, fstab, format_sys);
+
+	    foreach(string d, map disk, new_target_map, {
+		foreach(map p, disk["partitions"]:[], {
+		    string key = (p["type"]:`unknown != `loop) ? (p["device"]:"error") : (p["fpath"]:"error");
+		    if (!isempty(p["mount"]:"") && p["enc_type"]:`none!=`none &&
+			!p["tmpcrypt"]:false && Storage::NeedCryptPwd(key) )
+		    {
+			boolean ok = false;
+			string dev = p["device"]:"";
+			string pwd = "";
+			do
+			    {
+			    ok = false;
+			    pwd = DlgPasswdCryptFs( dev, 1, false, false );
+			    if( pwd != nil && !isempty(pwd) )
+				{
+				if( Storage::CheckCryptOk( dev, pwd, true, 
+				                           false ) )
+				    {
+				    ok = Storage::SetCryptPwd( dev, pwd ) &&
+					 Storage::SetCrypt( dev, true, false );
+				    }
+				else
+				    {
+				    Popup::Error(_("Wrong Password provided."));
+				    }
+				}
+			    else if( size(pwd)==0 )
+				{
+				ok = true;
+				import_ok = false;
+				}
+			    }
+			while( !ok );
+
+		    }
+		});
+	    });
+
+	}
+	if( import_ok )
+	    Storage::SetTargetMap(new_target_map);
+	else
+	    Storage::RestoreTargetBackup("import");
+
+	Storage::DisposeTargetBackup("import");
+    }
+
+}

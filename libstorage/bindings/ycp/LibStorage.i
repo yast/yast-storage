@@ -7,7 +7,12 @@
 %include "LiMaL.i"
 
 %{
+// workaround for bnc #593954
+#undef seed
+
 #include "../../src/StorageInterface.h"
+#include "../../src/HumanString.h"
+#include "../../src/Graph.h"
 %}
 
 using namespace std;
@@ -37,8 +42,16 @@ specialize_sequence(storage::DmmultipathCoInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::DmPartInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::DmraidInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::DmmultipathInfo, TO_PACK, FROM_PACK, CHECK)
+specialize_sequence(storage::BtrfsInfo, TO_PACK, FROM_PACK, CHECK)
+specialize_sequence(storage::TmpfsInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::PartitionSlotInfo, TO_PACK, FROM_PACK, CHECK)
 specialize_sequence(storage::CommitInfo, TO_PACK, FROM_PACK, CHECK)
+specialize_sequence(storage::ResizeInfo, TO_PACK, FROM_PACK, CHECK)
+specialize_sequence(storage::ContentInfo, TO_PACK, FROM_PACK, CHECK)
+
+specialize_sequence(storage::Environment, TO_PACK, FROM_PACK, CHECK)
 
 %include "../../src/StorageInterface.h"
+%include "../../src/HumanString.h"
+%include "../../src/Graph.h"
 

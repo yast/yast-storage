@@ -24,11 +24,6 @@
 #define LOCK_H
 
 
-/*
- * Author:	Arvin Schnell <aschnell@suse.de>
- */
-
-
 #include <stdexcept>
 #include <boost/noncopyable.hpp>
 
@@ -66,7 +61,7 @@ namespace storage
 
     private:
 
-	bool disabled;
+	const bool disabled;
 	int fd;
 
     };

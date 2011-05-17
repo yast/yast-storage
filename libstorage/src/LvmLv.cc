@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,30 +19,28 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
+#include <boost/algorithm/string.hpp>
 
-#include "y2storage/LvmLv.h"
-#include "y2storage/LvmVg.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-#include "y2storage/StorageDefines.h"
-
-using namespace storage;
-using namespace std;
+#include "storage/LvmLv.h"
+#include "storage/LvmVg.h"
+#include "storage/SystemCmd.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/StorageDefines.h"
 
 
-LvmLv::LvmLv(const LvmVg& d, const string& name, const string& origi,
-	     unsigned long le, const string& uuid, const string& stat, 
-	     const string& alloc)
-    : Dm( d, dupDash(d.name())+"-"+dupDash(name) ),
-      origin(origi)
+namespace storage
 {
-    init( name );
+    using namespace std;
+
+
+    LvmLv::LvmLv(const LvmVg& c, const string& name, const string& device, const string& origi,
+		 unsigned long le, const string& uuid, const string& stat, const string& alloc)
+	: Dm(c, name, device, makeDmTableName(c.name(), name)), origin(origi)
+{
+	Dm::init();
     setUuid( uuid );
     setStatus( stat );
     setAlloc( alloc );
@@ -54,26 +52,50 @@ LvmLv::LvmLv(const LvmVg& d, const string& name, const string& origi,
 }
 
 
-LvmLv::LvmLv(const LvmVg& d, const string& name, const string& origi, 
-	     unsigned long le, unsigned str)
-    : Dm( d, dupDash(d.name())+"-"+dupDash(name) ),
-      origin(origi)
+    LvmLv::LvmLv(const LvmVg& c, const string& name, const string& device, const string& origi,
+		 unsigned long le, unsigned str)
+	: Dm(c, name, device, makeDmTableName(c.name(), name)), origin(origi)
 {
-    init( name );
+	Dm::init();
     setLe( le );
     calcSize();
     stripe = str;
     fs = detected_fs = FSNONE;
-    alt_names.push_back( "/dev/mapper/" + dupDash(cont->name()) + "-" + dupDash(name) );
+    alt_names.push_back("/dev/mapper/" + getTableName());
 
     y2deb("constructed lvm lv dev:" << dev << " vg:" << cont->name() << " origin:" << origin);
 }
 
 
-LvmLv::~LvmLv()
-{
-    y2deb("destructed lvm lv dev:" << dev);
-}
+    LvmLv::LvmLv(const LvmVg& c, const xmlNode* node)
+	: Dm(c, node)
+    {
+	assert(!numeric);
+	assert(num == 0);
+
+	y2deb("constructed LvmLv " << dev);
+    }
+
+
+    LvmLv::LvmLv(const LvmVg& c, const LvmLv& v)
+	: Dm(c, v), origin(v.origin), vol_uuid(v.vol_uuid), status(v.status),
+	  allocation(v.allocation)
+    {
+	y2deb("copy-constructed LvmLv " << dev);
+    }
+
+
+    LvmLv::~LvmLv()
+    {
+	y2deb("destructed LvmLv " << dev);
+    }
+
+
+    void
+    LvmLv::saveData(xmlNode* node) const
+    {
+	Dm::saveData(node);
+    }
 
 
 const LvmVg* LvmLv::vg() const
@@ -82,11 +104,11 @@ const LvmVg* LvmLv::vg() const
 }
 
 
-void LvmLv::init( const string& name )
+    string
+    LvmLv::makeDmTableName(const string& vg_name, const string& lv_name)
     {
-    nm = name;
-    dev = normalizeDevice( cont->name() + "/" + name );
-    Dm::init();
+	return boost::replace_all_copy(vg_name, "-", "--") + "-" +
+	    boost::replace_all_copy(lv_name, "-", "--");
     }
 
 
@@ -98,7 +120,7 @@ void LvmLv::calcSize()
     }
     else
     {
-	LvmVg::ConstLvmLvPair p = vg()->LvmVg::lvmLvPair(LvmVg::lvNotDeleted);
+	LvmVg::ConstLvmLvPair p = vg()->LvmVg::lvmLvPair(LvmLv::notDeleted);
 	LvmVg::ConstLvmLvIter i = p.begin();
 	while( i!=p.end() && i->name()!=origin )
 	    ++i;
@@ -118,7 +140,7 @@ void LvmLv::calcSize()
 bool
 LvmLv::hasSnapshots() const
 {
-    LvmVg::ConstLvmLvPair p = vg()->LvmVg::lvmLvPair(LvmVg::lvNotDeleted);
+    LvmVg::ConstLvmLvPair p = vg()->LvmVg::lvmLvPair(LvmLv::notDeleted);
     LvmVg::ConstLvmLvIter i = p.begin();
     while( i!=p.end() && i->getOrigin()!=name() )
 	++i;
@@ -135,7 +157,7 @@ LvmLv::getState(LvmLvSnapshotStateInfo& info)
     {
 	for (unsigned int l = 1; l < cmd.numLines(); l++)
 	{
-	    string line = *cmd.getLine(l);
+	    string line = cmd.getLine(l);
 	    
 	    if (extractNthWord(0, line) == name())
 	    {
@@ -150,9 +172,9 @@ LvmLv::getState(LvmLvSnapshotStateInfo& info)
 }
 
 
-string LvmLv::removeText( bool doing ) const
+Text LvmLv::removeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/system/var
@@ -168,9 +190,9 @@ string LvmLv::removeText( bool doing ) const
     return( txt );
     }
 
-string LvmLv::createText( bool doing ) const
+Text LvmLv::createText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/system/var
@@ -219,9 +241,9 @@ string LvmLv::createText( bool doing ) const
     return( txt );
     }
 
-string LvmLv::formatText( bool doing ) const
+Text LvmLv::formatText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/system/var
@@ -275,9 +297,9 @@ string LvmLv::formatText( bool doing ) const
     return( txt );
     }
 
-string LvmLv::resizeText( bool doing ) const
+Text LvmLv::resizeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
         {
 	if( needShrink() )
@@ -288,8 +310,9 @@ string LvmLv::resizeText( bool doing ) const
 	    // displayed text during action, %1$s is replaced by device name e.g. /dev/system/var
 	    // %2$s is replaced by size (e.g. 623.5 MB)
 	    txt = sformat( _("Extending logical volume %1$s to %2$s"), dev.c_str(), sizeString().c_str() );
+	txt += Text(" ", " ");
 	// text displayed during action
-	txt += string(" ") + _("(progress bar might not move)");
+	txt += _("(progress bar might not move)");
         }
     else
         {
@@ -308,9 +331,9 @@ string LvmLv::resizeText( bool doing ) const
 
 void LvmLv::getInfo( LvmLvInfo& tinfo ) const
     {
-    ((Volume*)this)->getInfo( info.v );
-    info.stripe = stripe;
-    info.stripe_size = stripe_size;
+    Volume::getInfo(info.v);
+    info.stripes = stripe;
+    info.stripeSizeK = stripe_size;
     info.uuid = vol_uuid;
     info.status = status;
     info.allocation = allocation;
@@ -323,12 +346,10 @@ void LvmLv::getInfo( LvmLvInfo& tinfo ) const
     tinfo = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const LvmLv &p )
     {
-    s << *(Dm*)&p;
+    s << dynamic_cast<const Dm&>(p);
     if( !p.vol_uuid.empty() )
       s << " UUID:" << p.vol_uuid;
     if( !p.status.empty() )
@@ -338,7 +359,6 @@ std::ostream& operator<< (std::ostream& s, const LvmLv &p )
     return( s );
     }
 
-}
 
 bool LvmLv::equalContent( const LvmLv& rhs ) const
     {
@@ -347,31 +367,15 @@ bool LvmLv::equalContent( const LvmLv& rhs ) const
             allocation==rhs.allocation );
     }
 
-void LvmLv::logDifference( const LvmLv& rhs ) const
+
+    void
+    LvmLv::logDifference(std::ostream& log, const LvmLv& rhs) const
     {
-    string log = stringDifference( rhs );
-    if( vol_uuid!=rhs.vol_uuid )
-	log += " UUID:" + vol_uuid + "-->" + rhs.vol_uuid;
-    if( status!=rhs.status )
-	log += " Status:" + status + "-->" + rhs.status;
-    if( allocation!=rhs.allocation )
-	log += " Alloc:" + allocation + "-->" + rhs.allocation;
-    y2mil(log);
+	Dm::logDifference(log, rhs);
+
+	logDiff(log, "vol_uuid", vol_uuid, rhs.vol_uuid);
+	logDiff(log, "status", status, rhs.status);
+	logDiff(log, "alloc", allocation, rhs.allocation);
     }
 
-LvmLv& LvmLv::operator= ( const LvmLv& rhs )
-    {
-    y2deb("operator= from " << rhs.nm);
-    *((Dm*)this) = rhs;
-    vol_uuid = rhs.vol_uuid;
-    status = rhs.status;
-    allocation = rhs.allocation;
-    return( *this );
-    }
-
-LvmLv::LvmLv( const LvmVg& d, const LvmLv& rhs ) : Dm(d,rhs)
-    {
-    y2deb("constructed lvm lv by copy constructor from " << rhs.dev);
-    *this = rhs;
-    }
-
+}

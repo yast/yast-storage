@@ -19,63 +19,68 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream>
+#include <ostream>
 #include <sstream>
 
-#include "y2storage/LoopCo.h"
-#include "y2storage/Loop.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/Dm.h"
-#include "y2storage/ProcMounts.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-#include "y2storage/EtcFstab.h"
-#include "y2storage/StorageDefines.h"
-
-using namespace storage;
-using namespace std;
+#include "storage/LoopCo.h"
+#include "storage/Loop.h"
+#include "storage/SystemCmd.h"
+#include "storage/Dm.h"
+#include "storage/SystemInfo.h"
+#include "storage/ProcMounts.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/EtcFstab.h"
+#include "storage/StorageDefines.h"
 
 
-LoopCo::LoopCo(Storage * const s, bool detect, ProcPart& ppart)
-    : Container(s, "loop", staticType())
+namespace storage
 {
-    y2deb("constructing LoopCo detect:" << detect);
-    init();
-    if( detect )
-	getLoopData( ppart );
-}
+    using namespace std;
 
 
-LoopCo::LoopCo(Storage * const s, const string& file)
-    : Container(s, "loop", staticType())
-{
-    y2deb("constructing LoopCo file:" << file);
-    init();
-}
-
-
-LoopCo::~LoopCo()
-{
-    y2deb("destructed LoopCo");
-}
-
-
-void
-LoopCo::init()
+    LoopCo::LoopCo(Storage* s)
+	: Container(s, "loop", "/dev/loop", staticType())
     {
-    mjr = Loop::major();
+	y2deb("constructing LoopCo");
     }
 
+
+    LoopCo::LoopCo(Storage* s, SystemInfo& systeminfo)
+	: Container(s, "loop", "/dev/loop", staticType(), systeminfo)
+    {
+	y2deb("constructing LoopCo");
+	getLoopData(systeminfo);
+    }
+
+
+    LoopCo::LoopCo(const LoopCo& c)
+	: Container(c)
+    {
+	y2deb("copy-constructed LoopCo from " << c.dev);
+
+	ConstLoopPair p = c.loopPair();
+	for (ConstLoopIter i = p.begin(); i != p.end(); ++i)
+	{
+	    Loop* p = new Loop(*this, *i);
+	    vols.push_back(p);
+	}
+    }
+
+
+    LoopCo::~LoopCo()
+    {
+	y2deb("destructed LoopCo " << dev);
+    }
+
+
 void
-LoopCo::getLoopData( ProcPart& ppart )
+    LoopCo::getLoopData(SystemInfo& systeminfo)
     {
     y2mil("begin");
     list<FstabEntry> l;
-    EtcFstab* fstab = getStorage()->getFstab();
+    const EtcFstab* fstab = getStorage()->getFstab();
     fstab->getFileBasedLoops( getStorage()->root(), l );
     if( !l.empty() )
 	{
@@ -95,16 +100,16 @@ LoopCo::getLoopData( ProcPart& ppart )
 		{
 		Loop *l = new Loop( *this, i->loop_dev, lfile,
 				    i->dmcrypt, !i->noauto?i->dentry:"",
-				    ppart, c );
+				    systeminfo, c);
 		l->setEncryption( i->encr );
-		l->setFs( Volume::toFsType(i->fs) );
+		l->setFs(toValueWithFallback(i->fs, FSUNKNOWN));
 		y2mil( "l:" << *l );
 		addToList( l );
 		}
 	    }
 	LoopPair p=loopPair(Loop::notDeleted);
 	LoopIter i=p.begin();
-	std::map<string,string> mp = ProcMounts(getStorage()).allMounts();
+	map<string, string> mp = systeminfo.getProcMounts().allMounts();
 	while( i!=p.end() )
 	    {
 	    if( i->dmcrypt() )
@@ -138,17 +143,19 @@ LoopCo::getLoopData( ProcPart& ppart )
 	}
     }
 
-void LoopCo::loopIds( std::list<unsigned>& l ) const
+
+    list<unsigned>
+    LoopCo::usedNumbers() const
     {
-    l.clear();
-    ConstLoopPair p=loopPair(Loop::notDeleted);
-    ConstLoopIter i=p.begin();
-    while( i!=p.end() )
-	{
-	l.push_back( i->nr() );
-	++i;
-	}
+	list<unsigned> nums;
+
+	ConstLoopPair p = loopPair(Loop::notDeleted);
+	for (ConstLoopIter i = p.begin(); i != p.end(); ++i)
+	    nums.push_back(i->nr());
+
+	return nums;
     }
+
 
 bool
 LoopCo::findLoop( unsigned num, LoopIter& i )
@@ -268,7 +275,7 @@ LoopCo::removeLoop( const string& file, bool removeFile )
 	if( !findLoop( file, i ) && !findLoopDev( file, i ) )
 	    ret = LOOP_UNKNOWN_FILE;
 	}
-    if( ret==0 && i->getUsedByType() != UB_NONE )
+    if (ret == 0 && i->isUsedBy())
 	{
 	ret = LOOP_REMOVE_USED_BY;
 	}
@@ -281,7 +288,7 @@ LoopCo::removeLoop( const string& file, bool removeFile )
 	    }
 	else
 	    {
-	    i->setDeleted( true );
+	    i->setDeleted();
 	    i->setDelFile( removeFile );
 	    }
 	}
@@ -358,58 +365,27 @@ LoopCo::doRemove( Volume* v )
     return( ret );
     }
 
-void LoopCo::logData( const string& Dir ) {;}
 
-namespace storage
-{
-
-inline std::ostream& operator<< (std::ostream& s, const LoopCo& d )
+    std::ostream& operator<<(std::ostream& s, const LoopCo& d)
     {
-    s << *((Container*)&d);
+    s << dynamic_cast<const Container&>(d);
     return( s );
     }
 
-}
 
-void LoopCo::logDifference( const Container& d ) const
+    void
+    LoopCo::logDifferenceWithVolumes(std::ostream& log, const Container& rhs_c) const
     {
-    y2mil(getDiffString(d));
-    const LoopCo * p = dynamic_cast<const LoopCo*>(&d);
-    if( p != NULL )
-	{
-	ConstLoopPair pp=loopPair();
-	ConstLoopIter i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstLoopPair pc=p->loopPair();
-	    ConstLoopIter j = pc.begin();
-	    while( j!=pc.end() &&
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j!=pc.end() )
-		{
-		if( !i->equalContent( *j ) )
-		    i->logDifference( *j );
-		}
-	    else
-		y2mil( "  -->" << *i );
-	    ++i;
-	    }
-	pp=p->loopPair();
-	i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstLoopPair pc=loopPair();
-	    ConstLoopIter j = pc.begin();
-	    while( j!=pc.end() &&
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j==pc.end() )
-		y2mil( "  <--" << *i );
-	    ++i;
-	    }
-	}
+	const LoopCo& rhs = dynamic_cast<const LoopCo&>(rhs_c);
+
+	logDifference(log, rhs);
+	log << endl;
+
+	ConstLoopPair pp = loopPair();
+	ConstLoopPair pc = rhs.loopPair();
+	logVolumesDifference(log, pp.begin(), pp.end(), pc.begin(), pc.end());
     }
+
 
 bool LoopCo::equalContent( const Container& rhs ) const
     {
@@ -421,29 +397,10 @@ bool LoopCo::equalContent( const Container& rhs ) const
 	{
 	ConstLoopPair pp = loopPair();
 	ConstLoopPair pc = p->loopPair();
-	ConstLoopIter i = pp.begin();
-	ConstLoopIter j = pc.begin();
-	while( ret && i!=pp.end() && j!=pc.end() )
-	    {
-	    ret = ret && i->equalContent( *j );
-	    ++i;
-	    ++j;
-	    }
-	ret = ret && i==pp.end() && j==pc.end();
+	ret = ret && storage::equalContent(pp.begin(), pp.end(), pc.begin(), pc.end());
 	}
     return( ret );
     }
 
 
-LoopCo::LoopCo(const LoopCo& rhs)
-    : Container(rhs)
-{
-    y2deb("constructed LoopCo by copy constructor from " << rhs.nm);
-    *this = rhs;
-    ConstLoopPair p = rhs.loopPair();
-    for( ConstLoopIter i=p.begin(); i!=p.end(); ++i )
-    {
-	Loop * p = new Loop( *this, *i );
-	vols.push_back( p );
-    }
 }

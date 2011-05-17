@@ -24,22 +24,13 @@
 
     import "Mode";
     import "Stage";
-    import "String";
     import "HwStatus";
-    import "Partitions";
-    import "Installation";
-    import "Kernel";
-    import "AsciiFile";
-
-    import "Arch";
-    import "Report";
 
     textdomain "storage";
 
 
-
     boolean disks_valid = false;
-    boolean raid_shown = false;
+
 
     /**
      * @return map of $["device": $[..target..], ...] for each ZIP drive
@@ -73,19 +64,10 @@
      */
     list<map> cd_drives = nil;
 
-    global list<string> TypeNames = [ "cdrom", "dvd", "cdrecorder", "dvdrecorder",
-				      "dvdram" ];
-
     // storage for localProbe, see Probe()
     integer targetMapSize = 0;
 
     //---------------------------------------------------------------
-
-
-//---------------------------------------------------------------
-// CD Recorders and CD-ROM links
-list idecdrws = [];		// list of IDE CD-RW drivers for ide-scsi
-list scsicds = [];		// list of SCSI CDs
 
 
 list<map> AddNormalLinknames( list<map> cddrives )
@@ -220,20 +202,6 @@ boolean ProbeCDROMs()
 		cd_drives = [ $["dev_name":"/dev/cdrom"] ];
 		}
 	    }
-
-	// sort out idecdrws and scsicds
-	foreach (map e, cd_drives,
-	    ``{
-	    if( (e["cdr"]:false || e["cdrw"]:false || e["dvdr"]:false ) &&
-		e["bus"]:"" == "IDE" )
-		{
-		y2milestone ("IDE CD-RW %1", idecdrws );
-		}
-	    if( e["bus"]:"" == "SCSI" )
-		{
-		scsicds = add (scsicds, e["dev_name"]:"");
-		}
-	    });
 
 	string boot_device = (string) SCR::Read (.etc.install_inf.Cdrom);
 	if (boot_device == nil) boot_device = "";
@@ -383,19 +351,20 @@ global define map<string,map> ZipDrives()
  * @return	map	TargetMap
  */
 
-global define map fakeProbe ()
-    ``{
+map<string, map> fakeProbe()
+    {
     string fake_map_file = ( Mode::test () ? "demo_target_map.ycp" : "test_target_map.ycp" );
 
     y2milestone( "%1 mode - using fake target map from %2",
                  Mode::test () ? "Demo" : "Test", fake_map_file );
 
-    map target_map = (map) SCR::Read( .target.yast2, fake_map_file );
+    map<string, map> target_map = (map<string, map>) SCR::Read( .target.yast2, fake_map_file );
 
     y2debug( "Fake target map: %1", target_map );
 
     return target_map;
-    } // fakeProbe()
+    }
+
 
 global boolean FloppyPresent()
     {
@@ -425,9 +394,9 @@ global list<map> FloppyDrives()
  * @return	map	TargetMap
  */
 
-define map localProbe()
-    ``{
-    map targets = $[];
+map<string, map> localProbe()
+    {
+    map<string, map> targets = $[];
     if( Mode::test () )
 	{
 	return fakeProbe();
@@ -447,18 +416,13 @@ define map localProbe()
 
     // loop over all_disks, constructing targets map
 
-    integer ide_count = 0;
-    integer scsi_count = 0;
-    integer raid_count = 0;
-    integer other_count = 0;
-    string fake_raid = "";
-    map target = $[];
     zip_drives = $[];
 
-    foreach (map disk, filter(map e,all_disks,``(size(e["dev_name"]:"")>0)),
-	``{
-	target = $[];
+    foreach (map disk, filter(map e, all_disks, ``(!isempty(e["dev_name"]:""))), {
+
 	y2milestone( "localProbe: disk %1", disk );
+
+	map<string, any> target = $[];
 
 	boolean no_disk = false;
 	boolean notready = disk["notready"]:false &&
@@ -472,15 +436,7 @@ define map localProbe()
 	if( disk["hotpluggable"]:false )
 	    target["hotpluggable"] = true;
 	if( disk["softraiddisk"]:false )
-	    {
 	    target["softraiddisk"] = true;
-	    if( size(fake_raid)>0 )
-		{
-		fake_raid = fake_raid + " ";
-		}
-	    fake_raid = fake_raid + disk["dev_name"]:"";
-	    y2milestone( "localProbe: fake_raid %1", fake_raid );
-	    }
 
 	map<string, any> res_fc = disk["resource", "fc", 0]:$[];
 	if (res_fc != $[])
@@ -492,68 +448,21 @@ define map localProbe()
 	if( no_disk )
 	    continue;
 
-	string bus = disk["bus"]:"?";
-	string dname = "";
-	integer i = 0;
-
 	// write out data for hardware status check
 	HwStatus::Set (disk["unique_key"]:"", `yes);
 
 	target["unique"] = disk["unique_key"]:"";
 
-	// ------------------------------------------------------
-	// check bus, count disks per bus
-
-	if (bus == "IDE")
-	    {
-	    ide_count = ide_count + 1;
-	    i = ide_count;
-	    }
-	else if (bus == "SCSI")
-	    {
-	    scsi_count = scsi_count + 1;
-	    i = scsi_count;
-	    }
-	else if (bus == "RAID")
-	    {
-	    raid_count = raid_count + 1;
-	    i = raid_count;
-	    }
-	else
-	    {
-	    other_count = other_count + 1;
-	    i = other_count;
-	    }
-
-	target["bus"] = bus;
-
-	// ------------------------------------------------------
-	// construct disk name for user
-
-	dname = ""+i+". ";
-	if( bus != "None" )
-	    {
-	    dname = dname + bus;
-	    }
-	else
-	    {
-	    dname = dname + "Disk";
-	    }
-	dname = dname + ", ";
-	target["dname"] = dname;
+	target["bus"] = disk["bus"]:"?";
 
 	// needed also later as key
 	string ddevice = disk["dev_name"]:"";
 	target["device"] = ddevice;
 
 	if( size(disk["bios_id"]:"")>0 )
-	    {
 	    target["bios_id"] = disk["bios_id"]:"";
-	    }
 
 	y2milestone("localProbe: disk: %1", ddevice );
-
-	// call fdisk agent to get size information
 
 	// ------------------------------------------------------
 	// construct full target name
@@ -612,8 +521,6 @@ define map localProbe()
 	             targets[ddevice]:$[] );
 	}); // foreach (disk)
 
-    SCR::UnmountAgent(.disk);
-
     zip_drives = (map<string,map>)union( zip_drives, findZIPs() );
 
     foreach(string k, any e, zip_drives,
@@ -634,16 +541,16 @@ define map localProbe()
  * @param boolean force_reset
  */
 
-global define map Probe(boolean force_reset)
-    ``{
-    map target = $[];
+global map<string, map> Probe(boolean force_reset)
+    {
+    map<string, map> target = $[];
     y2milestone( "Probe force_reset:%1 disks_valid:%2", force_reset, disks_valid );
     if( force_reset )
 	targetMapSize = 0;
 
     if( targetMapSize==0 && disks_valid )
 	{
-	target = localProbe();
+	target = (map<string, map>) localProbe();
 	targetMapSize = size(target);
 	ProbeCDROMs();
 	}
@@ -677,6 +584,5 @@ global define void StorageDevices()
 	{
 	disks_valid = true;
 	}
-    return;
     }
 }

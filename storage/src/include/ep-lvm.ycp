@@ -3,13 +3,136 @@
  * Package:     yast2-storage
  * Summary:     Expert Partitioner
  * Authors:     Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
 
-
     include "partitioning/ep-lvm-dialogs.ycp";
     include "partitioning/ep-lvm-lib.ycp";
+
+
+    void EpContextMenuLvmVg(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`add), `icon(StorageIcons::lvm_lv_icon), _("Add Logical Volume")),
+					      `item(`id(`resize), _("Resize")),
+					      `item(`id(`delete), _("Delete")) ]);
+
+	switch (widget)
+	{
+	    case `add:
+		EpCreateLogicalVolume(device);
+		break;
+
+	    case `resize:
+		EpResizeVolumeGroup(device);
+		break;
+
+	    case `delete:
+		EpDeleteVolumeGroup(device);
+		break;
+	}
+    }
+
+
+    void EpContextMenuLvmLv(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`edit), _("Edit")),
+					      `item(`id(`resize), _("Resize")),
+					      `item(`id(`delete), _("Delete")) ]);
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditLogicalVolume(device);
+		break;
+
+	    case `resize:
+		EpResizeLogicalVolume(device);
+		break;
+
+	    case `delete:
+		EpDeleteLogicalVolume(device, `table);
+		break;
+	}
+    }
+
+
+    term LvmButtonBox()
+    {
+	return `HBox(
+	    // push button text
+	    `PushButton(`id(`edit),`opt(`key_F4), _("Edit...")),
+	    // push button text
+	    `PushButton(`id(`resize), `opt(`key_F6), _("Resize...")),
+	    // push button text
+	    `PushButton(`id(`delete), `opt(`key_F5), _("Delete..."))
+	);
+    }
+
+
+    void HandleLvmButtons( any user_data, string device, map event )
+    {
+	string vg = "";
+	boolean is_vg = false;
+
+	if (user_data == nil)
+	{
+	    map<string, map> target_map = Storage::GetTargetMap();
+
+	    map disk = nil;
+	    map part = nil;
+
+	    SplitDevice(target_map, device, disk, part);
+
+	    vg = disk["device"]:"";
+	    is_vg = part == nil;
+	}
+	else
+	{
+	    vg = (string) user_data;
+	}
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `add:
+		EpCreateLogicalVolume( vg );
+		break;
+
+	    case `edit:
+		if (is_vg)
+		    TreePanel::SwitchToNew( vg );
+		else
+		    EpEditLogicalVolume( device );
+		break;
+
+	    case `resize:
+		if (is_vg)
+		    EpResizeVolumeGroup( device);
+		else
+		    EpResizeLogicalVolume ( device );
+		break;
+
+	    case `delete:
+		if (is_vg)
+		    EpDeleteVolumeGroup( device );
+		else
+		    EpDeleteLogicalVolume ( device, UI::WidgetExists(`id(`table)) ? `table : `overview );
+		break;
+	}
+
+	switch (Event::IsMenu( event ))
+	{
+	    case `group:
+		EpCreateVolumeGroup();
+		break;
+
+	    case `volume:
+		EpCreateLogicalVolume( vg );
+		break;
+	}
+    }
 
 
     void CreateLvmMainPanel(any user_data)
@@ -27,17 +150,22 @@
 
 	term table_header = StorageFields::TableHeader(fields);
 	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
+	list <term> mb_items = [ `item(`id(`group), _("Volume Group")) ];
+
+	if ( !isempty(table_contents) )
+	    mb_items = add( mb_items, `item(`id(`volume), _("Logical Volume")) );
 
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // heading
-				  `IconAndHeading(_("Volume Management"), lvm_icon),
-				  `Table(`id(`table), `opt(`keepSorting, `notify),
+				  `IconAndHeading(_("Volume Management"), StorageIcons::lvm_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 					 table_header, table_contents),
 				  `HBox(
 				      // push button text
-				      `PushButton(`id(`add), `opt(`key_F3), _("Add Volume Group...")),
+				      `MenuButton(`id(`add), `opt(`key_F3), _("Add..."), mb_items),
+				      LvmButtonBox(),
 				      `HStretch()
 				      )
 				  )
@@ -52,14 +180,19 @@ their logical volumes.</p>");
     }
 
 
-    void HandleLvmMainPanel(any user_data, symbol widget)
+    void HandleLvmMainPanel(any user_data, map event)
     {
-	switch (widget)
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+
+	HandleLvmButtons( user_data, device, event );
+
+	switch (Event::IsWidgetContextMenuActivated(event))
 	{
-	    case `add:
-		EpCreateVolumeGroup();
+	    case `table:
+		EpContextMenuDevice(device);
 		break;
 	}
+
 	UI::SetFocus(`id(`table));
     }
 
@@ -75,16 +208,8 @@ their logical volumes.</p>");
 
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
-			      `HStretch(),
-			      StorageFields::Overview(fields, target_map, device),
-			      `HBox(
-				  // push button text
-				  `PushButton(`id(`resize), _("Resize...")),
-				  // push button text
-				  `PushButton(`id(`delete), _("Delete...")),
-				  `HStretch()
-				  )
-			      )
+			      StorageFields::Overview(fields, target_map, device)
+			  )
 	    );
 
 	// helptext
@@ -95,20 +220,11 @@ selected volume group.</p>");
     }
 
 
-    void HandleLvmVgOverviewTab(any user_data, symbol widget)
+    void HandleLvmVgOverviewTab(any user_data, map event)
     {
 	string device = (string) user_data;
 
-	switch (widget)
-	{
-	    case `resize:
-		EpResizeVolumeGroup(device);
-		break;
-
-	    case `delete:
-		EpDeleteVolumeGroup(device);
-		break;
-	}
+	HandleLvmButtons( nil, device, event );
 	UI::SetFocus(`id(`text));
     }
 
@@ -133,17 +249,13 @@ selected volume group.</p>");
 
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
-			      `Table(`id(`table), `opt(`keepSorting, `notify),
+			      DiskBarGraph(device),
+			      `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 				     table_header, table_contents),
 			      `HBox(
 				  // push button text
 				  `PushButton(`id(`add), `opt(`key_F3), _("Add...")),
-				  // push button text
-				  `PushButton(`id(`edit), `opt(`key_F4), _("Edit...")),
-				  // push button text
-				  `PushButton(`id(`resize), `opt(`key_F6), _("Resize...")),
-				  // push button text
-				  `PushButton(`id(`delete), `opt(`key_F5), _("Delete...")),
+				  LvmButtonBox(),
 				  `HStretch()
 				  )
 			      )
@@ -157,29 +269,20 @@ selected volume group.</p>");
     }
 
 
-    void HandleLvmVgLvsTab(any user_data, symbol widget)
+    void HandleLvmVgLvsTab(any user_data, map event)
     {
 	string vg_device = (string) user_data;
 	string lv_device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
 
-	switch (widget)
+	HandleLvmButtons( vg_device, lv_device, event );
+
+	switch (Event::IsWidgetContextMenuActivated(event))
 	{
-	    case `add:
-		EpCreateLogicalVolume(vg_device);
-		break;
-
-	    case `edit:
-		EpEditLogicalVolume(lv_device);
-		break;
-
-	    case `resize:
-		EpResizeLogicalVolume(lv_device);
-		break;
-
-	    case `delete:
-		EpDeleteLogicalVolume(lv_device);
+	    case `table:
+		EpContextMenuDevice(lv_device);
 		break;
 	}
+
 	UI::SetFocus(`id(`table));
     }
 
@@ -228,7 +331,7 @@ the selected volume group.</p>");
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // heading
-				  `IconAndHeading(sformat(_("Volume Group: %1"), device), lvm_icon),
+				  `IconAndHeading(sformat(_("Volume Group: %1"), device), StorageIcons::lvm_icon),
 				  `DumbTab(`id(`tab), [
 					       // push button text
 					       `item(`id(`overview), _("&Overview")),
@@ -246,9 +349,9 @@ the selected volume group.</p>");
     }
 
 
-    void HandleLvmVgPanel(any user_data, symbol widget)
+    void HandleLvmVgPanel(any user_data, map event)
     {
-	TabPanel::Handle(widget);
+	TabPanel::Handle(event);
     }
 
 
@@ -267,15 +370,10 @@ the selected volume group.</p>");
 			      `VBox(
 				  `HStretch(),
 				  // heading
-				  `IconAndHeading(sformat(_("Logical Volume: %1"), device), lvm_lv_icon),
+				  `IconAndHeading(sformat(_("Logical Volume: %1"), device), StorageIcons::lvm_lv_icon),
 				  StorageFields::Overview(fields, target_map, device),
 				  `HBox(
-				      // push button text
-				      `PushButton(`id(`edit), _("Edit...")),
-				      // push button text
-				      `PushButton(`id(`resize), _("Resize...")),
-				      // push button text
-				      `PushButton(`id(`delete), _("Delete...")),
+				      LvmButtonBox(),
 				      `HStretch()
 				      )
 				  )
@@ -290,23 +388,11 @@ selected logical volume.</p>");
     }
 
 
-    void HandleLvmLvPanel(any user_data, symbol widget)
+    void HandleLvmLvPanel(any user_data, map event)
     {
 	string device = (string) user_data;
 
-	switch (widget)
-	{
-	    case `edit:
-		EpEditLogicalVolume(device);
-		break;
-
-	    case `resize:
-		EpResizeLogicalVolume(device);
-		break;
-
-	    case `delete:
-		EpDeleteLogicalVolume(device);
-		break;
-	}
+	HandleLvmButtons( nil, device, event );
+	UI::SetFocus (`id(`text));
     }
 }

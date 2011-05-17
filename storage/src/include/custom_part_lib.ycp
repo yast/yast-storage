@@ -21,222 +21,30 @@
   textdomain "storage";
   import "Mode";
   import "Arch";
-  import "Installation";
   import "Partitions";
   import "Product";
   import "FileSystems";
 
+  include "partitioning/partition_defines.ycp";
 
-define string mountVar( map var, map root, string rdev, string mp, 
-                        map<string,map> targetMap )
-    ``{
-    string ret = "";
-    boolean mount_success = false;
-    y2milestone( "mountVar rdev:%1 mp:%2 var:%3 root:%4", rdev, mp, var, root );
-    if( var["size_k"]:0>0 )
-	{
-	ret = var["device"]:"";
-	}
-    else
-	{
-	list<string> ds = maplist( string d, map disk, targetMap, ``(d));
-	y2milestone( "mountVar ds:%1", ds );
-	ds = filter( string d, ds, ``(targetMap[d,"type"]:`CT_UNKNOWN==`CT_DISK));
-	y2milestone( "mountVar ds:%1", ds );
-	map rootm = Storage::GetDiskPartition( rdev );
-	map rootf = Storage::GetDiskPartition( root["device"]:"" );
-	map varf = Storage::GetDiskPartition( var["device"]:"" );
-	if( rootf["disk"]:""==varf["disk"]:"" )
-	    {
-	    ret = Storage::GetDeviceName( rootm["disk"]:"", varf["nr"]:(any)0 );
-	    }
-	else if( size(ds)==1 )
-	    {
-	    ret = Storage::GetDeviceName( ds[0]:"", varf["nr"]:(any)0 );
-	    }
-	else if( size(ds)>1 )
-	    {
-	    integer i = 0;
-	    while( i<size(ds) && size(ret)==0 )
-		{
-		ret = Storage::GetDeviceName( ds[i]:"", varf["nr"]:(any)0 );
-		if( size(Storage::GetPartition( targetMap, ret ))>0 &&
-		    Storage::Mount( ret, mp ) )
-		    {
-		    map d = (map)SCR::Read( .target.stat, mp+"/lib/hardware" );
-		    y2milestone( "mountVar d:%1", d );
-		    if( !d["isdir"]:false )
-			ret = "";
-		    Storage::Umount( ret );
-		    }
-		else 
-		    ret = "";
-		i = i+1;
-		}
-	    }
-	}
-    if( size(ret)>0 && !Storage::Mount( ret, mp ))
-	ret = "";
-    y2milestone( "mountVar ret:%1", ret );
-    return( ret );
-    }
-
-
-  /**
-   * Find and read fstab by installation. Scan existing partitions.
-   * @parm targetMap all targets
-   * @parm search_point mount point where partitions can be mounted
-   * @return list list with fstab data found
-   */
-define list<list> findExistingFstab( map<string,map> targetMap, string search_point )
-    ``{
-    /////////////////////////////////////////////////////////////////
-    // foreach partition on each target
-    list<list> fstab = [];
-    list skip_fs = [ `unknown, `swap, `vfat, `ntfs ];
-
-    foreach( string dev, map disk, targetMap,
-	``{
-	foreach( map part,
-	         filter( map p, disk["partitions"]:[],
-				``(!contains( skip_fs, 
-				              p["detected_fs"]:`unknown) )),
-	    ``{
-	    /////////////////////////////////////////////////////
-	    // try to mount
-	    boolean mount_success = Storage::Mount( part["device"]:"",
-	                                            search_point );
-
-	    if( mount_success &&
-		SCR::Read(.target.size, search_point+"/etc/fstab") > 0 )
-		{
-		list<map> tmp = 
-		    (list<map>)Storage::ReadFstab( search_point+"/etc" );
-		y2milestone( "findExistingFstab fstab %1", tmp );
-		if( size(tmp)>0 )
-		    {
-		    if( find( map p, tmp, ``(p["size_k"]:0==0 ))!=nil )
-			{
-			string vardev = "";
-			map var = find( map p, tmp, ``(p["mount"]:""=="/var"));
-			map root = find( map p, tmp, ``(p["mount"]:""=="/"));
-			y2milestone( "findExistingFstab var %1", var );
-			if( var != nil )
-			    {
-			    vardev = mountVar( var, root, part["device"]:"", 
-			                       search_point+"/var", targetMap );
-			    y2milestone( "findExistingFstab vardev %1", 
-			                 vardev );
-			    }
-			map dmap = Storage::BuildDiskmap( $[] );
-			if( size(dmap)>0 )
-			    {
-			    y2milestone( "findExistingFstab dmap %1", dmap );
-			    y2milestone( "findExistingFstab tmp %1", tmp );
-			    tmp = maplist( map p, tmp, 
-				``{
-				if( p["size_k"]:0 == 0 )
-				    p["device"] = Storage::HdDiskMap( p["device"]:"", dmap );
-				return( p );
-				});
-			    y2milestone( "findExistingFstab tmp %1", tmp );
-			    }
-			integer s = size(tmp);
-			tmp = filter( map p, tmp, ``(Storage::CanEdit(p,false)));
-			if( s!=size(tmp) )
-			    y2milestone( "findExistingFstab tmp %1", tmp );
-			if( size(vardev)>0 )
-			    Storage::Umount( vardev );
-			}
-		    fstab = add( fstab, tmp );
-		    }
-		}
-
-	    /////////////////////////////////////////////////////
-	    // unmount
-	    if( mount_success )
-		Storage::Umount( part["device"]:"" );
-	    });
-	});
-    y2milestone( "findExistingFstab count_fstab_found %1", size(fstab) );
-    y2milestone( "findExistingFstab fstab %1", fstab );
-    return fstab;
-    };
-
-
-/**
-  * Scan and Read and return fstab.
-  * @parm targetMap all targets
-  * @parm file_systems filesystem map
-  * @return list list with fstab
-  */
-define list<list> scanAndReadExistingFstab( map<string,map> targetMap )
-    ``{
-    string search_point = "/mnt";
-
-    /////////////////////////////////////////////////////////////////
-    // make search dir
-
-    if( SCR::Execute(.target.bash, "/usr/bin/test -d " + search_point ) != 0)
-	{
-	SCR::Execute(.target.mkdir, search_point );
-	}
-
-    list<list> fstab = findExistingFstab( targetMap, search_point );
-
-    return fstab;
-    };
-
-
-
-
-    /**
-     * Only for check in installed system.
-     * Please do not use this define by installation.
-     * @parm part1 partition 1
-     * @parm part2 partition 2
-     * @return boolean
-     */
-define boolean arePartitionsEqual( map part1, map part2 )
-    ``{
-    if( part1["create"]:false )
-	return true;
-
-    // -> not all keys
-    if( part1["nr"]:0 	       == part2["nr"]:0 &&
-	part1["fsid"]:0 	       == part2["fsid"]:0 &&
-	part1["region"]:[] 	       == part2["region"]:[] &&
-	part1["create"]:false      == part2["create"]:false &&
-	part1["format"]:false      == part2["format"]:false &&
-	part1["used_fs"]:`unknown  == part2["used_fs"]:`unknown &&
-	part1["enc_type"]:`none    == part2["enc_type"]:`none &&
-	part1["fstab_mnt"]:`device == part2["fstab_mnt"]:`device &&
-	part1["label"]:""          == part2["label"]:"" &&
-	part1["mount"]:""          == part2["mount"]:"" )
-	{
-	return true;
-	}
-    return false;
-    }
 
   /**
    * Check lvm mount points
    * @param mount mount point
    * @return boolean
    */
-define boolean check_lvm_mount_points( string mount )
-    ``{
-    list not_allowed_lvm_mount_points  = [ Partitions::BootMount() ];
-    y2milestone( " check lvm mount");
-    if( contains( not_allowed_lvm_mount_points, mount ))
+    boolean check_lvm_mount_points(string mount)
+    {
+	list<string> not_allowed_lvm_mount_points  = [ Partitions::BootMount() ];
+	y2milestone("check lvm mount");
+	if (contains(not_allowed_lvm_mount_points, mount))
         {
-        // error popup text
-	Popup::Error(sformat(_("You cannot use the mount point \"%1\" for LVM.\n"), Partitions::BootMount()));
-
+	    // error popup text
+	    Popup::Error(sformat(_("You cannot use the mount point \"%1\" for LVM.\n"), Partitions::BootMount()));
 	    return false;
 	}
-    return true;
-    };
+	return true;
+    }
 
 
   /**
@@ -244,25 +52,22 @@ define boolean check_lvm_mount_points( string mount )
    * @param mount mount point
    * @return boolean
    **/
-define boolean check_raid_mount_points( string mount )
-    ``{
-	list not_allowed_raid_mount_points  = [ ];
-	if( Arch::ppc () || Arch::s390 () || Arch::sparc () )
-	    {
-	    not_allowed_raid_mount_points =
-		add( not_allowed_raid_mount_points, Partitions::BootMount() );
-	    }
-	y2milestone( " check raid mount");
-	if( contains( not_allowed_raid_mount_points, mount ))
+    boolean check_raid_mount_points(string mount)
+    {
+        list<string> not_allowed_raid_mount_points  = [];
+	if (Arch::ppc() || Arch::s390())
 	{
-           // error popup text
+	    not_allowed_raid_mount_points = add(not_allowed_raid_mount_points, Partitions::BootMount());
+	}
+	y2milestone("check raid mount");
+	if (contains( not_allowed_raid_mount_points, mount))
+	{
+	    // error popup text
 	    Popup::Error(sformat(_("You cannot use the mount point %1 for RAID."), Partitions::BootMount()));
-
 	    return false;
 	}
 	return true;
-    };
-
+    }
 
 
   /**
@@ -366,19 +171,19 @@ Really do this?
      * @param mount mount point
      * @return boolean
      **/
-define boolean check_mount_point( map<string,map> targetMap, string dev,
-                                  map part )
-{
+    boolean check_mount_point(map<string,map> targetMap, string dev, map part)
+    {
     string mount = part["mount"]:"";
     symbol used_fs = part["used_fs"]:`unknown;
     y2milestone( "check_mount_point part:%1", part );
 
     boolean allowed = true;
-    list not_allowed_system_mount_points  =
-	[ "/proc", "/dev", "/mnt", "/var/adm/mnt", "/lost+found", "/lib",
-	  "/bin", "/etc", "/sbin" ];
 
-    if (mount == "")
+    list<string> not_allowed_system_mount_points = [ "/proc", "/sys",
+	"/dev", "/mnt", "/var/adm/mnt", "/lost+found", "/lib", "/lib64",
+	"/bin", "/etc", "/sbin" ];
+
+    if (isempty(mount))
     {
 	Popup::Error(_("Mount point must not be empty."));
 	allowed = false;
@@ -395,7 +200,7 @@ define boolean check_mount_point( map<string,map> targetMap, string dev,
 	// error popup
 	Popup::Error(_("Only swap devices may have swap as mount point."));
     }
-    else if (mount != "swap" || part["type"]:`unknown == `loop)
+    else if (mount != "swap") // || part["type"]:`unknown == `loop)
 	{
 	// check if the mount point is already in use
 	foreach( string disk, map diskinfo, targetMap, ``{
@@ -408,7 +213,7 @@ define boolean check_mount_point( map<string,map> targetMap, string dev,
 		});
 	    });
 
-	if( allowed == false && mount!="swap" )
+	if (allowed == false) // && mount!="swap" )
 	    {
 	    // error popup text
 	    Popup::Error(_("This mount point is already in use. Select a different one."));
@@ -436,7 +241,8 @@ define boolean check_mount_point( map<string,map> targetMap, string dev,
 	    allowed = false;
 	    // error popup text
 	    Popup::Error(_("You cannot use any of the following mount points:
-/proc, /dev, /lib, /bin, /etc, /sbin, /mnt, /var/adm/mnt, /lost+found
+/bin, /dev, /etc, /lib, /lib64, /lost+found, /mnt, /proc, /sbin, /sys,
+/var/adm/mnt
 "));
 	    }
 	else if ( substring( mount, 0, 1 ) != "/"  )
@@ -448,17 +254,7 @@ define boolean check_mount_point( map<string,map> targetMap, string dev,
 	}
     else if( !part["format"]:false && part["detected_fs"]:`none != `swap )
 	{
-	// error popup text
-string message = _("
-WARNING:
-
-You chose a swap partition but did not direct YaST2 to format it.
-This swap partition will probably not be usable.
-
-Change the setup?
-");
-
-	allowed = !Popup::YesNo(message);
+	allowed = false;
 	}
 
     if( allowed )
@@ -568,113 +364,17 @@ to a device with nonexistent or unknown file system."));
 define boolean EmptyCryptPwdAllowed( map p )
     {
     boolean ret = p["format"]:false && 
-		  contains( union(FileSystems::tmp_m_mpoint,["swap"]), 
-		            p["mount"]:"" );
+	contains(union(FileSystems::tmp_m_points, FileSystems::swap_m_points), p["mount"]:"");
     ret = ret && Storage::IsPersistent( p );
     y2milestone( "EmptyCryptPwdAllowed ret:%1", ret );
-    return( ret );
-    }
-
-define boolean AskCryptPwd( map p )
-    {
-    /* boolean ret = p["mount"]:""!="swap" || !EmptyCryptPwdAllowed(p); */
-    boolean ret = true;
-    y2milestone( "AskCryptPwd ret:%1", ret );
-    return( true );
-    }
-
-
-/**
-  * Do all checks concerning handling of crypt fs
-  * @param new partition map
-  * @return map
-  **/
-define map CheckCryptOk( map new )
-    ``{
-    map ret = $[ "ok" : true ];
-    boolean crypt_fs = false;
-    if( UI::WidgetExists( `id(`crypt_fs) ))
-	{
-	crypt_fs = (boolean)UI::QueryWidget(`id(`crypt_fs), `Value );
-	}
-    if( crypt_fs )
-	new["enc_type"] = new["format"]:false?`luks:`twofish;
-    else
-	new["enc_type"] = `none;
-    if( crypt_fs && AskCryptPwd( new ) && 
-        size(Storage::GetCryptPwd( new["device"]:"" ))==0 )
-	{
-	boolean tmpc = EmptyCryptPwdAllowed( new );
-	string fs_passwd = DlgCreateCryptFs( new["device"]:"", 
-	                                     new["format"]:false?8:1, 
-					     new["format"]:false, tmpc );
-	// Ask the user for a password for cryptofs, else set crypto to nil??
-	if( fs_passwd != nil && size(fs_passwd)>0 )
-	    {
-	    string dev = new["device"]:"";
-	    boolean popup = !new["format"]:false;
-	    y2milestone( "CheckCryptOk dev %1 popup %2", dev, popup );
-	    if( popup )
-		UI::OpenDialog( `opt(`decorated),
-			        `VBox(
-				     `VSpacing(1),
-				    `HBox(`HSpacing(1), 
-					  `Label(_("Detecting encryption type...")),
-					  `HSpacing(1)),
-				     `VSpacing(1)));
-
-	    ret["ok"] = Storage::SetCryptPwd( dev, fs_passwd ) && 
-	                (new["format"]:false ||
-			 Storage::SetCrypt( dev, true, new["format"]:false ));
-	    if( popup )
-		UI::CloseDialog();
-	    }
-	else
-	    {
-	    ret["ok"] = tmpc;
-	    }
-	}
-    ret["map"] = new;
-    y2milestone( "CheckCryptOk ret:%1", ret );
-    return( ret );
-    };
-
-define map CheckFormatOk( map new )
-    ``{
-    map ret = $[ "ok" : true ];
-    if( new["format"]:false )
-	{
-	symbol ufs = new["used_fs"]:`unknown;
-	y2milestone( "GetSupportFormat %1", FileSystems::GetSupportFormat(ufs));
-	if( !FileSystems::GetSupportFormat(ufs) )
-	    {
-	    // Popup text
-	    string txt = sformat( "The file system of type %1 cannot be created.", 
-	                          FileSystems::GetName( ufs, "" ));
-	    Popup::Error(txt);
-	    ret["ok"] = false;
-	    }
-	}
-    ret["map"] = new;
-    y2milestone( "CheckFormatOk ret:%1", ret["ok"]:false );
-    return( ret );
-    };
-
-define map CheckDeviceFinalOk( map new )
-    ``{
-    y2milestone( "CheckDeviceFinalOk new:%1", new );
-    map ret = CheckFormatOk( new );
-    if( ret["ok"]:false )
-	{
-	ret = CheckCryptOk( ret["map"]:$[] );
-	}
-    y2milestone( "CheckDeviceFinalOk ret:%1", ret );
     return( ret );
     }
 
 map pkg_for_fs = $[
     `ext2 : [ "e2fsprogs" ],
     `ext3 : [ "e2fsprogs" ],
+    `ext4 : [ "e2fsprogs" ],
+    `btrfs : [ "btrfsprogs" ],
     `reiser : [ "reiserfs" ],
     `vfat : [ "dosfstools" ],
     `ntfs : [ "ntfsprogs" ],
@@ -684,7 +384,7 @@ map pkg_for_fs = $[
 define map<string,any> HandleFsChanged( boolean init, map<string,any> new, 
                                         symbol old_fs, map file_systems )
     ``{
-    boolean undo_change = false;
+    boolean apply_change = true;
     list<string> not_used_mp = [];
     symbol used_fs = new["used_fs"]:`unknown;
     map selected_fs = file_systems[used_fs]:$[];
@@ -706,12 +406,12 @@ It is completely untested and might not be well-integrated
 in the system.  Do not file bugs against the file system 
 itself if it does not work properly or at all.
 
-Undo the change of file system?
+Really use this file system?
 "), Product::name );
 
-	    undo_change = Popup::YesNo(message);
+	    apply_change = Popup::YesNo(message);
 	    }
-	if( !undo_change && !Stage::initial() )
+	if( apply_change && !Stage::initial() )
 	    {
 	    if( size(pkg_for_fs[used_fs]:[])>0 )
 		{
@@ -719,19 +419,21 @@ Undo the change of file system?
 		y2milestone( "HandleFsChanged install %1 ret:%2", 
 		             pkg_for_fs[used_fs]:[], r );
 		if( !r )
-		    undo_change = true;
+		    apply_change = false;
 		}
 	    }
-	if( undo_change )
+	if( !apply_change )
 	    {
 	    new["used_fs"] = old_fs;
 	    UI::ChangeWidget(`id(`fs), `Value, old_fs );
 	    }
 	}
 
-    if( !undo_change && UI::WidgetExists( `id(`crypt_fs) ))
+    if( apply_change && UI::WidgetExists( `id(`crypt_fs)) )
 	{
-	boolean cr = selected_fs[`crypt]:true;
+	boolean cr = selected_fs[`crypt]:true && 
+	             new["type"]:`primary!=`btrfs;
+	y2milestone( "HandleFsChanged cr:%1", cr );
 
 	UI::ChangeWidget( `id(`crypt_fs), `Enabled, cr );
 	if( !cr )
@@ -741,7 +443,7 @@ Undo the change of file system?
 	    }
 	}
 
-    if( !undo_change )
+    if( apply_change )
 	{
 	////////////////////////////////////////////////
 	// switch between swap and other mountpoints
@@ -772,7 +474,7 @@ Undo the change of file system?
 		{
 		not_used_mp =
 		    filter( string mp, not_used_mp,
-			    ``(!contains( FileSystems::system_m_points, mp)));
+			    ``(!contains(FileSystems::system_m_points(), mp)));
 		}
 	    if(mount == "swap")
 		new["mount"] = "";
@@ -788,9 +490,9 @@ Undo the change of file system?
 	string fstopt = FileSystems::DefaultFstabOptions( new );
 	if( size(fstopt)>0 && size(new["fstopt"]:"")==0 )
 	    new["fstopt"] = fstopt;
-	new["fs_options"] = FileSystems::DefaultFormatOptions(new);
 	if( !init )
 	    {
+	    new["fs_options"] = FileSystems::DefaultFormatOptions(new);
 	    new["fstopt"] = fstopt;
 
 	    integer max_len = FileSystems::LabelLength( used_fs );
@@ -819,7 +521,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
                                                 map file_systems,
 						map<string,any> old,
 						map<string,any> new )
-    ``{
+    {
     y2milestone( "HandlePartWidgetChanges init:%1 ret:%2 new:%3",
                  init, ret, new );
     symbol used_fs = new["used_fs"]:`unknown;
@@ -837,7 +539,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
         UI::WidgetExists( `id(`fstab_options) ))
 	{
 	string mp = (string)UI::QueryWidget(`id(`mount_point), `Value);
-	UI::ChangeWidget( `id(`fstab_options), `Enabled, size(mp)>0 );
+	UI::ChangeWidget( `id(`fstab_options), `Enabled, !isempty(mp) );
 	}
     if( (init && UI::WidgetExists( `id(`format))) ||
         ret == `do_format || ret == `do_not_format)
@@ -849,25 +551,6 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	////////////////////////////////////////////////
 	// format partition
 	new["format"] = format;
-
-	if( UI::WidgetExists( `id(`fs) ))
-	    {
-	    UI::ChangeWidget( `id(`fs), `Enabled, format );
-	    }
-	if( UI::WidgetExists( `id(`fs_options) ))
-	    {
-	    UI::ChangeWidget( `id(`fs_options), `Enabled,
-			      format && selected_fs[`options]:[] != [] );
-	    }
-	if( UI::WidgetExists( `id(`crypt_fs) ))
-	    {
-	    UI::ChangeWidget( `id(`crypt_fs), `Enabled,
-			      selected_fs[`crypt]:true );
-	    }
-	if( UI::WidgetExists( `id(`fsid_point) ))
-	    {
-	    UI::ChangeWidget( `id(`fsid_point), `Enabled, !format);
-	    }
 
 	if( old_format != format )
 	    {
@@ -1029,6 +712,10 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	new["mount"] = UI::QueryWidget( `id(`mount_point), `Value );
 	new = FstabOptions( old, new );
 	}
+    if( ret == `subvol )
+	{
+	new = SubvolHandling( old, new );
+	}
     if( ret == `crypt_fs )
 	{
 	boolean val = (boolean)UI::QueryWidget( `id(`crypt_fs), `Value );
@@ -1049,125 +736,17 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	}
     if( Mode::repair () )
         {
-        UI::ChangeWidget(`id(`mount_point),   `Enabled, false);
+	UI::ChangeWidget(`id(`do_mount), `Enabled, false);
+	UI::ChangeWidget(`id(`do_not_mount), `Enabled, false);
+	UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, false);
         UI::ChangeWidget(`id(`fstab_options), `Enabled, false);
         UI::ChangeWidget(`id(`crypt_fs) ,     `Enabled, false);
         }
     y2milestone( "HandlePartWidgetChanges old:%1", old );
     y2milestone( "HandlePartWidgetChanges new:%1", new );
     return( new );
-    };
+    }
 
-/**
- * Merge readed list fstab with targetMap
- * @parm targetMap all targets
- * @parm fstab readed fstab list
- * @return return ( [ targetMap, table_input ]
- *
- */
-define list AddFstabToData( map<string,map> targetMap, list<map> fstab )
-    ``{
-    if( fstab == nil )
-	return [targetMap] ;
-
-    y2milestone( "AddFstabToData fstab = %1", fstab );
-
-    map new_targetMap = targetMap;
-    map table_input = $["tbl":[]];
-
-    foreach( string dev, map disk, targetMap,
-	``{
-	list new_partitions = [];
-	map target = disk;
-	foreach( map partition, disk["partitions"]:[],
-	    ``{
-	    map new_partition = partition;
-
-	    foreach( map fstab_entry, fstab,
-		``{
-		string dev_fstab   = fstab_entry["device"]:"";
-		string mount_fstab = fstab_entry["mount"]:"";
-		boolean found = false;
-
-		if( dev_fstab == partition["device"]:"" )
-		    {
-		    found = true;
-		    }
-		if( found )
-		    {
-		    new_partition["mount"] = mount_fstab;
-		    if( size(fstab_entry["fstopt"]:"")>0 &&
-			fstab_entry["fstopt"]:"" != "default" )
-			{
-			new_partition["fstopt"] = fstab_entry["fstopt"]:"";
-			}
-		    if( fstab_entry["mountby"]:`device != `device )
-			new_partition["mountby"] = fstab_entry["mountby"]:`device;
-		    if( fstab_entry["enc_type"]:`none != `none )
-			new_partition["enc_type"] = fstab_entry["enc_type"]:`none;
-
-		    /////////////////////////////////////////////
-		    // entries for table
-		    term a = `item(`id(dev_fstab));
-		    a = add( a, dev_fstab );
-		    a = add( a, mount_fstab );
-		    if( mount_fstab=="/" )
-			{
-			table_input["root"] = dev_fstab;
-			}
-		    table_input["tbl"] = add( table_input["tbl"]:[], a );
-		    }
-		});
-	    new_partitions = add( new_partitions, new_partition);
-	    });
-	target["partitions"] = new_partitions;
-	new_targetMap[dev] = target;
-	});
-
-    y2milestone( "AddFstabToData table_input %1", table_input );
-    y2milestone( "AddFstabToData tbl %1", table_input["tbl"]:[] );
-
-    if( size( table_input["tbl"]:[] )>1 )
-	{
-	table_input["tbl"] = sort( term a, term b, table_input["tbl"]:[],
-	                           ``(a[2]:""<b[2]:""));
-	}
-    y2milestone( "AddFstabToData ret %1", [ new_targetMap, table_input ] );
-
-    return [ new_targetMap, table_input ];
-    };
-
-define boolean check_max_size( integer byte_size, integer max_size )
-    ``{
-    y2milestone( "icheck_lv_size byte_size=%1 max_size=%2", byte_size,
-                 max_size );
-
-    if( byte_size == 0 )
-        {
-	if( max_size>0 )
-	    // error popup text
-	    Popup::Error(sformat(_("The size entered is invalid.
-Enter a size from 1M to %1. For example, 40M or 1G."),
-				 Storage::ByteToHumanString(max_size)) );
-	else
-	    // error popup text
-	    Popup::Error(_("The size entered is invalid.
-Enter a valid size, such as 500k, 40M, or 1G.
-"));
-        return( false );
-        }
-
-    if( max_size>0 && byte_size>max_size )
-        {
-	// error popup text
-        Popup::Error(sformat(_("The size entered is too large.
-Enter a size from 1M to %1."),
-			     Storage::ByteToHumanString(max_size)) );
-        return( false );
-        }
-
-    return( true );
-    };
 
 define boolean CheckResizePossible( boolean ask, boolean lvm, integer resize,
                                     symbol fsys, string mount )

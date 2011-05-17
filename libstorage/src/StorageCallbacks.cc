@@ -43,6 +43,8 @@
 
 #define y2log_component "libstorage"
 
+#include <algorithm>
+
 #include <ycp/y2log.h>
 #include <ycp/YExpression.h>
 #include <ycp/YBlock.h>
@@ -57,12 +59,7 @@
 #include <y2/Y2Component.h>
 #include <y2/Y2ComponentBroker.h>
 
-#undef y2milestone
-#undef y2error
-#undef y2warning
-#undef y2debug
-
-#include <Storage.h>
+#include <StorageInterface.h>
 
 using namespace storage;
 
@@ -73,6 +70,7 @@ namespace storage
     extern CallbackShowInstallInfo install_info_cb_ycp;
     extern CallbackInfoPopup info_popup_cb_ycp;
     extern CallbackYesNoPopup yesno_popup_cb_ycp;
+    extern CallbackCommitErrorPopup commit_error_popup_cb_ycp;
     extern CallbackPasswordPopup password_popup_cb_ycp;
 }
 
@@ -107,7 +105,7 @@ Y2StorageCallbackFunction::Y2StorageCallbackFunction (StorageCallbacks* instance
       m_param3 ( YCPNull () ),
       m_param4 ( YCPNull () )
 {
-};
+}
 
 bool Y2StorageCallbackFunction::attachParameter (const YCPValue& arg,
 						 const int position)
@@ -123,6 +121,7 @@ bool Y2StorageCallbackFunction::attachParameter (const YCPValue& arg,
 
     return true;
 }
+
 
 constTypePtr Y2StorageCallbackFunction::wantedParameterType () const
 {
@@ -236,6 +235,7 @@ static Y2Function* progress_bar = NULL;
 static Y2Function* show_install_info = NULL;
 static Y2Function* info_popup = NULL;
 static Y2Function* yesno_popup = NULL;
+static Y2Function* commit_error_popup = NULL;
 static Y2Function* password_popup = NULL;
 
 void progress_bar_callback( const string& id, unsigned cur, unsigned max )
@@ -290,6 +290,28 @@ bool yesno_popup_callback( const string& text )
 
     return ret;
 }
+
+
+bool commit_error_popup_callback(int error, const string& last_action, const string& extended_message)
+{
+    bool ret = false;
+
+    if (commit_error_popup)
+    {
+	commit_error_popup->reset();
+	commit_error_popup->appendParameter(YCPInteger(error));
+	commit_error_popup->appendParameter(YCPString(last_action));
+	commit_error_popup->appendParameter(YCPString(extended_message));
+	commit_error_popup->finishParameters();
+
+	YCPValue tmp = commit_error_popup->evaluateCall();
+	if (tmp->isBoolean())
+            ret = tmp->asBoolean()->value();
+    }
+
+    return ret;
+}
+
 
 bool password_popup_callback(const string& device, int attempts, string& password)
 {
@@ -496,6 +518,53 @@ StorageCallbacks::YesNoPopup (const YCPString & callback)
     storage::yesno_popup_cb_ycp = yesno_popup_callback;
 
     return YCPVoid ();
+}
+
+
+YCPValue
+StorageCallbacks::CommitErrorPopup(const YCPString& callback)
+{
+    string name_r = callback->value();
+    
+    y2debug("Registering callback %s", name_r.c_str());
+    string::size_type colonpos = name_r.find("::");
+    
+    if (colonpos == string::npos)
+    {
+	ycp2error ("Specify namespace and the fuction name for a callback");
+	return YCPVoid ();
+    }
+    
+    string module = name_r.substr(0, colonpos);
+    string name = name_r.substr(colonpos + 2);
+    
+    Y2Component* c = Y2ComponentBroker::getNamespaceComponent(module.c_str());
+    if (c == NULL)
+    {
+	ycp2error("No component can provide namespace %s for a callback of %s",
+		  module.c_str(), name.c_str());
+	return YCPVoid();
+    }
+    
+    Y2Namespace* ns = c->import(module.c_str());
+    if (ns == NULL)
+    {
+	y2error("No namespace %s for a callback of %s", module.c_str(),
+		name.c_str());
+	return YCPVoid();
+    }
+    
+    commit_error_popup = ns->createFunctionCall(name, Type::Unspec);
+    if (commit_error_popup == NULL)
+    {
+	ycp2error("Cannot find function %s in module %s as a callback",
+		  name.c_str(), module.c_str());
+	return YCPVoid();
+    }
+    
+    storage::commit_error_popup_cb_ycp = commit_error_popup_callback;
+    
+    return YCPVoid();
 }
 
 

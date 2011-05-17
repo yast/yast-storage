@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -23,55 +23,87 @@
 #ifndef APP_UTIL_H
 #define APP_UTIL_H
 
-#include <time.h>
 #include <libintl.h>
-#include <string.h>
-#include <cstdarg>
-#include <cstdio>
-#include <fstream>
+#include <sys/time.h>
+#include <sys/types.h>
 #include <sstream>
 #include <locale>
 #include <string>
 #include <list>
 #include <map>
 
-using std::string;
 
 namespace storage
 {
+    using std::string;
+    using std::list;
+    using std::map;
 
-class AsciiFile;
 
-bool searchFile(AsciiFile& File_Cr, string Pat_Cv, string& Line_Cr);
-bool searchFile(AsciiFile& File_Cr, string Pat_Cv, string& Line_Cr,
-		int& StartLine_ir);
-void createPath(string Path_Cv);
-bool checkNormalFile(string Path_Cv);
-bool checkDir(string Path_Cv);
+void createPath(const string& Path_Cv);
+bool checkNormalFile(const string& Path_Cv);
+bool checkDir(const string& Path_Cv);
+bool getStatMode(const string& Path_Cv, mode_t& val );
+bool setStatMode(const string& Path_Cv, mode_t val );
 
-string dupDash(const string& s);
+    list<string> glob(const string& path, int flags);
+
+    struct StatVfs
+    {
+	unsigned long long sizeK;
+	unsigned long long freeK;
+    };
+
+    bool getStatVfs(const string& path, StatVfs&);
+
+    bool getMajorMinor(const string& device, unsigned long& major, unsigned long& minor);
+
+
 string extractNthWord(int Num_iv, const string& Line_Cv, bool GetRest_bi = false);
 std::list<string> splitString( const string& s, const string& delChars=" \t\n",
                           bool multipleDelim=true, bool skipEmpty=true,
 			  const string& quotes="" );
-string mergeString( const std::list<string>& l, const string& del=" " );
-std::map<string,string> makeMap( const std::list<string>& l, 
+std::map<string,string> makeMap( const std::list<string>& l,
                                  const string& delim = "=",
 				 const string& removeSur = " \t\n" );
 
-    bool readlink(const string& path, string& buf);
-
     string udevAppendPart(const string&, unsigned num);
 
-void getUdevMap(const char* path, std::map<string, std::list<string>>& m);
-void getRevUdevMap(const char* path, std::map<string, string>& m);
+    string udevEncode(const string&);
+    string udevDecode(const string&);
 
-string normalizeDevice( const string& dev );
-void normalizeDevice( string& dev );
-string undevDevice( const string& dev );
-void undevDevice( string& dev );
+    bool mkdtemp(string& path);
+
+    bool readlink(const string& path, string& buf);
+
+
+    class UdevMap
+    {
+    public:
+
+	UdevMap(const string& path);
+
+	typedef map<string, list<string>>::const_iterator const_iterator;
+
+	const_iterator begin() const { return data.begin(); }
+	const_iterator end() const { return data.end(); }
+
+	const_iterator find(const string& nm) const { return data.find(nm); }
+
+    private:
+
+	map<string, list<string>> data;
+
+    };
+
+
+    string normalizeDevice(const string& dev);
+    list<string> normalizeDevices(const list<string>& devs);
+    string undevDevice(const string& dev);
+
 bool isNfsDev( const string& dev );
-unsigned getMajorDevices( const string& driver );
+
+unsigned getMajorDevices(const char* driver);
 
 
 template<class StreamType>
@@ -83,64 +115,71 @@ void classic(StreamType& stream)
 
 enum LogLevel { DEBUG, MILESTONE, WARNING, ERROR };
 
-void createLogger(const string& component, const string& name,
-		  const string& logpath, const string& logfile);
+void createLogger(const string& name, const string& logpath, const string& logfile);
 
 bool testLogLevel(LogLevel level);
 
-void logMsg(LogLevel level, const char* file, unsigned line,
-	    const char* func, const string& str);
+void prepareLogStream(std::ostringstream& stream);
 
-void logMsgVaArgs(LogLevel level, const char* file, unsigned line,
-		  const char* func, const char* format, ...)
-    __attribute__ ((format(printf, 5, 6)));
+std::ostringstream* logStreamOpen();
 
-void prepareLogStream(std::ostringstream& s);
-    
-#define y2debug(format, ...) \
-    logMsgVaArgs(storage::DEBUG, __FILE__, __LINE__, __FUNCTION__, format, ##__VA_ARGS__)
-#define y2milestone(format, ...) \
-    logMsgVaArgs(storage::MILESTONE, __FILE__, __LINE__, __FUNCTION__, format, ##__VA_ARGS__)
-#define y2warning(format, ...) \
-    logMsgVaArgs(storage::WARNING, __FILE__, __LINE__, __FUNCTION__, format, ##__VA_ARGS__)
-#define y2error(format, ...) \
-    logMsgVaArgs(storage::ERROR, __FILE__, __LINE__, __FUNCTION__, format, ##__VA_ARGS__)
+void logStreamClose(LogLevel level, const char* file, unsigned line,
+		    const char* func, std::ostringstream*);
 
 #define y2deb(op) y2log_op(storage::DEBUG, __FILE__, __LINE__, __FUNCTION__, op)
 #define y2mil(op) y2log_op(storage::MILESTONE, __FILE__, __LINE__, __FUNCTION__, op)
 #define y2war(op) y2log_op(storage::WARNING, __FILE__, __LINE__, __FUNCTION__, op)
 #define y2err(op) y2log_op(storage::ERROR, __FILE__, __LINE__, __FUNCTION__, op)
 
-#define y2log_op(level, file, line, function, op)			\
+#define y2log_op(level, file, line, func, op)				\
     do {								\
 	if (storage::testLogLevel(level))				\
 	{								\
-	    std::ostringstream __buf;					\
-	    storage::prepareLogStream(__buf);				\
-	    __buf << op;						\
-	    storage::logMsg(level, file, line, function, __buf.str());	\
+	    std::ostringstream* __buf = storage::logStreamOpen();	\
+	    *__buf << op;						\
+	    storage::logStreamClose(level, file, line, func, __buf);	\
 	}								\
     } while (0)
 
 
-string sformat(const char* format, ...);
+    string hostname();
+    string datetime();
 
 
-string byteToHumanString(unsigned long long size, bool classic, int precision,
-			 bool omit_zeroes);
+    class StopWatch
+    {
+    public:
 
-bool humanStringToByte(const string& str, bool classic, unsigned long long& size);
+	StopWatch();
+
+	friend std::ostream& operator<<(std::ostream& s, const StopWatch& sw);
+
+    protected:
+
+	struct timeval start_tv;
+
+    };
 
 
-inline const char* _(const char* msgid)
-{
-    return dgettext("storage", msgid);
-}
+    struct Text
+    {
+	Text() : native(), text() {}
+	Text(const string& native, const string& text) : native(native), text(text) {}
 
-inline const char* _(const char* msgid, const char* msgid_plural, unsigned long int n)
-{
-    return dngettext("storage", msgid, msgid_plural, n);
-}
+	void clear();
+
+	const Text& operator+=(const Text& a);
+
+	string native;
+	string text;
+    };
+
+
+    Text sformat(const Text& format, ...);
+
+
+    Text _(const char* msgid);
+    Text _(const char* msgid, const char* msgid_plural, unsigned long int n);
 
 
 extern const string app_ws;

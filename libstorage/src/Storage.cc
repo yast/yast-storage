@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,9 +19,6 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <dirent.h>
 #include <glob.h>
@@ -29,45 +26,45 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/statvfs.h>
 #include <pwd.h>
-#include <config.h>
 #include <signal.h>
-#include <sys/utsname.h>
-#include <errno.h>
-
 #include <set>
+#include <array>
 #include <fstream>
 #include <sstream>
-#include <iostream>
 #include <boost/algorithm/string.hpp>
 
-#include "y2storage/Storage.h"
-#include "y2storage/StorageTmpl.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/Disk.h"
-#include "y2storage/Dasd.h"
-#include "y2storage/MdCo.h"
-#include "y2storage/MdPartCo.h"
-#include "y2storage/DmCo.h"
-#include "y2storage/LoopCo.h"
-#include "y2storage/LvmVg.h"
-#include "y2storage/IterPair.h"
-#include "y2storage/ProcMounts.h"
-#include "y2storage/ProcPart.h"
-#include "y2storage/EtcFstab.h"
-#include "y2storage/EtcRaidtab.h"
-#include "y2storage/AsciiFile.h"
-#include "y2storage/StorageDefines.h"
+#include "config.h"
+#include "storage/Storage.h"
+#include "storage/StorageTmpl.h"
+#include "storage/AppUtil.h"
+#include "storage/SystemCmd.h"
+#include "storage/Disk.h"
+#include "storage/Dasd.h"
+#include "storage/MdCo.h"
+#include "storage/MdPartCo.h"
+#include "storage/DmCo.h"
+#include "storage/LoopCo.h"
+#include "storage/LvmVg.h"
+#include "storage/IterPair.h"
+#include "storage/SystemInfo.h"
+#include "storage/ProcMounts.h"
+#include "storage/ProcParts.h"
+#include "storage/Blkid.h"
+#include "storage/EtcFstab.h"
+#include "storage/EtcMdadm.h"
+#include "storage/AsciiFile.h"
+#include "storage/StorageDefines.h"
 
-using namespace std;
-using namespace storage;
 
-
-void
-Storage::initDefaultLogger ()
+namespace storage
 {
+    using namespace std;
+
+
+    void
+    initDefaultLogger()
+    {
     string path;
     string file;
     if (geteuid ())
@@ -90,30 +87,28 @@ Storage::initDefaultLogger ()
 	file = "y2log";
     }
 
-    storage::createLogger("libstorage", "default", path, file);
-}
+	createLogger("default", path, file);
+    }
 
 
-namespace storage
-{
     std::ostream& operator<<(std::ostream& s, const Environment& env)
     {
 	return s << "readonly:" << env.readonly << " testmode:" << env.testmode 
 		 << " autodetect:" << env.autodetect << " instsys:" << env.instsys
 		 << " logdir:" << env.logdir << " testdir:" << env.testdir;
     }
-}
 
 
 Storage::Storage(const Environment& env)
-    : env(env), lock(readonly(), testmode()), initialized(false), fstab(NULL), raidtab(NULL),
-      imsm_driver(IMSM_UNDECIDED)
+    : env(env), lock(readonly(), testmode()), cache(true), initialized(false),
+      recursiveRemove(false), zeroNewPartitions(false),
+      partAlignment(ALIGN_OPTIMAL), defaultMountBy(MOUNTBY_ID),
+      defaultFs(EXT4), detectMounted(true), root_mounted(!instsys()),
+      rootprefix(), fstab(NULL), mdadm(NULL), imsm_driver(IMSM_UNDECIDED)
 {
     y2mil("constructed Storage with " << env);
-    y2mil("package string \"" PACKAGE_STRING "\"");
+    y2mil("libstorage version " VERSION);
 
-    root_mounted = !instsys();
-    efiboot = false;
     hald_pid = 0;
 
     max_log_num = 5;
@@ -126,24 +121,18 @@ Storage::Storage(const Environment& env)
     install_info_cb = NULL;
     info_popup_cb = NULL;
     yesno_popup_cb = NULL;
+    commit_error_popup_cb = NULL;
     password_popup_cb = NULL;
 
-    recursiveRemove = false;
-    zeroNewPartitions = false;
-    partAlignment = ALIGN_OPTIMAL;
-    defaultMountBy = MOUNTBY_ID;
-    detectMounted = true;
-
+    SystemCmd::setTestmode(testmode());
 
     tenv = getenv("LIBSTORAGE_IMSM_DRIVER");
     if (tenv)
     {
-	if (boost::iequals(tenv, "DMRAID", locale::classic()))
-	    imsm_driver = IMSM_DMRAID;
-	else if (boost::iequals(tenv, "MDADM", locale::classic()))
-	    imsm_driver = IMSM_MDADM;
+	if (!toValue(tenv, imsm_driver, false))
+	    y2war("unknown IMSM driver '" << tenv << "' in environment");
     }
-    y2mil("imsm_driver:" << imsm_driver);
+    y2mil("imsm_driver:" << toString(imsm_driver));
 
     logSystemInfo();
 }
@@ -152,14 +141,11 @@ Storage::Storage(const Environment& env)
 void
 Storage::logSystemInfo() const
 {
-    ifstream File( "/proc/version" );
-    classic(File);
-    string line;
-    getline( File, line );
-    File.close();
-    y2mil( "kernel version:" << line );
-
-    SystemCmd(LSBIN " -1 /lib/modules");    
+    if (!testmode())
+    {
+    AsciiFile("/proc/version").logContent();
+    SystemCmd(LSBIN " -1 /lib/modules");
+    }
 }
 
 
@@ -167,399 +153,208 @@ void
 Storage::initialize()
     {
     initialized = true;
-    char tbuf[100];
-    strncpy( tbuf, "/tmp/liby2storageXXXXXX", sizeof(tbuf)-1 );
-    if( mkdtemp( tbuf )==NULL )
+
+    tempdir = "/tmp/libstorage-XXXXXX";
+    if (!mkdtemp(tempdir))
 	{
-	cerr << "tmpdir creation " << tbuf << " failed. Aborting..." << endl;
-	exit(1);
+	y2err("tmpdir creation " << tempdir << " failed. Aborting...");
+	exit(EXIT_FAILURE);
 	}
-    else
-	{
-	tempdir = tbuf;
-	rmdir( tempdir.c_str() );
-	}
-    if( access( "/etc/sysconfig/storage", R_OK )==0 )
+
+    bindtextdomain("libstorage", "/usr/share/locale");
+    bind_textdomain_codeset("libstorage", "UTF-8");
+
+    if (access(SYSCONFIGFILE, R_OK) == 0)
     {
-	AsciiFile sc( "/etc/sysconfig/storage" );
-	Regex r('^' + Regex::ws + "DEVICE_NAMES" + '=' + "(['\"]?)([^'\"]*)\\1" + Regex::ws + '$');
-	int line = sc.find( 0, r );
-	if( line >= 0 )
+	SysconfigFile sc(SYSCONFIGFILE);
+
+	string val;
+	if (sc.getValue("DEVICE_NAMES", val))
 	{
-	    string val = boost::to_lower_copy(r.cap(2), locale::classic());
-	    if( val == "id" )
-		setDefaultMountBy( MOUNTBY_ID );
-	    else if( val == "path" )
-		setDefaultMountBy( MOUNTBY_PATH );
-	    else if( val == "device" )
-		setDefaultMountBy( MOUNTBY_DEVICE );
-	    else if( val == "uuid" )
-		setDefaultMountBy( MOUNTBY_UUID );
-	    else if( val == "label" )
-		setDefaultMountBy( MOUNTBY_LABEL );
-	}
-	Regex rx3('^' + Regex::ws + "PARTITION_ALIGN" + '=' + "(['\"]?)([^'\"]*)\\1" + Regex::ws + '$');
-	line = sc.find( 0, rx3 );
-	if( line >= 0 )
-	{
-	    string val = boost::to_lower_copy(rx3.cap(2), locale::classic());
-	    if (val == "cylinder")
-		setPartitionAlignment(ALIGN_CYLINDER);
-	    else if(val == "optimal")
-		setPartitionAlignment(ALIGN_OPTIMAL);
+	    boost::to_lower(val, locale::classic());
+	    MountByType mount_by_type;
+	    if (!toValue(val, mount_by_type, false))
+		y2war("unknown default mount-by method '" << val << "' in " SYSCONFIGFILE);
 	    else
-		y2war("unknown partition alignment '" << val << "' in /etc/sysconfig/storage");
+		setDefaultMountBy(mount_by_type);
+	}
+
+	if (sc.getValue("DEFAULT_FS", val))
+	{
+	    boost::to_lower(val, locale::classic());
+	    if (val == "reiser") val = "reiserfs";
+	    FsType fs_type;
+	    if (!toValue(val, fs_type, false))
+		y2war("unknown default filesystem '" << val << "' in " SYSCONFIGFILE);
+	    else if (fs_type != EXT2 && fs_type != EXT3 && fs_type != EXT4 &&
+		     fs_type != REISERFS && fs_type != XFS)
+		y2war("unallowed default filesystem '" << val << "' in " SYSCONFIGFILE);
+	    else
+		setDefaultFs(fs_type);
+	}
+
+	if (sc.getValue("PARTITION_ALIGN", val))
+	{
+	    boost::to_lower(val, locale::classic());
+	    PartAlign part_align;
+	    if (!toValue(val, part_align, false))
+		y2war("unknown partition alignment '" << val << "' in " SYSCONFIGFILE);
+	    else
+		setPartitionAlignment(part_align);
 	}
     }
 
-    if( autodetect() )
-	{
-	detectArch();
-	efiboot = (arch() == "ia64");
-	}
+    if (testmode())
+    {
+	string t = testdir() + "/arch.info";
+	if (access(t.c_str(), R_OK) == 0)
+	    readArchInfo(t);
+    }
+    else if (autodetect())
+    {
+	archinfo.detect(instsys());
+	y2mil(archinfo);
+    }
 
     detectObjects();
-    setCacheChanges( true );
-    dumpObjectList();
 
-    std::list<std::pair<string,string> >::const_iterator i;
-    for( i=infoPopupTxts.begin(); i!=infoPopupTxts.end(); ++i )
+    for (list<std::pair<string, Text>>::const_iterator i = infoPopupTxts.begin(); 
+	 i != infoPopupTxts.end(); ++i)
 	{
-	storage::usedBy ub;
-	usedBy( i->first, ub );
-	y2mil( "device:" << i->first << " used By:" << ub );
-	if( ub.type()==UB_NONE )
+	if (!isUsedBy(i->first))
 	    infoPopupCb( i->second );
 	else
-	    y2mil( "suppressing cb:" << i->second );
+	    y2mil( "suppressing cb:" << i->second.native );
 	}
     logProcData();
     }
 
+
 void Storage::dumpObjectList()
 {
+    assertInit();
     ostringstream buf;
-    classic(buf);
+    prepareLogStream(buf);
     printInfo(buf);
-    std::list<string> l = splitString( buf.str(), "\n" );
-    y2mil("DETECTED OBJECTS");
-    for (std::list<string>::const_iterator i = l.begin(); i != l.end(); i++)
-	y2mil(*i);
-    y2mil("END DETECTED OBJECTS");
+    y2mil("DETECTED OBJECTS BEGIN");
+    y2mil(buf.str());
+    y2mil("DETECTED OBJECTS END");
 }
 
+
 void Storage::detectObjects()
-    {
-    ProcPart* ppart = new ProcPart;
-    detectDisks( *ppart );
-    if( instsys() )
+{
+	if (instsys())
 	{
-         if( discoverMdPVols() == true )
-           {
-           // if 'yes' then activate md prior to dm
-           MdPartCo::activate( true, tmpDir() );
-           waitForDevice();
-           }
-        //Note:
-        //dmraid will not activate devices that were activated by
-        //mdadm. So this is safe.
-	DmraidCo::activate( true );
-	waitForDevice();
-	//If user said No then this is the way it was before.
-	if (getImsmDriver() != IMSM_MDADM)
-	  {
-	  MdPartCo::activate(true, tmpDir() );
-	  waitForDevice();
-	  }
-	LvmVg::activate( true );
-	waitForDevice();
-	delete ppart;
-	ppart = new ProcPart;
+	    discoverMdPVols();
+
+	    if (getImsmDriver() == IMSM_MDADM)
+	    {
+		MdPartCo::activate(true, tmpDir());
+		DmraidCo::activate(true);
+	    }
+	    else
+	    {
+		DmraidCo::activate(true);
+		MdPartCo::activate(true, tmpDir());
+	    }
+
+	    MdCo::activate(true, tmpDir());
+	    LvmVg::activate(true);
 	}
 
-    detectDmraid( *ppart );
-    detectDmmultipath( *ppart );
-    detectMdParts(*ppart);
-    detectMds();
-    detectDm(*ppart, true);
-    detectLvmVgs();
-    detectDm(*ppart, false);
+    danglingUsedBy.clear();
 
+    SystemInfo systeminfo;
+
+    detectDisks(systeminfo);
+    detectDmraid(systeminfo);
+    detectDmmultipath(systeminfo);
+    detectMdParts(systeminfo);
+    detectMds(systeminfo);
+    detectDm(systeminfo, true);
+    detectLvmVgs(systeminfo);
+    detectDm(systeminfo, false);
+    delete fstab;
+    if (testmode())
+	{
+ 	rootprefix = testdir();
+ 	fstab = new EtcFstab( rootprefix + "/etc" );
+	mdadm = new EtcMdadm(this, rootprefix);
+	}
+    else
+    {
+	fstab = new EtcFstab( "/etc", isRootMounted() );
+	if (!instsys())
+	    mdadm = new EtcMdadm(this, root());
+    }
+    
+    detectLoops(systeminfo);
+    if( !instsys() )
+	{
+	detectNfs(*fstab, systeminfo);
+	detectTmpfs(*fstab, systeminfo);
+	}
+
+    if (!danglingUsedBy.empty())
+	y2err("dangling used-by left after detection: " << danglingUsedBy);
+    
     LvmVgPair p = lvgPair();
     y2mil( "p length:" << p.length() );
     for( LvmVgIterator i=p.begin(); i!=p.end(); ++i )
 	i->normalizeDmDevices();
 
-    if( testmode() )
+    if (testmode())
         {
-	SystemCmd::testmode = true;
- 	rootprefix = testdir();
- 	fstab = new EtcFstab( rootprefix );
-	raidtab = new EtcRaidtab(this, rootprefix);
-	string t = testdir() + "/volume_info";
+	for (VolIterator i = vBegin(); i != vEnd(); ++i)
+	    i->getFstabData(*fstab);
+
+	string t = testdir() + "/free.info";
 	if( access( t.c_str(), R_OK )==0 )
-	    {
-	    detectFsDataTestMode( t, vBegin(), vEnd() );
-	    }
+	    readFreeInfo(t);
 	}
     else
 	{
-	fstab = new EtcFstab( "/etc", isRootMounted() );
-	if (!instsys())
-	    raidtab = new EtcRaidtab(this, root());
-	detectLoops( *ppart );
-	ProcMounts pm( this );
-	if( !instsys() )
-	    detectNfs( pm );
-	detectFsData( vBegin(), vEnd(), pm );
+	detectFsData(vBegin(), vEnd(), systeminfo);
+	logContainersAndVolumes(logdir());
 	}
+    detectBtrfs(systeminfo);
+
+    dumpObjectList();
 
     if( instsys() )
 	{
-	SystemCmd c( "grep ^md.*dm- /proc/mdstat" );
+	SystemCmd c(GREPBIN " ^md.*dm- /proc/mdstat");
 	SystemCmd rm;
 	for( unsigned i=0; i<c.numLines(); i++ )
 	    {
-	    rm.execute(MDADMBIN " --stop " + quote("/dev/" + extractNthWord(0, *c.getLine(i))));
+	    rm.execute(MDADMBIN " --stop " + quote("/dev/" + extractNthWord(0, c.getLine(i))));
 	    }
 	}
-    delete ppart;
     }
 
-void Storage::deleteClist( CCont& co )
-    {
-    for( CIter i=co.begin(); i!=co.end(); ++i )
-	delete( *i );
-    co.clear();
-    }
 
-void Storage::deleteBackups()
-    {
-    map<string,CCont>::iterator i = backups.begin();
-    while( i!=backups.end() )
-	{
-	deleteClist( i->second );
-	++i;
-	}
-    backups.clear();
-    }
-
-Storage::~Storage()
-    {
-    if( max_log_num>0 )
-	{
-	logVolumes( logdir() );
-	for( CIter i=cont.begin(); i!=cont.end(); ++i )
-	    {
-	    (*i)->logData( logdir() );
-	    }
-	}
-    deleteClist(cont);
-    deleteBackups();
-    if( !tempdir.empty() && access( tempdir.c_str(), R_OK )==0 )
-	{
-	SystemCmd c( "rmdir " + tempdir );
-	if( c.retcode()!=0 )
-	    {
-	    y2err("stray tmpfile");
-	    c.execute( "ls -l" + tempdir );
-	    c.execute( "rm -rf " + tempdir );
-	    }
-	}
-    y2mil("destructed Storage");
-    }
-
-void Storage::rescanEverything()
-    {
-    y2mil("rescan everything");
-
-    if (instsys())
-    {
-	bool dmmultipath_active = DmmultipathCo::isActive();
-
-	LvmVg::activate(false);
-	MdCo::activate(false, tmpDir());
-	MdPartCo::activate(false, tmpDir());
-	DmraidCo::activate(false);
-	DmmultipathCo::activate(false);
-	Dm::activate(false);
-
-	if (dmmultipath_active)
-	{
-	    DmmultipathCo::activate(true);
-	}
-    }
-
-    deleteClist(cont);
-    detectObjects();
-    }
-
-const string& Storage::tmpDir() const
-    {
-    if( access( tempdir.c_str(), W_OK )!= 0 )
-	mkdir( tempdir.c_str(), 0700 );
-    return( tempdir );
-    }
-
-void
-Storage::detectArch()
-    {
-    struct utsname buf;
-    proc_arch = "i386";
-    if( uname( &buf ) == 0 )
-	{
-	if( strncmp( buf.machine, "ppc", 3 )==0 )
-	    {
-	    proc_arch = "ppc";
-	    }
-	else if( strncmp( buf.machine, "ia64", 4 )==0 )
-	    {
-	    proc_arch = "ia64";
-	    }
-	else if( strncmp( buf.machine, "s390", 4 )==0 )
-	    {
-	    proc_arch = "s390";
-	    }
-	else if( strncmp( buf.machine, "sparc", 5 )==0 )
-	    {
-	    proc_arch = "sparc";
-	    }
-	}
-    if( proc_arch == "ppc" )
-	{
-	AsciiFile cpu( "/proc/cpuinfo" );
-	int l = cpu.find( 0, "^machine\t" );
-	y2mil("line:" << l);
-	if( l >= 0 )
-	    {
-	    string line = cpu[l];
-	    line = extractNthWord( 2, line );
-	    y2mil("line:" << line);
-	    is_ppc_mac = line.find( "PowerMac" )==0 || line.find( "PowerBook" )==0;
-	    is_ppc_pegasos = line.find( "EFIKA5K2" )==0;
-	    if( is_ppc_mac == 0 && is_ppc_pegasos == 0 )
-		{
-		line = cpu[l];
-		line = extractNthWord( 3, line );
-		y2mil("line:" << line);
-		is_ppc_pegasos = line.find( "Pegasos" )==0;
-		}
-	    }
-	}
-    y2mil("Arch:" << proc_arch << " IsPPCMac:" << is_ppc_mac << " IsPPCPegasos:" << is_ppc_pegasos);
-    }
-
-void
-Storage::detectDisks( ProcPart& ppart )
-    {
-    if( testmode() )
-	{
-	glob_t globbuf;
-
-	if( glob( (testdir()+"/disk_*[!~0-9]").c_str(), GLOB_NOSORT, 0,
-	          &globbuf) == 0)
-	    {
-	    for (char** p = globbuf.gl_pathv; *p != 0; *p++)
-		addToList( new Disk( this, *p ) );
-	    }
- 	globfree (&globbuf);
-	}
-    else if( autodetect() )
-	{
-	autodetectDisks( ppart );
-	}
-    }
-
-// Detect MD Partitionable Volumes.
-void Storage::detectMdParts(ProcPart& ppart)
-{
-  if( testmode() )
-    {
-    string file = testdir()+"/md";
-    if( access( file.c_str(), R_OK )==0 )
-      {
-      y2mil("MD PART CO in test mode not available yet");
-      }
-    }
-  else
-    {
-    list<string> l = MdPartCo::getMdRaids();
-    list<string> mdpartlist = MdPartCo::filterMdPartCo(l,ppart, instsys());
-
-    if (!mdpartlist.empty())
-    {
-    map<string, list<string>> by_id;
-    getUdevMap("/dev/disk/by-id", by_id);
-    for( list<string>::const_iterator i = mdpartlist.begin();
-        i != mdpartlist.end();
-        i++)
-      {
-      MdPartCo * v = new MdPartCo( this, *i, &ppart );
-      list<string> nm = by_id[v->name()];
-      if( !nm.empty() )
-        {
-        v->setUdevData(nm);
-        }
-      addToList( v );
-      }
-    }
-    }
-}
-
-void Storage::detectMds()
-    {
-    if( testmode() )
-	{
-	string file = testdir()+"/md";
-	if( access( file.c_str(), R_OK )==0 )
-	    {
-	    addToList( new MdCo( this, file ) );
-	    }
-	}
-    else
-	{
-	MdCo * v = new MdCo( this, true );
-	if( !v->isEmpty() )
-	    addToList( v );
-	else
-	    delete v;
-	}
-    }
-
-bool Storage::discoverMdPVols()
+bool
+Storage::discoverMdPVols()
 {
   if( !instsys() )
     {
     return false;
     }
-  string mdDevs = "";
-  bool ret = MdPartCo::isImsmPlatform();
-  if( ret == true )
+
+  bool ret = false;
+  if (isImsmPlatform())
     {
     y2mil("Intel SW RAID Platform detected.");
 
     list <string> l;
-    if( MdPartCo::scanForRaid(l) != 0 )
+    if (MdPartCo::scanForRaid(l) && !l.empty())
       {
-      MdPartCo::activate( true, tmpDir() );
-      waitForDevice();
-      l = MdPartCo::getMdRaids();
-      MdPartCo::activate( false, "" );
-      }
-    if (!l.empty())
-      {
-      // At least ONE Volume must be detected
-      mdDevs.clear();
-      for( list<string>::const_iterator i=l.begin(); i!=l.end(); ++i )
-        {
-        mdDevs += " " + *i;
-        }
-      y2mil(" md raids:" + mdDevs);
-      if( !mdDevs.empty())
-        {
+	  y2mil("md raids:" << l);
+
 	if (getImsmDriver() == IMSM_UNDECIDED)
 	{
-        string txt = sformat(
+        Text txt = sformat(
             // popup text %1$s is replaced by disk name e.g. /dev/hda
             _("You are running on the Intel(R) Matrix Storage Manager compatible platform.\n"
                 "\n"
@@ -569,7 +364,7 @@ bool Storage::discoverMdPVols()
                 "MD Partitionable RAID sysbsystem to handle them. In case of clean device you\n"
                 "will be able to install system on it and boot from such RAID.\n"
                 "Do you want MD Partitionable RAID subsystem to manage those partitions?"
-            ), mdDevs.c_str() );
+            ), boost::join(l, " ").c_str() );
 
         if( yesnoPopupCb(txt) )
           {
@@ -586,17 +381,6 @@ bool Storage::discoverMdPVols()
 	{
 	    ret = getImsmDriver() == IMSM_MDADM;
 	}
-	}
-      else
-        {
-        /* No mdDevs */
-        ret = false;
-        }
-      }
-    else
-      {
-      /* No RAIDs at all */
-      ret = false;
       }
     }
   y2mil(" Exiting with status: " << ret);
@@ -604,19 +388,145 @@ bool Storage::discoverMdPVols()
 }
 
 
-void Storage::detectLoops( ProcPart& ppart )
+void Storage::deleteBackups()
     {
-    if( testmode() )
+    for (map<string, CCont>::iterator i = backups.begin(); i != backups.end(); ++i)
+	clearPointerList(i->second);
+    backups.clear();
+    }
+
+Storage::~Storage()
+    {
+	logContainersAndVolumes(logdir());
+    clearPointerList(cont);
+    deleteBackups();
+    if (!tempdir.empty() && rmdir(tempdir.c_str()) != 0)
+    {
+	y2err("stray tmpfile");
+	SystemCmd(LSBIN " -l " + quote(tempdir));
+    }
+    delete fstab;
+    delete mdadm;
+    y2mil("destructed Storage");
+    }
+
+void Storage::rescanEverything()
+    {
+    y2mil("rescan everything");
+
+    if (instsys())
+    {
+	bool dmmultipath_active = DmmultipathCo::isActive();
+	if (!dmmultipath_active)
 	{
-	string file = testdir()+"/loop";
-	if( access( file.c_str(), R_OK )==0 )
+	    SystemInfo systeminfo;
+	    DmmultipathCo::getMultipaths(systeminfo);
+	    dmmultipath_active = DmmultipathCo::isActive();
+	}
+
+	LvmVg::activate(false);
+	MdCo::activate(false, tmpDir());
+	MdPartCo::activate(false, tmpDir());
+	DmraidCo::activate(false);
+	DmmultipathCo::activate(false);
+	Dm::activate(false);
+
+	if (dmmultipath_active)
+	{
+	    DmmultipathCo::activate(true);
+	}
+    }
+
+    clearPointerList(cont);
+    detectObjects();
+    }
+
+bool Storage::rescanCryptedObjects()
+    {
+    bool ret = false;
+    LvmVg::activate(false);
+    LvmVg::activate(true);
+    SystemInfo systeminfo;
+    const list<string> l = LvmVg::getVgs();
+    for( list<string>::const_iterator i=l.begin(); i!=l.end(); ++i )
+	{
+	if( findLvmVg( *i ) == lvgEnd() )
 	    {
-	    addToList( new LoopCo( this, file ) );
+	    LvmVg* v = new LvmVg(this, *i, "/dev/" + *i, systeminfo);
+	    addToList( v );
+	    v->normalizeDmDevices();
+	    v->checkConsistency();
+	    for( LvmVg::LvmLvIter i=v->lvmLvBegin(); i!=v->lvmLvEnd(); ++i )
+		i->updateFsData();
+	    ret = true;
 	    }
 	}
-    else
+    if( ret )
+	dumpObjectList();
+    y2mil( "ret:" << ret );
+    return( ret );
+    }
+
+    string
+    Storage::bootMount() const
+    {
+	if (archinfo.is_efiboot)
+	    return "/boot/efi";
+	else
+	    return "/boot";
+    }
+
+
+void
+    Storage::detectDisks(SystemInfo& systeminfo)
+    {
+    if (testmode())
 	{
-	LoopCo * v = new LoopCo( this, true, ppart );
+	    const list<string> l = glob(testdir() + "/disk_*.info", GLOB_NOSORT);
+	    for (list<string>::const_iterator i = l.begin(); i != l.end(); ++i)
+	    {
+		XmlFile file(*i);
+		const xmlNode* root = file.getRootElement();
+		const xmlNode* disk = getChildNode(root, "disk");
+		if (disk)
+		    addToList(new Disk(this, disk));
+	    }
+	}
+    else if (autodetect() && getenv("LIBSTORAGE_NO_DISK") == NULL)
+	{
+	    autodetectDisks(systeminfo);
+	}
+    }
+
+
+void
+Storage::detectMdParts(SystemInfo& systeminfo)
+{
+    if( testmode() )
+    {
+    }
+    else if (autodetect() && getenv("LIBSTORAGE_NO_MDPARTRAID") == NULL)
+    {
+	list<string> l = MdPartCo::getMdRaids(systeminfo);
+	list<string> mdpartlist = MdPartCo::filterMdPartCo(l, systeminfo, instsys());
+	
+	for(list<string>::const_iterator i = mdpartlist.begin(); i != mdpartlist.end(); ++i)
+	{
+	    MdPartCo* v = new MdPartCo(this, *i, "/dev/" + *i, systeminfo);
+	    addToList( v );
+	}
+    }
+}
+
+
+void Storage::detectMds(SystemInfo& systeminfo)
+    {
+    if (testmode())
+	{
+	}
+    else if (autodetect() && getenv("LIBSTORAGE_NO_MDRAID") == NULL)
+	{
+	MdCo* v = new MdCo(this, systeminfo);
 	if( !v->isEmpty() )
 	    addToList( v );
 	else
@@ -624,19 +534,62 @@ void Storage::detectLoops( ProcPart& ppart )
 	}
     }
 
-void Storage::detectNfs( ProcMounts& mounts )
+void Storage::detectBtrfs(SystemInfo& systeminfo)
     {
-    if( testmode() )
+    if (testmode())
 	{
-	string file = testdir()+"/nfs";
-	if( access( file.c_str(), R_OK )==0 )
-	    {
-	    addToList( new NfsCo( this, file ) );
-	    }
 	}
-    else if (getenv("YAST2_STORAGE_NO_NFS") == NULL)
+    else if (autodetect() && getenv("LIBSTORAGE_NO_BTRFS") == NULL)
 	{
-	NfsCo * v = new NfsCo( this, mounts );
+	BtrfsCo* v = new BtrfsCo(this, systeminfo);
+	if( !v->isEmpty() )
+	    {
+	    BtrfsCo::ConstBtrfsPair p(v->btrfsPair());
+	    for( BtrfsCo::ConstBtrfsIter i=p.begin(); i!=p.end(); ++i )
+		{
+		const list<string>& devs = i->getDevices();
+		for( list<string>::const_iterator d=devs.begin(); d!=devs.end(); ++d )
+		    {
+		    VolIterator v;
+		    if( findVolume( *d, v ))
+			{
+			v->setUsedByUuid( UB_BTRFS, i->getUuid() );
+			}
+		    }
+		}
+	    addToList( v );
+	    }
+	else
+	    delete v;
+	}
+    }
+
+    void
+    Storage::detectLoops(SystemInfo& systeminfo)
+    {
+    if (testmode())
+	{
+	}
+    else if (autodetect() && getenv("LIBSTORAGE_NO_LOOP") == NULL)
+	{
+	    LoopCo* v = new LoopCo(this, systeminfo);
+	if( !v->isEmpty() )
+	    addToList( v );
+	else
+	    delete v;
+	}
+    }
+
+
+    void
+    Storage::detectNfs(const EtcFstab& fstab, SystemInfo& systeminfo)
+    {
+    if (testmode())
+	{
+	}
+    else if (autodetect() && getenv("LIBSTORAGE_NO_NFS") == NULL)
+	{
+	NfsCo* v = new NfsCo(this, fstab, systeminfo);
 	if( !v->isEmpty() )
 	    addToList( v );
 	else
@@ -645,131 +598,102 @@ void Storage::detectNfs( ProcMounts& mounts )
     }
 
 void
-Storage::detectLvmVgs()
+Storage::detectTmpfs(const EtcFstab& fstab, SystemInfo& systeminfo)
     {
-    if( testmode() )
+    if (testmode())
 	{
-	glob_t globbuf;
-	if( glob( (testdir()+"/lvm_*[!~0-9]").c_str(), GLOB_NOSORT, 0,
-	          &globbuf) == 0)
-	    {
-	    for (char** p = globbuf.gl_pathv; *p != 0; *p++)
-		addToList( new LvmVg( this, *p, true ) );
-	    }
- 	globfree (&globbuf);
 	}
-    else if( getenv( "YAST2_STORAGE_NO_LVM" )==NULL )
+    else if (autodetect() && getenv("LIBSTORAGE_NO_TMPFS") == NULL)
 	{
-	list<string> l;
-	LvmVg::getVgs( l );
+	TmpfsCo* v = new TmpfsCo(this, fstab, systeminfo);
+	logCo( v );
+	if( !v->isEmpty() )
+	    addToList( v );
+	else
+	    delete v;
+	}
+    }
+
+void
+Storage::detectLvmVgs(SystemInfo& systeminfo)
+    {
+    if (testmode())
+	{
+	    const list<string> l = glob(testdir() + "/lvmvg_*.info", GLOB_NOSORT);
+	    for (list<string>::const_iterator i = l.begin(); i != l.end(); ++i)
+	    {
+		XmlFile file(*i);
+		const xmlNode* root = file.getRootElement();
+		const xmlNode* volume_group = getChildNode(root, "volume_group");
+		if (volume_group)
+		    addToList(new LvmVg(this, volume_group));
+	    }
+	}
+    else if (autodetect() && getenv("LIBSTORAGE_NO_LVM") == NULL)
+	{
+	const list<string> l = LvmVg::getVgs();
 	for( list<string>::const_iterator i=l.begin(); i!=l.end(); ++i )
 	    {
-	    LvmVg * v = new LvmVg( this, *i );
-	    if( !v->inactive() )
-		{
+		LvmVg* v = new LvmVg(this, *i, "/dev/" + *i, systeminfo);
 		addToList( v );
 		v->checkConsistency();
-		}
-	    else
-		{
-		y2milestone( "inactive VG %s", i->c_str() );
-		v->unuseDev();
-		delete( v );
-		}
 	    }
 	}
     }
 
 
 void
-Storage::detectDmraid(ProcPart& ppart)
+    Storage::detectDmraid(SystemInfo& systeminfo)
 {
-    if( testmode() )
+    if (testmode())
     {
-	glob_t globbuf;
-	if( glob( (testdir()+"/dmraid_*[!~0-9]").c_str(), GLOB_NOSORT, 0,
-	          &globbuf) == 0)
-	{
-	    // TODO: load test data
-	}
- 	globfree (&globbuf);
     }
-    else if( getenv( "YAST2_STORAGE_NO_DMRAID" )==NULL )
+    else if (autodetect() && getenv("LIBSTORAGE_NO_DMRAID") == NULL)
     {
-	const list<string> l = DmraidCo::getRaids();
-	if (!l.empty())
-	{
-	    map<string, list<string>> by_id;
-	    getUdevMap("/dev/disk/by-id", by_id);
+	const list<string> l = DmraidCo::getRaids(systeminfo);
 	    for( list<string>::const_iterator i=l.begin(); i!=l.end(); ++i )
 	    {
-		DmraidCo * v = new DmraidCo( this, *i, ppart );
-		    list<string> nm = by_id["dm-"+decString(v->minorNr())];
-		    if( !nm.empty() )
-			v->setUdevData( nm );
+		    DmraidCo* v = new DmraidCo(this, *i, "/dev/mapper/" + *i, systeminfo);
 		    addToList( v );
 	    }
 	}
     }
-}
 
 
 void
-Storage::detectDmmultipath(ProcPart& ppart)
+    Storage::detectDmmultipath(SystemInfo& systeminfo)
 {
-    if( testmode() )
+    if (testmode())
     {
-	glob_t globbuf;
-	if( glob( (testdir()+"/dmmultipath_*[!~0-9]").c_str(), GLOB_NOSORT, 0,
-	          &globbuf) == 0)
-	{
-	    // TODO: load test data
-	}
- 	globfree (&globbuf);
     }
-    else if( getenv( "YAST2_STORAGE_NO_DMMULTIPATH" )==NULL )
+    else if (autodetect() && getenv("LIBSTORAGE_NO_DMMULTIPATH") == NULL)
     {
-	const list<string> l = DmmultipathCo::getMultipaths();
-	if (!l.empty())
-	{
-	    map<string, list<string>> by_id;
-	    getUdevMap("/dev/disk/by-id", by_id);
+	const list<string> l = DmmultipathCo::getMultipaths(systeminfo);
 	    for( list<string>::const_iterator i=l.begin(); i!=l.end(); ++i )
 	    {
-		DmmultipathCo * v = new DmmultipathCo( this, *i, ppart );
-		    list<string> nm = by_id["dm-"+decString(v->minorNr())];
-		    if (!nm.empty())
-			v->setUdevData( nm );
+		    DmmultipathCo* v = new DmmultipathCo(this, *i, "/dev/mapper/" + *i, systeminfo);
 		    addToList( v );
 	    }
 	}
     }
-}
 
 
 void
-Storage::detectDm(ProcPart& ppart, bool only_crypt)
+    Storage::detectDm(SystemInfo& systeminfo, bool only_crypt)
     {
-    if( testmode() )
+    if (testmode())
 	{
-	glob_t globbuf;
-	if( glob( (testdir()+"/dm_*[!~0-9]").c_str(), GLOB_NOSORT, 0,
-	          &globbuf) == 0)
-	    {
-	    // TODO: load test data
-	    }
- 	globfree (&globbuf);
 	}
-    else if( getenv( "YAST2_STORAGE_NO_DM" )==NULL )
+    else if (autodetect() && getenv("LIBSTORAGE_NO_DM") == NULL)
 	{
 	    DmCo* v = NULL;
 	    if (haveDm(v))
 	    {
-		v->second(true, ppart, only_crypt);
+		v->second(systeminfo, only_crypt);
 	    }
 	    else
 	    {
-		v = new DmCo(this, true, ppart, only_crypt);
+		v = new DmCo(this, systeminfo, only_crypt);
 		if (!v->isEmpty() )
 		{
 		    addToList( v );
@@ -781,14 +705,12 @@ Storage::detectDm(ProcPart& ppart, bool only_crypt)
 	}
     }
 
-namespace storage
-{
+
 struct DiskData
     {
     enum DTyp { DISK, DASD, XEN };
 
-    DiskData() { d=0; s=0; typ=DISK; };
-    DiskData( const string& n, DTyp t, unsigned long long sz ) { d=0; s=sz; typ=t; name=n; };
+    DiskData( const string& n, DTyp t, unsigned long long sz ) : d(NULL) { s=sz; typ=t; name=n; }
 
     Disk* d;
     DTyp typ;
@@ -797,6 +719,7 @@ struct DiskData
     string dev;
     };
 
+
 std::ostream& operator<< ( std::ostream& s, const storage::DiskData& d )
     {
     s << d.name << "," << d.typ << "," << d.s << "," << d.d;
@@ -804,34 +727,25 @@ std::ostream& operator<< ( std::ostream& s, const storage::DiskData& d )
 	s << "," << d.dev;
     return( s );
     }
-}
 
 
 void
-Storage::initDisk( list<DiskData>& dl, ProcPart& pp )
+Storage::initDisk(list<DiskData>& dl, SystemInfo& systeminfo)
     {
     y2mil( "dl: " << dl );
     for( list<DiskData>::iterator i = dl.begin(); i!=dl.end(); ++i )
 	{
 	DiskData& data( *i );
-	y2mil( "data:" << data );
-	data.dev = data.name;
-	string::size_type pos = data.dev.find('!');
-	while( pos!=string::npos )
-	    {
-	    data.dev[pos] = '/';
-	    pos = data.dev.find('!',pos+1);
-	    }
-	y2milestone( "name sysfs:%s parted:%s", data.name.c_str(), 
-		     data.dev.c_str() );
+	data.dev = boost::replace_all_copy(data.name, "!", "/");
+	y2mil("name sysfs:" << data.name << " parted:" << data.dev);
 	Disk * d = NULL;
 	switch( data.typ )
 	    {
 	    case DiskData::DISK:
-		d = new Disk( this, data.dev, data.s );
+		d = new Disk(this, data.dev, "/dev/" + data.dev, data.s, systeminfo);
 		break;
 	    case DiskData::DASD:
-		d = new Dasd( this, data.dev, data.s );
+		d = new Dasd(this, data.dev, "/dev/" + data.dev, data.s, systeminfo);
 		break;
 	    case DiskData::XEN:
 		{
@@ -842,44 +756,39 @@ Storage::initDisk( list<DiskData>& dl, ProcPart& pp )
 		y2mil( "data dev:" << data.dev << " nr:" << nr );
 		if( nr>=0 )
 		    {
-		    list<DiskData>::iterator j = dl.begin(); 
+		    list<DiskData>::iterator j = dl.begin();
 		    while( j!=dl.end() && j->dev!=data.dev )
 			++j;
 		    if( j!=dl.end() && j->d )
-			j->d->addPartition( (unsigned)nr, data.s, pp );
+			j->d->addPartition( (unsigned)nr, data.s, systeminfo );
 		    else
-			d = new Disk( this, data.dev, (unsigned)nr, data.s, pp );
+			d = new Disk(this, data.dev, "/dev/" + data.dev, (unsigned) nr, data.s, systeminfo);
 		    }
 		break;
 		}
 	    }
 	if( d && 
-	    (d->getSysfsInfo(SYSFSDIR "/" + data.name)||data.typ==DiskData::XEN) &&
-	    (data.typ==DiskData::XEN||d->detect(pp)))
+	    (d->getSysfsInfo()||data.typ==DiskData::XEN) &&
+	    (data.typ == DiskData::XEN || d->detect(systeminfo)))
 	    {
-	    if( max_log_num>0 )
-		d->logData( logdir() );
 	    data.d = d;
 	    }
-	else if( d )
+	else
 	    {
 	    delete d;
 	    }
 	}
+    y2mil( "dl: " << dl );
     }
 
 
 void
-    Storage::autodetectDisks(ProcPart& parts)
+    Storage::autodetectDisks(SystemInfo& systeminfo)
     {
     DIR *Dir;
     struct dirent *Entry;
     if( (Dir=opendir(SYSFSDIR))!=NULL )
     {
-	map<string,list<string>> by_path;
-	map<string,list<string>> by_id;
-	getUdevMap("/dev/disk/by-path", by_path);
-	getUdevMap("/dev/disk/by-id", by_id);
 	list<DiskData> dl;
 	while( (Entry=readdir( Dir ))!=NULL )
 	{
@@ -888,18 +797,12 @@ void
 	    if (dn == "." || dn == "..")
 		continue;
 
-	    // Do not allow to detect MD Device as 'disk'
-	    if( MdPartCo::isMdName(dn) )
-	      {
-	      continue;
-	      }
+	    // we do not treat mds as disks although they can be partitioned since kernel 2.6.28
+	    if (boost::starts_with(dn, "md"))
+		continue;
 
 	    Disk::SysfsInfo sysfsinfo;
 	    if (!Disk::getSysfsInfo(SYSFSDIR "/" + dn, sysfsinfo))
-		continue;
-
-	    // we do not treat mds as disks although they can be partitioned since kernel 2.6.28
-	    if (boost::starts_with(dn, "md"))
 		continue;
 
 	    if (sysfsinfo.range > 1 && (sysfsinfo.size > 0 || dn.find("dasd") == 0))
@@ -909,26 +812,27 @@ void
 	    }
 	    else if (sysfsinfo.range == 1 && sysfsinfo.size > 0)
 	    {
-		if (sysfsinfo.device.find( "/vbd" ) != string::npos && isdigit(dn[dn.size() - 1]))
+		if (sysfsinfo.vbd)
 		{
 		    dl.push_back(DiskData(dn, DiskData::XEN, sysfsinfo.size / 2));
 		}
 	    }
 	}
 	closedir( Dir );
-	initDisk(dl, parts);
-	y2mil( "dl: " << dl );
+	initDisk(dl, systeminfo);
+	const UdevMap& by_path = systeminfo.getUdevMap("/dev/disk/by-path");
+	const UdevMap& by_id = systeminfo.getUdevMap("/dev/disk/by-id");
 	for( list<DiskData>::const_iterator i = dl.begin(); i!=dl.end(); ++i )
 	    {
 	    if( i->d )
 	        {
 		string tmp1;
-		map<string, list<string>>::const_iterator it1 = by_path.find(i->dev);
+		UdevMap::const_iterator it1 = by_path.find(i->dev);
 		if (it1 != by_path.end())
 		    tmp1 = it1->second.front();
 
 		list<string> tmp2;
-		map<string, list<string>>::const_iterator it2 = by_id.find(i->dev);			
+		UdevMap::const_iterator it2 = by_id.find(i->dev);
 		if (it2 != by_id.end())
 		    tmp2 = it2->second;
 
@@ -944,117 +848,87 @@ void
     }
 
 
-void
-Storage::detectFsData( const VolIterator& begin, const VolIterator& end,
-                       ProcMounts& mounts )
+    void
+    Storage::detectFsData(const VolIterator& begin, const VolIterator& end, SystemInfo& systeminfo)
     {
-    y2milestone( "detectFsData begin" );
-    SystemCmd Blkid( "BLKID_SKIP_CHECK_MDRAID=1 /sbin/blkid -c /dev/null" );
+    y2mil("detectFsData begin");
     SystemCmd Losetup(LOSETUPBIN " -a");
     for( VolIterator i=begin; i!=end; ++i )
 	{
-	if( i->getUsedByType()==UB_NONE )
+	if (!i->isUsedBy())
 	    {
 	    i->getLoopData( Losetup );
-	    i->getFsData( Blkid );
+	    i->getFsData(systeminfo.getBlkid());
 	    y2mil( "detect:" << *i );
 	    }
 	}
     for( VolIterator i=begin; i!=end; ++i )
 	{
-	if( i->getUsedByType()==UB_NONE )
+	if (!i->isUsedBy())
 	    {
-	    i->getMountData( mounts, !detectMounted );
+	    i->getMountData(systeminfo.getProcMounts(), !detectMounted);
 	    i->getFstabData( *fstab );
 	    y2mil( "detect:" << *i );
 	    if( i->getFs()==FSUNKNOWN && i->getEncryption()==ENC_NONE )
-		i->getStartData();
-	    }
-	}
-    if( max_log_num>0 )
-	logVolumes( logdir() );
-    y2milestone( "detectFsData end" );
-    }
-
-void
-Storage::printInfo( ostream& str, const string& name )
-    {
-    assertInit();
-    ConstContPair p = contPair();
-    string n = DmPartCo::undevName(name);
-    for( ConstContIterator i=p.begin(); i!=p.end(); ++i )
-	{
-	if( name.empty() || i->name()==n )
-	    {
-	    Container::ConstVolPair vp = i->volPair();
-	    i->print( str );
-	    str << endl;
-	    for( Container::ConstVolIterator j=vp.begin(); j!=vp.end(); ++j )
 		{
-		j->print( str );
-		str << endl;
+		Blkid::Entry e;
+		if( i->findBlkid( systeminfo.getBlkid(), e ) && e.is_luks)
+		    i->initEncryption(ENC_LUKS);
 		}
 	    }
 	}
+    y2mil("detectFsData end");
     }
 
 void
-Storage::detectFsDataTestMode( const string& file, const VolIterator& begin,
-			       const VolIterator& end )
+Storage::printInfo(ostream& str) const
+{
+    ConstContPair p = contPair();
+    for (ConstContIterator i = p.begin(); i != p.end(); ++i)
     {
-    AsciiFile vd( file );
-    for( VolIterator i=begin; i!=end; ++i )
+	i->print(str);
+	str << endl;
+
+	Container::ConstVolPair vp = i->volPair();
+	for (Container::ConstVolIterator j = vp.begin(); j != vp.end(); ++j)
 	{
-	int pos = -1;
-	if( (pos=vd.find( 0, "^"+i->device()+" " ))>=0 )
-	    {
-	    i->getTestmodeData( vd[pos] );
-	    }
-	i->getFstabData( *fstab );
+	    j->print(str);
+	    str << endl;
+	}
+    }
+}
+
+
+    void
+    Storage::logContainersAndVolumes(const string& Dir) const
+    {
+	if (max_log_num > 0)
+	{
+	    for (CCIter i = cont.begin(); i != cont.end(); ++i)
+		(*i)->logData(Dir);
+
+	    logFreeInfo(Dir);
+	    logArchInfo(Dir);
 	}
     }
 
-void
-Storage::logVolumes( const string& Dir )
-    {
-    string fname( Dir + "/volume_info.tmp" );
-    ofstream file( fname.c_str() );
-    classic(file);
-    for( VolIterator i=vBegin(); i!=vEnd(); ++i )
-	{
-	if( i->getFs()!=FSUNKNOWN )
-	    {
-	    i->logVolume( file );
-	    }
-	}
-    file.close();
-    handleLogFile( fname );
-    }
 
 bool
-Storage::testFilesEqual( const string& n1, const string& n2 )
-    {
+Storage::testFilesEqual(const string& n1, const string& n2)
+{
     bool ret = false;
-    if( access( n1.c_str(), R_OK )==0 && access( n2.c_str(), R_OK )==0 )
-	{
-	SystemCmd c("/usr/bin/md5sum " + quote(n1) + " " + quote(n2));
-	if( c.retcode()==0 && c.numLines()>=2 )
-	    {
-	    ret = extractNthWord( 0, *c.getLine(0) )==
-	          extractNthWord( 0, *c.getLine(1) );
-	    }
-	}
-    y2mil("ret:" << ret << "n1:" << n1 << " n2:" << n2);
+    if (access(n1.c_str(), R_OK) == 0 && access(n2.c_str(), R_OK) == 0)
+	ret = AsciiFile(n1).lines() == AsciiFile(n2).lines();
+    y2deb("ret:" << ret << " n1:" << n1 << " n2:" << n2);
     return ret;
-    }
+}
+
 
 void
-Storage::handleLogFile( const string& name )
+Storage::handleLogFile(const string& name) const
     {
-    string bname( name );
-    string::size_type pos = bname.rfind( '.' );
-    bname.erase( pos );
-    y2milestone( "name:%s bname:%s", name.c_str(), bname.c_str() );
+    string bname(name, 0, name.rfind('.'));
+    y2mil("name:" << name << " bname:" << bname);
     if( access( bname.c_str(), R_OK )==0 )
 	{
 	if( !testFilesEqual( bname, name ) )
@@ -1082,98 +956,210 @@ Storage::handleLogFile( const string& name )
 	rename( name.c_str(), bname.c_str() );
     }
 
-void Storage::setRecursiveRemoval( bool val )
-    {
-    y2milestone( "val:%d", val );
+
+void Storage::setRecursiveRemoval(bool val)
+{
+    y2mil("val:" << val);
     recursiveRemove = val;
+}
+
+
+int
+Storage::getRecursiveUsing(const string& device, list<string>& devices)
+{
+    y2mil("device:" << device);
+    assertInit();
+    devices.clear();
+    int ret = getRecursiveUsingHelper(device, devices);
+    y2mil("ret:" << ret << " devices:" << devices);
+    return ret;
+}
+
+
+int
+Storage::getRecursiveUsingHelper(const string& device, list<string>& devices)
+    {
+    int ret = 0;
+    ConstContIterator cont;
+    ConstVolIterator vol;
+
+    if (findContainer(device, cont))
+	{
+	Container::ConstVolPair p = cont->volPair(Volume::notDeleted); 
+	for( Container::ConstVolIterator it = p.begin(); it != p.end(); ++it )
+	    {
+	    addIfNotThere( devices, it->device() );
+	    getRecursiveUsingHelper(it->device(), devices);
+	    }
+
+	if (cont->isUsedBy())
+	    {
+	    const list<UsedBy> usedBy = cont->getUsedBy();
+	    for( list<UsedBy>::const_iterator it = usedBy.begin(); 
+	         it != usedBy.end(); ++it)
+		{
+		addIfNotThere( devices, it->device() );
+		getRecursiveUsingHelper(it->device(), devices);
+		}
+	    }
+	}
+    else if (findVolume(device, vol))
+	{
+	if (vol->isUsedBy())
+	    {
+	    const list<UsedBy> usedBy = vol->getUsedBy();
+	    for( list<UsedBy>::const_iterator it = usedBy.begin(); 
+	         it != usedBy.end(); ++it)
+		{
+		addIfNotThere( devices, it->device() );
+		getRecursiveUsingHelper(it->device(), devices);
+		}
+	    }
+	CType typ = vol->cType();
+	list<string> dl;
+	switch( typ )
+	    {
+	    default:
+		break;
+	    case DISK:
+		{
+		const Partition* p = dynamic_cast<const Partition*>(&(*vol));
+		if( p!=NULL && p->type()==EXTENDED )
+		    {
+		    const Disk* d = p->disk();
+		    Disk::ConstPartPair pp = d->partPair(Partition::notDeleted);
+		    for( Disk::ConstPartIter i=pp.begin(); i!=pp.end(); ++i )
+			{
+			if( i->type()==LOGICAL )
+			    dl.push_back(i->device());
+			}
+		    }
+		}
+		break;
+	    case DMRAID:
+	    case DMMULTIPATH:
+		{
+		const DmPart* dp = dynamic_cast<const DmPart*>(&(*vol));
+		const Partition* p = dp!=NULL ? dp->getPtr() : NULL;
+		if( p!=NULL && p->type()==EXTENDED )
+		    {
+		    const Container* co = vol->getContainer();
+		    const DmPartCo* d = dynamic_cast<const DmPartCo *>(co);
+		    if( d!=NULL )
+			{
+			DmPartCo::ConstDmPartPair pp = d->dmpartPair(DmPart::notDeleted);
+			for( DmPartCo::ConstDmPartIter i=pp.begin(); i!=pp.end(); ++i )
+			    {
+			    p = i->getPtr();
+			    if( p!=NULL && p->type()==LOGICAL )
+				dl.push_back(i->device());
+			    }
+			}
+		    }
+		}
+		break;
+	    case MDPART:
+		{
+		const MdPart* dp = dynamic_cast<const MdPart*>(&(*vol));
+		const Partition* p = dp!=NULL ? dp->getPtr() : NULL;
+		if( p!=NULL && p->type()==EXTENDED )
+		    {
+		    const Container* co = vol->getContainer();
+		    const MdPartCo* d = dynamic_cast<const MdPartCo *>(co);
+		    if( d!=NULL )
+			{
+			MdPartCo::ConstMdPartPair pp = d->mdpartPair(MdPart::notDeleted);
+			for( MdPartCo::ConstMdPartIter i=pp.begin(); i!=pp.end(); ++i )
+			    {
+			    p = i->getPtr();
+			    if( p!=NULL && p->type()==LOGICAL )
+				dl.push_back(i->device());
+			    }
+			}
+		    }
+		}
+		break;
+	    }
+	for( list<string>::const_iterator i = dl.begin(); i != dl.end(); ++i )
+	    {
+	    addIfNotThere( devices, *i );
+	    getRecursiveUsingHelper(*i, devices);
+	    }
+	}
+    else
+	{
+	ret = STORAGE_DEVICE_NOT_FOUND;
+	}
+    return ret;
     }
 
-void Storage::setZeroNewPartitions( bool val )
-    {
-    y2milestone( "val:%d", val );
+
+void Storage::setZeroNewPartitions(bool val)
+{
+    y2mil("val:" << val);
     zeroNewPartitions = val;
-    }
+}
 
 void Storage::setPartitionAlignment( PartAlign val )
     {
-    y2mil("val:" << val);
+    y2mil("val:" << toString(val));
     partAlignment = val;
     }
 
-void Storage::setDefaultMountBy( MountByType val )
-    {
-    y2mil( "val:" << Volume::mbyTypeString(val) );
+void Storage::setDefaultMountBy(MountByType val)
+{
+    y2mil("val:" << toString(val));
     defaultMountBy = val;
-    }
-
-
-void
-Storage::setEfiBoot(bool val)
-{
-    assertInit();
-    y2mil("val:" << val);
-    efiboot = val;
-}
-
-bool
-Storage::getEfiBoot()
-{
-    assertInit();
-    return efiboot;
 }
 
 
-void Storage::setRootPrefix( const string& root )
+void Storage::setDefaultFs(FsType val)
+{
+    y2mil("val:" << toString(val));
+    defaultFs = val;
+}
+
+
+    bool
+    Storage::getEfiBoot()
     {
-    y2milestone( "root:%s", root.c_str() );
-    rootprefix = root;
+	assertInit();
+	return archinfo.is_efiboot;
     }
+
+
+    bool
+    Storage::hasIScsiDisks() const
+    {
+	ConstDiskPair dp = diskPair(Disk::isIScsi);
+	bool ret = !dp.empty();
+	y2mil("ret:" << ret);
+	return ret;
+    }
+
+
+void Storage::setRootPrefix(const string& root)
+{
+    y2mil("root:" << root);
+    rootprefix = root;
+}
 
 string Storage::prependRoot(const string& mp) const
-{ 
-    string ret = mp;
-    if (mp != "swap")
-	ret.insert(0, rootprefix);
-    return ret;
+{
+    if (mp == "swap")
+	return mp;
+
+    if (rootprefix != "" && mp == "/")
+	return rootprefix;
+    else
+	return rootprefix + mp;
 }
 
-void Storage::setDetectMountedVolumes( bool val )
-    {
-    y2milestone( "val:%d", val );
+void Storage::setDetectMountedVolumes(bool val)
+{
+    y2mil("val:" << val);
     detectMounted = val;
-    }
-
-string Storage::proc_arch;
-bool Storage::is_ppc_mac = false;
-bool Storage::is_ppc_pegasos = false;
-
-
-bool
-Storage::hasIScsiDisks() const
-{
-    bool ret = false;
-
-    ConstDiskPair dp = diskPair();
-    for (ConstDiskIterator i = dp.begin(); i != dp.end(); ++i)
-    {
-	if (i->isIScsi())
-	{
-	    ret = true;
-	    break;
-	}
-    }
-
-    y2mil("ret:" << ret);
-    return ret;
 }
-
-
-namespace storage
-{
-    void initDefaultLogger ()
-    {
-	Storage::initDefaultLogger ();
-    }
 
 
     StorageInterface* createStorageInterface(const Environment& env)
@@ -1198,7 +1184,6 @@ namespace storage
     {
 	delete p;
     }
-}
 
 
 int
@@ -1208,9 +1193,8 @@ Storage::createPartition( const string& disk, PartitionType type, unsigned long 
     int ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s type:%d start:%ld size:%ld", disk.c_str(),
-                 type, start, size );
-    if( readonly() )
+    y2mil("disk:" << disk << " type:" << toString(type) << " start:" << start << " size:" << size);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -1220,7 +1204,7 @@ Storage::createPartition( const string& disk, PartitionType type, unsigned long 
 	if( i != dEnd() )
 	    {
 	    done = true;
-	    if( i->getUsedByType() != UB_NONE )
+	    if (i->isUsedBy())
 		ret = STORAGE_DISK_USED_BY;
 	    else
 		{
@@ -1236,7 +1220,7 @@ Storage::createPartition( const string& disk, PartitionType type, unsigned long 
 	if( i != dmpCoEnd() )
 	    {
 	    done = true;
-	    if( i->getUsedByType() != UB_NONE )
+	    if (i->isUsedBy())
 		ret = STORAGE_DISK_USED_BY;
 	    else
 		{
@@ -1252,11 +1236,13 @@ Storage::createPartition( const string& disk, PartitionType type, unsigned long 
         if( i != mdpCoEnd() )
             {
             done = true;
-            if( i->getUsedByType() != UB_NONE )
+            if (i->isUsedBy())
                 ret = STORAGE_DISK_USED_BY;
             else
                 {
                 ret = i->createPartition( type, start, size, device, true );
+		if( ret==0 )
+		    checkPwdBuf( device );
                 }
             }
         }
@@ -1268,7 +1254,7 @@ Storage::createPartition( const string& disk, PartitionType type, unsigned long 
 	{
 	ret = checkCache();
 	}
-    y2milestone( "ret:%d device:%s", ret, ret?"":device.c_str() );
+    y2mil("ret:" << ret << " device:" << (ret?"":device));
     return( ret );
     }
 
@@ -1280,9 +1266,9 @@ Storage::createPartitionKb( const string& disk, PartitionType type,
     int ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s type:%d start:%lld sizeK:%lld", disk.c_str(),
-                 type, start, sizeK );
-    if( readonly() )
+    y2mil("disk:" << disk << " type:" << toString(type) << " start:" << start << " sizeK:" <<
+	  sizeK);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -1292,7 +1278,7 @@ Storage::createPartitionKb( const string& disk, PartitionType type,
 	if( i != dEnd() )
 	    {
 	    done = true;
-	    if( i->getUsedByType() != UB_NONE )
+	    if (i->isUsedBy())
 		ret = STORAGE_DISK_USED_BY;
 	    else
 		{
@@ -1313,7 +1299,7 @@ Storage::createPartitionKb( const string& disk, PartitionType type,
 	if( i != dmpCoEnd() )
 	    {
 	    done = true;
-	    if( i->getUsedByType() != UB_NONE )
+	    if (i->isUsedBy())
 		ret = STORAGE_DISK_USED_BY;
 	    else
 		{
@@ -1334,7 +1320,7 @@ Storage::createPartitionKb( const string& disk, PartitionType type,
         if( i != mdpCoEnd() )
             {
             done = true;
-            if( i->getUsedByType() != UB_NONE )
+            if (i->isUsedBy())
                 ret = STORAGE_DISK_USED_BY;
             else
                 {
@@ -1353,7 +1339,7 @@ Storage::createPartitionKb( const string& disk, PartitionType type,
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
 	}
-    y2milestone( "ret:%d device:%s", ret, ret?"":device.c_str() );
+    y2mil("ret:" << ret << " device:" << (ret?"":device));
     return( ret );
     }
 
@@ -1364,8 +1350,8 @@ Storage::createPartitionAny( const string& disk, unsigned long long sizeK,
     int ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s sizeK:%lld", disk.c_str(), sizeK );
-    if( readonly() )
+    y2mil("disk:" << disk << " sizeK:" << sizeK);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -1375,7 +1361,7 @@ Storage::createPartitionAny( const string& disk, unsigned long long sizeK,
 	if( i != dEnd() )
 	    {
 	    done = true;
-	    if( i->getUsedByType() != UB_NONE )
+	    if (i->isUsedBy())
 		ret = STORAGE_DISK_USED_BY;
 	    else
 		{
@@ -1390,7 +1376,7 @@ Storage::createPartitionAny( const string& disk, unsigned long long sizeK,
 	if( i != dmpCoEnd() )
 	    {
 	    done = true;
-	    if( i->getUsedByType() != UB_NONE )
+	    if (i->isUsedBy())
 		ret = STORAGE_DISK_USED_BY;
 	    else
 		{
@@ -1405,7 +1391,7 @@ Storage::createPartitionAny( const string& disk, unsigned long long sizeK,
         if( i != mdpCoEnd() )
             {
             done = true;
-            if( i->getUsedByType() != UB_NONE )
+            if (i->isUsedBy())
                 ret = STORAGE_DISK_USED_BY;
             else
                 {
@@ -1418,7 +1404,7 @@ Storage::createPartitionAny( const string& disk, unsigned long long sizeK,
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
 	}
-    y2milestone( "ret:%d device:%s", ret, ret?"":device.c_str() );
+    y2mil("ret:" << ret << " device:" << (ret?"":device));
     return( ret );
     }
 
@@ -1429,8 +1415,8 @@ Storage::nextFreePartition( const string& disk, PartitionType type,
     int ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s type:%u", disk.c_str(), type );
-    DiskIterator i = findDisk( disk );
+    y2mil("disk:" << disk << " type:" << toString(type));
+    ConstDiskIterator i = findDisk( disk );
     if( i != dEnd() )
 	{
 	done = true;
@@ -1438,7 +1424,7 @@ Storage::nextFreePartition( const string& disk, PartitionType type,
 	}
     if( !done )
 	{
-	DmPartCoIterator i = findDmPartCo( disk );
+	ConstDmPartCoIterator i = findDmPartCo( disk );
 	if( i != dmpCoEnd() )
 	    {
 	    done = true;
@@ -1447,7 +1433,7 @@ Storage::nextFreePartition( const string& disk, PartitionType type,
 	}
     if( !done )
         {
-        MdPartCoIterator i = findMdPartCo( disk );
+        ConstMdPartCoIterator i = findMdPartCo( disk );
         if( i != mdpCoEnd() )
             {
             done = true;
@@ -1458,7 +1444,7 @@ Storage::nextFreePartition( const string& disk, PartitionType type,
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
 	}
-    y2milestone( "ret:%d device:%s", ret, ret?"":device.c_str() );
+    y2mil("ret:" << ret << " device:" << (ret?"":device));
     return( ret );
     }
 
@@ -1469,9 +1455,9 @@ Storage::createPartitionMax( const string& disk, PartitionType type,
     int ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s type:%u", disk.c_str(), type );
+    y2mil("disk:" << disk << " type:" << toString(type));
     DiskIterator i = findDisk( disk );
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -1481,7 +1467,7 @@ Storage::createPartitionMax( const string& disk, PartitionType type,
 	if( i != dEnd() )
 	    {
 	    done = true;
-	    if( i->getUsedByType() != UB_NONE )
+	    if (i->isUsedBy())
 		ret = STORAGE_DISK_USED_BY;
 	    else
 		{
@@ -1495,7 +1481,7 @@ Storage::createPartitionMax( const string& disk, PartitionType type,
 	if( i != dmpCoEnd() )
 	    {
 	    done = true;
-	    if( i->getUsedByType() != UB_NONE )
+	    if (i->isUsedBy())
 		ret = STORAGE_DISK_USED_BY;
 	    else
 		{
@@ -1509,7 +1495,7 @@ Storage::createPartitionMax( const string& disk, PartitionType type,
         if( i != mdpCoEnd() )
             {
             done = true;
-            if( i->getUsedByType() != UB_NONE )
+            if (i->isUsedBy())
                 ret = STORAGE_DISK_USED_BY;
             else
                 {
@@ -1521,7 +1507,7 @@ Storage::createPartitionMax( const string& disk, PartitionType type,
 	{
 	ret = STORAGE_DISK_NOT_FOUND;
 	}
-    y2milestone( "ret:%d device:%s", ret, ret?"":device.c_str() );
+    y2mil("ret:" << ret << " device:" << (ret?"":device));
     return( ret );
     }
 
@@ -1531,8 +1517,8 @@ Storage::cylinderToKb( const string& disk, unsigned long size )
     unsigned long long ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s size:%ld", disk.c_str(), size );
-    DiskIterator i = findDisk( disk );
+    y2mil("disk:" << disk << " size:" << size);
+    ConstDiskIterator i = findDisk( disk );
     if( i != dEnd() )
 	{
 	done = true;
@@ -1540,7 +1526,7 @@ Storage::cylinderToKb( const string& disk, unsigned long size )
 	}
     if( !done )
 	{
-	DmPartCoIterator i = findDmPartCo( disk );
+	ConstDmPartCoIterator i = findDmPartCo( disk );
 	if( i != dmpCoEnd() )
 	    {
 	    done = true;
@@ -1548,15 +1534,15 @@ Storage::cylinderToKb( const string& disk, unsigned long size )
 	    }
 	}
     if( !done )
-        {
-        MdPartCoIterator i = findMdPartCo( disk );
+    {
+        ConstMdPartCoIterator i = findMdPartCo( disk );
         if( i != mdpCoEnd() )
-            {
+	{
             done = true;
             ret = i->cylinderToKb( size );
-            }
-        }
-    y2milestone( "ret:%lld", ret );
+	}
+    }
+    y2mil("ret:" << ret);
     return( ret );
     }
 
@@ -1566,8 +1552,8 @@ Storage::kbToCylinder( const string& disk, unsigned long long sizeK )
     unsigned long ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s sizeK:%lld", disk.c_str(), sizeK );
-    DiskIterator i = findDisk( disk );
+    y2mil("disk:" << disk << " sizeK:" << sizeK);
+    ConstDiskIterator i = findDisk( disk );
     if( i != dEnd() )
 	{
 	done = true;
@@ -1575,7 +1561,7 @@ Storage::kbToCylinder( const string& disk, unsigned long long sizeK )
 	}
     if( !done )
 	{
-	DmPartCoIterator i = findDmPartCo( disk );
+	ConstDmPartCoIterator i = findDmPartCo( disk );
 	if( i != dmpCoEnd() )
 	    {
 	    done = true;
@@ -1583,16 +1569,15 @@ Storage::kbToCylinder( const string& disk, unsigned long long sizeK )
 	    }
 	}
     if( !done )
-        {
-        MdPartCoIterator i = findMdPartCo( disk );
+    {
+        ConstMdPartCoIterator i = findMdPartCo( disk );
         if( i != mdpCoEnd() )
-            {
+	{
             done = true;
             ret = i->kbToCylinder( sizeK );
-            }
-        }
-
-    y2milestone( "ret:%ld", ret );
+	}
+    }
+    y2mil("ret:" << ret);
     return( ret );
     }
 
@@ -1601,23 +1586,23 @@ Storage::removePartition( const string& partition )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "partition:%s", partition.c_str() );
+    y2mil("partition:" << partition);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
-    else if( findVolume( partition, cont, vol ) )
+    else if( findVolume( partition, cont, vol, true ) )
 	{
 	if( cont->type()==DISK )
 	    {
 	    Disk* disk = dynamic_cast<Disk *>(&(*cont));
 	    if( disk!=NULL )
 		{
-		if( vol->getUsedByType() == UB_NONE || recursiveRemove )
+		if( canRemove( *vol ) )
 		    {
-		    if( vol->getUsedByType() != UB_NONE )
+		    if (vol->isUsedBy())
 			ret = removeUsing( vol->device(), vol->getUsedBy() );
 		    if( ret==0 )
 			ret = disk->removePartition( vol->nr() );
@@ -1635,9 +1620,9 @@ Storage::removePartition( const string& partition )
 	    DmPartCo* disk = dynamic_cast<DmPartCo *>(&(*cont));
 	    if( disk!=NULL )
 		{
-		if( vol->getUsedByType() == UB_NONE || recursiveRemove )
+		if( canRemove( *vol ) )
 		    {
-		    if( vol->getUsedByType() != UB_NONE )
+		    if (vol->isUsedBy())
 			ret = removeUsing( vol->device(), vol->getUsedBy() );
 		    if( ret==0 )
 			ret = disk->removePartition( vol->nr() );
@@ -1655,9 +1640,9 @@ Storage::removePartition( const string& partition )
 	  MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
 	  if( disk != NULL)
 	    {
-	    if( vol->getUsedByType() == UB_NONE || recursiveRemove )
+	    if( canRemove( *vol ) )
 	      {
-	      if( vol->getUsedByType() != UB_NONE )
+		  if( vol->isUsedBy())
 	        ret = removeUsing( vol->device(), vol->getUsedBy() );
 	      if( ret==0 )
 	        {
@@ -1695,11 +1680,10 @@ Storage::updatePartitionArea( const string& partition, unsigned long start,
     {
     int ret = 0;
     assertInit();
-    y2milestone( "partition:%s start:%ld size:%ld", partition.c_str(),
-                 start, size );
+    y2mil("partition:" << partition << " start:" << start << " size:" << size);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -1710,7 +1694,7 @@ Storage::updatePartitionArea( const string& partition, unsigned long start,
 	    Disk* disk = dynamic_cast<Disk *>(&(*cont));
 	    if( disk!=NULL )
 		{
-		ret = disk->changePartitionArea( vol->nr(), start, size );
+		ret = disk->changePartitionArea(vol->nr(), Region(start, size));
 		}
 	    else
 		{
@@ -1722,7 +1706,7 @@ Storage::updatePartitionArea( const string& partition, unsigned long start,
 	    DmPartCo* disk = dynamic_cast<DmPartCo *>(&(*cont));
 	    if( disk!=NULL )
 		{
-		ret = disk->changePartitionArea( vol->nr(), start, size );
+		ret = disk->changePartitionArea(vol->nr(), Region(start, size));
 		}
 	    else
 		{
@@ -1734,7 +1718,7 @@ Storage::updatePartitionArea( const string& partition, unsigned long start,
 	  MdPartCo* disk = dynamic_cast<MdPartCo *>(&(*cont));
 	  if( disk!=NULL )
 	    {
-	    ret = disk->changePartitionArea( vol->nr(), start, size );
+	    ret = disk->changePartitionArea(vol->nr(), Region(start, size));
 	    }
 	  else
 	    {
@@ -1766,8 +1750,8 @@ Storage::freeCylindersAroundPartition(const string& partition, unsigned long& fr
     int ret = 0;
     assertInit();
     y2mil("partition:" << partition);
-    VolIterator vol;
-    ContIterator cont;
+    ConstVolIterator vol;
+    ConstContIterator cont;
     if( findVolume( partition, cont, vol ) )
     {
 	if( cont->type()==DISK )
@@ -1828,10 +1812,10 @@ Storage::changePartitionId( const string& partition, unsigned id )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "partition:%s id:%x", partition.c_str(), id );
+    y2mil("partition:" << partition << " id:" << hex << id);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -1908,11 +1892,10 @@ Storage::resizePartition( const string& partition, unsigned long sizeCyl,
     {
     int ret = 0;
     assertInit();
-    y2milestone( "partition:%s newCyl:%lu ignoreFs:%d", partition.c_str(), 
-                 sizeCyl, ignoreFs );
+    y2mil("partition:" << partition << " newCyl:" << sizeCyl << " ignoreFs:" << ignoreFs);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -1985,10 +1968,10 @@ Storage::forgetChangePartitionId( const string& partition )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "partition:%s", partition.c_str() );
+    y2mil("partition:" << partition);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2049,6 +2032,20 @@ Storage::forgetChangePartitionId( const string& partition )
     }
 
 
+    string
+    Storage::getPartitionPrefix(const string& disk)
+    {
+	return Disk::partNaming(disk);
+    }
+
+
+    string
+    Storage::getPartitionName(const string& disk, int partition_no)
+    {
+	return disk + Disk::partNaming(disk) + decString(partition_no);
+    }
+
+
 int
 Storage::getUnusedPartitionSlots(const string& disk, list<PartitionSlotInfo>& slots)
 {
@@ -2058,9 +2055,9 @@ Storage::getUnusedPartitionSlots(const string& disk, list<PartitionSlotInfo>& sl
 
     // TODO: don't have code below twice
 
-    DiskIterator i1 = findDisk( disk );
-    DmPartCoIterator i2 = findDmPartCo( disk );
-    MdPartCoIterator i3 = findMdPartCo( disk );
+    ConstDiskIterator i1 = findDisk( disk );
+    ConstDmPartCoIterator i2 = findDmPartCo( disk );
+    ConstMdPartCoIterator i3 = findMdPartCo( disk );
 
     if (i1 != dEnd())
     {
@@ -2200,9 +2197,9 @@ Storage::destroyPartitionTable( const string& disk, const string& label )
     int ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s label:%s", disk.c_str(), label.c_str() );
+    y2mil("disk:" << disk << " label:" << label);
 
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2251,9 +2248,9 @@ Storage::initializeDisk( const string& disk, bool value )
     int ret = 0;
     bool done = false;
     assertInit();
-    y2milestone( "disk:%s value:%d", disk.c_str(), value );
+    y2mil("disk:" << disk << " value:" << value);
 
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2302,21 +2299,19 @@ Storage::defaultDiskLabel(const string& device)
 {
     assertInit();
 
-    unsigned long long num_sectors = 0;
-
-    DiskIterator i1 = findDisk(device);
+    ConstDiskIterator i1 = findDisk(device);
     if (i1 != dEnd())
-	num_sectors = i1->kbToSector(i1->size_k);
+	return i1->defaultLabel();
 
-    DmPartCoIterator i2 = findDmPartCo(device);
+    ConstDmPartCoIterator i2 = findDmPartCo(device);
     if (i2 != dmpCoEnd())
-	num_sectors = i2->disk->kbToSector(i2->size_k);
+	return i2->disk->defaultLabel();
 
-    MdPartCoIterator i3 = findMdPartCo(device);
+    ConstMdPartCoIterator i3 = findMdPartCo(device);
     if (i3 != mdpCoEnd())
-	num_sectors = i3->disk->kbToSector(i3->size_k);
+	return i3->disk->defaultLabel();
 
-    return Disk::defaultLabel(efiBoot(), num_sectors);
+    return "";			// FIXME
 }
 
 
@@ -2325,17 +2320,58 @@ Storage::changeFormatVolume( const string& device, bool format, FsType fs )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s format:%d type:%s", device.c_str(), format,
-                 Volume::fsTypeString(fs).c_str() );
+    y2mil("device:" << device << " format:" << format << " fs_type:" << toString(fs));
     VolIterator vol;
-    ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
-    else if( findVolume( device, cont, vol ) )
+    else if( findVolume( device, vol ) )
 	{
-	ret = vol->setFormat( format, fs );
+	BtrfsCo *co = NULL;
+	FsType tmpfs = format?fs:vol->detectedFs();
+	y2mil( "tmpfs:" << tmpfs << " fs:" << fs << " det:" << vol->detectedFs() );
+	y2mil( "ctype:" << vol->cType() << " BTRFS:" << BTRFSC );
+
+	if( (tmpfs==BTRFS && vol->cType()==BTRFSC) ||
+	    (tmpfs!=BTRFS && vol->cType()!=BTRFSC) )
+	    ret = vol->setFormat( format, fs );
+	else if( tmpfs==BTRFS )
+	    {
+	    // put volume to format into BTRFS-Container and set used by on plain volume
+	    bool have_co = haveBtrfs(co);
+	    if( !have_co )
+		co = new BtrfsCo(this);
+	    if( co==NULL )
+		ret = STORAGE_MEMORY_EXHAUSTED;
+	    if( ret==0 )
+		{
+		ret = vol->setFormat( format, fs );
+		if( ret==0 )
+		    {
+		    co->addFromVolume( *vol );
+		    vol->setUsedByUuid( UB_BTRFS, "12345" );
+		    }
+		}
+	    }
+	else if( tmpfs!=BTRFS )
+	    {
+	    // remove volume from BTRFS-Container and unset used by on plain volume
+	    if(haveBtrfs(co))
+		{
+		string mp = vol->getMount();
+		co->eraseVolume( &(*vol) );
+		if( findVolume( device, vol ) && vol->cType()!=BTRFSC )
+		    {
+		    vol->updateFsData();
+		    vol->changeMount( mp );
+		    vol->clearUsedBy();
+		    ret = vol->setFormat( format, fs );
+		    }
+		else
+		    y2war( "base volume for " << device << " not found" );
+		}
+	    }
 	}
     else
 	{
@@ -2354,10 +2390,10 @@ Storage::changeLabelVolume( const string& device, const string& label )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s label:%s", device.c_str(), label.c_str() );
+    y2mil("device:" << device << " label:" << label);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2382,10 +2418,10 @@ Storage::eraseLabelVolume( const string& device )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str() );
+    y2mil("device:" << device);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2402,48 +2438,14 @@ Storage::eraseLabelVolume( const string& device )
     }
 
 int
-Storage::verifyCryptFilePassword( const string& file, const string& pwd )
-    {
-    int ret = VOLUME_CRYPT_NOT_DETECTED;
-    assertInit();
-    y2mil("file:" << file << " l:" << pwd.length());
-#ifdef DEBUG_LOOP_CRYPT_PASSWORD
-    y2mil("password:" << pwd);
-#endif
-
-    VolIterator vol;
-    if (readonly())
-	{
-	ret = STORAGE_CHANGE_READONLY;
-	}
-    else
-	{
-	ProcPart ppart;
-	LoopCo* co = new LoopCo(this, false, ppart);
-	if( co )
-	    {
-	    Loop* loop = new Loop( *co, file, true, 0, true );
-	    if( loop && loop->setCryptPwd( pwd )==0 && 
-		loop->detectEncryption()!=ENC_UNKNOWN )
-		ret = 0;
-	    if( loop )
-		delete loop;
-	    delete co;
-	    }
-	}
-    y2mil("ret:" << ret);
-    return( ret );
-    }
-
-int
 Storage::changeMkfsOptVolume( const string& device, const string& opts )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s opts:%s", device.c_str(), opts.c_str() );
+    y2mil("device:" << device << " opts:" << opts);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2468,10 +2470,10 @@ Storage::changeTunefsOptVolume( const string& device, const string& opts )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s opts:%s", device.c_str(), opts.c_str() );
+    y2mil("device:" << device << " opts:" << opts);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2496,10 +2498,10 @@ Storage::changeDescText( const string& device, const string& txt )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s txt:%s", device.c_str(), txt.c_str() );
+    y2mil("device:" << device << " txt:" << txt);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2524,10 +2526,10 @@ Storage::changeMountPoint( const string& device, const string& mount )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s mount:%s", device.c_str(), mount.c_str() );
+    y2mil("device:" << device << " mount:" <<  mount);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2552,9 +2554,9 @@ Storage::getMountPoint( const string& device, string& mount )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str());
-    VolIterator vol;
-    ContIterator cont;
+    y2mil("device:" << device);
+    ConstVolIterator vol;
+    ConstContIterator cont;
     if( findVolume( device, cont, vol ) )
 	{
 	mount = vol->getMount();
@@ -2572,11 +2574,10 @@ Storage::changeMountBy( const string& device, MountByType mby )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s mby:%s", device.c_str(),
-                 Volume::mbyTypeString(mby).c_str() );
+    y2mil("device:" << device << " mby:" << toString(mby));
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2601,9 +2602,9 @@ Storage::getMountBy( const string& device, MountByType& mby )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str());
-    VolIterator vol;
-    ContIterator cont;
+    y2mil("device:" << device);
+    ConstVolIterator vol;
+    ConstContIterator cont;
     if( findVolume( device, cont, vol ) )
 	{
 	mby = vol->getMountBy();
@@ -2614,10 +2615,9 @@ Storage::getMountBy( const string& device, MountByType& mby )
 	pair<string,unsigned> dp = Disk::getDiskPartition(device);
 	y2mil( "dp:" << dp );
 
-	DiskIterator i1 = findDisk(dp.first);
-	DmPartCoIterator i2 = findDmPartCo(dp.first);
-	MdPartCoIterator i3 = findMdPartCo(dp.first);
-
+	ConstDiskIterator i1 = findDisk(dp.first);
+	ConstDmPartCoIterator i2 = findDmPartCo(dp.first);
+	ConstMdPartCoIterator i3 = findMdPartCo(dp.first);
 	if (i1 != dEnd())
 	{ 
 	    if ((mby == MOUNTBY_ID && i1->udevId().empty()) ||
@@ -2641,7 +2641,7 @@ Storage::getMountBy( const string& device, MountByType& mby )
 	    ret = STORAGE_VOLUME_NOT_FOUND;
 	}
 	}
-    y2milestone( "ret:%d mby:%s", ret, Volume::mbyTypeString(mby).c_str());
+    y2mil("ret:" << ret << " mby:" << toString(mby));
     return( ret );
     }
 
@@ -2650,10 +2650,10 @@ Storage::changeFstabOptions( const string& device, const string& options )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s options:%s", device.c_str(), options.c_str() );
+    y2mil("device:" << device << " options:" << options);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2678,9 +2678,9 @@ Storage::getFstabOptions( const string& device, string& options )
 {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str());
-    VolIterator vol;
-    ContIterator cont;
+    y2mil("device:" << device);
+    ConstVolIterator vol;
+    ConstContIterator cont;
     if( findVolume( device, cont, vol ) )
     {
 	options = vol->getFstabOption();
@@ -2689,7 +2689,7 @@ Storage::getFstabOptions( const string& device, string& options )
     {
 	ret = STORAGE_VOLUME_NOT_FOUND;
     }
-    y2milestone( "ret:%d options:%s", ret, options.c_str() );
+    y2mil("ret:" << ret << " options:" << options);
     return( ret );
 }
 
@@ -2698,10 +2698,10 @@ Storage::addFstabOptions( const string& device, const string& options )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s options:%s", device.c_str(), options.c_str() );
+    y2mil("device:" << device << " options:" << options);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2714,7 +2714,7 @@ Storage::addFstabOptions( const string& device, const string& options )
 	    if( find( opts.begin(), opts.end(), *i )==opts.end() )
 		opts.push_back( *i );
 	    }
-	ret = vol->changeFstabOptions( mergeString( opts, "," ) );
+	ret = vol->changeFstabOptions( boost::join( opts, "," ) );
 	}
     else
 	{
@@ -2733,10 +2733,10 @@ Storage::removeFstabOptions( const string& device, const string& options )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s options:%s", device.c_str(), options.c_str() );
+    y2mil("device:" << device << " options:" << options);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2746,9 +2746,9 @@ Storage::removeFstabOptions( const string& device, const string& options )
 	list<string> opts = splitString( vol->getFstabOption(), "," );
 	for( list<string>::const_iterator i=l.begin(); i!=l.end(); i++ )
 	    {
-	    opts.remove_if(match_regex(*i));
+	    opts.remove_if(regex_matches(*i));
 	    }
-	ret = vol->changeFstabOptions( mergeString( opts, "," ) );
+	ret = vol->changeFstabOptions( boost::join( opts, "," ) );
 	}
     else
 	{
@@ -2765,7 +2765,7 @@ Storage::removeFstabOptions( const string& device, const string& options )
 int
 Storage::setCrypt( const string& device, bool val )
     {
-    y2milestone( "device:%s val:%d", device.c_str(), val );
+    y2mil("device:" << device << " val:" << val);
     return( setCryptType( device, val, ENC_LUKS ));
     }
     
@@ -2774,10 +2774,10 @@ Storage::setCryptType( const string& device, bool val, EncryptType typ )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s val:%d type:%d", device.c_str(), val, typ );
+    y2mil("device:" << device << " val:" << val << " enc_type:" << toString(typ));
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2804,9 +2804,9 @@ Storage::getCrypt( const string& device, bool& val )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str());
-    VolIterator vol;
-    ContIterator cont;
+    y2mil("device:" << device);
+    ConstVolIterator vol;
+    ConstContIterator cont;
     if( findVolume( device, cont, vol ) )
 	{
 	val = vol->getEncryption();
@@ -2815,22 +2815,23 @@ Storage::getCrypt( const string& device, bool& val )
 	{
 	ret = STORAGE_VOLUME_NOT_FOUND;
 	}
-    y2milestone( "ret:%d val:%d", ret, val );
+    y2mil("ret:" << ret << " val:" << val);
     return( ret );
     }
 
 int
-Storage::verifyCryptPassword( const string& device, const string& pwd )
+Storage::verifyCryptPassword( const string& device, const string& pwd,
+                              bool erase )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s l:%zu", device.c_str(), pwd.length() );
-#ifdef DEBUG_LOOP_CRYPT_PASSWORD
-    y2milestone( "password:%s", pwd.c_str() );
+    y2mil("device:" << device << " l:" << pwd.length() << " erase:" << erase );
+#ifdef DEBUG_CRYPT_PASSWORD
+    y2mil("pwd:" << pwd);
 #endif
 
     VolIterator vol;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2839,11 +2840,44 @@ Storage::verifyCryptPassword( const string& device, const string& pwd )
 	ret = vol->setCryptPwd( pwd );
 	if( ret==0 && vol->detectEncryption()==ENC_UNKNOWN )
 	    ret = VOLUME_CRYPT_NOT_DETECTED;
-	vol->clearCryptPwd();
+	if( erase || ret != 0 )
+	    vol->clearCryptPwd();
 	}
     else
 	{
 	ret = verifyCryptFilePassword( device, pwd );
+	}
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+int
+Storage::verifyCryptFilePassword( const string& file, const string& pwd )
+    {
+    int ret = VOLUME_CRYPT_NOT_DETECTED;
+    assertInit();
+    y2mil("file:" << file << " l:" << pwd.length());
+#ifdef DEBUG_CRYPT_PASSWORD
+    y2mil("pwd:" << pwd);
+#endif
+
+    if (readonly())
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    else
+	{
+	LoopCo* co = new LoopCo(this);
+	if( co )
+	    {
+	    Loop* loop = new Loop( *co, file, true, 0, true );
+	    if( loop && loop->setCryptPwd( pwd )==0 && 
+		loop->detectEncryption()!=ENC_UNKNOWN )
+		ret = 0;
+	    if( loop )
+		delete loop;
+	    delete co;
+	    }
 	}
     y2mil("ret:" << ret);
     return( ret );
@@ -2855,8 +2889,8 @@ Storage::setCryptPassword( const string& device, const string& pwd )
     int ret = 0;
     assertInit();
     y2mil("device:" << device << " l:" << pwd.length());
-#ifdef DEBUG_LOOP_CRYPT_PASSWORD
-    y2mil("password:" << pwd);
+#ifdef DEBUG_CRYPT_PASSWORD
+    y2mil("pwd:" << pwd);
 #endif
 
     VolIterator vol;
@@ -2888,10 +2922,10 @@ Storage::forgetCryptPassword( const string& device )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str() );
+    y2mil("device:" << device);
 
     VolIterator vol;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -2919,7 +2953,7 @@ Storage::needCryptPassword( const string& device )
     assertInit();
     y2mil("device:" << device);
 
-    VolIterator vol;
+    ConstVolIterator vol;
     if( checkNormalFile(device) )
 	{
 	ConstLoopPair p = loopPair(Loop::notDeleted);
@@ -2950,10 +2984,10 @@ Storage::getCryptPassword( const string& device, string& pwd )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str() );
+    y2mil("device:" << device);
 
     pwd.clear();
-    VolIterator vol;
+    ConstVolIterator vol;
     if( findVolume( device, vol ) )
 	{
 	pwd = vol->getCryptPwd();
@@ -2966,8 +3000,8 @@ Storage::getCryptPassword( const string& device, string& pwd )
 	else
 	    ret = STORAGE_VOLUME_NOT_FOUND;
 	}
-#ifdef DEBUG_LOOP_CRYPT_PASSWORD
-    y2milestone( "password:%s", pwd.c_str() );
+#ifdef DEBUG_CRYPT_PASSWORD
+    y2mil("pwd:" << pwd);
 #endif
     y2mil("ret:" << ret);
     return( ret );
@@ -2978,10 +3012,10 @@ Storage::setIgnoreFstab( const string& device, bool val )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s val:%d", device.c_str(), val );
+    y2mil("device:" << device << " val:" << val);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3006,9 +3040,9 @@ Storage::getIgnoreFstab( const string& device, bool& val )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str());
-    VolIterator vol;
-    ContIterator cont;
+    y2mil("device:" << device);
+    ConstVolIterator vol;
+    ConstContIterator cont;
     if( findVolume( device, cont, vol ) )
 	{
 	val = vol->ignoreFstab();
@@ -3017,33 +3051,32 @@ Storage::getIgnoreFstab( const string& device, bool& val )
 	{
 	ret = STORAGE_VOLUME_NOT_FOUND;
 	}
-    y2milestone( "ret:%d val:%d", ret, val );
+    y2mil("ret:" << ret << " val:" << val);
     return( ret );
     }
 
 int
-Storage::resizeVolume( const string& device, unsigned long long newSizeMb )
+Storage::resizeVolume(const string& device, unsigned long long newSizeK)
     {
-    return( resizeVolume( device, newSizeMb, false ));
+    return resizeVolume(device, newSizeK, false);
     }
 
 int
-Storage::resizeVolumeNoFs( const string& device, unsigned long long newSizeMb )
+Storage::resizeVolumeNoFs(const string& device, unsigned long long newSizeK)
     {
-    return( resizeVolume( device, newSizeMb, true ));
+    return resizeVolume(device, newSizeK, true);
     }
 
 int
-Storage::resizeVolume( const string& device, unsigned long long newSizeMb,
-                       bool ignoreFs )
+Storage::resizeVolume(const string& device, unsigned long long newSizeK,
+		      bool ignoreFs)
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s newSizeMb:%llu ignoreFs:%d", device.c_str(), 
-                 newSizeMb, ignoreFs );
+    y2mil("device:" << device << " newSizeK:" << newSizeK << " ignoreFs:" << ignoreFs);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3052,8 +3085,8 @@ Storage::resizeVolume( const string& device, unsigned long long newSizeMb,
 	y2mil( "vol:" << *vol );
 	if( ignoreFs )
 	    vol->setIgnoreFs();
-	ret = cont->resizeVolume( &(*vol), newSizeMb*1024 );
-	eraseFreeInfo( vol->device() );
+	ret = cont->resizeVolume(&(*vol), newSizeK);
+	eraseCachedFreeInfo(vol->device());
 	y2mil( "vol:" << *vol );
 	}
     else
@@ -3073,10 +3106,10 @@ Storage::forgetResizeVolume( const string& device )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str() );
+    y2mil("device:" << device);
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3101,20 +3134,20 @@ Storage::removeVolume( const string& device )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s", device.c_str() );
+    y2mil("device:" << device);
 
     VolIterator vol;
     ContIterator cont;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
-    else if( findVolume( device, cont, vol ) )
+    else if( findVolume( device, cont, vol, false ) )
 	{
-	if( vol->getUsedByType() == UB_NONE || recursiveRemove )
+	if( canRemove( *vol ) )
 	    {
 	    string vdev = vol->device();
-	    if( vol->getUsedByType() != UB_NONE )
+	    if (vol->isUsedBy())
 		ret = removeUsing( vdev, vol->getUsedBy() );
 	    if( ret==0 )
 		ret = cont->removeVolume( &(*vol) );
@@ -3142,8 +3175,8 @@ Storage::createLvmVg( const string& name, unsigned long long peSizeK,
     assertInit();
     y2mil( "name:" << name << " peSizeK:" << peSizeK << " lvm1:" << lvm1 <<
 	   " devices:" << devs );
-    LvmVgIterator i = findLvmVg( name );
-    if( readonly() )
+    ConstLvmVgIterator i = findLvmVg( name );
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3154,14 +3187,11 @@ Storage::createLvmVg( const string& name, unsigned long long peSizeK,
 	}
     else if( i == lvgEnd() )
 	{
-	LvmVg *v = new LvmVg( this, name, lvm1 );
-	v->setCreated();
+	LvmVg* v = new LvmVg(this, name, "/dev/" + name, lvm1);
 	ret = v->setPeSize( peSizeK );
 	if( ret==0 && !devs.empty() )
 	    {
-	    list<string> d;
-	    back_insert_iterator<list<string> > inserter(d);
-	    copy( devs.begin(), devs.end(), inserter );
+	    list<string> d(devs.begin(), devs.end());
 	    ret = v->extendVg( d );
 	    }
 	if( ret==0 )
@@ -3186,9 +3216,9 @@ Storage::removeLvmVg( const string& name )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "name:%s", name.c_str() );
+    y2mil("name:" << name);
     LvmVgIterator i = findLvmVg( name );
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3217,15 +3247,13 @@ Storage::extendLvmVg( const string& name, const deque<string>& devs )
     assertInit();
     y2mil( "name:" << name << " devices:" << devs );
     LvmVgIterator i = findLvmVg( name );
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
     else if( i != lvgEnd() )
 	{
-	list<string> d;
-	back_insert_iterator<list<string> > inserter(d);
-	copy( devs.begin(), devs.end(), inserter );
+	list<string> d(devs.begin(), devs.end());
 	ret = i->extendVg( d );
 	}
     else
@@ -3247,15 +3275,13 @@ Storage::shrinkLvmVg( const string& name, const deque<string>& devs )
     assertInit();
     y2mil( "name:" << name << " devices:" << devs );
     LvmVgIterator i = findLvmVg( name );
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
     else if( i != lvgEnd() )
 	{
-	list<string> d;
-	back_insert_iterator<list<string> > inserter(d);
-	copy( devs.begin(), devs.end(), inserter );
+	list<string> d(devs.begin(), devs.end());
 	ret = i->reduceVg( d );
 	}
     else
@@ -3271,22 +3297,21 @@ Storage::shrinkLvmVg( const string& name, const deque<string>& devs )
     }
 
 int
-Storage::createLvmLv( const string& vg, const string& name,
-                      unsigned long long sizeM, unsigned stripe,
-		      string& device )
+Storage::createLvmLv(const string& vg, const string& name,
+		     unsigned long long sizeK, unsigned stripes,
+		     string& device)
     {
     int ret = 0;
     assertInit();
-    y2milestone( "vg:%s name:%s sizeM:%llu stripe:%u", vg.c_str(),
-                 name.c_str(), sizeM, stripe );
+    y2mil("vg:" << vg << " name:" << name << " sizeK:" << sizeK << " stripes:" << stripes);
     LvmVgIterator i = findLvmVg( vg );
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
     else if( i != lvgEnd() )
 	{
-	ret = i->createLv( name, sizeM*1024, stripe, device );
+	ret = i->createLv(name, sizeK, stripes, device);
 	if( ret==0 )
 	    checkPwdBuf( device );
 	}
@@ -3298,7 +3323,7 @@ Storage::createLvmLv( const string& vg, const string& name,
 	{
 	ret = checkCache();
 	}
-    y2milestone( "ret:%d device:%s", ret, ret?"":device.c_str() );
+    y2mil("ret:" << ret << " device:" << (ret?"":device));
     return( ret );
     }
 
@@ -3327,9 +3352,9 @@ Storage::removeLvmLv( const string& vg, const string& name )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "vg:%s name:%s", vg.c_str(), name.c_str() );
+    y2mil("vg:" << vg << " name:" << name);
     LvmVgIterator i = findLvmVg( vg );
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3355,10 +3380,9 @@ Storage::changeLvStripeCount( const string& vg, const string& name,
     {
     int ret = 0;
     assertInit();
-    y2milestone( "vg:%s name:%s stripe:%lu", vg.c_str(), name.c_str(),
-                 stripe );
+    y2mil("vg:" << vg << " name:" << name << " stripe:" << stripe);
     LvmVgIterator i = findLvmVg( vg );
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3384,10 +3408,9 @@ Storage::changeLvStripeSize( const string& vg, const string& name,
     {
     int ret = 0;
     assertInit();
-    y2milestone( "vg:%s name:%s stripeSize:%llu", vg.c_str(), name.c_str(),
-                 stripeSize );
+    y2mil("vg:" << vg << " name:" << name << " stripeSize:" << stripeSize);
     LvmVgIterator i = findLvmVg( vg );
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3489,102 +3512,71 @@ Storage::getLvmLvSnapshotStateInfo(const string& vg, const string& name,
 
 
 int
-Storage::nextFreeMd(int &nr, string &device)
+Storage::nextFreeMd(unsigned& nr, string &device)
 {
     int ret = 0;
     assertInit();
     MdCo *md = NULL;
-    list<int> mdNums;
-    list<int> mdPartNums;
 
-    nr = -1;
-    mdNums.clear();
-    mdPartNums.clear();
+    list<unsigned> nums;
+
     if (haveMd(md))
-	(void)md->usedNumbers(mdNums);
+	nums = md->usedNumbers();
 
-    getMdPartMdNums(mdPartNums);
+    nums.splice(nums.end(), getMdPartMdNums());
 
-    mdPartNums.merge(mdNums);
-    mdPartNums.sort();
-    mdPartNums.unique();
+	bool found_free = false;
 
-    if(mdPartNums.size() > 0 )
-      {
-      int found;
-      //FIXME: magic number
-      for(int i=0; i<1000; i++)
-        {
-        found=0;
-        for(list<int>::iterator it=mdPartNums.begin();
-            it!=mdPartNums.end(); it++)
-          {
-          if (i == *it )
-            found = 1;
-          }
-        if(found == 0)
-          {
-          // Number not found on the list.
-          nr = i;
-          break;
-          }
-        }
-      }
+	//FIXME: magic number
+	for (unsigned i = 0; i < 1000; ++i)
+	{
+	    if (find(nums.begin(), nums.end(), i) == nums.end())
+	    {
+		found_free = true;
+		nr = i;
+		break;
+	    }
+	}
+
+    if (found_free)
+    {
+	device = "/dev/md" + decString(nr);
+	y2mil("nr:" << nr << " device:" << device);
+    }
     else
-      {
-      nr = 0;
-      }
-    if( nr != -1 )
-      {
-      device = "/dev/md" + decString(nr);
-      y2milestone("ret:%d nr:%d device:%s", ret, nr, device.c_str());
-      }
-    else
-      ret = MD_UNKNOWN_NUMBER;
+	ret = MD_UNKNOWN_NUMBER;
+
+    y2mil("ret:" << ret);
     return ret;
 }
 
-bool Storage::checkMdNumber(int num)
+
+bool
+Storage::checkMdNumber(unsigned num)
 {
-  assertInit();
-  MdCo *md = NULL;
-  list<int> mdNums;
-  list<int> mdPartNums;
+    assertInit();
+    MdCo *md = NULL;
 
-  mdNums.clear();
-  mdPartNums.clear();
-  if (haveMd(md))
-      (void)md->usedNumbers(mdNums);
+    list<unsigned> nums;
 
-  getMdPartMdNums(mdPartNums);
+    if (haveMd(md))
+	nums = md->usedNumbers();
 
-  mdPartNums.merge(mdNums);
-  mdPartNums.sort();
-  mdPartNums.unique();
+    nums.splice(nums.end(), getMdPartMdNums());
 
-  if(mdPartNums.size() == 0 )
-    return false;
-
-  for(list<int>::iterator it=mdPartNums.begin();
-      it!=mdPartNums.end();
-      it++)
-      {
-        if (num == *it )
-          return true;
-      }
-  return false;
+    return find(nums.begin(), nums.end(), num) == nums.end();
 }
 
+
 int
-Storage::createMd( const string& name, MdType rtype,
-                   const deque<string>& devs )
+Storage::createMd(const string& name, MdType rtype, const list<string>& devs,
+		  const list<string>& spares)
     {
     int ret = 0;
     assertInit();
-    y2mil( "name:" << name << " MdType:" << Md::pName(rtype) <<
-           " devices:" << devs );
+    y2mil("name:" << name << " MdType:" << toString(rtype) << " devices:" << devs << " spares:" << spares);
     unsigned num = 0;
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3592,7 +3584,7 @@ Storage::createMd( const string& name, MdType rtype,
 	{
 	ret = STORAGE_MD_INVALID_NAME;
 	}
-    if( ret==0 && checkMdNumber(num)==true )
+    if( ret==0 && !checkMdNumber(num) )
         {
         ret = MD_DUPLICATE_NUMBER;
         }
@@ -3602,13 +3594,11 @@ Storage::createMd( const string& name, MdType rtype,
 	{
 	have_md = haveMd(md);
 	if( !have_md )
-	    md = new MdCo( this, false );
+	    md = new MdCo(this);
 	}
     if( ret==0 && md!=NULL )
 	{
-	list<string> d;
-	d.insert( d.end(), devs.begin(), devs.end() );
-	ret = md->createMd( num, rtype, d );
+	ret = md->createMd(num, rtype, normalizeDevices(devs), normalizeDevices(spares));
 	if( ret==0 )
 	    checkPwdBuf( Md::mdDevice(num) );
 	}
@@ -3627,40 +3617,34 @@ Storage::createMd( const string& name, MdType rtype,
     return( ret );
     }
 
-int Storage::createMdAny( MdType rtype, const deque<string>& devs,
-			  string& device )
+int Storage::createMdAny(MdType rtype, const list<string>& devs, const list<string>& spares,
+			 string& device)
     {
     int ret = 0;
     assertInit();
-    y2mil( "MdType:" << Md::pName(rtype) << " devices:" << devs );
-    if( readonly() )
+    y2mil("MdType:" << toString(rtype) << " devices:" << devs << " spares:" << spares);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
     MdCo *md = NULL;
     bool have_md = true;
-    int mdNum=0;
     unsigned num = 0;
-    string tmpStr;
     if( ret==0 )
 	{
 	have_md = haveMd(md);
 	if( !have_md )
-	    md = new MdCo( this, false );
+	    md = new MdCo(this);
 	if( md==NULL )
 	    ret = STORAGE_MEMORY_EXHAUSTED;
 	if( ret == 0 )
 	  {
-	  ret = nextFreeMd(mdNum,tmpStr);
-	  if( ret == 0 )
-	      num = (unsigned)mdNum;
+	  ret = nextFreeMd(num, device);
 	  }
 	}
     if( ret==0 )
 	{
-	list<string> d;
-	d.insert( d.end(), devs.begin(), devs.end() );
-	ret = md->createMd( num, rtype, d );
+	ret = md->createMd(num, rtype, normalizeDevices(devs), normalizeDevices(spares));
 	if( ret==0 )
 	    checkPwdBuf( Md::mdDevice(num) );
 	}
@@ -3675,13 +3659,9 @@ int Storage::createMdAny( MdType rtype, const deque<string>& devs,
 	}
     if( ret==0 )
 	{
-	device = "/dev/md" + decString(num);
-	}
-    if( ret==0 )
-	{
 	ret = checkCache();
 	}
-    y2milestone( "ret:%d device:%s", ret, ret==0?device.c_str():"" );
+    y2mil("ret:" << ret << " device:" << (ret==0?device:""));
     return( ret );
     }
 
@@ -3689,8 +3669,8 @@ int Storage::removeMd( const string& name, bool destroySb )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "name:%s destroySb:%d", name.c_str(), destroySb );
-    if( readonly() )
+    y2mil("name:" << name << " destroySb:" << destroySb);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3715,12 +3695,12 @@ int Storage::removeMd( const string& name, bool destroySb )
     return( ret );
     }
 
-int Storage::extendMd( const string& name, const string& dev )
+int Storage::extendMd(const string& name, const list<string>& devs, const list<string>& spares)
     {
     int ret = 0;
     assertInit();
-    y2milestone( "name:%s dev:%s", name.c_str(), dev.c_str() );
-    if( readonly() )
+    y2mil("name:" << name << " devs:" << devs << " spares:" << spares);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3733,7 +3713,7 @@ int Storage::extendMd( const string& name, const string& dev )
 	{
 	MdCo *md = NULL;
 	if( haveMd(md) )
-	    ret = md->extendMd( num, dev );
+	    ret = md->extendMd(num, normalizeDevices(devs), normalizeDevices(spares));
 	else
 	    ret = STORAGE_MD_NOT_FOUND;
 	}
@@ -3745,12 +3725,12 @@ int Storage::extendMd( const string& name, const string& dev )
     return( ret );
     }
 
-int Storage::shrinkMd( const string& name, const string& dev )
+int Storage::shrinkMd(const string& name, const list<string>& devs, const list<string>& spares)
     {
     int ret = 0;
     assertInit();
-    y2milestone( "name:%s dev:%s", name.c_str(), dev.c_str() );
-    if( readonly() )
+    y2mil("name:" << name << " devs:" << devs << " spares:" << spares);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3763,7 +3743,7 @@ int Storage::shrinkMd( const string& name, const string& dev )
 	{
 	MdCo *md = NULL;
 	if( haveMd(md) )
-	    ret = md->shrinkMd( num, dev );
+	    ret = md->shrinkMd(num, normalizeDevices(devs), normalizeDevices(spares));
 	else
 	    ret = STORAGE_MD_NOT_FOUND;
 	}
@@ -3774,14 +3754,13 @@ int Storage::shrinkMd( const string& name, const string& dev )
     y2mil("ret:" << ret);
     return( ret );
     }
-
 
 int Storage::changeMdType( const string& name, MdType rtype )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "name:%s rtype:%d", name.c_str(), rtype );
-    if( readonly() )
+    y2mil("name:" << name << " rtype:" << toString(rtype));
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3810,8 +3789,8 @@ int Storage::changeMdChunk( const string& name, unsigned long chunk )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "name:%s dev:%lu", name.c_str(), chunk );
-    if( readonly() )
+    y2mil("name:" << name << " chunk:" << chunk);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3840,8 +3819,8 @@ int Storage::changeMdParity( const string& name, MdParity ptype )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "name:%s parity:%d", name.c_str(), ptype );
-    if( readonly() )
+    y2mil("name:" << name << " parity:" << toString(ptype));
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -3870,7 +3849,7 @@ int Storage::checkMd( const string& name )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "name:%s", name.c_str() );
+    y2mil("name:" << name);
     unsigned num = 0;
     MdCo *md = NULL;
     if( Md::mdStringNum( name, num ) && haveMd(md) )
@@ -3886,7 +3865,7 @@ int Storage::getMdStateInfo(const string& name, MdStateInfo& info)
 {
     int ret = 0;
     assertInit();
-    y2milestone("name:%s", name.c_str());
+    y2mil("name:" << name);
     unsigned num = 0;
     if (ret == 0 && !Md::mdStringNum(name, num))
     {
@@ -3900,40 +3879,40 @@ int Storage::getMdStateInfo(const string& name, MdStateInfo& info)
 	else
 	    ret = STORAGE_MD_NOT_FOUND;
     }
-    y2milestone("ret:%d", ret);
+    y2mil("ret:" << ret);
     return ret;
 }
 
-// Find container 'name' and return its state.
-int Storage::getMdPartCoStateInfo(const string& name, MdPartCoStateInfo& info)
-{
-  CPair p = cPair();
-  ContIterator i = p.begin();
-
-  for( i=p.begin(); i!=p.end(); i++)
-    {
-    if( i->type()==MDPART )
-      {
-      MdPartCo* mdp = static_cast<MdPartCo*>(&(*i));
-      if( mdp->matchMdName(name) )
-        {
-         mdp->getMdPartCoState(info);
-         break;
-        }
-      }
-    }
-  return( i != p.end() );
-}
 
 int
-Storage::computeMdSize(MdType md_type, list<string> devices, unsigned long long& sizeK)
+Storage::getMdPartCoStateInfo(const string& name, MdPartCoStateInfo& info)
+{
+    int ret = 0;
+
+    ConstMdPartCoIterator i = findMdPartCo(name);
+    if (i != mdpCoEnd())
+    { 
+	ret = i->getMdPartCoState(info);
+    }
+    else
+    {
+	ret = STORAGE_MDPART_CO_NOT_FOUND;
+    }
+
+    return ret;
+}
+
+
+int
+Storage::computeMdSize(MdType md_type, const list<string>& devices, const list<string>& spares,
+		       unsigned long long& sizeK)
 {
     int ret = 0;
 
     unsigned long long sumK = 0;
     unsigned long long smallestK = 0;
 
-    for (list<string>::const_iterator i = devices.begin(); i != devices.end(); i++)
+    for (list<string>::const_iterator i = devices.begin(); i != devices.end(); ++i)
     {
 	const Volume* v = getVolume(*i);
 	if (!v)
@@ -3943,39 +3922,114 @@ Storage::computeMdSize(MdType md_type, list<string> devices, unsigned long long&
 	}
 
 	sumK += v->sizeK();
-	if (smallestK == 0)
+	if (i == devices.begin())
 	    smallestK = v->sizeK();
 	else
 	    smallestK = min(smallestK, v->sizeK());
     }
 
-    switch (md_type)
+    for (list<string>::const_iterator i = spares.begin(); i != spares.end(); ++i)
     {
-	case RAID0:
-	    sizeK = sumK;
+	const Volume* v = getVolume(*i);
+	if (!v)
+	{
+	    ret = STORAGE_VOLUME_NOT_FOUND;
 	    break;
-	case RAID1:
-	case MULTIPATH:
-	    sizeK = smallestK;
-	    break;
-	case RAID5:
-	    sizeK = devices.size()<1 ? 0 : smallestK*(devices.size()-1);
-	    break;
-	case RAID6:
-	    sizeK = devices.size()<2 ? 0 : smallestK*(devices.size()-2);
-	    break;
-	case RAID10:
-	    sizeK = smallestK*devices.size()/2;
-	    break;
-	default:
-	    break;
+	}
+
+	smallestK = min(smallestK, v->sizeK());
     }
 
-    y2milestone ("type:%d smallest:%llu sum:%llu size:%llu", md_type,
-		 smallestK, sumK, sizeK);
+    if (ret == 0)
+    {
+	switch (md_type)
+	{
+	    case RAID0:
+		if (devices.size() < 2)
+		    ret = MD_TOO_FEW_DEVICES;
+		else
+		    sizeK = sumK;
+		break;
+
+	    case RAID1:
+	    case MULTIPATH:
+		if (devices.size() < 2)
+		    ret = MD_TOO_FEW_DEVICES;
+		else
+		    sizeK = smallestK;
+		break;
+
+	    case RAID5:
+		if (devices.size() < 3)
+		    ret = MD_TOO_FEW_DEVICES;
+		else
+		    sizeK = smallestK*(devices.size()-1);
+		break;
+
+	    case RAID6:
+		if (devices.size() < 4)
+		    ret = MD_TOO_FEW_DEVICES;
+		else
+		    sizeK = smallestK*(devices.size()-2);
+		break;
+
+	    case RAID10:
+		if (devices.size() < 2)
+		    ret = MD_TOO_FEW_DEVICES;
+		else
+		    sizeK = smallestK*devices.size()/2;
+		break;
+
+	    default:
+		break;
+	}
+    }
+
+    y2mil("type:" << toString(md_type) << " smallest:" << smallestK << " sum:" << sumK <<
+	  " size:" << sizeK);
 
     return ret;
 }
+
+list<int>
+Storage::getMdAllowedParity( MdType md_type, unsigned devices )
+    {
+    list<int> ret;
+    if( md_type==RAID5 || md_type==RAID6 )
+	{
+	ret.push_back(PAR_DEFAULT);
+	ret.push_back(LEFT_ASYMMETRIC);
+	ret.push_back(LEFT_SYMMETRIC);
+	ret.push_back(RIGHT_ASYMMETRIC);
+	ret.push_back(RIGHT_SYMMETRIC);
+	ret.push_back(PAR_FIRST);
+	ret.push_back(PAR_LAST);
+	if( md_type==RAID6 )
+	    {
+	    ret.push_back(LEFT_ASYMMETRIC_6);
+	    ret.push_back(LEFT_SYMMETRIC_6);
+	    ret.push_back(RIGHT_ASYMMETRIC_6);
+	    ret.push_back(RIGHT_SYMMETRIC_6);
+	    ret.push_back(PAR_FIRST_6);
+	    }
+	}
+    else if( md_type==RAID10 )
+	{
+	ret.push_back(PAR_DEFAULT);
+	ret.push_back(PAR_NEAR_2);
+	ret.push_back(PAR_OFFSET_2);
+	ret.push_back(PAR_FAR_2);
+	if( devices>2 )
+	    {
+	    ret.push_back(PAR_NEAR_3);
+	    ret.push_back(PAR_OFFSET_3);
+	    ret.push_back(PAR_FAR_3);
+	    }
+	}
+
+    y2mil("type:" << toString(md_type) << " ret:" << ret );
+    return ret;
+    }
 
 //
 // Removes Software RAIDs that are not IMSM RAIDs.
@@ -3984,12 +4038,10 @@ int Storage::removeMdPartCo(const string& devName, bool destroySb)
 {
   y2mil("Called");
   int ret;
-  MdPartCoIterator mdp;
-
-  mdp = findMdPartCo(devName);
+  MdPartCoIterator mdp = findMdPartCo(devName);
   if( mdp == mdpCoEnd()  )
     {
-     y2war("Not found device: " + devName);
+	y2war("Not found device: " << devName);
      return MDPART_DEVICE_NOT_FOUND;
     }
   MdPartCoInfo mdpInfo;
@@ -4005,46 +4057,41 @@ int Storage::removeMdPartCo(const string& devName, bool destroySb)
     {
     ret = checkCache();
     }
-  y2mil("Done, ret=" << ret);
+  y2mil("ret:" << ret);
   return ret;
 }
+
 
 bool Storage::haveMd( MdCo*& md )
     {
     md = NULL;
-    CPair p = cPair();
+    CPair p = cPair(isMd);
     ContIterator i = p.begin();
-    while( i != p.end() && i->type()!=MD )
-	++i;
     if( i != p.end() )
 	md = static_cast<MdCo*>(&(*i));
     return( i != p.end() );
     }
 
-int Storage::getMdPartMdNums(list<int>& mdPartNums)
+
+    list<unsigned>
+    Storage::getMdPartMdNums() const
     {
-    mdPartNums.clear();
-    CPair p = cPair();
-    ContIterator i;
-    for(i=p.begin(); i!=p.end(); i++ )
-       {
-        if( i->type()==MDPART )
-          {
-          MdPartCo *mdpart = static_cast<MdPartCo*>(&(*i));
-          mdPartNums.push_back(mdpart->nr());
-          }
-         }
-    return 0;
+	list<unsigned> nums;
+
+	ConstMdPartCoPair p = mdpartCoPair(MdPartCo::notDeleted);
+	for (ConstMdPartCoIterator i = p.begin(); i != p.end(); ++i)
+	    nums.push_back(i->nr());
+
+	return nums;
     }
+
 
     bool
     Storage::haveDm(DmCo*& dm)
     {
 	dm = NULL;
-	CPair p = cPair();
+	CPair p = cPair(isDm);
 	ContIterator i = p.begin();
-	while (i != p.end() && i->type() != DM)
-	    ++i;
 	if (i != p.end())
 	    dm = static_cast<DmCo*>(&(*i));
 	return i != p.end();
@@ -4054,23 +4101,21 @@ int Storage::getMdPartMdNums(list<int>& mdPartNums)
 bool Storage::haveNfs( NfsCo*& co )
     {
     co = NULL;
-    CPair p = cPair();
+    CPair p = cPair(isNfs);
     ContIterator i = p.begin();
-    while( i != p.end() && i->type()!=NFSC )
-	++i;
     if( i != p.end() )
 	co = static_cast<NfsCo*>(&(*i));
     return( i != p.end() );
     }
 
 int 
-Storage::addNfsDevice( const string& nfsDev, const string& opts,
-                       unsigned long long sizeK, const string& mp )
+Storage::addNfsDevice(const string& nfsDev, const string& opts, unsigned long long sizeK,
+		      const string& mp, bool nfs4)
     {
     int ret = 0;
     assertInit();
-    y2mil( "name:" << nfsDev << " sizeK:" << sizeK << " mp:" << mp );
-    if( readonly() )
+    y2mil("name:" << nfsDev << " sizeK:" << sizeK << " mp:" << mp << " nfs4:" << nfs4);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -4085,8 +4130,8 @@ Storage::addNfsDevice( const string& nfsDev, const string& opts,
     if( ret==0 && co!=NULL )
 	{
 	if( sizeK==0 )
-	    checkNfsDevice( nfsDev, opts, sizeK );
-	ret = co->addNfs( nfsDev, sizeK, mp );
+	    checkNfsDevice(nfsDev, opts, nfs4, sizeK);
+	ret = co->addNfs(nfsDev, sizeK, opts, mp, nfs4);
 	}
     if( !have )
 	{
@@ -4103,20 +4148,16 @@ Storage::addNfsDevice( const string& nfsDev, const string& opts,
     return( ret );
     }
 
-int 
-Storage::checkNfsDevice( const string& nfsDev, const string& opts,
-                         unsigned long long& sizeK )
+
+int
+Storage::checkNfsDevice(const string& nfsDev, const string& opts, bool nfs4, unsigned long long& sizeK)
     {
     int ret = 0;
     assertInit();
     NfsCo co( this );
-    string mdir = tmpDir() + "/tmp_mp";
-    unlink( mdir.c_str() );
-    rmdir( mdir.c_str() );
-    createPath( mdir );
-    ret = co.addNfs( nfsDev, 0, "" );
-    if( !opts.empty() )
-	co.vBegin()->setFstabOption( opts );
+    string mdir = tmpDir() + "/tmp-nfs-mp";
+    mkdir(mdir.c_str(), 0777);
+    ret = co.addNfs(nfsDev, 0, opts, "", nfs4);
     if( instsys() )
 	{
 	SystemCmd c;
@@ -4135,12 +4176,15 @@ Storage::checkNfsDevice( const string& nfsDev, const string& opts,
 	}
     if( ret==0 && (ret=co.vBegin()->mount( mdir ))==0 )
 	{
-	sizeK = getDfSize( mdir );
+	StatVfs vfsbuf;
+	getStatVfs(mdir, vfsbuf);
+	sizeK = vfsbuf.sizeK;
 	ret = co.vBegin()->umount( mdir );
 	}
-    y2mil( "name:" << nfsDev << " opts:" << opts << " ret:" << ret <<
+    rmdir(mdir.c_str());
+    y2mil( "name:" << nfsDev << " opts:" << opts << " nfs4:" << nfs4 << " ret:" << ret <<
            " sizeK:" << sizeK );
-    return( ret );
+    return ret;
     }
 
 int
@@ -4150,12 +4194,11 @@ Storage::createFileLoop( const string& lname, bool reuseExisting,
     {
     int ret = 0;
     assertInit();
-    y2milestone( "lname:%s reuseExisting:%d sizeK:%llu mp:%s", lname.c_str(),
-                 reuseExisting, sizeK, mp.c_str() );
-#ifdef DEBUG_LOOP_CRYPT_PASSWORD
-    y2milestone( "pwd:%s", pwd.c_str() );
+    y2mil("lname:" << lname << " reuseExisting:" << reuseExisting << " sizeK:" << sizeK << " mp:" << mp);
+#ifdef DEBUG_CRYPT_PASSWORD
+    y2mil("pwd:" << pwd);
 #endif
-    if( readonly() )
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -4168,8 +4211,7 @@ Storage::createFileLoop( const string& lname, bool reuseExisting,
 	y2mil( "have_loop:" << have_loop );
 	if( !have_loop )
 	    {
-	    ProcPart ppart;
-	    loop = new LoopCo( this, false, ppart );
+	    loop = new LoopCo(this);
 	    }
 	if( loop==NULL )
 	    ret = STORAGE_MEMORY_EXHAUSTED;
@@ -4211,7 +4253,7 @@ Storage::createFileLoop( const string& lname, bool reuseExisting,
 	{
 	ret = checkCache();
 	}
-    y2milestone( "ret:%d device:%s", ret, ret==0?device.c_str():"" );
+    y2mil("ret:" << ret << " device:" << (ret==0?device:""));
     return( ret );
     }
 
@@ -4221,9 +4263,8 @@ Storage::modifyFileLoop( const string& device, const string& lname,
     {
     int ret = 0;
     assertInit();
-    y2milestone( "device:%s lname:%s reuse:%d sizeK:%lld", device.c_str(), 
-                 lname.c_str(), reuseExisting, sizeK );
-    if( readonly() )
+    y2mil("device:" << device << " lname:" << lname << " reuse:" << reuseExisting << " sizeK:" << sizeK);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -4248,8 +4289,8 @@ Storage::removeFileLoop( const string& lname, bool removeFile )
     {
     int ret = 0;
     assertInit();
-    y2milestone( "lname:%s removeFile:%d", lname.c_str(), removeFile );
-    if( readonly() )
+    y2mil("lname:" << lname << " removeFile:" << removeFile);
+    if (readonly())
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
@@ -4273,12 +4314,30 @@ Storage::removeFileLoop( const string& lname, bool removeFile )
 bool Storage::haveLoop( LoopCo*& loop )
     {
     loop = NULL;
-    CPair p = cPair();
+    CPair p = cPair(isLoop);
     ContIterator i = p.begin();
-    while( i != p.end() && i->type()!=LOOP )
-	++i;
     if( i != p.end() )
 	loop = static_cast<LoopCo*>(&(*i));
+    return( i != p.end() );
+    }
+
+bool Storage::haveBtrfs( BtrfsCo*& co )
+    {
+    co = NULL;
+    CPair p = cPair(isBtrfs);
+    ContIterator i = p.begin();
+    if( i != p.end() )
+	co = static_cast<BtrfsCo*>(&(*i));
+    return( i != p.end() );
+    }
+
+bool Storage::haveTmpfs( TmpfsCo*& co )
+    {
+    co = NULL;
+    CPair p = cPair(isTmpfs);
+    ContIterator i = p.begin();
+    if( i != p.end() )
+	co = static_cast<TmpfsCo*>(&(*i));
     return( i != p.end() );
     }
 
@@ -4287,12 +4346,211 @@ int Storage::removeDmraid( const string& name )
     int ret = 0;
     assertInit();
     DmraidCoIterator i = findDmraidCo( name );
-    if( i != dmrCoEnd() )
+    if (readonly())
+    {
+	ret = STORAGE_CHANGE_READONLY;
+    }
+    else if( i != dmrCoEnd() )
 	{
 	ret = i->removeDmPart();
 	}
     else
 	ret = STORAGE_DMRAID_CO_NOT_FOUND;
+    return( ret );
+    }
+
+int Storage::createSubvolume( const string& device, const string& name )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("device:" << device << " name:" << name);
+    BtrfsCo* co;
+    if (readonly())
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    else if( haveBtrfs(co) )
+	{
+	ret = co->createSubvolume( device, name );
+	}
+    else
+	{
+	ret = STORAGE_BTRFS_CO_NOT_FOUND;
+	}
+    if( ret==0 )
+	{
+	ret = checkCache();
+	}
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+int Storage::removeSubvolume( const string& device, const string& name )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("device:" << device << " name:" << name);
+    BtrfsCo* co;
+    if (readonly())
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    else if( haveBtrfs(co) )
+	{
+	ret = co->removeSubvolume( device, name );
+	}
+    else
+	{
+	ret = STORAGE_BTRFS_CO_NOT_FOUND;
+	}
+    if( ret==0 )
+	{
+	ret = checkCache();
+	}
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+int Storage::extendBtrfsVolume( const string& device, const string& dev )
+    {
+    deque<string> d;
+    d.push_back(dev);
+    return( extendBtrfsVolume(device,d));
+    }
+
+int Storage::extendBtrfsVolume( const string& device, const deque<string>& devs )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("device:" << device << "devices:" << devs );
+    BtrfsCo* co;
+    if (readonly())
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    else if( devs.empty() )
+	{
+	ret = BTRFS_LIST_EMPTY;
+	}
+    else if( haveBtrfs(co) )
+	{
+	list<string> d(devs.begin(), devs.end());
+	ret = co->extendVolume( device, d );
+	}
+    else
+	{
+	ret = STORAGE_BTRFS_CO_NOT_FOUND;
+	}
+    if( ret==0 )
+	{
+	ret = checkCache();
+	}
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+int Storage::shrinkBtrfsVolume( const string& device, const string& dev )
+    {
+    deque<string> d;
+    d.push_back(dev);
+    return( shrinkBtrfsVolume(device,d));
+    }
+
+int Storage::shrinkBtrfsVolume( const string& device, const deque<string>& devs )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("device:" << device << "devices:" << devs );
+    BtrfsCo* co;
+    if (readonly())
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    else if( devs.empty() )
+	{
+	ret = BTRFS_LIST_EMPTY;
+	}
+    else if( haveBtrfs(co) )
+	{
+	list<string> d(devs.begin(), devs.end());
+	ret = co->shrinkVolume( device, d );
+	}
+    else
+	{
+	ret = STORAGE_BTRFS_CO_NOT_FOUND;
+	}
+    if( ret==0 )
+	{
+	ret = checkCache();
+	}
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+int Storage::addTmpfsMount( const string& mp, const string& opts )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("mount:" << mp << " opts:" << opts );
+    if (readonly())
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    TmpfsCo *co = NULL;
+    bool have = true;
+    if( ret==0 )
+	{
+	have = haveTmpfs(co);
+	if( !have )
+	    co = new TmpfsCo( this );
+	}
+    if( ret==0 && co!=NULL )
+	{
+	ret = co->addTmpfs(mp, opts);
+	}
+    if( !have )
+	{
+	if( ret==0 )
+	    addToList( co );
+	else if( co!=NULL )
+	    delete co;
+	}
+    if( ret==0 )
+	{
+	ret = checkCache();
+	}
+    y2mil("ret:" << ret);
+    return( ret );
+    }
+
+int Storage::removeTmpfsMount( const string& mp )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("mount:" << mp );
+    if (readonly())
+	{
+	ret = STORAGE_CHANGE_READONLY;
+	}
+    TmpfsCo *co = NULL;
+    bool have = true;
+    if( ret==0 )
+	{
+	have = haveTmpfs(co);
+	}
+    if( ret==0 && co!=NULL )
+	{
+	ret = co->removeTmpfs(mp);
+	}
+    else if( ret==0 )
+	{
+	ret = STORAGE_TMPFS_CO_NOT_FOUND;
+	}
+    if( ret==0 )
+	{
+	ret = checkCache();
+	}
+    y2mil("ret:" << ret);
     return( ret );
     }
 
@@ -4305,55 +4563,59 @@ int Storage::checkCache()
     }
 
 
-deque<string> 
-Storage::getCommitActions(bool mark_destructive) const
+list<commitAction>
+Storage::getCommitActions() const
 {
-    CommitInfo info;
-    getCommitInfo(mark_destructive, info);
-    return info.actions;
+    ConstContPair p = contPair();
+    list<commitAction> ca;
+    for (ConstContIterator it = p.begin(); it != p.end(); ++it)
+    {
+	list<commitAction> l;
+	it->getCommitActions(l);
+	ca.splice(ca.end(), l);
+    }
+    ca.sort();
+    return ca;
 }
 
 
 void
-Storage::getCommitInfo(bool mark_destructive, CommitInfo& info) const
+Storage::getCommitInfos(list<CommitInfo>& infos) const
 {
-    info.destructive = false;
-    info.actions.clear();
-    
-    ConstContPair p = contPair();
-    y2mil("empty:" << p.empty());
-    if( !p.empty() )
-    {
-	list<commitAction*> ac;
-	for( ConstContIterator i = p.begin(); i != p.end(); ++i )
+    static list<CommitInfo> s_infos; // workaround for broken ycp bindings
+    s_infos.clear();
+
+        const list<commitAction> ca = getCommitActions();
+	for (list<commitAction>::const_iterator i = ca.begin(); i != ca.end(); ++i)
 	{
-	    list<commitAction*> l;
-	    i->getCommitActions( l );
-	    ac.splice( ac.end(), l );
-	}
-	ac.sort( cont_less<commitAction>() );
-	string txt;
-	for( list<commitAction*>::const_iterator i=ac.begin(); i!=ac.end(); ++i )
-	{
-	    if ((*i)->destructive)
-		info.destructive = true;
-	    txt.erase();
-	    if( mark_destructive && (*i)->destructive )
-		txt += "<font color=red>";
-	    txt += (*i)->descr;
-	    const Volume *v = (*i)->vol();
+	    CommitInfo info;
+	    info.destructive = i->destructive;
+	    info.text = i->description.text;
+	    const Volume* v = i->vol();
 	    if( v && !v->getDescText().empty() )
 	    {
-		txt += ". ";
-		txt += v->getDescText();
+		info.text += ". ";
+		info.text += v->getDescText();
 	    }
-	    if( mark_destructive && (*i)->destructive )
-		txt += "</font>";
-	    info.actions.push_back( txt );
-	    delete *i;
+	    s_infos.push_back(info);
 	}
+
+    infos = s_infos;
+    y2mil("infos.size:" << infos.size());
+}
+
+
+void
+Storage::dumpCommitInfos() const
+{
+    const list<commitAction> ca = getCommitActions();
+    for (list<commitAction>::const_iterator it = ca.begin(); it != ca.end(); ++it)
+    {
+	string text = it->description.native;
+	if (it->destructive)
+	    text += " [destructive]";
+	y2mil("ChangeText " << text);
     }
-    y2mil("destructive:" << info.destructive << " actions.size():" << info.actions.size());
 }
 
 
@@ -4424,9 +4686,10 @@ static bool sort_vol_mount( const Volume* rhs, const Volume* lhs )
 	return( rhs->getMount()<lhs->getMount() );
     }
 
+
 void
-Storage::sortCommitLists( CommitStage stage, list<Container*>& co,
-                          list<Volume*>& vl, list<commitAction*>& todo )
+Storage::sortCommitLists(CommitStage stage, list<const Container*>& co,
+			 list<const Volume*>& vl, list<commitAction>& todo) const
     {
     co.sort( (stage==DECREASE)?sort_cont_up:sort_cont_down );
     std::ostringstream b;
@@ -4442,28 +4705,28 @@ Storage::sortCommitLists( CommitStage stage, list<Container*>& co,
 	vl.sort( sort_vol_mount );
     else
 	vl.sort( sort_vol_normal );
-    for( list<Container*>::const_iterator i=co.begin(); i!=co.end(); ++i )
-	todo.push_back( new commitAction( stage, (*i)->type(), *i ));
-    for( list<Volume*>::const_iterator i=vl.begin(); i!=vl.end(); ++i )
-	todo.push_back( new commitAction( stage, (*i)->cType(), *i ));
+    for( list<const Container*>::const_iterator i=co.begin(); i!=co.end(); ++i )
+	todo.push_back(commitAction(stage, (*i)->type(), *i));
+    for( list<const Volume*>::const_iterator i=vl.begin(); i!=vl.end(); ++i )
+	todo.push_back(commitAction(stage, (*i)->cType(), *i));
     b.str("");
     b << "unsorted actions <";
-    for( list<commitAction*>::const_iterator i=todo.begin(); i!=todo.end(); ++i )
+    for (list<commitAction>::const_iterator i = todo.begin(); i != todo.end(); ++i)
 	{
 	if( i!=todo.begin() )
 	    b << " ";
-	if( (*i)->container )
-	    b << "C:" << (*i)->co()->device();
+	if( i->container )
+	    b << "C:" << i->co()->device();
 	else
-	    b << "V:" << (*i)->vol()->device();
+	    b << "V:" << i->vol()->device();
 	}
     b << "> ";
     y2mil(b.str());
     b.str("");
-    todo.sort( cont_less<commitAction>() );
-    y2milestone( "stage %d", stage );
+    todo.sort();
+    y2mil("stage:" << stage);
     b << "sorted co <";
-    for( list<Container*>::const_iterator i=co.begin(); i!=co.end(); ++i )
+    for( list<const Container*>::const_iterator i=co.begin(); i!=co.end(); ++i )
 	{
 	if( i!=co.begin() )
 	    b << " ";
@@ -4473,7 +4736,7 @@ Storage::sortCommitLists( CommitStage stage, list<Container*>& co,
     y2mil(b.str());
     b.str("");
     b << "sorted vol <";
-    for( list<Volume*>::const_iterator i=vl.begin(); i!=vl.end(); ++i )
+    for( list<const Volume*>::const_iterator i=vl.begin(); i!=vl.end(); ++i )
 	{
 	if( i!=vl.begin() )
 	    b << " ";
@@ -4483,14 +4746,14 @@ Storage::sortCommitLists( CommitStage stage, list<Container*>& co,
     y2mil(b.str());
     b.str("");
     b << "sorted actions <";
-    for( list<commitAction*>::const_iterator i=todo.begin(); i!=todo.end(); ++i )
+    for (list<commitAction>::const_iterator i = todo.begin(); i != todo.end(); ++i)
 	{
 	if( i!=todo.begin() )
 	    b << " ";
-	if( (*i)->container )
-	    b << "C:" << (*i)->co()->device();
+	if( i->container )
+	    b << "C:" << i->co()->device();
 	else
-	    b << "V:" << (*i)->vol()->device();
+	    b << "V:" << i->vol()->device();
 	}
     b << "> ";
     y2mil(b.str());
@@ -4506,7 +4769,7 @@ void Storage::handleHald( bool stop )
 	SystemCmd c( "ps ax | grep -w /usr/sbin/hald | grep -v grep" );
 	if( c.numLines()>0 )
 	    {
-	    extractNthWord( 0, *c.getLine(0) ) >> hald_pid;
+	    extractNthWord( 0, c.getLine(0) ) >> hald_pid;
 	    y2mil( "hald_pid:" << hald_pid );
 	    }
 	if( hald_pid>0 )
@@ -4531,16 +4794,16 @@ int Storage::commit()
     assertInit();
     lastAction.clear();
     extendedError.clear();
-    SystemCmd c;
+    dumpCommitInfos();
     CPair p = cPair( notLoop );
     int ret = 0;
-    y2milestone( "empty:%d", p.empty() );
+    y2mil("empty:" << p.empty());
     if( !p.empty() )
 	{
 	ret = commitPair( p, notLoop );
 	}
     p = cPair( isLoop );
-    y2milestone( "empty:%d", p.empty() );
+    y2mil("empty:" << p.empty());
     if( ret==0 && !p.empty() )
 	{
 	ret = commitPair( p, isLoop );
@@ -4554,62 +4817,67 @@ int Storage::commit()
     return( ret );
     }
 
-bool 
-Storage::ignoreError( list<commitAction*>::iterator i,
-                      list<commitAction*>& al )
+
+string
+Storage::getErrorString(int error) const
+{
+    switch (error)
     {
-    bool ret = false;
-    if( !(*i)->container && (*i)->type==DISK && (*i)->stage==DECREASE )
-	{
-	++i;
-	while( ret==false && i!=al.end() )
-	    {
-	    y2mil( "it:" << **i );
-	    ret = (*i)->container && (*i)->type==DISK && (*i)->stage==DECREASE;
-	    ++i;
-	    }
-	}
-    y2mil( "ret:" << ret );
-    return( ret );
+	case VOLUME_UMOUNT_FAILED:
+	    return _("Unmount failed.").text;
+
+	default:
+	    return "";
     }
+}
+
+
+bool
+Storage::ignoreError(int error, list<commitAction>::const_iterator ca) const
+{
+    bool ret = commitErrorPopupCb(error, lastAction, extendedError);
+
+    if (ret)
+	y2mil("user decided to continue after commit error");
+
+    return ret;
+}
+
 
 int
 Storage::commitPair( CPair& p, bool (* fnc)( const Container& ) )
     {
     int ret = 0;
-    y2milestone( "p.length:%d", p.length() );
-    CommitStage a[] = { DECREASE, INCREASE, FORMAT, MOUNT };
-    CommitStage* pt = a;
-    while( unsigned(pt-a) < lengthof(a) )
+    y2mil("p.length:" << p.length());
+
+    typedef array<CommitStage, 5> Stages;
+    const Stages stages = { { DECREASE, INCREASE, FORMAT, MOUNT, SUBVOL } };
+
+    for (Stages::const_iterator stage = stages.begin(); stage != stages.end(); ++stage)
+    {
+	list<const Container*> colist;
+	list<const Volume*> vlist;
+
+	if (ret == 0)
 	{
+	    for (ContIterator i = p.begin(); i != p.end(); ++i)
+		i->getToCommit(*stage, colist, vlist);
+	}
+
 	bool new_pair = false;
-	list<Container*> colist;
-	list<Volume*> vlist;
-	ContIterator i = p.begin();
-	while( ret==0 && i != p.end() )
-	    {
-	    ret = i->getToCommit( *pt, colist, vlist );
-	    ++i;
-	    }
-#if 0
-	if( *pt == FORMAT && instsys() )
-	    {
-	    activateHld( true );
-	    }
-#endif
-	list<commitAction*> todo;
-	sortCommitLists( *pt, colist, vlist, todo );
-	list<commitAction*>::iterator ac = todo.begin();
+	list<commitAction> todo;
+	sortCommitLists(*stage, colist, vlist, todo);
+	list<commitAction>::iterator ac = todo.begin();
 	while( ret==0 && ac != todo.end() )
 	    {
-	    bool cont = (*ac)->container;
-	    CType type = (*ac)->type;
-	    Container *co = cont ? const_cast<Container*>((*ac)->co()) : 
-	                           const_cast<Container*>((*ac)->vol()->getContainer());
+	    bool cont = ac->container;
+	    CType type = ac->type;
+	    Container *co = cont ? const_cast<Container*>(ac->co()) : 
+	                           const_cast<Container*>(ac->vol()->getContainer());
 	    if( cont )
 		{
-		bool cont_removed = co->deleted() && (type==LVM || type==MDPART);
-		ret = co->commitChanges( *pt );
+		bool cont_removed = co->deleted() && (type == LVM || type == MDPART);
+		ret = co->commitChanges(*stage);
 		cont_removed = cont_removed && ret==0;
 		if( cont_removed )
 		    {
@@ -4619,24 +4887,22 @@ Storage::commitPair( CPair& p, bool (* fnc)( const Container& ) )
 		}
 	    else
 		{
-		ret = co->commitChanges( *pt, const_cast<Volume*>((*ac)->vol()) );
+		ret = co->commitChanges(*stage, const_cast<Volume*>(ac->vol()));
 		}
 	    if( ret!=0 )
 		{
-		y2mil( "err at " << **ac );
-		if( ignoreError( ac, todo ))
+		y2mil("err at " << *ac);
+		if (ignoreError(ret, ac))
 		    ret = 0;
 		}
-	    delete( *ac );
 	    ++ac;
 	    }
-	y2milestone( "stage:%d new_pair:%d", *pt, new_pair );
+	y2mil("stage:" << *stage << " new_pair:" << new_pair);
 	if( new_pair )
 	    {
 	    p = cPair( fnc );
 	    new_pair = false;
 	    }
-	pt++;
 	if( !todo.empty() )
 	    {
 	    SystemCmd c;
@@ -4680,10 +4946,10 @@ bool Storage::removeDmMapsTo( const string& dev )
 		}
 	    }
 	else
-	    y2warning( "not a Dm descendant %s", v->device().c_str() );
+	    y2war("not a Dm descendant " << v->device());
 	}
-    VolIterator v;
-    DiskIterator d;
+    ConstVolIterator v;
+    ConstDiskIterator d;
     if( findVolume( dev, v ))
 	{
 	v->triggerUdevUpdate();
@@ -4713,19 +4979,19 @@ void Storage::updateDmEmptyPeMap()
 		}
 	    }
 	else
-	    y2warning( "not a Dm descendant %s", v->device().c_str() );
+	    y2war("not a Dm descendant " << v->device());
 	}
     }
 
 bool Storage::checkDmMapsTo( const string& dev )
     {
     bool ret = false;
-    y2milestone( "dev:%s", dev.c_str() );
+    y2mil("dev:" << dev);
     VPair vp = vPair( isDmContainer );
-    VolIterator v=vp.begin(); 
+    ConstVolIterator v=vp.begin(); 
     while( !ret && v!=vp.end() )
 	{
-	Dm * dm = dynamic_cast<Dm *>(&(*v));
+	const Dm* dm = dynamic_cast<const Dm*>(&(*v));
 	if( dm!=NULL )
 	    ret = ret && dm->mapsTo( dev );
 	++v;
@@ -4738,11 +5004,9 @@ void Storage::changeDeviceName( const string& old, const string& nw )
     {
     y2mil( "old:" << old << " new:" << nw );
     CPair p = cPair();
-    ContIterator ci = p.begin();
-    while( ci!=p.end() )
+    for (ContIterator ci = p.begin(); ci != p.end(); ++ci)
 	{
 	ci->changeDeviceName( old, nw );
-	++ci;
 	}
     }
 
@@ -4752,24 +5016,20 @@ Storage::getDiskList( bool (* CheckFnc)( const Disk& ), std::list<Disk*>& dl )
     {
     dl.clear();
     DiskPair dp = dPair( CheckFnc );
-    DiskIterator i = dp.begin();
-    while( i!=dp.end() )
+    for (DiskIterator i = dp.begin(); i != dp.end(); ++i)
 	{
 	y2mil( "disk:" << i->device() );
 	dl.push_back( &(*i) );
-	++i;
 	}
     }
 
-static bool showContainers( const Container& c )
-    { return( !c.deleted()||c.type()==DISK ); }
 
 void
 Storage::getContainers( deque<ContainerInfo>& infos )
     {
-    infos.clear ();
+    infos.clear();
     assertInit();
-    ConstContPair p = contPair( showContainers );
+    ConstContPair p = contPair(Container::notDeleted);
     for( ConstContIterator i = p.begin(); i != p.end(); ++i)
 	{
 	y2mil( "co:" << *i );
@@ -4791,152 +5051,42 @@ Storage::getVolumes( deque<VolumeInfo>& infos )
 	}
     }
 
-int 
-Storage::getContVolInfo( const string& device, ContVolInfo& info)
+int
+Storage::getContVolInfo(const string& device, ContVolInfo& info)
     {
-    int ret = 0;
-    string dev = device;
-    ContIterator c;
-    VolIterator v;
-    info.type = CUNKNOWN;
+    int ret = STORAGE_VOLUME_NOT_FOUND;
+    ConstContIterator c;
+    ConstVolIterator v;
+    info.ctype = CUNKNOWN;
     assertInit();
-    if( findVolume( dev, c, v ))
+    if (findVolume(device, c, v))
 	{
-	info.type = c->type();
-	info.cname = c->device();
+	ret = 0;
+	info.ctype = c->type();
+	info.cname = c->name();
+	info.cdevice = c->device();
 	info.vname = v->name();
-	info.numeric = v->isNumeric();
-	if( info.numeric )
-	    info.nr = v->nr();
-	else
-	    info.nr = 0;
+	info.vdevice = v->device();
 	}
-    else 
-	{
-	DiskIterator d;
-	DmraidCoIterator r;
-	DmmultipathCoIterator m;
-	MdPartCoIterator md;
-	std::pair<string,unsigned> p = Disk::getDiskPartition( dev );
-	if( p.first=="/dev/md" )
-	    {
-	    info.cname = p.first;
-	    info.vname = undevDevice(device);
-	    info.type = MD;
-	    info.numeric = true;
-	    info.nr = p.second;
-	    }
-	else if( p.first=="/dev/loop" )
-	    {
-	    info.cname = p.first;
-	    info.vname = undevDevice(device);
-	    info.type = LOOP;
-	    info.numeric = true;
-	    info.nr = p.second;
-	    }
-	else if( p.first=="/dev/dm-" )
-	    {
-	    info.cname = p.first;
-	    info.vname = undevDevice(device);
-	    info.type = DM;
-	    info.numeric = true;
-	    info.nr = p.second;
-	    }
-	else if( (d=findDisk(p.first))!=dEnd() )
-	    {
-	    info.cname = d->device();
-	    info.vname = dev.substr( dev.find_last_of('/')+1 );
-	    info.type = DISK;
-	    info.numeric = true;
-	    info.nr = p.second;
-	    }
-	else if( (r=findDmraidCo(p.first))!=dmrCoEnd() )
-	    {
-	    info.cname = r->device();
-	    info.vname = dev.substr( dev.find_last_of('/')+1 );
-	    info.type = DMRAID;
-	    info.numeric = true;
-	    info.nr = p.second;
-	    }
-        else if( (md=findMdPartCo(p.first))!=mdpCoEnd() )
-            {
-            info.cname = md->device();
-            info.vname = dev.substr( dev.find_last_of('/')+1 );
-            info.type = MDPART;
-            info.numeric = true;
-            info.nr = p.second;
-            }
-	else if( (m=findDmmultipathCo(p.first))!=dmmCoEnd() )
-	    {
-	    info.cname = m->device();
-	    info.vname = dev.substr( dev.find_last_of('/')+1 );
-	    info.type = DMMULTIPATH;
-	    info.numeric = true;
-	    info.nr = p.second;
-	    }
-	else if( dev.find("/dev/disk/by-uuid/")==0 ||
-	         dev.find("/dev/disk/by-label/")==0 ||
-	         dev.find("UUID=")==0 || dev.find("LABEL=")==0 )
-	    {
-	    if( dev[0] == '/' )
-		{
-		bool uuid = dev.find( "/by-uuid/" )!=string::npos;
-		dev.erase( 0, dev.find_last_of('/')+1 );
-		dev = (uuid?"UUID=":"LABEL=")+dev;
-		}
-	    if( findVolume(dev, v) )
-		{
-		info.type = v->cType();
-		info.numeric = v->isNumeric();
-		if( info.numeric )
-		    info.nr = v->nr();
-		info.vname = v->name();
-		info.cname = v->getContainer()->name();
-		}
-	    }
-	else if( (dev.find("/dev/disk/by-id/")==0 &&
-	          (d=findDiskId(p.first))!=dEnd()) ||
-		 (dev.find("/dev/disk/by-path/")==0 &&
-		  (d=findDiskPath(p.first))!=dEnd()) )
-	    {
-	    info.type = DISK;
-	    info.numeric = true;
-	    info.nr = p.second;
-	    info.cname = d->device();
-	    if( p.second>0 )
-		info.vname = Disk::getPartName( d->name(), p.second );
-	    else
-		info.vname = d->name();
-	    if( info.vname.find('/')!=string::npos )
-		info.vname.erase( 0, info.vname.find_last_of('/')+1 );
-	    }
-	else if( splitString( dev, "/" ).size()==3 && !Disk::needP( dev ) )
-	    {
-	    info.type = LVM;
-	    info.numeric = false;
-	    info.vname = dev.substr( dev.find_last_of('/')+1 );
-	    info.cname = dev.substr( 0, dev.find_last_of('/') );
-	    }
-	else
-	    {
-	    info.cname = p.first;
-	    info.vname = dev.substr( dev.find_last_of('/')+1 );
-	    info.numeric = true;
-	    info.nr = p.second;
-	    }
-	}
-    y2mil( "dev:" << dev << " ret:" << ret << " cn:" << info.cname << 
-           " vn:" << info.vname );
-    if( info.numeric )
-	y2mil( "nr:" << info.nr );
-    return( ret );
+    else if (findContainer(device, c))
+    {
+	ret = 0;
+	info.ctype = c->type();
+	info.cname = c->name();
+	info.cdevice = c->device();
+	info.vname = "";
+	info.vdevice = "";
+    }
+    y2mil("device:" << device << " ret:" << ret << " cname:" << info.cname <<
+	  " vname:" << info.vname);
+    return ret;
     }
 
 int
 Storage::getVolume( const string& device, VolumeInfo& info )
     {
     int ret = 0;
-    VolIterator v;
+    ConstVolIterator v;
     if( findVolume( device, v ))
 	{
 	v->getInfo( info );
@@ -4952,7 +5102,7 @@ int Storage::getDiskInfo( const string& disk, DiskInfo& info )
     {
     int ret = 0;
     assertInit();
-    DiskIterator i = findDisk( disk );
+    ConstDiskIterator i = findDisk( disk );
     if( i != dEnd() )
 	{
 	i->getInfo( info );
@@ -4967,10 +5117,10 @@ int Storage::getContDiskInfo( const string& disk, ContainerInfo& cinfo,
     {
     int ret = 0;
     assertInit();
-    DiskIterator i = findDisk( disk );
+    ConstDiskIterator i = findDisk( disk );
     if( i != dEnd() )
 	{
-	((const Container*)&(*i))->getInfo( cinfo );
+	i->Container::getInfo(cinfo);
 	i->getInfo( info );
 	}
     else
@@ -4978,46 +5128,36 @@ int Storage::getContDiskInfo( const string& disk, ContainerInfo& cinfo,
     return( ret );
     }
 
-
 int Storage::getPartitionInfo( const string& disk,
 			       deque<storage::PartitionInfo>& plist )
     {
     int ret = 0;
-    bool done = false;
     plist.clear();
     assertInit();
-    DiskIterator i = findDisk( disk );
-    if( i != dEnd() )
+    ConstDiskIterator i = findDisk(disk);
+    if (i != dEnd())
+    {
+	// TODO: those partitions shouldn't be detected at all
+	if (!i->isUsedBy())
 	{
-	Disk::PartPair p = i->partPair (Disk::notDeleted);
-	for (Disk::PartIter i2 = p.begin(); i2 != p.end(); ++i2)
+	    Disk::ConstPartPair p = i->partPair(Partition::notDeleted);
+	    for (Disk::ConstPartIter i2 = p.begin(); i2 != p.end(); ++i2)
 	    {
-	    plist.push_back( PartitionInfo() );
-	    i2->getInfo( plist.back() );
+		plist.push_back(PartitionInfo());
+		i2->getInfo(plist.back());
 	    }
-	done = true;
 	}
-    if( done == false )
-      {
-      MdPartCoIterator i = findMdPartCo( disk );
-      if( i != mdpCoEnd() )
-        {
-        ret = i->getPartitionInfo( plist );
-        done = false;
-        }
-      }
-    if( done == false)
-      {
+    }
+    else
 	ret = STORAGE_DISK_NOT_FOUND;
-      }
-    return( ret );
+    return ret;
     }
 
 int Storage::getLvmVgInfo( const string& name, LvmVgInfo& info )
     {
     int ret = 0;
     assertInit();
-    LvmVgIterator i = findLvmVg( name );
+    ConstLvmVgIterator i = findLvmVg( name );
     if( i != lvgEnd() )
 	{
 	i->getInfo( info );
@@ -5032,10 +5172,10 @@ int Storage::getContLvmVgInfo( const string& name, ContainerInfo& cinfo,
     {
     int ret = 0;
     assertInit();
-    LvmVgIterator i = findLvmVg( name );
+    ConstLvmVgIterator i = findLvmVg( name );
     if( i != lvgEnd() )
 	{
-	((const Container*)&(*i))->getInfo( cinfo );
+	i->Container::getInfo(cinfo);
 	i->getInfo( info );
 	}
     else
@@ -5049,11 +5189,11 @@ int Storage::getLvmLvInfo( const string& name,
     int ret = 0;
     plist.clear();
     assertInit();
-    LvmVgIterator i = findLvmVg( name );
+    ConstLvmVgIterator i = findLvmVg( name );
     if( i != lvgEnd() )
 	{
-	LvmVg::LvmLvPair p = i->lvmLvPair(LvmVg::lvNotDeleted);
-	for( LvmVg::LvmLvIter i2 = p.begin(); i2 != p.end(); ++i2)
+	LvmVg::ConstLvmLvPair p = i->lvmLvPair(LvmLv::notDeleted);
+	for( LvmVg::ConstLvmLvIter i2 = p.begin(); i2 != p.end(); ++i2)
 	    {
 	    plist.push_back( LvmLvInfo() );
 	    i2->getInfo( plist.back() );
@@ -5069,7 +5209,7 @@ int Storage::getDmraidCoInfo( const string& name, DmraidCoInfo& info )
     {
     int ret = 0;
     assertInit();
-    DmraidCoIterator i = findDmraidCo( name );
+    ConstDmraidCoIterator i = findDmraidCo( name );
     if( i != dmrCoEnd() )
 	{
 	i->getInfo( info );
@@ -5084,10 +5224,10 @@ int Storage::getContDmraidCoInfo( const string& name, ContainerInfo& cinfo,
     {
     int ret = 0;
     assertInit();
-    DmraidCoIterator i = findDmraidCo( name );
+    ConstDmraidCoIterator i = findDmraidCo( name );
     if( i != dmrCoEnd() )
 	{
-	((const Container*)&(*i))->getInfo( cinfo );
+	i->Container::getInfo(cinfo);
 	i->getInfo( info );
 	}
     else
@@ -5101,7 +5241,7 @@ Storage::getDmmultipathCoInfo( const string& name, DmmultipathCoInfo& info )
 {
     int ret = 0;
     assertInit();
-    DmmultipathCoIterator i = findDmmultipathCo( name );
+    ConstDmmultipathCoIterator i = findDmmultipathCo( name );
     if( i != dmmCoEnd() )
     {
 	i->getInfo( info );
@@ -5117,10 +5257,10 @@ Storage::getContDmmultipathCoInfo( const string& name, ContainerInfo& cinfo,
 {
     int ret = 0;
     assertInit();
-    DmmultipathCoIterator i = findDmmultipathCo( name );
+    ConstDmmultipathCoIterator i = findDmmultipathCo( name );
     if( i != dmmCoEnd() )
     {
-	((const Container*)&(*i))->getInfo( cinfo );
+	i->Container::getInfo(cinfo);
 	i->getInfo( info );
     }
     else
@@ -5147,7 +5287,7 @@ int Storage::getMdPartCoInfo( const string& name, MdPartCoInfo& info)
 {
   int ret = 0;
   assertInit();
-  MdPartCoIterator i = findMdPartCo( name );
+  ConstMdPartCoIterator i = findMdPartCo( name );
   if( i != mdpCoEnd() )
       {
       i->getInfo( info );
@@ -5162,10 +5302,10 @@ int Storage::getContMdPartCoInfo( const string& name, ContainerInfo& cinfo,
 {
   int ret = 0;
   assertInit();
-  MdPartCoIterator i = findMdPartCo( name );
+  ConstMdPartCoIterator i = findMdPartCo( name );
   if( i != mdpCoEnd() )
       {
-      ((const Container*)&(*i))->getInfo( cinfo );
+      i->Container::getInfo(cinfo);
       i->getInfo( info );
       }
   else
@@ -5249,7 +5389,7 @@ int Storage::getDmraidInfo( const string& name,
     DmraidCoIterator i = findDmraidCo( name );
     if( i != dmrCoEnd() )
 	{
-	DmraidCo::DmraidPair p = i->dmraidPair(DmraidCo::raidNotDeleted);
+	DmraidCo::DmraidPair p = i->dmraidPair(Dmraid::notDeleted);
 	for( DmraidCo::DmraidIter i2 = p.begin(); i2 != p.end(); ++i2 )
 	    {
 	    plist.push_back( DmraidInfo() );
@@ -5269,11 +5409,11 @@ Storage::getDmmultipathInfo( const string& name,
     int ret = 0;
     plist.clear();
     assertInit();
-    DmmultipathCoIterator i = findDmmultipathCo( name );
+    ConstDmmultipathCoIterator i = findDmmultipathCo( name );
     if( i != dmmCoEnd() )
     {
-	DmmultipathCo::DmmultipathPair p = i->dmmultipathPair(DmmultipathCo::multipathNotDeleted);
-	for( DmmultipathCo::DmmultipathIter i2 = p.begin(); i2 != p.end(); ++i2 )
+	DmmultipathCo::ConstDmmultipathPair p = i->dmmultipathPair(Dmmultipath::notDeleted);
+	for( DmmultipathCo::ConstDmmultipathIter i2 = p.begin(); i2 != p.end(); ++i2 )
 	{
 	    plist.push_back( DmmultipathInfo() );
 	    i2->getInfo( plist.back() );
@@ -5284,6 +5424,33 @@ Storage::getDmmultipathInfo( const string& name,
     return( ret );
 }
 
+int Storage::getBtrfsInfo( deque<storage::BtrfsInfo>& plist )
+    {
+    int ret = 0;
+    plist.clear();
+    assertInit();
+    ConstBtrfsPair p = btrfsPair(Btrfs::notDeleted);
+    for( ConstBtrfsIterator i = p.begin(); i != p.end(); ++i )
+	{
+	plist.push_back( BtrfsInfo() );
+	i->getInfo( plist.back() );
+	}
+    return( ret );
+    }
+
+int Storage::getTmpfsInfo( deque<storage::TmpfsInfo>& plist )
+    {
+    int ret = 0;
+    plist.clear();
+    assertInit();
+    ConstTmpfsPair p = tmpfsPair(Tmpfs::notDeleted);
+    for( ConstTmpfsIterator i = p.begin(); i != p.end(); ++i )
+	{
+	plist.push_back( TmpfsInfo() );
+	i->getInfo( plist.back() );
+	}
+    return( ret );
+    }
 
 list<string> Storage::getAllUsedFs() const 
 {
@@ -5298,7 +5465,7 @@ list<string> Storage::getAllUsedFs() const
     list<string> ret;
     for( set<FsType>::const_iterator i=fs.begin(); i!=fs.end(); ++i )
     {
-	ret.push_back(Volume::fsTypeString(*i));
+	ret.push_back(toString(*i));
     }
     y2mil( "ret:" << ret );
     return ret;
@@ -5338,6 +5505,12 @@ Storage::getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const
     static FsCapabilitiesX ext3Caps (true, true, true, false, true, true,
 				     true, 16, 10*1024);
 
+    static FsCapabilitiesX ext4Caps (true, true, true, false, true, true,
+				     true, 16, 32*1024);
+
+    static FsCapabilitiesX btrfsCaps (false, false, false, false, true, false,
+				      false, 0, 256*1024);
+
     static FsCapabilitiesX xfsCaps (true, true, false, false, true, true,
 				    false, 12, 40*1024);
 
@@ -5348,7 +5521,7 @@ Storage::getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const
 				    false, 0, 16);
 
     static FsCapabilitiesX swapCaps (true, false, true, false, true, true,
-				     true, 16, 64);
+				     false, 16, 64);
 
     static FsCapabilitiesX jfsCaps (false, false, false, false, true, true,
 				    false, 16, 16*1024);
@@ -5374,6 +5547,14 @@ Storage::getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const
 
 	case EXT3:
 	    fscapabilities = ext3Caps;
+	    return true;
+
+	case EXT4:
+	    fscapabilities = ext4Caps;
+	    return true;
+
+	case BTRFS:
+	    fscapabilities = btrfsCaps;
 	    return true;
 
 	case XFS:
@@ -5413,12 +5594,27 @@ Storage::getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const
     }
 }
 
+
 bool
 Storage::getDlabelCapabilities(const string& dlabel, DlabelCapabilities& dlabelcapabilities) const
 {
     return Disk::getDlabelCapabilities(dlabel, dlabelcapabilities);
 }
 
+void Storage::removeDmTableTo( unsigned long mjr, unsigned long mnr )
+    {
+    y2mil( "mjr:" << mjr << " mnr:" << mnr );
+    string cmd = DMSETUPBIN " table | grep -w ";
+    cmd += decString(mjr) + ":" + decString(mnr);
+    cmd += " | sed s/:.*// | uniq";
+    SystemCmd c( cmd );
+    unsigned line=0;
+    while( line<c.numLines() )
+	{
+	removeDmTable( c.getLine(line) );
+	line++;
+	}
+    }
 
 
 void Storage::removeDmTableTo( const Volume& vol )
@@ -5433,17 +5629,8 @@ void Storage::removeDmTableTo( const Volume& vol )
 	    removeDmMapsTo( vol.getContainer()->device() );
 	    if( vol.getContainer()->majorNr()>0 )
 		{
-		string cmd = DMSETUPBIN " table | grep -w ";
-		cmd += decString(vol.getContainer()->majorNr()) + ":" +
-		       decString(vol.getContainer()->minorNr());
-		cmd += " | sed s/:.*// | uniq";
-		SystemCmd c( cmd );
-		unsigned line=0;
-		while( line<c.numLines() )
-		    {
-		    removeDmTable( *c.getLine(line) );
-		    line++;
-		    }
+		removeDmTableTo( vol.getContainer()->majorNr(),
+		                 vol.getContainer()->minorNr() );
 		}
 	    }
 	}
@@ -5476,17 +5663,6 @@ bool Storage::removeDmTable( const string& table )
 
 
 void
-Storage::logCo(const string& device)
-{
-    ContIterator cc;
-    if( findContainer( device, cc ))
-	logCo( &(*cc) );
-    else
-	y2mil( "not found:" << device );
-}
-
-
-void
 Storage::logCo(const Container* c) const
 {
     std::ostringstream b;
@@ -5502,25 +5678,41 @@ Storage::logCo(const Container* c) const
 }
 
 
-void Storage::logProcData( const string& l )
+    void
+    Storage::logProcData(const string& str) const
     {
-    y2mil( "begin:" << l );
-    ProcPart t;
-    AsciiFile md( "/proc/mdstat" );
-    for( unsigned i=0; i<md.numLines(); i++ )
-	y2mil( "mdstat:" << i+1 << ". line:" << md[i] );
-    AsciiFile mo( "/proc/mounts" );
-    for( unsigned i=0; i<mo.numLines(); i++ )
-	y2mil( "mounts:" << i+1 << ". line:" << mo[i] );
-    y2mil( "end" << l );
+	y2mil("begin:" << str);
+
+	if (!testmode())
+	{
+	AsciiFile("/proc/partitions").logContent();
+	AsciiFile("/proc/mdstat").logContent();
+	AsciiFile("/proc/mounts").logContent();
+	AsciiFile("/proc/swaps").logContent();
+	}
+
+	y2mil("end" << str);
     }
 
+bool Storage::findVolume( const string& device, ConstContIterator& c,
+                          ConstVolIterator& v )
+    {
+    ContIterator ct;
+    VolIterator vt;
+    bool ret = findVolume( device, ct, vt );
+    if( ret )
+	{
+	c = ct;
+	v = vt;
+	}
+    return( ret );
+    }
 
 bool Storage::findVolume( const string& device, ContIterator& c,
-                          VolIterator& v )
+                          VolIterator& v, bool no_btrfs )
     {
     bool ret = false;
-    if( findVolume( device, v ))
+    if( findVolume( device, v, false, no_btrfs ))
 	{
 	const Container *co = v->getContainer();
 	CPair cp = cPair();
@@ -5529,9 +5721,8 @@ bool Storage::findVolume( const string& device, ContIterator& c,
 	    ++c;
 	ret = c!=cp.end();
 	}
-    y2milestone( "device:%s ret:%d c->device:%s v->device:%s", device.c_str(),
-                 ret, ret?c->device().c_str():"nil",
-		 ret?v->device().c_str():"nil" );
+    y2mil("device:" << device << " ret:" << ret << " c->device:" << (ret?c->device():"NULL") << 
+	  " v->device:" << (ret?v->device():"NULL"));
     return( ret );
     }
 
@@ -5587,23 +5778,58 @@ bool Storage::removeDm( const string& device )
 	    {
 	    c->removeFromList( const_cast<Dm*>(dm) );
 	    if( c->isEmpty() )
-		removeContainer( &(*c), true );
+		removeContainer( &(*c) );
 	    }
 	}
     y2mil( "device:" << device << " ret:" << (dm!=0)  );
     return( dm!=0 );
     }
 
+int Storage::unaccessDev( const string& device )
+    {
+    int ret = 0;
+    VolIterator v;
+    if( findVolume(device, v) )
+	{
+	v->setSilent(true);
+	ret = v->unaccessVol();
+	v->setSilent(false);
+	}
+    else
+	ret = STORAGE_VOLUME_NOT_FOUND;
+    y2mil( "device:" << device << " ret:" << ret );
+    return( ret );
+    }
+
+bool Storage::findContainer( const string& device, ConstContIterator& c )
+    {
+    ContIterator tmp;
+    bool ret = findContainer( device, tmp );
+    if( ret )
+	c = tmp;
+    return( ret );
+    }
+
 bool Storage::findContainer( const string& device, ContIterator& c )
     {
     CPair cp = cPair();
     c = cp.begin();
-    while( c!=cp.end() && c->sameDevice(device))
+    while (c != cp.end() && !c->sameDevice(device))
 	++c;
     return( c!=cp.end() );
     }
 
-bool Storage::findVolume( const string& device, VolIterator& v, bool also_del )
+bool Storage::findVolume( const string& device, ConstVolIterator& v, bool also_del, bool no_btrfsc )
+    {
+    VolIterator tmp;
+    bool ret = findVolume( device, tmp, also_del, no_btrfsc );
+    if( ret )
+	v = tmp;
+    return( ret );
+    }
+
+bool Storage::findVolume( const string& device, VolIterator& v, bool also_del, 
+                          bool no_btrfsc )
     {
     assertInit();
     string label;
@@ -5616,57 +5842,69 @@ bool Storage::findVolume( const string& device, VolIterator& v, bool also_del )
     else
 	d = normalizeDevice( device );
     if( !label.empty() || !uuid.empty() )
-	y2milestone( "label:%s uuid:%s", label.c_str(), uuid.c_str() );
-    VPair p = vPair( also_del?NULL:Volume::notDeleted );
-    v = p.begin();
-    if( label.empty() && uuid.empty() )
+	y2mil("label:" << label << " uuid:" << uuid);
+    bool found = false;
+    list<VPair> pl;
+    if( !no_btrfsc )
+	pl.push_back( vPair( also_del?NULL:Volume::notDeleted, isBtrfs ));
+    pl.push_back( vPair( also_del?NULL:Volume::notDeleted, isNotBtrfs ));
+    list<VPair>::iterator li = pl.begin();
+    while( li != pl.end() && !found )
 	{
-	while( v!=p.end() && v->device()!=d )
+	v = li->begin();
+	if( label.empty() && uuid.empty() )
 	    {
-	    const list<string>& al( v->altNames() );
-	    if( find( al.begin(), al.end(), d )!=al.end() )
-		break;
-	    ++v;
+	    while( v!=li->end() && v->device()!=d )
+		{
+		const list<string>& al( v->altNames() );
+		if( find( al.begin(), al.end(), d )!=al.end() )
+		    break;
+		++v;
+		}
+	    if( !li->empty() && v==li->end() && d.find("/dev/loop")==0 )
+		{
+		v = li->begin();
+		while( v!=li->end() && v->loopDevice()!=d )
+		    ++v;
+		}
+	    if( !li->empty() && v==li->end() && d.find("/dev/mapper/cr_")==0 )
+		{
+		v = li->begin();
+		while( v!=li->end() && v->dmcryptDevice()!=d )
+		    ++v;
+		}
+	    if( !li->empty() && v==li->end() )
+		{
+		string tmp(d);
+		tmp.replace( 0, 5, "/dev/mapper/" );
+		v = li->begin();
+		while( v!=li->end() && v->device()!=tmp )
+		    ++v;
+		}
 	    }
-	if( !p.empty() && v==p.end() && d.find("/dev/loop")==0 )
+	else if( !label.empty() )
 	    {
-	    v = p.begin();
-	    while( v!=p.end() && v->loopDevice()!=d )
+	    while( v!=li->end() && v->getLabel()!=label )
 		++v;
 	    }
-	if( !p.empty() && v==p.end() && d.find("/dev/mapper/cr_")==0 )
+	else if( !uuid.empty() )
 	    {
-	    v = p.begin();
-	    while( v!=p.end() && v->dmcryptDevice()!=d )
+	    while( v!=li->end() && v->getUuid()!=uuid )
 		++v;
 	    }
-	if( !p.empty() && v==p.end() )
-	    {
-	    d.replace( 0, 5, "/dev/mapper/" );
-	    v = p.begin();
-	    while( v!=p.end() && v->device()!=d )
-		++v;
-	    }
+	found = v!=li->end();
+	++li;
 	}
-    else if( !label.empty() )
-	{
-	while( v!=p.end() && v->getLabel()!=label )
-	    ++v;
-	}
-    else if( !uuid.empty() )
-	{
-	while( v!=p.end() && v->getUuid()!=uuid )
-	    ++v;
-	}
-    return( v!=p.end() );
+    return( found );
     }
 
-bool Storage::findVolume( const string& device, Volume const * &vol )
+bool Storage::findVolume( const string& device, Volume const * &vol, 
+                          bool no_btrfsc )
     {
     bool ret = false;
     vol = NULL;
-    VolIterator v;
-    if( findVolume( device, v ))
+    ConstVolIterator v;
+    if( findVolume( device, v, false, true ))
 	{
 	vol = &(*v);
 	ret = true;
@@ -5680,7 +5918,7 @@ bool Storage::findVolume( const string& device, Volume const * &vol )
 string Storage::findNormalDevice( const string& device )
     {
     string ret;
-    VolIterator v;
+    ConstVolIterator v;
     if( findVolume( device, v ))
 	ret = v->device();
     y2mil( "device:" << device << " ret:" << ret );
@@ -5688,121 +5926,285 @@ string Storage::findNormalDevice( const string& device )
     }
 
 
-bool Storage::clearUsedBy(const string& dev)
-{
-    return setUsedBy(dev, UB_NONE, "");
-}
-
-
-bool Storage::setUsedBy(const string& dev, UsedByType ub_type, const string& ub_name)
-{
-    bool ret=true;
-    VolIterator v;
-    if( !findVolume( dev, v ) )
+bool
+Storage::findDevice( const string& dev, const Device* &vol, 
+                     bool search_by_minor )
     {
-	DiskIterator i = findDisk( dev );
-	if( i != dEnd() )
+    vol = findDevice(dev);
+    unsigned long mj = 0, mi = 0;
+    if( vol==NULL && search_by_minor && getMajorMinor( dev, mj, mi ) && mi!=0 )
 	{
-	    i->setUsedBy(ub_type, ub_name);
+	vol = deviceByNumber( mj, mi );
+	}
+    return( vol!=NULL );
+    }
+
+    Device*
+    Storage::findDevice(const string& dev, bool no_btrfsc)
+    {
+	VolIterator v;
+	if (findVolume(dev, v, false, no_btrfsc))
+	    return &*v;
+
+	ContIterator c;
+	if (findContainer(dev, c))
+	    return &*c;
+
+	return NULL;
+    }
+
+
+    void
+    Storage::clearUsedBy(const string& dev)
+    {
+	Device* tmp = findDevice(dev,true);
+	if (tmp)
+	{
+	    tmp->clearUsedBy();
+	    y2mil("dev:" << dev);
 	}
 	else
 	{
-	    ret = false;
-	    y2err("could not set ub_type:" << ub_type << " ub_name:" << ub_name <<
-		  "for dev: " << dev);
+	    y2mil("dev:" << dev << " failed");
 	}
     }
-    else
+
+
+    void
+    Storage::clearUsedBy(const list<string>& devs)
     {
-	v->setUsedBy(ub_type, ub_name);
+	for (list<string>::const_iterator it = devs.begin(); it != devs.end(); ++it)
+	    clearUsedBy(*it);
     }
-    y2mil("dev:" << dev << " ub_type:" << ub_type << " ub_name:" << ub_name << " ret:" << ret);
-    return ret;
-}
 
 
-bool Storage::usedBy( const string& dev, storage::usedBy& ub )
+    void
+    Storage::setUsedBy(const string& dev, UsedByType type, const string& device)
     {
-    ub.clear();
-    bool ret=false;
-    VolIterator v;
-    if( !findVolume( dev, v ) )
+	Device* tmp = findDevice(dev);
+	if (tmp)
 	{
-	DiskIterator i = findDisk( dev );
-	if( i != dEnd() )
-	    {
-	    ub = i->getUsedBy();
-	    ret = true;
-	    }
+	    tmp->setUsedBy(type, device);
+	    y2mil("dev:" << dev << " type:" << toString(type) << " device:" << device);
 	}
-    else
+	else
 	{
-	ub = v->getUsedBy();
-	ret = true;
+	    danglingUsedBy[dev].clear();
+	    danglingUsedBy[dev].push_back(UsedBy(type, device));
+	    y2mil("setting type:" << toString(type) << " device:" << device <<
+		  " for dev:" << dev << " to dangling usedby");
 	}
-    y2mil( "dev:" << dev << " ret:" << ret << " ub:" << ub );
+    }
+
+void
+Storage::setUsedByBtrfs(const string& dev, const string& uuid)
+    {
+    y2mil( "dev:" << dev << " uuid:" << uuid );
+    Device* tmp = findDevice(dev,true);
+    if (tmp)
+	{
+	tmp->setUsedBy(UB_BTRFS, uuid);
+	}
+    }
+
+bool 
+Storage::canRemove( const Volume& vol ) const
+    {
+    return( recursiveRemove || !vol.isUsedBy() || 
+            isUsedBySingleBtrfs( vol ) );
+    }
+
+bool 
+Storage::isUsedBySingleBtrfs( const Volume& vol ) const
+    {
+    const list<UsedBy>& ub = vol.getUsedBy();
+    bool ret = ub.size()==1 && ub.front().type()==UB_BTRFS;
+    if( ret )
+	{
+	ConstBtrfsPair p = btrfsPair(Btrfs::notDeleted);
+	ConstBtrfsIterator i = p.begin();
+	while( i!=p.end() && i->getUuid()!=ub.front().device() )
+	    ++i;
+	ret = i!=p.end() && i->getDevices().size()<=1;
+	}
+    y2mil( "dev:" << vol.device() << " ret:" << ret );
     return( ret );
     }
 
-UsedByType Storage::usedBy( const string& dev )
+
+    void
+    Storage::setUsedBy(const list<string>& devs, UsedByType type, const string& device)
     {
-    storage::usedBy ub;
-    usedBy( dev, ub );
-    return( ub.type() );
+	for (list<string>::const_iterator it = devs.begin(); it != devs.end(); ++it)
+	    setUsedBy(*it, type, device);
+    }
+
+
+    void
+    Storage::addUsedBy(const string& dev, UsedByType type, const string& device)
+    {
+	Device* tmp = findDevice(dev);
+	if (tmp)
+	{
+	    tmp->addUsedBy(type, device);
+	    y2mil("dev:" << dev << " type:" << toString(type) << " device:" << device);
+	}
+	else
+	{
+	    danglingUsedBy[dev].push_back(UsedBy(type, device));
+	    y2mil("adding type:" << toString(type) << " device:" << device <<
+		  " for dev:" << dev << " to dangling usedby");
+	}
+    }
+
+
+    void
+    Storage::addUsedBy(const list<string>& devs, UsedByType type, const string& device)
+    {
+	for (list<string>::const_iterator it = devs.begin(); it != devs.end(); ++it)
+	    addUsedBy(*it, type, device);
+    }
+
+
+    void
+    Storage::removeUsedBy(const string& dev, UsedByType type, const string& device)
+    {
+	Device* tmp = findDevice(dev);
+	if (tmp)
+	{
+	    tmp->removeUsedBy(type, device); 
+	    y2mil("dev:" << dev << " type:" << toString(type) << " device:" << device);
+	}
+	else
+	{
+	    y2mil("dev:" << dev << " type:" << toString(type) << " device:" << device <<
+		  " failed");
+	}
+    }
+
+
+    void
+    Storage::removeUsedBy(const list<string>& devs, UsedByType type, const string& device)
+    {
+	for (list<string>::const_iterator it = devs.begin(); it != devs.end(); ++it)
+	    removeUsedBy(*it, type, device);
+    }
+
+
+    bool
+    Storage::isUsedBy(const string& dev)
+    {
+	bool ret = false;
+
+	Device* tmp = findDevice(dev);
+	if (tmp)
+	{
+	    ret = tmp->isUsedBy();
+	}
+
+	y2mil("dev:" << dev << " ret:" << ret);
+	return ret;
+    }
+
+
+    bool
+    Storage::isUsedBy(const string& dev, UsedByType type)
+    {
+	bool ret = false;
+
+	Device* tmp = findDevice(dev);
+	if (tmp)
+	{
+	    ret = tmp->isUsedBy(type);
+	}
+
+	y2mil("dev:" << dev << " type:" << toString(type) << " ret:" << ret);
+	return ret;
+    }
+
+
+    void
+    Storage::fetchDanglingUsedBy(const string& dev, list<UsedBy>& uby)
+    {
+	map<string, list<UsedBy>>::iterator pos = danglingUsedBy.find(dev);
+	if (pos != danglingUsedBy.end())
+	{
+	    uby.splice(uby.end(), pos->second);
+	    danglingUsedBy.erase(pos);
+	    y2mil("dev:" << dev << " usedby:" << uby);
+	}
+	else
+	{
+	    y2mil("dev:" << dev << " not found");
+	}
     }
 
 
 void Storage::progressBarCb(const string& id, unsigned cur, unsigned max) const
     {
-    y2milestone( "id:%s cur:%d max:%d", id.c_str(), cur, max );
+    y2mil("PROGRESS BAR id:" << id << " cur:" << cur << " max:" << max);
     CallbackProgressBar cb = getCallbackProgressBarTheOne();
     if( cb )
 	(*cb)( id, cur, max );
     }
 
-void Storage::showInfoCb(const string& info)
+void Storage::showInfoCb(const Text& info)
     {
-    y2milestone( "INSTALL INFO:%s", info.c_str() );
+    y2mil("INSTALL INFO info:" << info.native);
     CallbackShowInstallInfo cb = getCallbackShowInstallInfoTheOne();
     lastAction = info;
     if( cb )
-	(*cb)( info );
+	(*cb)( info.text );
     }
 
-void Storage::infoPopupCb(const string& info) const
+void Storage::infoPopupCb(const Text& info) const
     {
-    y2milestone( "INFO POPUP:%s", info.c_str() );
+    y2mil("INFO POPUP info:" << info.native);
     CallbackInfoPopup cb = getCallbackInfoPopupTheOne();
     if( cb )
-	(*cb)( info );
+	(*cb)( info.text );
     }
 
-void Storage::addInfoPopupText(const string& disk, const string& txt)
+void Storage::addInfoPopupText(const string& disk, const Text& txt)
     {
-    y2mil( "d:" << disk << " txt:" << txt );
+    y2mil( "d:" << disk << " txt:" << txt.native );
     infoPopupTxts.push_back( make_pair(disk,txt) );
     }
 
-bool Storage::yesnoPopupCb(const string& info) const
+bool Storage::yesnoPopupCb(const Text& info) const
     {
-    y2milestone( "YESNO POPUP:%s", info.c_str() );
+    y2mil("YESNO POPUP info:" << info.native);
     CallbackYesNoPopup cb = getCallbackYesNoPopupTheOne();
     if( cb )
-	return (*cb)( info );
+	return (*cb)( info.text );
     else
-	return( true );
+	return true;
     }
 
-bool
-Storage::passwordPopupCb(const string& device, int attempts, string& password) const
-{
-    y2mil("PASSWORD POPUP device:" << device << " attempts:" << attempts);
-    CallbackPasswordPopup cb = getCallbackPasswordPopupTheOne();
-    if (cb)
-	return (*cb)(device, attempts, password);
-    else
-	return false;
-}
+
+    bool
+    Storage::commitErrorPopupCb(int error, const Text& last_action, const string& extended_message) const
+    {
+	y2mil("COMMIT ERROR POPUP error:" << error << " last_action:" << last_action.native <<
+	      " extended_message:" << extended_message);
+	CallbackCommitErrorPopup cb = getCallbackCommitErrorPopupTheOne();
+	if (cb)
+	    return (*cb)(error, last_action.text, extended_message);
+	else
+	    return false;
+    }
+
+
+    bool
+    Storage::passwordPopupCb(const string& device, int attempts, string& password) const
+    {
+	y2mil("PASSWORD POPUP device:" << device << " attempts:" << attempts);
+	CallbackPasswordPopup cb = getCallbackPasswordPopupTheOne();
+	if (cb)
+	    return (*cb)(device, attempts, password);
+	else
+	    return false;
+    }
 
 
 Storage::DiskIterator Storage::findDisk( const string& disk )
@@ -5907,12 +6309,12 @@ Storage::MdPartCoIterator Storage::findMdPartCo( const string& name )
 bool Storage::knownDevice( const string& dev, bool disks_allowed )
     {
     bool ret=true;
-    VolIterator v;
+    ConstVolIterator v;
     if( !findVolume( dev, v ) )
 	{
 	ret = disks_allowed && findDisk( dev )!=dEnd();
 	}
-    y2milestone( "dev:%s ret:%d", dev.c_str(), ret );
+    y2mil("dev:" << dev << " ret:" << ret);
     return( ret );
     }
 
@@ -5920,8 +6322,7 @@ bool Storage::setDmcryptData( const string& dev, const string& dm,
                               unsigned dmnum, unsigned long long siz,
 			      storage::EncryptType typ )
     {
-    y2milestone( "dev:%s dm:%s dmn:%u sizeK:%llu", dev.c_str(), dm.c_str(), 
-                 dmnum, siz );
+    y2mil("dev:" << dev << " dm:" << dm << " dmnum:" << dmnum << " sizeK:" << siz);
     bool ret=false;
     VolIterator v;
     if( dm.find("/temporary-cryptsetup-")==string::npos && 
@@ -5936,16 +6337,19 @@ bool Storage::setDmcryptData( const string& dev, const string& dm,
     return( ret );
     }
 
-bool Storage::deletedDevice( const string& dev )
-    {
-    VPair p = vPair( Volume::isDeleted );
-    VolIterator v = p.begin();
+
+bool
+Storage::deletedDevice(const string& dev) const
+{
+    ConstVolPair p = volPair(Volume::isDeleted);
+    ConstVolIterator v = p.begin();
     while( v!=p.end() && v->device()!=dev )
 	++v;
     bool ret = v!=p.end();
-    y2milestone( "dev:%s ret:%d", dev.c_str(), ret );
-    return( ret );
-    }
+    y2mil("dev:" << dev << " ret:" << ret);
+    return ret;
+}
+
 
 bool Storage::isDisk( const string& dev )
     {
@@ -5957,27 +6361,25 @@ const Volume*
 Storage::getVolume( const string& dev )
     {
     const Volume* ret=NULL;
-    VolIterator v;
+    ConstVolIterator v;
     if( findVolume( dev, v ) )
 	{
 	ret = &(*v);
 	}
-    y2milestone( "dev:%s ret:%s", dev.c_str(),
-                 ret?ret->device().c_str():"nil" );
+    y2mil("dev:" << dev << " ret:" << (ret?ret->device():"NULL"));
     return( ret );
     }
 
 bool Storage::canUseDevice( const string& dev, bool disks_allowed )
     {
     bool ret=true;
-    VolIterator v;
+    ConstVolIterator v;
     if( !findVolume( dev, v ) )
 	{
 	if( disks_allowed )
 	    {
 	    DiskIterator i = findDisk( dev );
-	    ret = i!=dEnd() && i->getUsedByType()==UB_NONE &&
-	          i->numPartitions()==0;
+	    ret = i != dEnd() && !i->isUsedBy() && i->numPartitions() == 0;
 	    }
 	else
 	    ret = false;
@@ -5986,11 +6388,37 @@ bool Storage::canUseDevice( const string& dev, bool disks_allowed )
 	{
 	ret = v->canUseDevice();
 	}
-    y2milestone( "dev:%s ret:%d", dev.c_str(), ret );
+    y2mil("dev:" << dev << " ret:" << ret);
     return( ret );
     }
 
-string Storage::deviceByNumber( const string& majmin )
+const Device*
+Storage::deviceByNumber( unsigned long maj, unsigned long min ) const
+    {
+    const Device* ret=NULL;
+    ConstVolPair p = volPair( Volume::notDeleted );
+    ConstVolIterator v = p.begin();
+    while( v!=p.end() && (maj!=v->majorNr() || min!=v->minorNr()))
+       {
+       ++v;
+       }
+    if( v!=p.end() )
+	ret = &*v;
+    if( !ret )
+	{
+	ConstContPair c = contPair(Container::DeviceUsable);
+	ConstContIterator ci = c.begin();
+	while( ci!=c.end() && (maj!=ci->majorNr() || min!=ci->minorNr()))
+	    ++ci;
+	if( ci!=c.end() )
+	    ret = &*ci;
+	}
+    y2mil( "maj:" << maj << " min:" << min << " ret:" << (ret?ret->device():"NULL") );
+    return ret;
+    }
+
+string
+Storage::deviceByNumber(const string& majmin) const
     {
     string ret="";
     string::size_type pos = majmin.find( ":" );
@@ -5999,41 +6427,18 @@ string Storage::deviceByNumber( const string& majmin )
 	unsigned ma, mi;
 	majmin.substr( 0, pos ) >> ma;
 	majmin.substr( pos+1 ) >> mi;
-	ConstVolPair p = volPair( Volume::notDeleted );
-	ConstVolIterator v = p.begin();
-	while( v!=p.end() && (ma!=v->majorNr() || mi!=v->minorNr()))
-	   {
-	   ++v;
-	   }
-	if( v!=p.end() )
-	    ret = v->device();
-	if( ret.empty() )
-	    {
-	    ConstDiskPair d = diskPair();
-	    ConstDiskIterator di = d.begin();
-	    while( di!=d.end() && (ma!=di->majorNr() || mi!=di->minorNr()))
-		++di;
-	    if( di!=d.end() )
-		ret = di->device();
-	    }
-	if( ret.empty() && ma==Dm::dmMajor())
-	    {
-	    ConstDmraidCoPair d = dmraidCoPair();
-	    ConstDmraidCoIterator di = d.begin();
-	    while( di!=d.end() && mi!=di->minorNr() )
-		++di;
-	    if( di!=d.end() )
-		ret = di->device();
-	    }
+	const Device* dev = deviceByNumber( ma, mi );
+	if( dev )
+	    ret = dev->device();
 	}
-    y2milestone( "majmin %s ret:%s", majmin.c_str(), ret.c_str() );
-    return( ret );
+    y2mil("majmin:" << majmin << " ret:" << ret);
+    return ret;
     }
 
 unsigned long long Storage::deviceSize( const string& dev )
     {
     unsigned long long ret=0;
-    VolIterator v;
+    ConstVolIterator v;
     if( !findVolume( dev, v ) )
 	{
 	DiskIterator i = findDisk( dev );
@@ -6042,21 +6447,28 @@ unsigned long long Storage::deviceSize( const string& dev )
 	}
     else
 	ret = v->sizeK();
-    y2milestone( "dev:%s ret:%llu", dev.c_str(), ret );
+    y2mil("dev:" << dev << " ret:" << ret);
     return( ret );
     }
 
-int Storage::removeContainer( Container* val, bool call_del )
+
+    void
+    Storage::addToList(Container* e)
     {
-    y2milestone( "name:%s call_del:%d", val->name().c_str(), call_del );
+	pointerIntoSortedList<Container>(cont, e);
+    }
+
+
+int Storage::removeContainer( Container* val )
+    {
+    y2mil("name:" << val->name());
     int ret = 0;
     CIter i=cont.begin();
     while( i!=cont.end() && *i!=val )
 	++i;
     if( i!=cont.end() )
 	{
-	if( call_del )
-	    delete( *i );
+	delete *i;
 	cont.erase( i );
 	}
     else
@@ -6068,50 +6480,62 @@ int Storage::removeContainer( Container* val, bool call_del )
     }
 
 
-int Storage::removeUsing(const string& device, const storage::usedBy& uby)
-{
-    y2mil("device:" << device << " uby:" << uby);
-    int ret=0;
-    switch( uby.type() )
-	{
-	case UB_MD:
-	    ret = removeVolume(uby.device());
-	    break;
-	case UB_DM:
-	    ret = removeVolume(uby.device());
-	    break;
-	case UB_LVM:
-	    ret = removeLvmVg(uby.name());
-	    break;
-	case UB_DMRAID:
-	    //ret = removeDmraidCo( name );
-	    break;
-	case UB_MDPART:
-	  ret = removeMdPartCo( uby.device(), true );
-	  break;
-	case UB_DMMULTIPATH:
-	    break;
-	case UB_NONE:
-	    y2war(device << " used by none");
-	    break;
-	default:
-	    ret = STORAGE_REMOVE_USING_UNKNOWN_TYPE;
-	    break;
-	}
-    y2mil("ret:" << ret);
-    return ret;
-}
-
-
-void Storage::rootMounted()
+    int
+    Storage::removeUsing(const string& device, const list<UsedBy>& usedby)
     {
-    root_mounted = true;
-    if( !root().empty() )
-	{
-	string d = root() + "/etc";
-	if (!checkDir(d))
-	    createPath(d);
+	y2mil("device:" << device << " usedby:" << usedby);
 
+	int ret = 0;
+
+	// iterators of usedby are invalidated during remove
+	const list<UsedBy> tmp(usedby);
+
+	for (list<UsedBy>::const_iterator it = tmp.begin(); it != tmp.end(); ++it)
+	{
+	    switch (it->type())
+	    {
+		case UB_MD:
+		    ret = removeVolume(it->device());
+		    break;
+		case UB_DM:
+		    ret = removeVolume(it->device());
+		    break;
+		case UB_LVM:
+		    ret = removeLvmVg(it->device().substr(5));
+		    break;
+		case UB_DMRAID:
+		    break;
+		case UB_DMMULTIPATH:
+		    break;
+		case UB_BTRFS:
+		    {
+		    BtrfsCo* co;
+		    if( haveBtrfs(co) )
+			ret = co->removeUuid(it->device());
+		    else
+			ret = STORAGE_BTRFS_CO_NOT_FOUND;
+		    }
+		    break;
+		case UB_MDPART:
+		    ret = removeMdPartCo(it->device(), true);
+		    break;
+		default:
+		    ret = STORAGE_REMOVE_USING_UNKNOWN_TYPE;
+		    break;
+	    }
+
+	    if (ret != 0)
+		break;
+	}
+
+	y2mil("ret:" << ret);
+	return ret;
+    }
+
+
+    void
+    Storage::syncMdadm()
+    {
 	bool have_mds = false;
 
 	MdCo* md;
@@ -6124,15 +6548,28 @@ void Storage::rootMounted()
 
 	if (have_mds)
 	{
-	    delete raidtab;
-	    raidtab = new EtcRaidtab(this, root());
+	    delete mdadm;
+	    mdadm = new EtcMdadm(this, root());
 
 	    if (haveMd(md))
-		md->syncRaidtab();
+		md->syncMdadm(mdadm);
 
 	    for (MdPartCoIterator it = p.begin(); it != p.end(); ++it)
-		it->syncRaidtab();
+		it->syncMdadm(mdadm);
 	}
+    }
+
+
+void Storage::rootMounted()
+    {
+    root_mounted = true;
+    if( !root().empty() )
+	{
+	string d = root() + "/etc";
+	if (!checkDir(d))
+	    createPath(d);
+
+	syncMdadm();
 
 	if( instsys() )
 	    {
@@ -6141,45 +6578,47 @@ void Storage::rootMounted()
 	    }
 	int ret = fstab->changeRootPrefix( root()+"/etc" );
 	if( ret!=0 )
-	    y2error( "changeRootPrefix returns %d", ret );
+	    y2err("changeRootPrefix returns " << ret);
 	}
     }
 
+
 bool
-Storage::checkDeviceMounted( const string& device, string& mp )
+Storage::checkDeviceMounted(const string& device, list<string>& mps)
     {
     bool ret = false;
     assertInit();
-    y2milestone( "device:%s", device.c_str() );
-    VolIterator vol;
-    ProcMounts mountData( this );
+    y2mil("device:" << device);
+    ConstVolIterator vol;
+	ProcMounts mounts;
     if( findVolume( device, vol ) )
 	{
-	mp = mountData.getMount( vol->mountDevice() );
-	if( mp.empty() )
-	    mp = mountData.getMount( vol->altNames() );
-	ret = !mp.empty();
+	    mps = mounts.getAllMounts(vol->mountDevice());
+	    mps.splice(mps.end(), mounts.getAllMounts(vol->altNames()));
 	}
     else
 	{
-	mp = mountData.getMount( device );
+	    mps = mounts.getAllMounts(device);
 	}
-    y2milestone( "ret:%d mp:%s", ret, mp.c_str() );
-    return( ret );
+    ret = !mps.empty();
+    y2mil("ret:" << ret << " mps:" << mps);
+    return ret;
     }
 
+
 bool
-Storage::umountDevice( const string& device )
+Storage::umountDev( const string& device, bool unsetup )
     {
     bool ret = false;
     assertInit();
-    y2milestone( "device:%s", device.c_str() );
+    y2mil("device:" << device << " unsetup:" << unsetup );
     VolIterator vol;
     if( !readonly() && findVolume( device, vol ) )
 	{
 	if( vol->umount()==0 )
 	    {
-	    vol->crUnsetup();
+	    if( unsetup )
+		vol->crUnsetup();
 	    ret = true;
 	    }
 	}
@@ -6193,8 +6632,7 @@ Storage::mountDev( const string& device, const string& mp, bool ro,
     {
     bool ret = true;
     assertInit();
-    y2milestone( "device:%s mp:%s ro:%d opts:%s", device.c_str(), mp.c_str(), 
-                 ro, opts.c_str() );
+    y2mil("device:" << device << " mp:" << mp << " ro:" << ro << " opts:" << opts);
     VolIterator vol;
     if( !readonly() && findVolume( device, vol ) )
 	{
@@ -6218,191 +6656,181 @@ Storage::mountDev( const string& device, const string& mp, bool ro,
     return( ret );
     }
 
-bool
-Storage::readFstab( const string& dir, deque<VolumeInfo>& infos )
+int
+Storage::activateEncryption( const string& device, bool on )
     {
-    static deque<VolumeInfo> vil;
-    static Regex disk_part( "^/dev/[sh]d[a-z]+[0-9]+$" );
-    vil.clear();
-    bool ret = false;
-    VolIterator vol;
+    int ret = 0;
     assertInit();
-    y2milestone( "dir:%s", dir.c_str() );
-    EtcFstab *fstab = new EtcFstab( dir, true );
-    list<FstabEntry> le;
-    fstab->getEntries( le );
-    for( list<FstabEntry>::const_iterator i=le.begin(); i!=le.end(); ++i )
+    y2mil("device:" << device << " on:" << on );
+    VolIterator vol;
+    if( !readonly() && findVolume( device, vol ) )
 	{
-	y2mil( "entry:" << *i );
-	VolumeInfo* info = NULL;
-	if( disk_part.match( i->dentry ) )
+	bool slnt = vol->isSilent();
+	vol->setSilent(true);
+	if( on && vol->needCrsetup() )
 	    {
-	    info = new VolumeInfo;
-	    info->create = info->format = info->resize = false;
-	    info->sizeK = info->OrigSizeK = info->minor = info->major = 0;
-	    info->device = i->dentry;
-	    info->mount = i->mount;
-	    info->mount_by = MOUNTBY_DEVICE;
-	    info->fs = Volume::toFsType( i->fs );
-	    info->fstab_options = mergeString( i->opts, "," );
-	    vil.push_back( *info );
+	    ret = vol->doCrsetup();
 	    }
-	else if( findVolume( i->dentry, vol ) )
+	else if( !on )
 	    {
-	    info = new VolumeInfo;
-	    vol->getInfo( *info );
-	    vol->mergeFstabInfo( *info, *i );
-	    y2mil( "volume:" << *vol );
-	    vil.push_back( *info );
+	    ret = vol->crUnsetup(true);
 	    }
-	if( info )
-	    {
-	    delete info;
-	    info = NULL;
-	    }
+	vol->setSilent(slnt);
 	}
-    delete fstab;
-    infos = vil;
-    ret = !infos.empty();
+    else
+	ret = STORAGE_VOLUME_NOT_FOUND;
     y2mil("ret:" << ret);
     return( ret );
     }
 
-unsigned long long 
-Storage::getDfSize( const string& mp )
+
+bool
+Storage::readFstab( const string& dir, deque<VolumeInfo>& infos )
+{
+    static deque<VolumeInfo> s_infos; // workaround for broken ycp bindings
+    static Regex disk_part( "^/dev/[sh]d[a-z]+[0-9]+$" );
+    s_infos.clear();
+    bool ret = false;
+    ConstVolIterator vol;
+    assertInit();
+    y2mil("dir:" << dir);
+    EtcFstab fstab(dir, true);
+    const list<FstabEntry> le = fstab.getEntries();
+    for( list<FstabEntry>::const_iterator i=le.begin(); i!=le.end(); ++i )
     {
-    unsigned long long ret = 0;
-    struct statvfs64 fsbuf;
-    if( statvfs64( mp.c_str(), &fsbuf )==0 )
+	y2mil( "entry:" << *i );
+	if( disk_part.match( i->dentry ) )
 	{
-	ret = fsbuf.f_blocks;
-	ret *= fsbuf.f_bsize;
-	ret /= 1024;
-	y2mil("blocks:" << fsbuf.f_blocks << " free:" << fsbuf.f_bfree <<
-	      " bsize:" << fsbuf.f_bsize);
+	    VolumeInfo info;
+	    info.create = info.format = info.resize = false;
+	    info.sizeK = info.origSizeK = 0;
+	    info.minor = info.major = 0;
+	    info.device = i->dentry;
+	    info.mount = i->mount;
+	    info.mount_by = MOUNTBY_DEVICE;
+	    info.fs = toValueWithFallback(i->fs, FSUNKNOWN);
+	    info.fstab_options = boost::join( i->opts, "," );
+	    s_infos.push_back(info);
 	}
-    else
+	else if( findVolume( i->dentry, vol )||findVolume( i->device, vol ) )
 	{
-	y2war( "errno:" << errno << " " << strerror(errno));
+	    VolumeInfo info;
+	    vol->getInfo( info );
+	    vol->mergeFstabInfo( info, *i );
+	    y2mil( "volume:" << *vol );
+	    s_infos.push_back(info);
 	}
-    y2mil( "mp:" << mp << " ret:" << ret );
+    }
+    infos = s_infos;
+    ret = !infos.empty();
+    y2mil("ret:" << ret);
+    return ret;
+}
+
+
+bool Storage::mountTmp( const Volume* vol, string& mdir, bool ro )
+    {
+    bool ret = false;
+    removeDmTableTo( *vol );
+    mdir = tmpDir() + "/tmp-" + (ro?"ro-mp":"mp") + "-XXXXXX";
+    if (mkdtemp(mdir))
+    {
+	y2mil( "mdir:" << mdir << " ro:" << ro );
+
+	string opts = vol->getFstabOption();
+	if( vol->getFs()==NTFS )
+	{
+	    if( !opts.empty() )
+		opts += ",";
+	    opts += "show_sys_files";
+	}
+
+	if( mountDev( vol->device(), mdir, ro, opts ) )
+	{
+	    ret = true;
+	}
+	else
+	{
+	    rmdir(mdir.c_str());
+	    mdir.erase();
+	}
+    }
+
+    y2mil( "ret:" << ret << " mp:" << mdir );
     return( ret );
     }
 
 bool
-Storage::getFreeInfo( const string& device, unsigned long long& resize_free,
-		      unsigned long long& df_free,
-		      unsigned long long& used, bool& win, bool& efi,
-		      bool use_cache )
+Storage::getFreeInfo(const string& device, bool get_resize, ResizeInfo& resize_info,
+		     bool get_content, ContentInfo& content_info, bool use_cache)
     {
     bool ret = false;
     assertInit();
-    resize_free = df_free = used = 0;
-    y2milestone( "device:%s use_cache:%d", device.c_str(), use_cache );
+
+    resize_info = ResizeInfo();
+    content_info = ContentInfo();
+
+    if (testmode())
+	use_cache = true;
+
+    y2mil("device:" << device << " use_cache:" << use_cache);
+
     VolIterator vol;
     if( findVolume( device, vol ) )
 	{
-	if( use_cache && getFreeInf( vol->device(), df_free, resize_free,
-	                             used, win, efi, ret ))
-	    {
-	    }
+	if (vol->getFs() == FSUNKNOWN || vol->getFs() == FSNONE || vol->getFs() == SWAP)
+	{
+	    ret = false;
+	}
+	else if (vol->isUsedBy()&&!isUsedBySingleBtrfs(*vol))
+	{
+	    ret = false;
+	}
+	else if (use_cache && getCachedFreeInfo(vol->device(), get_resize, resize_info,
+						get_content, content_info))
+	{
+	    ret = true;
+	}
+	else if (testmode())
+	{
+	    ret = false;
+	}
 	else
 	    {
 	    bool needUmount = false;
 	    string mp;
-	    if( !vol->isMounted() )
-		{
-		removeDmTableTo( *vol );
-		string mdir = tmpDir() + "/tmp_mp";
-		unlink( mdir.c_str() );
-		rmdir( mdir.c_str() );
-		string save_opt;
-		string cur_opt;
-		if( vol->getFs()==NTFS )
-		    {
-		    save_opt = vol->getFstabOption();
-		    cur_opt = save_opt;
-		    if( !cur_opt.empty() )
-			cur_opt += ",";
-		    cur_opt += "show_sys_files";
-		    vol->changeFstabOptions( cur_opt );
-		    }
-		if( vol->getFs()!=FSUNKNOWN && mkdir( mdir.c_str(), 0700 )==0 &&
-		    mountDev( device, mdir ) )
-		    {
-		    needUmount = true;
-		    mp = mdir;
-		    }
-		if( vol->getFs()==NTFS )
-		    vol->changeFstabOptions( save_opt );
-		}
+	    if( !vol->isMounted() && mountTmpRo( &(*vol), mp ) )
+		needUmount = true;
 	    else
 		mp = vol->getMount();
+
 	    if( !mp.empty() )
 		{
-		struct statvfs64 fsbuf;
-		ret = statvfs64( mp.c_str(), &fsbuf )==0;
-		if( ret )
-		    {
-		    df_free = fsbuf.f_bfree;
-		    df_free *= fsbuf.f_bsize;
-		    df_free /= 1024;
-		    resize_free = df_free;
-		    used = fsbuf.f_blocks-fsbuf.f_bfree;
-		    used *= fsbuf.f_bsize;
-		    used /= 1024;
-		    y2mil("blocks:" << fsbuf.f_blocks << " free:" << fsbuf.f_bfree <<
-			  " bsize:" << fsbuf.f_bsize);
-		    y2mil("free:" << df_free << " used:" << used);
-		    }
-		if( ret && vol->getFs()==NTFS )
-		    {
-		    SystemCmd c("/usr/sbin/ntfsresize -f -i " + quote(device));
-		    string fstr = " might resize at ";
-		    string::size_type pos;
-		    if( c.retcode()==0 &&
-			(pos=c.getString()->find( fstr ))!=string::npos )
-			{
-			y2mil("pos:" << pos);
-			pos = c.getString()->find_first_not_of( " \t\n", pos+fstr.size());
-			y2mil("pos:" << pos);
-			string number = c.getString()->substr( pos,
-							       c.getString()->find_first_not_of( "0123456789", pos ));
-			y2mil("number:\"" << number << "\"");
-			unsigned long long t;
-			number >> t;
-			y2mil("number:" << t);
-			if( t-vol->sizeK()<resize_free )
-			    resize_free = t-vol->sizeK();
-			y2mil("resize_free:" << t);
-			}
-		    else
-			ret = false;
-		    }
-		win = false;
-		const char * files[] = { "boot.ini", "msdos.sys", "io.sys",
-				         "config.sys", "MSDOS.SYS", "IO.SYS",
-					 "bootmgr", "$Boot" };
-		unsigned i=0;
-		while( !win && i<lengthof(files) )
+		ret = true;
+
+		bool resize_cached = false;
+		bool content_cached = false;
+
+		if (get_resize || vol->getFs() != NTFS)
 		{
-		    string f = mp + "/" + files[i];
-		    if (access(f.c_str(), R_OK) == 0)
-		    {
-			y2mil("found windows file " << quote(f));
-			win = true;
-		    }
-		    i++;
+		    resize_cached = true;
+		    resize_info = FreeInfo::detectResizeInfo(mp, *vol);
 		}
-		efi = vol->getFs()==VFAT && checkDir( mp + "/efi" );
-		if( efi )
-		    win = false;
+
+		if (get_content || true)
+		{
+		    content_cached = true;
+		    content_info = FreeInfo::detectContentInfo(mp, *vol);
 		}
+
+		setCachedFreeInfo(vol->device(), resize_cached, resize_info, content_cached,
+				  content_info);
+		}
+
 	    if( needUmount )
 		{
 		umountDevice( device );
 		rmdir( mp.c_str() );
-		rmdir( tmpDir().c_str() );
 		}
 
 	    if( vol->needCrsetup() && vol->doCrsetup() )
@@ -6411,82 +6839,173 @@ Storage::getFreeInfo( const string& device, unsigned long long& resize_free,
 		if( !ret )
 		    vol->crUnsetup();
 		}
-	    setFreeInfo( vol->device(), df_free, resize_free, used, win, efi,
-	                 ret );
 	    }
 	}
-    if( ret )
-	y2milestone( "resize_free:%llu df_free:%llu used:%llu",
-	             resize_free, df_free, used );
-    y2milestone( "ret:%d win:%d", ret, win );
-    return( ret );
+
+    y2mil("device:" << device << " ret:" << ret);
+    if (ret && get_resize)
+	y2mil("resize_info " << resize_info);
+    if (ret && get_content)
+	y2mil("content_info " << content_info);
+
+    return ret;
     }
 
-void Storage::setFreeInfo( const string& device, unsigned long long df_free,
-                           unsigned long long resize_free,
-			   unsigned long long used, bool win, bool efi,
-			   bool resize_ok )
-    {
-    y2milestone( "device:%s df_free:%llu resize_free:%llu used:%llu win:%d efi:%d",
-		 device.c_str(), df_free, resize_free, used, win, efi );
-
-    FreeInfo inf( df_free, resize_free, used, win, efi, resize_ok );
-    freeInfo[device] = inf;
-    }
-
-bool
-Storage::getFreeInf( const string& device, unsigned long long& df_free,
-		     unsigned long long& resize_free,
-		     unsigned long long& used, bool& win,  bool& efi,
-		     bool& resize_ok )
-    {
-    map<string,FreeInfo>::iterator i = freeInfo.find( device );
-    bool ret = i!=freeInfo.end();
-    if( ret )
-	{
-	df_free = i->second.df_free;
-	resize_free = i->second.resize_free;
-	used = i->second.used;
-	win = i->second.win;
-	efi = i->second.efi;
-	resize_ok = i->second.rok;
-	}
-    y2milestone( "device:%s ret:%d", device.c_str(), ret );
-    if( ret )
-	y2milestone( "df_free:%llu resize_free:%llu used:%llu win:%d efi:%d resize_ok:%d",
-		     df_free, resize_free, used, win, efi, resize_ok );
-    return( ret );
-    }
 
 void
-Storage::eraseFreeInfo( const string& device )
+Storage::setCachedFreeInfo(const string& device, bool resize_cached, const ResizeInfo& resize_info,
+			   bool content_cached, const ContentInfo& content_info)
+{
+    map<string, FreeInfo>::iterator it = free_infos.find(device);
+    if (it != free_infos.end())
+	it->second.update(resize_cached, resize_info, content_cached, content_info);
+    else
+	free_infos.insert(it, make_pair(device, FreeInfo(resize_cached, resize_info,
+							 content_cached, content_info)));
+}
+
+
+bool
+Storage::getCachedFreeInfo(const string& device, bool get_resize, ResizeInfo& resize_info,
+			   bool get_content, ContentInfo& content_info) const
+{
+    bool ret = false;
+
+    map<string, FreeInfo>::const_iterator it = free_infos.find(device);
+    if (it != free_infos.end())
     {
-    map<string,FreeInfo>::iterator i = freeInfo.find( device );
-    if( i!=freeInfo.end() )
-	freeInfo.erase(i);
+	ret = true;
+
+	if (get_resize)
+	{
+	    if (it->second.resize_cached)
+		resize_info = it->second.resize_info;
+	    else
+		ret = false;
+	}
+
+	if (get_content)
+	{
+	    if (it->second.content_cached)
+		content_info = it->second.content_info;
+	    else
+		ret = false;
+	}
     }
+
+    y2mil("device:" << device << " ret:" << ret);
+    return ret;
+}
+
+
+void
+Storage::eraseCachedFreeInfo(const string& device)
+{
+    free_infos.erase(device);
+}
+
+
+void Storage::checkPwdBuf( const string& device )
+    {
+	map<string,string>::iterator i=pwdBuf.find(device);
+	if( i!=pwdBuf.end() )
+	    {
+	    VolIterator vol;
+	    if( findVolume( device, vol ) )
+		vol->setCryptPwd( i->second );
+	    pwdBuf.erase(i);
+	    }
+    }
+
+
+    void
+    Storage::logFreeInfo(const string& Dir) const
+    {
+	string fname(Dir + "/free.info.tmp");
+
+	XmlFile xml;
+	xmlNode* node = xmlNewNode("free");
+	xml.setRootElement(node);
+
+	for (map<string, FreeInfo>::const_iterator it = free_infos.begin(); it != free_infos.end(); ++it)
+	{
+	    xmlNode* tmp = xmlNewChild(node, "free");
+	    setChildValue(tmp, "device", it->first);
+	    it->second.saveData(tmp);
+	}
+
+	xml.save(fname);
+
+	handleLogFile(fname);
+    }
+
+
+    void
+    Storage::readFreeInfo(const string& fname)
+    {
+	XmlFile file(fname);
+	const xmlNode* root = file.getRootElement();
+	const xmlNode* free = getChildNode(root, "free");
+	if (free)
+	{
+	    const list<const xmlNode*> frees = getChildNodes(free, "free");
+	    for(list<const xmlNode*>::const_iterator it = frees.begin(); it != frees.end(); ++it)
+	    {
+		string device;
+		getChildValue(*it, "device", device);
+		mapInsertOrReplace(free_infos, device, FreeInfo(*it));
+	    }
+	}
+    }
+
+
+    void
+    Storage::logArchInfo(const string& Dir) const
+    {
+	string fname(Dir + "/arch.info.tmp");
+
+	XmlFile xml;
+	xmlNode* node = xmlNewNode("arch");
+	xml.setRootElement(node);
+	archinfo.saveData(node);
+	xml.save(fname);
+
+	handleLogFile(fname);
+    }
+
+
+    void
+    Storage::readArchInfo(const string& fname)
+    {
+	XmlFile file(fname);
+	const xmlNode* root = file.getRootElement();
+	const xmlNode* node = getChildNode(root, "arch");
+	if (node)
+	    archinfo.readData(node);
+    }
+
 
 int
 Storage::createBackupState( const string& name )
     {
     int ret = readonly()?STORAGE_CHANGE_READONLY:0;
     assertInit();
-    y2milestone( "name:%s", name.c_str() );
+    y2mil("name:" << name);
+    if (ret == 0 && name.empty())
+	ret = STORAGE_INVALID_BACKUP_STATE_NAME;
     if( ret==0 )
 	{
-	if(checkBackupState(name))
-	    removeBackupState( name );
-	CCIter i=cont.begin();
-	while( i!=cont.end() )
-	    {
-	    backups[name].push_back( (*i)->getCopy() );
-	    ++i;
-	    }
+	if (checkBackupState(name))
+	    removeBackupState(name);
+	CCont tmp;
+	for (CCIter i = cont.begin(); i != cont.end(); ++i)
+	    tmp.push_back((*i)->getCopy());
+	backups.insert(make_pair(name, tmp));
 	}
     y2mil( "states:" << backupStates() );
     y2mil("ret:" << ret);
     if( ret==0 )
-	y2milestone( "comp:%d", equalBackupStates( name, "", true ));
+	y2mil("comp:" << equalBackupStates(name, "", true));
     return( ret );
     }
 
@@ -6495,7 +7014,7 @@ Storage::removeBackupState( const string& name )
     {
     int ret = readonly()?STORAGE_CHANGE_READONLY:0;
     assertInit();
-    y2milestone( "name:%s", name.c_str() );
+    y2mil("name:" << name);
     if( ret==0 )
 	{
 	if( !name.empty() )
@@ -6503,7 +7022,7 @@ Storage::removeBackupState( const string& name )
 	    map<string,CCont>::iterator i = backups.find( name );
 	    if( i!=backups.end())
 		{
-		deleteClist( i->second );
+		clearPointerList(i->second);
 		backups.erase(i);
 		}
 	    else
@@ -6522,19 +7041,15 @@ Storage::restoreBackupState( const string& name )
     {
     int ret = readonly()?STORAGE_CHANGE_READONLY:0;
     assertInit();
-    y2milestone( "name:%s", name.c_str() );
+    y2mil("name:" << name);
     if( ret==0 )
 	{
-	map<string,CCont>::iterator b = backups.find( name );
+	map<string, CCont>::const_iterator b = backups.find(name);
 	if( b!=backups.end())
 	    {
-	    cont.clear();
-	    CCIter i=b->second.begin();
-	    while( i!=b->second.end() )
-		{
+	    clearPointerList(cont);
+	    for (CCIter i = b->second.begin(); i != b->second.end(); ++i)
 		cont.push_back( (*i)->getCopy() );
-		++i;
-		}
 	    }
 	else
 	    ret = STORAGE_BACKUP_STATE_NOT_FOUND;
@@ -6544,23 +7059,12 @@ Storage::restoreBackupState( const string& name )
     }
 
 bool
-Storage::checkBackupState( const string& name )
+Storage::checkBackupState( const string& name ) const
     {
-    bool ret = false;
-    assertInit();
-    y2milestone( "name:%s", name.c_str() );
-    map<string,CCont>::iterator i = backups.find( name );
-    ret = i!=backups.end();
-    y2mil("ret:" << ret);
-    return( ret );
+    bool ret = backups.find(name) != backups.end();
+    y2mil("name:" << name << " ret:" << ret);
+    return ret;
     }
-
-struct equal_co
-    {
-    equal_co( const Container* const co ) : c(co) {};
-    bool operator()(const Container* co) { return( *co==*c ); }
-    const Container* const c;
-    };
 
 
 bool
@@ -6568,14 +7072,13 @@ Storage::equalBackupStates(const string& lhs, const string& rhs,
 			   bool verbose_log) const
 {
     y2mil("lhs:" << lhs << " rhs:" << rhs << " verbose:" << verbose_log);
-    map<string,CCont>::const_iterator i;
     const CCont* l = NULL;
     const CCont* r = NULL;
     if( lhs.empty() )
 	l = &cont;
     else
 	{
-	i = backups.find( lhs );
+	map<string, CCont>::const_iterator i = backups.find(lhs);
 	if( i!=backups.end() )
 	    l = &i->second;
 	}
@@ -6583,7 +7086,7 @@ Storage::equalBackupStates(const string& lhs, const string& rhs,
 	r = &cont;
     else
 	{
-	i = backups.find( rhs );
+	map<string, CCont>::const_iterator i = backups.find(rhs);
 	if( i!=backups.end() )
 	    r = &i->second;
 	}
@@ -6594,9 +7097,9 @@ Storage::equalBackupStates(const string& lhs, const string& rhs,
 	CCIter j;
 	while( (ret||verbose_log) && i!=l->end() )
 	    {
-	    j = find_if( r->begin(), r->end(), equal_co( *i ) );
+	    j = find_if(r->begin(), r->end(), bind2nd(deref_equal_to<Container>(), *i));
 	    if( j!=r->end() )
-		ret = (*i)->compareContainer( *j, verbose_log ) && ret;
+		ret = (*i)->compareContainer( **j, verbose_log ) && ret;
 	    else
 		{
 		ret = false;
@@ -6608,7 +7111,7 @@ Storage::equalBackupStates(const string& lhs, const string& rhs,
 	i=r->begin();
 	while( (ret||verbose_log) && i!=r->end() )
 	    {
-	    j = find_if( l->begin(), l->end(), equal_co( *i ) );
+	    j = find_if(l->begin(), l->end(), bind2nd(deref_equal_to<Container>(), *i));
 	    if( j==l->end() )
 		{
 		ret = false;
@@ -6654,8 +7157,6 @@ Storage::activateHld(bool val)
           Dm::activate(val);
           MdPartCo::activate(val, tmpDir());
           }
-
-
     }
     LvmVg::activate(val);
     if (!val)
@@ -6680,9 +7181,8 @@ int Storage::addFstabEntry( const string& device, const string& mount,
     {
     int ret = readonly()?STORAGE_CHANGE_READONLY:0;
     assertInit();
-    y2milestone( "device:%s mount:%s vfs:%s opts:%s freq:%u passno:%u",
-                 device.c_str(), mount.c_str(), vfs.c_str(), options.c_str(),
-		 freq, passno );
+    y2mil("device:" << device << " mount:" << mount << " vfs:" << vfs << " opts:" << options <<
+	  " freq:" << freq << " passno:" << passno);
     if( ret==0 && (device.empty()||mount.empty()||vfs.empty()))
 	{
 	ret = STORAGE_INVALID_FSTAB_VALUE;
@@ -6706,7 +7206,7 @@ int Storage::addFstabEntry( const string& device, const string& mount,
 	fstab->addEntry( c );
 	if( isRootMounted() )
 	    {
-	    string dir = root() + mount;
+	    string dir = prependRoot(mount);
 	    if( access( dir.c_str(), R_OK )!=0 )
 		createPath( dir );
 	    ret = fstab->flush();
@@ -6722,74 +7222,40 @@ void Storage::setExtError( const string& txt )
     }
 
 
-int Storage::waitForDevice()
+void
+Storage::waitForDevice()
+{ 
+    string cmd(UDEVADM " settle --timeout=20");
+    y2mil("calling prog:" << cmd);
+    SystemCmd c(cmd);
+    y2mil("returned prog:" << cmd << " retcode:" << c.retcode());
+}
+
+
+int
+Storage::waitForDevice(const string& device)
 {
     int ret = 0;
-    if (access(UDEVADM, X_OK) == 0)
+    waitForDevice();
+    bool exist = access(device.c_str(), R_OK)==0;
+    y2mil("device:" << device << " exist:" << exist);
+    if (!exist)
     {
-	string cmd(UDEVADM " settle --timeout=20");
-	y2mil("calling prog:" << cmd);
-	SystemCmd c(cmd);
-	y2mil("returned prog:" << cmd << " retcode:" << c.retcode());
+	for (int count = 0; count < 500; count++)
+	{
+	    usleep(10000);
+	    exist = access(device.c_str(), R_OK) == 0;
+	    if (exist)
+		break;
+	}
+	y2mil("device:" << device << " exist:" << exist);
     }
+    if (!exist)
+	ret = STORAGE_DEVICE_NODE_NOT_FOUND;
     y2mil("ret:" << ret);
     return ret;
 }
 
-
-int Storage::waitForDevice( const string& device )
-    {
-    int ret = 0;
-    waitForDevice();
-    bool exist = access( device.c_str(), R_OK )==0;
-    y2milestone( "device:%s exist:%d", device.c_str(), exist );
-    if( !exist )
-	{
-	unsigned count=0;
-	while( !exist && count<500 )
-	    {
-	    usleep( 10000 );
-	    exist = access( device.c_str(), R_OK )==0;
-	    count++;
-	    }
-	y2milestone( "device:%s exist:%d", device.c_str(), exist );
-	}
-    if( !exist )
-	ret = STORAGE_DEVICE_NODE_NOT_FOUND;
-    y2mil("ret:" << ret);
-    return( ret );
-    }
-
-
-void Storage::checkDeviceExclusive( const string& device, unsigned secs )
-{
-    const int delay = 50000;
-    const unsigned count = secs * 1000000/delay;
-    y2mil( "dev:" << device << " sec:" << secs << " count:" << count );
-    for( unsigned i=0; i<count; i++ )
-    {
-	int fd = open( device.c_str(), O_RDONLY|O_EXCL );
-	y2mil( "count:" << i << " fd:" << fd );
-	if( fd>=0 )
-	    close(fd);
-	usleep( delay );
-    }
-}
-
-void Storage::checkPwdBuf( const string& device )
-    {
-    if( !pwdBuf.empty() )
-	{
-	map<string,string>::iterator i=pwdBuf.find(device);
-	if( i!=pwdBuf.end() )
-	    {
-	    VolIterator vol;
-	    if( findVolume( device, vol ) )
-		vol->setCryptPwd( i->second );
-	    pwdBuf.erase(i);
-	    }
-	}
-    }
 
 int
 Storage::zeroDevice(const string& device, unsigned long long sizeK, bool random,
@@ -6807,53 +7273,45 @@ Storage::zeroDevice(const string& device, unsigned long long sizeK, bool random,
     SystemCmd c;
     string cmd;
 
-    startK = min(startK, sizeK);
-    cmd = DDBIN " if=" + source + " of=" + quote(device) + " bs=1k count=" + decString(startK);
+    if( sizeK>0 )
+	startK = min(startK, sizeK);
+    cmd = DDBIN " if=" + source + " of=" + quote(device) + " bs=1k count=" + decString(startK) + " conv=nocreat";
     if (c.execute(cmd) != 0)
 	ret = STORAGE_ZERO_DEVICE_FAILED;
 
-    endK = min(endK, sizeK);
-    cmd = DDBIN " if=" + source + " of=" + quote(device) + " seek=" + decString(sizeK - endK) +
-	" bs=1k count=" + decString(endK);
-    c.execute(cmd);
-
+    if( sizeK>0 )
+	{
+	endK = min(endK, sizeK);
+	cmd = DDBIN " if=" + source + " of=" + quote(device) + " seek=" + decString(sizeK - endK) +
+	    " bs=1k count=" + decString(endK) + " conv=nocreat";
+	if (c.execute(cmd) != 0)
+	    ret = STORAGE_ZERO_DEVICE_FAILED;
+	}
     y2mil("ret:" << ret);
     return ret;
 }
 
 
-string Storage::byteToHumanString(unsigned long long size, bool classic, int precision, 
-				  bool omit_zeroes) const
-{
-    return storage::byteToHumanString(size, classic, precision, omit_zeroes);
-}
-
-
-bool Storage::humanStringToByte(const string& str, bool classic, unsigned long long& size) const
-{
-    return storage::humanStringToByte(str, classic, size);
-}
-
-
-namespace storage
-{
-std::ostream& operator<< (std::ostream& s, Storage &v )
+std::ostream& operator<<(std::ostream& s, const Storage& v)
     {
     v.printInfo(s);
     return(s);
     }
-}
+
+std::ostream& operator<<(std::ostream& s, Storage& v)
+    {
+    v.assertInit();
+    v.printInfo(s);
+    return(s);
+    }
 
 
-
-Storage::SkipDeleted Storage::SkipDel;
-
-namespace storage
-{
     // workaround for broken YCP bindings
     CallbackProgressBar progress_bar_cb_ycp = NULL;
     CallbackShowInstallInfo install_info_cb_ycp = NULL;
     CallbackInfoPopup info_popup_cb_ycp = NULL;
     CallbackYesNoPopup yesno_popup_cb_ycp = NULL;
+    CallbackCommitErrorPopup commit_error_popup_cb_ycp = NULL;
     CallbackPasswordPopup password_popup_cb_ycp = NULL;
+
 }

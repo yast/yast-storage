@@ -30,11 +30,12 @@
 #include <list>
 #include <map>
 #include <deque>
+#include <iostream>
 
-#include "y2storage/IterPair.h"
-#include "y2storage/FilterIterator.h"
-#include "y2storage/DerefIterator.h"
-#include "y2storage/AppUtil.h"
+#include "storage/IterPair.h"
+#include "storage/FilterIterator.h"
+#include "storage/DerefIterator.h"
+#include "storage/AppUtil.h"
 
 namespace storage
 {
@@ -62,7 +63,9 @@ class ContainerIter : public FilterIterator< Pred, Iter >
 	ContainerIter( const IterPair<Iter>& pair, const Pred& p,
 		       bool atend=false ) :
 	    _bclass(pair, p, atend ) {}
-	ContainerIter( const ContainerIter& i) { *this=i;}
+	template< class It >
+	ContainerIter( const It& i) : _bclass( i.begin(), i.end(), i.pred() )
+	    { this->m_cur=i.cur(); }
     };
 
 template< class Pred, class Iter, class Value >
@@ -72,7 +75,9 @@ class ContainerDerIter : public DerefIterator<Iter,Value>
     public:
 	ContainerDerIter() : _bclass() {}
 	ContainerDerIter( const _bclass& i ) : _bclass(i) {}
-	ContainerDerIter( const ContainerDerIter& i) { *this=i;}
+	template< class It >
+	ContainerDerIter( const It& i) : _bclass( i )
+	    { this->m_cur=i.cur(); }
     };
 
 template< class Iter, class CastResult >
@@ -85,7 +90,8 @@ class CastIterator : public Iter
 
 	CastIterator() : Iter() {}
 	CastIterator( const Iter& i ) : Iter( i ) {}
-	CastIterator( const CastIterator& i ) { *this=i; }
+	template< class It >
+	CastIterator( const It& i ) : Iter( i ) {}
 	CastResult operator*() const
 	    {
 	    return( static_cast<CastResult>(Iter::operator*()) );
@@ -119,45 +125,29 @@ class CastIterator : public Iter
     };
 
 template < class Checker, class ContIter, class Iter, class Value >
-class CheckerIterator : public Checker, public ContIter
+class CheckerIterator : public ContIter
     {
     public:
 	CheckerIterator() {};
 	CheckerIterator( const Iter& b, const Iter& e,
 			 bool (* CheckFnc)( const Value& )=NULL,
 			 bool atend=false ) :
-	    Checker( CheckFnc ),
-	    ContIter( b, e, *this, atend ) {}
+	    ContIter( b, e, Checker( CheckFnc ), atend ) {}
 	CheckerIterator( const IterPair<Iter>& p, 
 			 bool (* CheckFnc)( const Value& )=NULL,
 			 bool atend=false ) :
-	    Checker( CheckFnc ),
-	    ContIter( p, *this, atend ) {}
-	CheckerIterator( const CheckerIterator& i ) { *this=i; }
+	    ContIter( p, Checker( CheckFnc ), atend ) {}
+	template<class It>
+	CheckerIterator( const It& i ) :
+	    ContIter( i.begin(), i.end(), Checker(i.pred()), false )
+	    { this->m_cur=i.cur(); }
     };
 
-template < class C >
-void pointerIntoSortedList( std::list<C*>& l, C* e )
-    {
-    typename std::list<C*>::iterator i = l.begin();
-    while( i!=l.end() && **i < *e )
-	i++;
-    l.insert( i, e );
-    }
-
-template<typename Map, typename Key, typename Value>
-typename Map::iterator mapInsertOrReplace(Map& m, const Key& k, const Value& v)
-    {
-    typename Map::iterator pos = m.lower_bound(k);
-    if (pos != m.end() && !typename Map::key_compare()(k, pos->first))
-	pos->second = v;
-    else
-	pos = m.insert(pos, typename Map::value_type(k, v));
-    return pos;
-    }
 
 template<class Num> string decString(Num number)
 {
+    static_assert(std::is_integral<Num>::value, "not integral");
+
     std::ostringstream num_str;
     classic(num_str);
     num_str << number;
@@ -166,6 +156,8 @@ template<class Num> string decString(Num number)
 
 template<class Num> string hexString(Num number)
 {
+    static_assert(std::is_integral<Num>::value, "not integral");
+
     std::ostringstream num_str;
     classic(num_str);
     num_str << std::hex << number;
@@ -224,35 +216,191 @@ template<class Key, class Value> std::ostream& operator<<( std::ostream& s, cons
     return( s );
     }
 
+
+    template <typename Type>
+    void logDiff(std::ostream& log, const char* text, const Type& lhs, const Type& rhs)
+    {
+	static_assert(!std::is_enum<Type>::value, "is enum");
+
+	if (lhs != rhs)
+	    log << " " << text << ":" << lhs << "-->" << rhs;
+    }
+
+    template <typename Type>
+    void logDiffHex(std::ostream& log, const char* text, const Type& lhs, const Type& rhs)
+    {
+	static_assert(std::is_integral<Type>::value, "not integral");
+
+	if (lhs != rhs)
+	    log << " " << text << ":" << std::hex << lhs << "-->" << rhs << std::dec;
+    }
+
+    template <typename Type>
+    void logDiffEnum(std::ostream& log, const char* text, const Type& lhs, const Type& rhs)
+    {
+	static_assert(std::is_enum<Type>::value, "not enum");
+
+	if (lhs != rhs)
+	    log << " " << text << ":" << toString(lhs) << "-->" << toString(rhs);
+    }
+
+    inline
+    void logDiff(std::ostream& log, const char* text, bool lhs, bool rhs)
+    {
+	if (lhs != rhs)
+	{
+	    if (rhs)
+		log << " -->" << text;
+	    else
+		log << " " << text << "-->";
+	}
+    }
+
+
     template<class Type>
     bool
     read_sysfs_property(const string& path, Type& value, bool log_error = true)
     {
-       std::ifstream file(path.c_str());
-       classic(file);
-       file >> value;
-       file.close();
+	std::ifstream file(path.c_str());
+	classic(file);
+	file >> value;
+	file.close();
 
-       if (file.fail())
-       {
-           y2err("reading " << path << " failed");
-	   if (log_error)
+	if (file.fail())
+	{
+	    if (log_error)
 		y2err("reading " << path << " failed");
-           return false;
-       }
+	    return false;
+	}
 
-       return true;
+	return true;
     }
 
 
-template< class Val >
-struct cont_less : public std::binary_function<Val*,Val*,bool>
+    template<class Type>
+    struct deref_less : public std::binary_function<const Type*, const Type*, bool>
     {
-    bool operator()(const Val* __x, const Val* __y) const { return *__x < *__y; }
+	bool operator()(const Type* x, const Type* y) const { return *x < *y; }
     };
+
+
+    template<class Type>
+    struct deref_equal_to : public std::binary_function<const Type*, const Type*, bool>
+    {	
+	bool operator()(const Type* x, const Type* y) const { return *x == *y; }
+    };
+
+
+    template <class Type>
+    void pointerIntoSortedList(list<Type*>& l, Type* e)
+    {
+	l.insert(lower_bound(l.begin(), l.end(), e, deref_less<Type>()), e);
+    }
+
+
+    template <class Type>
+    void clearPointerList(list<Type*>& l)
+    {
+	for (typename list<Type*>::iterator i = l.begin(); i != l.end(); ++i)
+	    delete *i;
+	l.clear();
+    }
+
+
+    template <typename ListType, typename Type>
+    bool contains(const ListType& l, const Type& value)
+    {
+	return find(l.begin(), l.end(), value) != l.end();
+    }
+
+
+    template <typename ListType, typename Predicate>
+    bool contains_if(const ListType& l, Predicate pred)
+    {
+	return find_if(l.begin(), l.end(), pred) != l.end();
+    }
+
+
+    template<typename Map, typename Key, typename Value>
+    typename Map::iterator mapInsertOrReplace(Map& m, const Key& k, const Value& v)
+    {
+	typename Map::iterator pos = m.lower_bound(k);
+	if (pos != m.end() && !typename Map::key_compare()(k, pos->first))
+	    pos->second = v;
+	else
+	    pos = m.insert(pos, typename Map::value_type(k, v));
+	return pos;
+    }
+
+    template<typename List, typename Value>
+    typename List::const_iterator addIfNotThere(List& l, const Value& v)
+	{
+	typename List::const_iterator pos = find( l.begin(), l.end(), v );
+	if (pos == l.end() )
+	    pos = l.insert(l.end(), v);
+	return pos;
+	}
+
+
+    template <class InputIterator1, class InputIterator2>
+    bool equalContent(InputIterator1 first1, InputIterator1 last1,
+		      InputIterator2 first2, InputIterator2 last2)
+    {
+	while (first1 != last1 && first2 != last2)
+	{
+	    if (!first1->equalContent(*first2))
+		return false;
+	    ++first1;
+	    ++first2;
+	}
+	return first1 == last1 && first2 == last2;
+    }
+
+
+    template <class InputIterator1, class InputIterator2>
+    void logVolumesDifference(std::ostream& log, InputIterator1 first1, InputIterator1 last1,
+			      InputIterator2 first2, InputIterator2 last2)
+    {
+	for (InputIterator1 i = first1; i != last1; ++i)
+	{
+	    InputIterator2 j = first2;
+	    while (j != last2 && (i->device() != j->device() || i->created() != j->created()))
+		++j;
+	    if (j != last2)
+	    {
+		if (!i->equalContent(*j))
+		{
+		    i->logDifference(log, *j);
+		    log << std::endl;
+		}
+	    }
+	    else
+	    {
+		log << "  -->" << *i << std::endl;
+	    }
+	}
+
+	for (InputIterator2 i = first2; i != last2; ++i)
+	{
+	    InputIterator1 j = first1;
+	    while (j != last1 && (i->device() != j->device() || i->created() != j->created()))
+		++j;
+	    if (j == last1)
+	    {
+		log << "  <--" << *i << std::endl;
+	    }
+	}
+    }
+
 
 template <class T, unsigned int sz>
   inline unsigned int lengthof (T (&)[sz]) { return sz; }
+
+template <class Type>
+void printtype(Type type)
+    {
+    std::cout << __PRETTY_FUNCTION__ << std::endl;
+    }
 
 }
 

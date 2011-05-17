@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,72 +19,117 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
 
-#include "y2storage/Dm.h"
-#include "y2storage/PeContainer.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Regex.h"
-#include "y2storage/Storage.h"
-#include "y2storage/StorageDefines.h"
-
-using namespace storage;
-using namespace std;
-
-Dm::Dm( const PeContainer& d, const string& tn ) :
-	Volume( d ), tname(tn)
-    {
-    num_le = 0;
-    stripe = 1;
-    stripe_size = 0;
-    inactiv = true;
-    y2deb("constructed dm dev");
-    }
-
-Dm::Dm( const PeContainer& d, const string& tn, unsigned mnum ) :
-	Volume( d ), tname(tn)
-    {
-    y2milestone( "constructed dm dev table \"%s\" %u", tn.c_str(), mnum );
-    num_le = 0;
-    stripe = 1;
-    stripe_size = 0;
-    inactiv = true;
-    nm = tn;
-    init();
-    getTableInfo();
-    }
+#include "storage/Dm.h"
+#include "storage/PeContainer.h"
+#include "storage/SystemCmd.h"
+#include "storage/AppUtil.h"
+#include "storage/Regex.h"
+#include "storage/Storage.h"
+#include "storage/StorageDefines.h"
 
 
-Dm::~Dm()
+namespace storage
 {
-    y2deb("destructed dm dev " << dev);
-}
+    using namespace std;
+
+
+    // this ctr is used for volumes of LvmVg and DmPart
+    Dm::Dm(const PeContainer& c, const string& name, const string& device, const string& tname)
+	: Volume(c, name, device), tname(tname), num_le(0), stripe(1), stripe_size(0),
+	  inactiv(true)
+    {
+	y2mil("constructed Dm tname:" << tname);
+    }
+
+
+    // this ctr is used for volumes of DmCo
+    Dm::Dm(const PeContainer& c, const string& name, const string& device, const string& tname,
+	   SystemInfo& systeminfo)
+	: Volume(c, name, device, systeminfo), tname(tname), num_le(0), stripe(1), stripe_size(0),
+	  inactiv(true)
+    {
+	y2mil("constructed Dm dev:" << dev << " tname:" << tname);
+
+	string dmn = "/dev/mapper/" + tname;
+	if (dmn != dev)
+	    alt_names.push_back(dmn);
+
+	updateMajorMinor();
+
+    getTableInfo();
+
+    getStorage()->fetchDanglingUsedBy(dev, uby);
+    for (list<string>::const_iterator it = alt_names.begin(); it != alt_names.end(); ++it)
+	getStorage()->fetchDanglingUsedBy(*it, uby);
+    }
+
+
+    Dm::Dm(const PeContainer& c, const xmlNode* node)
+	: Volume(c, node), tname(), num_le(0), stripe(1), stripe_size(0), inactiv(true)
+    {
+	getChildValue(node, "table_name", tname);
+
+	getChildValue(node, "stripes", stripe);
+	getChildValue(node, "stripe_size_k", stripe_size);
+
+	y2deb("constructed Dm " << dev);
+
+	assert(!tname.empty());
+	assert(stripe == 1 || stripe_size > 0);
+    }
+
+
+    Dm::Dm(const PeContainer& c, const Dm& v)
+	: Volume(c, v), tname(v.tname), num_le(v.num_le), stripe(v.stripe),
+	  stripe_size(v.stripe_size), inactiv(v.inactiv), pe_map(v.pe_map)
+    {
+	y2deb("copy-constructed Dm " << dev);
+    }
+
+
+    Dm::~Dm()
+    {
+	y2deb("destructed Dm dev " << dev);
+    }
+
+
+    void
+    Dm::saveData(xmlNode* node) const
+    {
+	Volume::saveData(node);
+
+	setChildValue(node, "table_name", tname);
+
+	setChildValue(node, "stripes", stripe);
+	if (stripe > 1)
+	    setChildValue(node, "stripe_size_k", stripe_size);
+    }
 
 
 unsigned Dm::dmMajor()
     {
     if( dm_major==0 )
-	getDmMajor();
+    {
+	dm_major = getMajorDevices("device-mapper");
+	y2mil("dm_major:" << dm_major);
+    }
     return( dm_major );
     }
+
 
 void
 Dm::getTableInfo()
     {
-    if( dm_major==0 )
-	getDmMajor();
     SystemCmd c(DMSETUPBIN " table " + quote(tname));
     inactiv = c.retcode()!=0;
-    y2milestone( "table %s retcode:%d numLines:%u inactive:%d", 
-                 tname.c_str(), c.retcode(), c.numLines(), inactiv );
+    y2mil("table:" << tname << " retcode:" << c.retcode() << " numLines:" << c.numLines() <<
+	  " inactive:" << inactiv);
     if( c.numLines()>0 )
 	{
-	string line = *c.getLine(0);
+	string line = c.getLine(0);
 	target = extractNthWord( 2, line );
 	if( target=="striped" )
 	    extractNthWord( 3, line ) >> stripe;
@@ -98,7 +143,7 @@ Dm::getTableInfo()
 	unsigned long le;
 	string dev;
 	string majmin;
-	string line = *c.getLine(i);
+	string line = c.getLine(i);
 	if( target=="linear" )
 	    {
 	    extractNthWord( 1, line ) >> le;
@@ -106,7 +151,7 @@ Dm::getTableInfo()
 	    le += pesize-1;
 	    le /= pesize;
 	    majmin = extractNthWord( 3, line );
-	    dev = getDevice( majmin );
+	    dev = pec()->getDeviceByNumber( majmin );
 	    if( !dev.empty() )
 		{
 		if( (mit=pe_map.find( dev ))==pe_map.end() )
@@ -115,8 +160,7 @@ Dm::getTableInfo()
 		    mit->second += le;
 		}
 	    else
-		y2warning( "could not find major/minor pair %s", 
-			majmin.c_str());
+		y2war("could not find major/minor pair " << majmin);
 	    }
 	else if (target == "snapshot-origin")
 	{
@@ -137,14 +181,14 @@ Dm::getTableInfo()
 	    stripe_size /= 2;
 	    extractNthWord( 3, line ) >> str;
 	    if( str<2 )
-		y2warning( "invalid stripe count %u", str );
+		y2war("invalid stripe count " << str);
 	    else
 		{
 		le = (le+str-1)/str;
 		for( unsigned j=0; j<str; j++ )
 		    {
 		    majmin = extractNthWord( 5+j*2, line );
-		    dev = getDevice( majmin );
+		    dev = pec()->getDeviceByNumber( majmin );
 		    if( !dev.empty() )
 			{
 			if( (mit=pe_map.find( dev ))==pe_map.end() )
@@ -153,8 +197,7 @@ Dm::getTableInfo()
 			    mit->second += le;
 			}
 		    else
-			y2warning( "could not find major/minor pair %s", 
-				majmin.c_str());
+			y2war("could not find major/minor pair " << majmin);
 		    }
 		}
 	    }
@@ -162,7 +205,7 @@ Dm::getTableInfo()
 	    {
 	    if( find( known_types.begin(), known_types.end(), target ) == 
 	        known_types.end() )
-		y2warning( "unknown target type \"%s\"", target.c_str() );
+		y2war("unknown target type \"" << target << "\"");
 	    extractNthWord( 1, line ) >> le;
 	    y2mil( "le:" << le );
 	    le /= 2;
@@ -182,7 +225,7 @@ Dm::getTableInfo()
 		if( devspec.match( *i ))
 		    {
 		    y2mil( "match \"" << *i << "\"" );
-		    dev = getDevice( *i );
+		    dev = pec()->getDeviceByNumber( *i );
 		    if( !dev.empty() )
 			{
 			if( (mit=pe_map.find( dev ))==pe_map.end() )
@@ -191,8 +234,7 @@ Dm::getTableInfo()
 			    mit->second += le;
 			}
 		    else
-			y2warning( "could not find major/minor pair %s", 
-				majmin.c_str());
+			y2war("could not find major/minor pair " << majmin);
 		    }
 		}
 	    }
@@ -201,58 +243,7 @@ Dm::getTableInfo()
 
 bool Dm::removeTable()
     {
-    return( getContainer()->getStorage()->removeDmTable( tname ));
-    }
-
-string Dm::getDevice( const string& majmin )
-    {
-    string ret = cont->getStorage()->deviceByNumber( majmin );
-    if( ret.empty() )
-	{
-	unsigned mj = 0;
-	unsigned mi = 0;
-	string pair( majmin );
-	SystemCmd c;
-	do
-	    {
-	    mj = mi = 0;
-	    string::size_type pos = pair.find( ':' );
-	    if( pos != string::npos )
-		pair[pos] = ' ';
-	    istringstream i( pair );
-	    classic(i);
-	    i >> mj >> mi;
-	    list<string> ls = splitString(pair);
-	    if( cont->majorNr()>0 && mj==cont->majorNr() && mi==cont->minorNr())
-		ret = cont->device();
-	    if( mj==Loop::major() )
-		ret = Loop::loopDeviceName(mi);
-	    if( ret.empty() && mj==dmMajor() && ls.size()>=2 )
-		{
-		c.execute(DMSETUPBIN " info -c --noheadings -j " + *ls.begin() +
-			  " -m " + *(++ls.begin()) + " | sed -e \"s/:.*//\"" );
-		if( c.retcode()==0 && c.numLines()>0 )
-		    {
-		    string tmp = "/dev/"+*c.getLine(0);
-		    if( cont->getStorage()->knownDevice( tmp, true ) )
-			{
-			ret = tmp;
-			}
-		    else
-			{
-			c.execute(DMSETUPBIN " table " + quote(*c.getLine(0)));
-			if( c.retcode()==0 && c.numLines()>0 )
-			    {
-			    pair = extractNthWord( 3, *c.getLine(0) );
-			    ret = cont->getStorage()->deviceByNumber( pair );
-			    }
-			}
-		    }
-		}
-	    }
-	while( ret.empty() && mj==dm_major && c.retcode()==0 );
-	}
-    return( ret );
+    return getStorage()->removeDmTable(tname);
     }
 
 unsigned long long
@@ -287,8 +278,8 @@ Dm::mapsTo( const string& dev ) const
     ret = mit != pe_map.end();
     if( ret )
 	{
-	y2mil( "map:" << pe_map );
-	y2milestone( "table:%s dev:%s ret:%d", tname.c_str(), dev.c_str(), ret );
+	y2mil("map:" << pe_map);
+	y2mil("table:" << tname << " dev:" << dev << " ret:" << ret);
 	}
     return( ret );
     }
@@ -302,7 +293,7 @@ Dm::checkConsistency() const
          mit!=pe_map.end(); ++mit )
 	 sum += mit->second;
     if( sum != num_le )
-	y2warning( "lv:%s sum:%lu num:%llu", dev.c_str(), sum, num_le );
+	y2war("lv:" << dev << " sum:" << sum << " num:" << num_le);
     else
 	ret = true;
     return( ret );
@@ -317,20 +308,16 @@ Dm::setLe( unsigned long long le )
 void Dm::init()
     {
     string dmn = "/dev/mapper/" + tname;
-    if( dev.empty() )
-	{
-	dev = dmn;
-	nm = tname;
-	}
-    else if( dmn != dev )
+    if( dmn != dev )
 	alt_names.push_back( dmn );
     //alt_names.push_back( "/dev/"+tname );
-    updateMajorMinor();
+    if (!getStorage()->testmode())
+	updateMajorMinor();
     }
 
 void Dm::updateMajorMinor()
     {
-    getMajorMinor( dev, mjr, mnr );
+    getMajorMinor();
     if( majorNr()==Dm::dmMajor() )
 	{
 	string d = "/dev/dm-" + decString(minorNr());
@@ -387,9 +374,9 @@ void Dm::changeDeviceName( const string& old, const string& nw )
 	}
     }
 
-string Dm::removeText( bool doing ) const
+Text Dm::removeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/mapper/system
@@ -405,9 +392,9 @@ string Dm::removeText( bool doing ) const
     return( txt );
     }
 
-string Dm::formatText( bool doing ) const
+Text Dm::formatText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/mapper/system
@@ -456,7 +443,10 @@ string Dm::formatText( bool doing ) const
 
 void Dm::activate( bool val )
     {
-    y2milestone( "old active:%d val:%d", active, val );
+	if (getenv("LIBSTORAGE_NO_DM") != NULL)
+	    return;
+
+    y2mil("old active:" << active << " val:" << val);
     if( active!=val )
 	{
 	SystemCmd c;
@@ -465,18 +455,24 @@ void Dm::activate( bool val )
 	    c.execute(DMSETUPBIN " version");
 	    if( c.retcode()!=0 )
 		{
-		c.execute("grep \"^dm[-_]mod[ \t]\" /proc/modules");
-		if( c.numLines()<=0 )
 		    c.execute(MODPROBEBIN " dm-mod");
-		c.execute("grep \"^dm[-_]snapshot[ \t]\" /proc/modules");
-		if( c.numLines()<=0 )
 		    c.execute(MODPROBEBIN " dm-snapshot");
-		c.execute("/sbin/devmap_mknod.sh");
+		c.execute(DMSETUPBIN " version");
 		}
 	    }
 	else
 	    {
-	    c.execute(DMSETUPBIN " remove_all");
+	    c.execute(DMSETUPBIN " info -c -o name,subsystem");
+	    SystemCmd rm;
+	    for( unsigned i=0; i<c.numLines(); i++ )
+		{
+		if( extractNthWord(1, c.getLine(i)) != "CRYPT" )
+		    {
+		    string cmd = DMSETUPBIN " remove ";
+		    cmd += extractNthWord(0, c.getLine(i));
+		    rm.execute( cmd  );
+		    }
+		}
 	    }
 	active = val;
 	}
@@ -484,93 +480,40 @@ void Dm::activate( bool val )
 
 string Dm::devToTable( const string& dev )
     {
-    string ret(undevDevice(dev));
-    string::iterator it = ret.begin();
-    while( it!=ret.end() )
-	{
-	if( *it == '/' )
-	    *it = '|';
-	++it;
-	}
+    string ret = boost::replace_all_copy(undevDevice(dev), "/", "|");
     if( dev!=ret )
-	y2milestone( "dev:%s --> %s", dev.c_str(), ret.c_str() );
+	y2mil("dev:" << dev << " ret:" << ret);
     return( ret );
     }
 
-string Dm::dmName( const string& table )
-    {
-    string ret = "";
-    int num = Dm::dmNumber( table );
-    if( num>=0 )
-	ret = "dm-" + decString(num);
-    y2mil( "table:" << table << " ret:" << ret );
-    return( ret );
-    }
 
 string Dm::dmDeviceName( unsigned long num )
     {
     return( "/dev/dm-" + decString(num));
     }
 
-int Dm::dmNumber( const string& table )
+
+    string
+    Dm::sysfsPath() const
     {
-    int ret = -1;
-    SystemCmd c(DMSETUPBIN " -c --noheadings info " + quote(table));
-    if( c.retcode()==0 && c.numLines()>0 )
-	{
-	list<string> sl = splitString( *c.getLine(0), ":" );
-	if( sl.size()>=3 )
-	    {
-	    list<string>::const_iterator ci = sl.begin();
-	    ++ci;
-	    ++ci;
-	    *ci >> ret;
-	    }
-	}
-    y2mil( "table:" << table << " ret:" << ret );
-    return( ret );
+	return SYSFSDIR "/" + procName();
     }
 
-string Dm::sysfsPath() const
-    {
-    string ret = SYSFSDIR "/";
-    list<string>::const_iterator i = 
-	find_if( alt_names.begin(), alt_names.end(), find_begin( "/dev/dm-" ) );
-    if( i != alt_names.end() )
-	{
-	string::size_type pos = i->rfind( '/' ) + 1;
-	ret += i->substr( pos );
-	}
-    else
-	{
-	y2mil( "no dm device found " << *this );
-	}
-    y2mil( "ret:" << ret );
-    return( ret );
-    }
-
-void Dm::getDmMajor()
-    {
-    dm_major = getMajorDevices( "device-mapper" );
-    y2milestone( "dm_major:%u", dm_major );
-    }
 
 void Dm::getInfo( DmInfo& tinfo ) const
     {
-    ((Volume*)this)->getInfo( info.v );
+    Volume::getInfo(info.v);
     info.nr = num;
     info.table = tname;
     info.target = target;
     tinfo = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const Dm &p )
     {
     s << p.shortPrintedName() << " ";
-    s << *(Volume*)&p;
+    s << dynamic_cast<const Volume&>(p);
     if( p.num_le>0 )
 	s << " LE:" << p.num_le;
     s << " Table:" << p.tname;
@@ -591,7 +534,6 @@ std::ostream& operator<< (std::ostream& s, const Dm &p )
     return( s );
     }
     
-}
 
 bool Dm::equalContent( const Dm& rhs ) const
     {
@@ -600,53 +542,24 @@ bool Dm::equalContent( const Dm& rhs ) const
             stripe_size==rhs.stripe_size && pe_map==rhs.pe_map );
     }
 
-void Dm::logDifference( const Dm& rhs ) const
-{
-    string log = stringDifference(rhs);
-    y2mil(log);
-}
 
-string Dm::stringDifference( const Dm& rhs ) const
+    void
+    Dm::logDifference(std::ostream& log, const Dm& rhs) const
     {
-    string ret = Volume::logDifference( rhs );
-    if( num_le!=rhs.num_le )
-	ret += " LE:" + decString(num_le) + "-->" + decString(rhs.num_le);
-    if( stripe!=rhs.stripe )
-	ret += " Stripes:" + decString(stripe) + "-->" + decString(rhs.stripe);
-    if( stripe_size!=rhs.stripe_size )
-	ret += " StripeSize:" + decString(stripe_size) + "-->" + 
-	       decString(rhs.stripe_size);
-    if( pe_map!=rhs.pe_map )
-	{
-	std::ostringstream b;
-	classic(b);
-	b << " pe_map:" << pe_map << "-->" << rhs.pe_map;
-	ret += b.str();
-	}
-    return( ret );
+	Volume::logDifference(log, rhs);
+
+	logDiff(log, "num_le", num_le, rhs.num_le);
+	logDiff(log, "stripes", stripe, rhs.stripe);
+	logDiff(log, "stripe_size", stripe_size, rhs.stripe_size);
+
+	logDiff(log, "pe_map", pe_map, rhs.pe_map);
     }
 
-Dm& Dm::operator= ( const Dm& rhs )
-    {
-    y2deb("operator= from " << rhs.nm);
-    *((Volume*)this) = rhs;
-    num_le = rhs.num_le;
-    stripe = rhs.stripe;
-    stripe_size = rhs.stripe_size;
-    inactiv = rhs.inactiv;
-    tname = rhs.tname;
-    pe_map = rhs.pe_map;
-    return( *this );
-    }
-
-Dm::Dm( const PeContainer& d, const Dm& rhs ) : Volume(d)
-    {
-    y2deb("constructed dm by copy constructor from " << rhs.dev);
-    *this = rhs;
-    }
 
 bool Dm::active = false;
 unsigned Dm::dm_major = 0;
-static const char* elem[] = { "crypt" };
-list<string> Dm::known_types( elem, elem+lengthof(elem) );
 
+    static const char* elem[] = { "crypt" };
+    const list<string> Dm::known_types(elem, elem + lengthof(elem));
+
+}

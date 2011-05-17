@@ -30,26 +30,26 @@
   import "Arch";
   import "Label";
   import "Popup";
+    import "StorageProposal";
 
-  include "partitioning/partition_defines.ycp";
   include "partitioning/custom_part_helptexts.ycp";
-  include "partitioning/custom_part_check_generated.ycp";
 
 
   // TODO: cleanup
   boolean check_unique_label( map<string,map> targetMap, map part );
   boolean CheckFstabOptions( map part );
+  symbol check_devices_used( list<map> partitions, boolean not_cr );
 
 
-define string DlgCreateCryptFs( string device, integer minpwlen, boolean format,
+define string DlgPasswdCryptFs( string device, integer minpwlen, boolean format,
                                 boolean tmpcrypt )
   ``{
     string helptext = GetCreateCryptFsHelptext(minpwlen, format, tmpcrypt);
-    y2milestone( "DlgCreateCryptFs device:%1 minpwlen:%2 format:%3 tmpcrypt:%4",
+    y2milestone( "DlgPasswdCryptFs device:%1 minpwlen:%2 format:%3 tmpcrypt:%4",
                  device, minpwlen, format, tmpcrypt );
 
     // heading text
-    string h = _("Enter your password for the encrypted file system.");
+    string h = _("Enter your Password for the Encrypted File System.");
     string label = "";
     if( format )
 	// label text
@@ -58,166 +58,15 @@ define string DlgCreateCryptFs( string device, integer minpwlen, boolean format,
 	{
 	if( size(label)>0 )
 	    label = label + " ";
-	label = label + ("Empty password allowed.");
+	label = label + _("Empty password allowed.");
 	}
 
     if( size(device)>0 )
 	// heading text, %1 is replaced by device name (e.g. /dev/hda1)
 	h = sformat( _("Password for Encrypted File System on %1"), device );
 
-    UI::OpenDialog(
-	     `opt(`decorated ),
-	     `HBox(
-		   `HWeight(3, `RichText( helptext ) ),
-		   `HWeight(6, `VBox(
-				    `VSpacing(0.3),
-				    `HBox(
-					  `HSpacing(1),
-					  `Heading(h),
-					  `HSpacing(1)
-					 ),
-				    `VSpacing(4),
-				    `HBox(
-					  `HSpacing(4),
-					  `VBox(
-						// label text
-						`Label(label),
-						`VSpacing(),
-
-						`HBox(
-						    `Password(`id("pw1"),
-						    // Label: get password for user root
-						    // Please use newline if label is longer than 40 characters
-								_("&Enter a password for your file system:"), ""),
-						    `HSpacing(15)),
-
-						`VSpacing(0.5),
-
-						`HBox(
-						    `Password(`id("pw2"),
-						     // Label: get same password again for verification
-						     // Please use newline if label is longer than 40 characters
-								_("Reenter the password for &verification:"), ""),
-						     `HSpacing(15))
-						),
-					  `HSpacing(4)
-					 ),
-				    `VSpacing(3),
-				    `ButtonBox(
-					  `PushButton(`id("ok"), `opt(`default),  Label::OKButton()),
-					  `PushButton(`id("cancel"),   Label::CancelButton())
-					  ),
-				    `VSpacing(0.5)
-				    )
-			   )
-	     ));
-
-	string password = "";
-        symbol widget = nil;
-
-      repeat
-      {
-	  // Clear password fields on every round.
-	    UI::ChangeWidget(`id(`pw1), `Value, "");
-	    UI::ChangeWidget(`id(`pw2), `Value, "");
-
-	    UI::SetFocus(`id(`pw1));
-
-	    widget = (symbol) UI::UserInput();
-
-	    switch (widget)
-	  {
-		case `ok:
-
-		    password = (string) UI::QueryWidget(`id(`pw1), `Value);
-		    string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
-
-		    if (!Storage::CheckEncryptionPasswords(password, tmp, minpwlen, tmpcrypt))
-			widget = `again;
-
-		    break;
-	      }
-
-	} until (widget == `cancel || widget == `ok);
-
-	UI::CloseDialog();
-
-	if (widget == `ok)
-	      {
-	    return password;
-	      }
-	else
-	      {
-	    return "";
-	      }
-    }
-
-
-    boolean QueryProposalPassword()
-    {
-	if (size(Storage::ProposalPassword()) != 0)
-	    return true;
-
-	UI::OpenDialog(`VBox(
-			   `Label(_("Enter your password for the proposal encryption.")),
-			   `MinWidth(40,
-				     `Password(`id(`pw1),
-					       // Label: get password for user root
-					       // Please use newline if label is longer than 40 characters
-					       _("Password:"), "")),
-			   `VSpacing(0.5),
-			   `MinWidth(40,
-				     `Password(`id(`pw2),
-					       // Label: get same password again for verification
-					       // Please use newline if label is longer than 40 characters
-					       _("Reenter the password for verification:"), "")),
-			   `Label(_("Don't forget what you enter here!")),
-			   `ButtonBox(
-			       `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
-			       `PushButton(`id(`cancel), Label::CancelButton())
-			       )
-			   ));
-
-	string password = "";
-        symbol widget = nil;
-
-	repeat
-		  {
-	    // Clear password fields on every round.
-	    UI::ChangeWidget(`id(`pw1), `Value, "");
-	    UI::ChangeWidget(`id(`pw2), `Value, "");
-
-	    UI::SetFocus(`id(`pw1));
-
-	    widget = (symbol) UI::UserInput();
-
-	    switch (widget)
-		  {
-		case `ok:
-
-		    password = (string) UI::QueryWidget(`id(`pw1), `Value);
-		    string tmp = (string) UI::QueryWidget(`id(`pw2), `Value);
-
-		    if (!Storage::CheckEncryptionPasswords(password, tmp, 8, false))
-			widget = `again;
-
-		    break;
-		  }
-
-	} until (widget == `cancel || widget == `ok);
-
-      UI::CloseDialog();
-
-	if (widget == `ok)
-	  {
-	    Storage::SetProposalPassword(password);
-	    return true;
-	  }
-	else
-	{
-	    return false;
-  }
-
+    string ret = Storage::PasswdPopup( helptext, h, label, format, minpwlen, tmpcrypt );
+    return( ret );
     }
 
 
@@ -274,8 +123,7 @@ device %1 mounted on %2.
 					  `HSpacing(4)
 					  ),
 				    `VSpacing(2),
-				    `HBox(
-					  // Ok button
+				    `ButtonBox(
 					  `PushButton(`id("ok"), `opt(`default),  Label::OKButton()),
 					  // Cancel button
 					  `PushButton(`id("cancel"),  _("&Skip") )
@@ -350,6 +198,7 @@ define symbol DoInputChecks( map entry, string query )
     ``{
     symbol ret = `ok;
     list between = entry[`between]:[];
+    integer below = entry[`below]:0;
     string valid_chars = entry[`valid_chars]:"";
     integer str_length = entry[`str_length]:0;
 
@@ -363,7 +212,15 @@ define symbol DoInputChecks( map entry, string query )
 	    ret = `error;
 	    }
 	}
-
+    if( below != 0 && (size(query)>0 || !entry[`empty_allowed]:false))
+	{
+	y2milestone( "DoInputChecks entry:%1 query:\"%2\"", entry, query );
+	if( below < tofloat(query) )
+	    {
+	    Popup::Error(entry[`error_text]:"");
+	    ret = `error;
+	    }
+	}
     if( valid_chars != "" && size(query)>0 && ret != `error )
 	{
 	if( nil != findfirstnotof( query, valid_chars ))
@@ -419,10 +276,10 @@ map <any, map<string, any> > FileSystemOptions(map< any, map<string,any> > org_f
 			   `HSpacing(1)),
 		       `VSpacing(1),
 		       `VStretch(),
-		       `HBox(  
-			   `Left(`PushButton(`id(`help),`opt(`helpButton), Label::HelpButton())),
-			   `Right(`HBox(`PushButton(`id(`ok), `opt(`default), Label::OKButton()),
-					`PushButton(`id(`cancel), Label::CancelButton())))
+		       `ButtonBox(  
+			   `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
+			   `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+			   `PushButton(`id(`cancel), Label::CancelButton())
 			   )
 		       )
 	);
@@ -454,6 +311,11 @@ map <any, map<string, any> > FileSystemOptions(map< any, map<string,any> > org_f
 			$[ "option_str"   : entry[`option_str]:"",
 			   "option_cmd"	  : entry[`option_cmd]:`mkfs,
 			   "option_value" : query ];
+		    if( is( query, boolean ) && query==false && 
+		        haskey( entry, `option_false ) )
+			{
+			fs_option["option_str"] = entry[`option_false]:"";
+			}
 		    y2milestone( "FileSystemOptions fs_option %1", fs_option );
 
 		    if( entry[`option_blank]:false )
@@ -512,7 +374,7 @@ define map<string,any> FstabOptions( map<string,any> old, map<string,any> new )
     term contents = `VBox();
     term emptyterm = `Empty();
 
-    if( new["enc_type"]:`none==`none) // && new["mount"]:"" != "swap" )
+    if( new["enc_type"]:`none==`none && new["type"]:`unknown!=`tmpfs ) 
 	{
 	// help text, richtext format
 	helptext = helptext + _("<p><b>Mount in /etc/fstab By:</b>
@@ -672,11 +534,10 @@ A volume label cannot contain the / character or spaces.
 			     `HSpacing(1)),
 		       `VSpacing(1),
 		       `VStretch(),
-		       `HBox(
-			   `Left(`PushButton(`id(`help),`opt(`helpButton), Label::HelpButton())),
-			   `Right(`HBox(`PushButton(`id(`ok), `opt(`default), Label::OKButton()),
-					`PushButton(`id(`cancel), Label::CancelButton()))
-			       )
+		       `ButtonBox(
+			   `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
+			   `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+			   `PushButton(`id(`cancel), Label::CancelButton())
 			   )
 		       )
 	);
@@ -687,21 +548,27 @@ A volume label cannot contain the / character or spaces.
 	{
 	list no_mountby_type = [ `loop ];
 	list mountby_id_path_type = [ `primary, `logical ];
+	map enab = $[];
+	boolean tmp = !contains( no_mountby_type, new["type"]:`primary );
+	enab[`label] = tmp && FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
+		       new["enc_type"]:`none==`none;
+	enab[`uuid] = tmp && (new["format"]:false || size(new["uuid"]:"")>0) &&
+		      FileSystems::MountUuid( new["used_fs"]:`unknown );
+	tmp = contains(mountby_id_path_type, new["type"]:`none);
+	enab[`id] = tmp && size(new["udev_id"]:[])>0;
+	enab[`path] = tmp && size(new["udev_path"]:"")>0;
+	y2milestone( "FstabOptions enab %1", enab );
+	UI::ChangeWidget( `id(`label), `Enabled,  enab[`label]:false );
+	UI::ChangeWidget( `id(`uuid), `Enabled, enab[`uuid]:false );
+	UI::ChangeWidget( `id(`id), `Enabled, enab[`id]:false );
+	UI::ChangeWidget( `id(`path), `Enabled, enab[`path]:false );
 	symbol defmb = !Mode::config() ? Storage::GetMountBy( new["device"]:"" )
 	                               : `device;
 	y2milestone( "FstabOptions defmb %1", defmb );
+	if( haskey( enab, defmb ) && !enab[defmb]:false )
+	    defmb = `device;
 	UI::ChangeWidget( `id(`mt_group), `CurrentButton,
 	                  new["mountby"]:defmb );
-	UI::ChangeWidget( `id(`label), `Enabled,
-			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
-			  new["enc_type"]:`none==`none &&
-			  !contains( no_mountby_type, new["type"]:`primary ) );
-	UI::ChangeWidget( `id(`uuid), `Enabled,
-			  (new["format"]:false || size(new["uuid"]:"")>0) &&
-			  FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
-			  !contains( no_mountby_type, new["type"]:`primary ) );
-	UI::ChangeWidget( `id(`id), `Enabled, contains(mountby_id_path_type, new["type"]:`none) );
-	UI::ChangeWidget( `id(`path), `Enabled, contains(mountby_id_path_type, new["type"]:`none) );
 	}
 
     if( UI::WidgetExists( `id(`vol_label) ))
@@ -720,17 +587,17 @@ A volume label cannot contain the / character or spaces.
     if( UI::WidgetExists( `id("opt_user") ))
 	{
 	UI::ChangeWidget( `id("opt_user"), `Enabled,
-			  new["enc_type"]:`none==`none || new["noauto"]:false );
-	}
-    if( UI::WidgetExists( `id("opt_noauto") ))
-	{
-	UI::ChangeWidget( `id("opt_noauto"), `Enabled,
-			  new["enc_type"]:`none==`none || new["noauto"]:false );
+			  new["enc_type"]:`none==`none );
 	}
     if( UI::WidgetExists( `id("opt_quota") ))
 	{
 	UI::ChangeWidget( `id("opt_quota"), `Enabled,
 			  FileSystems::CanDoQuota(new) );
+	}
+    if( UI::WidgetExists( `id("opt_readonly") ))
+	{
+	UI::ChangeWidget( `id("opt_readonly"), `Enabled,
+			  FileSystems::CanMountRo(new) );
 	}
     foreach( any key, any value, old_state,
 	``{
@@ -742,15 +609,6 @@ A volume label cannot contain the / character or spaces.
 	{
 	ret = UI::UserInput();
 	y2milestone( "FstabOptions ret %1", ret );
-	if( ret == "opt_noauto" )
-	    {
-	    if( UI::WidgetExists( `id("opt_user") ))
-		{
-		boolean val = (boolean)UI::QueryWidget( `id("opt_noauto" ), `Value );
-		UI::ChangeWidget( `id("opt_user"), `Enabled,
-		                  new["enc_type"]:`none==`none || val );
-		}
-	    }
 	if( ret == `ok )
 	    {
 	    if( UI::WidgetExists( `id(`mt_group) ))
@@ -1033,7 +891,6 @@ define term FormatDlg( map new_val, map<symbol, map> file_systems )
 
     if( new_val["type"]:`primary != `lvm &&
 	new_val["type"]:`primary != `sw_raid &&
-	new_val["type"]:`primary != `evms &&
 	new_val["type"]:`primary != `loop && !Partitions::no_fsid_menu )
 	{
 	fsid = `VBox(
@@ -1120,23 +977,6 @@ define term MountDlg( map new_val, list mountpoints )
     }
 
 
-
-
-define boolean UseChangedPartitionContinueCancelPopup()
-    ``{
-    // popup text
-    if( Popup::ContinueCancel(_("You have changed the parameters of a partition currently
-mounted. In some cases, this can damage your Linux installation.
-
-Proceed only if you know what you are doing. If you are unsure,
-press Cancel.
-
-")))
-	return true;
-
-     return false;
-     };
-
 define boolean ModifyPartitionInSystemWarningPopup( string part, string mount )
     ``{
 
@@ -1169,12 +1009,12 @@ define boolean FsysCannotShrinkPopup( boolean ask, boolean lvm )
 	// Popup text
 	txt = _("
 The file system on the partition cannot be shrunk by YaST2.
-Only fat, ext2, ext3, and reiser allow shrinking of a file system.");
+Only fat, ext2, ext3, ext4, and reiser allow shrinking of a file system.");
     else
 	// Popup text
 	txt = _("
 The file system on the logical volume cannot be shrunk by YaST2.
-Only fat, ext2, ext3, and reiser allow shrinking of a file system.");
+Only fat, ext2, ext3, ext4, and reiser allow shrinking of a file system.");
     if( ask )
 	{
 	txt = txt + "\n";
@@ -1207,12 +1047,12 @@ define boolean FsysCannotGrowPopup( boolean ask, boolean lvm )
 	// Popup text
 	txt = _("
 The file system on the selected partition cannot be extended by YaST2.
-Only fat, ext2, ext3, xfs, and reiser allow extending a file system.");
+Only fat, ext2, ext3, ext4, xfs, and reiser allow extending a file system.");
     else
 	// Popup text
 	txt = _("
 The file system on the selected logical volume cannot be extended by YaST2.
-Only fat, ext2, ext3, xfs, and reiser allow extending a file system.");
+Only fat, ext2, ext3, ext4, xfs, and reiser allow extending a file system.");
     if( ask )
 	{
 	txt = txt + "\n\n";
@@ -1262,119 +1102,6 @@ Shrink the file system now?");
     return( ret );
     }
 
-
-/**
-  * Scan exiting partitions for fstab files and if one found read the mountpoints
-  * from the fstab file and build a new targetMap.
-  * Ask the user if he like to use the new or old targetMap
-  * (with or without found mountpoints)
-  *------------------------------------
-  * @parm targetMap all targets
-  * @parm installation !!
-  * @parm file_systems  filesystems definition map
-  * @return targetMap new or unmodified targetMap
-  *---------------------------------------------------------------------
-  */
-define integer FstabAddDialog( list table_input )
-    ``{
-    y2milestone( "FstabAddDialog start %1", table_input );
-    if( table_input == [] || table_input == nil )
-	{
-	// popup text
-	Popup::Message(_("No previous system with mount points was detected."));
-	return -1;
-	}
-
-    // heading text
-    term header = `header( _("Device      "),  _("Mount       "));
-
-    // help text, richtext format
-    string help_text = _("<P><B><BIG>Attention:</BIG></B><BR>YaST2 has scanned your hard disks and found an old Linux system
-with mount points. On the right, see a list with the mount points found. </P>
-")+
-    // help text, richtext format
-_("<P>To use these mount points, <BR>press <B>Yes</B>.</P>")+
-    // help text, richtext format
-_("<P>To ignore these mount points, <BR> press <B>No</B>.</P>");
-
-    UI::OpenDialog(
-	`opt(`decorated ),
-        `HBox(
-	    `VBox( `HSpacing(20), `RichText(help_text)),
-	    `VBox( `VSpacing(1),
-		   `ReplacePoint( `id(`heading), `Empty() ),
-		   `HBox(
-		       `HSpacing(3.0),
-		       `VSpacing(8),
-		       `VBox( `VSpacing(1),
-			       `Table(`id(`table), header, [] )
-			    ),
-		       `HSpacing(3.0)
-		       ),
-
-		   `VSpacing(1),
-		   // popup text
-		   `Heading(_("Would you like to use these mount points
-for your new installation?")),
-		   `VSpacing(1),
-		   `ReplacePoint( `id(`bbox), `Empty() )
-		 ))
-	     );
-
-    symbol userinput = `none;
-    integer idx = 0;
-    repeat
-	{
-	// popup text %1 is replaced by a device name (e.g. /dev/hda1)
-	string tmp = sformat(
-_("A previous system with the following mount points was detected:
-/etc/fstab found on %1"), table_input[idx,"root"]:"/dev/emil" );
-	UI::ReplaceWidget( `id(`heading), `Heading( tmp ) );
-
-	UI::ChangeWidget( `id(`table), `Items, table_input[idx,"tbl"]:[] );
-
-	term bbox = `HBox( `PushButton( `id(`ok), `opt(`default),
-					Label::YesButton() ),
-			   `PushButton(`id(`cancel), Label::NoButton())
-			 );
-	if( size(table_input)>0 )
-	    {
-	    bbox = add( bbox, `HSpacing(5) );
-	    if( idx>0 )
-		{
-		bbox = add( bbox,
-		            `PushButton( `id(`show_p), _("Show &Previous") ));
-		}
-	    if( idx<size(table_input)-1 )
-		{
-		bbox = add( bbox,
-		            `PushButton( `id(`show_n), _("Show &Next") ));
-		}
-	    }
-	y2milestone( "userinput UI::ReplaceWidget" );
-	UI::ReplaceWidget( `id(`bbox), bbox );
-	y2milestone( "after UI::ReplaceWidget" );
-
-	userinput = (symbol)UI::UserInput();
-	y2milestone( "userinput %1", userinput );
-
-	if( userinput == `show_n )
-	    {
-	    idx = idx+1;
-	    }
-	else if( userinput == `show_p )
-	    {
-	    idx = idx-1;
-	    }
-	y2milestone( "idx %1", idx );
-	}
-    until( userinput == `ok || userinput == `cancel );
-    UI::CloseDialog();
-
-    integer ret = userinput == `ok ? idx : -1;
-    y2milestone( "ret %1", ret );
-    return ret;
-    };
 
 //FIXME: y2-repair uses this, need to find
 //a better place for it
@@ -1438,9 +1165,8 @@ symbol ReallyInstPrepdisk()
  * Check if at least on partition is mounted.
  * @return map targetMap
  */
-define boolean deleteAllDevPartitions( map<string, any> disk,
-                                       boolean installation, boolean bsd_label )
-    ``{
+boolean deleteAllDevPartitions(map<string, any> disk, boolean installation)
+    {
     boolean go_on     = true;
     string del_dev = disk["device"]:"";
     y2milestone( "deleteAllDevPartitions disk:%1", remove( disk, "partitions" ));
@@ -1529,13 +1255,132 @@ before deleting the device.
 	    y2milestone( "deleteAllDevPartitions dp:%1", dp );
 	    foreach( map part, dp,
 		``{
-		go_on = go_on &&
-			Storage::DeleteDevice( del_dev, part["device"]:"" );
+		go_on = go_on && Storage::DeleteDevice(part["device"]:"");
 		});
 	    }
 	}
     y2milestone( "deleteAllDevPartitions ret:%1", go_on );
     return(go_on);
+    }
+
+list<string> SubvolNames( map<string,any> data )
+    {
+    list<string> items = maplist( map p, 
+                                  filter( map s, data["subvol"]:[], ``(!s["delete"]:false)),
+				  {return p["name"]:"";});
+    y2milestone( "items:%1", items );
+    return( items );
+    }
+
+  /**
+   * Dialog: Subvolume handling
+   * @parm old map with original partition
+   * @parm new map with changes filled in
+   */
+define map<string,any> SubvolHandling( map<string,any> old, map<string,any> new )
+    ``{
+    // help text, richtext format
+    string helptext = _("<p>
+Here it is possible to create and remove subvolumes 
+from an BTRFS filesystem.</p>");
+
+    list<map> old_subvol = new["subvol"]:[];
+
+    list<string> items = SubvolNames( new );
+
+    term contents = `VBox(
+			// label text
+			`MinHeight(10,`SelectionBox( `id(`subvol), _("Existing Subvolumes:"), items )),
+			`TextEntry( `id(`new_path), `opt(`hstretch),
+				    // label text
+				    _("New Subvolume")),
+			`HBox( 
+			    `PushButton( `id(`add), 
+					 // button text
+					 _("Add new")),
+			    `HSpacing(2),
+			    `PushButton( `id(`remove), 
+					 // button text
+					 _("Remove"))
+			    )
+			);
+		 
+    UI::OpenDialog(`opt(`decorated),
+		   `VBox(
+		       `HSpacing(50),
+		       // heading text
+		       `Heading(_("Subvolume Handling")),
+		       `VStretch(),
+		       `VSpacing(1),
+		       `HBox(`HStretch(),
+			     `HSpacing(1),
+			     contents,
+			     `HStretch(),
+			     `HSpacing(1)),
+		       `VSpacing(1),
+		       `VStretch(),
+		       `ButtonBox(
+			   `PushButton(`id(`help), `opt(`helpButton), Label::HelpButton()),
+			   `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+			   `PushButton(`id(`cancel), Label::CancelButton())
+			   )
+		       )
+	);
+
+    UI::ChangeWidget(`help, `HelpText, helptext);
+
+    any ret = `ok;
+    boolean changed = false;
+    repeat
+	{
+	ret = UI::UserInput();
+	y2milestone( "SubvolHandling ret %1", ret );
+	if( ret == `remove )
+	    {
+	    string pth = (string)UI::QueryWidget(`id(`subvol), `CurrentItem);
+	    y2milestone( "SubvolHandling remove path:%1", pth );
+	    new["subvol"] = maplist( map p, new["subvol"]:[], 
+				     {
+				     if( p["name"]:""==pth )
+					p["delete"] = true;
+				     return p;
+				     });
+	    items = SubvolNames( new );
+	    changed = true;
+	    UI::ChangeWidget( `id(`subvol), `Items, items );
+	    }
+	if( ret == `add )
+	    {
+	    string pth = (string)UI::QueryWidget( `id(`new_path), `Value );
+	    y2milestone( "SubvolHandling add path:%1", pth );
+	    if( pth==nil || size(pth)==0 )
+		Popup::Message(_("Empty subvolume name noit allowed."));
+	    else if( size(filter( map p, new["subvol"]:[], ``(p["name"]:""==pth)))>0 )
+		Popup::Message(sformat(_("Subvolume name %1 alread exists."),pth));
+	    else
+		{
+		new["subvol"] = add( new["subvol"]:[], $[ "create" : true, "name" : pth ] );
+		changed = true;
+		}
+	    items = SubvolNames( new );
+	    UI::ChangeWidget( `id(`subvol), `Items, items );
+	    UI::ChangeWidget( `id(`new_path), `Value, "" );
+	    }
+	if( ret == `cancel )
+	    {
+	    if( changed )
+		{
+		if( Popup::YesNo( _("Modifications done so far in Dialog get lost!")) )
+		    new["subvol"] = old_subvol;
+		else
+		    ret = `again;
+		}
+	    }
+	} until ( ret == `ok || ret == `cancel );
+
+    UI::CloseDialog();
+    y2milestone( "SubvolHandling subvol %1", new["subvol"]:[] );
+    return( new );
     };
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -23,37 +23,44 @@
 #ifndef STORAGE_H
 #define STORAGE_H
 
-#include <iostream>
+#include <ostream>
 #include <list>
 #include <map>
 
-#include "y2storage/StorageInterface.h"
-#include "y2storage/StorageTypes.h"
-#include "y2storage/StorageTmpl.h"
-#include "y2storage/Container.h"
-#include "y2storage/Volume.h"
-#include "y2storage/Disk.h"
-#include "y2storage/Partition.h"
-#include "y2storage/LvmVg.h"
-#include "y2storage/LvmLv.h"
-#include "y2storage/DmraidCo.h"
-#include "y2storage/Dmraid.h"
-#include "y2storage/DmmultipathCo.h"
-#include "y2storage/Dmmultipath.h"
-#include "y2storage/MdCo.h"
-#include "y2storage/Md.h"
-#include "y2storage/MdPartCo.h"
-#include "y2storage/MdPart.h"
-#include "y2storage/DmCo.h"
-#include "y2storage/LoopCo.h"
-#include "y2storage/Loop.h"
-#include "y2storage/NfsCo.h"
-#include "y2storage/Nfs.h"
-#include "y2storage/FilterIterator.h"
-#include "y2storage/DerefIterator.h"
-#include "y2storage/ListListIterator.h"
-#include "y2storage/IterPair.h"
-#include "y2storage/Lock.h"
+#include "storage/StorageInterface.h"
+#include "storage/StorageTypes.h"
+#include "storage/StorageTmpl.h"
+#include "storage/Container.h"
+#include "storage/Volume.h"
+#include "storage/Disk.h"
+#include "storage/Partition.h"
+#include "storage/LvmVg.h"
+#include "storage/LvmLv.h"
+#include "storage/DmraidCo.h"
+#include "storage/Dmraid.h"
+#include "storage/DmmultipathCo.h"
+#include "storage/Dmmultipath.h"
+#include "storage/MdCo.h"
+#include "storage/Md.h"
+#include "storage/MdPartCo.h"
+#include "storage/MdPart.h"
+#include "storage/DmCo.h"
+#include "storage/LoopCo.h"
+#include "storage/Loop.h"
+#include "storage/BtrfsCo.h"
+#include "storage/Btrfs.h"
+#include "storage/TmpfsCo.h"
+#include "storage/Tmpfs.h"
+#include "storage/NfsCo.h"
+#include "storage/Nfs.h"
+#include "storage/FilterIterator.h"
+#include "storage/DerefIterator.h"
+#include "storage/ListListIterator.h"
+#include "storage/IterPair.h"
+#include "storage/Lock.h"
+#include "storage/FreeInfo.h"
+#include "storage/ArchInfo.h"
+
 
 namespace storage
 {
@@ -62,9 +69,11 @@ namespace storage
     extern CallbackShowInstallInfo install_info_cb_ycp;
     extern CallbackInfoPopup info_popup_cb_ycp;
     extern CallbackYesNoPopup yesno_popup_cb_ycp;
+    extern CallbackCommitErrorPopup commit_error_popup_cb_ycp;
     extern CallbackPasswordPopup password_popup_cb_ycp;
 
-template <int Value>
+
+template <CType Value>
 class CheckType
     {
     public:
@@ -74,9 +83,8 @@ class CheckType
 	    }
     };
 
-template< class Iter, int Value, class CastResult >
-class CastCheckIterator : public CheckType<Value>,
-                          public FilterIterator< CheckType<Value>, Iter >
+template< class Iter, CType Value, class CastResult >
+class CastCheckIterator : public FilterIterator< CheckType<Value>, Iter >
     {
     typedef FilterIterator<CheckType<Value>, Iter> _bclass;
     public:
@@ -86,10 +94,12 @@ class CastCheckIterator : public CheckType<Value>,
 
 	CastCheckIterator() : _bclass() {}
 	CastCheckIterator( const Iter& b, const Iter& e, bool atend=false) :
-	    _bclass( b, e, *this, atend ) {}
+	    _bclass( b, e, CheckType<Value>(), atend ) {}
 	CastCheckIterator( const IterPair<Iter>& pair, bool atend=false) :
-	    _bclass( pair, *this, atend ) {}
-	CastCheckIterator( const CastCheckIterator& i) { *this=i;}
+	    _bclass( pair, CheckType<Value>(), atend ) {}
+	template< class It >
+	CastCheckIterator( const It& i) : _bclass( i.begin(), i.end(), CheckType<Value>() )
+	    { this->m_cur=i.cur();}
 	CastResult operator*() const
 	    {
 	    return( static_cast<CastResult>(_bclass::operator*()) );
@@ -133,8 +143,7 @@ class CheckByFnc
     };
 
 template< class Iter, bool (* FncP)( const Container& c ), class CastResult >
-class CastCheckFncIterator : public CheckByFnc<FncP>,
-                            public FilterIterator< CheckByFnc<FncP>, Iter >
+class CastCheckFncIterator : public FilterIterator< CheckByFnc<FncP>, Iter >
     {
     typedef FilterIterator<CheckByFnc<FncP>, Iter> _bclass;
     public:
@@ -144,10 +153,12 @@ class CastCheckFncIterator : public CheckByFnc<FncP>,
 
 	CastCheckFncIterator() : _bclass() {}
 	CastCheckFncIterator( const Iter& b, const Iter& e, bool atend=false) :
-	    _bclass( b, e, *this, atend ) {}
+	    _bclass( b, e, CheckByFnc<FncP>(), atend ) {}
 	CastCheckFncIterator( const IterPair<Iter>& pair, bool atend=false) :
-	    _bclass( pair, *this, atend ) {}
-	CastCheckFncIterator( const CastCheckFncIterator& i) { *this=i;}
+	    _bclass( pair, CheckByFnc<FncP>(), atend ) {}
+	template< class It >
+	CastCheckFncIterator( const It& i) : _bclass( i.begin(), i.end(), i.pred() )
+	    { this->m_cur=i.cur();}
 	CastResult operator*() const
 	    {
 	    return( static_cast<CastResult>(_bclass::operator*()) );
@@ -180,26 +191,26 @@ class CastCheckFncIterator : public CheckByFnc<FncP>,
 	    }
     };
 
-/**
- * \brief Main class to access libstorage functionality.
- *
- * This is the main class with that one can get access to the
- * functionality provided by libstorage.
- * It contains a list of container objects.
- *
- * All modifying member functions of the storage library will
- * go through Storage class. This is the central place where
- * things like readonly access, locking, testmode, inst-sys etc.
- * are handled. It has the additional advantage the the complete
- * class hierarchy below Storage could be changed without affecting
- * the user interface of libstorage.
- */
 
 class EtcFstab;
-class EtcRaidtab;
+    class EtcMdadm;
 class DiskData;
 
-class Storage : public storage::StorageInterface
+
+    /**
+     * \brief Main class to access libstorage functionality.
+     *
+     * This is the main class with that one can get access to the
+     * functionality provided by libstorage. It contains a list of container
+     * objects.
+     *
+     * All modifying member functions of the storage library will go through
+     * Storage class. This is the central place where things like readonly
+     * access, locking, testmode, inst-sys etc. are handled. It has the
+     * additional advantage the the complete class hierarchy below Storage
+     * could be changed without affecting the user interface of libstorage.
+     */
+    class Storage : public storage::StorageInterface, boost::noncopyable
     {
     protected:
 
@@ -215,33 +226,19 @@ class Storage : public storage::StorageInterface
 	    { return( d.type()==storage::NFSC ); }
 	static bool isDm( const Container&d )
 	    { return( d.type()==storage::DM ); }
-	struct FreeInfo
-	    {
-	    unsigned long long resize_free;
-	    unsigned long long df_free;
-	    unsigned long long used;
-	    bool win;
-	    bool efi;
-	    bool rok;
-	    FreeInfo() { resize_free=df_free=used=0; efi=win=rok=false; }
-	    FreeInfo( unsigned long long df,
-		      unsigned long long resize,
-		      unsigned long long usd, bool w=false, bool e=false,
-		      bool r=true )
-		      { resize_free=resize; df_free=df; used=usd; win=w; 
-		        efi=e, rok=r; }
-	    };
+	static bool isBtrfs( const Container&d )
+	    { return( d.type()==storage::BTRFSC ); }
+	static bool isNotBtrfs( const Container&d )
+	    { return( d.type()!=storage::BTRFSC ); }
+	static bool isTmpfs( const Container&d )
+	    { return( d.type()==storage::TMPFSC ); }
 
     public:
-	struct SkipDeleted { bool operator()(const Container&d) const {return( !d.deleted());}};
-	static SkipDeleted SkipDel;
-	static bool notDeleted( const Container&d ) { return( !d.deleted() ); };
+
 	static bool isDmPart( const Container&d )
 	    { return d.type() == storage::DMRAID || d.type() == storage::DMMULTIPATH; }
-	  static bool isMdPart( const Container&d )
-	      { return( d.type()==storage::MDPART ); }
-
-	static void initDefaultLogger ();
+	static bool isMdPart( const Container&d )
+	    { return d.type() == storage::MDPART; }
 
 	Storage(const Environment& env);
 
@@ -256,47 +253,65 @@ class Storage : public storage::StorageInterface
 	bool isCacheChanges() const { return( cache ); }
 	void assertInit() { if( !initialized ) initialize(); }
 	void rescanEverything();
+	bool rescanCryptedObjects();
 	int checkCache();
 	const string& root() const { return( rootprefix ); }
 	string prependRoot(const string& mp) const;
-	const string& tmpDir() const;
-	bool efiBoot() const { return efiboot; }
+	const string& tmpDir() const { return tempdir; }
 	bool hasIScsiDisks() const;
-	static const string& arch() { return( proc_arch ); }
-	static bool isPPCMac() { return( is_ppc_mac ); }
-	static bool isPPCPegasos() { return( is_ppc_pegasos ); }
+	string bootMount() const;
+
+	const ArchInfo& getArchInfo() const { return archinfo; }
+
 	EtcFstab* getFstab() { return fstab; }
-	EtcRaidtab* getRaidtab() { return raidtab; }
-	void handleLogFile( const string& name );
+	EtcMdadm* getMdadm() { return mdadm; }
+	void handleLogFile(const string& name) const;
 	static bool testFilesEqual( const string& n1, const string& n2 );
-	void printInfo( std::ostream& str ) { printInfo( str, "" ); }
-	void printInfo( std::ostream& str, const string& name );
-	void printInfoCo( std::ostream& str, const string& name ) { printInfo( str, name ); }
+	void printInfo(std::ostream& str) const;
 	void logCo(const Container* c) const;
-	void logCo(const string& device);
-	void logProcData( const string& l="" );
-	storage::UsedByType usedBy( const string& dev );
-	bool usedBy( const string& dev, storage::usedBy& ub );
-	bool clearUsedBy(const string& dev);
-	bool setUsedBy(const string& dev, storage::UsedByType ub_type,
-		       const string& ub_name);
+	void logProcData(const string& str = "") const;
+
+	void clearUsedBy(const string& dev);
+	void clearUsedBy(const list<string>& devs);
+	void setUsedBy(const string& dev, UsedByType type, const string& device);
+	void setUsedBy(const list<string>& devs, UsedByType type, const string& device);
+	void setUsedByBtrfs( const string& dev, const string& uuid );
+	void addUsedBy(const string& dev, UsedByType type, const string& device);
+	void addUsedBy(const list<string>& devs, UsedByType type, const string& device);
+	void removeUsedBy(const string& dev, UsedByType type, const string& device);
+	void removeUsedBy(const list<string>& devs, UsedByType type, const string& device);
+	bool isUsedBy(const string& dev);
+	bool isUsedBy(const string& dev, UsedByType type);
+	bool isUsedBySingleBtrfs( const Volume& vol ) const;
+	bool canRemove( const Volume& vol ) const;
+
+	void fetchDanglingUsedBy(const string& dev, list<UsedBy>& uby);
+
 	bool canUseDevice( const string& dev, bool disks_allowed=false );
 	bool knownDevice( const string& dev, bool disks_allowed=false );
 	bool setDmcryptData( const string& dev, const string& dm, 
 	                     unsigned dmnum, unsigned long long siz,
 			     storage::EncryptType typ );
-	bool deletedDevice( const string& dev );
+	bool deletedDevice(const string& dev) const;
 	bool isDisk( const string& dev );
 	const Volume* getVolume( const string& dev );
 	unsigned long long deviceSize( const string& dev );
-	string deviceByNumber( const string& majmin );
+	string deviceByNumber(const string& majmin) const;
+	const Device* deviceByNumber( unsigned long maj, unsigned long min ) const;
+
+	void syncMdadm();
 	void rootMounted();
 	bool isRootMounted() const { return( root_mounted ); }
+
 	string findNormalDevice( const string& device );
-	bool findVolume( const string& device, Volume const* &vol );
+	bool findVolume( const string& device, Volume const* &vol, 
+	                 bool no_btrfsc=false );
 	bool findDm( const string& device, const Dm*& dm );
 	bool findDmUsing( const string& device, const Dm*& dm );
+	bool findDevice( const string& dev, const Device* &vol,
+	                 bool search_by_minor=false );
 	bool removeDm( const string& device );
+	int unaccessDev( const string& device );
 
 	virtual ~Storage();
 
@@ -328,6 +343,8 @@ class Storage : public storage::StorageInterface
 	int getDmInfo( deque<storage::DmInfo>& plist );
 	int getNfsInfo( deque<storage::NfsInfo>& plist );
 	int getLoopInfo( deque<storage::LoopInfo>& plist );
+	int getBtrfsInfo( deque<storage::BtrfsInfo>& plist );
+	int getTmpfsInfo( deque<storage::TmpfsInfo>& plist );
 	int getDmraidInfo( const string& name,
 	                   deque<storage::DmraidInfo>& plist );
 	int getDmmultipathInfo( const string& name,
@@ -338,6 +355,7 @@ class Storage : public storage::StorageInterface
 	                        storage::FsCapabilities& fscapabilities) const;
 	bool getDlabelCapabilities(const string& dlabel,
 				   storage::DlabelCapabilities& dlabelcapabilities) const;
+
 	list<string> getAllUsedFs() const;
 	void setExtError( const string& txt );
 	int createPartition( const string& disk, storage::PartitionType type,
@@ -363,6 +381,10 @@ class Storage : public storage::StorageInterface
 	int removePartition( const string& partition );
 	int changePartitionId( const string& partition, unsigned id );
 	int forgetChangePartitionId( const string& partition );
+
+	string getPartitionPrefix(const string& disk);
+	string getPartitionName(const string& disk, int partition_no);
+
 	int getUnusedPartitionSlots(const string& disk, list<PartitionSlotInfo>& slots);
 	int destroyPartitionTable( const string& disk, const string& label );
 	int initializeDisk( const string& disk, bool value );
@@ -384,7 +406,8 @@ class Storage : public storage::StorageInterface
 	int addFstabOptions( const string&, const string& options );
 	int removeFstabOptions( const string&, const string& options );
 	int setCryptPassword( const string& device, const string& pwd );
-	int verifyCryptPassword( const string& device, const string& pwd );
+	int verifyCryptPassword( const string& device, const string& pwd, 
+	                         bool erase );
 	int verifyCryptFilePassword( const string& file, const string& pwd );
 	bool needCryptPassword( const string& device );
 	int forgetCryptPassword( const string& device );
@@ -397,29 +420,38 @@ class Storage : public storage::StorageInterface
 	int addFstabEntry( const string& device, const string& mount,
 	                   const string& vfs, const string& options,
 			   unsigned freq, unsigned passno );
-	int resizeVolume( const string& device, unsigned long long newSizeMb );
-	int resizeVolumeNoFs( const string& device, unsigned long long newSizeMb );
+	int resizeVolume(const string& device, unsigned long long newSizeK);
+	int resizeVolumeNoFs(const string& device, unsigned long long newSizeK);
 	int forgetResizeVolume( const string& device );
 	void setRecursiveRemoval( bool val=true );
 	bool getRecursiveRemoval() const { return recursiveRemove; }
+
+	int getRecursiveUsing(const string& device, list<string>& devices);
+	int getRecursiveUsingHelper(const string& device, list<string>& devices);
+
 	void setZeroNewPartitions( bool val=true );
 	bool getZeroNewPartitions() const { return zeroNewPartitions; }
 
 	void setPartitionAlignment( PartAlign val );
 	PartAlign getPartitionAlignment() const { return partAlignment; }
 
-	void setDefaultMountBy (MountByType mby = MOUNTBY_DEVICE);
+	void setDefaultMountBy(MountByType mby);
 	MountByType getDefaultMountBy() const { return defaultMountBy; }
+
+	void setDefaultFs (FsType fs);
+	FsType getDefaultFs() const { return defaultFs; }
+
 	void setDetectMountedVolumes( bool val=true );
 	bool getDetectMountedVolumes() const { return detectMounted; }
-	void setEfiBoot(bool val);
 	bool getEfiBoot();
 	void setRootPrefix( const string& root );
 	string getRootPrefix() const { return rootprefix; }
 	int removeVolume( const string& device );
-	int removeUsing( const string& device, const storage::usedBy& uby );
-	bool checkDeviceMounted( const string& device, string& mp );
-	bool umountDevice( const string& device );
+	int removeUsing(const string& device, const list<UsedBy>& uby);
+	bool checkDeviceMounted(const string& device, list<string>& mps);
+	bool umountDevice( const string& device )
+	    { return( umountDev( device, true )); }
+	bool umountDev( const string& device, bool dounsetup=false );
 	bool mountDev( const string& device, const string& mp, bool ro=true,
 	               const string& opts="" );
 	bool mountDevice( const string& device, const string& mp )
@@ -430,16 +462,16 @@ class Storage : public storage::StorageInterface
 	bool mountDeviceRo( const string& device, const string& mp, 
 	                    const string& opts )
 	    { return( mountDev( device, mp, true, opts )); }
+	int activateEncryption( const string& device, bool on );
 	bool readFstab( const string& dir, deque<storage::VolumeInfo>& infos);
-	bool getFreeInfo( const string& device, unsigned long long& resize_free,
-	                  unsigned long long& df_free,
-	                  unsigned long long& used, bool& win, bool& efi,
-			  bool use_cache );
-	unsigned long long getDfSize( const string& mp );
+
+	bool getFreeInfo(const string& device, bool get_resize, ResizeInfo& resize_info, 
+			 bool get_content, ContentInfo& content_info, bool use_cache);
+
 	int createBackupState( const string& name );
 	int removeBackupState( const string& name );
 	int restoreBackupState( const string& name );
-	bool checkBackupState( const string& name );
+	bool checkBackupState( const string& name ) const;
 	bool equalBackupStates( const string& lhs, const string& rhs,
 	                        bool verbose_log ) const;
 
@@ -449,7 +481,7 @@ class Storage : public storage::StorageInterface
 	int extendLvmVg( const string& name, const deque<string>& devs );
 	int shrinkLvmVg( const string& name, const deque<string>& devs );
 	int createLvmLv( const string& vg, const string& name,
-			 unsigned long long sizeM, unsigned stripe,
+			 unsigned long long sizeK, unsigned stripes,
 			 string& device );
 	int removeLvmLvByDevice( const string& device );
 	int removeLvmLv( const string& vg, const string& name );
@@ -465,23 +497,23 @@ class Storage : public storage::StorageInterface
 	int getLvmLvSnapshotStateInfo(const string& vg, const string& name, 
 				      LvmLvSnapshotStateInfo& info);
 
-	int nextFreeMd(int &nr, string &device);
-	bool checkMdNumber(int num);
-	int createMd( const string& name, storage::MdType rtype,
-		      const deque<string>& devs );
-	int createMdAny( storage::MdType rtype, const deque<string>& devs,
-			 string& device );
+	int nextFreeMd(unsigned& nr, string &device);
+	bool checkMdNumber(unsigned num);
+	int createMd(const string& name, MdType rtype, const list<string>& devs,
+		     const list<string>& spares);
+	int createMdAny(MdType rtype, const list<string>& devs, const list<string>& spares,
+			string& device);
 	int removeMd( const string& name, bool destroySb=true );
-	int extendMd( const string& name, const string& dev );
-	int shrinkMd( const string& name, const string& dev );
+	int extendMd(const string& name, const list<string>& devs, const list<string>& spares);
+	int shrinkMd(const string& name, const list<string>& devs, const list<string>& spares);
 	int changeMdType( const string& name, storage::MdType rtype );
 	int changeMdChunk( const string& name, unsigned long chunk );
 	int changeMdParity( const string& name, storage::MdParity ptype );
 	int checkMd( const string& name );
 	int getMdStateInfo(const string& name, MdStateInfo& info);
-	int computeMdSize(MdType md_type, list<string> devices,
+	int computeMdSize(MdType md_type, const list<string>& devices, const list<string>& spares,
 			  unsigned long long& sizeK);
-
+	list<int> getMdAllowedParity(MdType md_type, unsigned devices );
 	void setImsmDriver(ImsmDriver val) { imsm_driver = val; }
 	ImsmDriver getImsmDriver() const { return imsm_driver; }
 
@@ -491,10 +523,10 @@ class Storage : public storage::StorageInterface
         int getMdPartCoStateInfo(const string& name, MdPartCoStateInfo& info);
         int removeMdPartCo(const string& devName, bool destroySb);
 
-	int addNfsDevice( const string& nfsDev, const string& opts,
-	                  unsigned long long sizeK, const string& mp );
-	int checkNfsDevice( const string& nfsDev, const string& opts,
-	                    unsigned long long& sizeK );
+	int addNfsDevice(const string& nfsDev, const string& opts,
+			 unsigned long long sizeK, const string& mp, bool nfs4);
+	int checkNfsDevice(const string& nfsDev, const string& opts, bool nfs4,
+			   unsigned long long& sizeK);
 
 	int createFileLoop( const string& lname, bool reuseExisting,
 			    unsigned long long sizeK, const string& mp,
@@ -505,66 +537,88 @@ class Storage : public storage::StorageInterface
 
 	int removeDmraid( const string& name );
 
-	deque<string> getCommitActions( bool mark_destructive ) const;
-	void getCommitInfo(bool mark_destructive, CommitInfo& info) const;
-	const string& getLastAction() const { return lastAction; }
-	const string& getExtendedErrorMessage() const { return extendedError; }
-	void eraseFreeInfo( const string& device );
+	int createSubvolume( const string& device, const string& name );
+	int removeSubvolume( const string& device, const string& name );
+	int extendBtrfsVolume( const string& device, const string& dev );
+	int extendBtrfsVolume( const string& device, const deque<string>& devs );
+	int shrinkBtrfsVolume( const string& device, const string& dev );
+	int shrinkBtrfsVolume( const string& device, const deque<string>& devs );
+	int newBtrfs( const string& device );
 
-	static int waitForDevice();
-	static int waitForDevice( const string& device );
-	void checkDeviceExclusive( const string& device, unsigned secs );
-	int zeroDevice(const string& device, unsigned long long sizeK, bool random = false, 
-		       unsigned long long beginK = 200, unsigned long long endK = 10);
+	int addTmpfsMount( const string& mp, const string& opts );
+	int removeTmpfsMount( const string& mp );
+
+	void getCommitInfos(list<CommitInfo>& infos) const;
+	const string& getLastAction() const { return lastAction.text; }
+	const string& getExtendedErrorMessage() const { return extendedError; }
+	void eraseCachedFreeInfo(const string& device);
+
+	static void waitForDevice();
+	static int waitForDevice(const string& device);
+
+	static int zeroDevice(const string& device, unsigned long long sizeK, bool random = false,
+			      unsigned long long beginK = 200, unsigned long long endK = 10);
 
 	void getDiskList( bool (* CheckFnc)( const Disk& ),
 	                  std::list<Disk*>& dl );
 	void changeDeviceName( const string& old, const string& nw );
 
         int commit();
+
+	string getErrorString(int error) const;
+
 	void handleHald( bool stop );
-	void activateHld( bool val=true );
-	void activateMultipath( bool val=true );
+
+	void activateHld(bool val = true);
+	void activateMultipath(bool val = true);
+
 	void removeDmTableTo( const Volume& vol );
 	void removeDmTableTo( const string& device );
+	void removeDmTableTo( unsigned long mjr, unsigned long mnr );
 	bool removeDmTable( const string& table );
 	bool removeDmMapsTo( const string& dev );
 	bool checkDmMapsTo( const string& dev );
 	void updateDmEmptyPeMap();
 	void dumpObjectList();
-
-	string byteToHumanString(unsigned long long size, bool classic, int precision, bool omit_zeroes) const;
-	bool humanStringToByte(const string& str, bool classic, unsigned long long& size) const;
+	void dumpCommitInfos() const;
+	bool mountTmpRo( const Volume* vol, string& mp )
+	    { return mountTmp( vol, mp, true ); }
+	bool mountTmp( const Volume* vol, string& mp, bool ro=false );
 
 	void setCallbackProgressBar(CallbackProgressBar pfnc) { progress_bar_cb = pfnc; }
-        CallbackProgressBar getCallbackProgressBar() const { return progress_bar_cb; }
-        void setCallbackShowInstallInfo(CallbackShowInstallInfo pfnc) { install_info_cb = pfnc; }
-        CallbackShowInstallInfo getCallbackShowInstallInfo() const { return install_info_cb; }
-        void setCallbackInfoPopup(CallbackInfoPopup pfnc) { info_popup_cb = pfnc; }
-        CallbackInfoPopup getCallbackInfoPopup() const { return info_popup_cb; }
-        void setCallbackYesNoPopup(CallbackYesNoPopup pfnc) { yesno_popup_cb = pfnc; }
-        CallbackYesNoPopup getCallbackYesNoPopup() const { return yesno_popup_cb; }
-        void setCallbackPasswordPopup(CallbackPasswordPopup pfnc) { password_popup_cb = pfnc; }
-        CallbackPasswordPopup getCallbackPasswordPopup() const { return password_popup_cb; }
+	CallbackProgressBar getCallbackProgressBar() const { return progress_bar_cb; }
+	void setCallbackShowInstallInfo(CallbackShowInstallInfo pfnc) { install_info_cb = pfnc; }
+	CallbackShowInstallInfo getCallbackShowInstallInfo() const { return install_info_cb; }
+	void setCallbackInfoPopup(CallbackInfoPopup pfnc) { info_popup_cb = pfnc; }
+	CallbackInfoPopup getCallbackInfoPopup() const { return info_popup_cb; }
+	void setCallbackYesNoPopup(CallbackYesNoPopup pfnc) { yesno_popup_cb = pfnc; }
+	CallbackYesNoPopup getCallbackYesNoPopup() const { return yesno_popup_cb; }
+	void setCallbackCommitErrorPopup(CallbackCommitErrorPopup pfnc) { commit_error_popup_cb = pfnc; }
+	CallbackCommitErrorPopup getCallbackCommitErrorPopup() const { return commit_error_popup_cb; }
+	void setCallbackPasswordPopup(CallbackPasswordPopup pfnc) { password_popup_cb = pfnc; }
+	CallbackPasswordPopup getCallbackPasswordPopup() const { return password_popup_cb; }
 
-        void addInfoPopupText( const string& disk, const string& txt );
+	void addInfoPopupText( const string& disk, const Text& txt );
 
-        CallbackProgressBar getCallbackProgressBarTheOne() const
-            { return progress_bar_cb ? progress_bar_cb : progress_bar_cb_ycp; }
-        CallbackShowInstallInfo getCallbackShowInstallInfoTheOne() const
-            { return install_info_cb ? install_info_cb : install_info_cb_ycp; }
-        CallbackInfoPopup getCallbackInfoPopupTheOne() const
-            { return info_popup_cb ? info_popup_cb : info_popup_cb_ycp; }
-        CallbackYesNoPopup getCallbackYesNoPopupTheOne() const
-            { return yesno_popup_cb ? yesno_popup_cb : yesno_popup_cb_ycp; }
-        CallbackPasswordPopup getCallbackPasswordPopupTheOne() const
-            { return password_popup_cb ? password_popup_cb : password_popup_cb_ycp; }
+	CallbackProgressBar getCallbackProgressBarTheOne() const
+	    { return progress_bar_cb ? progress_bar_cb : progress_bar_cb_ycp; }
+	CallbackShowInstallInfo getCallbackShowInstallInfoTheOne() const
+	    { return install_info_cb ? install_info_cb : install_info_cb_ycp; }
+	CallbackInfoPopup getCallbackInfoPopupTheOne() const
+	    { return info_popup_cb ? info_popup_cb : info_popup_cb_ycp; }
+	CallbackYesNoPopup getCallbackYesNoPopupTheOne() const
+	    { return yesno_popup_cb ? yesno_popup_cb : yesno_popup_cb_ycp; }
+	CallbackCommitErrorPopup getCallbackCommitErrorPopupTheOne() const
+	    { return commit_error_popup_cb ? commit_error_popup_cb : commit_error_popup_cb_ycp; }
+	CallbackPasswordPopup getCallbackPasswordPopupTheOne() const
+	    { return password_popup_cb ? password_popup_cb : password_popup_cb_ycp; }
 
-        void progressBarCb(const string& id, unsigned cur, unsigned max) const;
-        void showInfoCb(const string& info);
-        void infoPopupCb(const string& info) const;
-        bool yesnoPopupCb(const string& info) const;
-        bool passwordPopupCb(const string& device, int attempts, string& password) const;
+	void progressBarCb(const string& id, unsigned cur, unsigned max) const;
+	void showInfoCb(const Text& info);
+	void infoPopupCb(const Text& info) const;
+	bool yesnoPopupCb(const Text& info) const;
+	bool commitErrorPopupCb(int error, const Text& last_action, const string& extended_message) const;
+	bool passwordPopupCb(const string& device, int attempts, string& password) const;
 
 // iterators over container
     protected:
@@ -1512,9 +1566,6 @@ class Storage : public storage::StorageInterface
 	}
 
 
-
-
-
 // iterators over file based loop devices
     protected:
 	// protected typedefs for iterators over file based loop devices
@@ -1573,6 +1624,126 @@ class Storage : public storage::StorageInterface
 	    ConstVolInter e( contPair( isLoop ), true );
 	    IterPair<ConstLoopInter> pair( (ConstLoopInter(b)), (ConstLoopInter(e)) );
 	    return( typename ConstLoopI<Pred>::type( typename ConstLoopPI<Pred>::type(pair, p, true )) );
+	    }
+
+// iterators over btrfs volumes
+    protected:
+	// protected typedefs for iterators over btrfs volumes
+	typedef CastIterator<ConstVolInter, Btrfs *> ConstBtrfsInter;
+	template< class Pred >
+	    struct ConstBtrfsPI { typedef ContainerIter<Pred,
+	                                             ConstBtrfsInter> type; };
+	typedef CheckFnc<const Btrfs> CheckFncBtrfs;
+	typedef CheckerIterator< CheckFncBtrfs, ConstBtrfsPI<CheckFncBtrfs>::type,
+	                         ConstBtrfsInter, Btrfs > ConstBtrfsPIterator;
+    public:
+	// public typedefs for iterators over btrfs volumes
+	template< class Pred >
+	    struct ConstBtrfsI
+		{ typedef ContainerDerIter<Pred, typename ConstBtrfsPI<Pred>::type,
+		                           const Btrfs> type; };
+	template< class Pred >
+	    struct BtrfsCondIPair
+		{ typedef MakeCondIterPair<Pred, typename ConstBtrfsI<Pred>::type> type;};
+	typedef DerefIterator<ConstBtrfsPIterator, const Btrfs> ConstBtrfsIterator;
+	typedef IterPair<ConstBtrfsIterator> ConstBtrfsPair;
+
+	// public member functions for iterators over btrfs volumes
+	ConstBtrfsPair btrfsPair( bool (* CheckBtrfs)( const Btrfs& )=NULL ) const
+	    {
+	    return( ConstBtrfsPair( btrfsBegin( CheckBtrfs ), btrfsEnd( CheckBtrfs ) ));
+	    }
+	ConstBtrfsIterator btrfsBegin( bool (* CheckBtrfs)( const Btrfs& )=NULL ) const
+	    {
+	    ConstVolInter b( contPair( isBtrfs ) );
+	    ConstVolInter e( contPair( isBtrfs ), true );
+	    IterPair<ConstBtrfsInter> p( (ConstBtrfsInter(b)), (ConstBtrfsInter(e)) );
+	    return( ConstBtrfsIterator( ConstBtrfsPIterator(p, CheckBtrfs )));
+	    }
+	ConstBtrfsIterator btrfsEnd( bool (* CheckBtrfs)( const Btrfs& )=NULL ) const
+	    {
+	    ConstVolInter b( contPair( isBtrfs ) );
+	    ConstVolInter e( contPair( isBtrfs ), true );
+	    IterPair<ConstBtrfsInter> p( (ConstBtrfsInter(b)), (ConstBtrfsInter(e)) );
+	    return( ConstBtrfsIterator( ConstBtrfsPIterator(p, CheckBtrfs, true )));
+	    }
+	template< class Pred > typename BtrfsCondIPair<Pred>::type btrfsCondPair( const Pred& p ) const
+	    {
+	    return( typename BtrfsCondIPair<Pred>::type( btrfsCondBegin( p ), btrfsCondEnd( p ) ) );
+	    }
+	template< class Pred > typename ConstBtrfsI<Pred>::type btrfsCondBegin( const Pred& p ) const
+	    {
+	    ConstVolInter b( contPair( isBtrfs ) );
+	    ConstVolInter e( contPair( isBtrfs ), true );
+	    IterPair<ConstBtrfsInter> pair( (ConstBtrfsInter(b)), (ConstBtrfsInter(e)) );
+	    return( typename ConstBtrfsI<Pred>::type( typename ConstBtrfsPI<Pred>::type(pair, p) ) );
+	    }
+	template< class Pred > typename ConstBtrfsI<Pred>::type btrfsCondEnd( const Pred& p ) const
+	    {
+	    ConstVolInter b( contPair( isBtrfs ) );
+	    ConstVolInter e( contPair( isBtrfs ), true );
+	    IterPair<ConstBtrfsInter> pair( (ConstBtrfsInter(b)), (ConstBtrfsInter(e)) );
+	    return( typename ConstBtrfsI<Pred>::type( typename ConstBtrfsPI<Pred>::type(pair, p, true )) );
+	    }
+
+// iterators over tmpfs volumes
+    protected:
+	// protected typedefs for iterators over tmpfs volumes
+	typedef CastIterator<ConstVolInter, Tmpfs *> ConstTmpfsInter;
+	template< class Pred >
+	    struct ConstTmpfsPI { typedef ContainerIter<Pred,
+	                                             ConstTmpfsInter> type; };
+	typedef CheckFnc<const Tmpfs> CheckFncTmpfs;
+	typedef CheckerIterator< CheckFncTmpfs, ConstTmpfsPI<CheckFncTmpfs>::type,
+	                         ConstTmpfsInter, Tmpfs > ConstTmpfsPIterator;
+    public:
+	// public typedefs for iterators over tmpfs volumes
+	template< class Pred >
+	    struct ConstTmpfsI
+		{ typedef ContainerDerIter<Pred, typename ConstTmpfsPI<Pred>::type,
+		                           const Tmpfs> type; };
+	template< class Pred >
+	    struct TmpfsCondIPair
+		{ typedef MakeCondIterPair<Pred, typename ConstTmpfsI<Pred>::type> type;};
+	typedef DerefIterator<ConstTmpfsPIterator, const Tmpfs> ConstTmpfsIterator;
+	typedef IterPair<ConstTmpfsIterator> ConstTmpfsPair;
+
+	// public member functions for iterators over tmpfs volumes
+	ConstTmpfsPair tmpfsPair( bool (* CheckTmpfs)( const Tmpfs& )=NULL ) const
+	    {
+	    return( ConstTmpfsPair( tmpfsBegin( CheckTmpfs ), tmpfsEnd( CheckTmpfs ) ));
+	    }
+	ConstTmpfsIterator tmpfsBegin( bool (* CheckTmpfs)( const Tmpfs& )=NULL ) const
+	    {
+	    ConstVolInter b( contPair( isTmpfs ) );
+	    ConstVolInter e( contPair( isTmpfs ), true );
+	    IterPair<ConstTmpfsInter> p( (ConstTmpfsInter(b)), (ConstTmpfsInter(e)) );
+	    return( ConstTmpfsIterator( ConstTmpfsPIterator(p, CheckTmpfs )));
+	    }
+	ConstTmpfsIterator tmpfsEnd( bool (* CheckTmpfs)( const Tmpfs& )=NULL ) const
+	    {
+	    ConstVolInter b( contPair( isTmpfs ) );
+	    ConstVolInter e( contPair( isTmpfs ), true );
+	    IterPair<ConstTmpfsInter> p( (ConstTmpfsInter(b)), (ConstTmpfsInter(e)) );
+	    return( ConstTmpfsIterator( ConstTmpfsPIterator(p, CheckTmpfs, true )));
+	    }
+	template< class Pred > typename TmpfsCondIPair<Pred>::type tmpfsCondPair( const Pred& p ) const
+	    {
+	    return( typename TmpfsCondIPair<Pred>::type( tmpfsCondBegin( p ), tmpfsCondEnd( p ) ) );
+	    }
+	template< class Pred > typename ConstTmpfsI<Pred>::type tmpfsCondBegin( const Pred& p ) const
+	    {
+	    ConstVolInter b( contPair( isTmpfs ) );
+	    ConstVolInter e( contPair( isTmpfs ), true );
+	    IterPair<ConstTmpfsInter> pair( (ConstTmpfsInter(b)), (ConstTmpfsInter(e)) );
+	    return( typename ConstTmpfsI<Pred>::type( typename ConstTmpfsPI<Pred>::type(pair, p) ) );
+	    }
+	template< class Pred > typename ConstTmpfsI<Pred>::type tmpfsCondEnd( const Pred& p ) const
+	    {
+	    ConstVolInter b( contPair( isTmpfs ) );
+	    ConstVolInter e( contPair( isTmpfs ), true );
+	    IterPair<ConstTmpfsInter> pair( (ConstTmpfsInter(b)), (ConstTmpfsInter(e)) );
+	    return( typename ConstTmpfsI<Pred>::type( typename ConstTmpfsPI<Pred>::type(pair, p, true )) );
 	    }
 
 // iterators over nfs devices
@@ -1845,33 +2016,26 @@ class Storage : public storage::StorageInterface
 	// protected internal member functions
 	void initialize();
 	void logSystemInfo() const;
-	void detectDisks( ProcPart& ppart );
-	void autodetectDisks( ProcPart& ppart );
-	void detectMultipath();
-	void detectMds();
-	void detectMdParts(ProcPart& ppart);
-	//Discovers that platfrom is IMSM and Partitionable RAID Volumes
-	//can be on it
+	void detectDisks(SystemInfo& systeminfo);
+	void autodetectDisks(SystemInfo& systeminfo);
+	void detectMds(SystemInfo& systeminfo);
+	void detectBtrfs(SystemInfo& systeminfo);
+	void detectMdParts(SystemInfo& systeminfo);
 	bool discoverMdPVols();
-	void detectLoops( ProcPart& ppart );
-	void detectNfs( ProcMounts& mounts );
-	void detectLvmVgs();
-	void detectDmraid( ProcPart& ppart );
-	void detectDmmultipath( ProcPart& ppart );
-	void detectDm(ProcPart& ppart, bool only_crypt);
-	void initDisk( list<DiskData>& dl, ProcPart& pp );
-	void detectFsData( const VolIterator& begin, const VolIterator& end,
-	                   ProcMounts& mounts );
-	void detectFsDataTestMode( const string& file,
-	                           const VolIterator& begin,
-				   const VolIterator& end );
-	int resizeVolume( const string& device, unsigned long long newSizeMb,
-	                  bool ignore_fs );
+	void detectLoops(SystemInfo& systeminfo);
+	void detectNfs(const EtcFstab& fstab, SystemInfo& systeminfo);
+	void detectTmpfs(const EtcFstab& fstab, SystemInfo& systeminfo);
+	void detectLvmVgs(SystemInfo& systeminfo);
+	void detectDmraid(SystemInfo& systeminfo);
+	void detectDmmultipath(SystemInfo& systeminfo);
+	void detectDm(SystemInfo& systeminfo, bool only_crypt);
+	void initDisk( list<DiskData>& dl, SystemInfo& systeminfo);
+	void detectFsData(const VolIterator& begin, const VolIterator& end, SystemInfo& systeminfo);
+	int resizeVolume(const string& device, unsigned long long newSizeK,
+			 bool ignore_fs);
 	int resizePartition( const string& device, unsigned long sizeCyl,
 	                     bool ignore_fs );
-	static void detectArch();
-	void addToList( Container* e )
-	    { pointerIntoSortedList<Container>( cont, e ); }
+	void addToList(Container* e);
 	DiskIterator findDisk( const string& disk );
 	DiskIterator findDiskId( const string& id );
 	DiskIterator findDiskPath( const string& path );
@@ -1883,38 +2047,49 @@ class Storage : public storage::StorageInterface
 	MdPartCoIterator findMdPartCo( const string& name );
 
 	bool findVolume( const string& device, ContIterator& c,
-	                 VolIterator& v  );
+	                 VolIterator& v, bool no_btrfs=false  );
+	bool findVolume( const string& device, ConstContIterator& c,
+	                 ConstVolIterator& v  );
 	bool findVolume( const string& device, VolIterator& v,
-	                 bool also_del=false );
+	                 bool also_del=false, bool no_btrfs=false );
+	bool findVolume( const string& device, ConstVolIterator& v,
+	                 bool also_del=false, bool no_btrfs=false );
 	bool findContainer( const string& device, ContIterator& c );
+	bool findContainer( const string& device, ConstContIterator& c );
+
+	Device* findDevice(const string& dev, bool no_btrfs=false);
 
 	void checkPwdBuf( const string& device );
+
 	bool haveMd( MdCo*& md );
-	int  getMdPartMdNums(list<int>& mdPartNums);
+	list<unsigned> getMdPartMdNums() const;
 	bool haveDm(DmCo*& dm);
 	bool haveNfs( NfsCo*& co );
 	bool haveLoop( LoopCo*& loop );
-	int removeContainer( Container* val, bool call_del=true );
-	void logVolumes( const string& Dir );
+	bool haveBtrfs( BtrfsCo*& co );
+	bool haveTmpfs( TmpfsCo*& co );
+	int removeContainer( Container* val );
+	void logContainersAndVolumes(const string& Dir) const;
+
 	int commitPair( CPair& p, bool (* fnc)( const Container& ) );
-	void sortCommitLists( storage::CommitStage stage,
-			      std::list<Container*>& co,
-			      std::list<Volume*>& vl,
-			      std::list<storage::commitAction*>& todo );
-	bool ignoreError( std::list<commitAction*>::iterator i,
-			  std::list<commitAction*>& al );
+	void sortCommitLists(storage::CommitStage stage, list<const Container*>& co,
+			     list<const Volume*>& vl, list<commitAction>& todo) const;
+	bool ignoreError(int error, list<commitAction>::const_iterator ca) const;
 	string backupStates() const;
 	void detectObjects();
-	void deleteClist( CCont& co );
 	void deleteBackups();
-	void setFreeInfo( const string& device, unsigned long long df_free,
-			  unsigned long long resize_free,
-			  unsigned long long used, bool win, bool efi,
-			  bool resize_ok );
-	bool getFreeInf( const string& device, unsigned long long& df_free,
-			 unsigned long long& resize_free,
-			 unsigned long long& used, bool& win, bool& efi,
-			 bool& resize_ok );
+
+	void setCachedFreeInfo(const string& device, bool resize_cached, const ResizeInfo& resize_info,
+			       bool content_cached, const ContentInfo& content_info);
+	bool getCachedFreeInfo(	const string& device, bool get_resize, ResizeInfo& resize_info,
+				bool get_content, ContentInfo& content_info) const;
+	void logFreeInfo(const string& Dir) const;
+	void readFreeInfo(const string& file);
+
+	void logArchInfo(const string& Dir) const;
+	void readArchInfo(const string& file);
+
+	list<commitAction> getCommitActions() const;
 
 	// protected internal member variables
 	const Environment env;
@@ -1925,51 +2100,40 @@ class Storage : public storage::StorageInterface
 	bool zeroNewPartitions;
 	PartAlign partAlignment;
 	MountByType defaultMountBy;
+	FsType defaultFs;
 	bool detectMounted;
 	bool root_mounted;
 	string tempdir;
 	string rootprefix;
 	unsigned hald_pid;
-	bool efiboot;
-	static string proc_arch;
-	static bool is_ppc_mac;
-	static bool is_ppc_pegasos;
+
+	ArchInfo archinfo;
+
 	CCont cont;
 	EtcFstab *fstab;
-	EtcRaidtab *raidtab;
+	EtcMdadm* mdadm;
 
 	ImsmDriver imsm_driver;
 
 	CallbackProgressBar progress_bar_cb;
-        CallbackShowInstallInfo install_info_cb;
-        CallbackInfoPopup info_popup_cb;
-        CallbackYesNoPopup yesno_popup_cb;
-        CallbackPasswordPopup password_popup_cb;
+	CallbackShowInstallInfo install_info_cb;
+	CallbackInfoPopup info_popup_cb;
+	CallbackYesNoPopup yesno_popup_cb;
+	CallbackCommitErrorPopup commit_error_popup_cb;
+	CallbackPasswordPopup password_popup_cb;
 
-	friend std::ostream& operator<< (std::ostream& s, Storage &v );
+	friend std::ostream& operator<<(std::ostream& s, const Storage& v);
+	friend std::ostream& operator<<(std::ostream& s, Storage& v);
+
+	map<string, list<UsedBy>> danglingUsedBy;
 
 	unsigned max_log_num;
-	string lastAction;
+	Text lastAction;
 	string extendedError;
 	std::map<string,CCont> backups;
-	std::map<string,FreeInfo> freeInfo;
+	map<string, FreeInfo> free_infos;
 	std::map<string,string> pwdBuf;
-	std::list<std::pair<string,string> > infoPopupTxts;
-    };
-
-inline std::ostream& operator<< (std::ostream& s, commitAction &a )
-    {
-    s << "stage:" << a.stage
-      << " type:" << a.type
-      << " cont:" << a.container
-      << " dest:" << a.destructive;
-    if( a.container && a.co() )
-      s << " name:" << a.co()->name();
-    else if( a.vol() )
-      s << " name:" << a.vol()->name();
-    if( !a.descr.empty() )
-      s << " desc:" << a.descr;
-    return( s );
+	std::list<std::pair<string, Text>> infoPopupTxts;
     };
 
 }

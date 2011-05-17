@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -27,7 +27,6 @@
 #include <string>
 #include <deque>
 #include <list>
-#include <ostream>
 
 using std::string;
 using std::deque;
@@ -46,8 +45,8 @@ using std::list;
  *
  * \section Caching
  *
- * All modifying functions of libstorage can either operate on an
- * internal cache or directly on the system.
+ * All modifying functions of libstorage can either operate on an internal
+ * cache or directly on the system.
  *
  * When the caching mode is enabled a call of e.g. \link
  * storage::StorageInterface::createPartition() createPartition() \endlink
@@ -80,68 +79,86 @@ using std::list;
  *
  * Locking may also fail for other reasons, e.g. limited permissions.
  *
+ * \section Configuration File
+ *
+ * During initialisation libstorage reads the default filesystem and default
+ * mount-by method from /etc/sysconfig/storage. Libstorage does not write that
+ * file.
+ *
+ * \section Nomenclature
+ *
+ * Sizes with postfix K are in kilobytes (1024 bytes).
+ *
+ * The only size in bytes instead of kilobytes is the cylinder size of disks.
+ *
  * \section Example
  *
  * Here is a simple example to demonstrate the usage of libstorage:
  *
  * \code
  *
- * #include <y2storage/StorageInterface.h>
+ * #include <storage/StorageInterface.h>
  *
- * using namespace std;
  * using namespace storage;
  *
  * int
- * main ()
+ * main()
  * {
- *     // First we must create a concrete StorageInterface object.
- *     StorageInterface* s = createStorageInterface (false, false, true);
+ *     // Environment for StorageInterface with read-write enabled.
+ *     Environment env(false);
+ *
+ *     // Create a concrete StorageInterface object.
+ *     StorageInterface* s = createStorageInterface(env);
  *
  *     int ret;
  *     string name;
  *
- *     // Create a primary partition on /dev/hda.
- *     ret = s->createPartitionKb ("/dev/hda", PRIMARY, 0, 100000, name);
+ *     // Create a primary partition on /dev/sdb.
+ *     ret = s->createPartitionKb("/dev/sdb", PRIMARY, 0, 100000, name);
  *
  *     // Commit the change to the system.
- *     ret = s->commit ();
+ *     ret = s->commit();
  *
  *     // Finally destroy the StorageInterface object.
- *     delete s;
+ *     destroyStorageInterface(s);
  * }
  *
  * \endcode
  *
- * If you have installed the latest yast2-storage package you can find more
- * examples in the directory
- * /usr/share/doc/packages/yast2-storage/examples/liby2storage.
+ * If you have installed the latest libstorage-devel package you can find more
+ * examples in the directory /usr/share/doc/packages/libstorage/examples.
  */
 
 
 namespace storage
 {
-    enum FsType { FSUNKNOWN, REISERFS, EXT2, EXT3, VFAT, XFS, JFS, HFS, NTFS, SWAP, HFSPLUS, NFS, FSNONE };
+    enum FsType { FSUNKNOWN, REISERFS, EXT2, EXT3, EXT4, BTRFS, VFAT, XFS, JFS, HFS, NTFS,
+		  SWAP, HFSPLUS, NFS, NFS4, TMPFS, FSNONE };
 
     enum PartitionType { PRIMARY, EXTENDED, LOGICAL, PTYPE_ANY };
 
     enum MountByType { MOUNTBY_DEVICE, MOUNTBY_UUID, MOUNTBY_LABEL, MOUNTBY_ID, MOUNTBY_PATH };
 
     enum EncryptType { ENC_NONE, ENC_TWOFISH, ENC_TWOFISH_OLD,
-                       ENC_TWOFISH256_OLD, ENC_LUKS, ENC_UNKNOWN };
+		       ENC_TWOFISH256_OLD, ENC_LUKS, ENC_UNKNOWN };
 
     enum MdType { RAID_UNK, RAID0, RAID1, RAID5, RAID6, RAID10, MULTIPATH };
 
-    enum MdParity { PAR_NONE, LEFT_ASYMMETRIC, LEFT_SYMMETRIC,
-		    RIGHT_ASYMMETRIC, RIGHT_SYMMETRIC };
+    enum MdParity { PAR_DEFAULT, LEFT_ASYMMETRIC, LEFT_SYMMETRIC,
+		    RIGHT_ASYMMETRIC, RIGHT_SYMMETRIC, PAR_FIRST, PAR_LAST,
+		    LEFT_ASYMMETRIC_6, LEFT_SYMMETRIC_6, RIGHT_ASYMMETRIC_6, 
+		    RIGHT_SYMMETRIC_6, PAR_FIRST_6,
+		    PAR_NEAR_2, PAR_OFFSET_2, PAR_FAR_2,
+		    PAR_NEAR_3, PAR_OFFSET_3, PAR_FAR_3 };
 
     enum MdArrayState { UNKNOWN, CLEAR, INACTIVE, SUSPENDED, READONLY, READ_AUTO,
 			CLEAN, ACTIVE, WRITE_PENDING, ACTIVE_IDLE };
 
-    enum UsedByType { UB_NONE, UB_LVM, UB_MD, UB_DM, UB_DMRAID, UB_DMMULTIPATH,
-                      UB_MDPART };
+    enum UsedByType { UB_NONE, UB_LVM, UB_MD, UB_MDPART, UB_DM, UB_DMRAID, UB_DMMULTIPATH, UB_BTRFS };
 
-    enum CType { CUNKNOWN, DISK, MD, LOOP, LVM, DM, DMRAID, NFSC, DMMULTIPATH,
-                 MDPART, COTYPE_LAST_ENTRY };
+    enum CType { CUNKNOWN, DISK, MD, LOOP, LVM, DM, DMRAID, NFSC, DMMULTIPATH, MDPART, BTRFSC, TMPFSC };
+
+    enum Transport { TUNKNOWN, SBP, ATA, FC, ISCSI, SAS, SATA, SPI, USB };
 
     enum ImsmDriver { IMSM_UNDECIDED, IMSM_DMRAID, IMSM_MDADM };
 
@@ -149,19 +166,20 @@ namespace storage
 
 
     /**
-     * typedef for a pointer to a function that is called on progress bar events
+     * typedef for a pointer to a function that is called on progress bar
+     * events.
      */
     typedef void (*CallbackProgressBar)(const string& id, unsigned cur, unsigned max);
 
     /**
-     * typedef for a pointer to a function that is called with strings
-     * telling the user what is currently going on
+     * typedef for a pointer to a function that is called with strings telling
+     * the user what is currently going on.
      */
     typedef void (*CallbackShowInstallInfo)(const string& id);
 
     /**
-     * typedef for a pointer to a function that displays a popup with
-     * the given text and waits for user confirmation
+     * typedef for a pointer to a function that displays a popup with the
+     * given text and waits for user confirmation.
      */
     typedef void (*CallbackInfoPopup)(const string& text);
 
@@ -174,7 +192,15 @@ namespace storage
     typedef bool (*CallbackYesNoPopup)(const string& text);
 
     /**
-     * typedef for a pointer to a function that ask for the password of the
+     * typedef for a pointer to a function that asks whether to continue after
+     * an commit error. If true is returned the commit error is ignored and
+     * the commit continues.
+     */
+    typedef bool (*CallbackCommitErrorPopup)(int error, const string& last_action,
+					     const string& extended_message);
+
+    /**
+     * typedef for a pointer to a function that asks for the password of the
      * given device. If the user does not want to decrypt the device false is
      * returned, true otherwise.
      */
@@ -186,7 +212,7 @@ namespace storage
      */
     struct FsCapabilities
     {
-	FsCapabilities () {}
+	FsCapabilities() {}
 	bool isExtendable;
 	bool isExtendableWhileMounted;
 	bool isReduceable;
@@ -211,6 +237,40 @@ namespace storage
     };
 
 
+    struct UsedByInfo
+    {
+	UsedByInfo(UsedByType type, const string& device) : type(type), device(device) {}
+	UsedByType type;
+	string device;
+    };
+
+
+    struct SubvolInfo
+    {
+	SubvolInfo(const string& path) : path(path) {}
+	string path;
+    };
+
+
+    struct ResizeInfo
+    {
+	ResizeInfo() : df_freeK(0), resize_freeK(0), usedK(0), resize_ok(false) {}
+	unsigned long long df_freeK;
+	unsigned long long resize_freeK;
+	unsigned long long usedK;
+	bool resize_ok;
+    };
+
+
+    struct ContentInfo
+    {
+	ContentInfo() : windows(false), efi(false), homes(0) {}
+	bool windows;
+	bool efi;
+	unsigned homes;
+    };
+
+
     /**
      * Contains info about a generic container.
      */
@@ -218,12 +278,13 @@ namespace storage
     {
 	ContainerInfo() {}
 	CType type;
-	unsigned volcnt;
 	string device;
 	string name;
-	UsedByType usedByType;
-	string usedByName;	// deprecated
-	string usedByDevice;
+	string udevPath;
+	string udevId;
+	list<UsedByInfo> usedBy;
+	UsedByType usedByType;	// deprecated
+	string usedByDevice;	// deprecated
 	bool readonly;
     };
 
@@ -234,18 +295,18 @@ namespace storage
     {
 	DiskInfo() {}
 	unsigned long long sizeK;
-	unsigned long long cylSizeB;
+	unsigned long long cylSize;
 	unsigned long cyl;
 	unsigned long heads;
 	unsigned long sectors;
 	unsigned int sectorSize;
 	string disklabel;
-	string udevPath;
-	string udevId;
-	unsigned maxLogical;
 	unsigned maxPrimary;
+	bool extendedPossible;
+	unsigned maxLogical;
 	bool initDisk;
-	bool iscsi;
+	Transport transport;
+	bool iscsi;		// deprecated
     };
 
     /**
@@ -255,7 +316,7 @@ namespace storage
     {
 	LvmVgInfo() {}
 	unsigned long long sizeK;
-	unsigned long long peSize;
+	unsigned long long peSizeK;
 	unsigned long peCount;
 	unsigned long peFree;
 	string uuid;
@@ -303,10 +364,14 @@ namespace storage
 	string name;
 	string device;
 	string mount;
+	string crypt_device;
 	MountByType mount_by;
-	UsedByType usedByType;
-	string usedByName;	// deprecated
-	string usedByDevice;
+	string udevPath;
+	string udevId;
+	list<UsedByInfo> usedBy;
+	UsedByType usedByType;	// deprecated
+	string usedByDevice;	// deprecated
+	bool ignore_fstab;
 	string fstab_options;
 	string uuid;
 	string label;
@@ -317,12 +382,13 @@ namespace storage
 	EncryptType encryption;
 	string crypt_pwd;
 	FsType fs;
+	FsType detected_fs;
 	bool format;
 	bool create;
 	bool is_mounted;
 	bool resize;
 	bool ignore_fs;
-	unsigned long long OrigSizeK;
+	unsigned long long origSizeK;
     };
 
     struct PartitionAddInfo
@@ -334,8 +400,6 @@ namespace storage
 	PartitionType partitionType;
 	unsigned id;
 	bool boot;
-	string udevPath;
-	string udevId;
     };
 
     /**
@@ -352,8 +416,6 @@ namespace storage
 	PartitionType partitionType;
 	unsigned id;
 	bool boot;
-	string udevPath;
-	string udevId;
     };
 
     /**
@@ -363,8 +425,8 @@ namespace storage
     {
 	LvmLvInfo() {}
 	VolumeInfo v;
-	unsigned stripe;
-	unsigned stripe_size;
+	unsigned stripes;
+	unsigned stripeSizeK;
 	string uuid;
 	string status;
 	string allocation;
@@ -396,8 +458,9 @@ namespace storage
 	unsigned parity;
 	string uuid;
 	string sb_ver;
-	unsigned long chunk;
+	unsigned long chunkSizeK;
 	string devices;
+	string spares;
     };
 
     /**
@@ -406,9 +469,7 @@ namespace storage
     struct MdStateInfo
     {
 	MdStateInfo() {}
-	bool active;
-	bool degraded;
-	enum MdArrayState state;
+	MdArrayState state;
     };
 
     /**
@@ -419,27 +480,21 @@ namespace storage
     {
         MdPartCoInfo() {}
         DiskInfo d;
-        string devices;
-        string spares;        // Spare disks
-        unsigned long minor;
-
-        unsigned level;       // RAID level
+	unsigned type;        // RAID level
         unsigned nr;          // MD device number
         unsigned parity;      // Parity (not for all RAID level)
         string   uuid;        // MD Device UUID
         string   sb_ver;      // Metadata version
-        unsigned long chunk;  // Chunksize (strip size)
-        string   md_name;     // MD Device name (link in /dev/md/)
+	unsigned long chunkSizeK;  // Chunksize (strip size)
+	string devices;
+	string spares;
     };
 
     struct MdPartCoStateInfo
     {
         MdPartCoStateInfo() {}
-        bool active;
-        bool degraded;
-        enum MdArrayState state;  // Few states at one?
+        MdArrayState state;
     };
-
 
     /**
      * Contains info about a partition on SW RAID device.
@@ -471,6 +526,28 @@ namespace storage
 	bool reuseFile;
 	unsigned nr;
 	string file;
+    };
+
+    /**
+     * Contains info about btrfs volume.
+     */
+    struct BtrfsInfo
+    {
+	BtrfsInfo() {}
+	VolumeInfo v;
+	string devices;
+	string devices_add;
+	string devices_rem;
+	string subvol;
+    };
+
+    /**
+     * Contains info about tmpfs volume.
+     */
+    struct TmpfsInfo
+    {
+	TmpfsInfo() {}
+	VolumeInfo v;
     };
 
     /**
@@ -517,16 +594,16 @@ namespace storage
     };
 
     /**
-     * Contains info about a DM volume.
+     * Contains info about container and volume.
      */
     struct ContVolInfo
     {
-	ContVolInfo() { numeric=false; nr=0; type=CUNKNOWN; }
-	CType type;
+	ContVolInfo() : ctype(CUNKNOWN) {}
+	CType ctype;
 	string cname;
+	string cdevice;
 	string vname;
-	bool numeric;
-	unsigned nr;
+	string vdevice;
     };
 
     /**
@@ -550,8 +627,9 @@ namespace storage
      */
     struct CommitInfo
     {
+	CommitInfo() {}
 	bool destructive;
-	deque<string> actions;
+	string text;
     };
 
 
@@ -560,6 +638,8 @@ namespace storage
      */
     enum ErrorCodes
     {
+	STORAGE_NO_ERROR = 0,
+
 	DISK_PARTITION_OVERLAPS_EXISTING = -1000,
 	DISK_PARTITION_EXCEEDS_DISK = -1001,
 	DISK_CREATE_PARTITION_EXT_ONLY_ONCE = -1002,
@@ -619,7 +699,11 @@ namespace storage
 	STORAGE_RESIZE_INVALID_CONTAINER = -2029,
 	STORAGE_DMMULTIPATH_CO_NOT_FOUND = -2030,
 	STORAGE_ZERO_DEVICE_FAILED = -2031,
-	STORAGE_MDPART_CO_NOT_FOUND = -2032,
+	STORAGE_INVALID_BACKUP_STATE_NAME = -2032,
+	STORAGE_MDPART_CO_NOT_FOUND = -2033,
+	STORAGE_DEVICE_NOT_FOUND = -2034,
+	STORAGE_BTRFS_CO_NOT_FOUND = -2035,
+	STORAGE_TMPFS_CO_NOT_FOUND = -2036,
 
 	VOLUME_COMMIT_UNKNOWN_STAGE = -3000,
 	VOLUME_FSTAB_EMPTY_MOUNT = -3001,
@@ -657,10 +741,11 @@ namespace storage
 	VOLUME_CRYPTSETUP_FAILED = -3034,
 	VOLUME_CRYPTUNSETUP_FAILED = -3035,
 	VOLUME_FORMAT_NOT_IMPLEMENTED = -3036,
-	VOLUME_FORMAT_NFS_IMPOSSIBLE = -3037,
+	VOLUME_FORMAT_IMPOSSIBLE = -3037,
 	VOLUME_CRYPT_NFS_IMPOSSIBLE = -3038,
 	VOLUME_REMOUNT_FAILED = -3039,
 	VOLUME_TUNEREISERFS_FAILED = -3040,
+	VOLUME_UMOUNT_NOT_MOUNTED = -3041,
 
 	LVM_CREATE_PV_FAILED = -4000,
 	LVM_PV_ALREADY_CONTAINED = -4001,
@@ -695,6 +780,7 @@ namespace storage
 	LVM_LV_NOT_SNAPSHOT = -4030,
 	LVM_LV_HAS_SNAPSHOTS = -4031,
 	LVM_LV_IS_SNAPSHOT = -4032,
+	LVM_LIST_EMPTY = -4033,
 
 	FSTAB_ENTRY_NOT_FOUND = -5000,
 	FSTAB_CHANGE_PREFIX_IMPOSSIBLE = -5001,
@@ -723,6 +809,9 @@ namespace storage
 	MD_NO_CREATE_UNKNOWN = -6018,
 	MD_STATE_NOT_ON_DISK = -6019,
 	MD_PARTITION_NOT_FOUND = -6020,
+	MD_INVALID_PARITY = -6021,
+	MD_TOO_MANY_SPARES = -6022,
+	MD_GET_STATE_FAILED = -6023,
 
 	MDPART_CHANGE_READONLY = -6100,
 	MDPART_INTERNAL_ERR = -6101,
@@ -780,6 +869,31 @@ namespace storage
 	NFS_REMOVE_VOLUME_CREATE_NOT_FOUND = -14003,
 	NFS_REMOVE_VOLUME_LIST_ERASE = -14004,
 	NFS_REMOVE_INVALID_VOLUME = -14005,
+
+	BTRFS_COMMIT_INVALID_VOLUME = -15001,
+	BTRFS_CANNOT_TMP_MOUNT = -15002,
+	BTRFS_CANNOT_TMP_UMOUNT = -15003,
+	BTRFS_DELETE_SUBVOL_FAIL = -15004,
+	BTRFS_CREATE_SUBVOL_FAIL = -15005,
+	BTRFS_VOLUME_NOT_FOUND = -15006,
+	BTRFS_SUBVOL_EXISTS = -15007,
+	BTRFS_SUBVOL_NON_EXISTS = -15008,
+	BTRFS_REMOVE_NOT_FOUND = -15009,
+	BTRFS_REMOVE_NO_BTRFS = -15010,
+	BTRFS_REMOVE_INVALID_VOLUME = -15011,
+	BTRFS_CHANGE_READONLY = -15012,
+	BTRFS_DEV_ALREADY_CONTAINED = -15013,
+	BTRFS_DEVICE_UNKNOWN = -15014,
+	BTRFS_DEVICE_USED = -15015,
+	BTRFS_HAS_NONE_DEV = -15016,
+	BTRFS_DEV_NOT_FOUND = -15017,
+	BTRFS_EXTEND_FAIL = -15018,
+	BTRFS_REDUCE_FAIL = -15019,
+	BTRFS_LIST_EMPTY = -15020,
+
+	TMPFS_REMOVE_INVALID_VOLUME = -16001,
+	TMPFS_REMOVE_NO_TMPFS = -16002,
+	TMPFS_REMOVE_NOT_FOUND = -16003,
 
 	CONTAINER_INTERNAL_ERROR = -99000,
 	CONTAINER_INVALID_VIRTUAL_CALL = -99001,
@@ -996,6 +1110,22 @@ namespace storage
 	virtual int getDmInfo( deque<DmInfo>& plist ) = 0;
 
 	/**
+	 * Query infos for btrfs devices in system
+	 *
+	 * @param plist list of records that get filled with btrfs specific info
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int getBtrfsInfo( deque<BtrfsInfo>& plist ) = 0;
+
+	/**
+	 * Query infos for tmpfs devices in system
+	 *
+	 * @param plist list of records that get filled with tmpfs specific info
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int getTmpfsInfo( deque<TmpfsInfo>& plist ) = 0;
+
+	/**
 	 * Query infos for dmraid devices in system
 	 *
 	 * @param plist list of records that get filled with dmraid specific info
@@ -1032,30 +1162,11 @@ namespace storage
 	virtual list<string> getAllUsedFs() const = 0;
 
 	/**
-	 * Print all detected entities to a stream.
-	 * Exact output format may change between releases.
-	 * Function mainly meant for debugging purposes.
-	 *
-	 * @param str stream to print data to
-	 */
-	virtual void printInfo( std::ostream& str ) = 0;
-
-	/**
-	 * Print names entities to a stream.
-	 * Exact output format may change between releases.
-	 * Function mainly meant for debugging purposes.
-	 *
-	 * @param str stream to print data to
-	 * @param name name of container to print
-	 */
-	virtual void printInfoCo( std::ostream& str, const string& name ) = 0;
-
-	/**
 	 * Create a new partition. Units given in disk cylinders.
 	 *
 	 * @param disk device name of disk, e.g. /dev/hda
 	 * @param type type of partition to create, e.g. primary or extended
-	 * @param start cylinder number of partition start (cylinders are numbered starting with 0)
+	 * @param startCyl cylinder number of partition start (cylinders are numbered starting with 0)
 	 * @param sizeCyl size of partition in disk cylinders
 	 * @param device is set to the device name of the new partition
 	 * The name is returned instead of the number since creating the name from the
@@ -1063,7 +1174,7 @@ namespace storage
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
 	virtual int createPartition( const string& disk, PartitionType type,
-				     unsigned long start,
+				     unsigned long startCyl,
 				     unsigned long sizeCyl,
 				     string& device ) = 0;
 
@@ -1095,12 +1206,12 @@ namespace storage
 	 * committed.
 	 *
 	 * @param device device name of partition, e.g. /dev/hda1
-	 * @param start cylinder number of partition start (cylinders are numbered starting with 0)
+	 * @param startCyl cylinder number of partition start (cylinders are numbered starting with 0)
 	 * @param sizeCyl size of partition in disk cylinders
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
 	virtual int updatePartitionArea( const string& device,
-	                                 unsigned long start,
+	                                 unsigned long startCyl,
 					 unsigned long sizeCyl ) = 0;
 
 	/**
@@ -1131,30 +1242,30 @@ namespace storage
 	 *
 	 * @param disk device name of disk, e.g. /dev/hda
 	 * @param type type of partition to create, e.g. primary or extended
-	 * @param start offset in kilobytes from start of disk
-	 * @param size  size of partition in kilobytes
+	 * @param startK offset in kilobytes from start of disk
+	 * @param sizeK size of partition in kilobytes
 	 * @param device is set to the device name of the new partition
 	 * The name is returned instead of the number since creating the name from the
 	 * number is not straight-forward.
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
 	virtual int createPartitionKb( const string& disk, PartitionType type,
-				       unsigned long long start,
-				       unsigned long long size,
+				       unsigned long long startK,
+				       unsigned long long sizeK,
 				       string& device ) = 0;
 
 	/**
 	 * Create a new partition of any type anywhere on the disk. Units given in Kilobytes.
 	 *
 	 * @param disk device name of disk, e.g. /dev/hda
-	 * @param size  size of partition in kilobytes
+	 * @param sizeK size of partition in kilobytes
 	 * @param device is set to the device name of the new partition
 	 * The name is returned instead of the number since creating the name from the
 	 * number is not straight-forward.
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
 	virtual int createPartitionAny( const string& disk,
-					unsigned long long size,
+					unsigned long long sizeK,
 					string& device ) = 0;
 
 	/**
@@ -1174,21 +1285,21 @@ namespace storage
 	 * Compute number of kilobytes of a given number of disk cylinders
 	 *
 	 * @param disk device name of disk, e.g. /dev/hda
-	 * @param size number of disk cylinders
+	 * @param sizeCyl number of disk cylinders
 	 * @return number of kilobytes of given cylinders
 	 */
 	virtual unsigned long long cylinderToKb( const string& disk,
-	                                         unsigned long size ) = 0;
+	                                         unsigned long sizeCyl) = 0;
 
 	/**
 	 * Compute number of disk cylinders needed for given space
 	 *
 	 * @param disk device name of disk, e.g. /dev/hda
-	 * @param size number of kilobytes
+	 * @param sizeK number of kilobytes
 	 * @return number of disk cylinders needed
 	 */
 	virtual unsigned long kbToCylinder( const string& disk,
-					    unsigned long long size ) = 0;
+					    unsigned long long sizeK) = 0;
 
 	/**
 	 * Remove a partition
@@ -1214,6 +1325,25 @@ namespace storage
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
 	virtual int forgetChangePartitionId (const string& partition ) = 0;
+
+	/**
+	 * Return the prefix that is inserted between the disk name and the
+	 * partition number.
+	 *
+	 * @param disk name of disk, e.g. /dev/sda
+	 * @return prefix for partitions, e.g. "", "p" or "_part"
+	 */
+	virtual string getPartitionPrefix(const string& disk) = 0;
+
+	/**
+	 * Construct the device name for a partiton from the disk name and
+	 * partiton number.
+	 *
+	 * @param disk name of disk, e.g. /dev/sda
+	 * @param partition_no number of partition, e.g. 1
+	 * @return device name of partition, e.g. /dev/sda1
+	 */
+	virtual string getPartitionName(const string& disk, int partition_no) = 0;
 
 	/**
 	 * Query unused slots on a disk suitable for creating partitions.
@@ -1246,7 +1376,7 @@ namespace storage
 	 */
 	virtual int initializeDisk( const string& disk, bool value ) = 0;
 
-        /**
+	/**
 	 * Query the default disk label of the architecture of the
 	 * machine (e.g. msdos for ix86, gpt for ia64, ...) for a disk
 	 *
@@ -1254,7 +1384,7 @@ namespace storage
 	 *
 	 * @return default disk label of the disk
 	 */
-        virtual string defaultDiskLabel(const string& device) = 0;
+	virtual string defaultDiskLabel(const string& device) = 0;
 
 	/**
 	 * Sets or unsets the format flag for the given volume.
@@ -1407,9 +1537,12 @@ namespace storage
 	 *
 	 * @param device name of volume, e.g. /dev/hda1
 	 * @param pwd crypt password for this volume
+	 * @param erase if true remove password even after successful verification
 	 * @return zero if password is ok, a negative number to indicate an error
 	 */
-	virtual int verifyCryptPassword( const string& device, const string& pwd ) = 0;
+	virtual int verifyCryptPassword( const string& device, 
+	                                 const string& pwd, bool erase ) = 0;
+
 	/**
 	 * Check if crypt password is required
 	 *
@@ -1476,8 +1609,8 @@ namespace storage
 
 	/**
 	 * Sets the value of description text.
-	 * This text will be returned together with the text returned by 
-	 * getCommitInfo().
+	 * This text will be returned together with the text returned by
+	 * getCommitInfos().
 	 *
 	 * @param device name of volume, e.g. /dev/hda1
 	 * @param txt description text for this partition
@@ -1487,6 +1620,9 @@ namespace storage
 
 	/**
 	 * Adds the specified entry to /etc/fstab
+	 *
+	 * This function does not cache the changes but writes them
+	 * immediately.
 	 *
 	 * @param device name of volume, e.g. /dev/hda1
 	 * @param mount mount point, e.g. /home
@@ -1505,19 +1641,19 @@ namespace storage
 	 * Resizes a volume while keeping the data on the filesystem
 	 *
 	 * @param device name of volume, e.g. /dev/hda1
-	 * @param newSizeMb new size desired volume in Megabyte
+	 * @param newSizeK new size desired volume in kilobytes
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int resizeVolume( const string& device, unsigned long long newSizeMb ) = 0;
+	virtual int resizeVolume(const string& device, unsigned long long newSizeK) = 0;
 
 	/**
 	 * Resizes a volume while ignoring the data on the filesystem
 	 *
 	 * @param device name of volume, e.g. /dev/hda1
-	 * @param newSizeMb new size desired volume in Megabyte
+	 * @param newSizeK new size desired volume in kilobytes
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int resizeVolumeNoFs( const string& device, unsigned long long newSizeMb ) = 0;
+	virtual int resizeVolumeNoFs(const string& device, unsigned long long newSizeK) = 0;
 
 	/**
 	 * Forget about possible resize of an volume.
@@ -1549,6 +1685,16 @@ namespace storage
 	 * @return value of the flag for recursive removal
 	 */
 	virtual bool getRecursiveRemoval() const = 0;
+
+	/**
+	 * Recursively get all devices using device. Volumes of containers are
+	 * also considered as using the devices.
+	 *
+	 * @param device name of device, e.g. /dev/sda
+	 * @param devices name of devices using device, e.g. /dev/sda1 /dev/sda2
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int getRecursiveUsing(const string& device, list<string>& devices) = 0;
 
 	/**
 	 * Set handling of newly created partitions. With this flag
@@ -1600,20 +1746,25 @@ namespace storage
 	virtual void setDefaultMountBy( MountByType val ) = 0;
 
 	/**
-	 * Set default value for mount by.
+	 * Get default value for mount by.
 	 *
 	 * @return default value for mount by
 	 */
 	virtual MountByType getDefaultMountBy() const = 0;
 
 	/**
-	 * Set value for EFI boot.
+	 * Set default filesystem.
 	 *
-	 * Currently this value affects the default disk label.
-	 *
-	 * @param val new efi boot value
+	 * @param val new default filesystem.
 	 */
-	virtual void setEfiBoot(bool val) = 0;
+	virtual void setDefaultFs(FsType val) = 0;
+
+	/**
+	 * Get default filesystem.
+	 *
+	 * @return default filesystem.
+	 */
+	virtual FsType getDefaultFs() const = 0;
 
 	/**
 	 * Get value for EFI boot.
@@ -1626,7 +1777,7 @@ namespace storage
 	 * Set value for root prefix.
 	 *
 	 * This value is appended to all mount points of volumes, when
-	 * changes are commited. Config files fstab, cryptotab, raidtab and
+	 * changes are commited. Config files fstab, crypttab and
 	 * mdadm.conf are also created relative to this prefix.
 	 * This variable must be set before first call to commit.
 	 *
@@ -1712,14 +1863,14 @@ namespace storage
 	 *
 	 * @param vg name of volume group
 	 * @param name of logical volume
-	 * @param sizeM size of logical volume in megabytes
-	 * @param stripe stripe count of logical volume (use 1 unless you know
+	 * @param sizeK size of logical volume in kilobytes
+	 * @param stripes stripe count of logical volume (use 1 unless you know
 	 * exactly what you are doing)
 	 * @param device is set to the device name of the new LV
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
 	virtual int createLvmLv( const string& vg, const string& name,
-	                         unsigned long long sizeM, unsigned stripe,
+	                         unsigned long long sizeK, unsigned stripes,
 				 string& device ) = 0;
 
 	/**
@@ -1757,11 +1908,11 @@ namespace storage
 	 *
 	 * @param vg name of volume group
 	 * @param name of logical volume
-	 * @param stripeSize new stripe size of logical volume
+	 * @param stripeSizeK new stripe size of logical volume
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
 	virtual int changeLvStripeSize( const string& vg, const string& name,
-	                                unsigned long long stripeSize ) = 0;
+	                                unsigned long long stripeSizeK) = 0;
 
 	/**
 	 * Create a LVM logical volume snapshot
@@ -1806,29 +1957,31 @@ namespace storage
          * @param device is set to the device name of the next created software raid device
          * @return zero if all is ok, a negative number to indicate an error
          */
-	virtual int nextFreeMd(int &nr, string &device) = 0;
+	virtual int nextFreeMd(unsigned& nr, string &device) = 0;
 
 	/**
 	 * Create a Software raid device by name
 	 *
 	 * @param name name of software raid device to create (e.g. /dev/md0)
-	 * @param rtype raid personality of the new software raid
-	 * @param devs list with physical devices for the new software raid
+	 * @param md_type raid personality of the new software raid
+	 * @param devices list with physical devices for the new software raid
+	 * @param spares list with spare physical devices for the new software raid
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int createMd( const string& name, MdType rtype,
-			      const deque<string>& devs ) = 0;
+	virtual int createMd(const string& name, MdType md_type, const list<string>& devices,
+			     const list<string>& spares) = 0;
 
 	/**
 	 * Create a Software raid device. Name determined by library.
 	 *
-	 * @param rtype raid personality of the new software raid
-	 * @param devs list with physical devices for the new software raid
+	 * @param md_type raid personality of the new software raid
+	 * @param devices list with physical devices for the new software raid
+	 * @param spares list with spare physical devices for the new software raid
 	 * @param device device name of created software raid device
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int createMdAny( MdType rtype, const deque<string>& devs,
-				 string& device ) = 0;
+	virtual int createMdAny(MdType md_type, const list<string>& devices,
+				const list<string>& spares, string& device) = 0;
 
 	/**
 	 * Remove a Software raid device.
@@ -1845,43 +1998,47 @@ namespace storage
 	 * This can only be done before the raid is created on disk.
 	 *
 	 * @param name name of software raid device (e.g. /dev/md0)
-	 * @param dev partition to add to that raid
+	 * @param devices list with physical devices to add to the raid
+	 * @param spares list with spare physical devices to add to the raid
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int extendMd( const string& name, const string& dev ) = 0;
+	virtual int extendMd(const string& name, const list<string>& devices,
+			     const list<string>& spares) = 0;
 
 	/**
 	 * Remove a partition from a raid device.
 	 * This can only be done before the raid is created on disk.
 	 *
 	 * @param name name of software raid device (e.g. /dev/md0)
-	 * @param dev partition to remove from that raid
+	 * @param devices list of physical devices to remove from the raid
+	 * @param spares list of spare physical devices to remove from the raid
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int shrinkMd( const string& name, const string& dev ) = 0;
+	virtual int shrinkMd(const string& name, const list<string>& devices,
+			     const list<string>& spares) = 0;
 
 	/**
 	 * Change raid type of a raid device.
 	 * This can only be done before the raid is created on disk.
 	 *
 	 * @param name name of software raid device (e.g. /dev/md0)
-	 * @param rtype new raid personality of the software raid
+	 * @param md_type new raid personality of the software raid
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int changeMdType( const string& name, MdType rtype ) = 0;
+	virtual int changeMdType(const string& name, MdType md_type) = 0;
 
 	/**
 	 * Change chunk size of a raid device.
 	 * This can only be done before the raid is created on disk.
 	 *
 	 * @param name name of software raid device (e.g. /dev/md0)
-	 * @param chunk new chunk size of the software raid
+	 * @param chunkSizeK new chunk size of the software raid
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int changeMdChunk( const string& name, unsigned long chunk ) = 0;
+	virtual int changeMdChunk(const string& name, unsigned long chunkSizeK) = 0;
 
 	/**
-	 * Change parity of a raid device with raid type raid5.
+	 * Change parity of a raid device with raid type raid5, raid6 or raid10.
 	 * This can only be done before the raid is created on disk.
 	 *
 	 * @param name name of software raid device (e.g. /dev/md0)
@@ -1929,11 +2086,21 @@ namespace storage
 	 *
 	 * @param md_type raid type of the software raid
 	 * @param devices list with physical devices for the software raid
+	 * @param spares list with spare physical devices for the software raid
 	 * @param sizeK will contain the computed size in kilobytes
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int computeMdSize(MdType md_type, list<string> devices,
-				  unsigned long long& sizeK) = 0;
+	virtual int computeMdSize(MdType md_type, const list<string>& devices,
+				  const list<string>& spares, unsigned long long& sizeK) = 0;
+
+	/**
+	 * Determine allowed parity types for raid type.
+	 *
+	 * @param md_type raid type of the software raid
+	 * @param devnr number of physical devices for the software raid
+	 * @return list of allowed parity typed for this raid
+	 */
+	virtual list<int> getMdAllowedParity(MdType md_type, unsigned devnr) = 0;
 
         /**
          * Remove a Partitionable Software raid device.
@@ -1954,22 +2121,24 @@ namespace storage
 	 * @param sizeK size of the nfs device
 	 * @param opts mount options for nfs mount
 	 * @param mp mount point of the nfs device
+	 * @param nfs4 use NFS4 for device
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int addNfsDevice( const string& nfsDev, const string& opts,
-	                          unsigned long long sizeK,
-				  const string& mp ) = 0;
+	virtual int addNfsDevice(const string& nfsDev, const string& opts,
+				 unsigned long long sizeK, const string& mp,
+				 bool nfs4) = 0;
 
 	/**
 	 * Check accessibility and size of nfs device.
 	 *
 	 * @param nfsDev name of nfs device
 	 * @param opts mount options for nfs mount
+	 * @param nfs4 use NFS4 for device
 	 * @param sizeK size of the nfs device
 	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual int checkNfsDevice( const string& nfsDev, const string& opts,
-	                            unsigned long long& sizeK ) = 0;
+	virtual int checkNfsDevice(const string& nfsDev, const string& opts,
+				   bool nfs4, unsigned long long& sizeK) = 0;
 
 	/**
 	 * Create a file based loop device. Encryption is automatically
@@ -2032,25 +2201,68 @@ namespace storage
 	virtual int removeDmraid( const string& name ) = 0;
 
 	/**
-	 * Gets a list of string describing the actions to be executed
-	 * after next call to commit().
+	 * Create a BTRFS subvolume
 	 *
-	 * Deprecated, use getCommitInfo().
-	 * 
-	 * @param mark_destructive if true use &lt;red&gt; around &lt;/red&gt;
-	 *    destructive actions (like e.g. deletion, formatting, ...)
-	 * @return list of strings presentable to the user
+	 * @param device of the main BTRFS volume
+	 * @param name of subvolume
+	 * @return zero if all is ok, a negative number to indicate an error
 	 */
-	virtual deque<string> getCommitActions(bool mark_destructive) const = 0;
+	virtual int createSubvolume( const string& device, const string& name ) = 0;
+
+	/**
+	 * Remove a BTRFS subvolume
+	 *
+	 * @param device of the main BTRFS volume
+	 * @param name of subvolume
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int removeSubvolume( const string& device, const string& name ) = 0;
+
+	/**
+	 * Extend a BTRFS volume with additional devices
+	 *
+	 * @param name name of BTRFS volume (this can contain a device name
+	 *    or be specified as "UUID=<uuid>")
+	 * @param devs list with devices to add to that BTRFS volume
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int extendBtrfsVolume( const string& name,
+				       const deque<string>& devs ) = 0;
+
+	/**
+	 * Shrink a BTRFS volume by some devices
+	 *
+	 * @param name name of BTRFS volume (this can contain a device name
+	 *    or be specified as "UUID=<uuid>")
+	 * @param devs list with devices to remove from that BTRFS volume
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int shrinkBtrfsVolume( const string& name,
+				       const deque<string>& devs ) = 0;
+
+	/**
+	 * Add new tmpfs filesystem 
+	 *
+	 * @param mp mount point for the tmpfs
+	 * @param opts mount options for tmpfs mount
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int addTmpfsMount( const string& mp, const string& opts ) = 0;
+
+	/**
+	 * Remove tmpfs filesystem 
+	 *
+	 * @param mp mount point for the tmpfs
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int removeTmpfsMount( const string& mp ) = 0;
 
 	/**
 	 * Gets info about actions to be executed after next call to commit().
 	 *
-	 * @param mark_destructive if true use &lt;red&gt; around &lt;/red&gt;
-	 *    destructive actions (like e.g. deletion, formatting, ...)
-	 * @param info record that gets filled with data
+	 * @param infos list of records that gets filled with infos
 	 */
-	virtual void getCommitInfo(bool mark_destructive, CommitInfo& info) const = 0;
+	virtual void getCommitInfos(list<CommitInfo>& infos) const = 0;
 
 	/**
 	 * Gets action performed last during previous call to commit()
@@ -2135,6 +2347,21 @@ namespace storage
 
 
 	/**
+	 * Sets the callback function called for errors during commit.
+	 *
+	 * @param pfnc pointer to function
+	 */
+	virtual void setCallbackCommitErrorPopup(CallbackCommitErrorPopup pfnc) = 0;
+
+	/**
+	 * Query the callback function called for errors during commit.
+	 *
+	 * @return pointer to function currently called for progress bar events
+	 */
+	virtual CallbackCommitErrorPopup getCallbackCommitErrorPopup() const = 0;
+
+
+	/**
 	 * Sets the callback function called to query a password by the user.
 	 *
 	 * @param pfnc pointer to function.
@@ -2170,6 +2397,11 @@ namespace storage
 	virtual int commit() = 0;
 
 	/**
+	 * Get a textual message for an error code. Can be empty.
+	 */
+	virtual string getErrorString(int error) const = 0;
+
+	/**
 	 * Create backup of current state of all containers
 	 *
 	 * @param name name under which the backup should be created
@@ -2189,9 +2421,9 @@ namespace storage
 	 * Checks if a backup with a certain name already exists
 	 *
 	 * @param name name of the backup to check
-	 * @return boolean if the backup exists
+	 * @return true if the backup exists
 	 */
-	virtual bool checkBackupState( const string& name ) = 0;
+	virtual bool checkBackupState(const string& name) const = 0;
 
 	/**
 	 * Compare two backup states
@@ -2201,9 +2433,8 @@ namespace storage
 	 * @param verbose_log flag if differences should be logged in detail
 	 * @return true if states are equal
 	 */
-	virtual bool equalBackupStates( const string& lhs,
-	                                const string& rhs,
-					bool verbose_log ) const = 0;
+	virtual bool equalBackupStates(const string& lhs, const string& rhs,
+				       bool verbose_log) const = 0;
 
 	/**
 	 * Remove existing backup state
@@ -2218,14 +2449,15 @@ namespace storage
 	 * Determine if the given device is known and mounted somewhere
 	 *
 	 * @param device device name to check (checks also all alias names)
-	 * @param mp set to current mount point if mounted
+	 * @param mps set to current mount points if mounted
 	 * @return bool that is true if device is mounted
 	 */
-	virtual bool checkDeviceMounted( const string& device, string& mp ) = 0;
+	virtual bool checkDeviceMounted(const string& device, list<string>& mps) = 0;
 
 	/**
 	 * Umount the given device and do what is necessary to remove
 	 * underlying volume (e.g. do losetup -d if loop is set up)
+	 *
 	 * The function umounts at once, /etc/fstab is unaffected
 	 *
 	 * @param device device name to umount
@@ -2236,6 +2468,7 @@ namespace storage
 	/**
 	 * Mount the given device and do what is necessary to access
 	 * volume (e.g. do losetup if loop is set up)
+	 *
 	 * The function mounts at once, /etc/fstab is unaffected
 	 *
 	 * @param device device name to mount
@@ -2245,8 +2478,21 @@ namespace storage
 	virtual bool mountDevice( const string& device, const string& mp ) = 0;
 
 	/**
+	 * Mount the given device and do what is necessary to access
+	 * volume (e.g. do losetup if loop is set up)
+	 *
+	 * The function mounts at once, /etc/fstab is unaffected
+	 *
+	 * @param device device name 
+	 * @param on if true activate access to encrypted data, otherwise deactivate it
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int activateEncryption( const string& device, bool on ) = 0;
+
+	/**
 	 * Mount the given device with given options and do what is necessary
 	 * to access volume (e.g. do losetup if loop is set up)
+	 *
 	 * The function mounts at once, /etc/fstab is unaffected
 	 *
 	 * @param device device name to mount
@@ -2260,6 +2506,7 @@ namespace storage
 	/**
 	 * Mount the given device readonly and do what is necessary to access
 	 * volume (e.g. do losetup if loop is set up)
+	 *
 	 * The function mounts at once, /etc/fstab is unaffected
 	 *
 	 * @param device device name to mount
@@ -2289,18 +2536,15 @@ namespace storage
 	 * Detect potentially available free space on a partition
 	 *
 	 * @param device device to check
-	 * @param resize_free free space in kilobytes available for resize
-	 * @param df_free free space in kilobytes available in filesystem
-	 * @param used used space in kilobytes for filesystem
-	 * @param win flag if partition contains a windows installation
+	 * @param get_resize flag to indicate that resize_info should be queried
+	 * @param resize_info struct that gets filled with resize info
+	 * @param get_content flag to indicate that content_info should be queried
+	 * @param content_info struct that gets filled with content info
 	 * @param use_cache function should return cached data if available
 	 * @return bool if values could be successfully determined
 	 */
-	virtual bool getFreeInfo( const string& device,
-	                          unsigned long long& resize_free,
-	                          unsigned long long& df_free,
-	                          unsigned long long& used,
-				  bool& win, bool& efi, bool use_cache ) = 0;
+	virtual bool getFreeInfo(const string& device, bool get_resize, ResizeInfo& resize_info,
+				 bool get_content, ContentInfo& content_info, bool use_cache) = 0;
 
 	/**
 	 * Read fstab and cryptotab, if existent, from a specified directory and
@@ -2314,7 +2558,8 @@ namespace storage
 	/**
 	 * Activate or deactivate higher level devices as MD, LVM, DM
 	 *
-	 * Multipath is not activate by this function.
+	 * Multipath is not activate by this function. Only use in instsys
+	 * mode.
 	 *
 	 * @param val flag if devices should be activated or deactivated
 	 * @return bool if values could be successfully determined
@@ -2323,6 +2568,8 @@ namespace storage
 
 	/**
 	 * Activate or deactivate multipath
+	 *
+	 * Only use in instsys mode.
 	 *
 	 * @param val flag if multipath should be activated or deactivated
 	 * @return bool if values could be successfully determined
@@ -2340,9 +2587,24 @@ namespace storage
 	virtual void rescanEverything() = 0;
 
 	/**
+	 * Rescan after unlocked encrypted volume.
+	 * Rescan for objects that might be newly found after at least one
+	 * encrypted volume has been unlocked. Currently the only supported
+	 * containers on an decrypted volume is a LVM Volume Group.
+	 *
+	 * @return true if at least on encrypted container has been found
+	 */
+	virtual bool rescanCryptedObjects() = 0;
+
+	/**
 	 * Dump list of all objects to log file.
 	 */
 	virtual void dumpObjectList() = 0;
+
+	/**
+	 * Dump list of commit actions to log file.
+	 */
+	virtual void dumpCommitInfos() const = 0;
 
 	/**
 	 * Split volume device name up into container name and a volume
@@ -2353,34 +2615,8 @@ namespace storage
 	 * @param info record that get filled with split data
 	 * @return zero if all is ok, negative number to indicate an error
 	 */
-	virtual int getContVolInfo( const string& dev, ContVolInfo& info) = 0;
+	virtual int getContVolInfo(const string& dev, ContVolInfo& info) = 0;
 
-	/**
-	 * Return a pretty description of a size with required precision
-	 * and using B, kB, MB, GB, TB or PB as unit as appropriate.
-	 *
-	 * @param size size in bytes
-	 * @param classic use classic locale
-	 * @param precision number of fraction digits in output
-	 * @param omit_zeroes if true omit trailing zeroes for exact values
-	 * @return formatted string
-	 */
-	virtual string byteToHumanString(unsigned long long size, bool classic, int precision,
-					 bool omit_zeroes) const = 0;
-
-	/**
-	 * Converts a size description using B, kB, MB, GB, TB or PB into an integer.
-	 *
-	 * @param str size string
-	 * @param classic use classic locale
-	 * @param size size in bytes
-	 * @return true on successful conversion
-	 *
-	 * The conversion is always case-insensitive. With classic set to
-	 * false the conversion is also sloppy concerning omission of 'B'.
-	 */
-	virtual bool humanStringToByte(const string& str, bool classic, unsigned long long&
-				       size) const = 0;
     };
 
 
@@ -2396,7 +2632,7 @@ namespace storage
     struct Environment
     {
 	Environment(bool readonly) : readonly(readonly), testmode(false), autodetect(true),
-	    instsys(false), logdir("/var/log/YaST2"), testdir("") {}
+	    instsys(false), logdir("/var/log/YaST2"), testdir("tmp") {}
 
 	bool readonly;
 	bool testmode;

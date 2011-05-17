@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,8 +19,11 @@
  * find current contact information at www.novell.com.
  */
 
-#include "y2storage/StorageTypes.h"
-#include "y2storage/Volume.h"
+
+#include "storage/Storage.h"
+#include "storage/StorageTypes.h"
+#include "storage/Volume.h"
+
 
 namespace storage
 {
@@ -73,69 +76,96 @@ bool commitAction::operator<( const commitAction& rhs ) const
     }
 
 
-    const string usedBy::device() const
+    std::ostream& operator<<(std::ostream& s, const commitAction& a)
     {
-	switch (ub_type)
-	{
-	    case UB_NONE:
-		return "";
+	s << "stage:" << a.stage
+	  << " type:" << toString(a.type)
+	  << " cont:" << a.container
+	  << " dest:" << a.destructive;
+	if (a.co())
+	    s << " name:" << a.co()->name();
+	if (a.vol())
+	    s << " name:" << a.vol()->name();
+	if (!a.description.native.empty())
+	    s << " desc:" << a.description.native;
+	return s;
+    };
 
+
+    std::ostream& operator<<(std::ostream& s, const UsedBy& usedby)
+    {
+	switch (usedby.type())
+	{
 	    case UB_LVM:
+		s << "lvm[" << usedby.device() << "]";
+		break;
 	    case UB_MD:
+		s << "md[" << usedby.device() << "]";
+		break;
 	    case UB_MDPART:
-		return "/dev/" + ub_name;
-
+		s << "mdpart[" << usedby.device() << "]";
+		break;
 	    case UB_DM:
+		s << "dm[" << usedby.device() << "]";
+		break;
 	    case UB_DMRAID:
+		s << "dmraid[" << usedby.device() << "]";
+		break;
 	    case UB_DMMULTIPATH:
-		return "/dev/mapper/" + ub_name;
+		s << "dmmultipath[" << usedby.device() << "]";
+		break;
+	    case UB_BTRFS:
+		s << "btrfs[" << usedby.device() << "]";
+		break;
+	    case UB_NONE:
+		break;
 	}
-    }
 
-
-    usedBy::operator string() const
-    {
-	string st;
-	if (type() != storage::UB_NONE)
-	{
-	    switch (type())
-	    {
-		case storage::UB_LVM:
-		    st = "lvm";
-		    break;
-		case storage::UB_MD:
-		    st = "md";
-		    break;
-		case storage::UB_MDPART:
-		    st = "mdpart";
-		    break;
-		case storage::UB_DM:
-		    st = "dm";
-		    break;
-		case storage::UB_DMRAID:
-		    st = "dmraid";
-		    break;
-		case UB_DMMULTIPATH:
-		    st = "dmmultipath";
-		    break;
-		default:
-		    st = "UNKNOWN";
-		    break;
-	    }
-	    st += "[" + name() + "]";
-	}
-	return st;
-    }
-
-
-    std::ostream& operator<<(std::ostream& s, const usedBy& d)
-    {
-	if (d.type() != storage::UB_NONE)
-	{
-	    s << " UsedBy:" << string(d);
-	}
 	return s;
     }
 
+    void
+    setChildValue(xmlNode* node, const char* name, const UsedBy& value)
+    {
+	xmlNode* tmp = xmlNewChild(node, name);
 
+	switch (value.ub_type)
+	{
+	    case UB_LVM: setChildValue(tmp, "type", "lvm"); break;
+	    case UB_MD: setChildValue(tmp, "type", "md"); break;
+	    case UB_MDPART: setChildValue(tmp, "type", "mdpart"); break;
+	    case UB_DM: setChildValue(tmp, "type", "dm"); break;
+	    case UB_DMRAID: setChildValue(tmp, "type", "dmraid"); break;
+	    case UB_DMMULTIPATH: setChildValue(tmp, "type", "dmmultipath"); break;
+	    case UB_BTRFS: setChildValue(tmp, "type", "btrfs"); break;
+	    case UB_NONE: break;
+	}
+
+	setChildValue(tmp, "device", value.ub_device);
+    }
+
+    std::ostream& operator<<(std::ostream& s, const Subvolume& sv)
+    {
+	s << sv.path();
+	return s;
+    }
+
+    void
+    setChildValue(xmlNode* node, const char* name, const Subvolume& v)
+    {
+	xmlNode* tmp = xmlNewChild(node, name);
+	setChildValue(tmp, "path", v.path());
+    }
+
+
+
+std::ostream& operator<<(std::ostream& s, const PartitionSlotInfo& a)
+    {
+    s << "start:" << a.cylStart
+      << " len:" << a.cylSize
+      << " primary:" << a.primarySlot << " poss:" << a.primaryPossible
+      << " extended:" << a.extendedSlot << " poss:" << a.extendedPossible
+      << " logical:" << a.logicalSlot << " poss:" << a.logicalPossible;
+    return s;
+    };
 }

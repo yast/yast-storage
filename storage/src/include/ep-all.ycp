@@ -3,13 +3,30 @@
  * Package:     yast2-storage
  * Summary:     Expert Partitioner
  * Authors:     Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
 
+    import "PackageCallbacks";
+    import "PackageSystem";
+
 
     void CreateAllPanel(any user_data)
     {
+
+	boolean IsAvailable ( string client )
+	{
+	    //in the installed system, we don't care if the client isn't there
+	    //as the user will be prompted to install the pkg anyway (in CallConfig)
+	    if ( !Stage::initial() )
+		return true;
+	    //check if the client is in inst-sys
+	    else
+		return WFM::ClientExists(client);
+	}
+
 	string short_hostname = Hostname::CurrentHostname();
 
 	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `format,
@@ -21,20 +38,53 @@
 	term table_header = StorageFields::TableHeader(fields);
 	list<term> table_contents = StorageFields::TableContents(fields, target_map, StorageFields::PredicateAll);
 
-	term buttons = `HBox();
+	term buttons = `HBox(
+	    // push button text
+	    `PushButton(`id(`rescan), `opt(`key_F6), _("Rescan Devices"))
+	);
 
 	if (Mode::installation()) {
 	    // push button text
 	    buttons = add(buttons, `PushButton(`id(`import), _("Import Mount Points...")));
-	    buttons = add(buttons, `HStretch());
 	}
+
+	buttons = add(buttons, `HStretch());
+
+	list<term> configs = [];
+
+	if (IsAvailable("iscsi-client")) {
+	    // menu entry text
+	    configs = add(configs, `item(`id(`iscsi), `icon("yast-iscsi-client"), _("Configure &iSCSI...")));
+	}
+
+	if (true) {
+	    // menu entry text
+	    configs = add(configs, `item(`id(`multipath), `icon("yast-iscsi-server"), _("Configure &Multipath...")));
+	    // menu entry text
+	    configs = add(configs, `item(`id(`cryptpwd), `icon("yast-encrypted"), _("Provide Crypt &Passwords...")));
+	}
+
+	if (Arch::s390() && IsAvailable("s390")) {
+	    // menu entry text
+	    configs = add(configs, `item(`id(`dasd), `icon("yast-dasd"),  _("Configure &DASD...")));
+	    // menu entry text
+	    configs = add(configs, `item(`id(`zfcp), `icon("yast-zfcp"),  _("Configure &zFCP...")));
+	    // menu entry text
+	    configs = add(configs, `item(`id(`xpram), `icon("yast-xpram"), _("Configure &XPRAM...")));
+	}
+
+	if (!isempty(configs)) {
+	    // menu button text
+	    buttons = add(buttons, `MenuButton(`opt(`key_F7), _("Configure..."), configs));
+	}
+
 
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // dialog heading, %1 is replaced with hostname
-				  `IconAndHeading(sformat(_("Available Storage on %1"), short_hostname), all_icon),
-				  `Table(`id(`table), `opt(`keepSorting, `notify),
+				  `IconAndHeading(sformat(_("Available Storage on %1"), short_hostname), StorageIcons::all_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 					 table_header, table_contents),
 				  buttons
 				  ))
@@ -64,16 +114,119 @@ navigate to the view with detailed information about the device.</p>");
     }
 
 
-    void HandleAllPanel(any user_data, symbol widget)
+    void HandleAllPanel(any user_data, map event)
     {
-	switch (widget)
+
+	boolean CheckAndInstallPackages( list <string> pkgs )
 	{
+	    if (Stage::initial())
+		return true;
+
+	    boolean ret = false;
+	    //switch off pkg-mgmt loading progress dialogs,
+	    //because it just plain sucks
+	    PackageCallbacks::RegisterEmptyProgressCallbacks();
+	    ret = PackageSystem::CheckAndInstallPackages(pkgs);
+	    PackageCallbacks::RestorePreviousProgressCallbacks();
+
+	    return ret;
+	}
+
+	void CallConfig(string text, list<string> pkgs, string call)
+	{
+	    boolean doit = true;
+
+	    if (!Storage::EqualBackupStates("expert-partitioner", "", true))
+	    {
+		doit = Popup::YesNo(text);
+	    }
+
+	    if (doit)
+	    {
+		if (pkgs == nil || CheckAndInstallPackages(pkgs))
+		{
+		    if (call != nil)
+			WFM::call(call);
+		    RescanDisks();
+		    Storage::CreateTargetBackup("expert-partitioner");
+
+		    UpdateMainStatus();
+		    UpdateNavigationTree(nil);
+		    TreePanel::Create();
+		}
+	    }
+	}
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `rescan:
+		// popup text
+		CallConfig(_("Rescaning disks cancels all current changes.
+Really rescan disks?"), nil, nil);
+		break;
+
 	    case `import:
 		ImportMountPoints();
 
 		UpdateMainStatus();
 		UpdateNavigationTree(nil);
 		TreePanel::Create();
+		break;
+	}
+
+	switch (Event::IsMenu(event))
+	{
+	    case `iscsi:
+		// popup text
+		CallConfig(_("Calling iSCSI configuration cancels all current changes.
+Really call iSCSI configuration?"), ["yast2-iscsi-client"], "iscsi-client");
+		break;
+
+	    case `multipath:
+		if ((ProductFeatures::GetBooleanFeature("partitioning", "use_separate_multipath_module") == true) ||
+		    (Mode::normal() && WFM::ClientExists("multipath")))
+		    // popup text
+		    CallConfig(_("Calling Multipath configuration cancels all current changes.
+Really call Multipath configuration?"), ["yast2-multipath"], "multipath");
+		else
+		    // popup text
+		    CallConfig(_("Calling Multipath configuration cancels all current changes.
+Really call Multipath configuration?"), nil, "multipath-simple");
+		break;
+
+	    case `cryptpwd:
+		map<string,map> tg = Storage::GetTargetMap();
+		tg = Storage::AskCryptPasswords( tg );
+		Storage::SetTargetMap(tg);
+		UpdateMainStatus();
+		UpdateNavigationTree(nil);
+		TreePanel::Create();
+		break;
+
+	    case `dasd:
+		// popup text
+		CallConfig(_("Calling DASD configuration cancels all current changes.
+Really call DASD configuration?"), ["yast2-s390"], "dasd");
+		break;
+
+	    case `zfcp:
+		// popup text
+		CallConfig(_("Calling zFCP configuration cancels all current changes.
+Really call zFCP configuration?"), ["yast2-s390"], "zfcp");
+		break;
+
+	    case `xpram:
+		// popup text
+		CallConfig(_("Calling XPRAM configuration cancels all current changes.
+Really call XPRAM configuration?"), ["yast2-s390"], "xpram");
+		break;
+	}
+
+	switch (Event::IsWidgetContextMenuActivated(event))
+	{
+	    case `table:
+		string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+		EpContextMenuDevice(device);
 		break;
 	}
     }

@@ -3,6 +3,8 @@
  * Package:	yast2-storage
  * Summary:	Expert Partitioner
  * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
@@ -27,6 +29,7 @@
 	    // error popup, %1 is replaced by raid type e.g. "RAID1", %2 is replaced by integer
 	    Popup::Error(sformat(_("For %1, select at least %2 device.", "For %1, select at least %2 devices.", min_num),
 				 info[raid_type]:"error", min_num));
+	    UI::SetFocus(`id(`unselected));
 	    return false;
 	}
 	else
@@ -38,7 +41,7 @@
 
     integer DefaultChunkSizeK(string raid_type)
     {
-	map<string, integer> info = $[ "raid0" : 32, "raid5" : 128 ];
+	map<string, integer> info = $[ "raid0" : 32, "raid5" : 128, "raid6" : 128, "raid10" : 32 ];
 	return info[raid_type]:4;
     }
 
@@ -92,16 +95,16 @@ to get the redundancy and performance you want.</p>
 	integer callback(list<map> devices)
 	{
 	    integer sizeK = 0;
-	    Storage::ComputeMdSize(symbolof(toterm(raid_type)), maplist(map device, devices, { return device["device"]:""; }), sizeK);
+	    Storage::ComputeMdSize(tosymbol(raid_type), maplist(map device, devices, { return device["device"]:""; }), sizeK);
 	    return sizeK;
 	}
 
 	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `encrypted, `type ]);
 
 	map<string, map> target_map = Storage::GetTargetMap();
-	list<map> unused_devices = filter(map dev, get_possible_rds(target_map), { return dev["used_by"]:"" == "" &&
+	list<map> unused_devices = filter(map dev, get_possible_rds(target_map), { return !Storage::IsUsedBy(dev) &&
 		    !contains(devices, dev["device"]:""); });
-	list<map> used_devices = filter(map dev, get_possible_rds(target_map), { return dev["used_by"]:"" == "" &&
+	list<map> used_devices = filter(map dev, get_possible_rds(target_map), { return !Storage::IsUsedBy(dev) &&
 		    contains(devices, dev["device"]:""); });
 
 	term contents = `VBox(`Left(
@@ -183,7 +186,7 @@ to get the redundancy and performance you want.</p>
 	    data["devices"] = devices;
 
 	    integer size_k = 0;
-	    Storage::ComputeMdSize(symbolof(toterm(raid_type)), devices, size_k);
+	    Storage::ComputeMdSize(tosymbol(raid_type), devices, size_k);
 	    data["size_k"] = size_k;
 	}
 
@@ -203,15 +206,23 @@ of data that can be written to the devices. A reasonable chunk size for RAID 5 i
 32 kB is a good starting point. For RAID 1, the chunk size does not affect the array very much.</p>
 ");
 
-	if (raid_type == "raid5")
+	if (raid_type == "raid5" || raid_type == "raid6")
 	    // helptext
-	    helptext = helptext + _("<p><b>Parity Algorithm:</b><br>The parity algorithm to use with RAID5.
+	    helptext = helptext + _("<p><b>Parity Algorithm:</b><br>The parity algorithm to use with RAID5/6.
 Left-symmetric is the one that offers maximum performance on typical disks with rotating platters.</p>
 ");
 
 	return helptext;
     }
 
+    list<term> getParTerms( string mdtype, integer sz )
+	{
+	list<list> pars = Storage::AllowdParity( mdtype, sz );
+	return( maplist( list e, pars, 
+			 ``{
+			 return( `item( `id(e[0]:`par_default), e[1]:"" ));
+			 }));
+	}
 
     symbol MiniWorkflowStepRaidOptions(map<string, any> &data)
     {
@@ -219,10 +230,10 @@ Left-symmetric is the one that offers maximum performance on typical disks with 
 
 	string raid_type = data["raid_type"]:"error";
 	integer chunk_size = (data["chunk_size_k"]:DefaultChunkSizeK(raid_type))*1024;
-	symbol parity_algorithm = data["parity_algorithm"]:`left_asymmetric;
+	symbol parity_algorithm = data["parity_algorithm"]:`par_default;
 
 	list<term> chunk_sizes_list = maplist(integer i, Integer::RangeFrom(11, 22), {
-	    return `item(`id(2 << i), Storage::ByteToHumanStringWithPrecision(2 << i, 2, true));
+	    return `item(`id(2 << i), Storage::ByteToHumanStringOmitZeroes(2 << i));
 	});
 
 	term options = `VBox(
@@ -230,15 +241,14 @@ Left-symmetric is the one that offers maximum performance on typical disks with 
 				    `id(chunk_size)))
 	    );
 
-	if (raid_type == "raid5")
+	list<term> par_list = getParTerms( raid_type, size(data["devices"]:[]));
+
+	if (size(par_list)>0)
 	    options = add(options,
 			  `Left(`ComboBoxSelected(`id(`parity_algorithm), `opt(`hstretch),
 						  // combo box label
 						  _("Parity &Algorithm"),
-						  [ `item(`id(`left_asymmetric), "left-asymmetric"),
-						    `item(`id(`left_symmetric), "left-symmetric"),
-						    `item(`id(`right_asymmetric), "right-asymmetric"),
-						    `item(`id(`right_symmetric), "right-symmetric") ],
+						  par_list,
 						  `id(parity_algorithm)))
 		);
 
@@ -293,7 +303,7 @@ Left-symmetric is the one that offers maximum performance on typical disks with 
 	integer callback(list<map> devices)
 	{
 	    integer sizeK = 0;
-	    Storage::ComputeMdSize(symbolof(toterm(raid_type)), maplist(map device, devices, { return device["device"]:""; }), sizeK);
+	    Storage::ComputeMdSize(tosymbol(raid_type), maplist(map device, devices, { return device["device"]:""; }), sizeK);
 	    return sizeK;
 	}
 
@@ -368,7 +378,7 @@ Left-symmetric is the one that offers maximum performance on typical disks with 
 	// dialog title
 	string title = sformat(_("Add RAID %1"), data["device"]:"error");
 
-	symbol widget = MiniWorkflow::Run(title, raid_icon, aliases, sequence, "TypeDevices");
+	symbol widget = MiniWorkflow::Run(title, StorageIcons::raid_icon, aliases, sequence, "TypeDevices");
 
 	return widget == `finish;
     }
@@ -387,7 +397,7 @@ Left-symmetric is the one that offers maximum performance on typical disks with 
 	// dialog title
 	string title = sformat(_("Resize RAID %1"), data["device"]:"error");
 
-	symbol widget = MiniWorkflow::Run(title, raid_icon, aliases, sequence, "TheOne");
+	symbol widget = MiniWorkflow::Run(title, StorageIcons::raid_icon, aliases, sequence, "TheOne");
 
 	return widget == `finish;
     }
@@ -411,7 +421,7 @@ Left-symmetric is the one that offers maximum performance on typical disks with 
 	// dialog title
 	string title = sformat(_("Edit RAID %1"), device);
 
-	symbol widget = MiniWorkflow::Run(title, raid_icon, aliases, sequence, "FormatMount");
+	symbol widget = MiniWorkflow::Run(title, StorageIcons::raid_icon, aliases, sequence, "FormatMount");
 
 	return widget == `finish;
     }

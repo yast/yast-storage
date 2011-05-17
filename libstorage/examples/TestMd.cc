@@ -7,11 +7,10 @@
 
 using namespace storage;
 using namespace std;
-using namespace blocxx;
 
-void scrollbarCb( const string& id, unsigned cur, unsigned max )
+void progressbarCb( const string& id, unsigned cur, unsigned max )
     {
-    cout << "SCROLLBAR id:" << id << " cur:" << cur << " max:" << max << endl;
+    cout << "PROGRESSBAR id:" << id << " cur:" << cur << " max:" << max << endl;
     }
 
 void installInfoCb( const string& info )
@@ -20,12 +19,13 @@ void installInfoCb( const string& info )
     }
 
 void
-printCommitActions( StorageInterface* s )
-    {
-    deque<string> l = s->getCommitActions( false );
-    for( deque<string>::iterator i=l.begin(); i!=l.end(); ++i )
-	cout << *i << endl;
-    }
+printCommitActions(StorageInterface* s)
+{
+    list<CommitInfo> l;
+    s->getCommitInfos(l);
+    for (list<CommitInfo>::iterator i=l.begin(); i!=l.end(); ++i)
+	cout << i->text << endl;
+}
 
 int doCommit( StorageInterface* s )
     {
@@ -50,7 +50,7 @@ main( int argc_iv, char** argv_ppcv )
     int ret = 0;
     initDefaultLogger();
     StorageInterface* s = createStorageInterface(Environment(false));
-    s->setCallbackProgressBar( scrollbarCb );
+    s->setCallbackProgressBar( progressbarCb );
     s->setCallbackShowInstallInfo( installInfoCb );
     string disk = "/dev/hdb";
     string device;
@@ -80,49 +80,49 @@ main( int argc_iv, char** argv_ppcv )
 	}
     if( ret==0 )
 	{
-	deque<string> ds;
+	list<string> ds;
 	ds.push_back( "/dev/hdb5" );
 	ds.push_back( "/dev/hdb6" );
 	ds.push_back( "/dev/hdb7" );
-	ret = s->createMd( "md0", RAID0, ds );
+	ret = s->createMd("md0", RAID0, ds, list<string>());
 	if( ret ) cerr << "retcode:" << ret << endl;
 	}
     if( ret==0 )
 	{
-	deque<string> ds;
+	list<string> ds;
 	ds.push_back( "/dev/hdb8" );
 	ds.push_back( "/dev/hdb9" );
-	ret = s->createMdAny( RAID1, ds, device );
+	ret = s->createMdAny(RAID1, ds, list<string>(), device);
 	cout << "device:" << device << endl;
 	if( ret ) cerr << "retcode:" << ret << endl;
 	}
     if( ret==0 )
 	{
-	deque<string> ds;
+	list<string> ds;
 	ds.push_back( "/dev/hdb10" );
 	ds.push_back( "/dev/hdb11" );
 	ds.push_back( "/dev/hdb12" );
-	ret = s->createMd( "/dev/md2", RAID5, ds );
+	ret = s->createMd("/dev/md2", RAID5, ds, list<string>());
 	if( ret ) cerr << "retcode:" << ret << endl;
 	}
     if( ret==0 )
 	{
-	deque<string> ds;
+	list<string> ds;
 	ds.push_back( "/dev/hdb13" );
 	ds.push_back( "/dev/hdb14" );
 	ds.push_back( "/dev/hdb15" );
 	ds.push_back( "/dev/hdb16" );
-	ret = s->createMd( "/dev/md3", RAID6, ds );
+	ret = s->createMd("/dev/md3", RAID6, ds, list<string>());
 	if( ret ) cerr << "retcode:" << ret << endl;
 	}
     if( ret==0 )
 	{
-	deque<string> ds;
+	list<string> ds;
 	ds.push_back( "/dev/hdb17" );
 	ds.push_back( "/dev/hdb18" );
 	ds.push_back( "/dev/hdb19" );
 	ds.push_back( "/dev/hdb1" );
-	ret = s->createMd( "/dev/md4", RAID10, ds );
+	ret = s->createMd("/dev/md4", RAID10, ds, list<string>());
 	if( ret ) cerr << "retcode:" << ret << endl;
 	}
     if( ret==0 )

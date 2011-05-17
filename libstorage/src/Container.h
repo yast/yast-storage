@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -25,14 +25,17 @@
 
 #include <list>
 
-#include "y2storage/Volume.h"
-#include "y2storage/StorageTypes.h"
-#include "y2storage/StorageTmpl.h"
+#include "storage/Volume.h"
+#include "storage/StorageTypes.h"
+#include "storage/StorageTmpl.h"
+
 
 namespace storage
 {
+    using std::list;
 
-class Container
+
+    class Container : public Device
     {
     friend class Storage;
     protected:
@@ -65,25 +68,23 @@ class Container
 	    { return( !(*this<rhs) ); }
 	bool operator> ( const Container& rhs ) const
 	    { return( !(*this<=rhs) ); }
-	bool sameDevice( const string& device ) const;
 	virtual bool equalContent( const Container& rhs ) const;
-	virtual string getDiffString( const Container& c ) const;
-	virtual void logDifference( const Container& c ) const;
 
-	const std::list<string>& altNames() const { return( alt_names ); }
+	void logDifference(std::ostream& log, const Container& rhs) const;
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const = 0;
 
-	virtual void getCommitActions( std::list<storage::commitAction*>& l ) const;
-	virtual int getToCommit( storage::CommitStage stage,
-	                         std::list<Container*>& col,
-	                         std::list<Volume*>& vol );
+	virtual void getCommitActions(list<commitAction>& l) const;
+	virtual void getToCommit(storage::CommitStage stage, list<const Container*>& col,
+				 list<const Volume*>& vol) const;
 
 	virtual int commitChanges( storage::CommitStage stage );
 	virtual int commitChanges( storage::CommitStage stage, Volume* vol );
 	virtual void changeDeviceName( const string& old, const string& nw ) {}
-	unsigned numVolumes() const;
 	bool isEmpty() const;
 	void getInfo( storage::ContainerInfo& info ) const;
 	bool findVolume( const string& device, Volume*& vol );
+
+	static bool notDeleted(const Container& c) { return !c.deleted(); }
 
 // iterators over volumes of a container
     protected:
@@ -154,36 +155,38 @@ class Container
 	    }
 
     public:
-	Container( Storage * const, const string& Name, storage::CType typ );
-	Container( const Container& );
-	Storage * getStorage() const { return sto; }
-	virtual ~Container();
-	const string& name() const { return nm; }
-	const string& device() const { return dev; }
-	storage::CType type() const { return typ; }
-	bool deleted() const { return del; }
-	bool created() const { return create; }
-	void setDeleted( bool val=true ) { del=val; }
-	void setCreated( bool val=true ) { create=val; }
-	void setSilent( bool val=true ) { silent=val; }
 
-	void clearUsedBy() { uby.clear(); }
-	void setUsedBy(storage::UsedByType ub_type, const string& ub_name) { uby.set(ub_type, ub_name); }
-	const storage::usedBy& getUsedBy() const { return uby; }
-	storage::UsedByType getUsedByType() const { return uby.type(); }
+	Container(Storage* s, const string& name, const string& device, CType typ);
+	Container(Storage* s, const string& name, const string& device, CType typ,
+		  SystemInfo& systemInfo);
+	Container(Storage* s, CType typ, const xmlNode* node);
+	Container(const Container& c);
+	virtual ~Container();
+
+	void saveData(xmlNode* node) const;
+
+	Storage* getStorage() const { return sto; }
+	const Storage* getStorageConst() const { return sto; }
+	CType type() const { return typ; }
+	bool isPartitionable() const;
+	static bool Partitionable( const Container&d ) 
+	    { return( d.isPartitionable() ); }
+	bool isDeviceUsable() const;
+	static bool DeviceUsable( const Container&d ) 
+	    { return( d.isDeviceUsable() ); }
 
 	bool readonly() const { return ronly; }
-	unsigned long minorNr() const { return mnr; }
-	unsigned long majorNr() const { return mjr; }
-	unsigned long long sizeK() const { return size_k; }
-	virtual string removeText(bool doing=true) const;
-	virtual string createText(bool doing=true) const;
+
+	virtual Text removeText(bool doing) const;
+	virtual Text createText(bool doing) const;
 	virtual int resizeVolume( Volume* v, unsigned long long newSize );
 	virtual int removeVolume( Volume* v );
 	static storage::CType staticType() { return storage::CUNKNOWN; }
 	friend std::ostream& operator<< (std::ostream& s, const Container &c );
-	virtual Container* getCopy() const { return( new Container( *this ) ); }
-	bool compareContainer( const Container* c, bool verbose ) const;
+
+	virtual Container* getCopy() const = 0;	// Container is always derived
+
+	bool compareContainer(const Container& rhs, bool verbose) const;
 	void setExtError( const string& txt ) const;
 	void setExtError( const SystemCmd& cmd, bool serr=true ) const;
 
@@ -197,37 +200,31 @@ class Container
 	PlainIterator end() { return vols.end(); }
 
 	virtual void print( std::ostream& s ) const { s << *this; }
-	void addToList( Volume* e )
-	    { pointerIntoSortedList<Volume>( vols, e ); }
+	void addToList(Volume* e);
 	bool removeFromList( Volume* e );
 	virtual int doCreate( Volume * v );
 	virtual int doRemove( Volume * v );
 	virtual int doResize( Volume * v );
-	virtual void logData( const string& Dir ) {}
-	Container& operator=( const Container& );
+
+	virtual void logData(const string& Dir) const {}
 
 	static bool stageDecrease(const Volume& v);
 	static bool stageIncrease(const Volume& v);
 	static bool stageFormat(const Volume& v);
 	static bool stageMount(const Volume& v);
 
-	static const string type_names[COTYPE_LAST_ENTRY];
-
-	Storage * const sto;
-	storage::CType typ;
-	string nm;
-	string dev;
-	bool del;
-	bool create;
-	bool silent;
+	Storage* const sto;
+	const CType typ;
 	bool ronly;
-	storage::usedBy uby;
-	std::list<string> alt_names;
-	unsigned long long size_k;
-	unsigned long mnr;
-	unsigned long mjr;
+
 	VCont vols;
-	mutable storage::ContainerInfo info;
+
+	mutable storage::ContainerInfo info; // workaround for broken ycp bindings
+
+    private:
+
+	Container& operator=(const Container&); // disallow
+
     };
 
 }

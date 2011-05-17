@@ -2,6 +2,7 @@
  * Module: 		FileSystems.ycp
  *
  * Authors:		Johannes Buchhold (jbuch@suse.de)
+ *		Arvin Schnell <aschnell@suse.de>
  *
  * Purpose:
  * These module contains the supported filesystems and their settings.
@@ -11,14 +12,13 @@
  */
 {
   module "FileSystems";
+
   textdomain "storage";
+
   import "Arch";
   import "String";
   import "Partitions";
-  import "Popup";
   import "Encoding";
-
-  import "Mode";
   import "Stage";
 
   import "LibStorage";
@@ -32,7 +32,9 @@ global map<string,any> conv_fs =
        "def_int" : LibStorage::FSUNKNOWN(),
        "m" : $[ LibStorage::REISERFS() : `reiser,
                 LibStorage::EXT2() : `ext2,
-                LibStorage::EXT3() : `ext3,
+                LibStorage::EXT3() : `ext3,   
+		LibStorage::EXT4() : `ext4,
+		LibStorage::BTRFS() : `btrfs,
                 LibStorage::VFAT() : `vfat,
                 LibStorage::XFS() : `xfs,
                 LibStorage::JFS() : `jfs,
@@ -40,6 +42,8 @@ global map<string,any> conv_fs =
                 LibStorage::NTFS() : `ntfs,
                 LibStorage::SWAP() : `swap,
                 LibStorage::NFS() : `nfs,
+		LibStorage::NFS4() : `nfs4,
+		LibStorage::TMPFS() : `tmpfs,
                 LibStorage::FSNONE() : `none
               ]
      ];
@@ -55,12 +59,19 @@ integer fromSymbol( map<string,any> conv, symbol val )
     return( ret );
     }
 
-  global list<string> system_m_points = [ "/", "/usr", "/var", "/opt", 
-                                          Partitions::BootMount() ];
-  global list<string> crypt_m_points = [ "/", Partitions::BootMount(), "/usr" ];
-  list<string> suggest_m_points = [];
-  global list<string> swap_m_points   = [ "swap" ];
-  global list<string> tmp_m_mpoint   = [ "/tmp", "/var/tmp" ];
+
+    // filesystems possible for root volume. used during scan for root volumes.
+    global const list<symbol> possible_root_fs = [ `ext2, `ext3, `ext4, `btrfs, `reiser, `xfs, `jfs ];
+
+
+    global list<string> system_m_points() { return [ "/", "/usr", "/var", "/opt", Partitions::BootMount() ]; }
+    global list<string> crypt_m_points() { return [ "/", Partitions::BootMount(), "/usr" ]; }
+    global const list<string> swap_m_points = [ "swap" ];
+    global const list<string> tmp_m_points = [ "/tmp", "/var/tmp" ];
+
+    list<string> suggest_m_points = [];
+    list<string> suggest_tmp_points = [];
+
 
   global string nchars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -70,17 +81,28 @@ global list<string> SuggestMPoints()
 	{
 	suggest_m_points = [ "/home", "/srv", "/tmp", "/local" ];
 	if( Stage::initial() )
-	    suggest_m_points = (list<string>)union( system_m_points,
+	    suggest_m_points = (list<string>)union( system_m_points(),
 						    suggest_m_points );
 	y2milestone( "SuggestMPoints init:%1", suggest_m_points );
 	}
     return( suggest_m_points );
     }
 
-  any lib_id = nil;
+global list<string> SuggesTmpfsMPoints()
+    {
+    if( size(suggest_tmp_points)==0 )
+	{
+	suggest_tmp_points = [ "/run", "/var/run", "/tmp", "/var/lock" ];
+	y2milestone( "SuggesTmpfsMPoints init:%1", suggest_tmp_points );
+	}
+    return( suggest_tmp_points );
+    }
 
-define list FstabOptionStrings = 
-    [ "defaults", 
+    any sint = nil;
+
+
+    const list<string> FstabOptionStrings = [
+	"defaults",
       "auto", "noauto",
       "atime", "noatime",
       "ro", "rw",
@@ -99,16 +121,19 @@ define list FstabOptionStrings =
       "usrquota", "grpquota"
       ];
 
-define list FstabOptionRegex = [ "pri=[0-9]\+", "iocharset=.\+", "utf8=\.*",
+    const list<string> FstabOptionRegex = [
+	"pri=[0-9]\+", "iocharset=.\+", "utf8=\.*",
                                  "nls=.\+", "codepage=.\+", 
 				 "gid=[0-9]\+", "umask=[0-7]\+",
 				 "loop=.\+", "encryption=.\+",
 				 "pri=[0-9]\+",
 				 "locale=\.\+", "fmask=[0-7]\+", "dmask=[0-7]\+",
-				 "usrjquota=.\+", "grpjquota=.\+", "jqfmt=.\+" ];
+	"usrjquota=.\+", "grpjquota=.\+", "jqfmt=.\+"
+    ];
 
-define map FstabDefaultMap =
-    $[ "pts":    $[ "spec":"devpts", "mount":"/dev/pts", "vfstype":"devpts",
+
+    const map<string, map> FstabDefaultMap = $[
+	"pts":    $[ "spec":"devpts", "mount":"/dev/pts", "vfstype":"devpts",
 		    "mntops":"mode=0620,gid=5", "freq":0, "passno":0 ],
        "proc":   $[ "spec":"proc", "mount":"/proc", "vfstype":"proc", 
                     "mntops":"defaults", "freq":0, "passno":0 ],
@@ -144,6 +169,8 @@ define map FstabDefaultMap =
 		   `xfs		: true,
 		   `ext2        : true,
 		   `ext3        : true,
+		   `ext4        : true,
+		   `btrfs	: true,
 		   `jfs    	: true,
 		   `vfat  	: true,
 		   `ntfs  	: true,
@@ -155,40 +182,8 @@ define map FstabDefaultMap =
 		   `lvm        	: true
   ];
 
-  list<symbol> unsupportFs = [ `jfs ];
+  list<symbol> unsupportFs = [ `jfs, `btrfs ];
 
-
-    map<symbol, map<string, any> > capabilities = $[
-	`reiser		: $[ ],
-	`xfs		: $[ ],
-	`ext2		: $[ ],
-	`ext3		: $[ ],
-	`jfs		: $[ ],
-	`hfs		: $[ ],
-	`vfat		: $[ ],
-	`ntfs		: $[ ],
-	`swap		: $[ ],
-	`unknown	: $[ ]
-    ];
-
-
-    /**
-     * Return a map that contains the mount option for each used_fs (-t)
-     * @return map
-     */
-  /*
-    to mount_string
-    global define used2typeMap()
-    ``{
-	return $[
-		 `ext2   : "ext2",
-		 `ext3   : "ext3",
-		 `reiser : "reiserfs",
-		 `xfs    : "xfs",
-		 `jfs    : "jfs",
-		 `vfat   : "vfat" ];
-    };
-  */
 
 global define list<map<symbol, any> > GetGeneralFstabOptions()
     ``{
@@ -335,6 +330,25 @@ Multiple options are separated by commas.</p>
     return( opt );
     };
 
+  list< map<symbol, any> > tmpfs_fst_options = [
+	$[ `widget 	    : `TextEntry( `id("size"), `opt(`hstretch),
+			      // label text
+			      _("Tmpfs &Size"), "" ),
+	   `query_key   : "size",
+	   `between	: [ 1, 200 ],
+	   `empty_allowed : true,
+	   `valid_chars : "0123456789kKmMgG%",
+	   // popup text
+	   `error_text  : _("Value must be larger than 0. Try again."),
+	   `type : `text,
+	   `str_opt : "size=%1",
+	   `str_scan : "size=\(.*\)",
+	   // help text, richtext format
+	   `help_text   : _("<p><b>Tmpfs Size:</b>
+Size may be either entered as a number followed by K,M,G for Kilo-, Mega- or Gigabyte or
+as a number followeb by a percent sign meaning percentage of memory.</p>")
+     ]];
+
 define map<symbol, map<symbol, any> > GetNormalFilesystems()``{
 
   list< map<symbol, any> > fat_fst_options =
@@ -373,7 +387,7 @@ This codepage is used for converting to shortname characters on FAT file systems
       [
        $[
 	 // label text
-	 `widget		: `ComboBox(`id("opt_number_of_fats"), `opt(`hstretch), _("Number of &FATs"), ["auto" , "1", "2"  ]),
+	 `widget	: `ComboBox(`id("opt_number_of_fats"), `opt(`hstretch), _("Number of &FATs"), [ "auto" , "1", "2" ]),
 	 `query_key	: "opt_number_of_fats",
 	 `option_str	: "-f",
 	     // help text, richtext format
@@ -390,7 +404,7 @@ Specify the number of file allocation tables in the file system. The default is 
 	   `option_str	: "-F",
 	     // help text, richtext format
 	   `help_text	: _("<p><b>FAT size:</b>
-Specifies the type of file allocation tables used (12,  16,  or  32-bit). If auto is specified, YaST2 will automatically select the value most suitable for the file system size.</p>
+Specifies the type of file allocation tables used (12, 16, or 32-bit). If auto is specified, YaST2 will automatically select the value most suitable for the file system size.</p>
 ")
 	 ],
 	 $[
@@ -567,14 +581,14 @@ number of inodes on a file system after its creation, so be sure to enter a reas
 				   `query_key	: "opt_reserved_blocks",
 				   `option_str  : "-m",
 				   //`default 	: 5,
-				   `between	: [ 0 , 99 ], //  -> -1 = infinite
-				   `str_length	: 2,
-				   `valid_chars : "0123456789",
+				   `below	: 99,
+				   `str_length	: 6,
+				   `valid_chars : "0123456789.",
 				   // popup text
-				   `error_text  : _("The \"Percentage of blocks reserved for root\" value is incorrect.\nPlease use a value between 0 and 99."),
+				   `error_text  : _("The \"Percentage of blocks reserved for root\" value is incorrect.\nAllowed are float numbers not larger than 99. (e.g. 0.5)"),
 				   // xgettext: no-c-format
 	     // help text, richtext format
-				   `help_text  	: _("<p><b>Percentage of blocks reserved for root:</b> Specify the percentage of blocks reserved for the super user. This value defaults to 5%.</p>")
+				   `help_text  	: _("<p><b>Percentage of blocks reserved for root:</b> Specify the percentage of blocks reserved for the super user. The default is computed so that normally 1 Gig is reserved. Upper limit for reserved default is 5.0, lowest reserved default is 0.1.</p>")
 				 ],
 			         $[
 				   // checkbox text
@@ -605,18 +619,36 @@ This option specifies the inode size of the file system.</p>\n")
       `widget   	: `CheckBox(`id("opt_dir_index"), `opt(`hstretch), _("&Directory Index Feature")),
       `query_key	: "opt_dir_index",
       `option_str  	: "-O dir_index",
+      `option_false  	: "-O ^dir_index",
       `type             : `boolean,
-      `default          : false,
        // help text, richtext format
       `help_text  	: _("<p><b>Directory Index:</b>
 Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
       ]
   ];
 
-  list< map<symbol, any> > ext3_options = (list< map<symbol, any> >)merge( ext2_options, ext3_only_options );
+list< map<symbol, any> > ext4_only_options = [
+      $[
+      // label text
+      `widget   	: `CheckBox(`id("no_journal"), `opt(`hstretch), _("&No Journal")),
+      `query_key	: "no_journal",
+      `option_str  	: "-O ^has_journal",
+      `type             : `boolean,
+      `default          : false,
+       // help text, richtext format
+      `help_text  	: _("<p><b>No Journal:</b>
+Suppressed use of journaling on filesystem. Only activate this when you really
+know what you are doing.</p>\n")
+      ]
+    ];
 
-  list< map<symbol, any> > ext3_fst_options = [ ];
+  list< map<symbol, any> > ext3_options = (list< map<symbol, any> >)merge( ext2_options, ext3_only_options );
+  list< map<symbol, any> > ext4_options = (list< map<symbol, any> >)merge( ext2_options, ext3_only_options );
+  ext4_options = (list< map<symbol, any> >)merge( ext4_options, ext4_only_options );
+
   list< map<symbol, any> > ext2_fst_options = [ ];
+  list< map<symbol, any> > ext3_fst_options = [ ];
+  list< map<symbol, any> > ext4_fst_options = [ ];
   list< map<symbol, any> > reiser_fst_options = [ ];
 
 
@@ -632,7 +664,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mountpoints 	: SuggestMPoints(),
 				    `mount_option	: "-t ext2",
 				    `mount_string	: "ext2",
-				    `makefstype		: "ext2",
 				    `fst_options  	: ext2_fst_options,
 				    `options  		: ext2_options,
 		      ],
@@ -648,7 +679,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mountpoints 	: SuggestMPoints() ,
 				    `mount_option	: "-t vfat",
 				    `mount_string	: "vfat",
-				    `makefstype		: "fat32",
 				    `needed_modules	: [ "fat", "vfat" ],
 				    `fst_options  	: fat_fst_options,
 				    `options 		: vfat_options
@@ -666,7 +696,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_option 	: "-t reiserfs",
 				    `mount_string	: "reiserfs",
 				    `needed_modules	: [ "reiserfs" ],
-				    `makefstype		: "reiserfs",
 				    `fst_options  	: reiser_fst_options,
 				    `options 		: reiserfs_options
 		      ],
@@ -682,7 +711,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_option 	: "-t xfs",
 				    `mount_string	: "xfs",
 				    `needed_modules	: [ "xfs" ],
-				    `makefstype		: "xfs",
 				    `options 		: xfs_options
 		      ],
 		      `jfs 	: $[
@@ -697,7 +725,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "jfs",
 				    `mount_option	: "-t jfs",
 				    `needed_modules	: [ "jfs" ],
-				    `makefstype		: "jfs",
 				    `options      	: jfs_options
 		      ],
 		      `ext3 	: $[
@@ -711,10 +738,39 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mountpoints 	: SuggestMPoints(),
 				    `mount_string	: "ext3",
 				    `mount_option	: "-t ext3",
-				    `needed_modules	: [ "jbd",  "ext3" ],
-				    `makefstype		: "ext2", // format ext3 as ext2 !!!!!!!!!!!!!!!
+				    `needed_modules	: [ "jbd", "mbcache", "ext3" ],
 				    `fst_options  	: ext3_fst_options,
 				    `options      	: ext3_options
+		      ], 
+		      `ext4 	: $[
+				    `name 		: "Ext4",
+				    `fsid 		: Partitions::fsid_native,
+				    `real_fs            : true,
+				    `supports_format 	: true ,
+				    `fsid_item 		: "0x83 Linux " ,
+				    `fstype 		: "Linux native" ,
+				    `crypt		: true,
+				    `mountpoints 	: SuggestMPoints(),
+				    `mount_string	: "ext4",
+				    `mount_option	: "-t ext4",
+				    `needed_modules	: [ "jbd2", "mbcache", "ext4" ],
+				    `fst_options  	: ext4_fst_options,
+				    `options      	: ext4_options
+		      ],
+		      `btrfs 	: $[
+				    `name 		: "BtrFS",
+				    `fsid 		: Partitions::fsid_native,
+				    `real_fs            : true,
+				    `supports_format 	: true ,
+				    `fsid_item 		: "0x83 Linux " ,
+				    `fstype 		: "Linux native" ,
+				    `crypt		: true,
+				    `mountpoints 	: SuggestMPoints(),
+				    `mount_string	: "btrfs",
+				    `mount_option	: "-t btrfs",
+				    `needed_modules	: [ "btrfs" ],
+				    `fst_options  	: [],
+				    `options      	: []
 		      ],
 		      `hfs 	: $[
 				    `name 		: "MacHFS",
@@ -729,7 +785,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "hfs",
 				    `mount_option	: "-t hfs",
 				    `needed_modules	: [ "hfs" ],
-				    `makefstype		: "hfs",
 				    `fst_options  	: [],
 				    `options      	: []
 		      ],
@@ -746,7 +801,6 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "hfsplus",
 				    `mount_option	: "-t hfsplus",
 				    `needed_modules	: [ "hfsplus" ],
-				    `makefstype		: "",
 				    `fst_options  	: [],
 				    `options      	: []
 		      ],
@@ -763,9 +817,15 @@ Enables use of hashed b-trees to speed up lookups in large directories.</p>\n")
 				    `mount_string	: "ntfs-3g",
 				    `mount_option	: "-t ntfs",
 				    `needed_modules	: [ "ntfs" ],
-				    `makefstype		: "",
 				    `fst_options  	: [],
 				    `options      	: []
+		      ],
+		      `tmpfs 	: $[
+				    `name 		: "TmpFS",
+				    `mountpoints 	: SuggesTmpfsMPoints(),
+				    `mount_string	: "tmpfs",
+				    `mount_option	: "-t tmpfs",
+				    `fst_options  	: tmpfs_fst_options,
 		      ]
   ];
 
@@ -867,38 +927,38 @@ global define map<symbol, map<symbol, any> > GetAllFileSystems(boolean add_swap,
     return ret;
     }
 
+global define map<symbol,any> GetTmpfsFilesystem()
+    {
+    return( GetNormalFilesystems()[`tmpfs]:$[] );
+    }
 
 global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
     ``{
     list< map<symbol, any> > ret = [];
-    if( fsys != `swap )
+    if( fsys == `swap )
+	ret = swap_fst_options;
+    else if( fsys == `tmpfs )
+	ret = tmpfs_fst_options;
+    else
 	{
 	map<symbol, map<symbol, any> > fs = GetAllFileSystems( true, false );
 	ret = fs[fsys,`fst_options]:[];
-	if( contains( [`ext3, `reiser], fsys ) )
+	if( contains( [`ext3, `ext4, `reiser], fsys ) )
 	    {
 	    ret = (list< map<symbol, any> >)union( ret, GetJournalFstabOptions() );
 	    }
-	if( contains( [`ext2, `ext3, `reiser], fsys ) )
+	if( contains( [`ext2, `ext3, `ext4, `reiser], fsys ) )
 	    {
 	    ret = (list< map<symbol, any> >)union( ret, GetAclFstabOptions() );
 	    }
 	}
-    else
-	{
-	ret = swap_fst_options;
-	}
-    y2milestone( "fsys %1", fsys );
-    y2milestone( "ret %1", ret );
-    return( ret );
+    y2milestone("fsys:%1 ret:%2", fsys, ret);
+    return ret;
     };
 
 
-
-
-  /* FileS build fss map with all supported filesystems ( list support ) */
-global define void FileSystems()
-    ``{
+    global void FileSystems()
+    {
     if( Arch::sparc64() || Arch::sparc32() )
 	{
         support[`vfat] = false;
@@ -930,51 +990,10 @@ global define void FileSystems()
     y2milestone( "support %1", support );
     }
 
-global define void InitSlib( any sint )
+
+    global void InitSlib(any value)
     {
-    boolean bval = false;
-    integer val = 0;
-    lib_id = sint;
-    foreach( symbol fs, map<string,any> cap, capabilities,
-	``{
-	if( fs != `unknown )
-	    {
-	    integer id = fromSymbol( conv_fs, fs );
-	    any fsinfo = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
-	    boolean ret = LibStorage::StorageInterface::getFsCapabilities( sint, id, fsinfo );
-	    if( !ret )
-		y2error( "InitSlib fs:%1 id:%2 ret:%3", fs, id, ret );
-	    else
-		{
-		cap = $[];
-		bval = LibStorage::FsCapabilities::swig_isExtendable_get(fsinfo);
-		if( bval )
-		    cap["extend"] = true;
-		bval = LibStorage::FsCapabilities::swig_isReduceable_get(fsinfo);
-		if( bval )
-		    cap["shrink"] = true;
-		bval = LibStorage::FsCapabilities::swig_isExtendableWhileMounted_get(fsinfo);
-		if( bval )
-		    cap["mount_extend"] = true;
-		bval = LibStorage::FsCapabilities::swig_isReduceableWhileMounted_get(fsinfo);
-		if( bval )
-		    cap["mount_shrink"] = true;
-		bval = LibStorage::FsCapabilities::swig_supportsUuid_get(fsinfo);
-		if( bval )
-		    cap["uuid"] = true;
-		bval = LibStorage::FsCapabilities::swig_supportsLabel_get(fsinfo);
-		if( bval )
-		    cap["label"] = true;
-		bval = LibStorage::FsCapabilities::swig_labelWhileMounted_get(fsinfo);
-		if( bval )
-		    cap["set_label_mount"] = true;
-		if( cap["label"]:false )
-		    cap["label_length"] = LibStorage::FsCapabilities::swig_labelLength_get(fsinfo);
-		cap["min_fs_k"] = LibStorage::FsCapabilities::swig_minimalFsSizeK_get(fsinfo);
-		capabilities[fs] = cap;
-		}
-	    }
-	});
+	sint = value;
     }
 
 
@@ -1000,14 +1019,18 @@ global define map<symbol, any> GetFsMap( symbol used_fs )
 	}
     }
 
-  global define string GetName( symbol used_fs, string defaultv )``{
+
+    global string GetName( symbol used_fs, string defaultv )
+    {
       map<symbol,any> fsmap 	= GetFsMap( used_fs);
       string ret        = fsmap[`name]:"";
       if ( ret == "" && used_fs == `ntfs ) ret = "NTFS";	// obsolete? (included in RealFileSystems)
-      if ( ret == "" && used_fs == `nfs ) ret = "NFS";
+      if ( ret == "" && used_fs == `nfs ) ret = "NFS";  
+      if ( ret == "" && used_fs == `nfs4 ) ret = "NFS4";
       if ( ret == "" ) ret = defaultv;
       return ret;
-  }
+    }
+
 
   global define integer GetFsid( symbol used_fs )``{
       map<symbol,any> fsmap 	= GetFsMap( used_fs);
@@ -1054,244 +1077,140 @@ global define map<symbol, any> GetFsMap( symbol used_fs )
      * Return the mount option for each used_fs (-t)
      * @return string
      */
-  global define string GetMountString(symbol used_fs, string defaultv )``{
-      map<symbol,any> fsmap 	= GetFsMap( used_fs);
-      string ret        = fsmap[`mount_string ]:"";
-      if( size(ret)==0 )
-	  {
-	  if( used_fs == `vfat )
-	      {
-	      ret = "vfat";
-	      }
-	  else if( used_fs == `ntfs )
-	      {
-	      ret = "ntfs-3g";
-	      }
-	  }
-      if( ret == "" ) ret = defaultv;
-      y2milestone( "used_fs:%1 ret:%2", used_fs, ret );
-      return ret;
-  }
-
-  global define list<string> GetNeededModules( symbol used_fs )``{
-      list<string> ret = [];
-      map<symbol,any> fsmap 	= GetFsMap( used_fs);
-      if( used_fs==`ntfs && size(fsmap)==0 )
-	{
-	ret = ["ntfs"];
-	}
-      else
-	{
-	ret = fsmap[`needed_modules ]:[];
-	}
-      return ret;
-  }
-
-
-/*
-  global define string GetMakeFsType( symbol used_fs , string defaultv )``{
-      map<symbol,any> fsmap 	= GetFsMap( used_fs);
-      string ret        = fsmap[`makefstype ]:"";
-      if( ret == "" ) ret = defaultv;
-      return ret;
-  }
-*/
-
-
-  /**
-     * Load the kernel module which is necessary to mount a partition with used_fs!
-     * @param used_fs filesystem
-     * @return boolean
-     * old load_fs_module
-     */
-/*
-global define boolean LoadModule( symbol used_fs )
-    ``{
-
-    list<string> all_needed_modules = GetNeededModules( used_fs );
-    y2milestone("all needed modules for %1: %2", used_fs, all_needed_modules );
-    boolean load_success = true;
-
-    SCR::UnmountAgent (.proc.modules);
-    map loaded_modules = (map) SCR::Read(.proc.modules);
-    y2milestone( "loaded_modules %1", loaded_modules );
-
-    foreach( string modulename, all_needed_modules,
-	``{
-	if( modulename != "" &&  size (loaded_modules[modulename]:$[])==0 )
-	    {
-	    if( load_success )
-		load_success = (boolean) SCR::Execute(.target.modprobe, modulename , "" );
-
-	    y2milestone ("Loaded fs module %1 %2", modulename, load_success?"Ok":"Failed");
-	    }
-	});
-    return load_success;
-    };
-*/
-
-
-global define integer MinFsSizeK( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    integer ret = cap["min_fs_k"]:0;
-    y2milestone( "MinFsSizeK fsys:%1 ret:%2", fsys, ret );
-    return( ret );
-    }
-
-global define boolean MountUuid( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    boolean ret = cap["uuid"]:false;
-    y2milestone( "MountUuid fsys:%1 ret:%2", fsys, ret );
-    return( ret );
-    }
-
-global define boolean MountLabel( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    boolean ret = cap["label"]:false;
-    y2milestone( "MountLabel fsys:%1 ret:%2", fsys, ret );
-    return( ret );
-    }
-
-global define boolean ChangeLabelMounted( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    boolean ret = cap["set_label_mount"]:false;
-    y2milestone( "ChangeLabelMounted fsys:%1 ret:%2", fsys, ret );
-    return( ret );
-    }
-
-global define integer LabelLength( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    integer ret = cap["label_length"]:16;
-    y2milestone( "LabelLength fsys:%1 ret:%2", fsys, ret );
-    return( ret );
-    }
-
-global define map IsResizable( symbol fsys )
-    ``{
-    map<string,any> cap = capabilities[`unknown]:$[];
-    cap = capabilities[fsys]:cap;
-    map ret = $[];
-    ret["extend"] = cap["extend"]:false;
-    ret["shrink"] = cap["shrink"]:false;
-    ret["mount_extend"] = cap["mount_extend"]:false;
-    ret["mount_shrink"] = cap["mount_shrink"]:false;
-    y2milestone( "IsResizable fsys:%1 ret:%2", fsys, ret );
-    return( ret );
-    };
-
-global define symbol FsToSymbol( string type )
-    ``{
-    symbol return_value = `none;
-	if( type == "ext2" )
-	  {
-	  return_value = `ext2;
-	  }
-	else if( type == "ext3" )
-	  {
-	  return_value = `ext3;
-	  }
-    else if( regexpmatch( type, "reiser.*" ) )
-	  {
-	  return_value = `reiser;
-	  }
-	else if( type == "jfs" )
-	  {
-	  return_value = `jfs;
-	  }
-	else if( type == "xfs" )
-	  {
-	  return_value = `xfs;
-	  }
-    else if( type == "vfat" || regexpmatch( type, "fat.*" ))
-	  {
-	  return_value = `vfat;
-	  }
-	else if( type == "ntfs" )
-	  {
-	  return_value = `ntfs;
-	  }
-	else if( type == "hfs" )
-	  {
-	  return_value = `hfs;
-	  }
-	else if( type == "swap" )
-	  {
-	  return_value = `swap;
-	  }
-    return( return_value );
+    global string GetMountString(symbol used_fs, string defaultv)
+    {
+	map<symbol, any> fsmap = GetFsMap(used_fs);
+	string ret = fsmap[`mount_string ]:defaultv;
+	y2milestone("GetMountString used_fs:%1 ret:%2", used_fs, ret);
+	return ret;
     }
 
 
-/*
-global define boolean SetVolumeLabel( string dev, map part )
-    ``{
-    boolean ret = false;
-    string cmd = "";
-    symbol fs = part["used_fs"]:`unknown;
-    string label = part["label"]:"";
-    y2milestone( "SetVolumeLabel dev:%1 fs:%2 label:%3", dev, fs, label );
-    if( fs == `ext2 || fs == `ext3 )
-	{
-	cmd = sformat("/sbin/tune2fs -L \"%1\" %2", label, dev );
-	}
-    else if( fs == `xfs )
-	{
-	if( size(label)==0 )
-	    label = "--";
-	cmd = sformat("/usr/sbin/xfs_admin -L %1 %2", label, dev );
-	}
-    else if( fs == `reiser )
-	{
-	cmd = sformat("/sbin/reiserfstune -l \"%1\" %2", label, dev );
-	}
-    if( size(cmd)>0 )
-	{
-	y2milestone( "Excuting cmd:%1", cmd );
-	ret = SCR::Execute(.target.bash, cmd ) == 0;
-	// /sbin/reiserfstune always seems to return 1 even on success
-	if( fs == `reiser )
-	    ret = true;
-	}
-    y2milestone( "SetVolumeLabel ret:%1", ret );
-    return( ret );
-    };
+    global list<string> GetNeededModules(symbol used_fs)
+    {
+	map<symbol, any> fsmap = GetFsMap(used_fs);
+	list<string> ret = fsmap[`needed_modules ]:[];
+	y2milestone("GetNeededModules used_fs:%1 ret:%2", used_fs, ret);
+	return ret;
+    }
 
-global define void DoChangedFsDefaults( map part )
-    ``{
-    string cmd = "";
-    symbol fs = part["used_fs"]:`unknown;
-    string dev = part["device"]:"";
-    if( haskey( part, "loop_dev" ))
+
+    global integer MinFsSizeK(symbol fsys)
+    {
+	integer ret = 0;
+	integer id = fromSymbol(conv_fs, fsys);
+	any caps = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(sint, id, caps))
+	    ret = LibStorage::FsCapabilities::swig_minimalFsSizeK_get(caps);
+	y2milestone("MinFsSizeK fsys:%1 ret:%2", fsys, ret);
+	return ret;
+    }
+
+
+    global boolean MountUuid(symbol fsys)
+    {
+	boolean ret = false;
+	integer id = fromSymbol(conv_fs, fsys);
+	any caps = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(sint, id, caps))
+	    ret = LibStorage::FsCapabilities::swig_supportsUuid_get(caps);
+	y2milestone("MountUuid fsys:%1 ret:%2", fsys, ret);
+	return ret;
+    }
+
+
+    global boolean MountLabel(symbol fsys)
+    {
+	boolean ret = false;
+	integer id = fromSymbol(conv_fs, fsys);
+	any caps = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(sint, id, caps))
+	    ret = LibStorage::FsCapabilities::swig_supportsLabel_get(caps);
+	y2milestone("MountLabel fsys:%1 ret:%2", fsys, ret);
+	return ret;
+    }
+
+
+    global boolean ChangeLabelMounted(symbol fsys)
+    {
+	boolean ret = false;
+	integer id = fromSymbol(conv_fs, fsys);
+	any caps = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(sint, id, caps))
+	    ret = LibStorage::FsCapabilities::swig_labelWhileMounted_get(caps);
+	y2milestone("ChangeLabelMounted fsys:%1 ret:%2", fsys, ret);
+	return ret;
+    }
+
+
+    global integer LabelLength(symbol fsys)
+    {
+	integer ret = 0;
+	integer id = fromSymbol(conv_fs, fsys);
+	any caps = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(sint, id, caps))
+	    ret = LibStorage::FsCapabilities::swig_labelLength_get(caps);
+	y2milestone("LabelLength fsys:%1 ret:%2", fsys, ret);
+	return ret;
+    }
+
+
+    global map<string, boolean> IsResizable(symbol fsys)
+    {
+	map<string, boolean> ret = $[];
+	integer id = fromSymbol(conv_fs, fsys);
+	any caps = LibStorage::FsCapabilities::new("LibStorage::FsCapabilities");
+	if (LibStorage::StorageInterface::getFsCapabilities(sint, id, caps))
 	{
-	dev = part["loop_dev"]:"";
+	    ret = $[
+		"extend" : LibStorage::FsCapabilities::swig_isExtendable_get(caps),
+		"shrink" : LibStorage::FsCapabilities::swig_isReduceable_get(caps),
+		"mount_extend" : LibStorage::FsCapabilities::swig_isExtendableWhileMounted_get(caps),
+		"mount_shrink" : LibStorage::FsCapabilities::swig_isReduceableWhileMounted_get(caps)
+	    ];
 	}
-    if( fs == `ext3 )
-	{
-	y2milestone( "dev:%1 fs:%2", dev, fs );
-	cmd = sformat("/sbin/tune2fs -c %1 -i %2 %3", 500, "2m", dev );
-	y2milestone( "Excuting cmd:%1", cmd );
-	SCR::Execute(.target.bash, cmd );
-	}
-    };
-*/
+	y2milestone("IsResizable fsys:%1 ret:%2", fsys, ret);
+	return ret;
+    }
+
+
+    global symbol FsToSymbol(string type)
+    {
+	symbol ret = `none;
+
+	if (type == "ext2")
+	    ret = `ext2;
+	else if (type == "ext3")
+	    ret = `ext3;
+	else if (type == "ext4")
+	    ret = `ext4;
+	else if (type == "btrfs")
+	    ret = `btrfs;
+	else if (regexpmatch(type, "reiser.*"))
+	    ret = `reiser;
+	else if (type == "jfs")
+	    ret = `jfs;
+	else if (type == "xfs" )
+	    ret = `xfs;
+	else if (type == "vfat" || regexpmatch(type, "fat.*"))
+	    ret = `vfat;
+	else if (type == "ntfs")
+	    ret = `ntfs;
+	else if (type == "hfs")
+	    ret = `hfs;
+	else if (type == "swap")
+	    ret = `swap;
+
+	return ret;
+    }
 
 
 global define boolean IsCryptMp( string mount, boolean prefix )
     ``{
-    boolean ret = contains( crypt_m_points, mount );
+    boolean ret = contains( crypt_m_points(), mount );
     if( !ret && prefix )
 	{
-	list<string> mp = filter(string s, system_m_points, ``(s!="/") );
+	list<string> mp = filter(string s, system_m_points(), ``(s!="/") );
 	foreach(string s, mp,
 	    ``{
 	    ret = ret || search( mount, s + "/" )==0;
@@ -1303,10 +1222,10 @@ global define boolean IsCryptMp( string mount, boolean prefix )
 
 global define boolean IsSystemMp( string mount, boolean prefix )
     ``{
-    boolean ret = contains( system_m_points, mount );
+    boolean ret = contains( system_m_points(), mount );
     if( !ret && prefix )
 	{
-	list<string> mp = filter(string s, system_m_points, ``(s!="/") );
+	list<string> mp = filter(string s, system_m_points(), ``(s!="/") );
 	foreach(string s, mp,
 	    ``{
 	    ret = ret || search( mount, s + "/" )==0;
@@ -1366,7 +1285,7 @@ global define string DefaultFstabOptions( map part )
     ``{
     symbol fsys = part["used_fs"]:`none;
     string fst_default = "";
-    if( part["format"]:false && contains( [`ext2, `ext3, `reiser ], fsys ) )
+    if( part["format"]:false && contains( [`ext2, `ext3, `ext4, `reiser ], fsys ) )
 	{
 	fst_default = "acl,user_xattr";
 	}
@@ -1401,17 +1320,17 @@ global define string DefaultFstabOptions( map part )
 	    fst_default = fst_default + ",codepage=" + code;
 	    }
 	}
+
     any dp = LibStorage::ContVolInfo::new("LibStorage::ContVolInfo");
     string dev = part["device"]:"";
-    LibStorage::StorageInterface::getContVolInfo( lib_id, dev, dp );
-    integer t = LibStorage::ContVolInfo::swig_type_get(dp);
+    LibStorage::StorageInterface::getContVolInfo(sint, dev, dp);
+    integer t = LibStorage::ContVolInfo::swig_ctype_get(dp);
     if( t == LibStorage::DISK() )
 	{
 	any infos = LibStorage::DiskInfo::new("LibStorage::DiskInfo");
-	string disk = LibStorage::ContVolInfo::swig_cname_get(dp);
+	string disk = LibStorage::ContVolInfo::swig_cdevice_get(dp);
 	y2milestone( "DefaultFstabOptions disk:%1", disk );
-	integer r = LibStorage::StorageInterface::getDiskInfo( lib_id, disk, 
-	                                                       infos );
+	integer r = LibStorage::StorageInterface::getDiskInfo(sint, disk, infos);
 	if( r==0 )
 	    {
 	    if(LibStorage::DiskInfo::swig_iscsi_get(infos))
@@ -1422,6 +1341,7 @@ global define string DefaultFstabOptions( map part )
 		}
 	    }
 	}
+
     y2milestone( "DefaultFstabOptions dev %3 fsys %1 is %2", fsys, fst_default, dev );
     return( fst_default );
     }
@@ -1433,7 +1353,7 @@ global map <string, map <string, any> > DefaultFormatOptions( map part )
     symbol fsys = part["used_fs"]:`none;
     if( part["format"]:false )
     {
-	if( fsys==`ext3 )
+	if (contains([ `ext3, `ext4 ], fsys))
 	{
 	    ret["opt_dir_index"] = $[ "option_str" : "-O dir_index",
 				      "option_value" : true ];
@@ -1441,15 +1361,30 @@ global map <string, map <string, any> > DefaultFormatOptions( map part )
 				       "option_value" : true,
 				       "option_cmd" : `tunefs ];
 	}
-	if( Arch::board_pegasos() && contains( [`ext2, `ext3], fsys ) ) 
+	if( Arch::board_pegasos() && contains( [`ext2, `ext3, `ext4], fsys ) ) 
 	{
 	    ret["opt_bytes_per_inode"] = $[ "option_str" : "-I",
 					    "option_value" : "128" ];
 	}
-	if( Arch::s390() && contains( [`ext2, `ext3], fsys ) ) 
+	if( Arch::s390() && contains( [`ext2, `ext3, `ext4], fsys ) ) 
 	{
 	    ret["opt_blocksize"] = $[ "option_str" : "-b",
 	                              "option_value" : "4096" ];
+	}
+	if( contains( [`ext2, `ext3, `ext4], fsys ) ) 
+	{
+	    if( Arch::s390() )
+	    {
+		ret["opt_blocksize"] = $[ "option_str" : "-b",
+					  "option_value" : "4096" ];
+	    }
+	    float f = (1048576.0 / (part["size_k"]:0)) * 100;
+	    if( f > 5 )
+		f = 5;
+	    if( f < 0.1 )
+		f = 0.1;
+	    ret["opt_reserved_blocks"] = $[ "option_str" : "-m",
+					    "option_value" : tostring( f, 1 ) ];
 	}
     }
     y2milestone( "DefaultFormatOptions fsys %1 fmt %2 is %3", fsys, 
@@ -1509,65 +1444,60 @@ global define map CheckFstabOptions( string option_list )
     return( ret );
     }
 
-global define map GetFstabDefaultMap( string key )
-    ``{
-    return( FstabDefaultMap[key]:$[] );
-    }
 
-global define string GetFstabDefaultMntops( string key )
-    ``{
-    map m = GetFstabDefaultMap( key );
-    return( m["mntops"]:"" );
-    }
-
-global define list GetFstabDefaultList( string key )
-    ``{
-    map m = GetFstabDefaultMap( key );
-    return( [ m["spec"]:"", m["mount"]:"", m["vfstype"]:"", m["mntops"]:"",
-              tostring(m["freq"]:0), tostring(m["passno"]:0) ] );
-    }
-
-global define boolean CanDoQuota( map part )
-    ``{
-    list quota_fs = [ `ext2, `ext3, `reiser, `xfs ];
-    return( contains( quota_fs, part["used_fs"]:`unknown ));
-    }
-
-global define boolean HasQuota( map part )
-    ``{
-    boolean ret = false;
-    list<string> opts = splitstring( part["fstopt"]:"", "," );
-    integer i=0;
-    while( !ret && i<size(opts) )
-	{
-	ret = opts[i]:""=="usrquota" || opts[i]:""=="grpquota" ||
-	      search(opts[i]:"","usrjquota=")==0 ||
-	      search(opts[i]:"","grpjquota=")==0;
-	i = i+1;
-	}
-    return( ret );
-    }
-
-global define string RemoveQuotaOpts( string fst_opts )
+    global map GetFstabDefaultMap(string key)
     {
-    list<string> opts = splitstring( fst_opts, "," );
-    opts = filter( string o, opts, 
-                   ``( o!="usrquota" && o!="grpquota" &&
-		       search(o,"usrjquota=")!=0 && search(o,"grpjquota=")!=0 &&
-		       search(o,"jqfmt=")!=0 ));
-    return( mergestring( opts, "," ));
+	return FstabDefaultMap[key]:$[];
     }
 
-global define string AddQuotaOpts( map part, string fst_opts )
+    global list<string> GetFstabDefaultList(string key)
     {
-    string ret = RemoveQuotaOpts( fst_opts );
-    list journal = [ `ext3, `reiser ];
-    if( contains( journal, part["used_fs"]:`unknown ))
-	ret = ret + ",usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv0";
-    else
-	ret = ret + ",usrquota,grpquota";
-    return( ret );
+	map m = GetFstabDefaultMap(key);
+	return [ m["spec"]:"", m["mount"]:"", m["vfstype"]:"", m["mntops"]:"",
+		 tostring(m["freq"]:0), tostring(m["passno"]:0) ];
     }
 
+
+    global boolean CanMountRo(map part)
+    {
+	const list<symbol> no_fs = [ `tmpfs, `swap ];
+	return !contains(no_fs, part["used_fs"]:`unknown);
+    }
+
+    global boolean CanDoQuota(map part)
+    {
+	const list<symbol> quota_fs = [ `ext2, `ext3, `ext4, `btrfs, `reiser, `xfs ];
+	return contains(quota_fs, part["used_fs"]:`unknown);
+    }
+
+    global boolean HasQuota(map part)
+    {
+	list<string> opts = splitstring(part["fstopt"]:"", ",");
+	return find(string opt, opts, {
+	    return opt == "usrquota" || opt == "grpquota" || search(opt, "usrjquota=") == 0 ||
+		search(opt, "grpjquota=") == 0;
+	}) != nil;
+    }
+
+    global string RemoveQuotaOpts(string fst_opts)
+    {
+	list<string> opts = splitstring(fst_opts, ",");
+	opts = filter(string opt, opts, {
+	    return opt != "usrquota" && opt != "grpquota" && search(opt, "usrjquota=") != 0 &&
+		search(opt, "grpjquota=") != 0 && search(opt, "jqfmt=") != 0;
+	});
+	return mergestring(opts, ",");
+    }
+
+    global string AddQuotaOpts(map part, string fst_opts)
+    {
+	const list<symbol> journal = [ `ext3, `ext4, `btrfs, `reiser ];
+	string ret = RemoveQuotaOpts(fst_opts);
+	if (contains(journal, part["used_fs"]:`unknown))
+	    ret = ret + ",usrjquota=aquota.user,grpjquota=aquota.group,jqfmt=vfsv0";
+	else
+	    ret = ret + ",usrquota,grpquota";
+	return ret;
+    }
 
 }

@@ -17,27 +17,20 @@
  *
  * defined functions:
     global define size_of_region (list region) ``{
-    global define size_to_units (integer bytes) ``{
     global define start_of_region (list region) ``{
     global define end_of_region (list region) ``{
     global define num_primary (list partitions) ``{
-    global define contiguous_selection (list selection) ``{
     global define contains_extended (list partitions) ``{
     global define extended_region (list partitions) ``{
-    global define calculate_selected_region (list selection, any extended_region) ``{
     global define can_create_logical (list partitions, integer first_logical,
                                       integer max_logical ) ``{
     global define can_resize( list partitions ) ``{
-    global define renumber_logical_partitions (list partitions) ``{
     global define unused_extended_region (list partitions) ``{
-    global define unused_logical_region (list partitions) ``{
     global define compute_max_partitions (map target) ``{
-    global define compute_max_primary (map target)
  *
  */
 {
     import "Arch";
-    import "Partitions";
 
     textdomain "storage";
 
@@ -49,13 +42,6 @@
 define integer size_of_region (list<integer> region, 
                                           integer bytes_per_unit) ``{
 	return region[1]:0 * bytes_per_unit;
-    };
-
-    // Return the number of units that holds at least BYTES
-
-define integer size_to_units( integer bytes, 
-                                         integer bytes_per_unit) ``{
-	return (bytes + bytes_per_unit - 1) / bytes_per_unit;
     };
 
     // Return the start of the region.
@@ -104,33 +90,6 @@ define integer compute_max_partitions (map disk)
 	return( ret );
 	};
 
-    // return the maximal number of primary partitions
-
-define integer compute_max_primary (map disk) ``{
-	return disk["max_primary"]:4;
-    };
-
-    // Return whether the list of selected partitions is contiguous.
-
-define boolean contiguous_selection (list<map> selection) ``{
-	boolean ret = true;
-	list<integer>    last_region = nil;
-
-	foreach (map pentry, selection, ``{
-	    if (!pentry["create"]:false) {
-		list<integer> region = pentry["region"]:[];
-		symbol type = pentry["type"]:`unknown;
-		if( last_region != nil &&
-		    (end_of_region(last_region) < start_of_region(region)))
-		    {
-		    ret = false;
-		    }
-		last_region = region;
-	    }
-	});
-	return ret;
-    }; // contiguous_selection
-
 
     // Return true if an extended partition exists
 
@@ -162,39 +121,6 @@ define list<integer> extended_region (list<map> partitions) ``{
 	});
 	return ret;
     };
-
-
-    // Return the region for the selected partitions.  If EXTENDED_REGION
-    // is not nil it is used to clip the region so that it is contained
-    // entirely within it.
-
-define list<integer> calculate_selected_region( list selection, 
-                                                list<integer> ext_region ) 
-    ``{
-    integer start = -1;
-    integer end = 0;
-    if( size(selection) > 0) 
-	{
-	start = start_of_region( selection[0,"region"]:[] );
-	end = end_of_region( selection[size(selection)-1,"region"]:[] );
-	}
-    if (start != -1) 
-	{
-	if (size (ext_region)>0) 
-	    {
-	    // Use only the part that is contained in the extended
-	    // partition
-	    if (start >= end_of_region (ext_region))
-		return [ 0, 0 ];
-	    if (start < start_of_region (ext_region))
-		start = start_of_region (ext_region);
-	    if (end > end_of_region (ext_region))
-		end = end_of_region (ext_region);
-	    }
-	return [ start, end - start ];
-	}
-    return [ 0, 0 ];
-    }; // selected_region
 
 
     // Check whether three logical partitions can be created without
@@ -386,25 +312,6 @@ define integer check_win_nt_system( map disk )
     }; // End of check_win_nt_system()
 
 
-    // --------------------------------------------------------------
-    // Renumber the logical partitions if some of them are deleted
-    // The returned list is sorted by partition number instead of region
-
-define list<map> renumber_logical_partitions (list<map> partitions) ``{
-	partitions = sort (map a, map b, partitions, ``(a["nr"]:0 < b["nr"]:0));
-	integer logicals_deleted = 0;
-	return maplist (map pentry, partitions, ``{
-	    if (pentry["type"]:`unknown == `logical) {
-		if (pentry["delete"]:false)
-		    logicals_deleted = logicals_deleted + 1;
-		else
-		    pentry = add (pentry, "nr",
-			    pentry["nr"]:0 - logicals_deleted);
-	    }
-	    return pentry;
-	});
-    };
-
     // Find unused space at the end of the extended partition
 define list<integer> unused_extended_region (list<map> partitions) ``{
 	list<integer> extended = extended_region (partitions);
@@ -419,28 +326,6 @@ define list<integer> unused_extended_region (list<map> partitions) ``{
 	if (end_of_logicals < end_of_region (extended))
 	    return [ end_of_logicals, end_of_region (extended) - end_of_logicals ];
 	return [0, 0];
-    };
-
-
-    // Find unused space at the start of the extended partition
-define list<integer> unused_logical_region (list<map> partitions) ``{
-	list<integer> extended = extended_region (partitions);
-	list logicals = filter (map pentry, partitions, ``(pentry["type"]:`unknown == `logical));
-	integer start_of_logicals = 0;
-
-	if (size (logicals) > 0)
-	    start_of_logicals = start_of_region (logicals[0,"region"]:[]);
-	else
-	    start_of_logicals = start_of_region (extended);
-
-	if (start_of_logicals > start_of_region (extended))
-	    return [ start_of_region(extended), start_of_region (extended) - start_of_logicals ];
-	return [0, 0];
-    };
-
-define integer calculate_needed_swap ()
-    ``{
-    return 1024*1024*Partitions::SwapSizeMb( 0 );
     };
 
 }

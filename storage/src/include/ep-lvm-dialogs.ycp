@@ -3,6 +3,8 @@
  * Package:	yast2-storage
  * Summary:	Expert Partitioner
  * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
@@ -43,7 +45,7 @@ are alphanumeric characters, \".\", \"_\", \"-\" and \"+\"."));
 	    ret = false;
 	}
 	if (!ret)
-	    UI::SetFocus(`id("vgname"));
+	    UI::SetFocus(`id(`vgname));
 
 	return ret;
     }
@@ -68,9 +70,25 @@ with another entry in the /dev directory.\n"), name));
 	}
 
 	if (!ret)
-	    UI::SetFocus(`id("vgname"));
+	    UI::SetFocus(`id(`vgname));
 
 	return ret;
+    }
+
+
+    boolean ConfirmVgDelete( string vgname, list <string> log_volumes )
+    {
+	return ConfirmRecursiveDelete( vgname, log_volumes,
+	    //pop-up dialog title
+	    _("Confirm Deleting of Volume Group"),
+	    //pop-up dialog message part 1: %1 is vol.group name
+	    sformat( _("The volume group \"%1\" contains at least one logical volume.
+If you proceed, the following volumes will be unmounted (if mounted)
+and deleted:"), vgname),
+	    //pop-up dialog message part 2: %1 is vol.group name
+	    sformat( _("Really delete volume group \"%1\" and all related logical volumes?"), vgname)
+	);
+
     }
 
 
@@ -81,10 +99,10 @@ with another entry in the /dev directory.\n"), name));
 	    // error popup, %1, %2 and %3 are replaced by sizes
 	    Popup::Error(sformat(_("The data entered is invalid. Insert a physical extent size larger than %1
 in powers of 2, for example, \"%2\" or \"%3\""),
-			  Storage::KByteToHumanStringWithPrecision(1, 1, true),
-			  Storage::KByteToHumanStringWithPrecision(4, 1, true),
-			  Storage::KByteToHumanStringWithPrecision(4*1024, 1, true)));
-	    UI::SetFocus(`id("pesize"));
+			  Storage::KByteToHumanStringOmitZeroes(1),
+			  Storage::KByteToHumanStringOmitZeroes(4),
+			  Storage::KByteToHumanStringOmitZeroes(4*1024)));
+	    UI::SetFocus(`id(`pesize));
 	    return false;
 	}
 	else
@@ -187,17 +205,17 @@ in volume group \"%2\"."),
 
 	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `encrypted, `type ]);
 
-	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return pv["used_by"]:"" == ""; });
+	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return !Storage::IsUsedBy(pv); });
 
 	term contents = `VBox();
 
 	list<term> pesizes_list = maplist(integer i, Integer::RangeFrom(19, 26), {
-	    return `item(`id(2 << i), Storage::ByteToHumanStringWithPrecision(2 << i, 2, true));
+	    return `item(`id(2 << i), Storage::ByteToHumanStringOmitZeroes(2 << i));
 	});
 
 	// label for input field
-	contents = add(contents, `Left(`InputField(`id("vgname"), _("Volume Group Name"))));
-	contents = add(contents, `Left(`ComboBoxSelected(`id("pesize"), `opt(`editable),
+	contents = add(contents, `Left(`InputField(`id(`vgname), _("Volume Group Name"))));
+	contents = add(contents, `Left(`ComboBoxSelected(`id(`pesize), `opt(`editable),
 							 // label for combo box
 							 _("&Physical Extent Size"), pesizes_list, `id(pesize))));
 
@@ -209,6 +227,7 @@ in volume group \"%2\"."),
 
 	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepVgHelptext());
 	MiniWorkflow::SetLastStep(true);
+	UI::SetFocus(`id(`vgname));
 
 	symbol widget = nil;
 
@@ -221,9 +240,9 @@ in volume group \"%2\"."),
 	    {
 		case `next:
 		{
-		    vgname = (string) UI::QueryWidget(`id("vgname"), `Value);
+		    vgname = (string) UI::QueryWidget(`id(`vgname), `Value);
 
-		    any tmp = UI::QueryWidget(`id("pesize"), `Value);
+		    any tmp = UI::QueryWidget(`id(`pesize), `Value);
 		    if (is(tmp, integer))
 			pesize = (integer) tmp;
 		    else if (!Storage::HumanStringToByte((string) tmp, pesize))
@@ -276,7 +295,7 @@ in volume group \"%2\"."),
 	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `encrypted, `type ]);
 
 	map<string, map> target_map = Storage::GetTargetMap();
-	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return pv["used_by_device"]:"" == ""; });
+	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return !Storage::IsUsedBy(pv); });
 	list<map> used_pvs = filter(map pv, get_possible_pvs(target_map), { return pv["used_by_device"]:"" == "/dev/" + vgname; });
 
 	term contents = `VBox();
@@ -339,7 +358,7 @@ in volume group \"%2\"."),
 	// dialog title
 	string title = _("Add Volume Group");
 
-	symbol widget = MiniWorkflow::Run(title, lvm_icon, aliases, sequence, "TheOne");
+	symbol widget = MiniWorkflow::Run(title, StorageIcons::lvm_icon, aliases, sequence, "TheOne");
 
 	return widget == `finish;
     }
@@ -348,7 +367,9 @@ in volume group \"%2\"."),
     string MiniWorkflowStepLvSizeHelptext()
     {
 	// helptext
-	string helptext = _("<p>Enter the size and stripe number of the new logical volume.</p>");
+	string helptext = _("<p>Enter the size as well as the number and size
+of stripes for the new logical volume. The number of stripes cannot be higher
+than the number of physical volumes of the volume group.</p>");
 
 	return helptext;
     }
@@ -363,7 +384,9 @@ in volume group \"%2\"."),
 	integer size_k = data["size_k"]:max_size_k;
 
 	symbol what = (size_k == max_size_k) ? `max_size : `manual_size;
+	string name = data["name"]:"";
 
+	integer max_stripes = data["max_stripes"]:1;
 	integer stripes = data["stripes"]:1;
 	integer stripe_size = data["stripesize"]:64*1024;
 
@@ -375,20 +398,21 @@ in volume group \"%2\"."),
 					      `VBox(
 						  `LeftRadioButton(`id(`max_size), `opt(`notify),
 								   sformat(_("Maximum Size (%1)"), Storage::KByteToHumanString(max_size_k))),
-						  `LeftRadioButtonWithAttachment(`id(`manual_size), `opt(`notify), _("Manual Size"),
+						  `LeftRadioButtonWithAttachment(`id(`manual_size), `opt(`notify), _("Custom Size"),
 										 `VBox(`id(`manual_size_attachment),
-										       `MinWidth(15, `InputField(`id(`size_input), `opt(`shrinkable), _("Size")))
+										       `MinWidth(15, `InputField(`id(`size_input),
+														 `opt(`shrinkable), _("Size")))
 										     )
 						      )
 						  )
 				)));
 
-	list<term> stripes_list = maplist(integer i, Integer::RangeFrom(1, 9), {
+	list<term> stripes_list = maplist(integer i, Integer::RangeFrom(1, max_stripes + 1), {
 	    return `item(`id(i), tostring(i));
 	});
 
 	list<term> stripe_sizes_list = maplist(integer i, Integer::RangeFrom(11, 20), {
-	    return `item(`id(2 << i), Storage::ByteToHumanStringWithPrecision(2 << i, 2, true));
+	    return `item(`id(2 << i), Storage::ByteToHumanStringOmitZeroes(2 << i));
 	});
 
 	// heading for frame
@@ -404,6 +428,8 @@ in volume group \"%2\"."),
 
 	term contents = `HVSquash(frames);
 
+	//A dialog title - %1 is a logical volume name, %2 is a volume group.
+	MiniWorkflow::SetTitle(sformat(_("Add Logical volume %1 on %2"), name, "/dev/" + data["vg_name"]:"error"));
 	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepLvSizeHelptext());
 	MiniWorkflow::SetLastStep(false);
 
@@ -426,6 +452,7 @@ in volume group \"%2\"."),
 
 		case `manual_size:
 		    UI::ChangeWidget(`id(`manual_size_attachment), `Enabled, true);
+		    UI::SetFocus(`id(`size_input));
 		    break;
 
 		case `stripes:
@@ -442,8 +469,8 @@ in volume group \"%2\"."),
 			if (!Storage::HumanStringToKByteWithRangeCheck(tmp, size_k, min_size_k, max_size_k))
 			{
 			    Popup::Error(sformat(_("The size entered is invalid. Enter a size between %1 and %2."),
-					  Storage::KByteToHumanString(min_size_k),
-					  Storage::KByteToHumanString(max_size_k)));
+						 Storage::KByteToHumanString(min_size_k),
+						 Storage::KByteToHumanString(max_size_k)));
 			    widget = `again;
 			}
 		    }
@@ -493,7 +520,7 @@ in volume group \"%2\"."),
 	// dialog title
 	string title = sformat(_("Resize Volume Group %1"), data["device"]:"error");
 
-	symbol widget = MiniWorkflow::Run(title, lvm_icon, aliases, sequence, "TheOne");
+	symbol widget = MiniWorkflow::Run(title, StorageIcons::lvm_icon, aliases, sequence, "TheOne");
 
 	return widget == `finish;
     }
@@ -528,6 +555,7 @@ in volume group \"%2\"."),
 
 	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepLvNameHelptext());
 	MiniWorkflow::SetLastStep(false);
+	UI::SetFocus(`id(`lvname));
 
 	symbol widget = nil;
 
@@ -582,10 +610,10 @@ in volume group \"%2\"."),
 	    "Commit"      : $[ `finish : `finish ]
 	];
 
-	// dialog title
+	// dialog title, %1 is a volume group
 	string title = sformat(_("Add Logical Volume on %1"), "/dev/" + data["vg_name"]:"error");
 
-	symbol widget = MiniWorkflow::Run(title, lvm_lv_icon, aliases, sequence, "Name");
+	symbol widget = MiniWorkflow::Run(title, StorageIcons::lvm_lv_icon, aliases, sequence, "Name");
 
 	return widget == `finish;
     }
@@ -606,10 +634,10 @@ in volume group \"%2\"."),
 	    "Password"    : $[ `finish : `finish ]
 	];
 
-	// dialog title
-	string title = sformat(_("Edit Logical Volume %1"), device);
+	// dialog title - %1 is a logical volume name, %2 is a volume group
+	string title = sformat(_("Edit Logical Volume %1 on %2"), data["name"]:"", regexpsub( device, "^(.*)/[^/]*$", "\\1" ) );
 
-	symbol widget = MiniWorkflow::Run(title, lvm_lv_icon, aliases, sequence, "FormatMount");
+	symbol widget = MiniWorkflow::Run(title, StorageIcons::lvm_lv_icon, aliases, sequence, "FormatMount");
 
 	return widget == `finish;
     }

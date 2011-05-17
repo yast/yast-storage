@@ -1,0 +1,184 @@
+/**
+ * File:	ep-tmpfs.ycp
+ * Package:	yast2-storage
+ * Summary:	Expert Partitioner
+ * Authors:	Thomas Fehr <fehr@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
+ */
+{
+    textdomain "storage";
+
+    include "partitioning/ep-tmpfs-dialogs.ycp";
+    include "partitioning/ep-tmpfs-lib.ycp";
+
+
+    void EpContextMenuTmpfs(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`delete), _("Delete")) ]);
+
+	switch (widget)
+	{
+	    case `delete:
+		EpDeleteTmpfsDevice(device);
+		break;
+	}
+    }
+
+    void HandleTmpfsButtons( any user_data, string device, map event )
+	{
+	y2milestone( "HandleTmpfsButtons device:%1 user_data:%2 event:%3",
+	             device, event, user_data );
+	string disk_device = "";
+
+	if (user_data == nil)
+	    {
+	    map disk = nil;
+	    map part = nil;
+
+	    map<string, map> target_map = Storage::GetTargetMap();
+	    SplitDevice(target_map, device, disk, part);
+	    disk_device = (string) disk["device"]:"";
+	    }
+	else
+	    {
+	    disk_device = (string) user_data;
+	    }
+
+	switch (Event::IsWidgetActivated(event))
+	    {
+	    case `delete:
+		EpDeleteTmpfsDevice(device);
+		break;
+
+	    case `add:
+		EpAddTmpfsDevice();
+		break;
+	    }
+	}
+
+    void CreateTmpfsMainPanel(any user_data)
+	{
+	list<symbol> fields = StorageSettings::FilterTable([ `size, `type,
+							     `fs_type, `mount_point ]);
+							     
+	map<string, map> target_map = Storage::GetTargetMap();
+	term table_header = StorageFields::TableHeader(fields);
+	list<term> table_contents = StorageFields::TableContents(fields, target_map, StorageFields::PredicateTmpfs);
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  `HStretch(),
+				  // heading
+				  `IconAndHeading(_("Tmpfs Volumes (TMPFS)"), StorageIcons::dm_icon ),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
+				         table_header, table_contents),
+				  ArrangeButtons([ // push button text
+						   `PushButton(`id(`add),`opt(`key_F3), _("Add...")),
+						   // push button text
+						   `PushButton(`id(`delete),`opt(`key_F5), _("Delete...")),
+                                                   `HStretch() ])
+				  )
+			      ));
+
+	// helptext
+	string helptext = _("<p>This view shows all TMPFS volumes.</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
+	}
+
+    void HandleTmpfsMainPanel(any user_data, map event)
+	{
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+	HandleTmpfsButtons( user_data, device, event );
+	switch (Event::IsWidgetContextMenuActivated(event))
+	    {
+	    case `table:
+		EpContextMenuDevice(device);
+		break;
+	    }
+	UI::SetFocus(`id(`table));
+	}
+
+
+    void CreateTmpfsOverviewTab(any user_data)
+    {
+	string device = (string) user_data;
+	y2milestone( "CreateTmpfsOverviewTab user_data:%1", user_data );
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `used_by,
+								`heading_filesystem, `fs_type, `mount_point,
+								`mount_by ]);
+
+	UI::ReplaceWidget(`tab_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  StorageFields::Overview(fields, target_map, device),
+				  `HBox(
+				      // push button text
+				      `PushButton(`id(`delete), _("Delete...")),
+				      `HStretch()
+				      )
+				  )
+			      )
+	    );
+
+	// helptext
+	string helptext = _("<p>This view shows detailed information about the
+selected TMPFS volume.</p>");
+
+	Wizard::RestoreHelp(helptext + StorageFields::OverviewHelptext(fields));
+    }
+
+
+    void HandleTmpfsOverviewTab(any user_data, map event)
+    {
+	string device = (string) user_data;
+	y2milestone( "HandleTmpfsOverviewTab user_data:%1", user_data );
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `add:
+		EpAddTmpfsDevice();
+		break;
+	    case `delete:
+		EpDeleteTmpfsDevice(device);
+		break;
+	}
+    }
+
+
+    void CreateTmpfsPanel(any user_data)
+    {
+	string device = (string) user_data;
+	y2milestone( "CreateTmpfsPanel user_data:%1 device:%2", user_data, device );
+
+	map<symbol, map> data = $[ `overview : $[ `create : CreateTmpfsOverviewTab, `handle : HandleTmpfsOverviewTab, `user_data : user_data ]
+				 ];
+
+	UI::ReplaceWidget(`tree_panel,
+			  Greasemonkey::Transform(
+			      `VBox(
+				  // heading
+				  `IconAndHeading(sformat(_("Tmpfs mounted at %1"), device), StorageIcons::lvm_lv_icon),
+				  `DumbTab(`id(`tab), [
+					       // push button text
+					       `item(`id(`overview), _("&Overview"))
+					       ],
+					   `ReplacePoint(`id(`tab_panel), TabPanel::empty_panel)
+				      )
+				  )
+			      )
+	    );
+
+	TabPanel::Init(data, `overview);
+    }
+
+
+    void HandleTmpfsPanel(any user_data, map event)
+    {
+	TabPanel::Handle(event);
+    }
+}

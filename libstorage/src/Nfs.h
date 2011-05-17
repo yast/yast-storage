@@ -23,7 +23,7 @@
 #ifndef NFS_H
 #define NFS_H
 
-#include "y2storage/Volume.h"
+#include "storage/Volume.h"
 
 namespace storage
 {
@@ -32,9 +32,11 @@ class NfsCo;
 class Nfs : public Volume
     {
     public:
-	Nfs( const NfsCo& d, const string& NfsDev );
-	Nfs( const NfsCo& d, const Nfs& rhs );
+
+	Nfs(const NfsCo& c, const string& NfsDev, bool nfs4);
+	Nfs(const NfsCo& c, const Nfs& v);
 	virtual ~Nfs();
+
 	friend std::ostream& operator<< (std::ostream& s, const Nfs& l );
 
 	static string canonicalName( const string& dev );
@@ -44,15 +46,20 @@ class Nfs : public Volume
 
 	void getInfo( storage::NfsInfo& info ) const;
 	bool equalContent( const Nfs& rhs ) const;
-	void logDifference( const Nfs& d ) const;
 
-	string removeText( bool doing=true ) const;
+	void logDifference(std::ostream& log, const Nfs& rhs) const;
+
+	Text removeText(bool doing) const;
 
     protected:
-	void init();
-	Nfs& operator=( const Nfs& );
 
-	mutable storage::NfsInfo info;
+	mutable storage::NfsInfo info; // workaround for broken ycp bindings
+
+    private:
+
+	Nfs(const Nfs&);	    // disallow
+	Nfs& operator=(const Nfs&); // disallow
+
     };
 
 }

@@ -24,19 +24,15 @@
 #define REGEX_H
 
 
-/*
- *  Author: Arvin Schnell
- */
-
-
 #include <regex.h>
 #include <string>
 #include <boost/noncopyable.hpp>
 
-using std::string;
 
 namespace storage
 {
+    using std::string;
+
 
 class Regex : boost::noncopyable
 {
@@ -46,7 +42,7 @@ public:
     Regex (const string& pattern, int cflags = REG_EXTENDED, unsigned int = 10);
     ~Regex ();
 
-    string getPattern () const { return pattern; };
+    string getPattern () const { return pattern; }
     int getCflags () const { return cflags; }
 
     bool match (const string&, int eflags = 0) const;

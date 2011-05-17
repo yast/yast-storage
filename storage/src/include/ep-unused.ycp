@@ -3,10 +3,14 @@
  * Package:     yast2-storage
  * Summary:     Expert Partitioner
  * Authors:     Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
+
     include "partitioning/ep-dialogs.ycp";
+
 
     void CreateUnusedPanel(any user_data)
     {
@@ -16,8 +20,8 @@
 
 	    if (partition == nil)
 	    {
-		if (disk["partitions"]:[] == [] &&
-		    disk["used_by_type"]:`UB_NONE == `UB_NONE)
+		if (isempty(disk["partitions"]:[]) &&
+		    !Storage::IsUsedBy(disk))
 		{
 		    return `show;
 		}
@@ -27,8 +31,8 @@
 	    else
 	    {
 		if (partition["type"]:`primary != `extended &&
-		    partition["mount"]:"" == "" &&
-		    partition["used_by_type"]:`UB_NONE == `UB_NONE)
+		    isempty(partition["mount"]:"") &&
+		    !Storage::IsUsedBy(partition))
 		{
 		    return `show;
 		}
@@ -37,8 +41,8 @@
 	    }
 	}
 
-	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `type,
-							     `fs_type, `label ]);
+	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `format,
+							     `encrypted, `type, `fs_type, `label ]);
 
 	map<string, map> target_map = Storage::GetTargetMap();
 
@@ -49,8 +53,8 @@
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // heading
-				  `IconAndHeading(_("Unused Devices"), unused_icon),
-				  `Table(`id(`table), `opt(`keepSorting, `notify),
+				  `IconAndHeading(_("Unused Devices"), StorageIcons::unused_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 					 table_header, table_contents),
 				  `HBox(
 				      // push button text
@@ -69,9 +73,18 @@ have no logical volumes.</p>");
     }
 
 
-    void HandleUnusedPanel(any user_data, symbol widget)
+    void HandleUnusedPanel(any user_data, map event)
     {
-	switch (widget)
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+
+	switch (Event::IsWidgetContextMenuActivated(event))
+	{
+	    case `table:
+		EpContextMenuDevice(device);
+		break;
+	}
+
+	switch (Event::IsWidgetActivated(event))
 	{
 	    case `rescan:
 		// popup message

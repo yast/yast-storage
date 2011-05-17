@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -25,16 +25,23 @@
 
 #include <list>
 
-#include "y2storage/Container.h"
-#include "y2storage/Partition.h"
+#include "storage/Container.h"
+#include "storage/Partition.h"
+#include "storage/Geometry.h"
+
 
 namespace storage
 {
+    using std::list;
+
 
 class Storage;
 class SystemCmd;
-class ProcPart;
+    class SystemInfo;
+    class ArchInfo;
+class ProcParts;
 class Region;
+
 
 class Disk : public Container
     {
@@ -52,35 +59,45 @@ class Disk : public Container
 	};
 
     public:
-	Disk( Storage * const s, const string& Name, unsigned long long Size );
-	Disk( Storage * const s, const string& Name, unsigned num, 
-	      unsigned long long Size, ProcPart& ppart );
-	Disk( const Disk& rhs );
+
+	Disk(Storage* s, const string& name, const string& device, unsigned long long Size,
+	     SystemInfo& systeminfo);
+	Disk(Storage* s, const string& name, const string& device, unsigned num, 
+	     unsigned long long Size, SystemInfo& systeminfo);
+	Disk(Storage* s, const xmlNode* node);
+	Disk(const Disk& c);
 	virtual ~Disk();
 
-	unsigned long cylinders() const { return cyl; }
-	unsigned heads() const { return head; }
-	unsigned sectors() const { return sector; }
+	void saveData(xmlNode* node) const;
+
+	unsigned long cylinders() const { return geometry.cylinders; }
+	unsigned heads() const { return geometry.heads; }
+	unsigned sectors() const { return geometry.sectors; }
+	unsigned sectorSize() const { return geometry.sector_size; }
+	const Geometry& getGeometry() const { return geometry; }
 
 	Region usableCylRegion() const;
 
 	unsigned long numMinor() const { return range; }
-	unsigned long cylSizeB() const { return byte_cyl; }
 	unsigned maxPrimary() const { return max_primary; }
 	bool extendedPossible() const { return ext_possible; }
 	unsigned maxLogical() const { return max_logical; }
 	const string& labelName() const { return label; }
-	const string& udevPath() const { return udev_path; }
-	const std::list<string>& udevId() const { return udev_id; }
+	virtual string udevPath() const { return udev_path; }
+	virtual list<string> udevId() const { return udev_id; }
 	void setSlave( bool val=true ) { dmp_slave=val; }
 	void setAddpart( bool val=true ) { no_addpart=!val; }
 	void setNumMinor( unsigned long val ) { range=val; }
-	const string& sysfsDir() const { return sysfs_dir; }
+
+	virtual string procName() const { return nm; }
+	virtual string sysfsPath() const;
+
 	unsigned numPartitions() const;
 	bool isDasd() const { return( nm.find("dasd")==0 ); }
-	bool isIScsi() const { return iscsi; }
+	bool isIScsi() const { return transport == ISCSI; }
+	static bool isIScsi(const Disk& d) { return d.isIScsi(); }
 	bool isLogical( unsigned nr ) const;
-	bool detect( ProcPart& ppart );
+	bool detect(SystemInfo& systeminfo);
 	static storage::CType staticType() { return storage::DISK; }
 	friend std::ostream& operator<< (std::ostream&, const Disk& );
 	void triggerUdevUpdate() const;
@@ -100,16 +117,14 @@ class Disk : public Container
 	bool initializeDisk() const { return init_disk; }
 	void resetInitDisk() { init_disk=false; }
 	int forgetChangePartitionId( unsigned nr );
-	int changePartitionArea( unsigned nr, unsigned long start, 
-	                         unsigned long size, bool checkRelaxed=false );
+	int changePartitionArea(unsigned nr, const Region& cylRegion, bool checkRelaxed = false);
 	int nextFreePartition(storage::PartitionType type, unsigned& nr,
 			      string& device) const;
 	int destroyPartitionTable( const string& new_label );
 	unsigned availablePartNumber(storage::PartitionType type = storage::PRIMARY) const;
-	virtual void getCommitActions( std::list<storage::commitAction*>& l ) const;
-	virtual int getToCommit( storage::CommitStage stage, 
-	                         std::list<Container*>& col,
-				 std::list<Volume*>& vol );
+	virtual void getCommitActions(list<commitAction>& l) const;
+	virtual void getToCommit(storage::CommitStage stage, list<const Container*>& col,
+				 list<const Volume*>& vol) const;
 	virtual int commitChanges( storage::CommitStage stage );
 	int commitChanges( storage::CommitStage stage, Volume* vol );
 	int freeCylindersAroundPartition(const Partition* p, unsigned long& freeCylsBefore,
@@ -122,34 +137,39 @@ class Disk : public Container
 	unsigned int numPrimary() const;
 	bool hasExtended() const;
 	unsigned int numLogical() const;
-	string setDiskLabelText( bool doing=true ) const;
+	Text setDiskLabelText(bool doing) const;
 
-	unsigned long long cylinderToKb( unsigned long ) const;
-	unsigned long kbToCylinder( unsigned long long ) const;
+	unsigned long long cylinderToKb(unsigned long cylinder) const
+	    { return geometry.cylinderToKb(cylinder); }
+	unsigned long kbToCylinder(unsigned long long kb) const
+	    { return geometry.kbToCylinder(kb); }
 
-	unsigned long long sectorToKb(unsigned long long sector) const;
-	unsigned long long kbToSector(unsigned long long kb) const;
+	unsigned long long sectorToKb(unsigned long long sector) const
+	    { return geometry.sectorToKb(sector); }
+	unsigned long long kbToSector(unsigned long long kb) const
+	    { return geometry.kbToSector(kb); }
 
-	string getPartName( unsigned nr ) const;
+	string getPartName(unsigned nr) const;
+	string getPartDevice(unsigned nr) const;
+
 	void getInfo( storage::DiskInfo& info ) const;
 	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& d ) const;
-	Disk& operator= ( const Disk& rhs );
+
+	void logDifference(std::ostream& log, const Disk& rhs) const;
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
+
 	bool FakeDisk() const { return(range==1); }
 
-	static string getPartName( const string& disk, unsigned nr );
-	static string getPartName( const string& disk, const string& nr );
 	static std::pair<string,unsigned> getDiskPartition( const string& dev );
+
 	static bool getDlabelCapabilities(const string& dlabel,
 					  storage::DlabelCapabilities& dlabelcapabilities);
 
 	struct SysfsInfo
 	{
-	    unsigned long mjr;
-	    unsigned long mnr;
-	    string device;
 	    unsigned long range;
 	    unsigned long long size;
+	    bool vbd;
 	};
 
 	static bool getSysfsInfo(const string& sysfsdir, SysfsInfo& sysfsinfo);
@@ -206,47 +226,41 @@ class Disk : public Container
 	    }
 
     protected:
-	Disk( Storage * const s, const string& File );
+
 	virtual bool detectGeometry();
-	virtual bool detectPartitions( ProcPart& ppart );
-	bool getSysfsInfo( const string& SysFsDir );
-	int checkSystemError( const string& cmd_line, const SystemCmd& cmd );
+	virtual bool detectPartitions(SystemInfo& systeminfo);
+	bool getSysfsInfo();
+	int checkSystemError( const string& cmd_line, const SystemCmd& cmd ) const;
 	int execCheckFailed( const string& cmd_line, bool stop_hald=true );
 	int execCheckFailed( SystemCmd& cmd, const string& cmd_line,
-			     bool stop_hald=true );
-	bool checkPartedOutput( const SystemCmd& cmd, ProcPart& ppart );
-	bool scanPartedLine( const string& Line, unsigned& nr,
-	                     unsigned long& start, unsigned long& csize,
-			     storage::PartitionType& type, 
-			     unsigned& id, bool& boot );
-	bool scanPartedSectors( const string& Line, unsigned& nr,
-				unsigned long long& start,
-				unsigned long long& ssize ) const;
-	bool checkPartedValid( const ProcPart& pp, const string& diskname,
-	                       std::list<Partition*>& pl, unsigned long& rng );
-	int callDelpart( unsigned nr ) const;
-	int callAddpart( unsigned nr, unsigned long long sstart,
-			 unsigned long long ssize ) const;
-	bool getPartedValues( Partition *p );
+	                     bool stop_hald=true );
+	bool checkPartedOutput(SystemInfo& systeminfo);
+	list<string> partitionsKernelKnowns(const ProcParts& parts) const;
+	bool checkPartedValid(SystemInfo& systeminfo, list<Partition*>& pl,
+			      unsigned long& rng) const;
+	virtual bool checkPartitionsValid(SystemInfo& systeminfo, const list<Partition*>& pl) const;
+
+	bool callDelpart(unsigned nr) const;
+	bool callAddpart(unsigned nr, const Region& blkRegion) const;
+
+	bool getPartedValues( Partition *p ) const;
 	bool getPartedSectors( const Partition *p, unsigned long long& start,
-	                       unsigned long long& end );
-	const Partition * getPartitionAfter( const Partition * p );
+	                       unsigned long long& end ) const;
+	const Partition * getPartitionAfter( const Partition * p ) const;
 	void addPartition( unsigned num, unsigned long long sz, 
-	                   ProcPart& ppart );
+	                   SystemInfo& ppart );
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new Disk( *this ) ); }
-	void getGeometry( const string& line, unsigned long& c, 
-			  unsigned& h, unsigned& s );
 	virtual void redetectGeometry();
 	void changeNumbers( const PartIter& b, const PartIter& e, 
 	                    unsigned start, int incr );
-	int createChecks( storage::PartitionType& type, unsigned long start,
-	                  unsigned long len, bool checkRelaxed );
+	int createChecks(PartitionType& type, const Region& cylRegion, bool checkRelaxed) const;
 	void removePresentPartitions();
 	void removeFromMemory();
 	void enlargeGpt();
 
-	static bool notDeleted( const Partition&d ) { return( !d.deleted() ); }
+	/* size of extended partition in proc and sysfs in 512 byte blocks */
+	unsigned long long procExtendedBlks() const;
 
 	virtual int doCreate( Volume* v );
 	virtual int doRemove( Volume* v );
@@ -254,40 +268,40 @@ class Disk : public Container
 	virtual int doSetType( Volume* v );
 	virtual int doCreateLabel();
 
-	void logData( const string& Dir );
+	virtual void logData(const string& Dir) const;
+
 	void setLabelData( const string& );
 
-	static string defaultLabel(bool efiboot, unsigned long long num_sectors);
+	string defaultLabel() const;
 
 	static const label_info labels[];
 	static const string p_disks[];
 
-	unsigned int logical_sector_size;
+	Geometry geometry;
+	Geometry new_geometry;
 
-	unsigned long cyl;
-	unsigned head;
-	unsigned sector;
-	unsigned long new_cyl;
-	unsigned new_head;
-	unsigned new_sector;
 	string label;
 	string udev_path;
-	std::list<string> udev_id;
+	list<string> udev_id;
 	string detected_label;
-	string system_stderr;
 	string logfile_name;
-	string sysfs_dir;
 	unsigned max_primary;
 	bool ext_possible;
 	unsigned max_logical;
 	bool init_disk;
-	bool iscsi;
+	Transport transport;
 	bool dmp_slave;
 	bool no_addpart;
 	bool gpt_enlarge;
-	unsigned long byte_cyl;
 	unsigned long range;
-	mutable storage::DiskInfo info;
+	bool del_ptable;
+
+	mutable storage::DiskInfo info; // workaround for broken ycp bindings
+
+    private:
+
+	Disk& operator=(const Disk&); // disallow
+
     };
 
 }

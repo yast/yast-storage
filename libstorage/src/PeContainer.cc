@@ -19,34 +19,105 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream>
+#include <ostream>
 #include <sstream>
 #include <utility>
 
-#include "y2storage/PeContainer.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
+#include "storage/PeContainer.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/SystemCmd.h"
+#include "storage/StorageDefines.h"
+#include "storage/Regex.h"
 
-using namespace std;
-using namespace storage;
 
-PeContainer::PeContainer( Storage * const s, CType t ) :
-    Container(s,"",t)
+namespace storage
+{
+    using namespace std;
+
+
+    PeContainer::PeContainer(Storage* s, const string& name, const string& device, CType t)
+	: Container(s, name, device, t), pe_size(1), num_pe(0), free_pe(0)
     {
-    y2deb("constructing pe container type " << t);
-    init();
+	y2deb("constructing PeContainer name:" << name << " ctype:" << toString(t));
     }
 
-PeContainer::~PeContainer()
+
+    PeContainer::PeContainer(Storage* s, const string& name, const string& device, CType t,
+			     SystemInfo& systeminfo)
+	: Container(s, name, device, t, systeminfo), pe_size(1), num_pe(0), free_pe(0)
     {
-    y2deb("destructed pe container " <<  dev);
+	y2deb("constructing PeContainer name:" << name << " ctype:" << toString(t));
     }
 
-void PeContainer::unuseDev()
+
+    PeContainer::PeContainer(Storage* s, CType t, const xmlNode* node)
+	: Container(s, t, node), pe_size(1), num_pe(0), free_pe(0)
+    {
+	getChildValue(node, "pe_size_k", pe_size);
+	getChildValue(node, "pe_count", num_pe);
+	getChildValue(node, "pe_free", free_pe);
+
+	const list<const xmlNode*> l = getChildNodes(node, "physical_extent");
+	for (list<const xmlNode*>::const_iterator it = l.begin(); it != l.end(); ++it)
+	{
+		Pv tmp = Pv(*it);
+		pv.push_back(tmp);
+
+		switch (t)
+		{
+		    case LVM:
+			s->addUsedBy(tmp.device, UB_LVM, dev);
+			break;
+		    case DM:
+			s->addUsedBy(tmp.device, UB_DM, dev);
+			break;
+		    case DMRAID:
+			s->addUsedBy(tmp.device, UB_DMRAID, dev);
+			break;
+		    case DMMULTIPATH:
+			s->addUsedBy(tmp.device, UB_DMMULTIPATH, dev);
+			break;
+		    default:
+			break;
+		}
+	}
+
+	y2deb("constructed PeContainer " << dev);
+    }
+
+
+    PeContainer::PeContainer(const PeContainer& c)
+	: Container(c), pe_size(c.pe_size), num_pe(c.num_pe),
+	  free_pe(c.free_pe), pv(c.pv), pv_add(c.pv_add),
+	  pv_remove(c.pv_remove)
+    {
+	y2deb("copy-constructed PeContainer " << dev);
+    }
+
+
+    PeContainer::~PeContainer()
+    {
+	y2deb("destructed PeContainer " << dev);
+    }
+
+
+    void
+    PeContainer::saveData(xmlNode* node) const
+    {
+	Container::saveData(node);
+
+	setChildValue(node, "pe_size_k", peSize());
+	setChildValue(node, "pe_count", peCount());
+	setChildValue(node, "pe_free", peFree());
+
+	for (list<Pv>::const_iterator it = pv.begin(); it != pv.end(); ++it)
+	    it->saveData(xmlNewChild(node, "physical_extent"));
+    }
+
+
+void PeContainer::unuseDev() const
     {
     for( list<Pv>::const_iterator s=pv.begin(); s!=pv.end(); ++s )
 	getStorage()->clearUsedBy(s->device);
@@ -58,7 +129,7 @@ int
 PeContainer::setPeSize( unsigned long long peSizeK, bool lvm1 )
     {
     int ret = 0;
-    y2milestone( "peSize:%llu", peSizeK );
+    y2mil("peSize:" << peSizeK);
 
     if( pe_size!=peSizeK )
 	{
@@ -97,6 +168,7 @@ PeContainer::setPeSize( unsigned long long peSizeK, bool lvm1 )
 		}
 	    pe_size = peSizeK;
 	    }
+	calcSize();
 	}
     y2mil("ret:" << ret);
     return( ret );
@@ -183,8 +255,7 @@ PeContainer::tryUnusePe( const string& dev, list<Pv>& pl, list<Pv>& pladd,
 	if( !added_pv )
 	    plrem.push_back( cur_pv );
 	}
-    y2milestone( "ret:%d removed_pe:%lu dev:%s", ret, removed_pe,
-                 cur_pv.device.c_str() );
+    y2mil("ret:" << ret << " removed_pe:" << removed_pe << " dev:" << cur_pv.device);
     return( ret );
     }
 
@@ -193,7 +264,7 @@ PeContainer::addLvPeDistribution( unsigned long le, unsigned stripe, list<Pv>& p
 				  list<Pv>& pladd, map<string,unsigned long>& pe_map )
     {
     int ret=0;
-    y2milestone( "le:%lu stripe:%u", le, stripe );
+    y2mil("le:" << le << " stripe:" << stripe);
     map<string,unsigned long>::iterator mit;
     list<Pv>::iterator i;
     if( stripe>1 )
@@ -357,9 +428,9 @@ bool PeContainer::checkCreateConstraints()
     list< tpair > li;
     DmPair lp=dmPair();
     DmIter i=lp.begin();
-    if( pv_add.size()>0 )
+    if (!pv_add.empty())
 	y2war( "should not happen pv_add:" << pv_add );
-    if( pv_remove.size()>0 )
+    if (!pv_remove.empty())
 	y2war( "should not happen pv_rem:" << pv_remove );
     while( i!=lp.end() )
 	{
@@ -424,14 +495,15 @@ bool PeContainer::checkCreateConstraints()
     return( ret );
     }
 
-bool PeContainer::findPe( const string& dev, const std::list<Pv>& pl,
-			  std::list<Pv>::const_iterator& i ) const
+
+bool
+PeContainer::findPe(const string& dev, const list<Pv>& pl, list<Pv>::const_iterator& i) const
     {
     bool ret = !pl.empty();
     if( ret )
 	{
-	const Volume *vol;
-	if( getStorage()->findVolume( dev, vol ))
+	const Device *vol;
+	if( getStorage()->findDevice( dev, vol, true ) )
 	    {
 	    i = pl.begin();
 	    while( i!=pl.end() && !vol->sameDevice( i->device ))
@@ -448,14 +520,15 @@ bool PeContainer::findPe( const string& dev, const std::list<Pv>& pl,
     return( ret );
     }
 
-bool PeContainer::findPe( const string& dev, std::list<Pv>& pl,
-			  std::list<Pv>::iterator& i )
+
+bool
+PeContainer::findPe(const string& dev, list<Pv>& pl, list<Pv>::iterator& i) const
     {
     bool ret = !pl.empty();
     if( ret )
 	{
-	const Volume *vol;
-	if( getStorage()->findVolume( dev, vol ))
+	const Device *vol;
+	if( getStorage()->findDevice( dev, vol, true ) )
 	    {
 	    i = pl.begin();
 	    while( i!=pl.end() && !vol->sameDevice( i->device ))
@@ -472,19 +545,23 @@ bool PeContainer::findPe( const string& dev, std::list<Pv>& pl,
     return( ret );
     }
 
-void PeContainer::addPv( const Pv* p )
+
+    void
+    PeContainer::addPv(const Pv& p)
     {
-    getStorage()->eraseLabelVolume( p->device );
-    list<Pv>::iterator i;
-    if( findPe( p->device, pv, i ))
-	*i = *p;
-    else if( !findPe( p->device, pv_remove, i ))
+	getStorage()->eraseLabelVolume(p.device);
+
+	list<Pv>::iterator i;
+	if (findPe(p.device, pv, i))
+	    *i = p;
+	else if (!findPe(p.device, pv_remove, i))
 	{
-	if( findPe( p->device, pv_add, i ))
-	    pv_add.erase(i);
-	pv.push_back( *p );
+	    if (findPe(p.device, pv_add, i))
+		pv_add.erase(i);
+	    pv.push_back(p);
 	}
     }
+
 
 string PeContainer::addList() const
     {
@@ -500,25 +577,15 @@ string PeContainer::addList() const
     return( ret );
     }
 
-void
-PeContainer::init()
-    {
-    y2mil( "init:" << nm );
-    mjr = Dm::dmMajor();
-    num_pe = free_pe = 0;
-    pe_size = 1;
-    }
-
-static bool isDeleted( const Dm& l ) { return( l.deleted() ); }
 
 unsigned long
 PeContainer::leByLvRemove() const
     {
     unsigned long ret=0;
-    ConstDmPair p=dmPair(isDeleted);
+    ConstDmPair p = dmPair(Dm::isDeleted);
     for( ConstDmIter i=p.begin(); i!=p.end(); ++i )
 	ret += i->getLe();
-    y2milestone( "ret:%lu", ret );
+    y2mil("ret:" << ret);
     return( ret );
     }
 
@@ -553,23 +620,20 @@ PeContainer::checkConsistency() const
 	    {
 	    if( mit->second != p->num_pe-p->free_pe )
 		{
-		y2warning( "Vg:%s used pv %s is %lu should be %lu",
-		           name().c_str(), mit->first.c_str(),
-		           mit->second,  p->num_pe-p->free_pe );
+		y2war("Vg:" << name() << " used pv " << mit->first << " is " <<
+		      mit->second << " should be " << p->num_pe - p->free_pe);
 		ret = false;
 		}
 	    }
 	else
 	    {
-	    y2warning( "Vg:%s pv %s not found", name().c_str(),
-	               mit->first.c_str() );
+	    y2war("Vg:" << name() << " pv " << mit->first << " not found");
 	    ret = false;
 	    }
 	}
     if( sum != num_pe-free_pe )
 	{
-	y2warning( "Vg:%s used PE is %lu should be %lu", name().c_str(),
-	           sum, num_pe-free_pe );
+	y2war("Vg:" << name() << " used PE is " << sum << " should be " << num_pe - free_pe);
 	ret = false;
 	}
     return( ret );
@@ -587,8 +651,31 @@ void PeContainer::changeDeviceName( const string& old, const string& nw )
 	}
     }
 
-namespace storage
-{
+string PeContainer::getDeviceByNumber( const string& majmin ) const
+    {
+    string ret = getStorage()->deviceByNumber(majmin);
+    if( ret.empty() )
+	{
+	unsigned mj = 0;
+	unsigned mi = 0;
+	string pair( majmin );
+	SystemCmd c;
+	mj = mi = 0;
+	string::size_type pos = pair.find( ':' );
+	if( pos != string::npos )
+	    pair[pos] = ' ';
+	istringstream i( pair );
+	classic(i);
+	i >> mj >> mi;
+	list<string> ls = splitString(pair);
+	if( majorNr()>0 && mj==majorNr() && mi==minorNr())
+	    ret = device();
+	if( mj==Loop::loopMajor() )
+	    ret = Loop::loopDeviceName(mi);
+	}
+    y2mil( "majmin " << majmin << " ret:" << ret );
+    return( ret );
+    }
 
 void printDevList( std::ostream& s, const std::list<PeContainer::Pv>& l )
     {
@@ -605,8 +692,8 @@ void printDevList( std::ostream& s, const std::list<PeContainer::Pv>& l )
 
 std::ostream& operator<< (std::ostream& s, const PeContainer& d )
     {
-    s << *((Container*)&d);
-    s << " SizeM:" << d.sizeK()/1024
+    s << dynamic_cast<const Container&>(d);
+    s << " SizeK:" << d.sizeK()
       << " PeSize:" << d.pe_size
       << " NumPE:" << d.num_pe
       << " FreePE:" << d.free_pe;
@@ -641,80 +728,45 @@ std::ostream& operator<< (std::ostream& s, const PeContainer& d )
 	return s;
     }
 
-}
 
-string PeContainer::getDiffString( const Container& rhs ) const
+    void
+    PeContainer::logDifference(std::ostream& log, const PeContainer& rhs) const
     {
-    string ret = Container::getDiffString( rhs );
-    const PeContainer* p = dynamic_cast<const PeContainer*>(&rhs);
-    if( p )
-	{
-	if( pe_size!=p->pe_size )
-	    ret += " PeSize:" + decString(pe_size) + "-->" + decString(p->pe_size);
-	if( num_pe!=p->num_pe )
-	    ret += " PE:" + decString(num_pe) + "-->" + decString(p->num_pe);
-	if( free_pe!=p->free_pe )
-	    ret += " Free:" + decString(free_pe) + "-->" + decString(p->free_pe);
+	Container::logDifference(log, rhs);
+
+	logDiff(log, "pe_size", pe_size, rhs.pe_size);
+	logDiff(log, "num_pe", num_pe, rhs.num_pe);
+	logDiff(log, "free_pe", free_pe, rhs.free_pe);
+
 	string tmp;
-	list<Pv>::const_iterator i = pv.begin();
-	list<Pv>::const_iterator j;
-	while( i!=pv.end() )
-	    {
-	    j = find( p->pv.begin(), p->pv.end(), *i );
-	    if( j==p->pv.end() )
+	for (list<Pv>::const_iterator i = pv.begin(); i != pv.end(); ++i)
+	    if (!contains(rhs.pv, *i))
 		tmp += i->device + "-->";
-	    ++i;
-	    }
-	i = p->pv.begin();
-	while( i!=p->pv.end() )
-	    {
-	    j = find( pv.begin(), pv.end(), *i );
-	    if( j==pv.end() )
+	for (list<Pv>::const_iterator i = rhs.pv.begin(); i != rhs.pv.end(); ++i)
+	    if (!contains(pv, *i))
 		tmp += "<--" + i->device;
-	    ++i;
-	    }
-	if( !tmp.empty() )
-	    ret += " Pv:" + tmp;
+	if (!tmp.empty())
+	    log << " Pv:" << tmp;
+
 	tmp.erase();
-	i = pv_add.begin();
-	while( i!=pv_add.end() )
-	    {
-	    j = find( p->pv_add.begin(), p->pv_add.end(), *i );
-	    if( j==p->pv_add.end() )
+	for (list<Pv>::const_iterator i = pv_add.begin(); i != pv_add.end(); ++i)
+	    if (!contains(rhs.pv_add, *i))
 		tmp += i->device + "-->";
-	    ++i;
-	    }
-	i = p->pv_add.begin();
-	while( i!=p->pv_add.end() )
-	    {
-	    j = find( pv_add.begin(), pv_add.end(), *i );
-	    if( j==pv_add.end() )
+	for (list<Pv>::const_iterator i = rhs.pv_add.begin(); i != rhs.pv_add.end(); ++i)
+	    if (!contains(pv_add, *i))
 		tmp += "<--" + i->device;
-	    ++i;
-	    }
-	if( !tmp.empty() )
-	    ret += " PvAdd:" + tmp;
+	if (!tmp.empty())
+	    log << " PvAdd:" << tmp;
+
 	tmp.erase();
-	i = pv_remove.begin();
-	while( i!=pv_remove.end() )
-	    {
-	    j = find( p->pv_remove.begin(), p->pv_remove.end(), *i );
-	    if( j==p->pv_remove.end() )
+	for (list<Pv>::const_iterator i = pv_remove.begin(); i != pv_remove.end(); ++i)
+	    if (!contains(rhs.pv_remove, *i))
 		tmp += i->device + "-->";
-	    ++i;
-	    }
-	i = p->pv_remove.begin();
-	while( i!=p->pv_remove.end() )
-	    {
-	    j = find( pv_remove.begin(), pv_remove.end(), *i );
-	    if( j==pv_remove.end() )
+	for (list<Pv>::const_iterator i = rhs.pv_remove.begin(); i != rhs.pv_remove.end(); ++i)
+	    if (!contains(pv_remove, *i))
 		tmp += "<--" + i->device;
-	    ++i;
-	    }
-	if( !tmp.empty() )
-	    ret += " PvRemove:" + tmp;
-	}
-    return( ret );
+	if (!tmp.empty())
+	    log << " PvRemove:" << tmp;
     }
 
 
@@ -726,56 +778,42 @@ bool PeContainer::equalContent( const PeContainer& rhs, bool comp_vol ) const
 	       pv_remove==rhs.pv_remove;
     if( ret )
 	{
-	list<Pv>::const_iterator i = rhs.pv.begin();
-	list<Pv>::const_iterator j = pv.begin();
-	while( ret && i!=rhs.pv.end() )
-	    {
-	    ret = ret && i->equalContent(*j);
-	    ++i;
-	    ++j;
-	    }
-	i = rhs.pv_add.begin();
-	j = pv_add.begin();
-	while( ret && i!=rhs.pv_add.end() )
-	    {
-	    ret = ret && i->equalContent(*j);
-	    ++i;
-	    ++j;
-	    }
-	i = rhs.pv_remove.begin();
-	j = pv_remove.begin();
-	while( ret && i!=rhs.pv_remove.end() )
-	    {
-	    ret = ret && i->equalContent(*j);
-	    ++i;
-	    ++j;
-	    }
+	ret = ret && storage::equalContent(pv.begin(), pv.end(),
+					   rhs.pv.begin(), rhs.pv.end());
+	ret = ret && storage::equalContent(pv_add.begin(), pv_add.end(),
+					   rhs.pv_add.begin(), rhs.pv_add.end());
+	ret = ret && storage::equalContent(pv_remove.begin(), pv_remove.end(),
+					   rhs.pv_remove.begin(), rhs.pv_remove.end());
 	}
     if( ret && comp_vol )
 	{
-	CVIter i = rhs.begin();
-	CVIter j = begin();
-	while( ret && i!=rhs.end() && j!=end() )
-	    ret = ret && ((Dm*)(&(*j)))->equalContent( *(Dm*)(&(*i)));
-	ret = ret && i==rhs.end() && j==end();
-	}
+	ConstDmPair pp = dmPair();
+	ConstDmPair pc = rhs.dmPair();
+	ret = ret && storage::equalContent(pp.begin(), pp.end(), pc.begin(), pc.end());
+       	}
     return( ret );
     }
 
-PeContainer& PeContainer::operator=( const PeContainer& rhs )
+
+    PeContainer::Pv::Pv(const xmlNode* node)
+	: device(), num_pe(0), free_pe(0)
     {
-    pe_size = rhs.pe_size;
-    num_pe = rhs.num_pe;
-    free_pe = rhs.free_pe;
-    pv = rhs.pv;
-    pv_add = rhs.pv_add;
-    pv_remove = rhs.pv_remove;
-    return( *this );
+	getChildValue(node, "device", device);
+	getChildValue(node, "pe_count", num_pe);
+	getChildValue(node, "pe_free", free_pe);
+
+	y2deb("constructed Pv");
+
+	assert(!device.empty());
     }
 
-PeContainer::PeContainer( const PeContainer& rhs ) : Container(rhs)
+
+    void
+    PeContainer::Pv::saveData(xmlNode* node) const
     {
-    y2deb("constructed PeContainer by copy constructor from " << rhs.nm);
-    *this = rhs;
+	setChildValue(node, "device", device);
+	setChildValue(node, "pe_count", num_pe);
+	setChildValue(node, "pe_free", free_pe);
     }
 
+}

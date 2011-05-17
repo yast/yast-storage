@@ -19,61 +19,57 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream>
+#include <ostream>
 #include <sstream>
 
-#include "y2storage/NfsCo.h"
-#include "y2storage/Nfs.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/ProcMounts.h"
-#include "y2storage/Storage.h"
-#include "y2storage/EtcFstab.h"
+#include "storage/NfsCo.h"
+#include "storage/Nfs.h"
+#include "storage/AppUtil.h"
+#include "storage/SystemInfo.h"
+#include "storage/Storage.h"
+#include "storage/EtcFstab.h"
 
-using namespace storage;
-using namespace std;
 
-NfsCo::NfsCo( Storage * const s, ProcMounts& mounts ) :
-    Container(s,"nfs",staticType())
+namespace storage
+{
+    using namespace std;
+
+
+    NfsCo::NfsCo(Storage* s)
+	: Container(s, "nfs", "/dev/nfs", staticType())
     {
-    y2deb("constructing NfsCo detect");
-    init();
-    getNfsData( mounts );
+	y2deb("constructing NfsCo");
     }
 
-NfsCo::NfsCo( Storage * const s ) :
-    Container(s,"nfs",staticType())
+
+    NfsCo::NfsCo(Storage* s, const EtcFstab& fstab, SystemInfo& systeminfo)
+	: Container(s, "nfs", "/dev/nfs", staticType(), systeminfo)
     {
-    y2deb("constructing NfsCo");
-    init();
+	y2deb("constructing NfsCo");
+	getNfsData(fstab, systeminfo);
     }
 
-NfsCo::NfsCo( Storage * const s, const string& file ) :
-    Container(s,"nfs",staticType())
+
+    NfsCo::NfsCo(const NfsCo& c)
+	: Container(c)
     {
-    y2deb("constructing NfsCo file:" << file);
-    init();
+	y2deb("copy-constructed NfsCo from " << c.dev);
+
+	ConstNfsPair p = c.nfsPair();
+	for (ConstNfsIter i = p.begin(); i != p.end(); ++i)
+	{
+	    Nfs* p = new Nfs(*this, *i);
+	    vols.push_back(p);
+	}
     }
 
-NfsCo::~NfsCo()
+
+    NfsCo::~NfsCo()
     {
-    y2deb("destructed NfsCo");
+	y2deb("destructed NfsCo " << dev);
     }
 
-void
-NfsCo::init()
-    {
-    }
-
-bool NfsCo::isNfsDev( const string& dev )
-    {
-    bool ret = dev.find( ":/" )<dev.find( '/' );
-    y2mil( "dev:" << dev << " ret:" << ret );
-    return( ret );
-    }
 
 int 
 NfsCo::removeVolume( Volume* v )
@@ -131,42 +127,59 @@ NfsCo::doRemove( Volume* v )
     }
 
 int 
-NfsCo::addNfs( const string& nfsDev, unsigned long long sizeK,
-               const string& mp )
+NfsCo::addNfs(const string& nfsDev, unsigned long long sizeK, 
+              const string& opts, const string& mp, bool nfs4)
     {
-    y2mil( "nfsDev:" << nfsDev << " sizeK:" << sizeK << " mp:" << mp );
-    Nfs *n = new Nfs( *this, nfsDev );
+    y2mil("nfsDev:" << nfsDev << " sizeK:" << sizeK << "opts:" << opts <<
+          " mp:" << mp << " nfs4:" << nfs4);
+    Nfs *n = new Nfs(*this, nfsDev, nfs4);
     n->changeMount( mp );
     n->setSize( sizeK );
+    n->setFstabOption( opts );
     addToList( n );
     return( 0 );
     }
 
-void
-NfsCo::getNfsData( ProcMounts& mounts )
+
+    list<string>
+    NfsCo::filterOpts(const list<string>& opts)
     {
-    y2mil( "begin fstab:" << getStorage()->getFstab() );
-    list<FstabEntry> l;
-    getStorage()->getFstab()->getEntries(l);
-    for( list<FstabEntry>::const_iterator i=l.begin(); i!=l.end(); ++i )
+	const char* ign_opt[] = { "hard", "rw", "v3", "v2", "lock" };
+	const char* ign_opt_start[] = { "proto=", "addr=", "vers=" };
+
+	list<string> ret = opts;
+
+	for (size_t i = 0; i < lengthof(ign_opt); ++i)
+	    ret.remove(ign_opt[i]);
+
+	for (size_t i = 0; i < lengthof(ign_opt_start); ++i)
+	    ret.remove_if(string_starts_with(ign_opt_start[i]));
+
+	return ret;
+    }
+
+
+void
+NfsCo::getNfsData(const EtcFstab& fstab, SystemInfo& systeminfo)
+    {
+    const list<FstabEntry> l1 = fstab.getEntries();
+    for (list<FstabEntry>::const_iterator i = l1.begin(); i != l1.end(); ++i)
 	{
-	if( i->fs == "nfs" )
+	if( i->fs == "nfs" || i->fs == "nfs4")
 	    {
-	    Nfs *n = new Nfs( *this, i->device );
+	    Nfs *n = new Nfs(*this, i->device, i->fs == "nfs4");
 	    n->setMount( i->mount );
-	    string op = mergeString(i->opts, "," );
-	    if( op != "defaults" )
-		n->setFstabOption( op );
+	    string opt = boost::join(i->opts, ",");
+	    if (opt != "defaults")
+		n->setFstabOption(opt);
 	    addToList( n );
 	    }
 	}
-    l.clear();
-    mounts.getEntries(l);
-    const char * ign_opt[] = { "hard", "rw", "v3", "v2", "lock" };
-    const char * ign_beg[] = { "proto=", "addr=", "vers=" };
-    for( list<FstabEntry>::iterator i=l.begin(); i!=l.end(); ++i )
+
+    const list<FstabEntry> l2 = systeminfo.getProcMounts().getEntries();
+    for (list<FstabEntry>::const_iterator i = l2.begin(); i != l2.end(); ++i)
 	{
-	if( i->fs == "nfs" )
+	if( i->fs == "nfs" || i->fs == "nfs4")
 	    {
 	    Nfs *n = NULL;
 	    NfsIter nfs;
@@ -176,37 +189,20 @@ NfsCo::getNfsData( ProcMounts& mounts )
 		}
 	    else
 		{
-		n = new Nfs( *this, i->device );
-		list<string>::iterator si = i->opts.begin();
-		unsigned pos = 0;
-		while( si!=i->opts.end() )
-		    {
-		    pos=0; 
-		    while( pos<lengthof(ign_opt) && *si!=ign_opt[pos] )
-			++pos;
-		    if( pos<lengthof(ign_opt) )
-			si = i->opts.erase(si);
-		    else
-			{
-			pos=0;
-			while( pos<lengthof(ign_beg) && si->find(ign_beg[pos])!=0 )
-			    ++pos;
-			if( pos<lengthof(ign_beg) )
-			    si = i->opts.erase(si);
-			else
-			    ++si;
-			}
-		    }
+		n = new Nfs(*this, i->device, i->fs == "nfs4");
 		n->setIgnoreFstab();
-		n->setFstabOption( mergeString(i->opts, "," ) );
+		string opt = boost::join(filterOpts(i->opts), ",");
+		n->setFstabOption(opt);
 		addToList( n );
 		}
-	    unsigned long long sz = getStorage()->getDfSize( i->mount );
-	    n->setSize( sz );
+
+	    StatVfs vfsbuf;
+	    getStatVfs(i->mount, vfsbuf);
+	    n->setSize(vfsbuf.sizeK);
 	    }
 	}
-    l.clear();
     }
+
 
 bool
 NfsCo::findNfs( const string& dev, NfsIter& i )
@@ -226,58 +222,27 @@ NfsCo::findNfs( const string& dev )
     }
 
 
-void NfsCo::logData( const string& Dir ) {;}
-
-namespace storage
-{
-
-inline std::ostream& operator<< (std::ostream& s, const NfsCo& d )
+    std::ostream& operator<<(std::ostream& s, const NfsCo& d)
     {
-    s << *((Container*)&d);
+    s << dynamic_cast<const Container&>(d);
     return( s );
     }
 
-}
 
-void NfsCo::logDifference( const Container& d ) const
+    void
+    NfsCo::logDifferenceWithVolumes(std::ostream& log, const Container& rhs_c) const
     {
-    y2mil(Container::getDiffString(d));
-    const NfsCo* p = dynamic_cast<const NfsCo*>(&d);
-    if( p != NULL )
-	{
-	ConstNfsPair pp=nfsPair();
-	ConstNfsIter i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstNfsPair pc=p->nfsPair();
-	    ConstNfsIter j = pc.begin();
-	    while( j!=pc.end() &&
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j!=pc.end() )
-		{
-		if( !i->equalContent( *j ) )
-		    i->logDifference( *j );
-		}
-	    else
-		y2mil( "  -->" << *i );
-	    ++i;
-	    }
-	pp=p->nfsPair();
-	i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstNfsPair pc=nfsPair();
-	    ConstNfsIter j = pc.begin();
-	    while( j!=pc.end() &&
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j==pc.end() )
-		y2mil( "  <--" << *i );
-	    ++i;
-	    }
-	}
+	const NfsCo& rhs = dynamic_cast<const NfsCo&>(rhs_c);
+
+	logDifference(log, rhs);
+	log << endl;
+
+	ConstNfsPair pp = nfsPair();
+	ConstNfsPair pc = rhs.nfsPair();
+
+	logVolumesDifference(log, pp.begin(), pp.end(), pc.begin(), pc.end());
     }
+
 
 bool NfsCo::equalContent( const Container& rhs ) const
     {
@@ -289,27 +254,9 @@ bool NfsCo::equalContent( const Container& rhs ) const
 	{
 	ConstNfsPair pp = nfsPair();
 	ConstNfsPair pc = p->nfsPair();
-	ConstNfsIter i = pp.begin();
-	ConstNfsIter j = pc.begin();
-	while( ret && i!=pp.end() && j!=pc.end() )
-	    {
-	    ret = ret && i->equalContent( *j );
-	    ++i;
-	    ++j;
-	    }
-	ret = ret && i==pp.end() && j==pc.end();
+	ret = ret && storage::equalContent(pp.begin(), pp.end(), pc.begin(), pc.end());
 	}
     return( ret );
     }
 
-NfsCo::NfsCo( const NfsCo& rhs ) : Container(rhs)
-    {
-    y2deb("constructed NfsCo by copy constructor from " << rhs.nm);
-    *this = rhs;
-    ConstNfsPair p = rhs.nfsPair();
-    for( ConstNfsIter i=p.begin(); i!=p.end(); ++i )
-         {
-         Nfs * p = new Nfs( *this, *i );
-         vols.push_back( p );
-         }
-    }
+}

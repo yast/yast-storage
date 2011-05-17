@@ -5,7 +5,7 @@
  * Volume) like md126 which is a Container for partitions.
  *
  * Copyright (c) 2009, Intel Corporation.
- * Copyright (c) 2009 Novell, Inc.
+ * Copyright (c) [2009-2010] Novell, Inc.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -26,18 +26,17 @@
 
 #include <list>
 
-#include "y2storage/Container.h"
-#include "y2storage/Disk.h"
-#include "y2storage/MdPart.h"
+#include "storage/Container.h"
+#include "storage/Disk.h"
+#include "storage/Md.h"
+#include "storage/MdPart.h"
 
 namespace storage
 {
+    class Storage;
+    class SystemInfo;
+    class Region;
 
-class Storage;
-class SystemCmd;
-class ProcPart;
-class Region;
-class EtcRaidtab;
 
 /**
  * Class: MdPartCo
@@ -48,29 +47,28 @@ class EtcRaidtab;
 class MdPartCo : public Container
     {
     friend class Storage;
+	friend class Md;
 
     public:
-    MdPartCo( Storage * const s,
-              const string& Name,
-              ProcPart* ppart = NULL);
 
-    MdPartCo( const MdPartCo& rhs );
-
+	MdPartCo(Storage* s, const string& name, const string& device, SystemInfo& systeminfo);
+    MdPartCo(const MdPartCo& c);
     virtual ~MdPartCo();
 
-    unsigned long long sizeK() const { return size_k; }
     const string& labelName() const { return disk->labelName(); }
-    const string& udevPath() const { return udev_path; }
-    const std::list<string>& udevId() const { return udev_id; }
+	virtual list<string> udevId() const { return udev_id; }
     unsigned numPartitions() const { return disk->numPartitions(); }
     static storage::CType staticType() { return storage::MDPART; }
     friend std::ostream& operator<< (std::ostream&, const MdPartCo& );
-    void setUdevData(const list<string>& id);
 
-    /* Checks if name fits with MD name*/
-    bool matchMdName(const string& name ) { return (name==nm); }
+	void setUdevData(SystemInfo& systeminfo);
 
-    void getMdPartCoState(storage::MdPartCoStateInfo& info);
+	virtual string procName() const { return nm; }
+	virtual string sysfsPath() const;
+
+	static bool notDeleted(const MdPartCo& c) { return !c.deleted(); }
+
+	int getMdPartCoState(MdPartCoStateInfo& info) const;
 
     int createPartition( storage::PartitionType type, long unsigned start,
         long unsigned len, string& device,
@@ -81,8 +79,7 @@ class MdPartCo : public Container
     int removePartition( unsigned nr );
     int changePartitionId( unsigned nr, unsigned id );
     int forgetChangePartitionId( unsigned nr );
-    int changePartitionArea( unsigned nr, unsigned long start,
-        unsigned long size, bool checkRelaxed=false );
+	int changePartitionArea(unsigned nr, const Region& cylRegion, bool checkRelaxed = false);
     int nextFreePartition(storage::PartitionType type, unsigned& nr,
         string& device) const;
     int destroyPartitionTable( const string& new_label );
@@ -108,89 +105,63 @@ class MdPartCo : public Container
     { return disk->cylinderToKb( val ); }
     unsigned long kbToCylinder( unsigned long long val ) const
     { return disk->kbToCylinder( val ); }
-    string getPartName( unsigned nr ) const;
 
-    virtual void getCommitActions( std::list<storage::commitAction*>& l ) const;
-    virtual int getToCommit( storage::CommitStage stage,
-        std::list<Container*>& col,
-        std::list<Volume*>& vol );
+	string getPartName(unsigned nr) const;
+	string getPartDevice(unsigned nr) const;
+
+    virtual void getCommitActions(list<commitAction>& l) const;
+    virtual void getToCommit(CommitStage stage, list<const Container*>& col,
+			     list<const Volume*>& vol) const;
     virtual int commitChanges( storage::CommitStage stage );
     int commitChanges( storage::CommitStage stage, Volume* vol );
 
     Partition* getPartition( unsigned nr, bool del );
-    int getPartitionInfo(deque<storage::PartitionInfo>& plist);
+
     void getInfo( storage::MdPartCoInfo& info ) const;
     bool equalContent( const Container& rhs ) const;
-    virtual string getDiffString( const Container& d ) const;
-    void logDifference( const MdPartCo& d ) const;
+
+	void logDifference(std::ostream& log, const MdPartCo& rhs) const;
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
+
     MdPartCo& operator= ( const MdPartCo& rhs );
     static string undevName( const string& name );
-    string numToName( unsigned mdNum ) const;
 
-    static list<string> getMdRaids();
+	static list<string> getMdRaids(SystemInfo& systeminfo);
 
-    void syncRaidtab();
+	void syncMdadm(EtcMdadm* mdadm) const;
 
-    /* Returns number from MD name */
-    int nr(const string& name);
     /* Returns Md number. */
-    int nr();
-    /* RAID Related functionality */
-    unsigned long chunkSize() const { return chunk_size; }
+    unsigned nr() const { return mnr; }
+
+	unsigned long chunkSizeK() const { return chunk_k; }
 
     storage::MdType personality() const { return md_type; }
 
-    storage::MdArrayState getArrayState() { return md_state; };
+	const string& getMdUuid() const { return md_uuid; }
 
-    void getMdUuid( string&val ) { val=md_uuid; }
-
-    /* Raid Level of the RAID as string. */
-    const string& pName() const { return md_names[md_type]; }
-    /* Parity for some of RAID's. */
-    const string& ptName() const { return par_names[md_parity]; }
     /* Devices from which RAID is composed. */
-    void getDevs( std::list<string>& devices, bool all=true, bool spare=false ) const;
-
-
-    void getSpareDevs(std::list<string>& devices );
-
-    /* Is MD device? */
-    static bool matchMdRegex( const string& dev );
-    /* MD Device major number. */
-    static unsigned mdMajor();
-
-    /* Raid Level as string for given type. */
-    static const string& pName( storage::MdType t ) { return md_names[t]; }
+	list<string> getDevs(bool all = true, bool spare = false) const;
 
     static void activate( bool val, const string& tmpDir  );
 
-    static bool isActive( void  ) { return active; }
+    static bool isActive() { return active; }
 
-    /* Return true if on RAID Volume is partition table */
-    static bool hasPartitionTable(const string& name );
-    /* Return true if there is no Filesystem on device (it can contain partition table). */
-    static bool hasFileSystem(const string& name);
-
-    static bool isImsmPlatform();
+	static bool hasPartitionTable(const string& name, SystemInfo& systeminfo);
+	static bool hasFileSystem(const string& name, SystemInfo& systeminfo);
 
     static bool matchRegex( const string& dev );
     static bool mdStringNum( const string& name, unsigned& num );
 
-    // This function will scann for MD RAIDs and will return
+    // This function will scan for MD RAIDs and will return
     // list with detected RAID names.
-    static int scanForRaid(list<string>& raidNames);
+    static bool scanForRaid(list<string>& raidNames);
 
     /* filterMdPartCo
      * Get list of detected MD RAIDs and filters them for
      * those which can be handled by MdPartCo.
      */
-    static list<string> filterMdPartCo(list<string>& raidList,
-                                       ProcPart& ppart,
-                                       bool isInst);
-
-    /* Returns uuid and possibly mdName for given MD Device.
-     * Input parameter: dev name - like md1 */
-    static bool getUuidName(const string dev,string& uuid, string& mdName);
+	static list<string> filterMdPartCo(const list<string>& raidList, SystemInfo& systeminfo,
+					   bool instsys);
 
     protected:
     // iterators over partitions
@@ -241,13 +212,12 @@ class MdPartCo : public Container
         return( ConstMdPartIter( MdPartCPIterator( p, CheckMdPart, true )) );
         }
 
-    MdPartCo( Storage * const s, const string& File );
     virtual void print( std::ostream& s ) const { s << *this; }
     virtual Container* getCopy() const { return( new MdPartCo( *this ) ); }
     void activate_part( bool val );
-    void init( ProcPart* ppart );
-    void createDisk( ProcPart* ppart );
-    void getVolumes( ProcPart* ppart );
+    void init(SystemInfo& systeminfo);
+    void createDisk(SystemInfo& systeminfo);
+    void getVolumes(const ProcParts& ppart);
     void updatePointers( bool invalid=false );
     void updateMinor();
     virtual void newP( MdPart*& dm, unsigned num, Partition* p );
@@ -259,12 +229,7 @@ class MdPartCo : public Container
     bool validPartition( const Partition* p );
     bool findMdPart( unsigned nr, MdPartIter& i );
 
-    void updateEntry();
-    string mdadmLine() const;
-    void raidtabLines( list<string>& lines ) const;
-
-
-    static bool partNotDeleted( const MdPart&d ) { return( !d.deleted() ); }
+	bool updateEntry(EtcMdadm* mdadm) const;
 
     int doCreate( Volume* v );
     int doRemove( Volume* v );
@@ -272,113 +237,47 @@ class MdPartCo : public Container
     int doSetType( MdPart* v );
     int doCreateLabel();
     virtual int doRemove();
-    virtual string removeText( bool doing ) const;
-    virtual string setDiskLabelText( bool doing ) const;
+    virtual Text removeText( bool doing ) const;
+    virtual Text setDiskLabelText( bool doing ) const;
 
-    void getMajorMinor(void);
-
-    /* Makes sure that dev=/dev/name is name doesn't contains this prefix*/
-    void makeDevName(const string& name );
     /* Initialize the MD part of object.*/
-    void initMd(void);
+	void initMd(SystemInfo& systeminfo);
 
     void setSize(unsigned long long size );
-    /* */
-    static bool isMdName(const string& name);
 
-    bool isMdPart(const string& name);
+    bool isMdPart(const string& name) const;
 
-    void getPartNum(const string& device, unsigned& num);
+    void getPartNum(const string& device, unsigned& num) const;
 
-    void getMdProps(void);
-
-    void setSpares(void);
-    /* Clear UsedBy for Disks. */
-    int unuseDevs(void);
-
-    void logData( const string& Dir );
-    string udev_path;
-    std::list<string> udev_id;
-    string logfile_name;
+	void unuseDevs() const;
 
     Disk* disk;
-    bool del_ptable;
-    unsigned num_part;
-
-    /* RAID Related */
-
-    /* Returns container */
-    void getParent();
-
-    void setMetaData();
-
-    void setMdDevs();
-
-    void setMdParity();
-
-    /* returns devices listed as slaves in sysfs directory */
-    void getSlaves(const string name, std::list<string>& devs_list );
-
-	string getContMember() const;
 
     //Input: 'mdXXX' device.
-    static storage::CType envSelection(const string& name);
-    static bool havePartsInProc(const string& name, ProcPart& ppart);
+    static CType envSelection(const string& name);
+    static bool havePartsInProc(const string& name, SystemInfo& systeminfo);
 
-    static void getMdMajor();
-    static storage::MdType toMdType( const string& val );
-    static storage::MdParity toMdParity( const string& val );
-    static storage::MdArrayState toMdArrayState( const string& val );
+	MdType md_type;
+	MdParity md_parity;
+	unsigned long chunk_k;
+	string md_uuid;
+	string md_name;		// line in /dev/md/*
+	string sb_ver;
+	bool destrSb;
+	list<string> devs;
+	list<string> spare;
 
+	list<string> udev_id;
 
+	// In case of IMSM and DDF raids there is 'container'.
+	bool has_container;
+	string parent_container;
+	string parent_uuid;
+	string parent_md_name;
+	string parent_metadata;
+	string parent_member;
 
-    unsigned long chunk_size;
-    storage::MdType md_type;
-    storage::MdParity md_parity;
-    storage::MdArrayState md_state;
-
-    /* Md Container - */
-    bool   has_container;
-    string parent_container;
-    string parent_uuid;
-    string parent_metadata;
-    string parent_md_name;
-    string md_metadata;
-    string md_uuid;
-    string sb_ver;
-    bool destrSb;
-    std::list<string> devs;
-    std::list<string> spare;
-    static string md_names[storage::MULTIPATH+1];
-    static string par_names[storage::RIGHT_SYMMETRIC+1];
-    static string md_states[storage::ACTIVE_IDLE+1];
-    static unsigned md_major;
-
-    /* Name that is present in /dev/md directory.*/
-    string md_name;
-
-    static string sysfs_path;
-
-    enum MdProperty
-    {
-      METADATA=0,
-      COMPONENT_SIZE,
-      CHUNK_SIZE,
-      ARRAY_STATE,
-      LEVEL,
-      LAYOUT,
-      /* ... */
-      MDPROP_LAST,
-    };
-    static string md_props[MDPROP_LAST];
-
-    bool readProp(enum MdProperty prop, string& val);
-
-    /* For that RAID type parity means something */
-    bool hasParity() const
-    { return md_type == RAID5 || md_type == RAID6 || md_type == RAID10; }
-
-    mutable storage::MdPartCoInfo info;
+    mutable storage::MdPartCoInfo info; // workaround for broken ycp bindings
 
     static bool active;
 

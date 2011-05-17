@@ -19,13 +19,14 @@ int
 main (int argc, char** argv)
 {
     initDefaultLogger();
-    StorageInterface* s = createStorageInterface(Environment(false));
+
+    StorageInterface* s = createStorageInterface(Environment(true));
 
     deque<ContainerInfo> containers;
     s->getContainers (containers);
 
-    for (deque<ContainerInfo>::iterator i1 = containers.begin ();
-	 i1 != containers.end(); i1++)
+    for (deque<ContainerInfo>::const_iterator i1 = containers.begin();
+	 i1 != containers.end(); ++i1)
     {
 	switch (i1->type)
 	{
@@ -40,8 +41,8 @@ main (int argc, char** argv)
 		    exit (EXIT_FAILURE);
 		}
 
-		for (deque<PartitionInfo>::iterator i2 = partitions.begin ();
-		     i2 != partitions.end(); i2++)
+		for (deque<PartitionInfo>::const_iterator i2 = partitions.begin();
+		     i2 != partitions.end(); ++i2)
 		{
 		    cout << "  " << i2->v.name << ' ';
 		    switch (i2->partitionType)
@@ -57,6 +58,8 @@ main (int argc, char** argv)
 			case REISERFS: cout << "REISERFS"; break;
 			case EXT2: cout << "EXT2"; break;
 			case EXT3: cout << "EXT3"; break;
+			case EXT4: cout << "EXT4"; break;
+			case BTRFS: cout << "BTRFS"; break;
 			case VFAT: cout << "VFAT"; break;
 			case XFS: cout << "XFS"; break;
 			case JFS: cout << "JFS"; break;
@@ -65,8 +68,30 @@ main (int argc, char** argv)
 			case NTFS: cout << "NTFS"; break;
 			case SWAP: cout << "SWAP"; break;
 			case NFS: cout << "NFS"; break;
+			case NFS4: cout << "NFS4"; break;
+			case TMPFS: cout << "TMPFS"; break;
 			case FSNONE: cout << "NONE"; break;
 		    }
+		    cout << '\n';
+		}
+
+	    } break;
+
+	    case MD:
+	    {
+		cout << "found special container (md) " << i1->name << '\n';
+
+		deque<MdInfo> mds;
+		if (s->getMdInfo(mds) != 0)
+		{
+		    cerr << "getMdInfo failed\n";
+		    exit (EXIT_FAILURE);
+		}
+
+		for (deque<MdInfo>::const_iterator i2 = mds.begin();
+		     i2 != mds.end(); ++i2)
+		{
+		    cout << "  " << i2->v.name;
 		    cout << '\n';
 		}
 
@@ -83,8 +108,8 @@ main (int argc, char** argv)
 		    exit (EXIT_FAILURE);
 		}
 
-		for (deque<LvmLvInfo>::iterator i2 = lvmlvs.begin ();
-		     i2 != lvmlvs.end(); i2++)
+		for (deque<LvmLvInfo>::const_iterator i2 = lvmlvs.begin();
+		     i2 != lvmlvs.end(); ++i2)
 		{
 		    cout << "  " << i2->v.name;
 		    cout << '\n';

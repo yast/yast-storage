@@ -15,17 +15,12 @@
     module "StorageControllers";
 
     import "Arch";
-    import "Mode";
-    import "ModulesConf";
     import "ModuleLoading";
     import "HwStatus";
     import "Initrd";
-    import "Kernel";
     import "Storage";
     import "StorageDevices";
     import "StorageClients";
-    import "Label";
-    import "Popup";
     import "Linuxrc";
 
     textdomain "storage";
@@ -35,171 +30,14 @@
     // must be kept in order (-> no map !)
     // must be searchable (-> separate lists for names and args)
 
-    global list moduleNames = [];
-    global list moduleArgs = [];
-    global list moduleIDs = [];		//unique_id from probing
+    list<string> moduleNames = [];
+    list<string> moduleArgs = [];
 
     list<list> ModToInitrdLx = [];
     list<list> ModToInitrd = [];
 
-    global string dasdParam = "";
+    list<map> controllers = [];	// set by "Probe"
 
-    // --------------------------------------------------------------
-    // local values
-
-    list controllers = [];	// set by "Probe"
-
-    // remember postinstall modules (like imm and ppa)
-    //   which must be installed *last*
-
-    list postinstall_names = [ "imm", "ppa" ];
-
-    // postinstall modules information
-    // list of [ boolean modprobe,
-    //		 string module_name,
-    //		 string module_arg,
-    //		 string vendor,
-    //		 string device]
-
-    list<list> postinstall_info = [];
-
-    // --------------------------------------------------------------
-
-
-define list GetDasdList()
-    ``{
-    list ret = [];
-    list<map> dasd = (list<map>) SCR::Read(.proc.dasddev);
-    y2milestone( "dasd=%1", dasd );
-    foreach( map entry, dasd,
-	``{
-	term a = `item( `id(entry["name"]:"") );
-	a = add( a, entry["name"]:"" );
-	a = add( a, entry["address"]:"" );
-	a = add( a, entry["state"]:"" );
-	ret = add( ret, a );
-	});
-    return( ret );
-    }
-
-define string S390DasdParams()
-    ``{
-    SCR::UnmountAgent (.proc.modules);
-    map mod = (map)SCR::Read(.proc.modules);
-    boolean mod_loaded = haskey(mod, "dasd_mod");
-    y2milestone( "mod %1", mod );
-    string param = (string)SCR::Read(.etc.install_inf.DASD_Parameter);
-    if( param==nil )
-	{
-	param = "";
-	}
-    y2milestone( "param %1 size:%2", param, size(param) );
-    boolean do_load = !mod_loaded || size(param)==0;
-    if( do_load )
-	{
-	string okb = Label::AcceptButton();
-	// button text
-	string loadb = _("&Load Module");
-	// popup text
-	string text = sformat( 
-_("Here, enter the parameters with which to load
-the dasd module, such as dasd=FD00-FD0F,FD40.
-Press \"%1\" to load the 
-module.
-If the table shows the correct DASDs available,
-press \"%2\".
-"), deletechars(loadb,"&"), deletechars(okb,"&") );
-
-	list cont = GetDasdList();
-	UI::OpenDialog(
-	    `opt(`decorated),
-	    `HBox(
-	        `HSpacing(1),
-	        `VBox(
-		    `VSpacing(0.5),
-		    // heading text
-		    `Left(`Heading(_("DASD Module Parameter Setting"))),
-		    `VSpacing(0.2),
-		    `Left(`Label(text)),
-		    `VSpacing(0.2),
-		    `HBox(
-			// label text
-			`Left(`TextEntry(`id(`param), _("&DASD Parameter"), 
-					 param )),
-			`VSpacing(1),
-			`Bottom(`PushButton(`id(`load), loadb ))
-			 ),
-		    `VSpacing(1),
-		    `HBox( 
-			`Table( `id(`dd_table), 
-				// heading text
-			        `header( _("DASD Name"), 
-				// heading text
-				         _("DASD Address"), 
-				// heading text
-				         _("Status") ),
-				cont ),
-			`VSpacing(10)
-			 ),
-		    `VSpacing(1),
-		    `HBox(
-			`HStretch(),
-			`PushButton(`id(`abort), Label::AbortButton() ),
-			`HStretch(),
-			`PushButton(`id(`accept), Label::AcceptButton() ),
-			`HStretch()
-			 ),
-		    `VSpacing(0.5)
-		    ),
-	        `HSpacing(1)
-		 ));
-	UI::SetFocus(`id(`param));
-	symbol ret = `none;
-	do
-	    {
-	    ret = (symbol)UI::UserInput();
-	    y2milestone( "ret = %1", ret );
-	    if( ret == `load )
-		{
-		if( mod_loaded )
-		    {
-		    SCR::Execute( .target.bash, 
-		                  "/sbin/rmmod dasd_eckd_mod dasd_fba_mod dasd_mod" );
-		    }
-		param = (string)UI::QueryWidget( `id(`param), `Value );
-		y2milestone( "param %1", param );
-		boolean ret = (boolean)SCR::Execute(.target.modprobe, "dasd_mod", param );
-		mod_loaded = true;
-		y2milestone( "ret=%1", ret );
-		if( !ret )
-		    {
-		    // popup text
-		    Popup::Error( sformat(_("Error loading module dasd with 
-parameter: %1"), param ));
-		    }
-		SCR::Execute(.target.modprobe, "dasd_eckd_mod", "" );
-		SCR::Execute(.target.modprobe, "dasd_fba_mod", "" );
-		cont = GetDasdList();
-		UI::ChangeWidget( `id(`dd_table), `Items, cont );
-		}
-	    else if( ret == `accept && size(cont)==0 )
-		{
-		ret = `continue;
-		}
-	    if( (ret == `accept||ret == `abort) && size(cont)==0 )
-		{
-		// popup text
-		Popup::Error( _("There are no DASD devices active.
-It is not possible to install without
-active DASD devices."));
-		}
-	    }
-	while( ret != `accept && ret != `abort );
-	UI::CloseDialog();
-	}
-    y2milestone( "ret %1", param );
-    return( param );
-    }
 
     /**
      * Probe storage controllers
@@ -207,8 +45,8 @@ active DASD devices."));
      *
      * @returns integer	number of controllers, 0 = none found 
      */
-global define integer Probe ()
-    ``{
+global integer Probe()
+{
     y2milestone( "StorageControllers::Probe()" );
 
     // probe 'storage' list
@@ -220,77 +58,19 @@ global define integer Probe ()
 	y2milestone("no controllers");
 	}
     return size (controllers);
-    }
+}
 
-
-
-// --------------------------------------------------------------
-
-// parportInitialize
-
-define void parportInitialize ()
-    ``{
-    // post-load parport module
-    if ((size (postinstall_info) == 0) || Mode::test ())
-	{
-	return;
-	}
-
-    boolean parport_loaded = false;
-    boolean parport_pc_loaded = false;
-
-    foreach (list postlist, postinstall_info,
-	``{
-	boolean post_modprobe = postlist[0]:false;
-	string post_name      = postlist[1]:"";
-	string post_arg	      = postlist[2]:"";
-	string post_vendor    = postlist[3]:"";
-	string post_device    = postlist[4]:"";
-	if (!parport_loaded)
-	    {
-	    if( `ok == ModuleLoading::Load( "parport", "", post_vendor, 
-	                                    post_device, Linuxrc::manual (), true ))
-		{
-		ModulesConf::ModuleArgs ("parport", "");
-		parport_loaded = true;
-		}
-	    }
-	if( !parport_pc_loaded)
-	    {
-	    if( `ok == ModuleLoading::Load( "parport_pc", "", post_vendor, 
-	                                    post_device, Linuxrc::manual (), true ))
-		{
-		ModulesConf::ModuleArgs ("parport_pc", "");
-		parport_pc_loaded = true;
-		}
-	    }
-
-	if( `ok == ModuleLoading::Load( post_name, post_arg, post_vendor, 
-	                                post_device, Linuxrc::manual (), post_modprobe))
-	    {
-	    ModulesConf::ModuleArgs (post_name, post_arg);
-	    Kernel::AddModuleToLoad(post_name);
-
-	    moduleNames = add( moduleNames, post_name );
-	    moduleArgs  = add( moduleArgs, post_arg );
-	    y2milestone( "moduleNames %1", moduleNames );
-	    y2milestone( "moduleArgs %1", moduleArgs );
-	    }
-	});
-    return;
-    }
 
 // start a controller (by loading its module)
 // return true if all necessary modules were actually loaded
 // return false if loading failed or was not necessary at all
 
-define boolean startController (map controller)
-    ``{
+boolean StartController(map controller)
+{
     // check module information
     // skip controller if no module info available
 
     list<map> module_drivers = controller["drivers"]:[];
-    string module_id = controller["unique_key"]:"";
 
     if (size (module_drivers) == 0)
 	return false;
@@ -349,23 +129,6 @@ define boolean startController (map controller)
 		string module_name = module_entry[0]:"";
 		string module_args = module_entry[1]:"";
 
-		// remember postinstall modules
-
-		if( contains( postinstall_names, module_name) )
-		    {
-		    y2milestone("startController name: %1 args: %2", module_name, module_args);
-
-		    list vendor_device = 
-			ModuleLoading::prepareVendorDeviceInfo(controller);
-
-		    // save data for parportInitialize
-		    postinstall_info = 
-			add( postinstall_info,
-			     [module_modprobe, module_name, module_args,
-			      vendor_device[0]:"", vendor_device[1]:""]);
-		    }
-		else
-		    {
 		    // load module if not yet loaded
 		    if( !contains (moduleNames, module_name) )
 			{
@@ -402,18 +165,15 @@ define boolean startController (map controller)
 			    // save data for modules.conf writing
 			    moduleNames = add (moduleNames, module_name);
 			    moduleArgs  = add (moduleArgs, module_args);
-			    moduleIDs  = add (moduleIDs, module_id);
 
 			    y2milestone( "startController moduleNames %1", moduleNames );
 			    y2milestone( "startController moduleArgs %1", moduleArgs );
-			    y2milestone( "startController moduleIDs %1", moduleIDs );
 			    ModToInitrd = add( ModToInitrd, [ module_name,
 			                                      module_args ] );
 			    y2milestone( "startController ModToInitrd %1", ModToInitrd );
 			    y2milestone( "startController ModToInitrdLx %1", ModToInitrdLx );
 			    }
 			} // not yet loaded
-		    } // not postinstall
 
 		// break out of module load loop if one module failed
 
@@ -437,15 +197,15 @@ define boolean startController (map controller)
 
     HwStatus::Set (unique_key, one_module_failed?`no:`yes);
 
-    return (!one_module_failed);
-    }
+    return !one_module_failed;
+}
 
 
 // local function to go through list of resources (list of maps)
 // checking if '"active":true' is set.
 
-define boolean anyActive (list<map> resources)
-``{
+boolean AnyActive(list<map> resources)
+{
     boolean active = size(resources)==0;
 
     foreach (map res, resources,
@@ -461,8 +221,8 @@ define boolean anyActive (list<map> resources)
  * Start storage related USB and FireWire stuff
  *
  */
-global define void StartHotplugStorage ()
-    ``{
+global void StartHotplugStorage()
+{
     import "Hotplug";
 
     // If USB capable, there might be an usb storage device (i.e. ZIP)
@@ -486,8 +246,6 @@ global define void StartHotplugStorage ()
 	// load sbp2
 	ModuleLoading::Load ("sbp2", "", "", "SBP2 Protocol", Linuxrc::manual (), true);
     }
-
-    return;
 }
 
 /**
@@ -498,13 +256,11 @@ global define void StartHotplugStorage ()
 // O: list of [ loaded modules, module argument ]
  */
 
-global define void Initialize()
-    ``{
+global void Initialize()
+{
     moduleNames = [];
     moduleArgs = [];
-    map controller = $[];
     integer cindex = 0;
-    list ioresources = [];
     boolean module_loaded = false;
 
     ModToInitrd = [];
@@ -517,7 +273,7 @@ global define void Initialize()
     // use while(), continue not allowed in foreach()
     while( !Arch::s390() && cindex < size(controllers) )
 	{
-	controller = controllers[cindex]:$[];
+	map controller = controllers[cindex]:$[];
 	y2milestone( "Initialize controller %1", controller );
 
 	if( size(controller["requires"]:[])>0 )
@@ -537,8 +293,8 @@ global define void Initialize()
 	    // the controller is disabled in BIOS
 	    // this is done by checking for an active IO or memory resource
 
-	    if( !(anyActive (controller["resource", "io"]:[])
-		  ||  anyActive (controller["resource", "mem"]:[])))
+	    if( !(AnyActive (controller["resource", "io"]:[])
+		  || AnyActive (controller["resource", "mem"]:[])))
 	    {
 		y2milestone( "Initialize controller %1 disabled in BIOS", 
 			     controller["device"]:"" );
@@ -548,7 +304,7 @@ global define void Initialize()
 	    }
 	}
 
-	module_loaded = startController(controller) || module_loaded;
+	module_loaded = StartController(controller) || module_loaded;
 	} // while (controller)
 
     y2milestone( "Initialize module_loaded %1", module_loaded );
@@ -593,29 +349,23 @@ global define void Initialize()
 	Initrd::AddModule( s[0]:"", s[1]:"" );
 	});
 
-    y2milestone( "Initialize postinstall_info %1", postinstall_info );
-
-    parportInitialize ();
-
     // load all raid personalities
     SCR::Execute(.target.modprobe, "raid0", "" );
     SCR::Execute(.target.modprobe, "raid1", "" );
-    SCR::Execute(.target.modprobe, "raid5", "" );
-    SCR::Execute(.target.modprobe, "raid6", "" );
+    SCR::Execute(.target.modprobe, "raid5", "");
+    SCR::Execute(.target.modprobe, "raid6", "");
+    SCR::Execute(.target.modprobe, "raid10", "");
     SCR::Execute(.target.modprobe, "multipath", "" );
 
     StartHotplugStorage();
 
-    y2milestone("Initialize all controllers initialized module_loaded:%1",
-                module_loaded );
+    y2milestone("Initialize all controllers initialized module_loaded:%1", module_loaded);
+
     StorageDevices::InitDone();
     if( module_loaded )
 	Storage::ReReadTargetMap();
     y2milestone( "Initialize calling EnablePopup()" );
     StorageClients::EnablePopup();
-
-    return;
-
-}; // Initialize ()
+};
 
 }

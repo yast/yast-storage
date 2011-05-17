@@ -5,10 +5,7 @@
  *			Arvin Schnell <arvin@suse.de>
  *
  * Purpose:		Define callbacks for libstorage.
- *
- * $Id$
  */
-
 {
     module "StorageClients";
 
@@ -18,7 +15,14 @@
     import "SlideShow";
     import "StorageCallbacks";
 
+    import "LibStorage";
+    import "LibStorage::StorageInterface";
+
     textdomain "storage";
+
+
+    any sint = nil;
+
 
 boolean enable_popup = false;
 list<string> texts = [];
@@ -53,9 +57,9 @@ global void ShowInstallInfo (string text)
     {
     SlideShow::SubProgressStart( text );
     SlideShow::AppendMessageToInstLog(text);
-    
+
     current_action = current_action + 1;
-    
+
     // hack: assume every text change means another action
     y2milestone( "Current action: %1, total stage progress: %2", current_action, current_action * 100 / total_actions );
     SlideShow::StageProgress( current_action * 100 / total_actions, nil );
@@ -74,56 +78,84 @@ global void InfoPopup (string text)
 global boolean YesNoPopup (string text)
     {
     y2milestone( "YesNoPopup txt:%1", text );
-    return Report::AnyQuestion( Popup::NoHeadline(), text, 
+    return Report::AnyQuestion( Popup::NoHeadline(), text,
                                 Label::YesButton(), Label::NoButton(),
 				`yes );
     }
 
 
-global list<any> PasswordPopup(string device, integer attempts, string password)
-{
-    y2milestone("PasswordPopup device:%1 attempts:%2", device, attempts);
+    global boolean CommitErrorPopup(integer error, string last_action, string extended_message)
+    {
+	y2milestone("CommitErrorPopup error%1 last_action%2 extended_message:%3", error,
+		    last_action, extended_message);
 
-    password = "";
+	string text = _("Failure occurred during following action:") + "\n" + last_action + "\n\n";
 
-    UI::OpenDialog(
-	`opt(`decorated),
-	`VBox(
-	    `Password(`id(`password),
-		      // Label: get password for device
-		      // Please use newline if label is longer than 40 characters
-		      sformat(_("&Enter password for device %1:"), device), password),
-	    `ButtonBox(
-		// Ok button
-		`PushButton(`id(`ok), `opt(`default),  Label::OKButton()),
-		// Cancel button
-		`PushButton(`id(`cancel), Label::CancelButton())
+	string tmp =  LibStorage::StorageInterface::getErrorString(sint, error);
+	if (!isempty(tmp))
+	{
+	    text = text + tmp + "\n\n";
+	}
+
+	text = text + sformat(_("System error code was: %1"), error) + "\n\n";
+
+	if (!isempty(extended_message))
+	{
+	    text = text + extended_message + "\n\n";
+	}
+
+	text = text + _("Continue despite the error?");
+
+	return Report::ErrorAnyQuestion(Popup::NoHeadline(), text, Label::ContinueButton(),
+					Label::AbortButton(), `focus_no);
+    }
+
+
+    global list<any> PasswordPopup(string device, integer attempts, string password)
+    {
+	y2milestone("PasswordPopup device:%1 attempts:%2", device, attempts);
+
+	password = "";
+
+	UI::OpenDialog(
+	    `opt(`decorated),
+	    `VBox(
+		`Password(`id(`password),
+			  // Label: get password for device
+			  // Please use newline if label is longer than 40 characters
+			  sformat(_("&Enter password for device %1:"), device), password),
+		`ButtonBox(
+		    `PushButton(`id(`ok), `opt(`default), Label::OKButton()),
+		    `PushButton(`id(`cancel), Label::CancelButton())
+		    )
 		)
-	    )
-	);
+	    );
 
-    UI::SetFocus(`id(`password));
+	UI::SetFocus(`id(`password));
 
-    symbol ret = (symbol) UI::UserInput();
+	symbol ret = (symbol) UI::UserInput();
 
-    if (ret == `ok)
-	password = (string) UI::QueryWidget(`id(`password), `Value);
+	if (ret == `ok)
+	    password = (string) UI::QueryWidget(`id(`password), `Value);
 
-    UI::CloseDialog();
+	UI::CloseDialog();
 
-    return [ ret == `ok, password ];
-}
+	return [ ret == `ok, password ];
+    }
 
 
-global define void InstallCallbacks()
+global void InstallCallbacks(any value)
     {
     y2milestone( "InstallCallbacks" );
-    StorageCallbacks::ProgressBar ("StorageClients::ProgressBar");
-    StorageCallbacks::ShowInstallInfo ("StorageClients::ShowInstallInfo");
-    StorageCallbacks::InfoPopup ("StorageClients::InfoPopup");
-    StorageCallbacks::YesNoPopup ("StorageClients::YesNoPopup");
+
+    sint = value;
+
+    StorageCallbacks::ProgressBar("StorageClients::ProgressBar");
+    StorageCallbacks::ShowInstallInfo("StorageClients::ShowInstallInfo");
+    StorageCallbacks::InfoPopup("StorageClients::InfoPopup");
+    StorageCallbacks::YesNoPopup("StorageClients::YesNoPopup");
+    StorageCallbacks::CommitErrorPopup("StorageClients::CommitErrorPopup");
     StorageCallbacks::PasswordPopup("StorageClients::PasswordPopup");
     }
 
-} // module StorageClients
-
+}

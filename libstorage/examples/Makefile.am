@@ -9,7 +9,7 @@ LDADD = ../src/liby2storage.la
 
 AM_CXXFLAGS =
 
-noinst_PROGRAMS = TestDisk TestDiskLog TestStorage TestProbing TestLvm TestMd TestLoop TestLock
+noinst_PROGRAMS = TestDisk TestDiskLog TestStorage TestProbing TestLvm TestMd TestLoop TestLock SaveGraph ShowBytes
 
 TestDisk_SOURCES = TestDisk.cc
 
@@ -27,9 +27,13 @@ TestLoop_SOURCES = TestLoop.cc
 
 TestLock_SOURCES = TestLock.cc
 
+SaveGraph_SOURCES = SaveGraph.cc
+
+ShowBytes_SOURCES = ShowBytes.cc
+
 exampledir = $(docdir)/examples/libstorage
 
-example_DATA = TestDisk.cc TestDiskLog.cc TestProbing.cc TestLvm.cc TestMd.cc TestLoop.cc 
+example_DATA = TestDisk.cc TestDiskLog.cc TestProbing.cc TestLvm.cc TestMd.cc TestLoop.cc SaveGraph.cc ShowBytes.cc
 
 EXTRA_DIST = $(example_DATA) Makefile.example
 

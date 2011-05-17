@@ -23,32 +23,36 @@
 #ifndef NFS_CO_H
 #define NFS_CO_H
 
-#include "y2storage/Container.h"
-#include "y2storage/Nfs.h"
+#include "storage/Container.h"
+#include "storage/Nfs.h"
 
 namespace storage
 {
+    class SystemInfo;
+
+
 class NfsCo : public Container
     {
     friend class Storage;
 
     public:
-	NfsCo( Storage * const s, ProcMounts& mounts );
-	NfsCo( Storage * const s );
-	NfsCo( const NfsCo& rhs );
 
+	NfsCo(Storage * const s);
+	NfsCo(Storage * const s, const EtcFstab& fstab, SystemInfo& systeminfo);
+	NfsCo(const NfsCo& c);
 	virtual ~NfsCo();
+
 	static storage::CType staticType() { return storage::NFSC; }
 	friend std::ostream& operator<< ( std::ostream&, const NfsCo& );
-	int addNfs( const string& nfsDev, unsigned long long sizeK,
-		    const string& mp );
+	int addNfs(const string& nfsDev, unsigned long long sizeK, const string& opts, 
+	           const string& mp, bool nfs4);
 
-	static bool isNfsDev( const string& dev );
 	int removeVolume( Volume* v );
 	int doRemove( Volume* );
 
 	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& d ) const;
+
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
 	
     protected:
 	// iterators over NFS volumes
@@ -99,17 +103,19 @@ class NfsCo : public Container
 	    return( ConstNfsIter( NfsCPIterator( p, Check, true )) );
 	    }
 
-	NfsCo( Storage * const s, const string& File );
-
 	bool findNfs( const string& dev, NfsIter& i );
 	bool findNfs( const string& dev );
-	void getNfsData( ProcMounts& mounts );
-	void init();
+
+	static list<string> filterOpts(const list<string>& opts);
+	void getNfsData(const EtcFstab& fstab, SystemInfo& systeminfo);
 
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new NfsCo( *this ) ); }
 
-	void logData( const string& Dir );
+    private:
+
+	NfsCo& operator=(const NfsCo&); // disallow
+
     };
 
 }

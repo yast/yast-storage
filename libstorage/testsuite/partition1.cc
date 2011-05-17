@@ -1,10 +1,5 @@
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <iostream>
-#include <iterator>
-
-#include <StorageInterface.h>
 
 #include "common.h"
 
@@ -17,52 +12,27 @@ StorageInterface* s = 0;
 
 
 void
-print_partitions (const string& disk)
-{
-    deque<PartitionInfo> partitioninfos;
-    s->getPartitionInfo (disk, partitioninfos);
-    for (deque<PartitionInfo>::iterator i = partitioninfos.begin ();
-	 i != partitioninfos.end(); i++)
-    {
-	cout << i->v.name << ' ';
-	switch (i->partitionType)
-	{
-	    case PRIMARY: cout << "PRIMARY "; break;
-	    case EXTENDED: cout << "EXTENDED "; break;
-	    case LOGICAL: cout << "LOGICAL "; break;
-	    case PTYPE_ANY: cout << "ANY "; break;
-	}
-	cout << i->cylStart << ' ' << i->cylSize << '\n';
-    }
-
-    cout << '\n';
-}
-
-
-void
 msdos (const string& disk, int n)
 {
-    printf ("msdos %s %d\n", disk.c_str(), n);
+    cout << "msdos " << disk << " " << n << endl;
 
     s = createStorageInterface(TestEnvironment());
 
-    s->destroyPartitionTable (disk, "msdos");
+    s->destroyPartitionTable(disk, "msdos");
 
     long int S = 100000;
     string name;
 
-    cout << s->createPartitionKb (disk, PRIMARY, 0*S, S, name) << '\n';
-    cout << s->createPartitionKb (disk, PRIMARY, 1*S, S, name) << '\n';
-    cout << s->createPartitionKb (disk, PRIMARY, 2*S, S, name) << '\n';
+    cout << s->createPartitionKb(disk, PRIMARY, 0*S, S, name) << endl;
+    cout << s->createPartitionKb(disk, PRIMARY, 1*S, S, name) << endl;
+    cout << s->createPartitionKb(disk, PRIMARY, 2*S, S, name) << endl;
 
-    cout << s->createPartitionKb (disk, EXTENDED, 3*S, (n+1)*S, name) << '\n';
+    cout << s->createPartitionKb(disk, EXTENDED, 3*S, (n+1)*S, name) << endl;
 
-    for (int i = 0; i < n; i++)
-	cout << s->createPartitionKb (disk, LOGICAL, (3+i)*S, S, name) << '\n';
+    for (int i = 0; i < n; ++i)
+	cout << s->createPartitionKb(disk, LOGICAL, (3+i)*S, S, name) << endl;
 
-    cout << s->createPartitionKb (disk, LOGICAL, (3+n)*S, S, name) << '\n'; // FAILS
-
-    print_partitions (disk);
+    print_partitions(s, disk);
 
     delete s;
 }
@@ -71,56 +41,40 @@ msdos (const string& disk, int n)
 void
 gpt (const string& disk, int n)
 {
-    printf ("gpt %s %d\n", disk.c_str(), n);
+    cout << "gpt " << disk << " " << n << endl;
 
     s = createStorageInterface(TestEnvironment());
 
-    s->destroyPartitionTable (disk, "gpt");
+    s->destroyPartitionTable(disk, "gpt");
 
     long int S = 100000;
     string name;
 
-    for (int i = 0; i < n; i++)
-	cout << s->createPartitionKb (disk, PRIMARY, i*S, S, name) << '\n';
+    for (int i = 0; i < n; ++i)
+	cout << s->createPartitionKb(disk, PRIMARY, i*S, S, name) << endl;
 
-    cout << s->createPartitionKb (disk, PRIMARY, n*S, S, name) << '\n'; // FAILS
-
-    print_partitions (disk);
+    print_partitions(s, disk);
 
     delete s;
 }
 
 
 int
-main ()
+main()
 {
-    system ("mkdir -p tmp");
+    setup_logger();
 
     /*
-     * Check that we can create 3 primary, 1 extended and 59 logical partitions
-     * on a ide disk with msdos partition table.
+     * Check that we can create 3 primary, 1 extended and many logical
+     * partitions on a disk with msdos partition table and big range.
      */
-    system ("cp data/disk_hda tmp/disk_hda");
-    msdos ("/dev/hda", 59);
+    setup_system("thalassa");
+    msdos("/dev/sdc", 32);
 
     /*
-     * Check that we can create 3 primary, 1 extended and 11 logical partitions
-     * on a scsi disk with msdos partition table.
+     * Check that we can create many primary partitions on a disk with gpt
+     * partition table and big range.
      */
-    system ("cp data/disk_sda tmp/disk_sda");
-    msdos ("/dev/sda", 11);
-
-    /*
-     * Check that we can create 63 primary partitions on a ide disk with gpt
-     * partition table.
-     */
-    system ("cp data/disk_hda tmp/disk_hda");
-    gpt ("/dev/hda", 63);
-
-    /*
-     * Check that we can create 15 primary partitions on a scsi disk with gpt
-     * partition table.
-     */
-    system ("cp data/disk_sda tmp/disk_sda");
-    gpt ("/dev/sda", 15);
+    setup_system("thalassa");
+    gpt("/dev/sdc", 32);
 }

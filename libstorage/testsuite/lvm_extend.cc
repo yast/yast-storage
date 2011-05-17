@@ -1,9 +1,5 @@
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <iostream>
-#include <iterator>
-#include <sstream>
 
 #include "common.h"
 
@@ -12,93 +8,40 @@ using namespace storage;
 using namespace std;
 
 
-StorageInterface *s = 0;
-
-void print_num_pvs( const string& vg)
+void
+extendVg(const string& vg, const deque<string>& pvs)
 {
-    deque<string> disks;
-    disks.push_back( "/dev/hda" );
-    disks.push_back( "/dev/hdb" );
-    disks.push_back( "/dev/sda" );
-    disks.push_back( "/dev/sdb" );
+    cout << "extendVg" << endl;
 
-    int count = 0;
-    for ( deque<string>::iterator i = disks.begin();
-	  i != disks.end(); i++ )
-    {
-	deque<PartitionInfo> pinfos;
-	cout << s->getPartitionInfo( *i, pinfos )<< endl;
+    StorageInterface* s = createStorageInterface(TestEnvironment());
 
-	for ( deque<PartitionInfo>::iterator p = pinfos.begin();
-	      p != pinfos.end(); p++ )
-	{
-	    if ( p->v.usedByDevice == "/dev/" + vg )
-		count++;	    
-	}
-    }
-    cout << count << endl;
-}
+    LvmVgInfo info;
+    cout << s->getLvmVgInfo(vg, info) << endl;
+    cout << info.devices << endl;
 
+    /* extend it by devs_extend given pvs */
+    cout << s->extendLvmVg(vg, pvs) << endl;
 
-void extendVg( const string& vg, deque<string> devs_extend )
-{
-    printf("extendVg\n");
-
-    s = createStorageInterface(TestEnvironment());
-
-    deque<string> devs;
-    devs.push_back( "/dev/hda1" );
-    /* create volume group with the above disk */
-    cout << s->createLvmVg( vg, 4, false, devs ) << endl;
-
-    print_num_pvs( vg );
-
-    /* extend it by devs_extend given devs */
-    cout << s->extendLvmVg( vg, devs_extend ) << endl;
-    
-    print_num_pvs( vg );
+    cout << s->getLvmVgInfo(vg, info) << endl;
+    cout << info.devices << endl;
+    cout << info.devices_add << endl;
 
     delete s;
 }
 
 
-int main( int argc_iv, char** argv_ppcv )
+int
+main()
 {
-    system ("mkdir -p tmp");
+    setup_logger();
 
-    system ("rm -rf tmp/*");
-
-    system ("cp data/disk_hda tmp");
-    system ("cp data/disk_hdb tmp");
-    system ("cp data/disk_sda tmp");
-    system ("cp data/disk_sdb tmp");
+    setup_system("thalassa");
 
     deque<string> devs;
 
     /*
-     * Check that we can extend a volume group ( consisting of one PV
-     * /dev/hda1 ) by some partitions on the same ide disk
+     * Check that we can extend a volume group.
      */
-    devs.push_back("/dev/hda2");
-    devs.push_back("/dev/hda5");
-    extendVg( "system", devs );
-    devs.clear();
-
-    /*
-     * Check that we can extend a volume group ( consisting of one PV
-     * /dev/hda1 ) by some partitions on the another ide disk
-     */
-    devs.push_back("/dev/hdb1");
-    devs.push_back("/dev/hdb2");
-    extendVg( "system", devs );
-    devs.clear();
-
-    /*
-     * Check that we can extend a volume group ( consisting of one PV
-     * /dev/hda1 ) by some partitions on the another scsi disk
-     */
-    devs.push_back("/dev/sda1");
     devs.push_back("/dev/sdb1");
-    extendVg( "system", devs );
-    devs.clear();
+    extendVg("system", devs);
 }

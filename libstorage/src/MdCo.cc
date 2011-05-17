@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,179 +19,78 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream> 
-#include <sstream> 
+#include <ostream>
+#include <fstream>
 
-#include "y2storage/MdCo.h"
-#include "y2storage/Md.h"
-#include "y2storage/MdPartCo.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-#include "y2storage/EtcRaidtab.h"
-#include "y2storage/StorageDefines.h"
-
-using namespace std;
-using namespace storage;
-
-MdCo::MdCo( Storage * const s, bool detect ) :
-    Container(s,"md",staticType())
-    {
-    y2deb("constructing MdCo detect:" << detect);
-    init();
-    if( detect )
-	getMdData();
-    }
-
-MdCo::MdCo( Storage * const s, const string& file ) :
-    Container(s,"md",staticType())
-    {
-    y2deb("constructing MdCo file:" << file);
-    init();
-    }
-
-MdCo::~MdCo()
-    {
-    y2deb("destructed MdCo");
-    }
-
-void
-MdCo::init()
-    {
-    mjr = Md::mdMajor();
-    }
+#include "storage/MdCo.h"
+#include "storage/Md.h"
+#include "storage/SystemCmd.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/EtcMdadm.h"
+#include "storage/StorageDefines.h"
+#include "storage/AsciiFile.h"
+#include "storage/SystemInfo.h"
 
 
-void
-MdCo::syncRaidtab()
+namespace storage
 {
-    MdPair p=mdPair(Md::notDeleted);
-    for( MdIter i=p.begin(); i!=p.end(); ++i )
-    {
-	//updateEntry( &(*i) );
-      i->updateEntry(getStorage()->getRaidtab());
-    }
-}
+    using namespace std;
 
 
-void MdCo::updateEntry( const Md* m )
+    MdCo::MdCo(Storage* s)
+	: Container(s, "md", "/dev/md", staticType())
     {
-    EtcRaidtab* tab = getStorage()->getRaidtab();
-    if (tab)
-	{
-	list<string> lines;
-	list<string> devices;
-	m->raidtabLines(lines);
-	m->getDevs( devices );
-	tab->updateEntry( m->nr(), lines, m->mdadmLine(), devices );
-	}
+	y2deb("constructing MdCo");
     }
 
-void
-MdCo::getMdData()
-    {
-    y2milestone( "begin" );
-    string line;
-    std::ifstream file( "/proc/mdstat" );
-    classic(file);
-    getline( file, line );
-    while( file.good() )
-	{
-      string mdDev = extractNthWord( 0, line );
-      string line2;
-      getline(file,line2);
 
-      if( canHandleDev(mdDev,line2) )
-        {
-        Md* m = new Md( *this, line, line2 );
-        addMd( m );
-        getline(file,line);
-        }
-      else
-        {
-        line = line2;
-        }
-	}
-    file.close();
-    file.clear();
-    file.open( (getStorage()->root()+"/etc/raidtab").c_str() );
-    MdIter i;
-    getline( file, line );
-    while( file.good() )
+    MdCo::MdCo(Storage* s, SystemInfo& systeminfo)
+	: Container(s, "md", "/dev/md", staticType(), systeminfo)
+    {
+	y2deb("constructing MdCo");
+
+	const ProcMdstat& procmdstat = systeminfo.getProcMdstat();
+	for (ProcMdstat::const_iterator it = procmdstat.begin(); it != procmdstat.end(); ++it)
 	{
-	y2mil( "raidtab line:" << line );
-	if( extractNthWord( 0, line )=="raiddev" )
+	    if (!it->second.is_container && !isHandledByMdPart(it->first))
 	    {
-	    string md = extractNthWord( 1, line );
-	    getline( file, line );
-	    y2mil( "raidtab line:" << line );
-	    if( findMd( md, i ))
-		{
-		string key;
-		string device;
-		while( file.good() && 
-		       (key=extractNthWord( 0, line ))!="raiddev" )
-		    {
-		    if( key=="device" )
-			device = extractNthWord( 1, line );
-		    else if( key=="spare-disk" )
-			{
-			if( !device.empty() )
-			    {
-			    normalizeDevice(device);
-			    i->addSpareDevice( device );
-			    device.clear();
-			    }
-			}
-		    getline( file, line );
-		    }
-		}
-	    else
-		y2warning( "raid %s from /etc/raidtab not found", md.c_str() );
+		Md* m = new Md(*this, it->first, "/dev/" + it->first, systeminfo);
+		addMd(m);
 	    }
-	getline( file, line );
-	}
-    MdPair p=mdPair(Md::notDeleted);
-    for( MdIter i=p.begin(); i!=p.end(); ++i )
-	{
-	string num = "md"+decString(i->nr());
-	list<string> devs;
-	i->getDevs( devs );
-	for( list<string>::iterator s=devs.begin(); s!=devs.end(); ++s )
-	  {
-	    y2mil( " Setting device " << *s << " as used by UB_MD" );
-	    getStorage()->setUsedBy( *s, UB_MD, num );
-	  }
 	}
     }
 
-void
-MdCo::getMdData( unsigned num )
+
+    MdCo::MdCo(const MdCo& c)
+	: Container(c)
     {
-    y2milestone( "num:%u", num );
-    string line;
-    std::ifstream file( "/proc/mdstat" );
-    classic(file);
-    string md = "md" + decString(num);
-    getline( file, line );
-    while( file.good() )
+	y2deb("copy-constructed MdCo from " << c.dev);
+
+	ConstMdPair p = c.mdPair();
+	for (ConstMdIter i = p.begin(); i != p.end(); ++i)
 	{
-	y2mil( "mdstat line:" << line );
-	if( extractNthWord( 0, line ) == md ) 
-	    {
-	    string line2;
-	    getline( file, line2 );
-	    y2mil( "mdstat line2:" << line );
-	    Md* m = new Md( *this, line, line2 );
-	    checkMd( m );
-	    }
-	getline( file, line );
+	    Md* p = new Md(*this, *i);
+	    vols.push_back(p);
 	}
     }
+
+
+    MdCo::~MdCo()
+    {
+	y2deb("destructed MdCo " << dev);
+    }
+
+
+    void
+    MdCo::syncMdadm(EtcMdadm* mdadm) const
+    {
+	ConstMdPair p = mdPair(Md::notDeleted);
+	for (ConstMdIter it = p.begin(); it != p.end(); ++it)
+	    it->updateEntry(mdadm);
+    }
+
 
 void
 MdCo::addMd( Md* m )
@@ -200,35 +99,9 @@ MdCo::addMd( Md* m )
 	addToList( m );
     else
 	{
-	y2warning( "addMd alread exists %u", m->nr() ); 
+	y2war("addMd already exists " << m->nr()); 
 	delete m;
 	}
-    }
-
-void
-MdCo::checkMd( Md* m )
-    {
-    MdIter i;
-    if( findMd( m->nr(), i ))
-	{
-	i->setSize( m->sizeK() );
-	i->setMdUuid( m->getMdUuid() );
-	i->setCreated( false );
-	if( m->personality()!=i->personality() )
-	    y2warning( "inconsistent raid type my:%s kernel:%s", 
-	               i->pName().c_str(), m->pName().c_str() );
-	if( i->parity()!=storage::PAR_NONE && m->parity()!=i->parity() )
-	    y2warning( "inconsistent parity my:%s kernel:%s", 
-	               i->ptName().c_str(), m->ptName().c_str() );
-	if( i->chunkSize()>0 && m->chunkSize()!=i->chunkSize() )
-	    y2warning( "inconsistent chunk size my:%lu kernel:%lu", 
-	               i->chunkSize(), m->chunkSize() );
-	}
-    else
-	{
-	y2warning( "checkMd does not exist %u", m->nr() ); 
-	}
-    delete m;
     }
 
 
@@ -269,24 +142,24 @@ MdCo::findMd( const string& dev )
     }
 
 
-int
-MdCo::usedNumbers(list<int>& nums)
-{
-  MdPair p=mdPair(Md::notDeleted);
-  MdIter i;
-  nums.clear();
-  for(i=p.begin(); i!=p.end(); i++ )
+    list<unsigned>
+    MdCo::usedNumbers() const
     {
-      nums.push_back(i->nr());
+	list<unsigned> nums;
+
+	ConstMdPair p = mdPair(Md::notDeleted);
+	for (ConstMdIter i = p.begin(); i != p.end(); ++i)
+	    nums.push_back(i->nr());
+
+	return nums;
     }
-  return 0;
-}
+
 
 int 
-MdCo::createMd( unsigned num, MdType type, const list<string>& devs )
+MdCo::createMd(unsigned num, MdType type, const list<string>& devs, const list<string>& spares)
     {
     int ret = 0;
-    y2mil( "num:" << num << " type:" << Md::pName(type) << " devs:" << devs );
+    y2mil("num:" << num << " type:" << toString(type) << " devs:" << devs << " spares:" << spares);
     if( readonly() )
 	{
 	ret = MD_CHANGE_READONLY;
@@ -304,22 +177,14 @@ MdCo::createMd( unsigned num, MdType type, const list<string>& devs )
 	if( findMd( num ))
 	    ret = MD_DUPLICATE_NUMBER;
 	}
-    list<string>::const_iterator i=devs.begin();
-    while( ret==0 && i!=devs.end() )
-	{
-	ret = checkUse( normalizeDevice( *i ) );
-	++i;
-	}
-    i=devs.begin();
-    while( ret==0 && i!=devs.end() )
-	{
-	string d = normalizeDevice( *i );
-	getStorage()->setUsedBy( d, UB_MD, "md"+decString(num) );
-	++i;
-	}
+
+    if (ret == 0)
+	ret = checkUse(devs, spares);
+
     if( ret==0 )
 	{
-	Md* m = new Md( *this, num, type, devs );
+	string name = "md" + decString(num);
+	Md* m = new Md(*this, name, "/dev/" + name, type, devs, spares);
 	m->setCreated( true );
 	addToList( m );
 	}
@@ -327,27 +192,40 @@ MdCo::createMd( unsigned num, MdType type, const list<string>& devs )
     return( ret );
     }
 
-int MdCo::checkUse( const string& dev )
+
+    int
+    MdCo::checkUse(const list<string>& devs, const list<string>& spares) const
     {
-    int ret = 0;
-    const Volume* v = getStorage()->getVolume( dev );
-    if( v==NULL )
+	int ret = 0;
+
+	list<string> all = devs;
+	all.insert(all.end(), spares.begin(), spares.end());
+
+	for (list<string>::const_iterator it = all.begin(); it != all.end(); ++it)
 	{
-	ret = MD_DEVICE_UNKNOWN;
+	    const Volume* v = getStorage()->getVolume(*it);
+	    if (v == NULL)
+	    {
+		ret = MD_DEVICE_UNKNOWN;
+		break;
+	    }
+	    else if (!v->canUseDevice())
+	    {
+		ret = MD_DEVICE_USED;
+		break;
+	    }
 	}
-    else if( !v->canUseDevice() )
-	{
-	ret = MD_DEVICE_USED;
-	}
-    y2milestone( "dev:%s ret:%d", dev.c_str(), ret );
-    return( ret );
+
+	y2mil("devs:" << devs << " spares:" << spares << " ret:" << ret);
+	return ret;
     }
+
 
 int 
 MdCo::checkMd( unsigned num )
     {
     int ret = 0;
-    y2milestone( "num:%u", num );
+    y2mil("num:" << num);
     MdIter i;
     if( !findMd( num, i ) )
 	ret = MD_DEVICE_UNKNOWN;
@@ -358,10 +236,10 @@ MdCo::checkMd( unsigned num )
     }
 
 int 
-MdCo::extendMd( unsigned num, const string& dev )
+MdCo::extendMd(unsigned num, const list<string>& devs, const list<string>& spares)
     {
     int ret = 0;
-    y2milestone( "num:%u dev:%s", num, dev.c_str() );
+    y2mil("num:" << num << " devs:" << devs << " spares:" << spares);
     MdIter i;
     if( readonly() )
 	{
@@ -369,7 +247,7 @@ MdCo::extendMd( unsigned num, const string& dev )
 	}
     if( ret==0 )
 	{
-	ret = checkUse( normalizeDevice( dev ) );
+	ret = checkUse(devs, spares);
 	}
     if( ret==0 )
 	{
@@ -382,26 +260,29 @@ MdCo::extendMd( unsigned num, const string& dev )
 	}
     if( ret==0 )
 	{
-	ret = i->addDevice( dev );
+	for (list<string>::const_iterator it = devs.begin(); it != devs.end(); ++it)
+	    if ((ret = i->addDevice(*it)) != 0)
+		break;
+	}
+    if( ret==0 )
+	{
+	for (list<string>::const_iterator it = spares.begin(); it != spares.end(); ++it)
+	    if ((ret = i->addDevice(*it, true)) != 0)
+		break;
 	}
     if( ret==0 && !getStorage()->isDisk(dev) )
 	{
 	getStorage()->changeFormatVolume( dev, false, FSNONE );
-	}
-    if( ret==0 )
-	{
-	string d = normalizeDevice( dev );
-	getStorage()->setUsedBy( d, UB_MD, "md"+decString(num) );
 	}
     y2mil("ret:" << ret);
     return( ret );
     }
 
 int 
-MdCo::shrinkMd( unsigned num, const string& dev )
+MdCo::shrinkMd(unsigned num, const list<string>& devs, const list<string>& spares)
     {
     int ret = 0;
-    y2milestone( "num:%u dev:%s", num, dev.c_str() );
+    y2mil("num:" << num << " devs:" << devs << " spares:" << spares);
     MdIter i;
     if( readonly() )
 	{
@@ -418,12 +299,15 @@ MdCo::shrinkMd( unsigned num, const string& dev )
 	}
     if( ret==0 )
 	{
-	ret = i->removeDevice( dev );
+	for (list<string>::const_iterator it = devs.begin(); it != devs.end(); ++it)
+	    if ((ret = i->removeDevice(*it)) != 0)
+		break;
 	}
     if( ret==0 )
 	{
-	string d = normalizeDevice( dev );
-	getStorage()->clearUsedBy(d);
+	for (list<string>::const_iterator it = spares.begin(); it != spares.end(); ++it)
+	    if ((ret = i->removeDevice(*it)) != 0)
+		break;
 	}
     y2mil("ret:" << ret);
     return( ret );
@@ -433,7 +317,7 @@ int
 MdCo::changeMdType( unsigned num, MdType ptype )
     {
     int ret = 0;
-    y2milestone( "num:%u md_type:%d", num, ptype );
+    y2mil("num:" << num << " md_type:" << toString(ptype));
     MdIter i;
     if( readonly() )
 	{
@@ -460,7 +344,7 @@ int
 MdCo::changeMdChunk( unsigned num, unsigned long chunk )
     {
     int ret = 0;
-    y2milestone( "num:%u chunk:%lu", num, chunk );
+    y2mil("num:" << num << " chunk:" << chunk);
     MdIter i;
     if( readonly() )
 	{
@@ -477,7 +361,7 @@ MdCo::changeMdChunk( unsigned num, unsigned long chunk )
 	}
     if( ret==0 )
 	{
-	i->setChunkSize( chunk );
+	i->setChunkSizeK(chunk);
 	}
     y2mil("ret:" << ret);
     return( ret );
@@ -487,7 +371,7 @@ int
 MdCo::changeMdParity( unsigned num, MdParity ptype )
     {
     int ret = 0;
-    y2milestone( "num:%u parity:%d", num, ptype );
+    y2mil("num:" << num << " parity:" << toString(ptype));
     MdIter i;
     if( readonly() )
 	{
@@ -504,7 +388,7 @@ MdCo::changeMdParity( unsigned num, MdParity ptype )
 	}
     if( ret==0 )
 	{
-	i->setParity( ptype );
+	ret = i->setParity( ptype );
 	}
     y2mil("ret:" << ret);
     return( ret );
@@ -526,9 +410,9 @@ MdCo::getMdState(unsigned num, MdStateInfo& info)
     }
     if( ret==0 )
     {
-	i->getState(info);
+	ret = i->getState(info);
     }
-    y2milestone("ret:%d", ret);
+    y2mil("ret:" << ret);
     return ret;
 }
 
@@ -536,7 +420,7 @@ int
 MdCo::removeMd( unsigned num, bool destroySb )
     {
     int ret = 0;
-    y2milestone( "num:%u", num );
+    y2mil("num:" << num);
     MdIter i;
     if( readonly() )
 	{
@@ -547,16 +431,14 @@ MdCo::removeMd( unsigned num, bool destroySb )
 	if( !findMd( num, i ))
 	    ret = MD_UNKNOWN_NUMBER;
 	}
-    if( ret==0 && i->getUsedByType() != UB_NONE )
+    if (ret == 0 && i->isUsedBy())
 	{
 	ret = MD_REMOVE_USED_BY;
 	}
     if( ret==0 )
 	{
-	list<string> devs;
-	i->getDevs( devs );
-	for( list<string>::const_iterator s=devs.begin(); s!=devs.end(); ++s )
-	    getStorage()->clearUsedBy(*s);
+	getStorage()->clearUsedBy(i->getDevs());
+
 	if( i->created() )
 	    {
 	    if( !removeFromList( &(*i) ))
@@ -564,7 +446,7 @@ MdCo::removeMd( unsigned num, bool destroySb )
 	    }
 	else
 	    {
-	    i->setDeleted( true );
+	    i->setDeleted();
 	    i->setDestroySb( destroySb );
 	    }
 	}
@@ -575,7 +457,7 @@ MdCo::removeMd( unsigned num, bool destroySb )
 int MdCo::removeVolume( Volume* v )
     {
     int ret = 0;
-    y2milestone( "name:%s", v->name().c_str() );
+    y2mil("name:" << v->name());
     Md * m = dynamic_cast<Md *>(v);
     if( m != NULL )
 	ret = removeMd( v->nr() );
@@ -586,21 +468,21 @@ int MdCo::removeVolume( Volume* v )
 
 void MdCo::activate( bool val, const string& tmpDir )
     {
-    y2milestone( "old active:%d val:%d tmp:%s", active, val, tmpDir.c_str() );
+	if (getenv("LIBSTORAGE_NO_MDRAID") != NULL)
+	    return;
+
+    y2mil("old active:" << active << " val:" << val << " tmp:" << tmpDir);
     if( active!=val )
 	{
 	SystemCmd c;
 	if( val )
 	    {
 	    string mdconf = tmpDir + "/mdadm.conf";
-	    string cmd = "echo 1 > /sys/module/md_mod/parameters/start_ro";
-	    c.execute( cmd );
-	    cmd = MDADMBIN " --examine --scan --config=partitions >" + mdconf;
-	    c.execute( cmd );
-	    cmd = "cat " + mdconf;
-	    c.execute( cmd );
-	    cmd = MDADMBIN " --assemble --scan --config=" + mdconf;
-	    c.execute( cmd );
+	    c.execute("echo 1 > /sys/module/md_mod/parameters/start_ro");
+	    c.execute(MDADMBIN " --examine --scan --config=partitions > " + mdconf);
+	    AsciiFile(mdconf).logContent();
+	    c.execute(MDADMBIN " --assemble --scan --config=" + mdconf);
+	    unlink(mdconf.c_str());
 	    }
 	else
 	    {
@@ -608,12 +490,13 @@ void MdCo::activate( bool val, const string& tmpDir )
 	    }
 	active = val;
 	}
+    Storage::waitForDevice();
     }
 
 int 
 MdCo::doCreate( Volume* v ) 
     {
-    y2milestone( "name:%s", v->name().c_str() );
+    y2mil("name:" << v->name());
     Md * m = dynamic_cast<Md *>(v);
     int ret = 0;
     if( m != NULL )
@@ -625,11 +508,11 @@ MdCo::doCreate( Volume* v )
 	ret =  m->checkDevices();
 	if( ret==0 )
 	    {
-	    list<string> devs;
-	    m->getDevs( devs );
+	    list<string> devs = m->getDevs();
 	    for( list<string>::iterator i = devs.begin(); i!=devs.end(); ++i )
 		{
 		getStorage()->removeDmTableTo( *i );
+		getStorage()->unaccessDev(*i);
 		}
 	    }
 	if( ret==0 )
@@ -644,15 +527,19 @@ MdCo::doCreate( Volume* v )
 	    }
 	if( ret==0 )
 	    {
-	    getStorage()->waitForDevice( m->device() );
-	    getMdData( m->nr() );
-	    updateEntry( m );
-	    bool used_as_pv = m->getUsedByType() == UB_LVM;
-	    y2milestone( "zeroNew:%d used_as_pv:%d",
-			 getStorage()->getZeroNewPartitions(), used_as_pv );
+	    m->setCreated(false);
+	    Storage::waitForDevice(m->device());
+	    SystemInfo systeminfo;
+	    m->updateData(systeminfo);
+	    m->setUdevData(systeminfo);
+	    EtcMdadm* mdadm = getStorage()->getMdadm();
+	    if (mdadm)
+		m->updateEntry(mdadm);
+	    bool used_as_pv = m->isUsedBy(UB_LVM);
+	    y2mil("zeroNew:" << getStorage()->getZeroNewPartitions() << " used_as_pv:" << used_as_pv);
 	    if( used_as_pv || getStorage()->getZeroNewPartitions() )
 		{
-		ret = getStorage()->zeroDevice(m->device(), m->sizeK());
+		ret = Storage::zeroDevice(m->device(), m->sizeK());
 		}
 	    }
 	}
@@ -665,7 +552,7 @@ MdCo::doCreate( Volume* v )
 int 
 MdCo::doRemove( Volume* v )
     {
-    y2milestone( "name:%s", v->name().c_str() );
+    y2mil("name:" << v->name());
     Md * m = dynamic_cast<Md *>(v);
     int ret = 0;
     if( m != NULL )
@@ -690,8 +577,7 @@ MdCo::doRemove( Volume* v )
 	if( ret==0 && m->destroySb() )
 	    {
 	    SystemCmd c;
-	    list<string> d;
-	    m->getDevs( d );
+	    list<string> d = m->getDevs();
 	    for( list<string>::const_iterator i=d.begin(); i!=d.end(); ++i )
 		{
 		c.execute(MDADMBIN " --zero-superblock " + quote(*i));
@@ -699,11 +585,9 @@ MdCo::doRemove( Volume* v )
 	    }
 	if( ret==0 )
 	    {
-	    EtcRaidtab* tab = getStorage()->getRaidtab();
-	    if( tab!=NULL )
-		{
-		tab->removeEntry( m->nr() );
-		}
+	    EtcMdadm* mdadm = getStorage()->getMdadm();
+	    if (mdadm)
+		mdadm->removeEntry(m->getMdUuid());
 	    if( !removeFromList( m ) )
 		ret = MD_NOT_IN_LIST;
 	    }
@@ -724,56 +608,26 @@ void MdCo::changeDeviceName( const string& old, const string& nw )
     }
 
 
-namespace storage
-{
-
 std::ostream& operator<< (std::ostream& s, const MdCo& d )
     {
-    s << *((Container*)&d);
+    s << dynamic_cast<const Container&>(d);
     return( s );
     }
 
-}
 
-void MdCo::logDifference( const Container& d ) const
+    void
+    MdCo::logDifferenceWithVolumes(std::ostream& log, const Container& rhs_c) const
     {
-    y2mil(getDiffString(d));
-    const MdCo * p = dynamic_cast<const MdCo*>(&d);
-    if( p != NULL )
-	{
-	ConstMdPair pp=mdPair();
-	ConstMdIter i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstMdPair pc=p->mdPair();
-	    ConstMdIter j = pc.begin();
-	    while( j!=pc.end() && 
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j!=pc.end() )
-		{
-		if( !i->equalContent( *j ) )
-		    i->logDifference( *j );
-		}
-	    else
-		y2mil( "  -->" << *i );
-	    ++i;
-	    }
-	pp=p->mdPair();
-	i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstMdPair pc=mdPair();
-	    ConstMdIter j = pc.begin();
-	    while( j!=pc.end() && 
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j==pc.end() )
-		y2mil( "  <--" << *i );
-	    ++i;
-	    }
-	}
+	const MdCo& rhs = dynamic_cast<const MdCo&>(rhs_c);
+
+	logDifference(log, rhs);
+	log << endl;
+
+	ConstMdPair pp = mdPair();
+	ConstMdPair pc = rhs.mdPair();
+	logVolumesDifference(log, pp.begin(), pp.end(), pc.begin(), pc.end());
     }
+
 
 bool MdCo::equalContent( const Container& rhs ) const
     {
@@ -785,77 +639,25 @@ bool MdCo::equalContent( const Container& rhs ) const
 	{
 	ConstMdPair pp = mdPair();
 	ConstMdPair pc = p->mdPair();
-	ConstMdIter i = pp.begin();
-	ConstMdIter j = pc.begin();
-	while( ret && i!=pp.end() && j!=pc.end() ) 
-	    {
-	    ret = ret && i->equalContent( *j );
-	    ++i;
-	    ++j;
-	    }
-	ret = ret && i==pp.end() && j==pc.end();
+	ret = ret && storage::equalContent(pp.begin(), pp.end(), pc.begin(), pc.end());
 	}
     return( ret );
     }
 
-MdCo::MdCo( const MdCo& rhs ) : Container(rhs)
-    {
-    y2deb("constructed MdCo by copy constructor from " << rhs.nm);
-    *this = rhs;
-    ConstMdPair p = rhs.mdPair();
-    for( ConstMdIter i=p.begin(); i!=p.end(); ++i )
-	 {
-	 Md * p = new Md( *this, *i );
-	 vols.push_back( p );
-	 }
-    }
 
-
-void MdCo::logData( const string& Dir ) {;}
-
-// Not a class member. Just check function.
-static bool showMdPartContainers(const Container& c )
-    {
-    return( c.deleted()==false && c.type()==MDPART);
-    }
-
-// No '/dev/' please.
-bool MdCo::isHandledByMdPart(const string& name)
+bool MdCo::isHandledByMdPart(const string& name) const
 {
-  if( sto )
+    Storage::ConstMdPartCoPair p = getStorage()->mdpartCoPair(MdPartCo::notDeleted);
+    for (Storage::ConstMdPartCoIterator i = p.begin(); i != p.end(); ++i)
     {
-    Storage::ConstContPair p = sto->contPair( showMdPartContainers );
-    for( Storage::ConstContIterator i = p.begin(); i != p.end(); ++i)
-      {
-      if( i->name() == name )
-        {
-        return true;
-        }
-      }
+	if (i->name() == name)
+	    return true;
     }
-  return false;
+
+    return false;
 }
 
-bool MdCo::canHandleDev(const string& name, const string& line2)
-{
-  unsigned dummy;
-  //If this is a valid MD name.
-  if( Md::mdStringNum(name,dummy) )
-    {
-    // if it's not used by Md Part
-    if (!isHandledByMdPart(name))
-       {
-      //Exclude 'container'
-       if( line2.find("external:imsm") == string::npos &&
-           line2.find("external:ddf") == string::npos )
-         {
-         y2mil("Device : " << name << " can be handled by Md.");
-         return true;
-         }
-       }
-    }
-  return false;
-}
 
 bool MdCo::active = false;
 
+}

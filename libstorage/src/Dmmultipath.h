@@ -23,7 +23,7 @@
 #ifndef DMMULTIPATH_H
 #define DMMULTIPATH_H
 
-#include "y2storage/DmPart.h"
+#include "storage/DmPart.h"
 
 namespace storage
 {
@@ -34,25 +34,34 @@ class Partition;
 class Dmmultipath : public DmPart
     {
     public:
-	Dmmultipath( const DmmultipathCo& d, unsigned nr, Partition* p=NULL );
-	Dmmultipath( const DmmultipathCo& d, const Dmmultipath& rd );
 
+	Dmmultipath(const DmmultipathCo& c, const string& name, const string& device, unsigned nr,
+		    Partition* p);
+	Dmmultipath(const DmmultipathCo& c, const Dmmultipath& v);
 	virtual ~Dmmultipath();
+
 	void getInfo( storage::DmmultipathInfo& info ) const;
 	friend std::ostream& operator<< (std::ostream& s, const Dmmultipath &p );
 	virtual void print( std::ostream& s ) const { s << *this; }
-	string removeText( bool doing ) const;
-	string createText( bool doing ) const;
-	string formatText( bool doing ) const;
-	string resizeText( bool doing ) const;
-	string setTypeText( bool doing=true ) const;
+	Text removeText( bool doing ) const;
+	Text createText( bool doing ) const;
+	Text formatText( bool doing ) const;
+	Text resizeText( bool doing ) const;
+	Text setTypeText(bool doing) const;
 	bool equalContent( const Dmmultipath& rhs ) const;
-	void logDifference( const Dmmultipath& d ) const;
+
+	void logDifference(std::ostream& log, const Dmmultipath& rhs) const;
+
 	static bool notDeleted( const Dmmultipath& l ) { return( !l.deleted() ); }
 
     protected:
 	virtual const string shortPrintedName() const { return( "Dmmultipath" ); }
-	Dmmultipath& operator=( const Dmmultipath& );
+
+    private:
+
+	Dmmultipath(const Dmmultipath&); // disallow
+	Dmmultipath& operator=(const Dmmultipath&); // disallow
+
     };
 
 }

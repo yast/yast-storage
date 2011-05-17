@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -23,47 +23,50 @@
 #ifndef MD_CO_H
 #define MD_CO_H
 
-#include "y2storage/Container.h"
-#include "y2storage/Md.h"
+#include "storage/Container.h"
+#include "storage/Md.h"
 
 namespace storage
 {
 
-class EtcRaidtab;
+    class EtcMdadm;
 
 class MdCo : public Container
     {
     friend class Storage;
 
     public:
-	MdCo( Storage * const s, bool detect );
-	MdCo( const MdCo& rhs );
 
+	MdCo(Storage * const s);
+	MdCo(Storage * const s, SystemInfo& systeminfo);
+	MdCo(const MdCo& c);	
 	virtual ~MdCo();
+
 	static storage::CType staticType() { return storage::MD; }
 	friend std::ostream& operator<< (std::ostream&, const MdCo& );
 
-	int createMd( unsigned num, storage::MdType type, 
-	              const std::list<string>& devs );
+	int createMd(unsigned num, MdType type, const list<string>& devs, const list<string>& spares);
 	int removeMd( unsigned num, bool destroySb=true );
-	int extendMd( unsigned num, const string& dev );
-	int shrinkMd( unsigned num, const string& dev );
+	int extendMd(unsigned num, const list<string>& devs, const list<string>& spares);
+	int shrinkMd(unsigned num, const list<string>& devs, const list<string>& spares);
 	int changeMdType( unsigned num, storage::MdType ptype );
 	int changeMdChunk( unsigned num, unsigned long chunk );
 	int changeMdParity( unsigned num, storage::MdParity ptype );
 	int checkMd( unsigned num );
 	int getMdState(unsigned num, MdStateInfo& info);
 	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& d ) const;
 
-	void syncRaidtab();
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
+
+	void syncMdadm(EtcMdadm* mdadm) const;
+
 	void changeDeviceName( const string& old, const string& nw );
 
-	static void activate( bool val, const string& tmpDir  );
+	static void activate(bool val, const string& tmpDir);
 	int removeVolume( Volume* v );
 	
 	/* returns in 'nums' numbers that are used by Md */
-	int usedNumbers(list<int>& nums);
+	list<unsigned> usedNumbers() const;
 
     protected:
 	// iterators over MD volumes
@@ -114,20 +117,12 @@ class MdCo : public Container
 	    return( ConstMdIter( MdCPIterator( p, Check, true )) );
 	    }
 
-	MdCo( Storage * const s, const string& File );
-
-	void getMdData();
-	void getMdData( unsigned num );
 	bool findMd( unsigned num, MdIter& i );
 	bool findMd( unsigned num ); 
 	bool findMd( const string& dev, MdIter& i );
 	bool findMd( const string& dev ); 
-	int checkUse( const string& dev );
+	int checkUse(const list<string>& dev, const list<string>& spares) const;
 	void addMd( Md* m );
-	void checkMd( Md* m );
-	void updateEntry( const Md* m );
-
-	void init();
 
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new MdCo( *this ) ); }
@@ -135,17 +130,15 @@ class MdCo : public Container
 	int doCreate( Volume* v );
 	int doRemove( Volume* v );
 
-	void logData( const string& Dir );
-
 	/* Return true if given device is alredy handled by MdPartCo. */
-	bool isHandledByMdPart(const string& name);
+	bool isHandledByMdPart(const string& name) const;
 
-	/* Return true if md device found in /proc/mdstat given by 'name'
-	 * can be handled by Md classes.
-	 * The line2 is a line following device name in mdstat. */
-	bool canHandleDev(const string& name, const string& line2);
+	static bool active;  
 
-	static bool active;
+    private:
+
+	MdCo& operator=(const MdCo&); // disallow
+
     };
 
 }

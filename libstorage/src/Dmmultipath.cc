@@ -19,41 +19,48 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
 
-#include "y2storage/Dmmultipath.h"
-#include "y2storage/DmmultipathCo.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-
-using namespace storage;
-using namespace std;
+#include "storage/Dmmultipath.h"
+#include "storage/DmmultipathCo.h"
+#include "storage/SystemCmd.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
 
 
-Dmmultipath::Dmmultipath(const DmmultipathCo& d, unsigned nr, Partition* p)
-    : DmPart(d, nr, p)
+namespace storage
 {
-    y2mil("constructed dmmultipath " << dev << " on co " << cont->name());
-}
+    using namespace std;
 
 
-Dmmultipath::~Dmmultipath()
-{
-    y2deb("destructed dmmultipath " << dev);
-}
-
-
-string Dmmultipath::removeText( bool doing ) const
+    Dmmultipath::Dmmultipath(const DmmultipathCo& c, const string& name, const string& device,
+			     unsigned nr, Partition* p)
+	: DmPart(c, name, device, nr, p)
     {
-    string txt;
+	y2mil("constructed Dmmultipath " << dev << " on " << cont->device());
+    }
+
+
+    Dmmultipath::Dmmultipath(const DmmultipathCo& c, const Dmmultipath& v)
+	: DmPart(c, v)
+    {
+	y2deb("copy-constructed Dmmultipath from " << v.dev);
+    }
+
+
+    Dmmultipath::~Dmmultipath()
+    {
+	y2deb("destructed Dmmultipath " << dev);
+    }
+
+
+Text Dmmultipath::removeText( bool doing ) const
+    {
+    Text txt;
     string d = dev.substr(12);
     if( p && p->OrigNr()!=p->nr() )
-	d = co()->numToName(p->OrigNr());
+	d = co()->getPartName(p->OrigNr());
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by multipath partition name e.g. 3600508b400105f590000900000300000_part1
@@ -69,9 +76,9 @@ string Dmmultipath::removeText( bool doing ) const
     return( txt );
     }
 
-string Dmmultipath::createText( bool doing ) const
+Text Dmmultipath::createText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev.substr(12);
     if( doing )
 	{
@@ -128,9 +135,9 @@ string Dmmultipath::createText( bool doing ) const
     return( txt );
     }
 
-string Dmmultipath::formatText( bool doing ) const
+Text Dmmultipath::formatText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev.substr(12);
     if( doing )
 	{
@@ -185,9 +192,9 @@ string Dmmultipath::formatText( bool doing ) const
     return( txt );
     }
 
-string Dmmultipath::resizeText( bool doing ) const
+Text Dmmultipath::resizeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev.substr(12);
     if( doing )
         {
@@ -199,8 +206,9 @@ string Dmmultipath::resizeText( bool doing ) const
 	    // displayed text during action, %1$s is replaced by multipath partition e.g. 3600508b400105f590000900000300000_part1
 	    // %2$s is replaced by size (e.g. 623.5 MB)
 	    txt = sformat( _("Extending multipath partition %1$s to %2$s"), d.c_str(), sizeString().c_str() );
+	txt += Text(" ", " ");
 	// text displayed during action
-	txt += string(" ") + _("(progress bar might not move)");
+	txt += _("(progress bar might not move)");
         }
     else
         {
@@ -217,9 +225,9 @@ string Dmmultipath::resizeText( bool doing ) const
     return( txt );
     }
 
-string Dmmultipath::setTypeText( bool doing ) const
+Text Dmmultipath::setTypeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev.substr(12);
     if( doing )
         {
@@ -244,31 +252,24 @@ void Dmmultipath::getInfo( DmmultipathInfo& tinfo ) const
     tinfo.p = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const Dmmultipath &p )
     {
-    s << *(DmPart*)&p;
+    s << dynamic_cast<const DmPart&>(p);
     return( s );
     }
 
-}
 
 bool Dmmultipath::equalContent( const Dmmultipath& rhs ) const
     {
     return( DmPart::equalContent(rhs) );
     }
 
-void Dmmultipath::logDifference( const Dmmultipath& rhs ) const
+
+    void
+    Dmmultipath::logDifference(std::ostream& log, const Dmmultipath& rhs) const
     {
-    DmPart::logDifference(rhs);
+	DmPart::logDifference(log, rhs);
     }
 
-
-Dmmultipath& Dmmultipath::operator=(const Dmmultipath& rhs)
-{
-    y2deb("operator= from " << rhs.nm);
-    *((DmPart*)this) = rhs;
-    return *this;
 }

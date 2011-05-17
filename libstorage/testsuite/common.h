@@ -15,5 +15,14 @@ namespace storage
 	}
     };
 
-}
 
+    void setup_logger();
+
+    void setup_system(const string& name);
+
+    void print_fstab();
+    void print_crypttab();
+
+    void print_partitions(StorageInterface* s, const string& disk);
+
+}

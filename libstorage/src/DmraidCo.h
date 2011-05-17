@@ -25,26 +25,50 @@
 
 #include <list>
 
-#include "y2storage/DmPartCo.h"
-#include "y2storage/Dmraid.h"
+#include "storage/DmPartCo.h"
+#include "storage/Dmraid.h"
 
 namespace storage
 {
-
 class Storage;
-class SystemCmd;
-class ProcPart;
-class Region;
+    class SystemInfo;
+
+
+    class CmdDmraid
+    {
+
+    public:
+
+	CmdDmraid();
+
+	struct Entry
+	{
+	    string raidtype;
+	    string controller;
+	    list<string> devices;
+	};
+
+	list<string> getEntries() const;
+
+	bool getEntry(const string& name, Entry& entry) const;
+
+    private:
+
+	typedef map<string, Entry>::const_iterator const_iterator;
+
+	map<string, Entry> data;
+
+    };
+
 
 class DmraidCo : public DmPartCo
     {
     friend class Storage;
 
     public:
-	DmraidCo( Storage * const s, const string& Name, ProcPart& ppart );
-	DmraidCo( Storage * const s, const string& Name, unsigned num, 
-	          unsigned long long Size, ProcPart& ppart );
-	DmraidCo( const DmraidCo& rhs );
+
+	DmraidCo(Storage* s, const string& name, const string& device, SystemInfo& systeminfo);
+	DmraidCo(const DmraidCo& c);
 	virtual ~DmraidCo();
 
 	static storage::CType staticType() { return storage::DMRAID; }
@@ -53,8 +77,9 @@ class DmraidCo : public DmPartCo
 	void setUdevData(const list<string>& id);
 
 	bool equalContent( const Container& rhs ) const;
-	string getDiffString( const Container& d ) const;
-	DmraidCo& operator= ( const DmraidCo& rhs );
+
+	void logDifference(std::ostream& log, const DmraidCo& rhs) const;
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
 
     protected:
 
@@ -106,32 +131,28 @@ class DmraidCo : public DmPartCo
             return( ConstDmraidIter( DmraidCPIterator( p, CheckDmraid, true )) );
 	    }
 
-	DmraidCo( Storage * const s, const string& File );
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new DmraidCo( *this ) ); }
-	static void activate( bool val );
-	void getRaidData( const string& name );
-	void addRaid( const string& name );
-	void addPv( Pv*& p );
+	static void activate(bool val);
+	void getRaidData(const string& name, SystemInfo& systeminfo);
+	void addPv(const Pv& pv);
 	void newP( DmPart*& dm, unsigned num, Partition* p );
-	string removeText( bool doing ) const;
-	string setDiskLabelText( bool doing ) const;
 
-	static string undevName( const string& name );
+	Text removeText( bool doing ) const;
 
-	static bool isActivated(const string& name);
-	static list<string> getRaids();
-
-	static bool raidNotDeleted( const Dmraid&d ) { return( !d.deleted() ); }
+	static list<string> getRaids(SystemInfo& systeminfo);
 
 	int doRemove();
-
-	void logData( const string& Dir );
 
 	string raidtype;
 	string controller;
 
-	static bool active;
+	static bool active; 
+
+    private:
+
+	DmraidCo& operator=(const DmraidCo&); // disallow
+
     };
 
 }
