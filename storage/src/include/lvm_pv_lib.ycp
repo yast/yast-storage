@@ -20,7 +20,6 @@
      textdomain "storage";
      import "Storage";
      import "Partitions";
-     import "Package";
 
      include "partitioning/lvm_lib.ycp";
      include "partitioning/lvm_lv_lib.ycp";
@@ -56,111 +55,6 @@ define boolean addPhysicalVolume( map<string,map> targetMap, string id,
     };
 
 
-/*
-define boolean removePhysicalVolume( map<string,map> targetMap, string id,
-                                 string current_vg )
-    ``{
-    map partition = Storage::GetPartition( targetMap, id );
-
-    if( partition["fsid"]:0 == Partitions::fsid_lvm &&
-        contains( [`primary, `logical], partition["type"]:`none ) )
-	{
-	Storage::UnchangePartitionId( id );
-	}
-    boolean ret = Storage::ReduceLvmVg( current_vg, id );
-    if( !ret )
-	{
-	// message popup
-	Popup::Error(_("If you remove the selected device from the volume group,
-there will not be enough space for all logical volumes in 
-this group.  To delete the volume group completely, remove 
-its logical volumes first.
-"));
-	}
-    return( ret );
-    };
-*/
-
-//////////////////////////////////////////////////////////////////////
-// belongs the the partition "id" already to a volume group
-//////////////////////////////////////////////////////////////////////
-
-/*
-define boolean isItemPv( map<string,map> tg, string id )
-    ``{
-    map part = $[];
-    if( haskey( tg, id ))
-	part = tg[id]:$[];
-    else
-	part = Storage::GetPartition( tg, id );
-    return( part["used_by_type"]:`UB_NONE == `UB_LVM ||
-            part["used_by_type"]:`UB_NONE == `UB_EVMS );
-    };
-*/
-
-//////////////////////////////////////////////////////////////////////
-// belongs the the partition "id" already to a volume group
-// if YES: popup a proper Message and return(false)
-//////////////////////////////////////////////////////////////////////
-/*
-define boolean CheckItemIsNotPv( map<string,map> tg, string id )
-    ``{
-    if( !isItemPv(tg,id) )
-	{
-	//////////////
-	return( true );
-	//////////////
-	}
-
-    // error case:
-    if( id != nil )
-	{
-	// message popup
-	Popup::Message(sformat(_("The item %1 is already a physical volume.
-To add it to a different volume group,
-remove it from its current volume group
-then add it to the new group.
-"), id ));
-	}
-    else
-	{
-	// message popup
-	Popup::Message(_("You have to select one device in the table"));
-	}
-    return( false );
-    };
-
-    //////////////////////////////////////////////////////////////////////
-    // belongs the the partition "id" already to a volume group?
-    // if NO: popup a proper Message and return(false)
-    //////////////////////////////////////////////////////////////////////
-
-define boolean CheckItemIsPv( map<string,map> tg, string id )
-    ``{
-    if ( isItemPv(tg,id) )
-	{
-	//////////////
-	return( true );
-	//////////////
-	}
-
-    // error case: 
-    if ( id != nil )
-	{
-	// Message popup
-	Popup::Message(sformat(_("The item %1 cannot be removed.
-It does not belong to a volume group.
-"), id ));
-	}
-    else
-	{
-	//Message popup
-	Popup::Message(_("You have to select one device in the table"));
-	}
-    return( false );
-    };
-*/
-
 /////////////////////////////////////////////////////////////////
 // Get all partitions, we can probably use as physical volumes
 // Add needed information: disksize 
@@ -189,10 +83,9 @@ define list<map> get_possible_pvs( map<string,map> targetMap )
     // no mountpoint
     // id 0x83 or 0x8e or 0xfe
 
-    list types_no = [ `lvm, `evms, `extended ];
+    list types_no = [ `lvm, `extended ];
     list fsids = [ Partitions::fsid_lvm, Partitions::fsid_raid,
 		   Partitions::fsid_native ];
-    list ubs = [ `UB_NONE, `UB_LVM, `UB_EVMS ];
     list allowed_enc_types = [ `none, `luks ];
 
     foreach( string dev, map devmap, targetMap,
@@ -203,7 +96,7 @@ define list<map> get_possible_pvs( map<string,map> targetMap )
 		    ``( size(part["mount"]:"")==0 &&
 			!contains( types_no, part["type"]:`primary ) &&
 			contains(allowed_enc_types, part["enc_type"]:`none) &&
-			contains( ubs, part["used_by_type"]:`UB_NONE ) &&
+			(!Storage::IsUsedBy(part) || part["used_by_type"]:`UB_NONE==`UB_LVM) &&
 			(part["type"]:`primary==`sw_raid||
 			 part["type"]:`primary==`dm||
 			contains( fsids, part["fsid"]:0 ))));
@@ -212,61 +105,27 @@ define list<map> get_possible_pvs( map<string,map> targetMap )
 	    {
 	    parts = [];
 	    y2milestone( "get_possible_pvs no parts, disk used by %1 %2",
-	                 devmap["used_by_type"]:`UB_NONE, devmap["used_by"]:"" );
+	                 devmap["used_by_type"]:`UB_NONE, devmap["used_by_device"]:"" );
 	    }
 	if( size(devmap["partitions"]:[])==0 && 
 	    Storage::IsPartType(devmap["type"]:`CT_UNKNOWN) &&
-	    contains( ubs, devmap["used_by_type"]:`UB_NONE ))
+	    (!Storage::IsUsedBy(devmap) || devmap["used_by_type"]:`UB_NONE==`UB_LVM))
 	    {
 	    map p = $[ "device":dev, "maindev":dev, 
 	               "size_k":devmap["size_k"]:0 ];
 	    if( devmap["used_by_type"]:`UB_NONE != `UB_NONE )
 		{
 		p["used_by_type"] = devmap["used_by_type"]:`UB_NONE;
-		p["used_by"] = devmap["used_by"]:"";
+		p["used_by_device"] = devmap["used_by_device"]:"";
 		}
 	    parts = [ p ];
 	    }
 	ret = (list<map>)merge( ret, parts );
 	});
-    ret = maplist( map p, ret,
-	``{
-	p["used_by"] = lvmVg( p["used_by"]:"" );
-	return( p );
-	});
     y2milestone( "get_possible_pvs ret %1", ret );
     return( ret );
     };
 
-
-/**
- * Check if the user can delete the partition.
- * -> Existing LVM partition with volume group
- * -> size of volume group to small for all logical partition
- */
-/*
-define boolean check_pv_delete( map<string,map> targetMap, string id, 
-                                string current_vg ) 
-    ``{
-    boolean ret = true;
-    y2milestone( "check_pv_delete id %1 current_vg: %2", id, current_vg );
-    integer num_pvs = size( filter( map p, get_possible_pvs(targetMap),
-				    ``(p["used_by"]:""==current_vg)));
-    y2milestone( "check_pv_delete num_pvs:%1", num_pvs );
-    if( num_pvs<=1 )
-	{
-	// message popup
-	Popup::Error(_("You cannot remove the last PV from a volume group.
-Delete the volume group completely instead.
-"));
-	y2milestone( "check_pv_delete `nodelete" );
-	ret = false;
-	}
-
-    y2milestone( "check_pv_delete ret:%1", ret );
-    return( ret );
-    }
-*/  
 
 boolean check_vgname_dev( string vgname )
     {

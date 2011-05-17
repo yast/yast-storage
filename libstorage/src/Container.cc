@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,64 +19,105 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream>
+#include <ostream>
 #include <algorithm>
 #include <list>
 
-#include "y2storage/Container.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/Storage.h"
-#include "y2storage/AppUtil.h"
+#include "storage/Container.h"
+#include "storage/SystemCmd.h"
+#include "storage/Storage.h"
+#include "storage/AppUtil.h"
+#include "storage/Device.h"
 
-using namespace std;
-using namespace storage;
 
-Container::Container( Storage * const s, const string& Name, CType t ) :
-    sto(s), nm(Name)
+namespace storage
+{
+    using namespace std;
+
+
+    /* This is our constructor for Container used for containers created via
+       the storage interface. This is recognisable by the fact that it does
+       not have a parameter of type SystemInfo or xmlNode. */
+    Container::Container(Storage* s, const string& name, const string& device, CType t)
+	: Device(name, device), sto(s), typ(t), ronly(false)
     {
-    del = silent = ronly = create = false;
-    dev = "/dev/" + nm;
-    size_k = mnr = mjr = 0;
-    typ = t;
-    y2deb("constructed cont " << nm);
-    }
+	y2deb("constructed Container " << dev);
 
-Container::~Container()
-    {
-    for( PlainIterator i=begin(); i!=end(); i++ )
-	{
-	delete( *i );
-	}
-    y2deb("destructed cont " << dev);
-    }
-
-static bool notDeleted( const Volume& v )
-    { return( !v.deleted()); }
-
-unsigned Container::numVolumes() const
-    {
-    ConstVolPair p = volPair( notDeleted );
-    return( p.length() );
-    }
-
-bool Container::isEmpty() const
-    {
-    ConstVolPair p = volPair( notDeleted );
-    return( p.empty() );
-    }
-
-bool Container::sameDevice( const string& device ) const
-    {
-    string d = normalizeDevice(device);
-    return( d==dev ||
-	    find( alt_names.begin(), alt_names.end(), d )!=alt_names.end() );
+	assert(!nm.empty() && !dev.empty());
     }
 
 
+    /* This is our constructor for Container used during detection. This is
+       recognisable by the fact that it has an parameter of type
+       SystemInfo. */
+    Container::Container(Storage* s, const string& name, const string& device, CType t,
+			 SystemInfo& systeminfo)
+	: Device(name, device, systeminfo), sto(s), typ(t), ronly(false)
+    {
+	y2deb("constructed Container " << dev);
+
+	assert(!nm.empty() && !dev.empty());
+	assert(!s->testmode());
+    }
+
+
+    /* This is our constructor for Container used during fake detection in
+       testmode. This is recognisable by the fact that it has an parameter of
+       type xmlNode. */
+    Container::Container(Storage* s, CType t, const xmlNode* node)
+	: Device(node), sto(s), typ(t), ronly(false)
+    {
+	getChildValue(node, "readonly", ronly);
+
+	y2deb("constructed Container " << dev);
+
+	assert(s->testmode());
+    }
+
+
+    /* This is our copy-constructor for Container. Every class derived from
+       Container needs an equivalent one. */
+    Container::Container(const Container& c)
+	: Device(c), sto(c.sto), typ(c.typ), ronly(c.ronly)
+    {
+	y2deb("copy-constructed Container " << dev);
+    }
+
+
+    Container::~Container()
+    {
+	clearPointerList(vols);
+	y2deb("destructed Container " << dev);
+    }
+
+
+    void
+    Container::saveData(xmlNode* node) const
+    {
+	Device::saveData(node);
+
+	if (ronly)
+	    setChildValue(node, "readonly", ronly);
+    }
+
+
+    bool
+    Container::isEmpty() const
+    {
+	ConstVolPair p = volPair(Volume::notDeleted);
+	return p.empty();
+    }
+
+bool Container::isPartitionable() const
+    {
+    return( typ==DISK || typ==DMRAID || typ==DMMULTIPATH || typ==MDPART );
+    }
+
+bool Container::isDeviceUsable() const
+    {
+    return( typ==DISK || typ==DMRAID || typ==DMMULTIPATH || typ==MDPART );
+    }
 
     bool Container::stageDecrease(const Volume& v)
     {
@@ -98,18 +139,18 @@ bool Container::sameDevice( const string& device ) const
 	return v.needRemount() || v.needFstabUpdate();
     }
 
-int Container::getToCommit( CommitStage stage, list<Container*>& col,
-                            list<Volume*>& vol )
+
+void
+Container::getToCommit(CommitStage stage, list<const Container*>& col, list<const Volume*>& vol) const
     {
-    int ret = 0;
     unsigned long oco = col.size();
     unsigned long ovo = vol.size();
     switch( stage )
 	{
 	case DECREASE:
 	    {
-	    VolPair p = volPair( stageDecrease );
-	    for( VolIterator i=p.begin(); i!=p.end(); ++i )
+	    ConstVolPair p = volPair( stageDecrease );
+	    for( ConstVolIterator i=p.begin(); i!=p.end(); ++i )
 		vol.push_back( &(*i) );
 	    if( deleted() )
 		col.push_back( this );
@@ -117,8 +158,8 @@ int Container::getToCommit( CommitStage stage, list<Container*>& col,
 	    break;
 	case INCREASE:
 	    {
-	    VolPair p = volPair(stageIncrease);
-	    for( VolIterator i=p.begin(); i!=p.end(); ++i )
+	    ConstVolPair p = volPair(stageIncrease);
+	    for( ConstVolIterator i=p.begin(); i!=p.end(); ++i )
 		vol.push_back( &(*i) );
 	    if( created() )
 		col.push_back( this );
@@ -126,26 +167,25 @@ int Container::getToCommit( CommitStage stage, list<Container*>& col,
 	    break;
 	case FORMAT:
 	    {
-	    VolPair p = volPair( stageFormat );
-	    for( VolIterator i=p.begin(); i!=p.end(); ++i )
+	    ConstVolPair p = volPair( stageFormat );
+	    for( ConstVolIterator i=p.begin(); i!=p.end(); ++i )
 		vol.push_back( &(*i) );
 	    }
 	    break;
 	case MOUNT:
 	    {
-	    VolPair p = volPair( stageMount );
-	    for( VolIterator i=p.begin(); i!=p.end(); ++i )
+	    ConstVolPair p = volPair( stageMount );
+	    for( ConstVolIterator i=p.begin(); i!=p.end(); ++i )
 		vol.push_back( &(*i) );
 	    }
 	    break;
-	default:
+	case SUBVOL:
 	    break;
 	}
     if( col.size()!=oco || vol.size()!=ovo )
-	y2mil("ret:" << ret << " stage:" << stage << " col:" << col.size() << " vol:" <<
-	      vol.size());
-    return( ret );
-    }
+	y2mil("stage:" << stage << " col:" << col.size() << " vol:" << vol.size());
+}
+
 
 int Container::commitChanges( CommitStage stage, Volume* vol )
     {
@@ -197,6 +237,8 @@ int Container::commitChanges( CommitStage stage, Volume* vol )
 		    vol->fstabUpdateDone();
 		}
 	    break;
+	case SUBVOL:
+	    break;
 
 	default:
 	    ret = VOLUME_COMMIT_UNKNOWN_STAGE;
@@ -213,17 +255,20 @@ int Container::commitChanges( CommitStage stage )
     return( ret );
     }
 
-void Container::getCommitActions( list<commitAction*>& l ) const
+
+void
+Container::getCommitActions(list<commitAction>& l) const
     {
     ConstVolPair p = volPair();
     for( ConstVolIterator i=p.begin(); i!=p.end(); ++i )
-	if( !i->silent() )
+	if( !i->isSilent() )
 	    i->getCommitActions( l );
     }
 
-string Container::createText( bool doing ) const
+
+Text Container::createText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/hda1
@@ -237,9 +282,9 @@ string Container::createText( bool doing ) const
     return( txt );
     }
 
-string Container::removeText( bool doing ) const
+Text Container::removeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by device name e.g. /dev/hda1
@@ -255,25 +300,25 @@ string Container::removeText( bool doing ) const
 
 int Container::doCreate( Volume * v )
 {
-    y2war("invalid container:" << type_names[typ] << " name:" << name());
+    y2war("invalid container:" << toString(typ) << " name:" << name());
     return( CONTAINER_INVALID_VIRTUAL_CALL );
 }
 
 int Container::doRemove( Volume * v )
 {
-    y2war("invalid container:" << type_names[typ] << " name:" << name());
+    y2war("invalid container:" << toString(typ) << " name:" << name());
     return( CONTAINER_INVALID_VIRTUAL_CALL );
 }
 
 int Container::doResize( Volume * v )
 {
-    y2war("invalid container:" << type_names[typ] << " name:" << name());
+    y2war("invalid container:" << toString(typ) << " name:" << name());
     return( CONTAINER_INVALID_VIRTUAL_CALL );
 }
 
 int Container::removeVolume( Volume * v )
 {
-    y2war("invalid container:" << type_names[typ] << " name:" << name());
+    y2war("invalid container:" << toString(typ) << " name:" << name());
     return( CONTAINER_INVALID_VIRTUAL_CALL );
 }
 
@@ -281,6 +326,14 @@ int Container::resizeVolume( Volume * v, unsigned long long )
 {
     return( VOLUME_RESIZE_UNSUPPORTED_BY_CONTAINER );
 }
+
+
+    void
+    Container::addToList(Volume* e)
+    {
+	pointerIntoSortedList<Volume>(vols, e);
+    }
+
 
 bool Container::removeFromList( Volume* e )
     {
@@ -290,11 +343,11 @@ bool Container::removeFromList( Volume* e )
 	++i;
     if( i!=vols.end() )
 	{
-	delete( *i );
+	delete *i;
 	vols.erase( i );
 	ret = true;
 	}
-    y2milestone( "P:%p ret:%d", e, ret );
+    y2mil("P:" << e << " ret:" << ret);
     return( ret );
     }
 
@@ -306,14 +359,11 @@ void Container::setExtError( const string& txt ) const
 
 void Container::setExtError( const SystemCmd& cmd, bool serr ) const
     {
-    const string& s = serr ? cmd.stderr() : cmd.stdout();
-    if( s.size()>0 )
-	{
+    string s = boost::join(serr ? cmd.stderr() : cmd.stdout(), "\n");
+    if (!s.empty())
 	sto->setExtError( cmd.cmd() + ":\n" + s );
-	}
     else
-	y2warning( "called with empty %s cmd:%s",
-		   (serr?"stderr":"stdout"), cmd.cmd().c_str());
+	y2war("called with empty " << (serr?"stderr":"stdout") << " cmd:" << cmd.cmd());
     }
 
 bool Container::findVolume( const string& device, Volume*& vol )
@@ -335,95 +385,58 @@ bool Container::findVolume( const string& device, Volume*& vol )
 
 void Container::getInfo(storage::ContainerInfo& tinfo) const
 {
-    Container::ConstVolPair vp = volPair( Volume::notDeleted );
     info.type = type();
     info.name = name();
     info.device = device();
-    info.volcnt = vp.length();
-    info.usedByType = uby.type();
-    info.usedByName = uby.name();
-    info.usedByDevice = uby.device();
+
+    info.udevPath = udevPath();
+    info.udevId = boost::join(udevId(), " ");
+
+    info.usedBy = list<UsedByInfo>(uby.begin(), uby.end());
+
+    if (uby.empty())
+    {
+	info.usedByType = UB_NONE;
+	info.usedByDevice = "";
+    }
+    else
+    {
+	info.usedByType = uby.front().type();
+	info.usedByDevice = uby.front().device();
+    }
+
     info.readonly = readonly();
     tinfo = info;
 }
 
 
-namespace storage
-{
-
 std::ostream& operator<< ( std::ostream& s, const Container &c )
     {
-    s << "Type:" << Container::type_names[c.typ]
-        << " Name:" << c.nm
-        << " Device:" << c.dev
-        << " Vcnt:" << c.vols.size();
-    if( c.del )
-        s << " deleted";
-    if( c.create )
-        s << " created";
+    s << "CType:" << toString(c.typ)
+      << " " << dynamic_cast<const Device&>(c);
     if( c.ronly )
       s << " readonly";
-    if( c.silent )
-      s << " silent";
-    s << c.uby;
-    return( s );
+    if (!c.uby.empty())
+	s << " usedby:" << c.uby;
+    if (!c.alt_names.empty())
+	s << " alt_names:" << c.alt_names;
+    return s;
     }
-}
 
-void
-Container::logDifference( const Container& c ) const
-{
-    y2mil(getDiffString(c));
-}
-    
-string
-Container::getDiffString( const Container& c ) const
+
+    void
+    Container::logDifference(std::ostream& log, const Container& rhs) const
     {
-    string ret = "Name:" + nm;
-    if( nm!=c.nm )
-	ret += "-->"+c.nm;
-    if( typ!=c.typ )
-	ret += " Type:" + Container::type_names[typ] + "-->" +
-	       Container::type_names[c.typ];
-    if( dev!=c.dev )
-	ret += " Device:" + dev + "-->" + c.dev;
-    if( del!=c.del )
-	{
-	if( c.del )
-	    ret += " -->deleted";
-	else
-	    ret += " deleted-->";
-	}
-    if( create!=c.create )
-	{
-	if( c.create )
-	    ret += " -->created";
-	else
-	    ret += " created-->";
-	}
-    if( ronly!=c.ronly )
-	{
-	if( c.ronly )
-	    ret += " -->readonly";
-	else
-	    ret += " readonly-->";
-	}
-    if( silent!=c.silent )
-	{
-	if( c.silent )
-	    ret += " -->silent";
-	else
-	    ret += " silent-->";
-	}
-    if( uby!=c.uby )
-	{
-	std::ostringstream b;
-	classic(b);
-	b << uby << "-->" << string(c.uby);
-	ret += b.str();
-	}
-    return( ret );
+	Device::logDifference(log, rhs);
+
+	logDiffEnum(log, "type", typ, rhs.typ);
+
+	logDiff(log, "readonly", ronly, rhs.ronly);
+	logDiff(log, "silent", silent, rhs.silent);
+
+	logDiff(log, "usedby", uby, rhs.uby);
     }
+
 
 bool Container::equalContent( const Container& rhs ) const
     {
@@ -432,49 +445,34 @@ bool Container::equalContent( const Container& rhs ) const
 	    uby==rhs.uby );
     }
 
-bool Container::compareContainer( const Container* c, bool verbose ) const
+
+    bool
+    Container::compareContainer(const Container& rhs, bool verbose) const
     {
-    bool ret = typ == c->typ;
-    if( !ret )
+	assert(typ != CUNKNOWN);
+	if (typ == CUNKNOWN)
 	{
-	if( verbose )
-	    y2mil(getDiffString( *c ));
+	    y2err("unknown container type lhs:" << *this);
+	    return false;
 	}
-    else
+
+	assert(typ == rhs.typ);
+	if (typ != rhs.typ)
 	{
-	ret = equalContent( *c );
-	if( !ret && verbose )
-	    logDifference( *c );
-	if( typ==COTYPE_LAST_ENTRY || typ==CUNKNOWN )
-	    y2err( "Unknown Container:" << *c ); 
+	    y2err("comparing different container types lhs:" << *this << " rhs:" << rhs);
+	    return false;
 	}
-    return( ret );
+
+	bool ret = equalContent(rhs);
+	if (!ret && verbose)
+	{
+	    std::ostringstream log;
+	    prepareLogStream(log);
+	    logDifferenceWithVolumes(log, rhs);
+	    y2mil(log.str());
+	}
+
+	return ret;
     }
 
-
-Container& Container::operator= ( const Container& rhs )
-    {
-    y2deb("operator= from " << rhs.nm);
-    typ = rhs.typ;
-    nm = rhs.nm;
-    dev = rhs.dev;
-    del = rhs.del;
-    mjr = rhs.mjr;
-    mnr = rhs.mnr;
-    size_k = rhs.size_k;
-    create = rhs.create;
-    ronly = rhs.ronly;
-    silent = rhs.silent;
-    uby = rhs.uby;
-    return( *this );
-    }
-
-Container::Container( const Container& rhs ) : sto(rhs.sto)
-    {
-    y2deb("constructed cont by copy constructor from " << rhs.nm);
-    *this = rhs;
-    }
-
-const string Container::type_names[] = { "UNKNOWN", "DISK", "MD", "LOOP", "LVM", 
-					 "DM", "DMRAID", "NFS", "DMMULTIPATH", "MDPART" };
-
+}

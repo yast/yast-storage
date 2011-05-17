@@ -23,8 +23,8 @@
 #ifndef PE_CONTAINER_H
 #define PE_CONTAINER_H
 
-#include "y2storage/Container.h"
-#include "y2storage/Dm.h"
+#include "storage/Container.h"
+#include "storage/Dm.h"
 
 namespace storage
 {
@@ -34,13 +34,17 @@ class PeContainer : public Container
     friend class Storage;
 
     public:
-	PeContainer( Storage * const s, storage::CType t );
-	PeContainer( const PeContainer& c );
-	PeContainer& operator= ( const PeContainer& rhs );
+
+	PeContainer(Storage* s, const string& name, const string& device, CType t);
+	PeContainer(Storage* s, const string& name, const string& device, CType t,
+		    SystemInfo& systeminfo);
+	PeContainer(Storage* s, CType t, const xmlNode* node);
+	PeContainer(const PeContainer& c);
 	virtual ~PeContainer();
 
+	void saveData(xmlNode* node) const;
+
 	unsigned long long peSize() const { return pe_size; }
-	unsigned long long sizeK() const { return pe_size*num_pe; }
 	unsigned long peCount() const { return num_pe; }
 	unsigned long peFree() const { return free_pe; }
 	unsigned numPv() const { return pv.size(); }
@@ -49,15 +53,23 @@ class PeContainer : public Container
 	unsigned long sizeToLe( unsigned long long sizeK ) const;
 
 	int setPeSize( long long unsigned, bool lvm1 );
-	void unuseDev();
+	void calcSize() { size_k = pe_size * num_pe; }
+	void unuseDev() const;
 	void changeDeviceName( const string& old, const string& nw );
+
 	bool equalContent( const PeContainer& rhs, bool comp_vol=true ) const;
-	virtual string getDiffString( const Container& d ) const;
-	
+
+	void logDifference(std::ostream& log, const PeContainer& rhs) const;
+
+	string getDeviceByNumber( const string& majmin ) const;
+
     protected:
 	struct Pv
 	    {
 	    Pv() : num_pe(0), free_pe(0) {}
+	    Pv(const xmlNode* node);
+
+	    void saveData(xmlNode* node) const;
 
 	    string device;
 	    string dmcryptDevice;
@@ -135,14 +147,11 @@ class PeContainer : public Container
 	friend std::ostream& operator<< (std::ostream&, const Pv& );
 	friend void printDevList (std::ostream&, const std::list<Pv>& );
 
-	void init();
 	string addList() const;
 	virtual void print( std::ostream& s ) const { s << *this; }
-	virtual Container* getCopy() const { return( new PeContainer( *this ) ); }
-	bool findPe( const string& dev, const std::list<Pv>& pl, 
-	             std::list<Pv>::const_iterator& i ) const;
-	bool findPe( const string& dev, std::list<Pv>& pl, 
-	             std::list<Pv>::iterator& i );
+	virtual Container* getCopy() const = 0; // { return( new PeContainer( *this ) ); }
+	bool findPe(const string& dev, const list<Pv>& pl, list<Pv>::const_iterator& i) const;
+	bool findPe(const string& dev, list<Pv>& pl, list<Pv>::iterator& i) const;
 	unsigned long leByLvRemove() const;
 	int tryUnusePe( const string& dev, std::list<Pv>& pl, std::list<Pv>& pladd,
 	                std::list<Pv>& plrem, unsigned long& removed_pe );
@@ -154,7 +163,7 @@ class PeContainer : public Container
 				 std::list<Pv>& pl, std::list<Pv>& pladd );
 	virtual bool checkConsistency() const;
 
-	void addPv( const Pv* p );
+	void addPv(const Pv& p);
 
 	unsigned long long pe_size;
 	unsigned long num_pe;
@@ -162,6 +171,11 @@ class PeContainer : public Container
 	std::list<Pv> pv;
 	std::list<Pv> pv_add;
 	std::list<Pv> pv_remove;
+
+    private:
+
+	PeContainer& operator=(const PeContainer&); // disallow
+
     };
 
 }

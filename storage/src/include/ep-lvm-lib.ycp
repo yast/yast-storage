@@ -3,6 +3,8 @@
  * Package:	yast2-storage
  * Summary:	Expert Partitioner
  * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
@@ -40,7 +42,7 @@
     void EpCreateVolumeGroup()
     {
 	map<string, map> target_map = Storage::GetTargetMap();
-	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return pv["used_by"]:"" == ""; });
+	list<map> unused_pvs = filter(map pv, get_possible_pvs(target_map), { return !Storage::IsUsedBy(pv); });
 
 	if (size(unused_pvs) < 1)
 	{
@@ -90,8 +92,7 @@ RAID device is required. Change your partition table accordingly."));
 
 	symbol Commit()
 	{
-	    list<string> devices_old = (list<string>) union(data["devices"]:[], data["devices_add"]:[]);
-	    devices_old = filter(string tmp, devices_old, { return !contains(data["devices_rem"]:[], tmp); });
+	    list<string> devices_old = MergeDevices(data);
 	    list<string> devices_new = data["devices_new"]:[];
 
 	    list<string> devices_added = AddedToList(devices_old, devices_new);
@@ -125,41 +126,55 @@ RAID device is required. Change your partition table accordingly."));
     }
 
 
-    void EpDeleteVolumeGroup(string device)
+    boolean EpDeleteVolumeGroup(string device)
     {
 	if (device == nil)
 	{
 	    // error popup
 	    Popup::Error(_("No volume group selected."));
-	    return;
+	    return false;
 	}
 
 	string vgname = substring(device, 5);
+	//LV device names
+	list<string> log_volumes = Storage::GetAffectedDevices( device );
+	//how many of those we have?
+	integer count = size(log_volumes);
 
-	map<string,map> tg = Storage::GetTargetMap();
-	integer count = size(get_lv_names(tg, vgname));
+	boolean ret = false;
+	boolean proceed = (count > 0) ?
+	    //non-empty VG - make sure user wants to delete all LVs
+	    ConfirmVgDelete(vgname, log_volumes) :
+	    //empty VG - simple
+	    Popup::YesNo(sformat(_("Really delete the volume group \"%1\"?"), vgname));
 
-	if (count > 0)
+	if (proceed)
 	{
-	    // message popup
-	    Popup::Message(sformat(_("The volume group \"%1\" contains at least one logical
-volume.  It cannot be removed. Remove all logical volumes then
-remove the volume group.
-"), vgname));
-	}
-	else
-	{
-	    // popup text
-	    if (Popup::YesNo(sformat(_("Really delete the volume group \"%1\"?"), vgname)))
+	    boolean recursive = Storage::GetRecursiveRemoval();
+	    Storage::SetRecursiveRemoval( true );
+
+	    if (Storage::DeleteLvmVg(vgname))
 	    {
-		if (Storage::DeleteLvmVg(vgname))
-		{
-		    UpdateMainStatus();
-		    UpdateNavigationTree(`lvm);
-		    TreePanel::Create();
-		}
+		any new_focus = nil;
+		if (UI::QueryWidget(`tree, `CurrentItem) == device)
+		    new_focus = `lvm;
+
+	        UpdateMainStatus();
+	        UpdateNavigationTree(new_focus);
+	        TreePanel::Create();
+	        ret = true;
 	    }
+	    else
+	    {
+		Popup::Error( sformat(_("Deleting volume group \"%1\" failed."), vgname));
+		//FIXME: some rollback?
+		ret = false;
+	    }
+
+	    Storage::SetRecursiveRemoval( recursive );
 	}
+
+	return ret;
     }
 
 
@@ -189,6 +204,7 @@ remove the volume group.
 	data["vg_name"] = vg_name;
 	data["pesize"] = target_map[device, "pesize"]:0;
 	data["max_size_k"] = (target_map[device, "pe_free"]:0 * target_map[device, "pesize"]:0) / 1024;
+	data["max_stripes"] = size(MergeDevices((map<string, any>) target_map[device]:$[]));
 
 
 	symbol Commit()
@@ -221,6 +237,14 @@ remove the volume group.
 
 	map<string, map> target_map = Storage::GetTargetMap();
 	map<string, any> data = Storage::GetPartition(target_map, device);
+
+	if (Storage::IsUsedBy(data))
+	    {
+	    // error popup, %1 is replace by partition device name e.g. /dev/sdb1
+	    Popup::Error(sformat(_("The volume %1 is in use. It cannot be
+edited. To edit %1, make sure it is not used."), device));
+	    return;
+	    }
 
 	if (DlgEditLogicalVolume(data))
 	{
@@ -258,7 +282,7 @@ remove the volume group.
     }
 
 
-    void EpDeleteLogicalVolume(string device)
+    void EpDeleteLogicalVolume(string device, symbol context)
     {
 	if (device == nil)
 	{
@@ -268,12 +292,26 @@ remove the volume group.
 	}
 
 	string parent = ParentDevice(device);
+	string next = NextDeviceAfterDelete(device);
 
 	if (EpDeleteDevice(device))
 	{
 	    UpdateMainStatus();
-	    UpdateNavigationTree(parent);
-	    TreePanel::Create();
+
+	    switch (context)
+	    {
+		case `table:
+		    UpdateNavigationTree(nil);
+		    TreePanel::Create();
+		    if (!isempty(next))
+			UI::ChangeWidget(`id(`table), `CurrentItem, next);
+		    break;
+
+		case `overview:
+		    UpdateNavigationTree(parent);
+		    TreePanel::Create();
+		    break;
+	    }
 	}
     }
 }

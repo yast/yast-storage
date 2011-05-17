@@ -25,36 +25,42 @@
 
 #include <list>
 
-#include "y2storage/PeContainer.h"
-#include "y2storage/Disk.h"
-#include "y2storage/DmPart.h"
+#include "storage/PeContainer.h"
+#include "storage/Disk.h"
+#include "storage/DmPart.h"
+
 
 namespace storage
 {
+    using std::list;
+
 
 class Storage;
-class SystemCmd;
-class ProcPart;
+    class SystemInfo;
 class Region;
+
 
 class DmPartCo : public PeContainer
     {
     friend class Storage;
 
     public:
-	DmPartCo( Storage * const s, const string& Name, storage::CType t,
-	          ProcPart& ppart );
-	DmPartCo( const DmPartCo& rhs );
+
+	DmPartCo(Storage* s, const string& name, const string& device, CType t,
+		 SystemInfo& systeminfo);
+	DmPartCo(const DmPartCo& c);
 	virtual ~DmPartCo();
 
 	unsigned long long sizeK() const { return size_k; }
 	const string& labelName() const { return disk->labelName(); }
-	const string& udevPath() const { return udev_path; }
-	const std::list<string>& udevId() const { return udev_id; }
+	virtual list<string> udevId() const { return udev_id; }
 	unsigned numPartitions() const { return disk->numPartitions(); }
 	static storage::CType staticType() { return storage::DMRAID; }
 	friend std::ostream& operator<< (std::ostream&, const DmPartCo& );
 	void setUdevData(const list<string>& id);
+
+	virtual string procName() const { return "dm-" + decString(mnr); }
+	virtual string sysfsPath() const;
 
 	int createPartition( storage::PartitionType type, long unsigned start,
 			     long unsigned len, string& device,
@@ -65,8 +71,7 @@ class DmPartCo : public PeContainer
 	int removePartition( unsigned nr );
 	int changePartitionId( unsigned nr, unsigned id );
 	int forgetChangePartitionId( unsigned nr );
-	int changePartitionArea( unsigned nr, unsigned long start, 
-	                         unsigned long size, bool checkRelaxed=false );
+	int changePartitionArea(unsigned nr, const Region& cylRegion, bool checkRelaxed = false);
 	int nextFreePartition(storage::PartitionType type, unsigned& nr,
 			      string& device) const;
 	int destroyPartitionTable( const string& new_label );
@@ -92,23 +97,23 @@ class DmPartCo : public PeContainer
 	    { return disk->cylinderToKb( val ); }
 	unsigned long kbToCylinder( unsigned long long val ) const
 	    { return disk->kbToCylinder( val ); }
-	string getPartName( unsigned nr ) const;
 
-	virtual void getCommitActions( std::list<storage::commitAction*>& l ) const;
-	virtual int getToCommit( storage::CommitStage stage,
-				 std::list<Container*>& col,
-			         std::list<Volume*>& vol );
+	string getPartName(unsigned nr) const;
+	string getPartDevice(unsigned nr) const;
+
+	virtual void getCommitActions(list<commitAction>& l) const;
+	virtual void getToCommit(storage::CommitStage stage, list<const Container*>& col,
+				 list<const Volume*>& vol) const;
 	virtual int commitChanges( storage::CommitStage stage );
 	int commitChanges( storage::CommitStage stage, Volume* vol );
 
 	Partition* getPartition( unsigned nr, bool del );
 	void getInfo( storage::DmPartCoInfo& info ) const;
 	bool equalContent( const DmPartCo& rhs ) const;
-	virtual string getDiffString( const Container& d ) const;
-	void logDifference( const DmPartCo& d ) const;
-	DmPartCo& operator= ( const DmPartCo& rhs );
+
+	void logDifference(std::ostream& log, const DmPartCo& rhs) const;
+
 	static string undevName( const string& name );
-	string numToName( unsigned num ) const;
 
     protected:
 	// iterators over partitions
@@ -159,13 +164,12 @@ class DmPartCo : public PeContainer
             return( ConstDmPartIter( DmPartCPIterator( p, CheckDmPart, true )) );
 	    }
 
-	DmPartCo( Storage * const s, const string& File );
 	virtual void print( std::ostream& s ) const { s << *this; }
-	virtual Container* getCopy() const { return( new DmPartCo( *this ) ); }
+	virtual Container* getCopy() const = 0; // { return( new DmPartCo( *this ) ); }
 	void activate_part( bool val );
-	void init( ProcPart& ppart );
-	void createDisk( ProcPart& ppart );
-	void getVolumes( ProcPart& ppart );
+	void init(SystemInfo& systeminfo);
+	void createDisk(SystemInfo& systeminfo);
+	void getVolumes(const ProcParts& parts);
 	void updatePointers( bool invalid=false );
 	void updateMinor();
 	virtual void newP( DmPart*& dm, unsigned num, Partition* p );
@@ -177,28 +181,25 @@ class DmPartCo : public PeContainer
 	bool validPartition( const Partition* p );
 	bool findDm( unsigned nr, DmPartIter& i );
 
-	static bool partNotDeleted( const DmPart&d ) { return( !d.deleted() ); }
-
 	int doCreate( Volume* v );
 	int doRemove( Volume* v );
 	int doResize( Volume* v );
 	int doSetType( DmPart* v );
 	int doCreateLabel();
 	virtual int doRemove();
-	virtual string removeText( bool doing ) const;
-	virtual string setDiskLabelText( bool doing ) const;
+	virtual Text removeText( bool doing ) const;
+	virtual Text setDiskLabelText( bool doing ) const;
 
-	void logData( const string& Dir );
-	string udev_path;
-	std::list<string> udev_id;
-	string logfile_name;
-
+	list<string> udev_id;
 	Disk* disk;
 	bool active;
-	bool del_ptable;
-	unsigned num_part;
 
-	mutable storage::DmPartCoInfo info;
+	mutable storage::DmPartCoInfo info; // workaround for broken ycp bindings
+
+    private:
+
+	DmPartCo& operator=(const DmPartCo&); // disallow
+
     };
 
 }

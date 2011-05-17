@@ -3,42 +3,141 @@
  * Package:	yast2-storage
  * Summary:	Expert Partitioner
  * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
 
 
+    boolean EpDeleteVolumeGroup(string device);
+    boolean ConfirmRecursiveDelete(string device, list <string> partitions, string headline, string text_before, string text_after );
+
+
     list<string> AddedToList(list<string> old, list<string> new)
     {
-	return filter(string tmp, new, { return !contains(old, tmp); });
+	return multiset::difference(sort(new), sort(old));
     }
 
 
     list<string> RemovedFromList(list<string> old, list<string> new)
     {
-	return filter(string tmp, old, { return !contains(new, tmp); });
+	return multiset::difference(sort(old), sort(new));
     }
 
 
+    // Calculates the devices from the devices, devices_add and devices_rem entries
+    // in data.
+    list<string> MergeDevices(map<string, any> data)
+    {
+	list<string> devices = sort((list<string>) data["devices"]:[]);
+	list<string> devices_add = sort((list<string>) data["devices_add"]:[]);
+	list<string> devices_rem = sort((list<string>) data["devices_rem"]:[]);
+
+	devices = multiset::union(devices, devices_add);
+	devices = multiset::difference(devices, devices_rem);
+
+	return devices;
+    }
+
+
+    void SplitDevice(map<string, map> target_map, string device, map& disk, map& part)
+    {
+	map disk_tmp = target_map[device]:nil;
+	map part_tmp = nil;
+
+	if (disk_tmp == nil)
+	{
+	    part_tmp = Storage::GetPartition( target_map, device );
+	    disk_tmp = Storage::GetDisk( target_map, device );
+	}
+
+	disk = disk_tmp;
+	part = part_tmp;
+    }
+
+
+    /**
+     * Must be called before removing device.
+     */
     string ParentDevice(string device)
     {
 	map<string, map> target_map = Storage::GetTargetMap();
 
-	map disk = target_map[device]:nil;
+	map disk = nil;
 	map part = nil;
 
-	if (disk == nil)
-	{
-	    foreach(string s, map d, target_map, {
-		part = find(map p, d["partitions"]:[], { return p["device"]:"" == device; });
-		if (part != nil) {
-		    disk = d;
-		    break;
-		}
-	    });
-	}
+	SplitDevice(target_map, device, disk, part);
 
 	return disk["device"]:"";
+    }
+
+
+    boolean ConfirmDeletingUsedDevice( map tg, map <string, any> part, symbol used_by )
+    {
+	string device = part["device"]:"";
+	string used_by_device = part["used_by_device"]:"";
+
+	switch (used_by)
+	{
+	    case `UB_LVM:
+	    {
+        	list<string> volumes = Storage::GetAffectedDevices( device );
+		return ( ConfirmRecursiveDelete( device, volumes,
+		    _("Confirm Deleting Partition Used by LVM"),
+		    sformat(_("The selected partition is used by volume group \"%1\"
+To keep system in consistent state, the following volume group
+and its logical volumes will be deleted:"), used_by_device),
+		    sformat( _("Delete partition \"%1\" and volume group \"%2\" now?"), device, used_by_device)
+		    ));
+		break;
+	    }
+	    case `UB_MD:
+	    {
+        	list<string> volumes = Storage::GetAffectedDevices( device );
+		return ( ConfirmRecursiveDelete( device, volumes,
+		    _("Confirm Deleting Partition Used by RAID"),
+		    sformat(_("The selected partition belongs to RAID  \"%1\"
+To keep system in consistent state, the following
+RAID device will be deleted:"), used_by_device),
+		    sformat( _("Delete partition \"%1\" and RAID \"%2\" now?"), device, used_by_device)
+		    ));
+
+	    }
+	    default:
+		break;
+	}
+
+	return false;
+    }
+
+    /**
+     * Must be called before removing device.
+     */
+    string NextDeviceAfterDelete(string device)
+    {
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	string parent = ParentDevice(device);
+
+	list<string> partitions = maplist(map part, target_map[parent, "partitions"]:[], {
+	    return part["device"]:"";
+	});
+
+	integer index = -1;
+	foreach(integer i, Integer::Range(size(partitions)), {
+	    if (partitions[i]:"" == device)
+		index = i;
+	});
+
+	string ret = "";
+	if (index > 0)
+	    ret = partitions[index - 1]:"";
+	else if (size(partitions) > 1)
+	    ret = partitions[1]:"";
+
+	y2milestone("NextDeviceAfterDelete device:%1 ret:%2", device, ret);
+	return ret;
     }
 
 
@@ -69,16 +168,11 @@
 	    {
 		return false;
 	    }
-	    else if( tg[id,"type"]:`CT_UNKNOWN == `CT_LVM )
-	    {
-		string current_vg = substring( tg[id,"device"]:"", 5 );
-		HandleRemoveVg( tg, current_vg );
-	    }
 	    else if( tg[id,"type"]:`CT_UNKNOWN == `CT_DMRAID )
 	    {
 		if( Popup::YesNo( sformat(_("Really delete BIOS RAID %1?"), id )))
 		{
-		    if( deleteAllDevPartitions( disk, Stage::initial(), false ))
+		    if (deleteAllDevPartitions(disk, Stage::initial()))
 			Storage::DeleteDmraid( id );
 		    return true;
 		}
@@ -86,20 +180,19 @@
 	    // YesNo popup text %1 is replaced by a disk name e.g. /dev/hda
 	    else if( Popup::YesNo( sformat(_("Really delete all partitions on %1?"), id )))
 	    {
-		deleteAllDevPartitions( disk, Stage::initial(), false );
+		deleteAllDevPartitions(disk, Stage::initial());
 		return true;
 	    }
 	}
 	else if( part["type"]:`unknown==`lvm )
 	{
-	    if( !check_device_delete( part, false, Stage::initial(), $[] ))
+	    if (!check_device_delete(part, Stage::initial(), $[]))
 	    {
 		return false;
 	    }
 	    else
 	    {
-		HandleRemoveLv( tg, id );
-		return true;
+		return HandleRemoveLv( tg, id );
 	    }
 	}
 	else
@@ -120,11 +213,27 @@
 	    {
 		return false;
 	    }
-	    if( part["type"]:`primary != `extended &&
-		!check_device_delete( part, false, Stage::initial(),
-				      disk ))
+
+	    if( part["type"]:`primary != `extended )
 	    {
-		return false;
+		symbol used_by = check_devices_used( [ part ], false);
+
+		if ( used_by != `UB_NONE)
+		{
+		    if (ConfirmDeletingUsedDevice( tg, part, used_by ))
+		    {
+			boolean recursive = Storage::GetRecursiveRemoval();
+			Storage::SetRecursiveRemoval( true );
+			Storage::DeleteDevice(part["device"]:"");
+			Storage::SetRecursiveRemoval( recursive );
+			return true;
+		    }
+		    else
+			return false;
+		}
+
+		if (!check_device_delete(part, Stage::initial(), disk))
+		    return false;
 	    }
 
 	    /////////////////////////////////////////////////////
@@ -145,15 +254,9 @@
 		    Storage::DeleteLoop( disk["device"]:"",
 					 part["fpath"]:"", true );
 		}
-		if( part["type"]:`unknown == `nfs )
-		{
-		    Storage::DeleteDevice( "/dev/nfs",
-					   part["device"]:"" );
-		}
 		else
 		{
-		    Storage::DeleteDevice( disk["device"]:"",
-					   part["device"]:"" );
+		    Storage::DeleteDevice(part["device"]:"");
 		}
 		return true;
 	    }
@@ -163,57 +266,192 @@
     }
 
 
-    void ImportMountPoints()
+    term DiskBarGraph(string device)
     {
-	map<string,map> od = (map<string,map>)Storage::GetOndiskTarget();
-	list<list> fstab = scanAndReadExistingFstab( od );
-	y2milestone( "adapt_mp fstab %1", fstab );
-	list ti = maplist( list e, fstab, ``(AddFstabToData( od, (list<map>)e)[1]:$[]));
-	y2milestone( "adapt_mp ti %1", ti );
+	if (!UI::HasSpecialWidget(`BarGraph))
+	    return `Empty();
 
-	integer idx = FstabAddDialog( ti );
-	if( idx>=0 )
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	map disk = nil;
+	map part = nil;
+	SplitDevice(target_map, device, disk, part);
+
+	if (Storage::IsUsedBy(disk))
+	    return `Empty();
+
+	list <integer> bits = [];
+	list <string> labels = [];
+
+	void AddSegment(float bit, string label, integer size_k)
 	{
-	    od = (map<string,map>)Storage::GetOndiskTarget();
-	    y2milestone( "adapt_mp use fstab idx %1", idx );
-	    ti = AddFstabToData( od, (list<map>)fstab[idx]:[] );
-	    Storage::ResetOndiskTarget();
-	    boolean import_ok = true;
-	    foreach( string d, map disk, ti[0]:$[],
-		     ``{
-			 foreach( map p, disk["partitions"]:[],
-				  ``{
-				      string key = (p["type"]:`unknown != `loop) ? (p["device"]:"error") : (p["fpath"]:"error");
-				      if( size(p["mount"]:"")>0 && p["enc_type"]:`none!=`none &&
-					  !p["tmpcrypt"]:false && Storage::NeedCryptPwd(key) )
-				      {
-					  boolean ok = false;
-					  string dev = p["device"]:"";
-					  string pwd = "";
-					  do
-					      {
-					      ok = false;
-					      pwd = DlgCreateCryptFs( dev, 1, false, false );
-					      if( pwd != nil && size(pwd)>0 )
-						  {
-						  if( Storage::CheckCryptOk( dev, pwd ) )
-						      {
-						      ok = Storage::SetCryptPwd( dev, pwd ) &&
-							   Storage::SetCrypt( dev, true, false );
-						      }
-						  }
-					      else if( size(pwd)==0 )
-						  {
-						  ok = true;
-						  import_ok = false;
-						  }
-					      }
-					  while( !ok );
-				      }
-				  });
-		     });
-	    if( import_ok )
-		Storage::SetTargetMap(ti[0]:$[]);
+	    // Guarantee some minimal share (1%) of total graph width to the segment.
+	    // Prevents small partitions e.g. swaps from disappearing completely.
+	    bits = add(bits, Integer::Clamp(1000 * bit, 10, 1000));
+	    labels = add(labels, label + "\n" + Storage::KByteToHumanString(size_k));
 	}
+
+	switch (disk["type"]:`CT_UNKNOWN)
+	{
+	    case `CT_DISK:
+	    case `CT_DMRAID:
+	    case `CT_DMMULTIPATH:
+	    case `CT_MDPART:
+	    {
+		string emptyspace = _("Unpartitioned");
+
+		// Filter out extended partitions
+		list <map> partitions = (list <map>) filter ( map one_part, disk["partitions"]:[], {
+		    return ( (one_part["type"]:`none == `primary) || (one_part["type"]:`none == `logical) );
+		});
+		// and sort the remaining ones by start cyl
+		partitions = (list <map> ) sort (map m, map n, partitions, {
+		    return Region::Start( m["region"]:[] ) < Region::Start( n["region"]:[] );
+		});
+
+		// Clean disk (or 1 big extended partition)
+		if (isempty(partitions))
+		{
+		    bits = [100];
+		    labels = [ emptyspace + "\n" + Storage::KByteToHumanString(disk["size_k"]:0)];
+		}
+		else
+		{
+		    integer i = 0;
+		    integer part_count = size(partitions);
+		    integer ccyl = 0;
+		    integer endcyl = disk["cyl_count"]:1;
+
+		    while (ccyl < endcyl)
+		    {
+			map part = partitions[ i ]:$[];
+			list <integer> region = partitions[ i, "region" ]:[];
+			ccyl = Region::Start( region );
+			integer next_cyl = 0;
+
+			// this is the last partition in a row, look at the last cylinder of the disk
+			if ( (i+1) == part_count)
+			{
+			    next_cyl = endcyl;
+			}
+			// somewhere in the middle, look where the next partition starts
+			else
+			{
+			    next_cyl = Region::Start( partitions[ i+1, "region" ]:[] );
+			}
+
+			float tmp1 = (float) Region::Length(region) / (float) disk["cyl_count"]:1;
+			if (tmp1 >= 0.0)
+			    AddSegment(tmp1, part["name"]:"", part["size_k"]:0);
+
+			// Now there is some xtra space between the end of this partition and the start of the next one
+			// or the end of the disk if
+			// 1. end +1th cyl is not the next one
+			// 2. end cyl is not the same as the next one (yeah, partitions may share a cylinder)
+			if ( ( Region::End( region ) != next_cyl ) &&
+			     ( (Region::End( region) + 1) != next_cyl ) )
+			{
+			    float tmp2 = (float) (next_cyl - Region::End(region)) / (float) disk["cyl_count"]:1;
+			    if (tmp2 >= 0.0)
+				AddSegment(tmp2, emptyspace, ((next_cyl - Region::End(region)) * disk["cyl_size"]:1) / 1024);
+			}
+
+			ccyl = next_cyl;
+			i = i+1;
+		    }
+		}
+	    }
+	    break;
+
+	    case `CT_LVM:
+	    {
+		string emptyspace = _("Unallocated");
+
+		list <map> partitions = disk["partitions"]:[];
+
+		integer disk_size_k = disk["size_k"]:1;
+		integer disk_free_k = disk_size_k;
+
+		foreach(map partition, partitions, {
+		    integer size_k = partition["size_k"]:0;
+		    disk_free_k = disk_free_k - size_k;
+		    AddSegment((float) size_k / (float) disk_size_k, partition["name"]:"", size_k);
+		});
+
+		if (disk_free_k > 0)
+		    AddSegment((float) disk_free_k / (float) disk_size_k, emptyspace, disk_free_k);
+	    }
+	    break;
+	}
+
+	return `BarGraph(bits, labels);
     }
+
+
+    string CompleteSummary()
+    {
+	string part_summary = Storage::ChangeText();
+	if (isempty(part_summary))
+	    part_summary = HTML::Heading(_("<p>No changes to partitioning.</p>"));
+	else
+	    part_summary = HTML::Heading(_("<p>Changes to partitioning:</p>")) + part_summary;
+
+	string config_summary = HTML::Heading(_("<p>No changes to storage settings.</p>"));
+	if (StorageSettings::GetModified())
+	    config_summary = HTML::Heading(_("<p>Storage settings:</p>")) + StorageSettings::Summary();
+
+	return part_summary + config_summary;
+    }
+
+
+    term ArrangeButtons(list<term> buttons)
+    {
+	// Unfortunately the UI does not provide functionality to rearrange
+	// buttons in two lines if the available space is limited.  This
+	// implementation in YCP has several drawbacks, e.g. it does not know
+	// anything about the font size or the actually available space nor is
+	// it run when the dialog is resized.
+
+	map display_info = UI::GetDisplayInfo();
+	boolean textmode = display_info["TextMode"]:false;
+	integer width = display_info["DefaultWidth"]:1024;
+
+	integer max_buttons = 6;
+
+	if ((textmode && width <= 140) || (!textmode && Mode::installation() && width <= 800))
+	    max_buttons = 3;
+
+	term ret = `VBox();
+
+	term line = `HBox();
+
+	integer i = 0;
+	integer j = 0;
+
+	foreach(term button, buttons, {
+
+	    line = add(line, button);
+	    i = i + 1;
+
+	    if (contains([ `PushButton, `MenuButton ], symbolof(button)))
+	    {
+		j = j + 1;
+
+		if (j == max_buttons)
+		{
+		    if (i != size(buttons))
+			line = add(line, `HStretch());
+
+		    ret = add(ret, line);
+		    line = `HBox();
+		    j = 0;
+		}
+	    }
+	});
+
+	ret = add(ret, line);
+
+	return ret;
+    }
+
 }

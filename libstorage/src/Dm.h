@@ -25,7 +25,7 @@
 
 #include <map>
 
-#include "y2storage/Volume.h"
+#include "storage/Volume.h"
 
 namespace storage
 {
@@ -35,12 +35,16 @@ class PeContainer;
 class Dm : public Volume
     {
     public:
-	Dm( const PeContainer& d, const string& tn );
-	Dm( const PeContainer& d, const string& tn, unsigned mnum );
-	Dm( const PeContainer& d, const Dm& rhs );
-	Dm& operator=( const Dm& );
 
+	Dm(const PeContainer& c, const string& name, const string& device, const string& tname);
+	Dm(const PeContainer& c, const string& name, const string& device, const string& tname,
+	   SystemInfo& systeminfo);
+	Dm(const PeContainer& c, const xmlNode* node);
+	Dm(const PeContainer& c, const Dm& v);
 	virtual ~Dm();
+
+	void saveData(xmlNode* node) const;
+
 	const string& getTableName() const { return( tname ); }
 	const string& getTargetName() const { return( target ); }
 	void setTableName( const string& name ) { tname=name; }
@@ -60,28 +64,31 @@ class Dm : public Volume
 	unsigned setStripes( unsigned long val ) { return stripe=val; }
 	unsigned long long stripeSize() const { return stripe_size; }
 	void setStripeSize( unsigned long long val ) { stripe_size=val; }
-	string sysfsPath() const;
+
+	virtual string procName() const { return "dm-" + decString(mnr); }
+	virtual string sysfsPath() const;
+
 	void updateMajorMinor();
 
-	virtual const std::list<string> udevId() const { return Volume::udevId(); }
 	friend std::ostream& operator<< (std::ostream& s, const Dm &p );
 	virtual void print( std::ostream& s ) const { s << *this; }
-	virtual string removeText( bool doing ) const;
-	virtual string formatText( bool doing ) const;
+	virtual Text removeText( bool doing ) const;
+	virtual Text formatText( bool doing ) const;
 	void getInfo( storage::DmInfo& info ) const;
 	void changeDeviceName( const string& old, const string& nw );
 
 	static bool notDeleted( const Dm& l ) { return( !l.deleted() ); }
+	static bool isDeleted(const Dm& l) { return l.deleted(); }
 
-	static void activate( bool val=true );
+	static void activate(bool val);
 	static bool isActive() { return active; }
 
 	static string devToTable( const string& dev );
-	static string dmName( const string& table );
-	static int dmNumber( const string& table );
-	bool equalContent( const Dm& rhs ) const;
-	void logDifference( const Dm& d ) const;
-	string stringDifference( const Dm& d ) const;
+
+	bool equalContent(const Dm& rhs) const;
+
+	void logDifference(std::ostream& log, const Dm& rhs) const;
+
 	static unsigned dmMajor();
 	static string dmDeviceName( unsigned long num );
 
@@ -89,8 +96,6 @@ class Dm : public Volume
 	void init();
 	const PeContainer* pec() const;
 	virtual const string shortPrintedName() const { return( "Dm" ); }
-	string getDevice( const string& majmin );
-	static void getDmMajor();
 
 	string tname;
 	string target;
@@ -101,8 +106,16 @@ class Dm : public Volume
 	std::map<string,unsigned long> pe_map;
 	static bool active;
 	static unsigned dm_major;
-	static std::list<string> known_types;
-	mutable storage::DmInfo info;
+
+	static const list<string> known_types;
+
+	mutable storage::DmInfo info; // workaround for broken ycp bindings
+
+    private:
+
+	Dm(const Dm&);		  // disallow
+	Dm& operator=(const Dm&); // disallow
+
     };
 
 }

@@ -23,22 +23,26 @@
 #ifndef LOOP_CO_H
 #define LOOP_CO_H
 
-#include "y2storage/Container.h"
-#include "y2storage/Loop.h"
+#include "storage/Container.h"
+#include "storage/Loop.h"
+
 
 namespace storage
 {
-class ProcPart;
+    class SystemInfo;
+
 
 class LoopCo : public Container
     {
     friend class Storage;
 
     public:
-	LoopCo( Storage * const s, bool detect, ProcPart& ppart );
-	LoopCo( const LoopCo& rhs );
 
+	LoopCo(Storage * const s);
+	LoopCo(Storage * const s, SystemInfo& systeminfo);
+	LoopCo(const LoopCo& c);
 	virtual ~LoopCo();
+
 	static storage::CType staticType() { return storage::LOOP; }
 	friend std::ostream& operator<< (std::ostream&, const LoopCo& );
 
@@ -47,11 +51,13 @@ class LoopCo : public Container
 	int updateLoop( const string& device, const string& file, 
 	                bool reuseExisting, unsigned long long sizeK );
 	int removeLoop( const string& file, bool removeFile = false );
-	void loopIds( std::list<unsigned>& l ) const;
+
+	list<unsigned> usedNumbers() const;
 
 	int removeVolume( Volume* v );
 	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& d ) const;
+
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
 	
     protected:
 	// iterators over LOOP volumes
@@ -102,18 +108,13 @@ class LoopCo : public Container
 	    return( ConstLoopIter( LoopCPIterator( p, Check, true )) );
 	    }
 
-	LoopCo( Storage * const s, const string& File );
-
-	void getLoopData( ProcPart& ppart );
+	void getLoopData(SystemInfo& systeminfo);
 	bool findLoop( unsigned num, LoopIter& i );
 	bool findLoop( unsigned num ); 
 	bool findLoop( const string& file, LoopIter& i );
 	bool findLoop( const string& file ); 
 	bool findLoopDev( const string& dev, LoopIter& i );
 	void addLoop( Loop* m );
-	void updateEntry( const Loop* m );
-
-	void init();
 
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new LoopCo( *this ) ); }
@@ -121,7 +122,10 @@ class LoopCo : public Container
 	int doCreate( Volume* v );
 	int doRemove( Volume* v );
 
-	void logData( const string& Dir );
+    private:
+
+	LoopCo& operator=(const LoopCo&); // disallow
+	
     };
 
 }

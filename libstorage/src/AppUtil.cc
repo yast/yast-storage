@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,19 +19,18 @@
  * find current contact information at www.novell.com.
  */
 
-// Maintainer: fehr@suse.de
-/*
-  Textdomain    "storage"
-*/
 
-
+#include <errno.h>
+#include <stdarg.h>
 #include <unistd.h>
-#include <string>
+#include <fcntl.h>
+#include <glob.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <sys/types.h>
+#include <sys/utsname.h>
 #include <dirent.h>
-
-#include <locale>
+#include <string>
 #include <boost/algorithm/string.hpp>
 
 #include <blocxx/AppenderLogger.hpp>
@@ -39,89 +38,31 @@
 #include <blocxx/Logger.hpp>
 #include <blocxx/LogMessage.hpp>
 
-#include "y2storage/AsciiFile.h"
-#include "y2storage/StorageTmpl.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/SystemCmd.h"
+#include "storage/AsciiFile.h"
+#include "storage/StorageTmpl.h"
+#include "storage/AppUtil.h"
+#include "storage/StorageTypes.h"
 
-using namespace std;
 
 namespace storage
 {
+    using namespace std;
 
-string dupDash(const string& s)
-    {
-    string ret(s);
-    string::size_type pos = ret.find("-");
-    while(pos!=string::npos)
-	{
-	ret.insert(pos,1,'-');
-	pos = ret.find("-",pos+2);
-	}
-    return(ret);
-    }
 
-bool
-searchFile(AsciiFile& File_Cr, string Pat_Cv, string& Line_Cr)
+void createPath(const string& Path_Cv)
 {
-  int LineNr_ii = 0;
-  return searchFile(File_Cr, Pat_Cv, Line_Cr, LineNr_ii);
-}
-
-bool
-searchFile(AsciiFile& File_Cr, string Pat_Cv, string& Line_Cr, int& LineNr_ir)
-{
-  int End_ii;
-  bool Found_bi = false;
-  bool BeginOfLine_bi;
-  string Tmp_Ci;
-  int LineNr_ii;
-  string Search_Ci(Pat_Cv);
-
-  BeginOfLine_bi = Search_Ci.length() > 0 && Search_Ci[0] == '^';
-  if (BeginOfLine_bi)
-    Search_Ci.erase(0, 1);
-  End_ii = File_Cr.numLines();
-  LineNr_ii = LineNr_ir;
-  while (!Found_bi && LineNr_ii < End_ii)
-    {
-      string::size_type Idx_ii;
-
-      Tmp_Ci = File_Cr[LineNr_ii++];
-      Idx_ii = Tmp_Ci.find(Search_Ci);
-      if (Idx_ii != string::npos)
-	{
-	  if (BeginOfLine_bi)
-	    Found_bi = Idx_ii == 0;
-	  else
-	    Found_bi = true;
-	}
-    }
-  if (Found_bi)
-    {
-      Line_Cr = Tmp_Ci;
-      LineNr_ir = LineNr_ii - 1;
-    }
-  return Found_bi;
-}
-
-
-void createPath(string Path_Cv)
-{
-  string Path_Ci = Path_Cv;
-  string Tmp_Ci;
-
   string::size_type Pos_ii = 0;
-  while ((Pos_ii = Path_Ci.find('/', Pos_ii + 1)) != string::npos)
+  while ((Pos_ii = Path_Cv.find('/', Pos_ii + 1)) != string::npos)
     {
-      Tmp_Ci = Path_Ci.substr(0, Pos_ii);
+      string Tmp_Ci = Path_Cv.substr(0, Pos_ii);
       mkdir(Tmp_Ci.c_str(), 0777);
     }
-  mkdir(Path_Ci.c_str(), 0777);
+  mkdir(Path_Cv.c_str(), 0777);
 }
 
+
 bool
-checkDir(string Path_Cv)
+checkDir(const string& Path_Cv)
 {
   struct stat Stat_ri;
 
@@ -129,32 +70,104 @@ checkDir(string Path_Cv)
 	  S_ISDIR(Stat_ri.st_mode));
 }
 
+
 bool
-checkSymlink(string Path_Cv)
+getStatMode(const string& Path_Cv, mode_t& val )
 {
   struct stat Stat_ri;
+  int ret_ii = stat(Path_Cv.c_str(), &Stat_ri);
 
-  return (lstat(Path_Cv.c_str(), &Stat_ri) >= 0 &&
-	  S_ISLNK(Stat_ri.st_mode));
+  if( ret_ii==0 )
+    val = Stat_ri.st_mode;
+  else
+    y2mil( "stat " << Path_Cv << " ret:" << ret_ii );
+
+  return (ret_ii==0);
 }
 
 bool
-checkBlockDevice(string Path_Cv)
+setStatMode(const string& Path_Cv, mode_t val )
 {
-  struct stat Stat_ri;
-
-  return (stat(Path_Cv.c_str(), &Stat_ri) >= 0 &&
-	  S_ISBLK(Stat_ri.st_mode));
+  int ret_ii = chmod( Path_Cv.c_str(), val );
+  if( ret_ii!=0 )
+    y2mil( "chmod " << Path_Cv << " ret:" << ret_ii );
+  return( ret_ii==0 );
 }
 
+
 bool
-checkNormalFile(string Path_Cv)
+checkNormalFile(const string& Path_Cv)
 {
   struct stat Stat_ri;
 
   return (stat(Path_Cv.c_str(), &Stat_ri) >= 0 &&
 	  S_ISREG(Stat_ri.st_mode));
 }
+
+
+    list<string>
+    glob(const string& path, int flags)
+    {
+	list<string> ret;
+
+	glob_t globbuf;
+	if (glob(path.c_str(), flags, 0, &globbuf) == 0)
+	{
+	    for (char** p = globbuf.gl_pathv; *p != 0; p++)
+		ret.push_back(*p);
+	}
+	globfree (&globbuf);
+
+	return ret;
+    }
+
+
+    bool
+    getStatVfs(const string& path, StatVfs& buf)
+    {
+	struct statvfs64 fsbuf;
+	if (statvfs64(path.c_str(), &fsbuf) != 0)
+	{
+	    buf.sizeK = buf.freeK = 0;
+
+	    y2err("errno:" << errno << " " << strerror(errno));
+	    return false;
+	}
+
+	buf.sizeK = fsbuf.f_blocks;
+	buf.sizeK *= fsbuf.f_bsize;
+	buf.sizeK /= 1024;
+
+	buf.freeK = fsbuf.f_bfree;
+	buf.freeK *= fsbuf.f_bsize;
+	buf.freeK /= 1024;
+
+	y2mil("blocks:" << fsbuf.f_blocks << " bfree:" << fsbuf.f_bfree <<
+	      " bsize:" << fsbuf.f_bsize << " sizeK:" << buf.sizeK <<
+	      " freeK:" << buf.freeK);
+	return true;
+    }
+
+
+    bool
+    getMajorMinor(const string& device, unsigned long& major, unsigned long& minor)
+    {
+	bool ret = false;
+	string dev = normalizeDevice(device);
+	struct stat sbuf;
+	if (stat(device.c_str(), &sbuf) == 0)
+	{
+	    major = gnu_dev_major(sbuf.st_rdev);
+	    minor = gnu_dev_minor(sbuf.st_rdev);
+	    ret = true;
+	}
+	else
+	{
+	    y2err("stat for " << device << " failed errno:" << errno << " (" << strerror(errno) << ")");
+	}
+	return ret;
+    }
+
 
 string extractNthWord(int Num_iv, const string& Line_Cv, bool GetRest_bi)
   {
@@ -249,13 +262,6 @@ list<string> splitString( const string& s, const string& delChars,
     }
 
 
-string
-mergeString(const list<string>& l, const string& del)
-{
-    return boost::join(l, del);
-}
-
-
 map<string,string>
 makeMap( const list<string>& l, const string& delim, const string& removeSur )
     {
@@ -289,12 +295,22 @@ makeMap( const list<string>& l, const string& delim, const string& removeSur )
     }
 
 
-string normalizeDevice( const string& dev )
+    string normalizeDevice(const string& dev)
     {
-    string ret( dev );
-    normalizeDevice( ret );
-    return( ret );
+	if (!boost::starts_with(dev, "/dev/") && !isNfsDev(dev))
+	    return "/dev/" + dev;
+	return dev;
     }
+
+
+    list<string> normalizeDevices(const list<string>& devs)
+    {
+	list<string> ret;
+	for (list<string>::const_iterator it = devs.begin(); it != devs.end(); ++it)
+	    ret.push_back(normalizeDevice(*it));
+	return ret;
+    }
+
 
 bool isNfsDev( const string& dev )
     {
@@ -302,31 +318,19 @@ bool isNfsDev( const string& dev )
             dev.find( ':' )!=string::npos );
     }
 
-void normalizeDevice( string& dev )
-    {
-    if( dev.find( "/dev/" )!=0 && !isNfsDev(dev) )
-	dev = "/dev/" + dev;
-    }
 
-string undevDevice( const string& dev )
+    string undevDevice(const string& dev)
     {
-    string ret( dev );
-    undevDevice( ret );
-    return( ret );
-    }
-
-void undevDevice( string& dev )
-    {
-    if( dev.find( "/dev/" )==0 )
-	dev.erase( 0, 5 );
+	if (boost::starts_with(dev, "/dev/"))
+	    return string(dev, 5);
+	return dev;
     }
 
 
 static const blocxx::String component = "libstorage";
 
 
-void createLogger(const string& lcomponent, const string& name,
-		  const string& logpath, const string& logfile)
+void createLogger(const string& name, const string& logpath, const string& logfile)
 {
     using namespace blocxx;
 
@@ -398,16 +402,26 @@ testLogLevel(LogLevel level)
 
 
 void
-prepareLogStream(std::ostringstream& s)
+prepareLogStream(ostringstream& stream)
 {
-    s.imbue(std::locale::classic());
-    s.setf(std::ios::showbase);
+    stream.imbue(std::locale::classic());
+    stream.setf(std::ios::boolalpha);
+    stream.setf(std::ios::showbase);
+}
+
+
+ostringstream*
+logStreamOpen()
+{
+    std::ostringstream* stream = new ostringstream;
+    prepareLogStream(*stream);
+    return stream;
 }
 
 
 void
-logMsg(LogLevel level, const char* file, unsigned line, const char* func,
-       const string& str)
+logStreamClose(LogLevel level, const char* file, unsigned line, const char* func,
+	       ostringstream* stream)
 {
     using namespace blocxx;
 
@@ -440,32 +454,99 @@ logMsg(LogLevel level, const char* file, unsigned line, const char* func,
 
     if (!category.empty())
     {
-	LogAppender::getCurrentLogAppender()->logMessage(LogMessage(component, category,
-								    String(str), file,
-								    line, func));
+	string tmp = stream->str();
+
+	string::size_type pos1 = 0;
+
+	while (true)
+	{
+	    string::size_type pos2 = tmp.find('\n', pos1);
+
+	    if (pos2 != string::npos || pos1 != tmp.length())
+		LogAppender::getCurrentLogAppender()->logMessage(LogMessage(component, category,
+									    String(tmp.substr(pos1, pos2 - pos1)),
+									    file, line, func));
+
+	    if (pos2 == string::npos)
+		break;
+
+	    pos1 = pos2 + 1;
+	}
     }
+
+    delete stream;
 }
 
 
-void
-logMsgVaArgs(LogLevel level, const char* file, unsigned line, const char* func,
-	     const char* format, ...)
-{
-    if (testLogLevel(level))
+    string
+    udevAppendPart(const string& s, unsigned num)
     {
-	char* str;
-	va_list ap;
-
-	va_start(ap, format);
-	if (vasprintf(&str, format, ap) == -1)
-	    return;
-	va_end(ap);
-
-	logMsg(level, file, line, func, str);
-
-	free(str);
+	return s + "-part" + decString(num);
     }
-}
+
+
+    string
+    udevEncode(const string& s)
+    {
+	string r = s;
+
+	string::size_type pos = 0;
+
+	while (true)
+	{
+	    pos = r.find_first_of(" '\\/", pos);
+	    if (pos == string::npos)
+		break;
+
+	    char tmp[16];
+	    sprintf(tmp, "\\x%02x", r[pos]);
+	    r.replace(pos, 1, tmp);
+
+	    pos += 4;
+	}
+
+	return r;
+    }
+
+
+    string
+    udevDecode(const string& s)
+    {
+	string r = s;
+
+	string::size_type pos = 0;
+
+	while (true)
+	{
+	    pos = r.find("\\x", pos);
+	    if (pos == string::npos || pos > r.size() - 4)
+		break;
+
+	    unsigned int tmp;
+	    if (sscanf(r.substr(pos + 2, 2).c_str(), "%x", &tmp) == 1)
+		r.replace(pos, 4, 1, (char) tmp);
+
+	    pos += 1;
+	}
+
+	return r;
+    }
+
+
+    bool
+    mkdtemp(string& path)
+    {
+	char* tmp = strdup(path.c_str());
+	if (!::mkdtemp(tmp))
+	{
+	    free(tmp);
+	    return false;
+	}
+
+	path = tmp;
+	free(tmp);
+	return true;
+    }
 
 
 bool
@@ -479,231 +560,190 @@ readlink(const string& path, string& buf)
 }
 
 
-    string
-    udevAppendPart(const string& s, unsigned num)
+    bool
+    readlinkat(int fd, const string& path, string& buf)
     {
-	return s + "-part" + decString(num);
+        char tmp[1024];
+        int count = ::readlinkat(fd, path.c_str(), tmp, sizeof(tmp));
+        if (count >= 0)
+            buf = string(tmp, count);
+        return count != -1;
     }
 
 
-map<string, string>
-getUdevLinks(const char* path)
-{
-    map<string, string> links;
-
-    DIR* dir;
-    if ((dir = opendir(path)) != NULL)
+    map<string, string>
+    getUdevLinks(const char* path)
     {
-	struct dirent* entry;
-	while ((entry = readdir(dir)) != NULL)
+	map<string, string> links;
+
+	int fd = open(path, O_RDONLY);
+	if (fd >= 0)
 	{
-	    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-		continue;
-
-	    string full = string(path) + "/" + entry->d_name;
-
-	    string tmp;
-	    if (readlink(full, tmp))
+	    DIR* dir;
+	    if ((dir = fdopendir(fd)) != NULL)
 	    {
-		string::size_type pos = tmp.find_first_not_of("./");
-		if (pos != string::npos)
-		    links[entry->d_name] = tmp.substr(pos);
-	    }
-	}
-	closedir(dir);
-    }
-
-    return links;
-}
-
-
-void
-getUdevMap(const char* path, map<string, list<string>>& m)
-{
-    y2mil( "path: " << path );
-
-    map<string, string> links = getUdevLinks(path);
-
-    m.clear();
-    for (map<string, string>::const_iterator it = links.begin(); it != links.end(); it++)
-	m[it->second].push_back(it->first);
-
-    y2mil("map: " << m);
-}
-
-
-void
-getRevUdevMap(const char* path, map<string, string>& m)
-{
-    y2mil("path: " << path);
-
-    m = getUdevLinks(path);
-
-    y2mil("map: " << m);
-}
-
-
-unsigned getMajorDevices( const string& driver )
-    {
-    unsigned ret=0;
-    string cmd = "grep \" " + driver + "$\" /proc/devices";
-    SystemCmd c( cmd );
-    if( c.numLines()>0 )
-	{
-	extractNthWord( 0, *c.getLine(0)) >> ret;
-	}
-    y2mil( "driver:" << driver << " ret:" << ret );
-    return( ret );
-    }
-
-
-string sformat(const char* format, ...)
-{
-    char* result;
-    va_list ap;
-
-    va_start(ap, format);
-    if (vasprintf(&result, format, ap) == -1)
-	return string();
-    va_end(ap);
-
-    string str(result);
-    free(result);
-    return str;
-}
-
-
-int
-numSuffixes()
-{
-    return 6;
-}
-
-
-string
-getSuffix(int i, bool classic, bool sloppy = false)
-{
-    switch (i)
-    {
-	case 0:
-	    if (sloppy)
-		return "";
-	    else
-		/* Byte abbreviated */
-		return classic ? "B" : _("B");
-
-	case 1:
-	    if (sloppy)
-		/* Kilo abbreviated */
-		return classic ? "k" : _("k");
-	    else
-		/* KiloByte abbreviated */
-		return classic ? "kB" : _("kB");
-
-	case 2:
-	    if (sloppy)
-		/* Mega abbreviated */
-		return classic ? "M" : _("M");
-	    else
-		/* MegaByte abbreviated */
-		return classic ? "MB" : _("MB");
-
-	case 3:
-	    if (sloppy)
-		/* Giga abbreviated */
-		return classic ? "G" : _("G");
-	    else
-		/* GigaByte abbreviated */
-		return classic ? "GB" : _("GB");
-
-	case 4:
-	    if (sloppy)
-		/* Tera abbreviated */
-		return classic ? "T" : _("T");
-	    else
-		/* TeraByte abbreviated */
-		return classic ? "TB" : _("TB");
-
-	case 5:
-	    if (sloppy)
-		/* Peta abbreviated */
-		return classic ? "P" : _("P");
-	    else
-		/* PetaByte abbreviated */
-		return classic ? "PB" : _("PB");
-    }
-
-    return string("error");
-}
-
-
-string
-byteToHumanString(unsigned long long size, bool classic, int precision, bool omit_zeroes)
-{
-    const locale loc = classic ? locale::classic() : locale();
-
-    double f = size;
-    int i = 0;
-
-    while (f >= 1024.0 && i + 1 < numSuffixes())
-    {
-	f /= 1024.0;
-	i++;
-    }
-
-    if (omit_zeroes && (f == (unsigned long long)(f)))
-    {
-	precision = 0;
-    }
-
-    ostringstream s;
-    s.imbue(loc);
-    s.setf(ios::fixed);
-    s.precision(precision);
-
-    s << f << ' ' << getSuffix(i, classic);
-
-    return s.str();
-}
-
-
-bool
-humanStringToByte(const string& str, bool classic, unsigned long long& size)
-{
-    const locale loc = classic ? locale::classic() : locale();
-
-    const string str_trimmed = boost::trim_copy(str, loc);
-
-    double f = 1.0;
-
-    for (int i = 0; i < numSuffixes(); i++)
-    {
-	for (int j = 0; j < (classic ? 1 : 2); j++)
-	{
-	    string suffix = getSuffix(i, classic, j != 0);
-	    if (boost::iends_with(str_trimmed, suffix, loc))
-	    {
-		string number = str_trimmed.substr(0, str_trimmed.size() - suffix.size());
-
-		istringstream s(boost::trim_copy(number, loc));
-		s.imbue(loc);
-
-		double g;
-		s >> g;
-
-		if (!s.fail() && s.eof() && g >= 0.0)
+		struct dirent* entry;
+		while ((entry = readdir(dir)) != NULL)
 		{
-		    size = g * f;
-		    return true;
+		    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+			continue;
+
+		    string tmp;
+		    if (!readlinkat(fd, entry->d_name, tmp))
+			continue;
+
+		    string::size_type pos = tmp.find_first_not_of("./");
+		    if (pos != string::npos)
+			links[udevDecode(entry->d_name)] = tmp.substr(pos);
 		}
+		closedir(dir);
+	    }
+	    else
+	    {
+		close(fd);
 	    }
 	}
 
-	f *= 1024.0;
+	return links;
     }
 
-    return false;
+
+    UdevMap::UdevMap(const string& path)
+    {
+	y2mil("path: " << path);
+
+	const map<string, string> links = getUdevLinks(path.c_str());
+
+	for (map<string, string>::const_iterator it = links.begin(); it != links.end(); ++it)
+	    data[it->second].push_back(it->first);
+
+	for (const_iterator it = begin(); it != end(); ++it)
+	    y2mil("data[" << it->first << "] -> " << boost::join(it->second, " "));
+    }
+
+
+unsigned
+getMajorDevices(const char* driver)
+{
+    unsigned ret = 0;
+
+    AsciiFile file("/proc/devices");
+    const vector<string>& lines = file.lines();
+
+    Regex rx("^" + Regex::ws + "([0-9]+)" + Regex::ws + string(driver) + "$");
+
+    if (find_if(lines, regex_matches(rx)) != lines.end())
+	rx.cap(1) >> ret;
+    else
+	y2err("did not find " << driver << " in /proc/devices");
+
+    y2mil("driver:" << driver << " ret:" << ret);
+    return ret;
 }
+
+
+    void
+    Text::clear()
+    {
+	native.clear();
+	text.clear();
+    }
+
+
+    const Text&
+    Text::operator+=(const Text& a)
+    {
+	native += a.native;
+	text += a.text;
+	return *this;
+    }
+
+
+    string
+    sformat(const string& format, va_list ap)
+    {
+	char* result;
+
+	if (vasprintf(&result, format.c_str(), ap) == -1)
+	    return string();
+
+	string str(result);
+	free(result);
+	return str;
+    }
+
+
+    Text
+    sformat(const Text& format, ...)
+    {
+	Text text;
+	va_list ap;
+
+	va_start(ap, format);
+	text.native = sformat(format.native, ap);
+	va_end(ap);
+
+	va_start(ap, format);
+	text.text = sformat(format.text, ap);
+	va_end(ap);
+
+	return text;
+    }
+
+
+    Text _(const char* msgid)
+    {
+	return Text(msgid, dgettext("libstorage", msgid));
+    }
+
+    Text _(const char* msgid, const char* msgid_plural, unsigned long int n)
+    {
+	return Text(n == 1 ? msgid : msgid_plural, dngettext("libstorage", msgid, msgid_plural, n));
+    }
+
+
+    string
+    hostname()
+    {
+	struct utsname buf;
+	if (uname(&buf) != 0)
+	    return string("unknown");
+	string hostname(buf.nodename);
+	if (strlen(buf.domainname) > 0)
+	    hostname += "." + string(buf.domainname);
+	return hostname;
+    }
+
+
+    string
+    datetime()
+    {
+	time_t t1 = time(NULL);
+	struct tm t2;
+	gmtime_r(&t1, &t2);
+	char buf[64 + 1];
+	if (strftime(buf, sizeof(buf), "%F %T %Z", &t2) == 0)
+	    return string("unknown");
+	return string(buf);
+    }
+
+
+    StopWatch::StopWatch()
+    {
+	gettimeofday(&start_tv, NULL);
+    }
+
+
+    std::ostream& operator<<(std::ostream& s, const StopWatch& sw)
+    {
+	struct timeval stop_tv;
+	gettimeofday(&stop_tv, NULL);
+
+	struct timeval tv;
+	timersub(&stop_tv, &sw.start_tv, &tv);
+
+	return s << fixed << double(tv.tv_sec) + (double)(tv.tv_usec) / 1000000.0 << "s";
+    }
 
 
 const string app_ws = " \t\n";

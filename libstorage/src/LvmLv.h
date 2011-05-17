@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -23,9 +23,8 @@
 #ifndef LVM_LV_H
 #define LVM_LV_H
 
-#include <map>
+#include "storage/Dm.h"
 
-#include "y2storage/Dm.h"
 
 namespace storage
 {
@@ -35,13 +34,16 @@ class LvmVg;
 class LvmLv : public Dm
     {
     public:
-	LvmLv(const LvmVg& d, const string& name, const string& origin, unsigned long le, 
-	      const string& uuid, const string& status, const string& alloc);
-	LvmLv(const LvmVg& d, const string& name, const string& origin, unsigned long le, 
-	      unsigned stripe);
-	LvmLv(const LvmVg& d, const LvmLv& l);
 
+	LvmLv(const LvmVg& c, const string& name, const string& device, const string& origin,
+	      unsigned long le, const string& uuid, const string& status, const string& alloc);
+	LvmLv(const LvmVg& c, const string& name, const string& device, const string& origin,
+	      unsigned long le, unsigned stripe);
+	LvmLv(const LvmVg& c, const xmlNode* node);
+	LvmLv(const LvmVg& c, const LvmLv& v);
 	virtual ~LvmLv();
+
+	void saveData(xmlNode* node) const;
 
 	const LvmVg* vg() const;
 
@@ -60,25 +62,35 @@ class LvmLv : public Dm
 	void setAlloc( const string& a ) { allocation=a; }
 	friend std::ostream& operator<< (std::ostream& s, const LvmLv &p );
 	virtual void print( std::ostream& s ) const { s << *this; }
-	string removeText( bool doing ) const;
-	string createText( bool doing ) const;
-	string formatText( bool doing ) const;
-	string resizeText( bool doing ) const;
+	Text removeText( bool doing ) const;
+	Text createText( bool doing ) const;
+	Text formatText( bool doing ) const;
+	Text resizeText( bool doing ) const;
 	void getInfo( storage::LvmLvInfo& info ) const;
 	bool equalContent( const LvmLv& rhs ) const;
-	void logDifference( const LvmLv& d ) const;
+
+	void logDifference(std::ostream& log, const LvmLv& rhs) const;
+
+	static bool notDeleted(const LvmLv& l) { return !l.deleted(); }
 
     protected:
-	void init( const string& name );
-	virtual const string shortPrintedName() const { return( "Lv" ); }
-	LvmLv& operator=( const LvmLv& );
+	static string makeDmTableName(const string& vg_name, const string& lv_name);
+
+	virtual const string shortPrintedName() const { return "Lv"; }
 
 	string origin;		// only for snapshots, empty otherwise
 
 	string vol_uuid;
 	string status;
 	string allocation;
-	mutable storage::LvmLvInfo info;
+
+	mutable storage::LvmLvInfo info; // workaround for broken ycp bindings
+
+    private:
+
+	LvmLv(const LvmLv&);		// disallow
+	LvmLv& operator=(const LvmLv&); // disallow
+
     };
 
 }

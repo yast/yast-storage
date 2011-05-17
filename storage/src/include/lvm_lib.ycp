@@ -16,26 +16,8 @@
  */
 
 {
-    import "Integer";
-      
-
-    include "partitioning/partition_defines.ycp";
-
-
-    // TODO: cleanup
-    void new_vg_list( list vg_list );
-
-
 textdomain "storage";
 
-define string lvmVg( string vg )
-    {
-    integer pos = search( vg, "/" );
-    if( pos!=nil )
-	return( substring( vg, pos+1 ));
-    else
-	return( vg );
-    }
 
 //////////////////////////////////////////////////////////////////////
 // get a list of all volume groups in the targetMap
@@ -53,70 +35,5 @@ list<string> get_vgs( map<string,map> targetMap )
 	});
     return( lvm_vg );
 };
-
-//////////////////////////////////////////////////////////////////////
-// pesize to byte
-// in: <number>[kKmM][bB]
-// 
-// return "0" if input is invalid
-// 
-// pesize is valid 8kB to 512MB in power of 2
-// used by autoyast
-define integer pesize_str_to_byte(string input)
-{
-    integer ret = kmgt_str_to_byte(input);
-
-    if (!Integer::IsPowerOfTwo(ret))
-	ret = 0;
-    else if (ret < 8*1024 || ret > 512*1024*1024)
-        ret = 0;
-    return ret;
-};
-
-
-//////////////////////////////////////////////////////////////////////
-// Let the User create a new Volume group: open dialog ...
-// return: the changed targetMap and lvm_vgs  and cancelled 
-// used by autoyast
-define map addVolumeGroup( map vg, map<string,map> targetMap, list lvm_vgs )
-    ``{
-    boolean cancelled   = true;
-    string  current_vg  = "";
-    integer pesize      = 0;
-      
-
-    // has the user cancelled the dialog? 
-    if( size(vg)>0 )
-	{
-	// Now the user has created a new vg: make it the current vg
-	current_vg = vg["vgname"]:"error";
-	lvm_vgs    = add( lvm_vgs, current_vg);
-	pesize     = vg["pesize"]:0;
-      
-	// Display current vg:
-        if (UI::WidgetExists(`id(`rvg)) && UI::WidgetExists(`id(`vg)))
-        {
-            new_vg_list( lvm_vgs );
-            UI::ChangeWidget( `id(`vg), `Value, current_vg);
-        }
-	cancelled = !Storage::CreateLvmVg( current_vg, pesize, 
-	                                   vg["lvm2"]:true );
-	}
-    else
-	{
-	cancelled = true;
-	}
-
-    return( $[ "cancelled" : cancelled, "vg" : current_vg ]);
-    };
-
-//////////////////////////////////////////////////////////////////////
-// Remove the specified volume group  
-// return: boolean if removal was succesful
-
-define boolean removeVolumeGroup( string current_vg )
-    ``{
-    return( Storage::DeleteLvmVg( current_vg ));
-    };
 
 }		 

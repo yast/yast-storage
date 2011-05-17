@@ -3,14 +3,72 @@
  * Package:	yast2-storage
  * Summary:	Expert Partitioner
  * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
 
-
     include "partitioning/ep-raid-dialogs.ycp";
     include "partitioning/ep-raid-lib.ycp";
 
+
+    void EpContextMenuRaid(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`edit), _("Edit")),
+					      `item(`id(`resize), _("Resize")),
+					      `item(`id(`delete), _("Delete")) ]);
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditRaid(device);
+		break;
+
+	    case `resize:
+		EpResizeRaid(device);
+		break;
+
+	    case `delete:
+		EpDeleteRaid(device);
+		break;
+	}
+    }
+
+    term RaidButtonBox()
+    {
+	return `HBox(
+	// push button text
+	    `PushButton(`id(`edit), `opt(`key_F4), _("Edit...")),
+	    // push button text
+	    `PushButton(`id(`resize), `opt(`key_F6), _("Resize...")),
+	    // push button text
+	    `PushButton(`id(`delete), `opt(`key_F5), _("Delete..."))
+	);
+    }
+
+    void HandleRaidButtons( string device, map event )
+    {
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `add:
+		EpCreateRaid();
+		break;
+	    case `edit:
+		EpEditRaid(device);
+		break;
+
+	    case `resize:
+		EpResizeRaid(device);
+		break;
+
+	    case `delete:
+		EpDeleteRaid(device);
+		break;
+	}
+
+    }
 
     void CreateRaidMainPanel(any user_data)
     {
@@ -33,12 +91,13 @@
 			      `VBox(
 				  `HStretch(),
 				  // heading
-				  `IconAndHeading(_("RAID"), raid_icon),
-				  `Table(`id(`table), `opt(`keepSorting, `notify),
+				  `IconAndHeading(_("RAID"), StorageIcons::raid_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 					 table_header, table_contents),
 				  `HBox(
 				      // push button text
-				      `Left(`PushButton(`id(`add), `opt(`key_F3), _("Add RAID..."))),
+				      `PushButton(`id(`add), `opt(`key_F3), _("Add RAID...")),
+				       RaidButtonBox(),
 				      `HStretch()
 				      )
 				  )
@@ -52,14 +111,19 @@
     }
 
 
-    void HandleRaidMainPanel(any user_data, symbol widget)
+    void HandleRaidMainPanel(any user_data, map event)
     {
-	switch (widget)
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+
+	HandleRaidButtons(device, event);
+
+	switch (Event::IsWidgetContextMenuActivated(event))
 	{
-	    case `add:
-		EpCreateRaid();
+	    case `table:
+		EpContextMenuDevice(device);
 		break;
 	}
+
 	UI::SetFocus(`id(`table));
     }
 
@@ -70,7 +134,7 @@
 
 	map<string, map> target_map = Storage::GetTargetMap();
 
-	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `encrypted,
+	list<symbol> fields = StorageSettings::FilterOverview([ `heading_device, `device, `size, `encrypted, `udev_id,
 								`used_by, `heading_md, `raid_type, `chunk_size,
 								`parity_algorithm, `heading_filesystem,
 								`fs_type, `mount_point, `mount_by, `uuid,
@@ -80,15 +144,7 @@
 			  `VBox(
 			      `HStretch(),
 			      StorageFields::Overview(fields, target_map, part_device),
-			      `HBox(
-				  // push button text
-				  `PushButton(`id(`edit), `opt(`key_F4), _("Edit...")),
-				  // push button text
-				  `PushButton(`id(`resize), `opt(`key_F6), _("Resize...")),
-				  // push button text
-				  `PushButton(`id(`delete), `opt(`key_F5), _("Delete...")),
-				  `HStretch()
-				  )
+			      `Left( RaidButtonBox() )
 			      )
 	    );
 
@@ -100,24 +156,11 @@ selected RAID.</p>");
     }
 
 
-    void HandleRaidOverviewTab(any user_data, symbol widget)
+    void HandleRaidOverviewTab(any user_data, map event)
     {
-	string device = (string) user_data;
 
-	switch (widget)
-	{
-	    case `edit:
-		EpEditRaid(device);
-		break;
+        HandleRaidButtons( (string) user_data, event);
 
-	    case `resize:
-		EpResizeRaid(device);
-		break;
-
-	    case `delete:
-		EpDeleteRaid(device);
-		break;
-	}
 	UI::SetFocus(`id(`text));
     }
 
@@ -165,7 +208,7 @@ selected RAID.</p>");
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // heading
-				  `IconAndHeading(sformat(_("RAID: %1"), device), raid_icon),
+				  `IconAndHeading(sformat(_("RAID: %1"), device), StorageIcons::raid_icon),
 				  `DumbTab(`id(`tab), [
 					       // push button text
 					       `item(`id(`overview), _("&Overview")),
@@ -182,8 +225,8 @@ selected RAID.</p>");
     }
 
 
-    void HandleRaidPanel(any user_data, symbol widget)
+    void HandleRaidPanel(any user_data, map event)
     {
-	TabPanel::Handle(widget);
+	TabPanel::Handle(event);
     }
 }

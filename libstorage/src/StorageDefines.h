@@ -26,13 +26,12 @@
 
 #define SYSFSDIR "/sys/block"
 
+#define SYSCONFIGFILE "/etc/sysconfig/storage"
 
 #define PARTEDBIN "/usr/sbin/parted"
 #define PARTEDCMD PARTEDBIN " -s "	// blank at end !!
 #define ADDPARTBIN "/usr/sbin/addpart"
 #define DELPARTBIN "/usr/sbin/delpart"
-
-#define FDISKBIN "/sbin/fdisk"
 
 #define MDADMBIN "/sbin/mdadm"
 
@@ -49,6 +48,7 @@
 #define VGEXTENDBIN "/sbin/vgextend"
 #define VGREDUCEBIN "/sbin/vgreduce"
 #define VGDISPLAYBIN "/sbin/vgdisplay"
+#define VGSBIN "/sbin/vgs"
 #define VGSCANBIN "/sbin/vgscan"
 #define VGCHANGEBIN "/sbin/vgchange"
 
@@ -57,8 +57,8 @@
 #define MULTIPATHBIN "/sbin/multipath"
 #define MULTIPATHDBIN "/sbin/multipathd"
 #define DMSETUPBIN "/sbin/dmsetup"
-#define KPARTXBIN "/sbin/kpartx"
 #define DMRAIDBIN "/sbin/dmraid"
+#define BTRFSBIN "/sbin/btrfs"
 
 #define MOUNTBIN "/bin/mount"
 #define UMOUNTBIN "/bin/umount"
@@ -67,6 +67,14 @@
 
 #define DDBIN "/bin/dd"
 
+#define BLKIDBIN "/sbin/blkid"
+#define BLOCKDEVBIN "/sbin/blockdev"
+#define LSSCSIBIN "/usr/bin/lsscsi"
+
+#define LSBIN "/bin/ls"
+
+#define GREPBIN "/bin/grep"
+
 #define DASDFMTBIN "/sbin/dasdfmt"
 #define DASDVIEWBIN "/sbin/dasdview"
 #define FDASDBIN "/sbin/fdasd"
@@ -74,10 +82,6 @@
 #define UDEVADM "/sbin/udevadm"
 
 #define MODPROBEBIN "/sbin/modprobe"
-
-#define BLKIDBIN "/sbin/blkid"
-
-#define LSBIN "/bin/ls"
 
 
 #endif

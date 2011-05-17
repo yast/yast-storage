@@ -1,10 +1,7 @@
 
 #include <stdlib.h>
 #include <iostream>
-#include <fstream>
-#include <iterator>
-
-#include <StorageInterface.h>
+#include <boost/algorithm/string.hpp>
 
 #include "common.h"
 
@@ -13,43 +10,29 @@ using namespace std;
 using namespace storage;
 
 
-StorageInterface* s = 0;
-
-
-void
-print_fstab ()
-{
-    ifstream fstab ("tmp/fstab");
-    string line;
-
-    while (getline (fstab, line))
-	cout << line << '\n';
-}
-
-
 void
 run1 ()
 {
-    cout << "run1\n";
+    cout << "run1" << endl;
 
-    s = createStorageInterface(TestEnvironment());
+    StorageInterface* s = createStorageInterface(TestEnvironment());
 
-    string disk = "/dev/hdb";
+    string disk = "/dev/sda";
 
     s->destroyPartitionTable (disk, "msdos");
 
     long int S = 4 * 1000000;
 
     string name;
-    cout << s->createPartitionKb (disk, PRIMARY, 0, S, name) << '\n';
+    cout << s->createPartitionKb(disk, PRIMARY, 0, S, name) << endl;
 
-    cout << name << '\n';
+    cout << name << endl;
 
-    cout << s->changeFormatVolume (name, true, REISERFS) << '\n';
-    cout << s->changeMountPoint (name, "/tmp/mnt") << '\n';
-    cout << s->changeMountBy (name, MOUNTBY_UUID) << '\n';
+    cout << s->changeFormatVolume(name, true, REISERFS) << endl;
+    cout << s->changeMountPoint(name, "/tmp/mnt") << endl;
+    cout << s->changeMountBy(name, MOUNTBY_UUID) << endl;
 
-    cout << s->commit () << '\n';
+    cout << s->commit() << endl;
 
     delete s;
 }
@@ -58,29 +41,30 @@ run1 ()
 void
 run2 ()
 {
-    cout << "run2\n";
+    cout << "run2" << endl;
 
-    s = createStorageInterface(TestEnvironment());
+    StorageInterface* s = createStorageInterface(TestEnvironment());
 
-    string name = "/dev/hdb1";
+    string name = "/dev/sda1";
 
-    cout << name << '\n';
+    cout << name << endl;
 
-    cout << s->changeMountBy (name, MOUNTBY_DEVICE) << '\n';
+    cout << s->changeMountBy(name, MOUNTBY_DEVICE) << endl;
 
-    cout << s->commit () << '\n';
+    cout << s->commit() << endl;
 
     delete s;
 }
 
 
 int
-main (int argc, char* argv[])
+main()
 {
-    system ("mkdir -p tmp");
+    cout.setf(std::ios::boolalpha);
 
-    system ("rm -f tmp/fstab tmp/volume_info");
-    system ("cp data/disk_hdb tmp/disk_hdb");
+    setup_logger();
+
+    setup_system("empty");
 
     run1 ();
     print_fstab ();

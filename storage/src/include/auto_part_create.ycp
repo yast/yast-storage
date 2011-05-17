@@ -18,19 +18,17 @@
 
     import "Storage";
     import "Partitions";
-    import "ProductFeatures";
-
-include "partitioning/do_proposal_flexible.ycp";
+    import "StorageProposal";
 
 boolean create_partitions( map<string,map> tgmap, map disk, list<map> partitions )
     {
     y2milestone( "create_partitions disk:%1",
                  haskey(disk,"partitions")?remove(disk,"partitions"):disk );
     y2milestone( "create_partitions partitions %1", partitions );
-    flex_init_swapable( tgmap );
+    StorageProposal::flex_init_swapable( tgmap );
     boolean ret = false;
-    boolean has_flex = has_flex_proposal();
-    string vm = Storage::ProposalVM();
+    boolean has_flex = StorageProposal::has_flex_proposal();
+    string vm = StorageProposal::GetProposalVM();
     y2milestone( "create_partitions flex %1 vm %2", has_flex, vm );
     disk["partitions"] = partitions;
     map keep = find( map p, partitions, 
@@ -39,7 +37,7 @@ boolean create_partitions( map<string,map> tgmap, map disk, list<map> partitions
 	{
 	if( has_flex )
 	    {
-	    map flex = do_flexible_disk( disk );
+	    map flex = StorageProposal::do_flexible_disk( disk );
 	    if( flex["ok"]:false )
 		partitions = flex["disk","partitions"]:[];
 	    }
@@ -51,7 +49,7 @@ boolean create_partitions( map<string,map> tgmap, map disk, list<map> partitions
 	    integer num_del_free = size(filter(map p, partitions,
 						``(p["type"]:`unknown==`free&&
 						   p["delete"]:false)));
-	    map r = can_swap_reuse( disk["device"]:"", partitions, tgmap );
+	    map r = StorageProposal::can_swap_reuse( disk["device"]:"", partitions, tgmap );
 	    if( haskey( r, "partitions" ))
 		partitions = r["partitions"]:[];
 	    else if( haskey( r, "targets" ))
@@ -80,7 +78,7 @@ boolean create_partitions( map<string,map> tgmap, map disk, list<map> partitions
 		}
 	    else
 		{
-		partitions = get_proposal( size(r)>0, disk );
+		partitions = StorageProposal::get_proposal( size(r)>0, disk );
 		}
 	    }
 	y2milestone( "create_partitions %1", partitions );
@@ -100,7 +98,7 @@ boolean create_partitions( map<string,map> tgmap, map disk, list<map> partitions
 	    });
 	y2milestone( "create_partitions id_save %1", id_save );
 	y2milestone( "create_partitions ps %1", disk["partitions"]:[] );
-	map r = get_proposal_vm( tgmap, vm, disk );
+	map r = StorageProposal::get_proposal_vm( tgmap, vm, disk );
 	ret = r["ok"]:false;
 	if( ret )
 	    {

@@ -3,6 +3,8 @@
  * Package:	yast2-storage
  * Summary:	Expert Partitioner
  * Authors:	Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
@@ -15,7 +17,7 @@
 	foreach(string dev, devs, {
 	    Storage::SetPartitionId(dev, Partitions::fsid_raid);
 	    Storage::SetPartitionFormat(dev, false, `none);
-	    if (!Storage::ExtendMd(raid_nr, dev))
+	    if (!Storage::ExtendMd(raid_nr, [ dev ]))
 		ret = false;
 	});
 
@@ -29,7 +31,7 @@
 
 	foreach(string dev, devs, {
 	    Storage::UnchangePartitionId(dev);
-	    if (!Storage::ShrinkMd(raid_nr, dev))
+	    if (!Storage::ShrinkMd(raid_nr, [ dev ]))
 		ret = false;
 	});
 
@@ -40,7 +42,7 @@
     void EpCreateRaid()
     {
 	map<string, map> target_map = Storage::GetTargetMap();
-	list<map> unused_devices = filter(map dev, get_possible_rds(target_map), { return dev["used_by"]:"" == ""; });
+	list<map> unused_devices = filter(map dev, get_possible_rds(target_map), { return !Storage::IsUsedBy(dev); });
 
 	if (size(unused_devices) < 2)
 	{
@@ -59,7 +61,7 @@
 	if (DlgCreateRaidNew(data))
 	{
 	    integer nr = data["nr"]:0;
-	    symbol raid_type = symbolof(toterm(data["raid_type"]:"raid0"));
+	    symbol raid_type = tosymbol(data["raid_type"]:"raid0");
 
 	    if (Storage::CreateMdWithDevs(nr, raid_type, []))
 	    {
@@ -69,10 +71,11 @@
 		integer chunk_size_k = data["chunk_size_k"]:4;
 		Storage::ChangeMdChunk(nr, chunk_size_k);
 
-		if (raid_type == `raid5) {
-		    symbol parity_algorithm = data["parity_algorithm"]:`left_asymmetric;
+		if( haskey( data, "parity_algorithm" ))
+		    {
+		    symbol parity_algorithm = data["parity_algorithm"]:`par_default;
 		    Storage::ChangeMdParitySymbol(nr, parity_algorithm);
-		}
+		    }
 
 		Storage::ChangeVolumeProperties(data);
 
@@ -97,7 +100,7 @@
 	map<string, map> target_map = Storage::GetTargetMap();
 	map<string, any> data = Storage::GetPartition(target_map, device);
 
-	if (data["used_by"]:"" != "")
+	if (Storage::IsUsedBy(data))
 	{
 	    // error popup, %1 is replaced by device name e.g. /dev/md1
 	    Popup::Error(sformat(_("The RAID %1 is in use. It cannot be
@@ -137,7 +140,7 @@ resized. To resize %1, remove it and create it again."), device));
 	    return;
 	}
 
-	if (data["used_by"]:"" != "")
+	if (Storage::IsUsedBy(data))
 	{
 	    // error popup, %1 is replaced by device name e.g. /dev/md1
 	    Popup::Error(sformat(_("The RAID %1 is in use. It cannot be
@@ -184,8 +187,12 @@ resized. To resize %1, make sure it is not used."), device));
 
 	if (EpDeleteDevice(device))
 	{
+	    any new_focus = nil;
+	    if (UI::QueryWidget(`tree, `CurrentItem) == device)
+		new_focus = `md;
+
 	    UpdateMainStatus();
-	    UpdateNavigationTree(`md);
+	    UpdateNavigationTree(new_focus);
 	    TreePanel::Create();
 	}
     }

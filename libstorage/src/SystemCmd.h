@@ -29,53 +29,48 @@
 #include <string>
 #include <vector>
 #include <list>
+#include <boost/noncopyable.hpp>
 
-using std::string;
 
 namespace storage
 {
+    using std::string;
+    using std::vector;
 
 class OutputProcessor;
 
-class SystemCmd
+class SystemCmd : boost::noncopyable
     {
     public:
+
 	enum OutputStream { IDX_STDOUT, IDX_STDERR };
-	SystemCmd( const char* Command_Cv );
-	SystemCmd( const string& Command_Cv );
+
+	SystemCmd(const string& Command_Cv);
 	SystemCmd();
+
 	virtual ~SystemCmd();
-	int execute( const string& Command_Cv );
-	int executeBackground( const string& Command_Cv );
-	int executeRestricted( const string& Command_Cv,
-	                       unsigned long MaxTimeSec,
-			       unsigned long MaxLineOut,
-			       bool& ExceedTime, bool& ExceedLines);
-	void setOutputHandler( void (*Handle_f)( void *, string, bool ),
-	                       void * Par_p );
-	void logOutput() const;
-	void setOutputProcessor( OutputProcessor * proc )
-	    { output_proc = proc; }
-	int select( string Reg_Cv, bool Invert_bv=false,
-	            unsigned Idx_ii=IDX_STDOUT );
-	const string& stderr() const { return( *getString(IDX_STDERR)); }
-	const string& stdout() const { return( *getString(IDX_STDOUT)); }
-	const string& cmd() const { return( lastCmd ); }
-	const string* getString( unsigned Idx_ii=IDX_STDOUT ) const;
-	const string* getLine( unsigned Num_iv, bool Selected_bv=false,
-			       unsigned Idx_ii=IDX_STDOUT ) const;
-	unsigned numLines( bool Selected_bv=false, unsigned Idx_ii=IDX_STDOUT ) const;
-	void setCombine( const bool Combine_b=true );
+
+	int execute(const string& Command_Cv);
+	int executeBackground(const string& Command_Cv);
+	int executeRestricted(const string& Command_Cv,
+			      unsigned long MaxTimeSec, unsigned long MaxLineOut,
+			      bool& ExceedTime, bool& ExceedLines);
+
+	void setOutputProcessor(OutputProcessor* proc) { output_proc = proc; }
+
+	const vector<string>& stdout() const { return Lines_aC[IDX_STDOUT]; }
+	const vector<string>& stderr() const { return Lines_aC[IDX_STDERR]; }
+
+	string cmd() const { return lastCmd; }
 	int retcode() const { return Ret_i; }
 
-	int getStdout( std::vector<string> &Ret_Cr, const bool Append_bv = false ) const
-	    { return placeOutput( IDX_STDOUT, Ret_Cr, Append_bv); }
-	int getStderr( std::vector<string> &Ret_Cr, const bool Append_bv = false ) const
-	    { return placeOutput( IDX_STDERR, Ret_Cr, Append_bv); }
-	int getStdout( std::list<string> &Ret_Cr, const bool Append_bv = false ) const
-	    { return placeOutput( IDX_STDOUT, Ret_Cr, Append_bv); }
-	int getStderr( std::list<string> &Ret_Cr, const bool Append_bv = false ) const
-	    { return placeOutput( IDX_STDERR, Ret_Cr, Append_bv); }
+	int select(const string& Reg_Cv, OutputStream Idx_ii = IDX_STDOUT);
+	unsigned numLines(bool Selected_bv = false, OutputStream Idx_ii = IDX_STDOUT) const;
+	string getLine(unsigned Num_iv, bool Selected_bv = false, OutputStream Idx_ii = IDX_STDOUT) const;
+
+	void setCombine(bool combine = true);
+
+	static void setTestmode(bool testmode = true);
 
 	/**
 	 * Quotes and protects a single string for shell execution.
@@ -87,27 +82,22 @@ class SystemCmd
 	 */
 	static string quote(const std::list<string>& strs);
 
-	static bool testmode;
-
     protected:
 
-        int  placeOutput( unsigned Which_iv, std::vector<string> &Ret_Cr, const bool Append_bv ) const;
-        int  placeOutput( unsigned Which_iv, std::list<string> &Ret_Cr, const bool Append_bv ) const;
-
 	void invalidate();
-	void closeOpenFds();
-	int doExecute( string Cmd_Cv );
-	bool doWait( bool Hang_bv, int& Ret_ir );
+	void closeOpenFds() const;
+	int doExecute(const string& Cmd_Cv);
+	bool doWait(bool Hang_bv, int& Ret_ir);
         void checkOutput();
-	void getUntilEOF( FILE* File_Cr, std::vector<string>& Lines_Cr,
-	                  bool& NewLineSeen_br, bool Stderr_bv );
-	void extractNewline( const char* Buf_ti, int Cnt_ii, bool& NewLineSeen_br,
-	                     string& Text_Cr, std::vector<string>& Lines_Cr );
-	void addLine( string Text_Cv, std::vector<string>& Lines_Cr );
+	void getUntilEOF(FILE* File_Cr, std::vector<string>& Lines_Cr,
+			 bool& NewLineSeen_br, bool Stderr_bv);
+	void extractNewline(const string& Buf_ti, int Cnt_ii, bool& NewLineSeen_br,
+			    string& Text_Cr, std::vector<string>& Lines_Cr);
+	void addLine(const string& Text_Cv, std::vector<string>& Lines_Cr);
 	void init();
 
-	mutable string Text_aC[2];
-	mutable bool Valid_ab[2];
+	void logOutput() const;
+
 	FILE* File_aC[2];
 	std::vector<string> Lines_aC[2];
 	std::vector<string*> SelLines_aC[2];
@@ -117,11 +107,12 @@ class SystemCmd
 	string lastCmd;
 	int Ret_i;
 	int Pid_i;
-	void (* OutputHandler_f)( void*, string, bool );
-	void *HandlerPar_p;
 	OutputProcessor* output_proc;
 	struct pollfd pfds[2];
 
+	static bool testmode;
+
+	static const unsigned line_limit = 50;
     };
 
 

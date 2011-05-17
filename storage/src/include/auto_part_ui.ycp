@@ -15,9 +15,7 @@
  *
  * defined functions
     global define display_error_box (string reason) ``{
-    global define warn_not_bootable () ``{
     global define partition_text (integer nr, map pentry) ``{
-    global define ask_free_space ()
     global define construct_partition_dialog ()
     global define open_auto_dialog (string targetname, term targetbox) ``{
     global define create_resize_dialog (list partitions) ``{
@@ -27,9 +25,9 @@
 
     import "Wizard";
     import "Partitions";
-    import "Report";
     import "Popup";
     import "Product";
+    import "StorageProposal";
 
     // --------------------------------------------------------------
     // warning and pop-ups
@@ -40,15 +38,6 @@ define void display_error_box (string reason) ``{
 	// then the message is passed through this interface transparently
 	string text = sformat(_("The current selection is invalid:\n%1"), reason);
 	Popup::Message(text);
-    };
-
-define void warn_not_bootable () ``{
-	  // This is a warning message that pops up when the selection does not
-	  // include a bootable disk region (< 1024 cylinders).
-	  Report::Warning(sformat(_("With the current partitioning, your %2 installation
-cannot be booted directly, because your /boot partition 
-is above cylinder %1.
-"), Partitions::BootCyl(), Product::name) );
     };
 
 
@@ -71,12 +60,6 @@ define string partition_text (integer nr, map pentry, integer bps)
 			    pentry["fstype"]:"", pentry["device"]:"", pentry["label"]:"" );
     };
 
-define boolean ask_free_space () ``{
-	// we found an unassigned partition which is large enough for a minimal installation
-	return Popup::YesNo(sformat(_("There is free space on the selected disk.
-Use this for %1?
-"),Product::name));
-    };
 
 define map construct_partition_dialog( list<map> partitions, string ptype, 
 				       integer bps )
@@ -192,7 +175,7 @@ lost. </i></b> There will be no way to recover this data.
 ");
 
 	// Information what to do, background information
-	Wizard::SetContents( _("Preparing Hard Disk -- Step 2"),
+	Wizard::SetContents( _("Preparing Hard Disk"),
 			   `HCenter(
 				    `HSquash(
 					     `Frame(
@@ -241,7 +224,7 @@ This may fail under rare circumstances.
 ");
 
     // Information what to do, background information
-    Wizard::SetContents( _("Preparing Hard Disk -- Step 2"),
+    Wizard::SetContents( _("Preparing Hard Disk"),
 		       `HCenter(
 					 `Frame(
 						// Frame title for installation target hard disk / partition(s)
@@ -268,7 +251,7 @@ This may fail under rare circumstances.
 
 term add_common_widgets( term vbox )
     {
-    map cfg = Storage::GetControlCfg();
+    map cfg = StorageProposal::GetControlCfg();
     term vb = `VBox();
     vb = add (vb, 
 	      `Left(`HBox(`HSpacing(3), `CheckBox( `id(`home),

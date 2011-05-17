@@ -13,81 +13,25 @@
  * and mounted for the targets / and /boot.
  *
  *
- * SCR:	Write(.disk + scrpath + .partitions, targetpartitions)
- *	Execute (.target.mkdir, [ <mountpoint>, 0755] )
- *	Execute (.target.mount, [<device>, <mountpoint>] )
- *
- *
  * possible return values: `back, `abort `next
  */
 {
   textdomain "storage";
   
-  import "Installation";
   import "Mode";
   import "Stage";
-  import "Wizard";
   import "Storage";
-  import "Hotplug";
   import "String";
   import "SlideShow";
   import "StorageClients";
-  import "Popup";
   
   if (Mode::update ())
     return `auto;
 
-  boolean test_mode		= Mode::test();
-  boolean this_is_for_real	= !test_mode;
-
   SCR::Write( .target.ycp, Storage::SaveDumpPath("targetMap_ps"), 
               Storage::GetTargetMap() );
 
-// Define macro that creates a dialog with progressbar
-define void MakefsDialog()
-    ``{
-    return;
-
-    if (!Wizard::IsWizardDialog())
-	return;
-
-    // html-format
-    // advise the user to wait for completion
-    // part 1 of 2
-    string helptext = _("<p>
-Please wait while your hard disk is prepared for installation...
-<br></p>");
-    if( !Stage::initial () )
-	{
-	helptext = _("<p>
-Please wait while your hard disk is prepared...
-<br></p>");
-	}
-    // rich-text format help text part 2 of 2
-    helptext = helptext + _("\
-<p>
-Depending on the size of your hard disk and your processor speed, this action
-might take some time.  Several minutes are not unusual for really large disks.
-Often, the progress meter does not show a linear progress. Even if it looks
-slow near the end (\"95 %\"), please be patient. The formatting tool 
-performs various checks. </p>");
-
-    // The Wizard module sets a special protection mode for "Accept"
-    // buttons to prevent sloppy calls to Wizard::SetContents()
-    // from disabling it. This doesn't apply here, however -
-    // switching protection mode off.
-    UI::WizardCommand(`ProtectNextButton( false ) );
-    
-    // hard disk will be made ready for installing Linux
-    Wizard::SetContents(_("Preparing Your Hard Disk"),
-			`ProgressBar(`id(`progress), " ", 100),
-			helptext, false, false);
-    };
-
   y2milestone( "BEGINNING of inst_prepdisk" );
-
-  // check for ppc-PReP/CHRP system, they need a special boot partition
-  // todo -> put this in a lib, we need it also in inst_custom_part ...
 
   if( Mode::normal() )
   {
@@ -109,7 +53,7 @@ performs various checks. </p>");
 
   // They are usually more than twice the reported value
   // create, format, mount ...
-  StorageClients::total_actions = Storage::ActionsCount() * 2.5;
+  StorageClients::total_actions = size(Storage::GetCommitInfos()) * 2.5;
   y2milestone ("StorageClients::total_actions: %1", StorageClients::total_actions);
 
   SlideShow::MoveToStage( "disk" );
@@ -120,25 +64,12 @@ performs various checks. </p>");
   integer ret = Storage::CommitChanges();
   y2milestone( "CommitChanges ret:%1", ret );
   if( ret!=0 )
-      {
-      string txt = sformat(_("Failure occurred during following action:
-%2
-
-System error code was: %1
-"), ret, Storage::LastAction() );
-      string ext = Storage::ExtendedErrorMsg();
-      if( size(ext)>0 )
-	  {
-	  txt = txt + "\n\n" + ext;
-	  }
-      Popup::Error( txt );
       ret_val = `abort;
-      }
 
-  //mount proc and usbfs during installation
   if( Stage::initial() )
       {
       Storage::WriteFstab();
+
       /*
        * If a kernel without initrd is booted, then there is a small window
        * between mounting the root filesystem until /etc/init.d/boot
@@ -153,16 +84,15 @@ System error code was: %1
       y2milestone( "cmd %1", cmd );
       map m = (map) SCR::Execute(.target.bash_output, cmd );
       y2milestone( "ret %1", m );
-      string destproc = Installation::scr_destdir+"/proc";
+      string destproc = Storage::PathToDestdir("/proc");
       SCR::Execute (.target.mount, ["proc", destproc], "-t proc");
-      destproc = Installation::scr_destdir+"/sys";
+      destproc = Storage::PathToDestdir("/sys");
       SCR::Execute (.target.mount, ["sysfs", destproc], "-t sysfs");
       }
   else
       {
       Storage::FinishInstall();
       }
-  Storage::UpdateTargetMap();
 
   // close progress on running system
   if( Mode::normal() )

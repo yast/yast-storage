@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,44 +19,51 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
 
-#include <sys/stat.h>
-
-#include "y2storage/Nfs.h"
-#include "y2storage/StorageTypes.h"
-#include "y2storage/Container.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
+#include "storage/Nfs.h"
+#include "storage/StorageTypes.h"
+#include "storage/Container.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
 
 
-using namespace storage;
-using namespace std;
+namespace storage
+{
+    using namespace std;
 
-Nfs::Nfs( const NfsCo& d, const string& NfsDev ) :
-    Volume( d, 0, 0 )
+
+    Nfs::Nfs(const NfsCo& c, const string& NfsDev, bool nfs4)
+	: Volume(c, canonicalName(NfsDev), canonicalName(NfsDev))
     {
-    y2deb("constructed nfs dev:" << NfsDev);
-    if( d.type() != NFSC )
-	y2err("constructed nfs with wrong container");
-    dev = canonicalName(NfsDev);
-    if( dev != NfsDev )
-	alt_names.push_back( NfsDev );
-    init();
+	assert(c.type() == NFSC);
+
+	if (dev != NfsDev)
+	    alt_names.push_back(NfsDev);
+
+	setFs(nfs4 ? NFS4 : NFS);
+
+	y2deb("constructed Nfs " << dev << " nfs4:" << nfs4);
     }
 
-Nfs::~Nfs()
+
+    Nfs::Nfs(const NfsCo& c, const Nfs& v)
+	: Volume(c, v)
     {
-    y2deb("destructed nfs " << dev);
+	y2deb("copy-constructed Nfs from " << v.dev);
     }
 
-string Nfs::removeText( bool doing ) const
+
+    Nfs::~Nfs()
     {
-    string txt;
+	y2deb("destructed Nfs " << dev);
+    }
+
+
+Text Nfs::removeText( bool doing ) const
+    {
+    Text txt;
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by volume name e.g. hilbert:/work
@@ -70,64 +77,43 @@ string Nfs::removeText( bool doing ) const
     return( txt );
     }
 
-void
-Nfs::init()
+
+    string
+    Nfs::canonicalName(const string& d)
     {
-    numeric = false;
-    nm = dev;
-    setFs(NFS);
+	string dev = boost::replace_all_copy(d, "//", "/");
+	if (dev.size() > 2 && dev[dev.size() - 2] != ':' && dev[dev.size() - 1] == '/')
+	    dev.erase(dev.size() - 1);
+	if (dev != d)
+	    y2mil("old:" << d << " new:" << dev);
+	return dev;
     }
 
-string Nfs::canonicalName( const string& d )
-    {
-    string dev(d);
-    string::size_type pos = 0;
-    while( (pos=dev.find("//",pos))!=string::npos )
-	dev.erase(pos,1);
-    if( !dev.empty() && *dev.rbegin()=='/' )
-	dev.erase(dev.size()-1);
-    if( dev!=d )
-	y2mil( "dev:" << dev << " d:" << d );
-    return(dev);
-    }
 
 void Nfs::getInfo( NfsInfo& tinfo ) const
     {
-    ((Volume*)this)->getInfo( info.v );
+    Volume::getInfo(info.v);
     tinfo = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const Nfs& l )
     {
-    s << "Nfs " << *(Volume*)&l;
+    s << "Nfs " << dynamic_cast<const Volume&>(l);
     return( s );
     }
 
-}
 
 bool Nfs::equalContent( const Nfs& rhs ) const
     {
     return( Volume::equalContent(rhs) );
     }
 
-void Nfs::logDifference( const Nfs& rhs ) const
-{
-    string log = Volume::logDifference(rhs);
-    y2mil(log);
+
+    void
+    Nfs::logDifference(std::ostream& log, const Nfs& rhs) const
+    {
+	Volume::logDifference(log, rhs);
+    }
+
 }
-
-Nfs& Nfs::operator= ( const Nfs& rhs )
-    {
-    y2deb("operator= from " << rhs.nm);
-    *((Volume*)this) = rhs;
-    return( *this );
-    }
-
-Nfs::Nfs( const NfsCo& d, const Nfs& rhs ) : Volume(d)
-    {
-    y2deb("constructed nfs by copy constructor from " << rhs.nm);
-    *this = rhs;
-    }

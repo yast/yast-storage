@@ -19,47 +19,39 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
-
-#include <sstream>
 
 #include <sys/stat.h>
+#include <sstream>
 
-#include "y2storage/Loop.h"
-#include "y2storage/StorageTypes.h"
-#include "y2storage/Container.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/ProcPart.h"
-#include "y2storage/Storage.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/StorageDefines.h"
+#include "storage/Loop.h"
+#include "storage/StorageTypes.h"
+#include "storage/Container.h"
+#include "storage/AppUtil.h"
+#include "storage/SystemInfo.h"
+#include "storage/Storage.h"
+#include "storage/SystemCmd.h"
+#include "storage/StorageDefines.h"
 
-using namespace storage;
-using namespace std;
+
+namespace storage
+{
+    using namespace std;
 
 
 Loop::Loop(const LoopCo& d, const string& LoopDev, const string& LoopFile,
-	   bool dmcrypt, const string& dm_dev, ProcPart& ppart,
+	       bool dmcrypt, const string& dm_dev, SystemInfo& systeminfo,
 	   SystemCmd& losetup)
-    : Volume(d, 0, 0)
+    : Volume(d, 0, 0), lfile(LoopFile), reuseFile(true), delFile(false)
 {
     y2mil("constructed loop dev:" << LoopDev << " file:" << LoopFile <<
 	  " dmcrypt:" << dmcrypt << " dmdev:" << dm_dev);
     if( d.type() != LOOP )
 	y2err("constructed loop with wrong container");
-    init();
-    lfile = LoopFile;
     loop_dev = fstab_loop_dev = LoopDev;
     if( loop_dev.empty() )
 	getLoopData( losetup );
     if( loop_dev.empty() )
-	{
-	list<unsigned> l;
-	d.loopIds( l );
-	getFreeLoop( losetup, l );
-	}
+	getFreeLoop(losetup, d.usedNumbers());
     string proc_dev;
     if( !dmcrypt )
 	{
@@ -67,7 +59,7 @@ Loop::Loop(const LoopCo& d, const string& LoopDev, const string& LoopFile,
 	if( loopStringNum( loop_dev, num ))
 	    {
 	    setNameDev();
-	    getMajorMinor( dev, mjr, mnr );
+	    getMajorMinor();
 	    }
 	proc_dev = loop_dev;
 	}
@@ -84,7 +76,7 @@ Loop::Loop(const LoopCo& d, const string& LoopDev, const string& LoopFile,
     is_loop = true;
     unsigned long long s = 0;
     if( !proc_dev.empty() )
-	ppart.getSize( proc_dev, s );
+	    systeminfo.getProcParts().getSize(proc_dev, s);
     if( s>0 )
 	{
 	setSize( s );
@@ -100,15 +92,12 @@ Loop::Loop(const LoopCo& d, const string& LoopDev, const string& LoopFile,
 
 Loop::Loop(const LoopCo& d, const string& file, bool reuseExisting,
 	   unsigned long long sizeK, bool dmcr)
-    : Volume(d, 0, 0)
+    : Volume(d, 0, 0), lfile(file), reuseFile(reuseExisting), delFile(false)
 {
     y2mil("constructed loop file:" << file << " reuseExisting:" << reuseExisting <<
 	  " sizek:" << sizeK << " dmcrypt:" << dmcr);
     if( d.type() != LOOP )
 	y2err("constructed loop with wrong container");
-    init();
-    reuseFile = reuseExisting;
-    lfile = file;
     getFreeLoop();
     is_loop = true;
     if( !dmcr )
@@ -117,7 +106,7 @@ Loop::Loop(const LoopCo& d, const string& file, bool reuseExisting,
 	if( loopStringNum( dev, num ))
 	    {
 	    setNameDev();
-	    getMajorMinor( dev, mjr, mnr );
+	    getMajorMinor();
 	    }
 	}
     else
@@ -134,18 +123,19 @@ Loop::Loop(const LoopCo& d, const string& file, bool reuseExisting,
 }
 
 
-Loop::~Loop()
-{
-    y2deb("destructed loop " << dev);
-}
-
-
-void
-Loop::init()
+    Loop::Loop(const LoopCo& c, const Loop& v)
+	: Volume(c, v), lfile(v.lfile), reuseFile(v.reuseFile),
+	  delFile(v.delFile)
     {
-    delFile = false;
-    reuseFile = true;
+	y2deb("copy-constructed Loop from " << v.dev);
     }
+
+
+    Loop::~Loop()
+    {
+	y2deb("destructed Loop " << dev);
+    }
+
 
 void
 Loop::setDmcryptDev( const string& dm_dev, bool active )
@@ -155,7 +145,7 @@ Loop::setDmcryptDev( const string& dm_dev, bool active )
     nm = dm_dev.substr( dm_dev.find_last_of( '/' )+1);
     if( active )
 	{
-	getMajorMinor( dev, mjr, mnr );
+	getMajorMinor();
 	replaceAltName( "/dev/dm-", "/dev/dm-"+decString(mnr) );
 	}
     Volume::setDmcryptDev( dm_dev, active );
@@ -222,21 +212,20 @@ Loop::createFile()
 string
 Loop::lfileRealPath() const
     {
-    return( cont->getStorage()->root() + lfile );
+    return getStorage()->root() + lfile;
     }
 
-unsigned Loop::major()
+
+unsigned Loop::loopMajor()
     {
     if( loop_major==0 )
-	getLoopMajor();
+    {
+	loop_major = getMajorDevices("loop");
+	y2mil("loop_major:" << loop_major);
+    }
     return( loop_major );
     }
 
-void Loop::getLoopMajor()
-    {
-    loop_major = getMajorDevices( "loop" );
-    y2mil("loop_major:" << loop_major);
-    }
 
 string Loop::loopDeviceName( unsigned num )
     {
@@ -245,7 +234,7 @@ string Loop::loopDeviceName( unsigned num )
 
 int Loop::setEncryption( bool val, storage::EncryptType typ )
     {
-    y2mil( "val:" << val << " type:" << typ );
+    y2mil("val:" << val << " enc_type:" << toString(typ));
     int ret = Volume::setEncryption( val, typ );
     if( ret==0 && encryption!=orig_encryption )
 	{
@@ -265,9 +254,9 @@ int Loop::setEncryption( bool val, storage::EncryptType typ )
     return(ret);
     }
 
-string Loop::removeText( bool doing ) const
+Text Loop::removeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev;
     if( doing )
 	{
@@ -284,9 +273,9 @@ string Loop::removeText( bool doing ) const
     return( txt );
     }
 
-string Loop::createText( bool doing ) const
+Text Loop::createText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev;
     if( doing )
 	{
@@ -337,9 +326,9 @@ string Loop::createText( bool doing ) const
     }
 
 
-string Loop::formatText( bool doing ) const
+Text Loop::formatText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev;
     if( doing )
 	{
@@ -397,19 +386,17 @@ string Loop::formatText( bool doing ) const
 
 void Loop::getInfo( LoopInfo& tinfo ) const
     {
-    ((Volume*)this)->getInfo( info.v );
+    Volume::getInfo(info.v);
     info.nr = num;
     info.file = lfile;
     info.reuseFile = reuseFile;
     tinfo = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const Loop& l )
     {
-    s << "Loop " << *(Volume*)&l
+    s << "Loop " << dynamic_cast<const Volume&>(l)
       << " LoopFile:" << l.lfile;
     if( l.reuseFile )
       s << " reuse";
@@ -418,7 +405,6 @@ std::ostream& operator<< (std::ostream& s, const Loop& l )
     return( s );
     }
 
-}
 
 bool Loop::equalContent( const Loop& rhs ) const
     {
@@ -427,46 +413,18 @@ bool Loop::equalContent( const Loop& rhs ) const
 	    delFile==rhs.delFile );
     }
 
-void Loop::logDifference( const Loop& rhs ) const
+
+    void
+    Loop::logDifference(std::ostream& log, const Loop& rhs) const
     {
-    string log = Volume::logDifference( rhs );
-    if( lfile!=rhs.lfile )
-	log += " LoopFile:" + lfile + "-->" + rhs.lfile;
-    if( reuseFile!=rhs.reuseFile )
-	{
-	if( rhs.reuseFile )
-	    log += " -->reuse";
-	else
-	    log += " reuse-->";
-	}
-    if( delFile!=rhs.delFile )
-	{
-	if( rhs.delFile )
-	    log += " -->delFile";
-	else
-	    log += " delFile-->";
-	}
-    y2mil(log);
+	Volume::logDifference(log, rhs);
+
+	logDiff(log, "loopfile", lfile, rhs.lfile);
+	logDiff(log, "reusefile", reuseFile, rhs.reuseFile);
+	logDiff(log, "delfile", delFile, rhs.delFile);
     }
 
 
-Loop& Loop::operator=(const Loop& rhs)
-{
-    y2deb("operator= from " << rhs.nm);
-    *((Volume*)this) = rhs;
-    lfile = rhs.lfile;
-    reuseFile = rhs.reuseFile;
-    delFile = rhs.delFile;
-    return *this;
-}
-
-
-Loop::Loop(const LoopCo& d, const Loop& rhs)
-    : Volume(d)
-{
-    y2deb("constructed loop by copy constructor from " << rhs.nm);
-    *this = rhs;
-}
-
-
 unsigned Loop::loop_major = 0;
+
+}

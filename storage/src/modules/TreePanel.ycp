@@ -9,6 +9,9 @@
  */
 {
     module "TreePanel";
+    
+
+    import "Event";
 
 
     map<any, map> data = nil;
@@ -30,14 +33,25 @@
 	}
     }
 
-    void CallHandle(symbol widget)
+    void CallRefresh()
     {
 	map tmp = data[current_item]:nil;
-	void(any, symbol) handle_func = (void(any, symbol)) tmp[`handle]:nil;
+	void(any) refresh_func = (void(any)) tmp[`refresh]:nil;
+	if (refresh_func != nil)
+	{
+	    any user_data = tmp[`user_data]:nil;
+	    refresh_func(user_data);
+	}
+    }
+
+    void CallHandle(map event)
+    {
+	map tmp = data[current_item]:nil;
+	void(any, map) handle_func = (void(any, map)) tmp[`handle]:nil;
 	if (handle_func != nil)
 	{
 	    any user_data = tmp[`user_data]:nil;
-	    handle_func(user_data, widget);
+	    handle_func(user_data, event);
 	}
     }
 
@@ -101,12 +115,19 @@
 	CallCreate();
     }
 
+    global void Refresh()
+    {
+	CallRefresh();
+    }
+
     /**
      * Handle user input by either switching the panel or delegating the input
      * to the selected panel.
      */
-    global void Handle(symbol widget)
+    global void Handle(map event)
     {
+	symbol widget = Event::IsWidgetActivatedOrSelectionChanged(event);
+
 	if (widget == `tree)
 	{
 	    any new_current_item = UI::QueryWidget(`tree, `CurrentItem);
@@ -119,7 +140,7 @@
 	}
 	else
 	{
-	    CallHandle(widget);
+	    CallHandle(event);
 	}
     }
 

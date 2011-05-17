@@ -1,17 +1,13 @@
 #include <iostream>
 
-#include <blocxx/AppenderLogger.hpp>
-#include <blocxx/FileAppender.hpp>
-
 #include <y2storage/StorageInterface.h>
 
 using namespace storage;
 using namespace std;
-using namespace blocxx;
 
-void scrollbarCb( const string& id, unsigned cur, unsigned max )
+void progressbarCb( const string& id, unsigned cur, unsigned max )
     {
-    cout << "SCROLLBAR id:" << id << " cur:" << cur << " max:" << max << endl;
+    cout << "PROGRESSBAR id:" << id << " cur:" << cur << " max:" << max << endl;
     }
 
 void installInfoCb( const string& info )
@@ -20,12 +16,13 @@ void installInfoCb( const string& info )
     }
 
 void
-printCommitActions( StorageInterface* s )
-    {
-    deque<string> l = s->getCommitActions( false );
-    for( deque<string>::iterator i=l.begin(); i!=l.end(); ++i )
-	cout << *i << endl;
-    }
+printCommitActions(StorageInterface* s)
+{
+    list<CommitInfo> l;
+    s->getCommitInfos(l);
+    for (list<CommitInfo>::iterator i=l.begin(); i!=l.end(); ++i)
+	cout << i->text << endl;
+}
 
 int doCommit( StorageInterface* s )
     {
@@ -50,7 +47,7 @@ main( int argc_iv, char** argv_ppcv )
     int ret = 0;
     initDefaultLogger();
     StorageInterface* s = createStorageInterface(Environment(false));
-    s->setCallbackProgressBar( scrollbarCb );
+    s->setCallbackProgressBar( progressbarCb );
     s->setCallbackShowInstallInfo( installInfoCb );
     string disk = "/dev/hdb";
     string device;

@@ -24,51 +24,64 @@
 #ifndef MD_PART_H
 #define MD_PART_H
 
-#include "y2storage/Md.h"
-#include "y2storage/Partition.h"
+
+#include "storage/Partition.h"
+
 
 namespace storage
 {
 
 class MdPartCo;
-class ProcPart;
+class ProcParts;
 
 class MdPart : public Volume
     {
     public:
-        MdPart( const MdPartCo& d, unsigned nr, Partition* p=NULL );
-        MdPart( const MdPartCo& d, const MdPart& rd );
-        MdPart& operator=( const MdPart& );
 
+        MdPart(const MdPartCo& c, const string& name, const string& device, unsigned nr,
+	       Partition* p);
+        MdPart(const MdPartCo& c, const MdPart& v);
         virtual ~MdPart();
+
         friend std::ostream& operator<< (std::ostream& s, const MdPart &p );
         virtual void print( std::ostream& s ) const { s << *this; }
         void getInfo( storage::MdPartInfo& info ) const;
-        void getPartitionInfo(storage::PartitionInfo& pinfo);
+
         bool equalContent( const MdPart& rhs ) const;
-        void logDifference( const MdPart& d ) const;
+
+        void logDifference(std::ostream& log, const MdPart& rhs) const;
+
         void setPtr( Partition* pa ) { p=pa; };
         Partition* getPtr() const { return p; };
         unsigned id() const { return p?p->id():0; }
         void updateName();
         void updateMinor();
-        void updateSize( ProcPart& pp );
+        void updateSize(const ProcParts& pp);
         void updateSize();
-        void getCommitActions( std::list<storage::commitAction*>& l ) const;
+        void getCommitActions(list<commitAction>& l) const;
         void addUdevData();
-        virtual const std::list<string> udevId() const;
-        virtual string setTypeText( bool doing=true ) const;
+        virtual list<string> udevId() const;
+
+        virtual Text setTypeText(bool doing) const;
+
         static bool notDeleted( const MdPart& l ) { return( !l.deleted() ); }
 
+	virtual string procName() const { return nm; }
+	virtual string sysfsPath() const;
+
     protected:
-        void init( const string& name );
-        void dataFromPart( const Partition* p );
-        virtual const string shortPrintedName() const { return( "MdPart" ); }
+
         const MdPartCo* co() const;
         void addAltUdevId( unsigned num );
         Partition* p;
 
-        mutable storage::MdPartInfo info;
+        mutable storage::MdPartInfo info; // workaround for broken ycp bindings
+
+    private:
+
+	MdPart(const MdPart&);		  // disallow
+	MdPart& operator=(const MdPart&); // disallow
+
     };
 
 }

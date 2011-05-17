@@ -21,18 +21,15 @@
  * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
 
-#include "y2storage/MdPart.h"
-#include "y2storage/MdPartCo.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/ProcPart.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
+#include "storage/MdPart.h"
+#include "storage/MdPartCo.h"
+#include "storage/ProcParts.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/StorageDefines.h"
 
 
 namespace storage
@@ -40,72 +37,62 @@ namespace storage
     using namespace std;
 
 
-MdPart::MdPart(const MdPartCo& d, unsigned nr, Partition* pa) : Volume( d, nr, 0 )
+    MdPart::MdPart(const MdPartCo& c, const string& name, const string& device, unsigned nr,
+		   Partition* pa)
+	: Volume(c, name, device), p(pa)
 {
-    init( d.numToName(nr) );
     numeric = true;
     num = nr;
-    p = pa;
+
+	if (!getStorage()->testmode())
+	    getMajorMinor();
+
     if( pa )
       {
         setSize( pa->sizeK() );
       }
-    y2mil("constructed MdPart " << dev << " on MdPartCo : " << cont->name());
-}
-
-MdPart::MdPart(const MdPartCo& d, const MdPart& rhs)
-    : Volume( d, 0, 0 )
-{
-    y2deb("constructed MdPart by copy constructor from " << rhs.dev);
-    *this = rhs;
+    y2mil("constructed MdPart " << dev << " on " << cont->name());
 }
 
 
-MdPart::~MdPart()
-{
-    y2deb("destructed MdPart " << dev);
-}
-
-void MdPart::init( const string& name )
+    MdPart::MdPart(const MdPartCo& c, const MdPart& v)
+	: Volume(c, v)
     {
-    p = NULL;
-    dev = "/dev/" + name;
-    string::size_type pos =  name.find_last_of( "/" );
-    if( pos!=string::npos )
-      {
-        nm = name.substr( pos+1 );
-      }
-    else
-      {
-        nm = name;
-      }
+	y2deb("copy-constructed MdPart from " << v.dev);
     }
+
+
+    MdPart::~MdPart()
+    {
+	y2deb("destructed MdPart " << dev);
+    }
+
 
 const MdPartCo* MdPart::co() const
     {
     return(dynamic_cast<const storage::MdPartCo*>(cont));
     }
 
+
+    string
+    MdPart::sysfsPath() const
+    {
+	return co()->sysfsPath() + "/" + procName();
+    }
+
+
 void MdPart::updateName()
     {
     if( p && p->nr() != num )
         {
         num = p->nr();
-        nm = co()->numToName(num);
-        dev = "/dev/" + nm;
+        setNameDevice(co()->getPartName(num), co()->getPartDevice(num));
         }
     }
 
 void MdPart::updateMinor()
     {
-    unsigned long mj=mjr;
-    unsigned long mi=mnr;
-    getMajorMinor( dev, mj, mi );
-    if( mi!=mnr || mj!=mjr )
-        {
-        mnr = mi;
-        mjr = mj;
-        }
+    getMajorMinor();
     }
 
 void MdPart::updateSize()
@@ -117,14 +104,14 @@ void MdPart::updateSize()
         }
     }
 
-void MdPart::updateSize( ProcPart& pp )
+void MdPart::updateSize( const ProcParts& pp )
     {
-    unsigned long long si = 0;
     updateSize();
     //In case of extended partition /proc/partition contains size 1.
     if( p && p->type() != storage::EXTENDED )
       {
-      if( mjr>0 && pp.getSize( nm, si ))
+	unsigned long long si = 0;
+	if( mjr>0 && pp.getSize(procName(), si))
         {
           setSize( si );
         }
@@ -135,81 +122,70 @@ void MdPart::addUdevData()
     {
     addAltUdevId( num );
     }
-//TODO: Is it OK? Check it
-static string udevCompleteIdPath( const string& s, unsigned nr )
+
+
+    void
+    MdPart::addAltUdevId(unsigned num)
     {
-    return( "/dev/disk/by-id/" + s + "-part" + decString(nr) );
+	alt_names.remove_if(string_contains("/by-id/"));
+
+	const list<string> tmp = co()->udevId();
+	for (list<string>::const_iterator i = tmp.begin(); i != tmp.end(); ++i)
+	    alt_names.push_back("/dev/disk/by-id/" + udevAppendPart(*i, num));
+
+	mount_by = orig_mount_by = defaultMountBy();
     }
 
 
-void
-MdPart::addAltUdevId( unsigned num )
-{
-    list<string>::iterator i = alt_names.begin();
-    while( i!=alt_names.end() )
-        {
-        if( i->find( "/by-id/" ) != string::npos )
-            i = alt_names.erase( i );
-        else
-            ++i;
-        }
-    list<string>::const_iterator j = co()->udevId().begin();
-    while( j!=co()->udevId().end() )
-        {
-        alt_names.push_back( udevCompleteIdPath( *j, num ));
-        ++j;
-        }
-    mount_by = orig_mount_by = defaultMountBy();
-}
-
-
-const std::list<string>
+list<string>
 MdPart::udevId() const
 {
     list<string> ret;
     const list<string> tmp = co()->udevId();
     for (list<string>::const_iterator i = tmp.begin(); i != tmp.end(); ++i)
-        ret.push_back(udevAppendPart("/dev/disk/by-id/" + *i, num));
+	ret.push_back(udevAppendPart(*i, num));
     return ret;
 }
 
 
-void MdPart::getCommitActions( std::list<storage::commitAction*>& l ) const
+void
+MdPart::getCommitActions(list<commitAction>& l) const
     {
     unsigned s = l.size();
     Volume::getCommitActions(l);
     if( p )
         {
         if( s==l.size() && Partition::toChangeId( *p ) )
-            l.push_back( new commitAction( INCREASE, cont->staticType(),
-                                           setTypeText(false), this, false ));
+            l.push_back(commitAction(INCREASE, cont->type(),
+				     setTypeText(false), this, false));
         }
     }
 
-string MdPart::setTypeText( bool doing ) const
+
+Text
+MdPart::setTypeText(bool doing) const
     {
-    string txt;
-    string d = dev;
+    Text txt;
     if( doing )
         {
         // displayed text during action, %1$s is replaced by partition name (e.g. pdc_dabaheedj1),
         // %2$s is replaced by hexadecimal number (e.g. 8E)
         txt = sformat( _("Setting type of partition %1$s to %2$X"),
-                      d.c_str(), id() );
+                      dev.c_str(), id() );
         }
     else
         {
         // displayed text before action, %1$s is replaced by partition name (e.g. pdc_dabaheedj1),
         // %2$s is replaced by hexadecimal number (e.g. 8E)
         txt = sformat( _("Set type of partition %1$s to %2$X"),
-                      d.c_str(), id() );
+                      dev.c_str(), id() );
         }
-    return( txt );
+    return txt;
     }
 
 void MdPart::getInfo( MdPartInfo& tinfo ) const
     {
-    ((Volume*)this)->getInfo( info.v );
+    Volume::getInfo(info.v);
     if( p )
         p->getInfo( info.p );
     info.part = p!=NULL;
@@ -219,42 +195,21 @@ void MdPart::getInfo( MdPartInfo& tinfo ) const
 
 std::ostream& operator<< (std::ostream& s, const MdPart &p )
     {
-    s << "MdPart: ";
-    s << *(Volume*)&p;
+    s << "MdPart ";
+    s << dynamic_cast<const Volume&>(p);
     return( s );
     }
 
 bool MdPart::equalContent( const MdPart& rhs ) const
     {
-    return( Volume::equalContent(rhs) );
+    return Volume::equalContent(rhs);
     }
 
-void MdPart::logDifference( const MdPart& rhs ) const
-{
-   string log = Volume::logDifference(rhs);
-   y2mil(log);
-}
 
-
-MdPart& MdPart::operator=(const MdPart& rhs)
-{
-    y2deb("operator= from " << rhs.nm);
-    *((Volume*)this) = rhs;
-    return *this;
-}
-
-
-void MdPart::getPartitionInfo(storage::PartitionInfo& pinfo)
-{
-  ((Volume*)this)->getInfo( pinfo.v );
-  if( p )
+    void
+    MdPart::logDifference(std::ostream& log, const MdPart& rhs) const
     {
-      PartitionAddInfo info;
-      p->getInfo( info );
-      pinfo = info;
+	Volume::logDifference(log, rhs);
     }
-
-}
-
 
 }

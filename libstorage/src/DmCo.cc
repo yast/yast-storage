@@ -19,54 +19,106 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream> 
+#include <ostream>
 #include <sstream> 
 
-#include "y2storage/DmCo.h"
-#include "y2storage/Dm.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/ProcPart.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-#include "y2storage/StorageDefines.h"
+#include "storage/DmCo.h"
+#include "storage/Dm.h"
+#include "storage/SystemCmd.h"
+#include "storage/SystemInfo.h"
+#include "storage/ProcParts.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/StorageDefines.h"
 
-using namespace std;
-using namespace storage;
 
-    DmCo::DmCo(Storage * const s, bool detect, ProcPart& ppart, bool only_crypt)
-	: PeContainer(s, staticType())
+namespace storage
+{
+    using namespace std;
+
+
+    CmdDmsetup::CmdDmsetup()
     {
-	y2deb("constructing DmCo detect:" << detect);
-	init();
-	if (detect)
-	    getDmData(ppart, only_crypt);
+	SystemCmd c(DMSETUPBIN " --columns --noheadings -o name,major,minor,segments,uuid info");
+	if (c.retcode() != 0 || c.numLines() == 0)
+	    return;
+
+	for (vector<string>::const_iterator it = c.stdout().begin(); it != c.stdout().end(); ++it)
+	{
+	    list<string> sl = splitString(*it, ":");
+	    if (sl.size() >= 4)
+	    {
+		Entry entry;
+
+		list<string>::const_iterator ci = sl.begin();
+		string name = *ci++;
+		*ci++ >> entry.mjr;
+		*ci++ >> entry.mnr;
+		*ci++ >> entry.segments;
+		entry.uuid = *ci++;
+
+		data[name] = entry;
+	    }
+	}
+
+	for (const_iterator it = data.begin(); it != data.end(); ++it)
+	    y2mil("data[" << it->first << "] -> mjr:" << it->second.mjr << " mnr:" <<
+		  it->second.mnr << " segments:" << it->second.segments << " uuid:" <<
+		  it->second.uuid);
+    }
+
+
+    bool
+    CmdDmsetup::getEntry(const string& name, Entry& entry) const
+    {
+	const_iterator it = data.find(name);
+	if (it == data.end())
+	    return false;
+
+	entry = it->second;
+	return true;
+    }
+
+
+    list<string>
+    CmdDmsetup::getEntries() const
+    {
+	list<string> ret;
+	for (const_iterator i = data.begin(); i != data.end(); ++i)
+	    ret.push_back(i->first);
+	return ret;
+    }
+
+
+    DmCo::DmCo(Storage* s)
+	: PeContainer(s, "mapper", "/dev/mapper", staticType())
+    {
+	y2deb("constructing DmCo");
+    }
+
+
+    DmCo::DmCo(Storage* s, SystemInfo& systeminfo, bool only_crypt)
+	: PeContainer(s, "mapper", "/dev/mapper", staticType(), systeminfo)
+    {
+	y2deb("constructing DmCo");
+	getDmData(systeminfo, only_crypt);
     }
 
 
     void
-    DmCo::second(bool detect, ProcPart& ppart, bool only_crypt)
+    DmCo::second(SystemInfo& systeminfo, bool only_crypt)
     {
-	y2deb("second DmCo detect:" << detect);
-	if (detect)
-	    getDmData(ppart, only_crypt);
+	y2deb("second DmCo");
+	getDmData(systeminfo, only_crypt);
     }
 
 
-DmCo::DmCo( Storage * const s, const string& file ) :
-    PeContainer(s,staticType())
-    {
-    y2deb("constructing DmCo file:" << file);
-    init();
-    }
-
-DmCo::~DmCo()
+    DmCo::~DmCo()
     {
     y2deb("destructed DmCo");
     }
+
 
 void DmCo::updateDmMaps()
     {
@@ -92,13 +144,6 @@ void DmCo::updateDmMaps()
     while( success );
     }
 
-void
-DmCo::init()
-    {
-    nm = "dm";
-    dev = "/dev/mapper";
-    }
-
 
 // dev should be something like /dev/mapper/cr_test
 storage::EncryptType
@@ -114,7 +159,7 @@ DmCo::detectEncryption( const string& dev ) const
 	string cipher, keysize;
 	for( unsigned int i = 0; i < c.numLines(); i++)
 	{
-	    string line = *c.getLine(i);
+	    string line = c.getLine(i);
 	    string key = extractNthWord( 0, line );
 	    if( key == "cipher:" )
 		cipher = extractNthWord( 1, line );
@@ -132,32 +177,34 @@ DmCo::detectEncryption( const string& dev ) const
 	    ret = ENC_TWOFISH256_OLD;
     }
 
-    y2mil("ret:" << ret);
+    y2mil("ret:" << toString(ret));
     return ret;
 }
 
 
 void
-DmCo::getDmData(ProcPart& ppart, bool only_crypt)
+    DmCo::getDmData(SystemInfo& systeminfo, bool only_crypt)
     {
     Storage::ConstLvmLvPair lv = getStorage()->lvmLvPair();
     Storage::ConstDmraidCoPair dmrco = getStorage()->dmraidCoPair();
     Storage::ConstDmraidPair dmr = getStorage()->dmrPair();
     Storage::ConstDmmultipathCoPair dmmco = getStorage()->dmmultipathCoPair();
     Storage::ConstDmmultipathPair dmm = getStorage()->dmmPair();
-    y2mil("begin");
-    SystemCmd c(DMSETUPBIN " ls | grep \"(.*)\"" );
-    for( unsigned i=0; i<c.numLines(); ++i )
-	{
-	string line = *c.getLine(i);
-	string table = extractNthWord( 0, line );
+
+    const CmdDmsetup& cmddmsetup = systeminfo.getCmdDmsetup();
+    for (CmdDmsetup::const_iterator it1 = cmddmsetup.begin(); it1 != cmddmsetup.end(); ++it1)
+    {
+	string table = it1->first;
 	bool found=false;
-	Storage::ConstLvmLvIterator i=lv.begin();
-	while( !found && i!=lv.end() )
+	if (!found)
+	{
+	    Storage::ConstLvmLvIterator i=lv.begin();
+	    while( !found && i!=lv.end() )
 	    {
-	    found = i->getTableName()==table;
-	    ++i;
+		found = i->getTableName()==table;
+		++i;
 	    }
+	}
 	if( !found )
 	    {
 	    Storage::ConstDmraidCoIterator i=dmrco.begin();
@@ -196,18 +243,13 @@ DmCo::getDmData(ProcPart& ppart, bool only_crypt)
 	    }
 	if( !found )
 	    {
-	    string minor = extractNthWord( 2, line );
-	    unsigned min_num;
-	    string::size_type pos;
-	    if( (pos=minor.find( ")" ))!=string::npos )
-		minor.erase( pos );
-	    minor >> min_num;
-	    y2mil( "minor:\"" << minor << "\" minor:" << min_num );
-	    Dm * m = new Dm( *this, table, min_num );
-	    y2mil( "new Dm:" << *m  );
+	    const CmdDmsetup::Entry& entry = it1->second;
+
+	    Dm* m = new Dm(*this, table, "/dev/mapper/" + table, table, systeminfo);
+	    y2mil("new Dm:" << *m);
 	    unsigned long long s = 0;
-	    string dev = "/dev/dm-" + decString(min_num);
-	    if( ppart.getSize( dev, s ))
+	    string dev = "/dev/dm-" + decString(entry.mnr);
+	    if (systeminfo.getProcParts().getSize(dev, s))
 		{
 		y2mil( "new dm size:" << s );
 		m->setSize( s );
@@ -222,7 +264,7 @@ DmCo::getDmData(ProcPart& ppart, bool only_crypt)
 		if( !getStorage()->canUseDevice( it->first, true ))
 		    in_use = true;
 		if( !in_use || multipath )
-		    getStorage()->setUsedBy( it->first, UB_DM, table );
+		    getStorage()->setUsedBy(it->first, UB_DM, "/dev/mapper/" + table);
 		}
 	    string tmp = m->device();
 	    tmp.erase( 5, 7 );
@@ -234,13 +276,12 @@ DmCo::getDmData(ProcPart& ppart, bool only_crypt)
 		getStorage()->knownDevice( it->first ))
 		{
 		skip = true;
-		getStorage()->setDmcryptData( it->first, m->device(), min_num,
+		getStorage()->setDmcryptData( it->first, m->device(), entry.mnr,
 		                              m->sizeK(), detectEncryption (m->device()) );
-		if (getStorage()->usedBy(it->first) == UB_DM)
+		if (getStorage()->isUsedBy(it->first, UB_DM))
 		    getStorage()->clearUsedBy(it->first);
 		}
-	    if (!skip && m->sizeK() > 0 && ((only_crypt && m->getTargetName() == "crypt") ||
-					    (!only_crypt && m->getTargetName() != "crypt")))
+	    if (!skip && m->sizeK()>0 && !only_crypt )
 		addDm( m );
 	    else
 		delete( m );
@@ -309,7 +350,7 @@ DmCo::removeDm( const string& tname )
 	if( !findDm( tname, i ))
 	    ret = DM_UNKNOWN_TABLE;
 	}
-    if( ret==0 && i->getUsedByType() != UB_NONE )
+    if (ret == 0 && i->isUsedBy())
 	{
 	ret = DM_REMOVE_USED_BY;
 	}
@@ -328,7 +369,7 @@ DmCo::removeDm( const string& tname )
 		{
 		getStorage()->clearUsedBy(it->first);
 		}
-	    i->setDeleted( true );
+	    i->setDeleted();
 	    }
 	}
     y2mil("ret:" << ret);
@@ -367,7 +408,7 @@ DmCo::doRemove( Volume* v )
 	    if( c.retcode()!=0 )
 		ret = DM_REMOVE_FAILED;
 	    else
-		getStorage()->waitForDevice();
+		Storage::waitForDevice();
 	    y2mil( "this:" << *this );
 	    getStorage()->logProcData( cmd );
 	    }
@@ -383,56 +424,27 @@ DmCo::doRemove( Volume* v )
     return( ret );
     }
 
-namespace storage
-{
 
-inline std::ostream& operator<< (std::ostream& s, const DmCo& d )
+    std::ostream& operator<<(std::ostream& s, const DmCo& d)
     {
-    s << *((Container*)&d);
+    s << dynamic_cast<const Container&>(d);
     return( s );
     }
 
-}
 
-void DmCo::logDifference( const Container& d ) const
+    void
+    DmCo::logDifferenceWithVolumes(std::ostream& log, const Container& rhs_c) const
     {
-    y2mil(getDiffString(d));
-    const DmCo * p = dynamic_cast<const DmCo*>(&d);
-    if( p != NULL )
-	{
-	ConstDmPair pp=dmPair();
-	ConstDmIter i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstDmPair pc=p->dmPair();
-	    ConstDmIter j = pc.begin();
-	    while( j!=pc.end() && 
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j!=pc.end() )
-		{
-		if( !i->equalContent( *j ) )
-		    i->logDifference( *j );
-		}
-	    else
-		y2mil( "  -->" << *i );
-	    ++i;
-	    }
-	pp=p->dmPair();
-	i=pp.begin();
-	while( i!=pp.end() )
-	    {
-	    ConstDmPair pc=dmPair();
-	    ConstDmIter j = pc.begin();
-	    while( j!=pc.end() && 
-		   (i->device()!=j->device() || i->created()!=j->created()) )
-		++j;
-	    if( j==pc.end() )
-		y2mil( "  <--" << *i );
-	    ++i;
-	    }
-	}
+	const DmCo& rhs = dynamic_cast<const DmCo&>(rhs_c);
+
+	logDifference(log, rhs);
+	log << endl;
+
+	ConstDmPair pp = dmPair();
+	ConstDmPair pc = rhs.dmPair();
+	logVolumesDifference(log, pp.begin(), pp.end(), pc.begin(), pc.end());
     }
+
 
 bool DmCo::equalContent( const Container& rhs ) const
     {
@@ -444,15 +456,7 @@ bool DmCo::equalContent( const Container& rhs ) const
 	{
 	ConstDmPair pp = dmPair();
 	ConstDmPair pc = p->dmPair();
-	ConstDmIter i = pp.begin();
-	ConstDmIter j = pc.begin();
-	while( ret && i!=pp.end() && j!=pc.end() ) 
-	    {
-	    ret = ret && i->equalContent( *j );
-	    ++i;
-	    ++j;
-	    }
-	ret = ret && i==pp.end() && j==pc.end();
+	ret = ret && storage::equalContent(pp.begin(), pp.end(), pc.begin(), pc.end());
 	}
     return( ret );
     }
@@ -468,5 +472,4 @@ DmCo::DmCo( const DmCo& rhs ) : PeContainer(rhs)
         }
     }
 
-
-void DmCo::logData( const string& Dir ) {;}
+}

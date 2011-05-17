@@ -3,18 +3,136 @@
  * Package:     yast2-storage
  * Summary:     Expert Partitioner
  * Authors:     Arvin Schnell <aschnell@suse.de>
+ *
+ * This file must only be included in other Expert Partitioner files ("ep-*.ycp").
  */
 {
     textdomain "storage";
 
-    import "Arch";
-    import "PackageCallbacks";
-    import "PackageSystem";
-    import "Mode";
-    import "Stage";
-
     include "partitioning/ep-hd-dialogs.ycp";
     include "partitioning/ep-hd-lib.ycp";
+
+
+    void EpContextMenuHdDisk(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`add), `icon(StorageIcons::hd_part_icon), _("Add Partition")),
+					      `item(`id(`delete), _("Delete")) ]);
+
+	switch (widget)
+	{
+	    case `add:
+		EpCreatePartition(device);
+		break;
+
+	    case `delete:
+		EpDeleteDisk(device);
+		break;
+	}
+    }
+
+
+    void EpContextMenuHdPartition(string device)
+    {
+	symbol widget = ContextMenu::Simple([ `item(`id(`edit), _("Edit")),
+					      `item(`id(`move), _("Move")),
+					      `item(`id(`resize), _("Resize")),
+					      `item(`id(`delete), _("Delete")) ]);
+
+	switch (widget)
+	{
+	    case `edit:
+		EpEditPartition(device);
+		break;
+
+	    case `move:
+		EpMovePartition(device);
+		break;
+
+	    case `resize:
+		EpResizePartition(device);
+		break;
+
+	    case `delete:
+		EpDeletePartition(device, `table);
+		break;
+	}
+    }
+
+
+    list<term> HdButtons()
+    {
+	return [
+	    // push button text
+	    `PushButton(`id(`edit),`opt(`key_F4), _("Edit...")),
+	    // push button text
+	    `PushButton(`id(`move), `opt(`key_F7), _("Move...")),
+	    // push button text
+	    `PushButton(`id(`resize), `opt(`key_F6), _("Resize...")),
+	    // push button text
+	    `PushButton(`id(`delete), `opt(`key_F5), _("Delete..."))
+	];
+    }
+
+
+    void HandleHdButtons( any user_data, string device, map event )
+    {
+	string disk_device = "";
+	boolean is_disk = false;
+
+	if (user_data == nil)
+	{
+	    map disk = nil;
+	    map part = nil;
+
+	    map<string, map> target_map = Storage::GetTargetMap();
+	    SplitDevice(target_map, device, disk, part);
+	    disk_device = (string) disk["device"]:"";
+	    is_disk = part == nil;
+	}
+	else
+	{
+	    disk_device = (string) user_data;
+	}
+
+	switch (Event::IsWidgetActivated(event))
+	{
+	    case `add:
+		EpCreatePartition(disk_device);
+		break;
+
+	    case `edit:
+		if (is_disk)
+		    TreePanel::SwitchToNew( disk_device );
+		else
+		    EpEditPartition( device );
+		break;
+
+	    case `move:
+		if (is_disk)
+		    // error popup
+		    Popup::Error(_("Hard disks, BIOS RAIDs and multipath
+devices cannot be moved."));
+		else
+		    EpMovePartition(device);
+		break;
+
+	    case `resize:
+		if (is_disk)
+		    // error popup
+		    Popup::Error(_("Hard disks, BIOS RAIDs and multipath
+devices cannot be resized."));
+		else
+		    EpResizePartition ( device );
+		break;
+
+	    case `delete:
+		if (is_disk)
+		    EpDeleteDisk(disk_device);
+		else
+		    EpDeletePartition ( device, UI::WidgetExists(`id(`table)) ? `table : `overview );
+		break;
+	}
+    }
 
 
     void CreateHdMainPanel(any user_data)
@@ -23,17 +141,6 @@
 	{
 	    return StorageFields::PredicateDiskType(disk, partition, [`CT_DMRAID, `CT_DMMULTIPATH,
 								      `CT_MDPART, `CT_DISK]);
-	}
-
-	boolean IsAvailable ( string client )
-	{
-	    //in the installed system, we don't care if the client isn't there
-	    //as the user will be prompted to install the pkg anyway (in CallConfig)
-	    if ( !Stage::initial() )
-		return true;
-	    //check if the client is in inst-sys
-	    else
-		return WFM::ClientExists(client);
 	}
 
 	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `format,
@@ -45,49 +152,21 @@
 	term table_header = StorageFields::TableHeader(fields);
 	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
 
-	term buttons = `HBox(
-	    // push button text
-	    `PushButton(`id(`rescan), `opt(`key_F6), _("Rescan Disks"))
-	);
-
-	buttons = add(buttons, `HStretch());
-
-	list<term> configs = [];
-
-	if (IsAvailable("iscsi-client")) {
-	    // menu entry text
-	    configs = add(configs, `item(`id(`iscsi), _("Configure &iSCSI...")));
-	}
-
-	if (true) {
-	    // menu entry text
-	    configs = add(configs, `item(`id(`multipath), _("Configure &Multipath...")));
-	}
-
-	if (Arch::s390() && IsAvailable("s390")) {
-	    // menu entry text
-	    configs = add(configs, `item(`id(`dasd), _("Configure &DASD...")));
-	    // menu entry text
-	    configs = add(configs, `item(`id(`zfcp), _("Configure &zFCP...")));
-	    // menu entry text
-	    configs = add(configs, `item(`id(`xpram), _("Configure &XPRAM...")));
-	}
-
-	if (size(configs) > 0) {
-	    // menu button text
-	    buttons = add(buttons, `MenuButton(`opt(`key_F7), _("Configure..."), configs));
-	}
-
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // heading
-				  `IconAndHeading(_("Hard Disks"), hd_icon),
-				  `Table(`id(`table), `opt(`keepSorting, `notify),
+				  `IconAndHeading(_("Hard Disks"), StorageIcons::hd_icon),
+				  `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 					 table_header, table_contents),
-				  buttons
-				  )
+				  ArrangeButtons(flatten([
+					[ // push button text
+					  `PushButton(`id(`add),`opt(`key_F3), _("Add Partition...")) ],
+					HdButtons(),
+					[ `HStretch() ]
+				  ]))
 			      )
+			)
 	    );
 
 	// helptext
@@ -98,90 +177,16 @@ iSCSI disks, BIOS RAIDs and Multipath disks and their partitions.</p>");
     }
 
 
-    void HandleHdMainPanel(any user_data, symbol widget)
+    void HandleHdMainPanel(any user_data, map event)
     {
-	boolean CheckAndInstallPackages( list <string> pkgs )
+	string device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
+
+	HandleHdButtons( user_data, device, event );
+
+	switch (Event::IsWidgetContextMenuActivated(event))
 	{
-	    if (Stage::initial())
-		return true;
-
-	    boolean ret = false;
-	    //switch off pkg-mgmt loading progress dialogs,
-	    //because it just plain sucks
-	    PackageCallbacks::RegisterEmptyProgressCallbacks();
-	    ret = PackageSystem::CheckAndInstallPackages(pkgs);
-	    PackageCallbacks::RestorePreviousProgressCallbacks();
-
-	    return ret;
-	}
-
-	void CallConfig(string text, list<string> pkgs, string call)
-	{
-	    boolean doit = true;
-
-	    if (!Storage::EqualBackupStates("expert-partitioner", "", true))
-	    {
-		doit = Popup::YesNo(text);
-	    }
-
-	    if (doit)
-	    {
-		if (pkgs == nil || CheckAndInstallPackages(pkgs))
-		{
-		    if (call != nil)
-			WFM::call(call);
-		    RescanDisks();
-		    Storage::CreateTargetBackup("expert-partitioner");
-
-		    UpdateMainStatus();
-		    UpdateNavigationTree(nil);
-		    TreePanel::Create();
-		}
-	    }
-	}
-
-	switch (widget)
-	{
-	    case `rescan:
-		// popup text
-		CallConfig(_("Rescaning disks cancels all current changes.
-Really rescan disks?"), nil, nil);
-		break;
-
-	    case `iscsi:
-		// popup text
-		CallConfig(_("Calling iSCSI configuration cancels all current changes.
-Really call iSCSI configuration?"), ["yast2-iscsi-client"], "iscsi-client");
-		break;
-
-	    case `multipath:
-		if ((ProductFeatures::GetBooleanFeature("partitioning", "use_separate_multipath_module") == true) ||
-		    (Mode::normal() && WFM::ClientExists("multipath")))
-		    // popup text
-		    CallConfig(_("Calling Multipath configuration cancels all current changes.
-Really call Multipath configuration?"), ["yast2-multipath"], "multipath");
-		else
-		    // popup text
-		    CallConfig(_("Calling Multipath configuration cancels all current changes.
-Really call Multipath configuration?"), nil, "multipath-simple");
-		break;
-
-	    case `dasd:
-		// popup text
-		CallConfig(_("Calling DASD configuration cancels all current changes.
-Really call DASD configuration?"), ["yast2-s390"], "dasd");
-		break;
-
-	    case `zfcp:
-		// popup text
-		CallConfig(_("Calling zFCP configuration cancels all current changes.
-Really call zFCP configuration?"), ["yast2-s390"], "zfcp");
-		break;
-
-	    case `xpram:
-		// popup text
-		CallConfig(_("Calling XPRAM configuration cancels all current changes.
-Really call XPRAM configuration?"), ["yast2-s390"], "xpram");
+	    case `table:
+		EpContextMenuDevice(device);
 		break;
 	}
     }
@@ -197,23 +202,21 @@ Really call XPRAM configuration?"), ["yast2-s390"], "xpram");
 
 	list<symbol> fields = [ `heading_device, `device, `size, `udev_path, `udev_id, `used_by,
 				`heading_hd, `vendor, `model, `num_cyl, `cyl_size, `bus, `bios_id,
-				`disk_label ];
+				`sector_size, `disk_label ];
 
 	if (contains([ `CT_MDPART ], ctype))
 	{
 	    fields = (list<symbol>) merge(fields, [ `heading_md, `raid_type, `chunk_size, `parity_algorithm ]);
 	}
 
-	if (contains([ `CT_DISK ], ctype))
+	if (contains([ `CT_DISK ], ctype) && target_map[device, "transport"]:`unknown == `fc)
 	{
 	    fields = (list<symbol>) merge(fields, [`heading_fc, `fc_wwpn, `fc_port_id, `fc_fcp_lun ]);
 	}
 
-	term buttons = `HBox(
-	    // push button text
-	    `PushButton(`id(`delete), _("Delete...")),
-	    `HStretch()
-	    );
+	fields = StorageSettings::FilterOverview(fields);
+
+	term buttons = `HBox();
 
 	if ((integer) SCR::Read(.target.size, "/usr/sbin/smartctl") > 0)
 	    // push button text (do not translate 'SMART', it is the name of the tool)
@@ -222,12 +225,12 @@ Really call XPRAM configuration?"), ["yast2-s390"], "xpram");
 	if ((integer) SCR::Read(.target.size, "/sbin/hdparm") > 0)
 	    // push button text (do not translate 'hdparm', it is the name of the tool)
 	    buttons = add(buttons, `PushButton(`id(`hdparm), _("Properties (hdparm)...")));
- 
+
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
 			      `HStretch(),
-			      StorageFields::Overview(StorageSettings::FilterOverview(fields), target_map, device),
-			      buttons
+			      StorageFields::Overview(fields, target_map, device),
+			      add(buttons, `HStretch())
 			      )
 	    );
 
@@ -239,25 +242,19 @@ selected hard disk.</p>");
     }
 
 
-    void HandleHdDiskOverviewTab(any user_data, symbol widget)
+    void HandleHdDiskOverviewTab(any user_data, map event)
     {
 	string disk_device = (string) user_data;
 
-	switch (widget)
+	switch (Event::IsWidgetActivated(event))
 	{
-	    case `delete:
-	    {
-		EpDeleteDisk(disk_device);
-		break;
-	    }
-
 	    case `smart:
 	    {
 		map<string, map> target_map = Storage::GetTargetMap();
 		map disk = target_map[disk_device]:$[];
 		if (disk["type"]:`CT_UNKNOWN != `CT_DISK || substring(disk_device, 0, 9) == "/dev/dasd")
 		{
-		    Popup::Error(_("Smart is not available for this disk."));
+		    Popup::Error(_("SMART is not available for this disk."));
 		    break;
 		}
 		DisplayCommandOutput(sformat("/usr/sbin/smartctl --health '%1'", disk_device));
@@ -270,7 +267,7 @@ selected hard disk.</p>");
 		map disk = target_map[disk_device]:$[];
 		if (disk["type"]:`CT_UNKNOWN != `CT_DISK || substring(disk_device, 0, 9) == "/dev/dasd")
 		{
-		    Popup::Error(_("HD Parm is not available for this disk."));
+		    Popup::Error(_("hdparm is not available for this disk."));
 		    break;
 		}
 		DisplayCommandOutput(sformat("/sbin/hdparm -aAgr '%1'", disk_device));
@@ -298,16 +295,22 @@ selected hard disk.</p>");
 	term table_header = StorageFields::TableHeader(fields);
 	list<term> table_contents = StorageFields::TableContents(fields, target_map, Predicate);
 
-	list<term> expert_cmds = [
-	    `item(`id(`create_partition_table),
-		  // menu entry text
-		  _("Create New Partition Table")),
-	    `item(`id(`clone_disk),
-		  // menu entry text
-		  _("Clone This Disk"))
-	    ];
+	list<term> expert_cmds = [];
 
-	if (Arch::s390() && search(device, "/dev/dasd") == 0)
+	if (!String::StartsWith(device, "/dev/dasd"))
+	{
+	    expert_cmds = add(expert_cmds,
+			      `item(`id(`create_partition_table),
+				    // menu entry text
+				    _("Create New Partition Table")));
+	}
+
+	expert_cmds = add(expert_cmds,
+			  `item(`id(`clone_disk),
+				// menu entry text
+				_("Clone This Disk")));
+
+	if (String::StartsWith(device, "/dev/dasd"))
 	{
 	    expert_cmds = add(expert_cmds,
 			      `item(`id(`dasdfmt),
@@ -318,21 +321,18 @@ selected hard disk.</p>");
 
 	UI::ReplaceWidget(`tab_panel,
 			  `VBox(
-			      `Table(`id(`table), `opt(`keepSorting, `notify),
+			      DiskBarGraph(device),
+			      `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 				     table_header, table_contents),
 			      `HBox(
-				  // push button text
-				  `PushButton(`id(`add),`opt(`key_F3), _("Add...")),
-				  // push button text
-				  `PushButton(`id(`edit),`opt(`key_F4), _("Edit...")),
-				  // push button text
-				  `PushButton(`id(`resize), `opt(`key_F6), _("Resize...")),
-				  // push button text
-				  `PushButton(`id(`delete), `opt(`key_F5), _("Delete...")),
-				  `HStretch(),
-				  // menu button text
-				  `MenuButton(`opt(`key_F7), _("Expert..."), expert_cmds)
-				  )
+				  ArrangeButtons(flatten([ 
+				      [ // push button text
+				        `PushButton(`id(`add),`opt(`key_F3), _("Add...")) ],
+				      HdButtons(),
+				      [ `HStretch(),
+					// menu button text
+					`MenuButton(`opt(`key_F7), _("Expert..."), expert_cmds)]
+				  ])))
 			      ));
 
 	// helptext
@@ -344,29 +344,15 @@ partitions are shown here.</p>");
     }
 
 
-    void HandleHdDiskPartitionsTab(any user_data, symbol widget)
+    void HandleHdDiskPartitionsTab(any user_data, map event)
     {
 	string disk_device = (string) user_data;
 	string part_device = (string) UI::QueryWidget(`id(`table), `CurrentItem);
 
-	switch (widget)
+	HandleHdButtons( disk_device, part_device, event );
+
+	switch (Event::IsMenu(event))
 	{
-	    case `add:
-		EpCreatePartition(disk_device);
-		break;
-
-	    case `edit:
-		EpEditPartition(part_device);
-		break;
-
-	    case `resize:
-		EpResizePartition(part_device);
-		break;
-
-	    case `delete:
-		EpDeletePartition(part_device);
-		break;
-
 	    case `create_partition_table:
 		EpCreatePartitionTable(disk_device);
 		break;
@@ -379,6 +365,14 @@ partitions are shown here.</p>");
 		EpDasdfmtDisk(disk_device);
 		break;
 	}
+
+	switch (Event::IsWidgetContextMenuActivated(event))
+	{
+	    case `table:
+		EpContextMenuDevice(part_device);
+		break;
+	}
+
 	UI::SetFocus(`id(`table));
     }
 
@@ -409,8 +403,8 @@ partitions are shown here.</p>");
 
 	// helptext
 	string helptext = _("<p>This view shows all devices used by the
-selected hard disk. The table is non-empty only for BIOS RAIDs and Multipath
-Disks.</p>");
+selected hard disk. The view is only available for BIOS RAIDs, partitioned
+software RAIDs and Multipath Disks.</p>");
 
 	Wizard::RestoreHelp(helptext + StorageFields::TableHelptext(fields));
     }
@@ -431,19 +425,27 @@ Disks.</p>");
 				   `devices : $[ `create : CreateHdDiskDevicesTab,
 						 `user_data : user_data ] ];
 
+	symbol ctype = target_map[device, "type"]:`CT_DISK;
+
+	list<term> tabs = [
+	    // tab heading
+	    `item(`id(`overview), _("&Overview")),
+	    // tab heading
+	    `item(`id(`partitions), _("&Partitions"))
+	];
+
+	if (contains([ `CT_DMRAID, `CT_DMMULTIPATH, `CT_MDPART ], ctype))
+	{
+	    // tab heading
+	    tabs = add(tabs, `item(`id(`devices), _("&Used Devices")));
+	}
+
 	UI::ReplaceWidget(`tree_panel,
 			  Greasemonkey::Transform(
 			      `VBox(
 				  // heading
-				  `IconAndHeading(sformat(_("Hard Disk: %1"), device), hd_icon),
-				  `DumbTab(`id(`tab), [
-					       // tab heading
-					       `item(`id(`overview), _("&Overview")),
-					       // tab heading
-					       `item(`id(`partitions), _("&Partitions")),
-					       // tab heading
-					       `item(`id(`devices), _("&Used Devices"))
-					       ],
+				  `IconAndHeading(sformat(_("Hard Disk: %1"), device), StorageIcons::hd_icon),
+				  `DumbTab(`id(`tab), tabs,
 					   `ReplacePoint(`id(`tab_panel), TabPanel::empty_panel)
 				      )
 				  )
@@ -453,9 +455,9 @@ Disks.</p>");
     }
 
 
-    void HandleHdDiskPanel(any user_data, symbol widget)
+    void HandleHdDiskPanel(any user_data, map event)
     {
-	TabPanel::Handle(widget);
+	TabPanel::Handle(event);
     }
 
 
@@ -475,18 +477,13 @@ Disks.</p>");
 			      `VBox(
 				  `HStretch(),
 				  // heading
-				  `IconAndHeading(sformat(_("Partition: %1"), device), hd_part_icon),
+				  `IconAndHeading(sformat(_("Partition: %1"), device), StorageIcons::hd_part_icon),
 				  StorageFields::Overview(fields, target_map, device),
-				  `HBox(
-				      // push button text
-				      `PushButton(`id(`edit), `opt(`key_F4), _("Edit...")),
-				      // push button text
-				      `PushButton(`id(`resize), `opt(`key_F6), _("Resize...")),
-				      // push button text
-				      `PushButton(`id(`delete), `opt(`key_F5), _("Delete...")),
-				      `HStretch()
-				      )
-				  )
+				  ArrangeButtons(flatten([
+				      HdButtons(),
+				      [ `HStretch() ]
+				  ]))
+			      )
 			      )
 	    );
 
@@ -498,24 +495,11 @@ selected partition.</p>");
     }
 
 
-    void HandleHdPartitionPanel(any user_data, symbol widget)
+    void HandleHdPartitionPanel(any user_data, map event)
     {
 	string part_device = (string) user_data;
 
-	switch (widget)
-	{
-	    case `edit:
-		EpEditPartition(part_device);
-		break;
-
-	    case `resize:
-		EpResizePartition(part_device);
-		break;
-
-	    case `delete:
-		EpDeletePartition(part_device);
-		break;
-	}
+	HandleHdButtons( nil, part_device, event);
 	UI::SetFocus(`id(`text));
     }
 }

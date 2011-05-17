@@ -23,48 +23,93 @@
 #ifndef DM_CO_H
 #define DM_CO_H
 
-#include "y2storage/PeContainer.h"
-#include "y2storage/Dm.h"
+#include "storage/PeContainer.h"
+#include "storage/Dm.h"
 
 namespace storage
 {
-class ProcPart;
+    class SystemInfo;
+
+
+    class CmdDmsetup
+    {
+
+    public:
+
+	CmdDmsetup();
+
+	struct Entry
+	{
+	    Entry() : name(), mjr(0), mnr(0), segments(0), uuid() {}
+
+	    string name;
+	    unsigned long mjr;
+	    unsigned long mnr;
+	    unsigned segments;
+	    string uuid;
+	};
+
+	bool getEntry(const string& name, Entry& entry) const;
+
+	list<string> getEntries() const;
+
+	template<class Pred>
+	list<string> getMatchingEntries(Pred pred) const
+	{
+	    list<string> ret;
+	    for (const_iterator i = data.begin(); i != data.end(); ++i)
+		if (pred(i->first))
+		    ret.push_back(i->first);
+	    return ret;
+	}
+
+	typedef map<string, Entry>::const_iterator const_iterator;
+
+	const_iterator begin() const { return data.begin(); }
+	const_iterator end() const { return data.end(); }
+
+    private:
+
+	map<string, Entry> data;
+
+    };
+
 
 class DmCo : public PeContainer
     {
     friend class Storage;
 
     public:
-	DmCo(Storage * const s, bool detect, ProcPart& ppart, bool only_crypt);
-	DmCo( const DmCo& rhs );
 
-	void second(bool detect, ProcPart& ppart, bool only_crypt);
-
+	DmCo(Storage * const s);
+	DmCo(Storage * const s, SystemInfo& systeminfo, bool only_crypt);
+	DmCo(const DmCo& c);
 	virtual ~DmCo();
+
+	void second(SystemInfo& systeminfo, bool only_crypt);
 
 	static storage::CType staticType() { return storage::DM; }
 	friend std::ostream& operator<< (std::ostream&, const DmCo& );
 	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& d ) const;
+
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
+
 	void updateDmMaps();
 
 	int removeDm( const string& table );
 	int removeVolume( Volume* v );
 	
     protected:
-	DmCo( Storage * const s, const string& File );
 
-	void getDmData(ProcPart& ppart, bool only_crypt);
+	void getDmData(SystemInfo& systeminfo, bool only_crypt);
 	bool findDm( unsigned num, DmIter& i );
 	bool findDm( unsigned num ); 
 	bool findDm( const string& dev, DmIter& i );
 	bool findDm( const string& dev ); 
 	void addDm( Dm* m );
 	void checkDm( Dm* m );
-	void updateEntry( const Dm* m );
-	virtual Container* getCopy() const { return( new DmCo( *this ) ); }
 
-	void init();
+	virtual Container* getCopy() const { return( new DmCo( *this ) ); }
 
 	storage::EncryptType detectEncryption( const string& device ) const;
 
@@ -72,7 +117,10 @@ class DmCo : public PeContainer
 
 	int doRemove( Volume* v );
 
-	void logData( const string& Dir );
+    private:
+
+	DmCo& operator=(const DmCo&);	// disallow
+
     };
 
 }

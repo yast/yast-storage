@@ -5,7 +5,7 @@
  * Volume) like md126 which is a Container for partitions.
  *
  * Copyright (c) 2009, Intel Corporation.
- * Copyright (c) 2009 Novell, Inc.
+ * Copyright (c) [2009-2010] Novell, Inc.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -21,33 +21,29 @@
  * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-/*
-  Textdomain    "storage"
-*/
-
-#include <sstream>
-#include <algorithm>
-#include <cctype>
-#include <string>
 
 #include <unistd.h>
-#include <string>
+#include <glob.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <stdlib.h>
-#include <boost/algorithm/string.hpp>
 
-#include "y2storage/MdPartCo.h"
-#include "y2storage/MdPart.h"
-#include "y2storage/ProcPart.h"
-#include "y2storage/Partition.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-#include "y2storage/StorageDefines.h"
-#include "y2storage/Regex.h"
-#include "y2storage/EtcRaidtab.h"
+#include <sstream>
+#include <algorithm>
+#include <string>
+
+#include "storage/MdPartCo.h"
+#include "storage/MdPart.h"
+#include "storage/SystemInfo.h"
+#include "storage/ProcParts.h"
+#include "storage/Partition.h"
+#include "storage/SystemCmd.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/StorageDefines.h"
+#include "storage/Regex.h"
+#include "storage/EtcMdadm.h"
 
 
 namespace storage
@@ -55,28 +51,47 @@ namespace storage
     using namespace std;
 
 
-MdPartCo::MdPartCo( Storage * const s,
-                    const string& name,
-                    ProcPart* ppart )
-     : Container(s,"",staticType()) // MD?
+    MdPartCo::MdPartCo(Storage* s, const string& name, const string& device, SystemInfo& systeminfo)
+	: Container(s, name, device, staticType()), disk(NULL), md_type(RAID_UNK),
+	  md_parity(PAR_DEFAULT), chunk_k(0), sb_ver("01.00.00"), destrSb(false),
+	  has_container(false)
     {
-    y2mil("constructing MdPartCo : " << name);
-    makeDevName(name);
-    nm = undevName(name);
+	getMajorMinor();
 
-    getMajorMinor();
+	/* First Initialize RAID properties. */
+	initMd(systeminfo);
+	/* Initialize 'disk' part, partitions.*/
+	init(systeminfo);
 
-    del_ptable = false;
-    disk = NULL;
+	setUdevData(systeminfo);
 
-    /* First Initialize RAID properties. */
-    initMd();
-    /* Initialize 'disk' part, partitions.*/
-    init( ppart );
-
-    y2mil("MdPartCo (nm=" << nm << ", dev=" << dev << ", level=" << md_type << ", disks=" << devs << ") ready.");
-
+	y2deb("constructed MdPartCo " << dev);
     }
+
+
+    MdPartCo::MdPartCo(const MdPartCo& c)
+	: Container(c), md_type(c.md_type), md_parity(c.md_parity),
+	  chunk_k(c.chunk_k), md_uuid(c.md_uuid), md_name(c.md_name),
+	  sb_ver(c.sb_ver), destrSb(c.destrSb), devs(c.devs), spare(c.spare),
+	  udev_id(c.udev_id),
+	  has_container(c.has_container), parent_container(c.parent_container),
+	  parent_uuid(c.parent_uuid), parent_md_name(c.parent_md_name),
+	  parent_metadata(c.parent_metadata), parent_member(c.parent_member)
+    {
+	y2deb("copy-constructed MdPartCo by from " << c.nm);
+
+	disk = NULL;
+	if( c.disk )
+	    disk = new Disk( *c.disk );
+	ConstMdPartPair p = c.mdpartPair();
+	for (ConstMdPartIter i = p.begin(); i != p.end(); ++i)
+        {
+	    MdPart* p = new MdPart(*this, *i);
+	    vols.push_back(p);
+        }
+	updatePointers(true);
+    }
+
 
 MdPartCo::~MdPartCo()
     {
@@ -88,14 +103,23 @@ MdPartCo::~MdPartCo()
     y2deb("destructed MdPartCo : " << dev);
     }
 
-bool MdPartCo::isMdPart(const string& name)
+
+    string
+    MdPartCo::sysfsPath() const
+    {
+	return SYSFSDIR "/" + procName();
+    }
+
+
+bool MdPartCo::isMdPart(const string& name) const
 {
   string n = undevName(name);
   static Regex mdpart( "^md[0123456789]+p[0123456789]+$" );
   return (mdpart.match(n));
 }
 
-void MdPartCo::getPartNum(const string& device, unsigned& num)
+
+void MdPartCo::getPartNum(const string& device, unsigned& num) const
 {
   string dev = device;
   string::size_type pos;
@@ -126,7 +150,7 @@ MdPartCo::addNewDev(string& device)
         unsigned number;
         const string tmpS(device);
         getPartNum(tmpS,number);
-        device = "/dev/" + numToName(number);
+        device = getPartDevice(number);
         Partition *p = getPartition( number, false );
         if( p==NULL )
           {
@@ -138,6 +162,7 @@ MdPartCo::addNewDev(string& device)
             newP( md, p->nr(), p );
             md->getFsInfo( p );
             md->setCreated();
+	    md->addUdevData();
             addToList( md );
             y2mil("device:" << device << " was added to MdPartCo : " << dev);
 
@@ -159,7 +184,8 @@ MdPartCo::createPartition( storage::PartitionType type,
                            string& device,
                            bool checkRelaxed )
     {
-    y2mil("begin type:" << type << " start:" << start << " len:" << len << " relaxed:" << checkRelaxed);
+	y2mil("begin type:" << toString(type) << " start:" << start << " len:" << len <<
+	      " relaxed:" << checkRelaxed);
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
     if( ret==0 && readonly() )
         ret = MDPART_CHANGE_READONLY;
@@ -193,7 +219,7 @@ MdPartCo::createPartition( long unsigned len, string& device, bool checkRelaxed 
 int
 MdPartCo::createPartition( storage::PartitionType type, string& device )
     {
-    y2mil("type:" << type);
+	y2mil("type:" << toString(type));
     int ret = disk ? 0 : MDPART_INTERNAL_ERR;
     if( ret==0 && readonly() )
         ret = MDPART_CHANGE_READONLY;
@@ -344,55 +370,46 @@ MdPartCo::resizeVolume( Volume* v, unsigned long long newSize )
 
 
 void
-MdPartCo::init( ProcPart* ppart )
+MdPartCo::init(SystemInfo& systeminfo)
 {
-  const string tmpS(nm);
-  if( ppart )
-    {
-    ppart->getSize( nm, size_k );
-    }
-  y2mil( " nm: " << nm << " size_k: " << size_k);
-  createDisk( ppart );
-  getVolumes( ppart );
+    systeminfo.getProcParts().getSize(procName(), size_k);
+    y2mil("nm:" << nm << " size_k:" << size_k);
+    createDisk(systeminfo);
+    getVolumes(systeminfo.getProcParts());
 }
 
+
 void
-MdPartCo::createDisk( ProcPart* ppart )
+MdPartCo::createDisk(SystemInfo& systeminfo)
     {
     if( disk )
         delete disk;
-    disk = new Disk( getStorage(), dev, size_k );
+    disk = new Disk(getStorage(), nm, dev, size_k, systeminfo);
     disk->setNumMinor( 64 );
     disk->setSilent();
     disk->setSlave();
-    if( ppart )
-      {
-      disk->detect( *ppart );
-      }
+    disk->detect(systeminfo);
     }
 
 // Creates new partition.
 void
 MdPartCo::newP( MdPart*& dm, unsigned num, Partition* p )
     {
-    dm = new MdPart( *this, num, p );
+    dm = new MdPart(*this, getPartName(num), getPartDevice(num), num, p);
     }
 
 //This seems to detect partitions from ppart and adds them to Container.
 void
-MdPartCo::getVolumes( ProcPart* ppart )
+MdPartCo::getVolumes(const ProcParts& ppart)
     {
     vols.clear();
-    num_part = 0;
     Disk::PartPair pp = disk->partPair();
     Disk::PartIter i = pp.begin();
     MdPart * p = NULL;
     while( i!=pp.end() )
         {
         newP( p, i->nr(), &(*i) );
-        if( ppart )
-          p->updateSize( *ppart );
-        num_part++;
+	p->updateSize(ppart);
         addToList( p );
         ++i;
         }
@@ -451,8 +468,8 @@ bool
 MdPartCo::validPartition( const Partition* p )
     {
     bool ret = false;
-    Disk::PartPair pp = disk->partPair();
-    Disk::PartIter i = pp.begin();
+    Disk::ConstPartPair pp = disk->partPair();
+    Disk::ConstPartIter i = pp.begin();
     while( i!=pp.end() && p != &(*i) )
         ++i;
     ret = i!=pp.end();
@@ -476,16 +493,13 @@ void MdPartCo::updatePointers( bool invalid )
 void MdPartCo::updateMinor()
     {
     MdPartPair p=mdpartPair();
-    MdPartIter i=p.begin();
-    while( i!=p.end() )
-        {
+    for (MdPartIter i = p.begin(); i != p.end(); ++i)
         i->updateMinor();
-        ++i;
-        }
     }
 
-// Makes complete partition name (like md125p5)
-string MdPartCo::numToName( unsigned mdNum ) const
+
+string
+MdPartCo::getPartName( unsigned mdNum ) const
     {
     string ret = nm;
     if( mdNum>0 )
@@ -496,18 +510,18 @@ string MdPartCo::numToName( unsigned mdNum ) const
     return( ret );
     }
 
-int MdPartCo::nr(const string& name)
-{
-  string tmp = name;
-  int n;
-  tmp.erase(0,2) >> n;
-  return n;
-}
 
-int MdPartCo::nr()
-{
-  return mnr;
-}
+string
+MdPartCo::getPartDevice( unsigned mdNum ) const
+    {
+    string ret = dev;
+    if( mdNum>0 )
+        {
+        ret += "p";
+        ret += decString(mdNum);
+        }
+    return( ret );
+    }
 
 
 //
@@ -540,7 +554,7 @@ int MdPartCo::destroyPartitionTable( const string& new_label )
             }
         bool save = getStorage()->getRecursiveRemoval();
         getStorage()->setRecursiveRemoval(true);
-        if( getUsedByType() != UB_NONE )
+        if (isUsedBy())
             {
             getStorage()->removeUsing( device(), getUsedBy() );
             }
@@ -553,7 +567,6 @@ int MdPartCo::destroyPartitionTable( const string& new_label )
             ++i;
             }
         getStorage()->setRecursiveRemoval(save);
-        del_ptable = true;
         }
     y2mil("ret:" << ret);
     return( ret );
@@ -585,23 +598,29 @@ int MdPartCo::forgetChangePartitionId( unsigned nr )
 int
 MdPartCo::nextFreePartition(PartitionType type, unsigned& nr, string& device) const
 {
-    int ret = disk->nextFreePartition( type, nr, device );
-    if( ret==0 )
-        {
-        device = "/dev/" + numToName(nr);
-        }
+    int ret = 0;
+    device = "";
+    nr = disk->availablePartNumber( type );
+    if (nr == 0)
+	{
+	ret = DISK_PARTITION_NO_FREE_NUMBER;
+	}
+    else
+	{
+	device = getPartDevice(nr);
+	}
     y2mil("ret:" << ret << " nr:" << nr << " device:" << device);
     return ret;
 }
 
 
-int MdPartCo::changePartitionArea( unsigned nr, unsigned long start,
-                                   unsigned long len, bool checkRelaxed )
+    int
+    MdPartCo::changePartitionArea(unsigned nr, const Region& cylRegion, bool checkRelaxed)
     {
     int ret = nr>0?0:MDPART_PARTITION_NOT_FOUND;
     if( ret==0 )
         {
-        ret = disk->changePartitionArea( nr, start, len, checkRelaxed );
+	ret = disk->changePartitionArea(nr, cylRegion, checkRelaxed);
         MdPartIter i;
         if( findMdPart( nr, i ))
             i->updateSize();
@@ -655,7 +674,6 @@ int MdPartCo::doCreateLabel()
     ret = disk->doCreateLabel();
     if( ret==0 )
         {
-        del_ptable = false;
         removeFromMemory();
         handleWholeDevice();
         getStorage()->waitForDevice();
@@ -707,24 +725,16 @@ MdPartCo::removeMdPart()
       unuseDevs();
       setDeleted( true );
       destrSb = true;
-      del_ptable = true;
       }
     y2mil("ret:" << ret);
     return( ret );
     }
 
-int MdPartCo::unuseDevs(void)
-{
-  list<string> rdevs;
-  getDevs( rdevs );
-  for( list<string>::const_iterator s=rdevs.begin();
-      s!=rdevs.end(); s++ )
-    {
-    getStorage()->clearUsedBy(*s);
-    }
-  return 0;
-}
 
+void MdPartCo::unuseDevs() const
+{
+    getStorage()->clearUsedBy(getDevs());
+}
 
 
 void MdPartCo::removePresentPartitions()
@@ -770,27 +780,25 @@ static bool toChangeId( const MdPart&d )
     return( p!=NULL && !d.deleted() && Partition::toChangeId(*p) );
     }
 
-int MdPartCo::getToCommit( CommitStage stage, list<Container*>& col,
-                           list<Volume*>& vol )
+void MdPartCo::getToCommit(CommitStage stage, list<const Container*>& col,
+                           list<const Volume*>& vol) const
     {
-    int ret = 0;
-    y2mil("ret:" << ret << " col:" << col.size() << " << vol:" << vol.size());
+    y2mil("col:" << col.size() << " << vol:" << vol.size());
     getStorage()->logCo( this );
     unsigned long oco = col.size();
     unsigned long ovo = vol.size();
     Container::getToCommit( stage, col, vol );
     if( stage==INCREASE )
         {
-        MdPartPair p = mdpartPair( toChangeId );
-        for( MdPartIter i=p.begin(); i!=p.end(); ++i )
+        ConstMdPartPair p = mdpartPair( toChangeId );
+        for( ConstMdPartIter i=p.begin(); i!=p.end(); ++i )
             if( find( vol.begin(), vol.end(), &(*i) )==vol.end() )
                 vol.push_back( &(*i) );
         }
-    if( del_ptable && find( col.begin(), col.end(), this )==col.end() )
+    if( disk->del_ptable && find( col.begin(), col.end(), this )==col.end() )
         col.push_back( this );
     if( col.size()!=oco || vol.size()!=ovo )
-        y2mil("ret:" << ret << " col:" << col.size() << " vol:" << vol.size());
-    return( ret );
+        y2mil("col:" << col.size() << " vol:" << vol.size());
     }
 
 
@@ -822,7 +830,7 @@ int MdPartCo::commitChanges( CommitStage stage )
         {
         ret = doRemove();
         }
-    else if( stage==DECREASE && del_ptable )
+    else if( stage==DECREASE && disk->del_ptable )
         {
         ret = doCreateLabel();
         }
@@ -832,28 +840,26 @@ int MdPartCo::commitChanges( CommitStage stage )
     return( ret );
     }
 
-void MdPartCo::getCommitActions( list<commitAction*>& l ) const
+void
+MdPartCo::getCommitActions(list<commitAction>& l ) const
     {
     y2mil( "l:" << l );
     Container::getCommitActions( l );
     y2mil( "l:" << l );
-    if( deleted() || del_ptable )
+    if( deleted() || disk->del_ptable )
         {
-        list<commitAction*>::iterator i = l.begin();
-        while( i!=l.end() )
+        list<commitAction>::iterator i = l.begin();
+        while (i != l.end())
             {
-            if( (*i)->stage==DECREASE )
+            if (i->stage == DECREASE)
                 {
-                delete( *i );
                 i=l.erase( i );
                 }
             else
                 ++i;
             }
-        string txt = deleted() ? removeText(false) :
-                                 setDiskLabelText(false);
-        l.push_front( new commitAction( DECREASE, staticType(),
-                                        txt, this, true ));
+        Text txt = deleted() ? removeText(false) : setDiskLabelText(false);
+        l.push_front(commitAction( DECREASE, staticType(), txt, this, true));
         }
     y2mil( "l:" << l );
     }
@@ -888,7 +894,7 @@ MdPartCo::doCreate( Volume* v )
             {
             activate_part(false);
             activate_part(true);
-            ProcPart pp;
+            ProcParts pp;
             updateMinor();
             l->updateSize( pp );
             }
@@ -908,7 +914,7 @@ int MdPartCo::doRemove()
     // 1. Check Metadata.
     if( sb_ver == "imsm" || sb_ver == "ddf" )
       {
-      y2error("Cannot remove IMSM or DDF SW RAIDs.");
+      y2err("Cannot remove IMSM or DDF SW RAIDs.");
       return (MDPART_NO_REMOVE);
       }
     // 2. Check for partitions.
@@ -928,12 +934,12 @@ int MdPartCo::doRemove()
         }
       if( permitRemove == 1 )
         {
-        y2error("Cannot remove RAID with partitions.");
+        y2err("Cannot remove RAID with partitions.");
         return (MDPART_NO_REMOVE);
         }
       }
     /* Try to remove this. */
-    y2milestone( "Raid:%s is going to be removed permanently.", name().c_str() );
+    y2mil("Raid:" << name() << " is going to be removed permanently");
     int ret = 0;
     if( deleted() )
       {
@@ -951,8 +957,7 @@ int MdPartCo::doRemove()
       if( ret==0 && destrSb )
         {
         SystemCmd c;
-        list<string> d;
-        getDevs( d );
+        list<string> d = getDevs();
         for( list<string>::const_iterator i=d.begin(); i!=d.end(); ++i )
           {
           c.execute(MDADMBIN " --zero-superblock " + quote(*i));
@@ -960,11 +965,9 @@ int MdPartCo::doRemove()
         }
       if( ret==0 )
         {
-        EtcRaidtab* tab = getStorage()->getRaidtab();
-        if( tab!=NULL )
-          {
-          tab->removeEntry( nr() );
-          }
+	EtcMdadm* mdadm = getStorage()->getMdadm();
+	if (mdadm)
+	    mdadm->removeEntry(getMdUuid());
         }
       }
     y2mil("Done, ret:" << ret);
@@ -991,7 +994,7 @@ int MdPartCo::doRemove( Volume* v )
         Partition *p = l->getPtr();
         if( p==NULL )
           {
-            y2error("Partition not found");
+            y2err("Partition not found");
             ret = MDPART_PARTITION_NOT_FOUND;
           }
         else
@@ -1003,7 +1006,7 @@ int MdPartCo::doRemove( Volume* v )
         {
         if( !removeFromList( l ) )
           {
-            y2warning("Couldn't remove parititon from list.");
+            y2war("Couldn't remove parititon from list.");
             ret = MDPART_REMOVE_PARTITION_LIST_ERASE;
           }
         }
@@ -1055,7 +1058,7 @@ int MdPartCo::doResize( Volume* v )
         ret = l->resizeFs();
     if( ret==0 )
         {
-        ProcPart pp;
+        ProcParts pp;
         updateMinor();
         l->updateSize( pp );
         getStorage()->waitForDevice( l->device() );
@@ -1066,30 +1069,18 @@ int MdPartCo::doResize( Volume* v )
     return( ret );
     }
 
-string MdPartCo::setDiskLabelText( bool doing ) const
+ 
+Text
+MdPartCo::setDiskLabelText(bool doing) const
     {
-    string txt;
-    string d = dev;
-    if( doing )
-        {
-        // displayed text during action, %1$s is replaced by name (e.g. pdc_igeeeadj),
-        // %2$s is replaced by label name (e.g. msdos)
-        txt = sformat( _("Setting disk label of %1$s to %2$s"),
-                       d.c_str(), labelName().c_str() );
-        }
-    else
-        {
-        // displayed text before action, %1$s is replaced by name (e.g. pdc_igeeeadj),
-        // %2$s is replaced by label name (e.g. msdos)
-        txt = sformat( _("Set disk label of %1$s to %2$s"),
-                      d.c_str(), labelName().c_str() );
-        }
-    return( txt );
+	return disk->setDiskLabelText(doing);
     }
 
-string MdPartCo::removeText( bool doing ) const
+
+Text
+MdPartCo::removeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
         {
         // displayed text during action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
@@ -1100,26 +1091,40 @@ string MdPartCo::removeText( bool doing ) const
         // displayed text before action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
 	txt = sformat( _("Remove software RAID %1$s"), name().c_str() );
         }
-    return( txt );
+    return txt;
     }
 
 
 void
-MdPartCo::setUdevData(const list<string>& id)
+MdPartCo::setUdevData(SystemInfo& systeminfo)
 {
-  y2mil("disk:" << nm << " id:" << id);
-  udev_id = id;
-    partition(udev_id.begin(), udev_id.end(), find_begin("md-uuid-"));
-  y2mil("id:" << udev_id);
+    const UdevMap& by_id = systeminfo.getUdevMap("/dev/disk/by-id");
+    UdevMap::const_iterator it = by_id.find(nm);
+    if (it != by_id.end())
+    {
+	udev_id = it->second;
+	partition(udev_id.begin(), udev_id.end(), string_starts_with("md-uuid-"));
+    }
+    else
+    {
+	udev_id.clear();
+    }
+
+    y2mil("dev:" << dev << " udev_id:" << udev_id);
+
+    alt_names.remove_if(string_starts_with("/dev/disk/by-id/"));
+    for (list<string>::const_iterator i = udev_id.begin(); i != udev_id.end(); ++i)
+	alt_names.push_back("/dev/disk/by-id/" + *i);
+
     if (disk)
     {
-	disk->setUdevData("", udev_id);
+        disk->setUdevData("", udev_id);
     }
     MdPartPair pp = mdpartPair();
     for( MdPartIter p=pp.begin(); p!=pp.end(); ++p )
-      {
-      p->addUdevData();
-      }
+    {
+	p->addUdevData();
+    }
 }
 
 
@@ -1129,164 +1134,82 @@ void MdPartCo::getInfo( MdPartCoInfo& tinfo ) const
         {
         disk->getInfo( info.d );
         }
-    info.minor = mnr;
 
-    info.devices = boost::join(devs, " ");
-    info.spares = boost::join(devs, " ");
-
-    info.level = md_type;
+    info.type = md_type;
     info.nr = mnr;
     info.parity = md_parity;
     info.uuid = md_uuid;
     info.sb_ver = sb_ver;
-    info.chunk = chunk_size;
-    info.md_name = md_name;
+    info.chunkSizeK = chunk_k;
+
+    info.devices = boost::join(devs, " ");
+    info.spares = boost::join(spare, " ");
 
     tinfo = info;
     }
 
 
-int MdPartCo::getPartitionInfo(deque<storage::PartitionInfo>& plist)
-{
-  int ret = 0;
-  if( !disk )
-    {
-    ret = MDPART_INTERNAL_ERR;
-    return ret;
-    }
-  Disk::PartPair p = disk->partPair (Disk::notDeleted);
-  for (Disk::PartIter i = p.begin(); i != p.end(); ++i)
-      {
-      plist.push_back( PartitionInfo() );
-      i->getInfo( plist.back() );
-      }
-  return ret;
-}
-
-
 std::ostream& operator<< (std::ostream& s, const MdPartCo& d )
     {
-    s << *((Container*)&d);
-    s << " md_name:" << d.md_name
-      << " MdNr:" << d.mnr
-      << " PNum:" << d.num_part;
-    if( !d.udev_id.empty() )
-        s << " UdevId:" << d.udev_id;
-    if( d.del_ptable )
-      s << " delPT";
-    if( !d.active )
-      s << " inactive";
-    return( s );
+    s << dynamic_cast<const Container&>(d)
+      << " Personality:" << toString(d.md_type);
+    if (d.chunk_k > 0)
+	s << " ChunkK:" << d.chunk_k;
+    if (d.md_parity != PAR_DEFAULT)
+	s << " Parity:" << toString(d.md_parity);
+    if (!d.sb_ver.empty() )
+	s << " SbVer:" << d.sb_ver;
+    if (!d.md_uuid.empty())
+	s << " md_uuid:" << d.md_uuid; 
+    if (!d.md_name.empty())
+	s << " md_name:" << d.md_name;
+    if( d.destrSb )
+	s << " destroySb";
+    s << " Devices:" << d.devs;
+    if( !d.spare.empty() )
+	s << " Spares:" << d.spare;
+    s << " geometry:" << d.disk->getGeometry();
+    return s;
     }
 
 
-string MdPartCo::getDiffString( const Container& d ) const
+    void
+    MdPartCo::logDifference(std::ostream& log, const MdPartCo& rhs) const
     {
-    string log = Container::getDiffString( d );
-    const MdPartCo* p = dynamic_cast<const MdPartCo*>(&d);
-    if( p )
-        {
-        if( del_ptable!=p->del_ptable )
-            {
-            if( p->del_ptable )
-                log += " -->delPT";
-            else
-                log += " delPT-->";
-            }
-        if( active!=p->active )
-            {
-            if( p->active )
-                log += " -->active";
-            else
-                log += " active-->";
-            }
-        }
-    return( log );
+	Container::logDifference(log, rhs);
+
+	logDiff(log, "active", active, rhs.active);
+
+	logDiffEnum(log, "md_type", md_type, rhs.md_type);
+	logDiffEnum(log, "md_parity", md_parity, rhs.md_parity);
+	logDiff(log, "chunk_k", chunk_k, rhs.chunk_k);
+	logDiff(log, "sb_ver", sb_ver, rhs.sb_ver);
+	logDiff(log, "md_uuid", md_uuid, rhs.md_uuid);
+	logDiff(log, "md_name", md_name, rhs.md_name);
+	logDiff(log, "destrSb", destrSb, rhs.destrSb);
+	logDiff(log, "devices", devs, rhs.devs);
+	logDiff(log, "spares", spare, rhs.spare);
+
+	logDiff(log, "parent_container",  parent_container, rhs.parent_container);
+	logDiff(log, "parent_md_name", parent_md_name, rhs.parent_md_name);
+	logDiff(log, "parent_metadata", parent_metadata, rhs.parent_metadata);
+	logDiff(log, "parent_uuid", parent_uuid, rhs.parent_uuid);
     }
 
-void MdPartCo::logDifference( const MdPartCo& d ) const
+
+    void
+    MdPartCo::logDifferenceWithVolumes(std::ostream& log, const Container& rhs_c) const
     {
-    string log = getDiffString( d );
+	const MdPartCo& rhs = dynamic_cast<const MdPartCo&>(rhs_c);
 
-    if( md_type!=d.md_type )
-        log += " Personality:" + md_names[md_type] + "-->" +
-               md_names[d.md_type];
-    if( md_parity!=d.md_parity )
-        log += " Parity:" + par_names[md_parity] + "-->" +
-               par_names[d.md_parity];
-    if( chunk_size!=d.chunk_size )
-        log += " Chunk:" + decString(chunk_size) + "-->" + decString(d.chunk_size);
-    if( sb_ver!=d.sb_ver )
-        log += " SbVer:" + sb_ver + "-->" + d.sb_ver;
-    if( md_uuid!=d.md_uuid )
-        log += " MD-UUID:" + md_uuid + "-->" + d.md_uuid;
-    if( md_name!=d.md_name )
-      {
-        log += " MDName:" + md_name + "-->" + d.md_name;
-      }
-    if( destrSb!=d.destrSb )
-        {
-        if( d.destrSb )
-            log += " -->destrSb";
-        else
-            log += " destrSb-->";
-        }
-    if( devs!=d.devs )
-        {
-        std::ostringstream b;
-        classic(b);
-        b << " Devices:" << devs << "-->" << d.devs;
-        log += b.str();
-        }
-    if( spare!=d.spare )
-        {
-        std::ostringstream b;
-        classic(b);
-        b << " Spares:" << spare << "-->" << d.spare;
-        log += b.str();
-        }
-    if( parent_container!=d.parent_container )
-        log += " ParentContainer:" + parent_container + "-->" + d.parent_container;
-    if( parent_md_name!=d.parent_md_name )
-        log += " ParentContMdName:" + parent_md_name + "-->" + d.parent_md_name;
-    if( parent_metadata!=d.parent_metadata )
-        log += " ParentContMetadata:" + parent_metadata + "-->" + d.parent_metadata;
-    if( parent_uuid!=d.parent_uuid )
-        log += " ParentContUUID:" + parent_uuid + "-->" + d.parent_uuid;
+	logDifference(log, rhs);
+	log << endl;
 
-    y2mil(log);
-    ConstMdPartPair pp=mdpartPair();
-    ConstMdPartIter i=pp.begin();
-    while( i!=pp.end() )
-        {
-        ConstMdPartPair pc=d.mdpartPair();
-        ConstMdPartIter j = pc.begin();
-        while( j!=pc.end() &&
-               (i->device()!=j->device() || i->created()!=j->created()) )
-            ++j;
-        if( j!=pc.end() )
-            {
-            if( !i->equalContent( *j ) )
-                i->logDifference( *j );
-            }
-        else
-            y2mil( "  -->" << *i );
-        ++i;
-        }
-    pp=d.mdpartPair();
-    i=pp.begin();
-    while( i!=pp.end() )
-        {
-        ConstMdPartPair pc=mdpartPair();
-        ConstMdPartIter j = pc.begin();
-        while( j!=pc.end() &&
-               (i->device()!=j->device() || i->created()!=j->created()) )
-            ++j;
-        if( j==pc.end() )
-            y2mil( "  <--" << *i );
-        ++i;
-        }
+	ConstMdPartPair pp = mdpartPair();
+        ConstMdPartPair pc = rhs.mdpartPair();
+	logVolumesDifference(log, pp.begin(), pp.end(), pc.begin(), pc.end());
     }
+
 
 bool MdPartCo::equalContent( const Container& rhs ) const
     {
@@ -1299,14 +1222,11 @@ bool MdPartCo::equalContent( const Container& rhs ) const
         return false;
         }
       ret = ret &&
-          active==mdp->active &&
-          del_ptable==mdp->del_ptable;
-
+          active==mdp->active;
       ret = ret &&
-          (chunk_size == mdp->chunk_size &&
+          (chunk_k == mdp->chunk_k &&
               md_type == mdp->md_type &&
               md_parity == mdp->md_parity &&
-              md_state == mdp->md_state &&
               sb_ver == mdp->sb_ver &&
               devs == mdp->devs &&
               spare == mdp->spare &&
@@ -1328,64 +1248,13 @@ bool MdPartCo::equalContent( const Container& rhs ) const
         {
         ConstMdPartPair pp = mdpartPair();
         ConstMdPartPair pc = mdp->mdpartPair();
-        ConstMdPartIter i = pp.begin();
-        ConstMdPartIter j = pc.begin();
-        while( ret && i!=pp.end() && j!=pc.end() )
-          {
-          ret = ret && i->equalContent( *j );
-          ++i;
-          ++j;
-          }
-        ret = ret && i==pp.end() && j==pc.end();
+	ret = ret && storage::equalContent(pp.begin(), pp.end(), pc.begin(), pc.end());
         }
-      }
-    return( ret );
+      } 
+    return ret;
     }
 
-MdPartCo::MdPartCo( const MdPartCo& rhs ) : Container(rhs)
-    {
-    y2deb("constructed MdPartCo by copy constructor from " << rhs.nm);
-    active = rhs.active;
-    del_ptable = rhs.del_ptable;
-    chunk_size = rhs.chunk_size;
-    md_type = rhs.md_type;
-    md_parity = rhs.md_parity;
-    md_state = rhs.md_state;
-    has_container = rhs.has_container;
-      parent_container = rhs.parent_container;
-      parent_md_name = rhs.parent_md_name;
-      parent_metadata = rhs.parent_metadata;
-      parent_uuid = rhs.parent_uuid;
-    md_metadata = rhs.md_metadata;
-    md_uuid = rhs.md_uuid;
-    sb_ver = rhs.sb_ver;
-    destrSb = rhs.destrSb;
-    devs = rhs.devs;
-    spare = rhs.spare;
-    md_name = rhs.md_name;
 
-    udev_path = rhs.udev_path;
-    udev_id = rhs.udev_id;
-
-    disk = NULL;
-    if( rhs.disk )
-        disk = new Disk( *rhs.disk );
-    getStorage()->waitForDevice();
-    ConstMdPartPair p = rhs.mdpartPair();
-    for( ConstMdPartIter i = p.begin(); i!=p.end(); ++i )
-        {
-        MdPart * p = new MdPart( *this, *i );
-        vols.push_back( p );
-        }
-    updatePointers(true);
-    num_part = rhs.num_part;
-    }
-
-bool MdPartCo::isMdName(const string& name)
-{
-  static Regex md("^md[0123456789]+");
-  return (md.match(name));
-}
 // Get list of active MD RAID's
 // cat /proc/mdstat
 // If we're looking for Volume then
@@ -1403,402 +1272,93 @@ bool MdPartCo::isMdName(const string& name)
 //unused devices: <none>
 
 
-list<string>
-MdPartCo::getMdRaids()
-{
-  y2mil( " called " );
-  list<string> l;
-  string line;
-  string dev_name;
-  std::ifstream file( "/proc/mdstat" );
-  classic(file);
-  getline( file, line );
-  while( file.good() )
-  {
-    string dev_name = extractNthWord( 0, line );
-    if( isMdName(dev_name) )
-      {
-      string line2;
-      getline(file,line2);
-      if( line2.find("external:imsm") == string::npos &&
-          line2.find("external:imsm") == string::npos)
+    list<string>
+    MdPartCo::getMdRaids(SystemInfo& systeminfo)
+    {
+	list<string> ret;
+
+	const ProcMdstat& procmdstat = systeminfo.getProcMdstat();
+	for (ProcMdstat::const_iterator it = procmdstat.begin(); it != procmdstat.end(); ++it)
+	{
+	    if (!it->second.is_container)
+		ret.push_back(it->first);
+	}
+
+	return ret;
+    }
+
+
+    list<string>
+    MdPartCo::getDevs(bool all, bool spares) const
+    {
+	list<string> ret;
+	if (!all)
+	{
+	    ret = spares ? spare : devs;
+	}
+	else
         {
-          // external:imsm or ddf not found. Assume that this is a Volume.
-        l.push_back(dev_name);
+	    ret = devs;
+	    ret.insert(ret.end(), spare.begin(), spare.end());
         }
-      }
-    getline( file, line );
-    }
-    file.close();
-    file.clear();
-
-    y2mil("detected md devs : " << l);
-    return l;
-}
-
-void
-MdPartCo::getDevs( list<string>& devices, bool all, bool spares ) const
-    {
-    if( !all )
-        devices = spares ? spare : devs;
-    else
-        {
-        devices = devs;
-        devices.insert( devices.end(), spare.begin(), spare.end() );
-        }
+	return ret;
     }
 
-
-void MdPartCo::getSpareDevs(std::list<string>& devices )
-{
-  devices = spare;
-}
-
-
-bool MdPartCo::matchMdRegex( const string& dev )
-    {
-    static Regex md( "^md[0123456789]+$" );
-    return( md.match(dev));
-    }
-
-
-unsigned MdPartCo::mdMajor()
-    {
-    if( md_major==0 )
-        getMdMajor();
-    return( md_major );
-    }
-
-void MdPartCo::getMdMajor()
-    {
-    md_major = getMajorDevices( "md" );
-    }
 
 void MdPartCo::setSize(unsigned long long size )
 {
   size_k = size;
 }
 
-void MdPartCo::getMdProps()
-{
-    y2mil("Called dev:" << dev);
 
-  string property;
-
-  if( !readProp(METADATA, md_metadata) )
+    void
+    MdPartCo::initMd(SystemInfo& systeminfo)
     {
-      y2war("Failed to read metadata");
+	ProcMdstat::Entry entry;
+	if (!systeminfo.getProcMdstat().getEntry(nm, entry))
+	    y2err("not found in mdstat nm:" << nm);
+
+	md_type = entry.md_type;
+	md_parity = entry.md_parity;
+
+	setSize(entry.size_k);
+	chunk_k = entry.chunk_k;
+
+	devs = entry.devices;
+	spare = entry.spares;
+
+	if (entry.has_container)
+	{
+	    has_container = true;
+	    parent_container = entry.container_name;
+
+	    MdadmDetails details;
+	    if (getMdadmDetails("/dev/" + entry.container_name, details))
+	    {
+		parent_uuid = details.uuid;
+		parent_md_name = details.devname;
+		parent_metadata = details.metadata;
+	    }
+
+	    parent_member = entry.container_member;
+
+	    sb_ver = parent_metadata;
+	}
+	else
+	{
+	    sb_ver = entry.super;
+	}
+
+	MdadmDetails details;
+	if (getMdadmDetails("/dev/" + nm, details))
+	{
+	    md_uuid = details.uuid;
+	    md_name = details.devname;
+	}
+
+	getStorage()->addUsedBy(devs, UB_MDPART, dev);
+	getStorage()->addUsedBy(spare, UB_MDPART, dev);
     }
-    y2mil("md_metadata:" << md_metadata);
-
-   property.clear();
-   if( !readProp(COMPONENT_SIZE, property) )
-     {
-       y2war("Failed to read component_size");
-       setSize(0);
-     }
-   else
-     {
-     unsigned long long tmpSize;
-     property >> tmpSize;
-     setSize(tmpSize);
-     }
-
-   property.clear();
-   if( !readProp(CHUNK_SIZE, property) )
-     {
-       y2war("Failed to read chunk_size");
-       chunk_size = 0;
-     }
-   else
-     {
-     property >> chunk_size;
-     /* From 'B' in file to 'Kb' here. */
-     chunk_size /= 1024;
-     }
-
-   property.clear();
-   if( !readProp(ARRAY_STATE, property) )
-     {
-     md_state = storage::UNKNOWN;
-     y2war("array state unknown ");
-     }
-   else
-     {
-     if( property == "readonly" )
-       {
-         //setReadonly();
-       }
-     md_state = toMdArrayState(property);
-     }
-
-    if( !readProp(LEVEL, property) )
-      {
-      y2war("RAID type unknown");
-      md_type = storage::RAID_UNK;
-      }
-    else
-      {
-      md_type = toMdType(property);
-      }
-
-    setMdParity();
-    setMdDevs();
-    setSpares();
-    setMetaData();
-    MdPartCo::getUuidName(nm,md_uuid,md_name);
-
-    y2mil("md_metadata:" << md_metadata);
-    if( has_container )
-      {
-      MdPartCo::getUuidName(parent_container,parent_uuid,parent_md_name);
-	y2mil("md_name:" << md_name << " parent_container:" << parent_container <<
-	      " parent_uuid:" << parent_uuid << " parent_md_name:" << parent_md_name);
-      }
-    y2mil("Done");
-}
-
-bool MdPartCo::readProp(enum MdProperty prop, string& val)
-{
-  string path = sysfs_path + nm + "/md/" + md_props[prop];
-    return read_sysfs_property(path, val);
-}
-
-
-void MdPartCo::getSlaves(const string name, std::list<string>& devs_list )
-{
-  string path = sysfs_path + name + "/slaves";
-  DIR* dir;
-
-  devs_list.clear();
-
-  if ((dir = opendir(path.c_str())) != NULL)
-    {
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL)
-      {
-      string tmpS(entry->d_name);
-      y2mil("Entry :  " << tmpS);
-      if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-        {
-        continue;
-        }
-      devs_list.push_back( ("/dev/"+tmpS) );
-      }
-    closedir(dir);
-    }
-  else
-    {
-    y2mil("Failed to opend directory");
-    }
-}
-
-
-void MdPartCo::setMdDevs()
-{
-  getSlaves(nm,devs);
-
-  for( list<string>::iterator s=devs.begin(); s!=devs.end(); ++s )
-  {
-    //It will be set always to last RAID that was detected.
-    getStorage()->setUsedBy( *s, UB_MDPART, nm );
-  }
-}
-
-
-void
-MdPartCo::getParent()
-{
-  string ret;
-  string con = md_metadata;
-  string::size_type pos1;
-  string::size_type pos2;
-
-  parent_container.clear();
-  has_container = false;
-  if( md_metadata.empty() )
-    {
-      (void)readProp(METADATA, md_metadata);
-      con = md_metadata;
-
-    }
-  if( con.find("external:")==0 )
-    {
-      if( (pos1=con.find_first_of("/")) != string::npos )
-        {
-        if( (pos2=con.find_last_of("/")) != string::npos)
-          {
-          if( pos1 != pos2)
-            {
-            //Typically: external:/md127/0
-            parent_container.clear();
-            parent_container = con.substr(pos1+1,pos2-pos1-1);
-            has_container = true;
-            }
-          }
-        }
-      else
-        {
-        // this is the Container
-        }
-    }
-  else
-    {
-    // No external metadata.
-    // Possibly this is raid with persistent metadata and no container.
-    }
-}
-
-void MdPartCo::setMetaData()
-{
-  if( parent_container.empty () )
-    {
-    getParent();
-    }
-  if( has_container == false )
-    {
-    // No parent container.
-    sb_ver = md_metadata;
-    parent_metadata.clear();
-    return;
-    }
-
-  string path = sysfs_path + parent_container + "/md/" + md_props[METADATA];
-  if( access( path.c_str(), R_OK )==0 )
-    {
-    std::ifstream file( path.c_str() );
-    classic(file);
-    string val;
-    file >> val;
-    file.close();
-    file.clear();
-
-    // It will be 'external:XXXX'
-    string::size_type pos = val.find(":");
-    if( pos != string::npos )
-      {
-      sb_ver = val.erase(0,pos+1);
-      parent_metadata = sb_ver;
-      }
-    }
-}
-
-void MdPartCo::setMdParity()
-{
-  md_parity = PAR_NONE;
-  //Level 5 & 6 - left-symmetric
-  //Level 10 - n2 layout (0x102)
-  if( hasParity() )
-    {
-    switch( md_type )
-    {
-    case RAID5:
-    case RAID6:
-      md_parity = LEFT_ASYMMETRIC;
-    case RAID10:
-      /* Parity 'n2' */
-      //md_parity = PARITY_N2;
-    default:
-      return;
-    }
-    }
-}
-
-
-/* Spares: any disk that is in container and not in RAID. */
-void MdPartCo::setSpares()
-{
-  std::list<string> parent_devs;
-  std::list<string> diff_devs;
-
-  parent_devs.clear();
-  diff_devs.clear();
-  int found;
-
-  list<string>::const_iterator it1;
-  list<string>::const_iterator it2;
-
-  getParent();
-  if( has_container == false )
-    {
-    spare.clear();
-    return;
-    }
-  getSlaves(parent_container,parent_devs);
-
-  for( it1 = parent_devs.begin(); it1 != parent_devs.end(); it1++ )
-    {
-      found = 0;
-      for(it2 = devs.begin(); it2 != devs.end(); it2++ )
-        {
-          if( *it1 == *it2 )
-            {
-              found++;
-              break;
-            }
-        }
-      if( found == 0 )
-        {
-          diff_devs.push_back(*it1);
-        }
-    }
-    spare = diff_devs;
-
-    for( list<string>::iterator s=spare.begin(); s!=spare.end(); ++s )
-    {
-      //It will be set always to last RAID that was detected.
-      getStorage()->setUsedBy( *s, UB_MDPART, nm );
-    }
-}
-
-
-/* Will try to set: UUID, Name.*/
-/* Format: mdX metadata uuid /dev/md/md_name */
-bool MdPartCo::getUuidName(const string dev,string& uuid, string& mdName)
-{
-  std::ifstream file;
-  string line;
-  classic(file);
-
-  uuid.clear();
-  mdName.clear();
-
-    string tmp;
-    string::size_type pos;
-    //No file, employ mdadm -D name --export
-    SystemCmd c(MDADMBIN " --detail " + quote(dev) + " --export");
-    if( c.retcode() != 0 )
-      {
-      return false;
-      }
-    if(c.select( "MD_UUID" ) > 0)
-      {
-      tmp = *c.getLine(0,true);
-      pos = tmp.find("=");
-      tmp.erase(0,pos+1);
-      uuid = tmp;
-      }
-    if( c.select( "MD_DEVNAME" ) > 0)
-      {
-      tmp = *c.getLine(0,true);
-      pos = tmp.find("=");
-      tmp.erase(0,pos+1);
-      mdName = tmp;
-      }
-    if( !mdName.empty() && !uuid.empty() )
-      {
-      return true;
-      }
-
-  return false;
-}
-
-
-void MdPartCo::initMd()
-{
-  /* Name is 'nm' read all props. */
-  getMdProps();
-}
 
 
 void MdPartCo::activate( bool val, const string& tmpDir  )
@@ -1829,109 +1389,17 @@ bool MdPartCo::mdStringNum( const string& name, unsigned& num )
     }
 
 
-MdType
-MdPartCo::toMdType( const string& val )
-    {
-    enum MdType ret = MULTIPATH;
-    while( ret!=RAID_UNK && val!=md_names[ret] )
-        {
-        ret = MdType(ret-1);
-        }
-    return( ret );
-    }
-
-MdParity
-MdPartCo::toMdParity( const string& val )
-    {
-    enum MdParity ret = RIGHT_SYMMETRIC;
-    while( ret!=PAR_NONE && val!=par_names[ret] )
-        {
-        ret = MdParity(ret-1);
-        }
-    return( ret );
-    }
-
-
-
-storage::MdArrayState
-MdPartCo::toMdArrayState( const string& val )
+int
+MdPartCo::getMdPartCoState(MdPartCoStateInfo& info) const
 {
-    enum storage::MdArrayState ret = storage::ACTIVE_IDLE;
-    while( ret!=storage::UNKNOWN && val!=md_states[ret] )
-        {
-        ret = storage::MdArrayState(ret-1);
-        }
-    return( ret );
+    string value;
+    if (read_sysfs_property(sysfsPath() + "/md/array_state", value))
+	if (toValue(value, info.state))
+	    return STORAGE_NO_ERROR;
+
+    return MD_GET_STATE_FAILED;
 }
 
-
-void MdPartCo::getMdPartCoState(storage::MdPartCoStateInfo& info)
-{
-  string prop;
-
-  readProp(ARRAY_STATE,prop);
-
-  info.state = toMdArrayState(prop);
-
-  info.active = true; //?
-  info.degraded = false; //?
-}
-
-
-void MdPartCo::getMajorMinor()
-{
-  string path = sysfs_path + nm + "/dev";
-
-  if( access( path.c_str(), R_OK )==0 )
-  {
-    string val;
-    unsigned pos;
-
-    std::ifstream file( path.c_str() );
-    classic(file);
-    file >> val;
-
-    pos = val.find(":");
-    val.substr(0,pos) >> mjr;
-    val.substr(pos+1) >> mnr;
-
-    file.close();
-    file.clear();
-  }
-
-}
-
-void MdPartCo::makeDevName(const string& name )
-{
-  if( name.find("/dev/") != string::npos )
-    {
-    dev = name;
-    }
-  else
-    {
-    dev = "/dev/" + name;
-    }
-}
-
-
-bool MdPartCo::isImsmPlatform()
-{
-  bool ret = false;
-  SystemCmd c;
-
-  c.execute(MDADMBIN " --detail-platform");
-  c.select( "Platform : " );
-  //c.retcode()==0 && - mdadm returns 1.
-  if(  c.numLines(true)>0 )
-    {
-    const string line = *c.getLine(0,true);
-    if( line.find("Intel(R) Matrix Storage Manager") != string::npos )
-      {
-      ret = true;
-      }
-    }
-  return ret;
-}
 
 /*
  * Return true if on RAID Volume has a partition table
@@ -1942,180 +1410,72 @@ bool MdPartCo::isImsmPlatform()
  *
  * Ad 2. Clean newly created device or FS on device.
  */
-bool MdPartCo::hasPartitionTable(const string& name )
+bool MdPartCo::hasPartitionTable(const string& name, SystemInfo& systeminfo)
 {
-  //bool ret = false;
-  SystemCmd c;
-  bool ret = false;
-
-  string cmd = PARTEDCMD " " + quote("/dev/" + name) + " print";
-
-  c.execute(cmd);
-
-  //For clear md125 (just created)
-  //Error: /dev/md125: unrecognised disk label
-  //so $? contains 1.
-  //If dev has partition table then $? contains 0
-  if( c.retcode() == 0 )
-    {
-    ret = true;
-    //Still - it can contain:
-    //    del: Unknown (unknown)
-    //    Disk /dev/md125: 133GB
-    //    Sector size (logical/physical): 512B/512B
-    //    Partition Table: loop
-
-    c.select("Partition Table:");
-    if(  c.numLines(true) > 0 )
-      {
-      string loop = *c.getLine(0,true);
-      if( loop.find("loop") != string::npos )
-        {
-        // It has 'loop' partition table so it's actually a volume.
-        ret = false;
-        }
-      }
-    }
-return ret;
+    const Parted& parted = systeminfo.getParted("/dev/" + name);
+    string dlabel = parted.getLabel();
+    bool ret = !dlabel.empty() && dlabel != "loop";
+    y2mil("name:" << name << " ret:" << ret);
+    return ret;
 }
 
 
-/* Return true if there is no partition table and no FS */
-bool MdPartCo::hasFileSystem(const string& name)
+bool
+MdPartCo::hasFileSystem(const string& name, SystemInfo& systeminfo)
 {
-  //bool ret = false;
-  SystemCmd c;
-  string cmd = BLKIDBIN " -c /dev/null " + quote("/dev/" + name);
+    bool ret = false;
 
-  c.execute(cmd);
-  // IF filesystem was bit found then it will return no output end error core 2.
-  if( c.retcode() != 0 )
+    Blkid::Entry entry;
+    if (systeminfo.getBlkid().getEntry("/dev/" + name, entry))
     {
-    return false;
+	ret = entry.is_fs || entry.is_lvm || entry.is_luks;
     }
-  // if FS is on device then it will be in TYPE="fsType" pair.
-  return true;
+
+    y2mil("name:" << name << " ret:" << ret);
+    return ret;
 }
 
 
 void
-MdPartCo::syncRaidtab()
+MdPartCo::syncMdadm(EtcMdadm* mdadm) const
 {
-    updateEntry();
+    updateEntry(mdadm);
 }
 
 
-string
-MdPartCo::getContMember() const
+    bool
+    MdPartCo::updateEntry(EtcMdadm* mdadm) const
+    {
+	EtcMdadm::mdconf_info info;
+
+	if (!md_name.empty())
+	    info.device = "/dev/md/" + md_name;
+	else
+	    info.device = dev;
+
+	info.uuid = md_uuid;
+
+	if (has_container)
+        {
+	    info.container_present = true;
+	    info.container_uuid = parent_uuid;
+	    info.container_metadata = parent_metadata;
+	    info.container_member = parent_member;
+        }
+
+	return mdadm->updateEntry(info);
+    }
+
+
+bool
+MdPartCo::scanForRaid(list<string>& raidNames)
 {
-    y2mil("md_metadata:" << md_metadata);
-    string::size_type pos = md_metadata.find_last_of("/");
-    if (pos != string::npos)
-    {
-	string tmp = md_metadata;
-	tmp.erase(0, pos + 1);
-	return tmp;
-    }
-    return string();
-}
-
-
-void MdPartCo::updateEntry()
-    {
-    EtcRaidtab* tab = getStorage()->getRaidtab();
-    if( tab )
-      {
-      EtcRaidtab::mdconf_info info;
-      if( !md_name.empty() )
-        {
-        //Raid name is preferred.
-        info.fs_name = "/dev/md/" + md_name;
-        }
-      else
-        {
-        info.fs_name = dev;
-        }
-      info.md_uuid = md_uuid;
-      if( has_container )
-        {
-        info.container_present = true;
-        info.container_info.md_uuid = parent_uuid;
-        info.container_info.metadata = parent_metadata;
-        info.member = getContMember();
-        }
-      else
-        {
-        info.container_present = false;
-        }
-      tab->updateEntry( info );
-      }
-    }
-
-string MdPartCo::mdadmLine() const
-    {
-    string line = "ARRAY " + device() + " level=" + pName();
-    line += " UUID=" + md_uuid;
-    y2mil("line:" << line);
-    return( line );
-    }
-
-void MdPartCo::raidtabLines( list<string>& lines ) const
-    {
-    lines.clear();
-    lines.push_back( "raiddev " + device() );
-    string tmp = "   raid-level            ";
-    switch( md_type )
-        {
-        case RAID1:
-            tmp += "1";
-            break;
-        case RAID5:
-            tmp += "5";
-            break;
-        case RAID6:
-            tmp += "6";
-            break;
-        case RAID10:
-            tmp += "10";
-            break;
-        case MULTIPATH:
-            tmp += "multipath";
-            break;
-        default:
-            tmp += "0";
-            break;
-        }
-    lines.push_back( tmp );
-    lines.push_back( "   nr-raid-disks         " + decString(devs.size()));
-    lines.push_back( "   nr-spare-disks        " + decString(spare.size()));
-    lines.push_back( "   persistent-superblock 1" );
-    if( md_parity!=PAR_NONE )
-        lines.push_back( "   parity-algorithm      " + ptName());
-    if( chunk_size>0 )
-        lines.push_back( "   chunk-size            " + decString(chunk_size));
-    unsigned cnt = 0;
-    for( list<string>::const_iterator i=devs.begin(); i!=devs.end(); ++i )
-        {
-        lines.push_back( "   device                " + *i);
-        lines.push_back( "   raid-disk             " + decString(cnt++));
-        }
-    cnt = 0;
-    for( list<string>::const_iterator i=spare.begin(); i!=spare.end(); ++i )
-        {
-        lines.push_back( "   device                " + *i);
-        lines.push_back( "   spare-disk            " + decString(cnt++));
-        }
-    }
-
-int MdPartCo::scanForRaid(list<string>& raidNames)
-{
-  int ret = -1;
-  SystemCmd c(MDADMBIN " -Es ");
+    bool ret = false;
   raidNames.clear();
 
+  SystemCmd c(MDADMBIN " --examine --scan");
   if( c.retcode() == 0 )
     {
-    raidNames.clear();
     for(unsigned i = 0; i < c.numLines(false); i++ )
       {
       //Example:
@@ -2123,7 +1483,7 @@ int MdPartCo::scanForRaid(list<string>& raidNames)
       //ARRAY /dev/md/Vol_r5 container=b...5 member=0 UUID=0...c
       //ARRAY metadata=imsm UUID=8...b
       //ARRAY /dev/md/Vol0 container=8...b member=0 UUID=7...9
-      string line = *c.getLine(i);
+      string line = c.getLine(i);
       string dev_name = extractNthWord( 1, line );
       if( dev_name.find("/dev/md/") == 0 )
         {
@@ -2131,20 +1491,18 @@ int MdPartCo::scanForRaid(list<string>& raidNames)
         raidNames.push_back(dev_name);
         }
       }
-    ret = 0;
+    ret = true;
     }
   y2mil(" Detected list of MD RAIDs : " << raidNames);
   return ret;
 }
 
-storage::CType
+
+CType
 MdPartCo::envSelection(const string& name)
 {
-  string big = name;
-  std::transform(name.begin(), name.end(),
-      big.begin(),(int(*)(int))std::toupper);
-  string str = "YAST_STORAGE_" + big;
-  char * tenv = getenv( str.c_str() );
+    string str = "LIBSTORAGE_" + boost::to_upper_copy(name, locale::classic());
+    const char* tenv = getenv(str.c_str());
   if( tenv == NULL )
     {
     return CUNKNOWN;
@@ -2161,52 +1519,51 @@ MdPartCo::envSelection(const string& name)
   return CUNKNOWN;
 }
 
-bool MdPartCo::havePartsInProc(const string& name, ProcPart& ppart)
+
+bool
+MdPartCo::havePartsInProc(const string& name, SystemInfo& systeminfo)
 {
-  string reg;
-  list <string> parts;
-  // Search /proc/partitions for partitions.
-  reg = name + "p[1-9]+";
-  parts.clear();
-  parts = ppart.getMatchingEntries( reg );
-  if( !parts.empty() )
-    {
-    return true;
-    }
-  return false;
+    string reg = "^" "/dev/" + name + "p[1-9]+" "$";
+    list <string> parts = systeminfo.getProcParts().getMatchingEntries(regex_matches(reg));
+    bool ret = !parts.empty();
+    y2mil("name:" << name << " ret:" << ret);
+    return ret;
 }
 
-list<string> MdPartCo::filterMdPartCo(list<string>& raidList,
-                                      ProcPart& ppart,
-                                      bool isInst)
+
+list<string>
+MdPartCo::filterMdPartCo(const list<string>& raidList, SystemInfo& systeminfo, bool instsys)
 {
-  y2mil(" called ");
   list<string> mdpList;
 
   for( list<string>::const_iterator i=raidList.begin(); i!=raidList.end(); ++i )
     {
-    storage::CType ct = MdPartCo::envSelection(*i);
-    if( ct == MD )
+	y2mil("name:" << *i);
+
+	CType ctype = envSelection(*i);
+	if (ctype == MD)
       {
       // skip
       continue;
       }
-    if (ct == MDPART )
+    if (ctype == MDPART)
       {
       mdpList.push_back(*i);
       continue;
       }
-    if( MdPartCo::havePartsInProc(*i,ppart) )
+
+    if (havePartsInProc(*i, systeminfo))
       {
       mdpList.push_back(*i);
       continue;
       }
-    if( isInst )
+
+    if (instsys)
       {
       // 1. With Partition Table
       // 2. Without Partition Table and without FS on it.
       // 3. this gives: No FS.
-      if (!MdPartCo::hasFileSystem(*i))
+	  if (!hasFileSystem(*i, systeminfo))
         {
         mdpList.push_back(*i);
         }
@@ -2215,35 +1572,17 @@ list<string> MdPartCo::filterMdPartCo(list<string>& raidList,
       {
       // In 'normal' mode ONLY volume with Partition Table.
       // Partitions should be visible already so check it.
-      if( MdPartCo::hasPartitionTable(*i))
+	  if (hasPartitionTable(*i, systeminfo))
         {
         mdpList.push_back(*i);
         }
       }
-    } // for
+    }
   y2mil("List of partitionable devs: " << mdpList);
   return mdpList;
 }
 
-string MdPartCo::md_names[] = { "unknown", "raid0", "raid1", "raid5", "raid6",
-                          "raid10", "multipath" };
-string MdPartCo::par_names[] = { "none", "left-asymmetric", "left-symmetric",
-                           "right-asymmetric", "right-symmetric" };
-/* */
-string MdPartCo::md_states[] = {"clear", "inactive", "suspended", "readonly",
-                          "read-auto", "clean", "active", "write-pending",
-                          "active-idle"};
-
-string MdPartCo::md_props[] = {"metadata_version", "component_size", "chunk_size",
-                       "array_state", "level", "layout" };
-/* */
-string MdPartCo::sysfs_path = "/sys/devices/virtual/block/";
-
-unsigned MdPartCo::md_major = 0;
 
 bool MdPartCo::active = false;
-
-void MdPartCo::logData( const string& Dir ) {}
-
 
 }

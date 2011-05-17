@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -23,11 +23,14 @@
 #ifndef LVM_VG_H
 #define LVM_VG_H
 
-#include "y2storage/PeContainer.h"
-#include "y2storage/LvmLv.h"
+#include "storage/PeContainer.h"
+#include "storage/LvmLv.h"
+
 
 namespace storage
 {
+    using std::list;
+
 
 class LvmVg : public PeContainer
     {
@@ -35,13 +38,17 @@ class LvmVg : public PeContainer
     friend class LvmLv;
 
     public:
-	LvmVg( Storage * const s, const string& Name );
-	LvmVg( Storage * const s, const string& Name, bool lvm1 );
-	LvmVg( const LvmVg& c );
+
+	LvmVg(Storage* s, const string& name, const string& device, bool lvm1);
+	LvmVg(Storage* s, const string& name, const string& device, SystemInfo& systeminfo);
+	LvmVg(Storage* s, const xmlNode* node);
+	LvmVg(const LvmVg& c);
 	virtual ~LvmVg();
-	unsigned numLv() const { return vols.size(); }
+
+	void saveData(xmlNode* node) const;
+
+	unsigned numLv() const;
 	bool lvm2() const { return( !lvm1 ); }
-	bool inactive() const { return( inactiv ); }
 	static storage::CType staticType() { return storage::LVM; }
 	friend std::ostream& operator<< (std::ostream&, const LvmVg& );
 
@@ -64,21 +71,22 @@ class LvmVg : public PeContainer
 
 	int setPeSize( long long unsigned peSizeK );
 	void normalizeDmDevices();
-	void getCommitActions( std::list<storage::commitAction*>& l ) const;
+	void getCommitActions(list<commitAction>& l) const;
+	void getToCommit(storage::CommitStage stage, list<const Container*>& col,
+			 list<const Volume*>& vol) const;
 	int commitChanges( storage::CommitStage stage );
-	int getToCommit( storage::CommitStage stage, std::list<Container*>& col,
-			 std::list<Volume*>& vol );
 	int resizeVolume( Volume* v, unsigned long long newSize );
 	int removeVolume( Volume* v );
 	void getInfo( storage::LvmVgInfo& info ) const;
 	bool equalContent( const Container& rhs ) const;
-	void logDifference( const Container& rhs ) const;
 
-	static void activate( bool val=true );
+	void logDifference(std::ostream& log, const LvmVg& rhs) const;
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
+
+	static void activate(bool val);
 	static bool isActive() { return active; }
 
-	static void getVgs( std::list<string>& l );
-	static bool lvNotDeleted( const LvmLv& l ) { return( !l.deleted() ); }
+	static list<string> getVgs();
 
     protected:
 	// iterators over LVM LVs
@@ -129,17 +137,15 @@ class LvmVg : public PeContainer
 	    return( ConstLvmLvIter( LvmLvCPIterator( p, Check, true )) );
 	    }
 
-	LvmVg( Storage * const s, const string& File, int );
-
 	void getVgData( const string& name, bool exists=true );
-	void init();
+
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new LvmVg( *this ) ); }
 
-	string createVgText( bool doing ) const;
-	string removeVgText( bool doing ) const;
-	string extendVgText( bool doing, const string& dev ) const;
-	string reduceVgText( bool doing, const string& dev ) const;
+	Text createText(bool doing) const;
+	Text removeText(bool doing) const;
+	Text extendText(bool doing, const string& dev) const;
+	Text reduceText(bool doing, const string& dev) const;
 
 	int doCreateVg();
 	int doRemoveVg();
@@ -148,12 +154,13 @@ class LvmVg : public PeContainer
 	int doCreate( Volume* v );
 	int doRemove( Volume* v );
 	int doResize( Volume* v );
-	int doCreatePv(const Pv& pv) const;
+	int doCreatePv(const Pv& pv);
 
 	string metaString() const;
-	string instSysString();
+	string instSysString() const;
 
-	void logData( const string& Dir );
+	virtual void logData(const string& Dir) const;
+
 	void addLv(unsigned long& le, string& name, string& origin, string& uuid,
 		   string& status, string& alloc, bool& ro);
 	void addPv( Pv*& p );
@@ -161,10 +168,15 @@ class LvmVg : public PeContainer
 	string status;
 	string uuid;
 	bool lvm1;
-	bool inactiv;
-	unsigned num_lv;
+
 	static bool active;
-	mutable storage::LvmVgInfo info;
+
+	mutable storage::LvmVgInfo info; // workaround for broken ycp bindings
+
+    private:
+
+	LvmVg& operator=(const LvmVg&);	// disallow
+
     };
 
 }

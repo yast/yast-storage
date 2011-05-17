@@ -17,10 +17,10 @@
     import "Mode";
     import "Popup";
     import "Storage";
+    import "StorageProposal";
     import "Partitions";
     import "Product";
     import "Label";
-    import "Popup";
 
     // flag for deleting a windows partition
     integer win_partition_to_delete = -1;
@@ -44,8 +44,6 @@
     // The partition number of the first logical partition
     integer first_logical_nr = 5;
 
-    integer size_of_swap = 0;
-    integer size_of_boot = 0;
     integer max_primary = 0;
     // this will tell if automatic partitioning if feasible
     boolean can_do_auto = false;
@@ -112,7 +110,7 @@
 	}
 
     // user visible name of target
-    string targetname = target["name"]:"";
+    string targetname = target["proposal_name"]:target["device"]:"?";
 
     // The current list of partitions
     list< map > partitions = target["partitions"]:[];
@@ -126,13 +124,6 @@
     // general settings for automatically created partitions
 
     max_partitions = compute_max_partitions(target);
-
-    // How much to allocate for swap
-    size_of_swap = 1024*1024*Partitions::SwapSizeMb(0);
-
-    // --------------------------------------------------------------
-    // set size of /boot partition
-    size_of_boot = Partitions::MinimalNeededBootsize();
 
     // The number of possible primary partitions
     max_primary = target["max_primary"]:4;
@@ -170,7 +161,7 @@
 	    // this is the resize case
 	    //
 	    vbox = create_resize_dialog (partitions, target["cyl_size"]:1 );
-	    vbox = add_common_widgets( vbox );
+	    vbox = add( vbox, StorageProposal::AddCommonWidgets());
 	    y2milestone ("can resize !");
 	    }
 	else
@@ -180,7 +171,7 @@
 	    map tmp = construct_partition_dialog( partitions, 
 	                                          target["label"]:"",
 						  target["cyl_size"]:1 );
-	    vbox = add_common_widgets( tmp["term"]:`Empty() );
+	    vbox = add( tmp["term"]:`VBox(), StorageProposal::AddCommonWidgets());
 	    }
 	}
 
@@ -189,7 +180,7 @@
     else 
 	{
 	vbox = create_whole_disk_dialog();
-	vbox = add_common_widgets( vbox );
+	vbox = add( vbox, StorageProposal::AddCommonWidgets());
 	}
 
     // Since resize case and normal case have different help texts we need
@@ -230,18 +221,10 @@
 	    {
 	    break;
 	    }
-	else if (ret == `lvm)
-	{
-	    UI::ChangeWidget(`id(`encrypt), `Enabled, (boolean) UI::QueryWidget(`id(`lvm), `Value));
-	}
-	else if (ret == `encrypt)
-	{
-	    if ((boolean) UI::QueryWidget(`id(`encrypt), `Value))
+	else if( contains( [ `lvm, `home, `btrfs, `encrypt ], ret ) )
 	    {
-		if (!QueryProposalPassword())
-		    UI::ChangeWidget(`id(`encrypt), `Value, false);
-	    }	    
-	}
+	    StorageProposal::HandleCommonWidgets(ret);
+	    }
 	else if (ret == `full)
 	    {
 	    // Set all checkboxes
@@ -402,17 +385,11 @@ Really delete your Windows partition?
 		    }
 		return( p );
 		});
-	    partitions = try_remove_sole_extended( partitions );
+	    partitions = StorageProposal::try_remove_sole_extended( partitions );
 
 	    y2milestone ("partitions '%1'", partitions);
 
-	    // Check selection for plausability
-	    Storage::SetProposalHome( (boolean)UI::QueryWidget( `id(`home), `Value ));
-	    Storage::SetProposalLvm((boolean) UI::QueryWidget(`id(`lvm), `Value));
-	    Storage::SetProposalEncrypt((boolean) UI::QueryWidget(`id(`encrypt), `Value));
-
 	    ok = create_partitions( targetMap, target, partitions );
-	    Storage::SetProposalDefault(true);
 	    if( !ok )
 		{
 		string reason = _("Too few partitions are marked for removal

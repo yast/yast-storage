@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,105 +19,130 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
 
-#include "y2storage/Partition.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Disk.h"
-#include "y2storage/Storage.h"
+#include "storage/Partition.h"
+#include "storage/AppUtil.h"
+#include "storage/Disk.h"
+#include "storage/Storage.h"
 
-using namespace storage;
-using namespace std;
 
-static string udevCompleteIdPath( const string& s, unsigned nr )
+namespace storage
+{
+    using namespace std;
+
+
+    Partition::Partition(const Disk& c, const string& name, const string& device, unsigned PNr,
+			 unsigned long long SizeK, const Region& cylRegion, PartitionType Type,
+			 unsigned Id, bool Boot)
+	: Volume(c, name, device), reg(cylRegion), bootflag(Boot), typ(Type), idt(Id), orig_id(Id)
     {
-    return( "/dev/disk/by-id/" + s + "-part" + decString(nr) );
-    }
+	numeric = true;
+	num = orig_num = PNr;
+	size_k = orig_size_k = SizeK;
 
-static string udevCompletePathPath( const string& s, unsigned nr )
-    {
-    return( "/dev/disk/by-path/" + s + "-part" + decString(nr) );
-    }
-
-Partition::Partition( const Disk& d, unsigned PNr, unsigned long long SizeK,
-                      unsigned long Start, unsigned long CSize,
-		      PartitionType Type, unsigned Id, bool Boot )
-    : Volume( d, PNr, SizeK ), reg( Start, CSize )
-    {
-    bootflag = Boot;
-    idt = orig_id = Id;
-    typ = Type;
-    orig_num = num;
     addUdevData();
-    y2debug( "constructed partition %s on disk %s", dev.c_str(),
-	     cont->name().c_str() );
+    y2deb("constructed Partition " << dev << " on " << cont->device());
     }
 
-Partition::Partition( const Disk& d, const string& Data ) :
-        Volume( d, 0, 0 )
+
+    Partition::Partition(const Disk& c, const string& name, const string& device, unsigned PNr,
+			 SystemInfo& systeminfo, unsigned long long SizeK, const Region& cylRegion,
+			 PartitionType Type, unsigned Id, bool Boot)
+	: Volume(c, name, device, systeminfo), reg(cylRegion), bootflag(Boot), typ(Type), idt(Id),
+	  orig_id(Id)
     {
-    string ts, rs;
-    istringstream i( Data );
-    classic(i);
-    i >> num >> dev >> size_k >> mjr >> mnr >> reg >>
-	 hex >> idt >> dec >> ts >> rs;
-    orig_size_k = size_k;
-    orig_num = num;
-    orig_id = idt;
-    nm = dev;
-    undevDevice(nm);	// strip "/dev/"
-    if( ts == "extended" )
-	typ = EXTENDED;
-    else if( ts == "logical" )
-	typ = LOGICAL;
-    else
-	typ = PRIMARY;
-    if( rs == "boot" )
-	bootflag = true;
-    else
-	bootflag = false;
-    addUdevData();
-    y2debug( "constructed partition %s on disk %s", dev.c_str(),
-	     cont->name().c_str() );
+	numeric = true;
+	num = orig_num = PNr;
+	size_k = orig_size_k = SizeK;
+
+	getMajorMinor();
+
+	addUdevData();
+	y2deb("constructed Partition " << dev << " on " << cont->device());
     }
 
-const list<string> Partition::udevId() const 
-    { 
-    list<string> ret;
-    list<string>::const_iterator i = alt_names.begin();
-    while( i != alt_names.end() )
-	{
-	if( i->find( "/by-id/" ) != string::npos )
-	    ret.push_back( *i );
-	++i;
-	}
-    return( ret );
-    }
 
-const string& Partition::udevPath() const 
-    { 
-    list<string>::const_iterator i = 
-	find_if( alt_names.begin(), alt_names.end(), find_any( "/by-path/" ));
-    return( i==alt_names.end() ? empty_string : *i );
-    }
-
-string Partition::sysfsPath() const
+    Partition::Partition(const Disk& c, const xmlNode* node)
+	: Volume(c, node), reg(0, 0), bootflag(false)
     {
-    string ret = disk()->sysfsDir() + "/";
-    string tmp = undevDevice(dev);
-    string::size_type pos = 0;
-    while( (pos=tmp.find( '/', pos ))!=string::npos )
-	{
-	tmp[pos++] = '!';
-	}
-    ret += tmp;
-    y2mil( "ret:" << ret );
-    return( ret );
+	string tmp;
+
+	assert(numeric);
+	assert(num > 0);
+
+	getChildValue(node, "region", reg);
+
+	if (getChildValue(node, "partition_type", tmp))
+	    typ = toValueWithFallback(tmp, PRIMARY);
+	getChildValue(node, "partition_id", idt);
+
+	getChildValue(node, "boot_flag", bootflag);
+
+	orig_num = num;
+	orig_id = idt;
+
+	y2deb("constructed Partition " << dev);
     }
+
+
+    Partition::Partition(const Disk& c, const Partition& v)
+	: Volume(c, v), reg(v.reg), bootflag(v.bootflag), typ(v.typ),
+	  idt(v.idt), orig_id(v.orig_id), orig_num(v.orig_num)
+    {
+	y2deb("copy-constructed Partition " << dev);
+    }
+
+
+    Partition::~Partition()
+    {
+	y2deb("destructed Partition " << dev);
+    }
+
+
+    void
+    Partition::saveData(xmlNode* node) const
+    {
+	Volume::saveData(node);
+
+	setChildValue(node, "region", reg);
+
+	setChildValue(node, "partition_type", toString(typ));
+	setChildValue(node, "partition_id", idt);
+
+	if (bootflag)
+	    setChildValue(node, "boot_flag", true);
+    }
+
+
+    list<string>
+    Partition::udevId() const 
+    { 
+	list<string> ret;
+	const list<string> tmp = disk()->udevId();
+	for (list<string>::const_iterator i = tmp.begin(); i != tmp.end(); ++i)
+	    ret.push_back(udevAppendPart(*i, num));
+	return ret;
+    }
+
+
+    string
+    Partition::udevPath() const 
+    {
+	const string tmp = disk()->udevPath();
+	if (!tmp.empty())
+	    return udevAppendPart(tmp, num);
+	return "";
+    }
+
+
+    string
+    Partition::sysfsPath() const
+    {
+	return disk()->sysfsPath() + "/" + boost::replace_all_copy(procName(), "/", "!");
+    }
+
 
 bool Partition::intersectArea( const Region& r, unsigned fuzz ) const
     {
@@ -133,44 +158,31 @@ void Partition::addUdevData()
     {
     addAltUdevPath( num );
     addAltUdevId( num );
-    y2mil( "dev:" << dev << " mby:" << mbyTypeString(mount_by) << 
-           " orig:" << mbyTypeString(orig_mount_by) );
+    y2mil("dev:" << dev << " mby:" << toString(mount_by) << " orig:" << toString(orig_mount_by));
     mount_by = orig_mount_by = defaultMountBy();
-    y2mil( "dev:" << dev << " mby:" << mbyTypeString(mount_by) << 
-           " orig:" << mbyTypeString(orig_mount_by) );
+    y2mil("dev:" << dev << " mby:" << toString(mount_by) << " orig:" << toString(orig_mount_by));
     }
+
 
 void Partition::addAltUdevId( unsigned num )
     {
-    list<string>::iterator i = alt_names.begin();
-    while( i!=alt_names.end() )
-	{
-	if( i->find( "/by-id/" ) != string::npos )
-	    i = alt_names.erase( i );
-	else
-	    ++i;
-	}
-    list<string>::const_iterator j = disk()->udevId().begin();
-    while( j!=disk()->udevId().end() )
-	{
-	alt_names.push_back( udevCompleteIdPath( *j, num ));
-	++j;
-	}
+    alt_names.remove_if(string_contains("/by-id/"));
+
+    const list<string> tmp = disk()->udevId();
+    for (list<string>::const_iterator i = tmp.begin(); i != tmp.end(); ++i)
+	alt_names.push_back("/dev/disk/by-id/" + udevAppendPart(*i, num));
     }
+
 
 void Partition::addAltUdevPath( unsigned num )
     {
-    list<string>::iterator i = alt_names.begin();
-    while( i!=alt_names.end() )
-	{
-	if( i->find( "/by-path/" ) != string::npos )
-	    i = alt_names.erase( i );
-	else
-	    ++i;
-	}
-    if( !disk()->udevPath().empty() )
-	alt_names.push_back( udevCompletePathPath( disk()->udevPath(), num ));
+    alt_names.remove_if(string_contains("/by-path/"));
+
+    const string tmp = disk()->udevPath();
+    if (!tmp.empty() )
+	alt_names.push_back("/dev/disk/by-path/" + udevAppendPart(tmp, num));
     }
+
 
 void Partition::changeNumber( unsigned new_num )
     {
@@ -186,15 +198,14 @@ void Partition::changeNumber( unsigned new_num )
 	    {
 	    orig_num = num;
 	    }
-	addAltUdevId( num );
-	list<string>::iterator i = find_if( alt_names.begin(), alt_names.end(),
-	                                    find_any( "/by-path/" ));
-	if( i!=alt_names.end() )
-	    *i = udevCompletePathPath( disk()->udevPath(), num );
-	nm.clear();
-	setNameDev();
-	getMajorMinor( dev, mjr, mnr );
-	getContainer()->getStorage()->changeDeviceName( old, dev );
+
+	addAltUdevId(num);
+	addAltUdevPath(num);
+
+	setNameDevice(disk()->getPartName(num), disk()->getPartDevice(num));
+
+	getMajorMinor();
+	getStorage()->changeDeviceName(old, dev);
 	}
     }
 
@@ -234,12 +245,14 @@ void Partition::unChangeId()
     idt = orig_id;
     }
 
-void Partition::changeRegion( unsigned long Start, unsigned long CSize,
-			      unsigned long long SizeK )
+
+    void
+    Partition::changeRegion(const Region& cylRegion, unsigned long long SizeK)
     {
-    reg = Region( Start, CSize );
-    size_k = orig_size_k = SizeK;
+	reg = cylRegion;
+	size_k = orig_size_k = SizeK;
     }
+
 
 bool Partition::canUseDevice() const
     {
@@ -252,51 +265,37 @@ bool Partition::canUseDevice() const
 void Partition::setResizedSize( unsigned long long SizeK ) 
     {
     Volume::setResizedSize(SizeK);
-    reg = Region( cylStart(), disk()->kbToCylinder(SizeK) );
+    reg.setLen(disk()->kbToCylinder(SizeK));
     }
 
 void Partition::forgetResize() 
     { 
     Volume::forgetResize();
-    reg = Region( cylStart(), disk()->kbToCylinder(size_k) );
+    reg.setLen(disk()->kbToCylinder(size_k));
     }
 
 bool Partition::operator== ( const Partition& rhs ) const
     {
     return( orig_num == rhs.orig_num &&
             num == rhs.num &&
-            del == rhs.del );
+            del == rhs.del &&
+	    cont == rhs.getContainer() );
     }
 
 bool Partition::operator< ( const Partition& rhs ) const
     {
-    if( orig_num!=rhs.orig_num )
+    if( cont != rhs.getContainer() )
+	return( *cont < *rhs.getContainer() );
+    else if( orig_num!=rhs.orig_num )
 	return( orig_num<rhs.orig_num );
     else
         return( !del );
     }
 
-ostream& Partition::logData( ostream& file ) const
-    {
-    file << num << " " << dev << " " << size_k << " " <<  mjr << " "
-         << mnr << " ";
-    file << reg.start() << " " << reg.len() << " " << hex << idt << dec;
-    if( typ == LOGICAL )
-	file << " logical";
-    else if( typ == EXTENDED )
-	file << " extended";
-    else
-	file << " primary";
-    if( bootflag )
-	file << " boot";
-    if( orig_num!=num )
-	file << " OrigNr:" << orig_num;
-    return( file );
-    }
 
-string Partition::setTypeText( bool doing ) const
+Text Partition::setTypeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev;
     if( doing )
         {
@@ -323,8 +322,7 @@ const Disk* Partition::disk() const
 int Partition::setFormat( bool val, storage::FsType new_fs )
     {
     int ret = 0;
-    y2milestone( "device:%s val:%d fs:%s", dev.c_str(), val,
-		 fs_names[new_fs].c_str() );
+    y2mil("device:" << dev << " val:" << val << " fs:" << toString(new_fs));
     if( typ==EXTENDED )
 	{
 	if( val )
@@ -339,7 +337,7 @@ int Partition::setFormat( bool val, storage::FsType new_fs )
 int Partition::changeMount( const string& val )
     {
     int ret = 0;
-    y2milestone( "device:%s val:%s", dev.c_str(), val.c_str() );
+    y2mil("device:" << dev << " val:" << val);
     if( typ==EXTENDED )
 	ret = VOLUME_MOUNT_EXTENDED_UNSUPPORTED;
     else
@@ -348,10 +346,12 @@ int Partition::changeMount( const string& val )
     return( ret );
     }
 
-bool Partition::isWindows() const
+
+    bool
+    Partition::isWindows() const
     {
-    return( idt==6 || idt==0xb || idt==ID_DOS || idt==0xe || idt==1 || idt==4 ||
-	    idt==ID_NTFS || idt==0x17 );
+	return idt==ID_DOS16 || idt==0x0b || idt==ID_DOS32 || idt==0x0e || idt==ID_DOS12 || idt==0x04 ||
+	    idt==ID_NTFS || idt==0x17;
     }
 
 
@@ -361,26 +361,26 @@ Partition::zeroIfNeeded() const
     int ret = 0;
 
     bool zero_new = getContainer()->getStorage()->getZeroNewPartitions();
-    bool used_as_pv = getUsedByType() == UB_LVM;
+    bool used_as_pv = isUsedBy(UB_LVM);
 
-    y2milestone( "zero_new:%d used_as_pv:%d", zero_new, used_as_pv );
+    y2mil("zero_new:" << zero_new << " used_as_pv:" << used_as_pv);
 
     if (zero_new || used_as_pv)
     {
-	ret = getContainer()->getStorage()->zeroDevice(device(), sizeK());
+       ret = getContainer()->getStorage()->zeroDevice(device(), sizeK());
     }
 
     return ret;
 }
 
 
-string Partition::removeText( bool doing ) const
+Text Partition::removeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev;
     if( orig_num!=num )
 	{
-	d = disk()->getPartName( orig_num );
+	d = disk()->getPartDevice( orig_num );
 	}
     if( doing )
 	{
@@ -407,112 +407,36 @@ string Partition::removeText( bool doing ) const
     return( txt );
     }
 
-string Partition::createText( bool doing ) const
+
+Text
+Partition::createText(bool doing) const
+{
+    Text txt;
+    if (doing)
     {
-    string txt;
-    string d = dev;
-    if( doing )
-	{
-	// displayed text during action, %1$s is replaced by device name e.g. /dev/hda1
-	txt = sformat( _("Creating partition %1$s"), d.c_str() );
-	}
+	txt = Volume::createText(doing);
+    }
     else
+    {
+	if (typ == EXTENDED)
 	{
-	if( typ==EXTENDED )
-	    {
 	    // displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
 	    // %2$s is replaced by size (e.g. 623.5 MB)
-	    txt = sformat( _("Create extended partition %1$s (%2$s)"),
-	                   d.c_str(), sizeString().c_str() );
-	    }
-	else if( mp=="swap" )
-	    {
-	    // displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-	    // %2$s is replaced by size (e.g. 623.5 MB)
-	    txt = sformat( _("Create swap partition %1$s (%2$s)"),
-	                   d.c_str(), sizeString().c_str() );
-	    }
-	else if( mp=="/" )
-	    {
-	    // displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-	    // %2$s is replaced by size (e.g. 623.5 MB)
-	    // %3$s is replaced by file system type (e.g. reiserfs)
-	    txt = sformat( _("Create root partition %1$s (%2$s) with %3$s"),
-	                   d.c_str(), sizeString().c_str(), fsTypeString().c_str() );
-	    }
-	else if( mp==bootMount() )
-	    {
-	    // displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-	    // %2$s is replaced by size (e.g. 623.5 MB)
-	    // %3$s is replaced by file system type (e.g. reiserfs)
-	    txt = sformat( _("Create boot partition %1$s (%2$s) with %3$s"),
-	                   d.c_str(), sizeString().c_str(), fsTypeString().c_str() );
-	    }
-	else if( !mp.empty() )
-	    {
-	    if( encryption==ENC_NONE )
-		{
-		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		// %3$s is replaced by file system type (e.g. reiserfs)
-		// %4$s is replaced by mount point (e.g. /usr)
-		txt = sformat( _("Create partition %1$s (%2$s) for %4$s with %3$s"),
-			       d.c_str(), sizeString().c_str(), fsTypeString().c_str(),
-			       mp.c_str() );
-		}
-	    else
-		{
-		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		// %3$s is replaced by file system type (e.g. reiserfs)
-		// %4$s is replaced by mount point (e.g. /usr)
-		txt = sformat( _("Create encrypted partition %1$s (%2$s) for %4$s with %3$s"),
-			       d.c_str(), sizeString().c_str(), fsTypeString().c_str(),
-			       mp.c_str() );
-		}
-	    }
-	else if( idt != ID_SWAP && idt != ID_LINUX && idt<256 )
-	{
-	    if (encryption == ENC_NONE)
-	    {
-		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		// %3$s is replaced by hexadecimal number (e.g. 8E)
-		txt = sformat(_("Create partition %1$s (%2$s) with id=%3$X"), d.c_str(),
-			      sizeString().c_str(), idt);
-	    }
-	    else
-	    {   
-		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		// %3$s is replaced by hexadecimal number (e.g. 8E)
-		txt = sformat(_("Create encrypted partition %1$s (%2$s) with id=%3$X"), d.c_str(),
-			      sizeString().c_str(), idt);
-	    }
+	    txt = sformat(_("Create extended partition %1$s (%2$s)"), dev.c_str(),
+			  sizeString().c_str());
 	}
 	else
 	{
-	    if (encryption == ENC_NONE)
-	    {
-		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		txt = sformat(_("Create partition %1$s (%2$s)"), d.c_str(), sizeString().c_str());
-	    }
-	    else
-	    {
-		// displayed text before action, %1$s is replaced by device name e.g. /dev/hda1
-		// %2$s is replaced by size (e.g. 623.5 MB)
-		txt = sformat(_("Create encrypted partition %1$s (%2$s)"), d.c_str(),
-			      sizeString().c_str());
-	    }
+	    txt = Volume::createText(doing);
 	}
-	}
-    return txt;
     }
+    return txt;
+}
 
-string Partition::formatText( bool doing ) const
+
+Text Partition::formatText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev;
     if( doing )
 	{
@@ -566,9 +490,9 @@ string Partition::formatText( bool doing ) const
     return( txt );
     }
 
-string Partition::resizeText( bool doing ) const
+Text Partition::resizeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev;
     if( doing )
         {
@@ -580,8 +504,9 @@ string Partition::resizeText( bool doing ) const
 	    // displayed text during action, %1$s is replaced by device name e.g. /dev/hda1
 	    // %2$s is replaced by size (e.g. 623.5 MB)
 	    txt = sformat( _("Extending partition %1$s to %2$s"), d.c_str(), sizeString().c_str() );
+	txt += Text(" ", " ");
 	// text displayed during action
-	txt += string(" ") + _("(progress bar might not move)");
+	txt += _("(progress bar might not move)");
 	}
     else
         {
@@ -611,7 +536,9 @@ string Partition::resizeText( bool doing ) const
     return( txt );
     }
 
-void Partition::getCommitActions( list<commitAction*>& l ) const
+
+void
+Partition::getCommitActions(list<commitAction>& l) const
     {
     unsigned s = l.size();
     bool change_id = idt!=orig_id;
@@ -620,15 +547,26 @@ void Partition::getCommitActions( list<commitAction*>& l ) const
 	change_id = false;
     if( change_id )
 	{
-	l.push_back( new commitAction( INCREASE, cont->staticType(),
-				       setTypeText(false), this, false ));
+	l.push_back(commitAction(INCREASE, cont->type(),
+				 setTypeText(false), this, false));
 	}
     }
 
-Partition::~Partition()
+
+    Region
+    Partition::detectSysfsBlkRegion(bool log_error) const
     {
-    y2deb("destructed partition " << dev);
+	string start_p = sysfsPath() + "/start";
+	string size_p = sysfsPath() + "/size";
+
+	unsigned long long start = 0;
+	unsigned long long len = 0;
+	read_sysfs_property(start_p, start, log_error);
+	read_sysfs_property(size_p, len, log_error);
+
+	return Region(start, len);
     }
+
 
 void
 Partition::getInfo( PartitionAddInfo& tinfo ) const
@@ -639,26 +577,19 @@ Partition::getInfo( PartitionAddInfo& tinfo ) const
     tinfo.nr = num;
     tinfo.id = idt;
     tinfo.boot = bootflag;
-    string tmp = udevPath();
-    tinfo.udevPath = tmp.substr( tmp.find_last_of('/')+1 );
-    list<string> l = udevId();
-    for( list<string>::iterator i=l.begin(); i!=l.end(); ++i )
-	i->erase( 0, i->find_last_of('/')+1 );
-    tinfo.udevId = mergeString( l );
     }
 
 void
 Partition::getInfo( PartitionInfo& tinfo ) const
     {
-    ((Volume*)this)->getInfo( info.v );
+    Volume::getInfo(info.v);
     PartitionAddInfo tmp;
     getInfo( tmp );
     info = tmp;
     tinfo = info;
     }
 
-namespace storage
-{
+
 PartitionInfo& PartitionInfo::operator=( const PartitionAddInfo& rhs )
     {
     nr = rhs.nr;
@@ -667,19 +598,16 @@ PartitionInfo& PartitionInfo::operator=( const PartitionAddInfo& rhs )
     partitionType = rhs.partitionType;
     id = rhs.id;
     boot = rhs.boot;
-    udevPath = rhs.udevPath;
-    udevId = rhs.udevId;
     return( *this );
     }
 
 std::ostream& operator<< (std::ostream& s, const Partition &p )
     {
-    s << "Partition " << *(Volume*)&p
-      << " Start:" << p.reg.start()
-      << " CylNum:" << p.reg.len()
+    s << "Partition " << dynamic_cast<const Volume&>(p)
+      << " cylRegion:" << p.reg
       << " Id:" << std::hex << p.idt << std::dec;
     if( p.typ!=storage::PRIMARY )
-      s << " " << Partition::pt_names[p.typ];
+	s << " " << toString(p.typ);
     if( p.orig_num!=p.num )
       s << " OrigNr:" << p.orig_num;
     if( p.orig_id!=p.idt )
@@ -689,34 +617,20 @@ std::ostream& operator<< (std::ostream& s, const Partition &p )
     return( s );
     }
 
-}
 
-void Partition::logDifference( const Partition& rhs ) const
+    void
+    Partition::logDifference(std::ostream& log, const Partition& rhs) const
     {
-    string log = Volume::logDifference( rhs );
-    if( reg.start()!=rhs.reg.start() )
-	log += " Start:" + decString(reg.start()) + "-->" + 
-	       decString(rhs.reg.start());
-    if( reg.len()!=rhs.reg.len() )
-	log += " CylNum:" + decString(reg.len()) + "-->" + 
-	       decString(rhs.reg.len());
-    if( typ!=rhs.typ )
-	log += " Typ:" + pt_names[typ] + "-->" + pt_names[rhs.typ];
-    if( idt!=rhs.idt )
-	log += " Id:" + hexString(idt) + "-->" + hexString(rhs.idt);
-    if( orig_id!=rhs.orig_id )
-	log += " OrigId:" + hexString(orig_id) + "-->" + hexString(rhs.orig_id);
-    if( orig_num!=rhs.orig_num )
-	log += " OrigNr:" + decString(orig_num) + "-->" + decString(rhs.orig_num);
-    if( bootflag!=rhs.bootflag )
-	{
-	if( rhs.bootflag )
-	    log += " -->boot";
-	else
-	    log += " boot-->";
-	}
-    y2mil(log);
+	Volume::logDifference(log, rhs);
+
+	logDiff(log, "reg", reg, rhs.reg);
+	logDiffEnum(log, "type", typ, rhs.typ);
+	logDiffHex(log, "id", idt, rhs.idt);
+	logDiffHex(log, "orig_id", orig_id, rhs.orig_id);
+	logDiff(log, "orig_num", orig_num, rhs.orig_num);
+	logDiff(log, "boot", bootflag, rhs.bootflag);
     }
+
 
 bool Partition::equalContent( const Partition& rhs ) const
     {
@@ -725,24 +639,4 @@ bool Partition::equalContent( const Partition& rhs ) const
             idt==rhs.idt );
     }
 
-Partition& Partition::operator= ( const Partition& rhs )
-    {
-    y2deb("operator= from " << rhs.nm);
-    *((Volume*)this) = rhs;
-    reg = rhs.reg;
-    bootflag = rhs.bootflag;
-    typ = rhs.typ;
-    idt = rhs.idt;
-    orig_id = rhs.orig_id;
-    orig_num = rhs.orig_num;
-    return( *this );
-    }
-
-Partition::Partition( const Disk& d, const Partition& rhs ) : Volume(d)
-    {
-    y2deb("constructed partition by copy constructor from " << rhs.dev);
-    *this = rhs;
-    }
-
-string Partition::pt_names[] = { "primary", "extended", "logical", "any" };
-
+}

@@ -19,10 +19,6 @@
  * find current contact information at www.novell.com.
  */
 
-/*
- * Author:	Arvin Schnell <aschnell@suse.de>
- */
-
 
 #include <stdio.h>
 #include <unistd.h>
@@ -32,8 +28,8 @@
 #include <sys/types.h>
 #include <stdlib.h>
 
-#include "y2storage/AppUtil.h"
-#include "y2storage/Lock.h"
+#include "storage/AppUtil.h"
+#include "storage/Lock.h"
 
 
 namespace storage
@@ -51,7 +47,7 @@ namespace storage
 
 
     Lock::Lock(bool readonly, bool disable)
-	: disabled(disable || getenv("YAST2_STORAGE_NO_LOCKING") != NULL),
+	: disabled(disable || getenv("LIBSTORAGE_NO_LOCKING") != NULL),
 	  fd(-1)
     {
 	if (disabled)
@@ -71,7 +67,7 @@ namespace storage
 	{
 	    // Opening lock-file failed.
 	    y2err("opening lock-file failed: " << strerror(errno));
-	    throw(LockException(0));
+	    throw LockException(0);
 	}
 
 	struct flock lock;
@@ -89,13 +85,15 @@ namespace storage
 		    // release. In that case we don't get the pid (and it is
 		    // still 0).
 		    fcntl(fd, F_GETLK, &lock);
+		    close(fd);
 		    y2err("locked by process " << lock.l_pid);
-		    throw(LockException(lock.l_pid));
+		    throw LockException(lock.l_pid);
 
 		default:
 		    // Some other error.
+		    close(fd);
 		    y2err("getting lock failed: " << strerror(errno));
-		    throw(LockException(0));
+		    throw LockException(0);
 	    }
 	}
 

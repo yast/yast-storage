@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,80 +19,50 @@
  * find current contact information at www.novell.com.
  */
 
-// Maintainer: fehr@suse.de
-/* 
-  Textdomain    "storage"
-*/
 
 #include <assert.h>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <fstream>
 
-#include "y2storage/AppUtil.h"
-#include "y2storage/Regex.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AsciiFile.h"
-
-using namespace std;
-using namespace storage;
+#include "storage/AppUtil.h"
+#include "storage/AsciiFile.h"
+#include "storage/StorageTypes.h"
 
 
-AsciiFile::AsciiFile( bool CreateBackup_bv, const char* BackupExt_Cv ) :
-	BackupCreated_b(!CreateBackup_bv),
-	BackupExtension_C( BackupExt_Cv )
+namespace storage
 {
+    using namespace std;
+
+
+AsciiFile::AsciiFile(const char* Name_Cv, bool remove_empty)
+    : Name_C(Name_Cv),
+      remove_empty(remove_empty)
+{
+    reload();
 }
 
-AsciiFile::AsciiFile( const char* Name_Cv, bool CreateBackup_bv,
-		      const char* BackupExt_Cv ) :
-	BackupCreated_b(!CreateBackup_bv),
-	BackupExtension_C( BackupExt_Cv )
-    {
-    loadFile( Name_Cv );
-    }
 
-AsciiFile::AsciiFile( const string& Name_Cv, bool CreateBackup_bv,
-		      const char* BackupExt_Cv ) :
-	BackupCreated_b(!CreateBackup_bv),
-	BackupExtension_C( BackupExt_Cv )
-    {
-    loadFile( Name_Cv.c_str() );
-    }
-
-AsciiFile::~AsciiFile()
-    {
-    }
-
-bool AsciiFile::loadFile( const string& Name_Cv )
-    {
-    bool Ret_bi;
-
-    y2mil("Loading File:\"" << Name_Cv << "\"");
-    Lines_C.clear();
-    Ret_bi = appendFile( Name_Cv, Lines_C );
-    Name_C = Name_Cv;
-    return Ret_bi;
-    }
-
-const string& AsciiFile::fileName() const
-    {
-    return Name_C;
-    }
-
-bool AsciiFile::appendFile( const string& Name_Cv )
-    {
-    return appendFile( Name_Cv, Lines_C );
-    }
-
-bool AsciiFile::appendFile( AsciiFile& File_Cv )
+AsciiFile::AsciiFile(const string& Name_Cv, bool remove_empty)
+    : Name_C(Name_Cv),
+      remove_empty(remove_empty)
 {
-    return appendFile( File_Cv, Lines_C );
+    reload();
 }
 
-bool AsciiFile::appendFile( const string& Name_Cv, vector<string>& Lines_Cr )
+
+bool
+AsciiFile::reload()
 {
-    ifstream File_Ci( Name_Cv.c_str() );
+    if (Name_C.empty())
+    {
+	y2err("trying to load nameless AsciiFile");
+	return false;
+    }
+
+    y2mil("loading file " << Name_C);
+    clear();
+
+    ifstream File_Ci(Name_C.c_str());
     classic(File_Ci);
     string Line_Ci;
 
@@ -100,140 +70,55 @@ bool AsciiFile::appendFile( const string& Name_Cv, vector<string>& Lines_Cr )
     File_Ci.unsetf(ifstream::skipws);
     getline( File_Ci, Line_Ci );
     while( File_Ci.good() )
-      {
-	Lines_Cr.push_back( Line_Ci );
+    {
+	Lines_C.push_back( Line_Ci );
 	getline( File_Ci, Line_Ci );
-      }
+    }
     return Ret_bi;
 }
 
-bool AsciiFile::appendFile( AsciiFile& File_Cv, vector<string>& Lines_Cr )
-{
-    unsigned Idx_ii = 0;
 
-    while( Idx_ii<File_Cv.numLines() )
-      {
-	Lines_Cr.push_back( File_Cv[Idx_ii] );
-	Idx_ii++;
-      }
-    return true;
+bool
+AsciiFile::save()
+{
+    if (Name_C.empty())
+    {
+	y2err("trying to save nameless AsciiFile");
+	return false;
+    }
+
+    if (remove_empty && Lines_C.empty())
+    {
+	y2mil("deleting file " << Name_C);
+
+	if (access(Name_C.c_str(), F_OK) != 0)
+	    return true;
+
+	return unlink(Name_C.c_str()) == 0;
+    }
+    else
+    {
+	y2mil("saving file " << Name_C);
+
+	ofstream file( Name_C.c_str() );
+	classic(file);
+
+	for (vector<string>::const_iterator it = Lines_C.begin(); it != Lines_C.end(); ++it)
+	    file << *it << std::endl;
+
+	file.close();
+
+	return file.good();
+    }
 }
 
-bool AsciiFile::insertFile( const string& Name_Cv, unsigned int BeforeLine_iv )
-{
-    ifstream File_Ci( Name_Cv.c_str() );
-    classic(File_Ci);
-    string Line_Ci;
-    vector<string> New_Ci;
 
-    bool Ret_bi = File_Ci.good();
-    if( Ret_bi )
-      {
-	unsigned int Idx_ii=0;
-	while( Idx_ii<BeforeLine_iv )
-	  {
-	    New_Ci.push_back( Lines_C[Idx_ii] );
-	    Idx_ii++;
-	    }
-	Ret_bi = appendFile( Name_Cv, New_Ci );
-	while( Idx_ii<Lines_C.size() )
-	    {
-	    New_Ci.push_back( Lines_C[Idx_ii] );
-	    Idx_ii++;
-	    }
-	Lines_C = New_Ci;
-	}
-    return Ret_bi;
-    }
-
-bool AsciiFile::insertFile( AsciiFile& File_Cv, unsigned int BeforeLine_iv )
+    void
+    AsciiFile::logContent() const
     {
-    string Line_Ci;
-    vector<string> New_Ci;
-    bool Ret_bi;
-
-    unsigned int Idx_ii=0;
-    while( Idx_ii<BeforeLine_iv )
-	{
-	New_Ci.push_back( Lines_C[Idx_ii] );
-	Idx_ii++;
-	}
-    Ret_bi = appendFile( File_Cv, New_Ci );
-    while( Idx_ii<Lines_C.size() )
-	{
-	New_Ci.push_back( Lines_C[Idx_ii] );
-	Idx_ii++;
-	}
-    Lines_C = New_Ci;
-    return Ret_bi;
-    }
-
-bool AsciiFile::updateFile()
-    {
-    struct stat Stat_ri;
-    bool Status_b = stat( Name_C.c_str(), &Stat_ri )==0;
-
-    if( !BackupCreated_b )
-	{
-	string BakName_Ci = Name_C + BackupExtension_C;
-	if( access( Name_C.c_str(), R_OK ) == 0 )
-	    {
-	    string OldBakName_Ci = BakName_Ci  + ".o";
-	    if( access( BakName_Ci.c_str(), R_OK ) == 0 &&
-		access( OldBakName_Ci.c_str(), R_OK ) != 0 )
-		{
-		int r = link( BakName_Ci.c_str(), OldBakName_Ci.c_str() );
-		if( r==0 )
-		    unlink( BakName_Ci.c_str() );
-		}
-	    SystemCmd Cmd_Ci;
-	    string Tmp_Ci = "cp -a ";
-	    Tmp_Ci += Name_C;
-	    Tmp_Ci += ' ';
-	    Tmp_Ci += BakName_Ci;
-	    Cmd_Ci.execute( Tmp_Ci );
-	    }
-	BackupCreated_b = true;
-	}
-    ofstream File_Ci( Name_C.c_str() );
-    classic(File_Ci);
-    unsigned int Idx_ii = 0;
-
-    while( File_Ci.good() && Idx_ii<Lines_C.size() )
-	{
-	File_Ci << Lines_C[Idx_ii] << std::endl;
-	Idx_ii++;
-	}
-    if( Status_b )
-	{
-	chmod( Name_C.c_str(), Stat_ri.st_mode );
-	}
-    return File_Ci.good();
-    }
-
-bool AsciiFile::removeIfEmpty()
-    {
-    bool ret = Lines_C.empty();
-    if( ret && access( Name_C.c_str(), W_OK )==0 )
-	{
-	unlink( Name_C.c_str() );
-	y2mil( "deleting file " << Name_C );
-	}
-    return ret;
-    }
-
-bool AsciiFile::saveToFile( const string& Name_Cv )
-    {
-    ofstream File_Ci( Name_Cv.c_str() );
-    classic(File_Ci);
-    unsigned int Idx_ii = 0;
-
-    while( File_Ci.good() && Idx_ii < Lines_C.size() )
-	{
-	File_Ci << Lines_C[Idx_ii] << std::endl;
-	Idx_ii++;
-	}
-    return File_Ci.good();
+	y2mil("content of " << (Name_C.empty() ? "<nameless>" : Name_C));
+	for (vector<string>::const_iterator it = Lines_C.begin(); it != Lines_C.end(); ++it)
+	    y2mil(*it);
     }
 
 
@@ -251,27 +136,35 @@ void AsciiFile::append( const string& Line_Cv )
     Lines_C.push_back( Line_Ci );
     }
 
-void AsciiFile::append( const list<string>& lines )
+void AsciiFile::append( const vector<string>& lines )
     {
-    for( list<string>::const_iterator i=lines.begin(); i!=lines.end(); ++i )
+    for( vector<string>::const_iterator i=lines.begin(); i!=lines.end(); ++i )
 	append( *i );
     }
 
-void AsciiFile::replace( unsigned int Start_iv, unsigned int Cnt_iv, 
+void AsciiFile::replace( unsigned int Start_iv, unsigned int Cnt_iv,
                          const string& Lines_Cv )
     {
     remove( Start_iv, Cnt_iv );
     insert( Start_iv, Lines_Cv );
     }
 
-void AsciiFile::replace( unsigned int Start_iv, unsigned int Cnt_iv, 
-                         const list<string>& lines )
+void AsciiFile::replace( unsigned int Start_iv, unsigned int Cnt_iv,
+                         const vector<string>& lines )
     {
     remove( Start_iv, Cnt_iv );
-    for( list<string>::const_reverse_iterator i=lines.rbegin(); i!=lines.rend();
+    for( vector<string>::const_reverse_iterator i=lines.rbegin(); i!=lines.rend();
          ++i )
 	insert( Start_iv, *i );
     }
+
+
+void
+AsciiFile::clear()
+{
+    Lines_C.clear();
+}
+
 
 void AsciiFile::remove( unsigned int Start_iv, unsigned int Cnt_iv )
     {
@@ -339,85 +232,39 @@ string& AsciiFile::operator [] ( unsigned int Idx_iv )
     return Lines_C[Idx_iv];
     }
 
-int AsciiFile::find( unsigned Start_iv, Regex& Pat_Cv ) const
-    {
-    unsigned Idx_ii = Start_iv;
-    int Ret_ii = -1;
-    while( Ret_ii<0 && Idx_ii<Lines_C.size() )
-	{
-	if( Pat_Cv.match( Lines_C[Idx_ii] ))
-	    {
-	    Ret_ii = Idx_ii;
-	    }
-	else
-	    {
-	    Idx_ii++;
-	    }
-	}
-    return Ret_ii;
-    }
-
-int AsciiFile::find( unsigned int Start_iv, const string& Pat_Cv ) const
-    {
-    string::size_type Pos_ii;
-    unsigned int Idx_ii = Start_iv;
-    int Ret_ii = -1;
-    string Pat_Ci = Pat_Cv;
-    bool BeginOfLine_bi = Pat_Ci.length()>0 && Pat_Ci[0]=='^';
-
-    if( BeginOfLine_bi )
-	{
-	Pat_Ci.erase( 0, 1 );
-	}
-    while( Ret_ii<0 && Idx_ii<Lines_C.size() )
-	{
-	if( (Pos_ii=Lines_C[Idx_ii].find( Pat_Ci )) != string::npos )
-	    {
-	    if( !BeginOfLine_bi || (BeginOfLine_bi && Pos_ii==0) )
-		{
-		Ret_ii = Idx_ii;
-		}
-	    else
-		{
-		Idx_ii++;
-		}
-	    }
-	else
-	    {
-	    Idx_ii++;
-	    }
-	}
-    return Ret_ii;
-    }
-
-unsigned AsciiFile::numLines() const
-    {
-    return Lines_C.size();
-    }
-
-unsigned AsciiFile::differentLine( const AsciiFile& File_Cv ) const
-    {
-    int Ret_ii = -1;
-    unsigned Cnt_ii = min( numLines(), File_Cv.numLines() );
-    unsigned I_ii = 0;
-    while( I_ii<Cnt_ii && (*this)[I_ii]==File_Cv[I_ii] )
-        {
-        I_ii++;
-        }
-    if( I_ii<Cnt_ii )
-        {
-        Ret_ii = I_ii;
-        }
-    else if( numLines()>Cnt_ii || File_Cv.numLines()>Cnt_ii )
-        {
-        Ret_ii = Cnt_ii;
-        }
-    return Ret_ii;
-    }
-
 
 void AsciiFile::removeLastIf (string& Text_Cr, char Char_cv) const
 {
     if (Text_Cr.length() > 0 && Text_Cr[Text_Cr.length() - 1] == Char_cv)
 	Text_Cr.erase(Text_Cr.length() - 1);
+}
+
+
+    bool
+    SysconfigFile::getValue(const string& key, string& value) const
+    {
+	Regex rx('^' + Regex::ws + key + '=' + "(['\"]?)([^'\"]*)\\1" + Regex::ws + '$');
+
+	if (find_if(lines(), regex_matches(rx)) == lines().end())
+	    return false;
+
+	value = rx.cap(2);
+	y2mil("key:" << key << " value:" << value);
+	return true;
+    }
+
+
+    bool
+    InstallInfFile::getValue(const string& key, string& value) const
+    {
+	Regex rx('^' + key + ":" + Regex::ws + "([^ ]*)" + '$');
+
+	if (find_if(lines(), regex_matches(rx)) == lines().end())
+	    return false;
+
+	value = rx.cap(1);
+	y2mil("key:" << key << " value:" << value);
+	return true;
+    }
+
 }

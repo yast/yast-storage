@@ -12,12 +12,15 @@
 
 
     import "Storage";
+    import "StorageIcons";
     import "FileSystems";
     import "Partitions";
+    import "Directory";
     import "Mode";
     import "HTML";
     import "Integer";
     import "String";
+    import "Region";
 
 
     /**
@@ -26,12 +29,13 @@
     global void IterateTargetMap(map<string, map> target_map, void(map<string, map>, map) callback)
     {
 	const map disk_order = $[ `CT_DMRAID : 0, `CT_DMMULTIPATH : 1, `CT_MDPART : 2, `CT_DISK : 3,
-				  `CT_MD : 4, `CT_LOOP : 5, `CT_LVM : 6, `CT_DM : 7, `CT_NFS : 8 ];
+				  `CT_MD : 4, `CT_LOOP : 5, `CT_LVM : 6, `CT_DM : 7, `CT_NFS : 8,
+				  `CT_BTRFS : 9, `CT_TMPFS : 10 ];
 
 	list<string> keys = maplist(string dev, map disk, target_map, { return dev; });
 	keys = sort(string a, string b, keys, {
-	    integer oa = disk_order[target_map[a, "type"]:`CT_UNKNOWN]:9;
-	    integer ob = disk_order[target_map[b, "type"]:`CT_UNKNOWN]:9;
+	    integer oa = disk_order[target_map[a, "type"]:`CT_UNKNOWN]:10;
+	    integer ob = disk_order[target_map[b, "type"]:`CT_UNKNOWN]:10;
 	    return (oa==ob) ? (a<b) : (oa<ob);
 	});
 
@@ -53,23 +57,28 @@
     }
 
 
-    string UsedByString(symbol used_by_type, string used_by)
+    string UsedByString(map<string, any> used_by)
     {
-	switch (used_by_type)
+	symbol type = used_by["type"]:`UB_NONE;
+	string device = used_by["device"]:"";
+
+	switch (type)
 	{
 	    case `UB_LVM:
-		return "LVM " + used_by;
+		return "LVM " + device;
 	    case `UB_DM:
-		return "DM " + used_by;
+		return "DM " + device;
 	    case `UB_DMRAID:
-		return "DM RAID " + used_by;
+		return "DM RAID " + device;
 	    case `UB_DMMULTIPATH:
-		return "DM Multipath " + used_by;
+		return "DM Multipath " + device;
 	    case `UB_MD:
 	    case `UB_MDPART:
-		return "RAID " + used_by;
+		return "MD RAID " + device;
+	    case `UB_BTRFS:
+		return "BTRFS " + device;
 	    default:
-		return used_by;
+		return device;
 	}
     }
 
@@ -185,6 +194,11 @@
 		case `stripes:
 		    // Column header
 		    header = add(header, _("Stripes"));
+		    break;
+
+		case `raid_version:
+		    // Column header
+		    header = add(header, _("RAID Version"));
 		    break;
 
 		case `raid_type:
@@ -336,13 +350,19 @@ volume groups.");
 		ret = ret + _("<b>Mount By</b> indicates how the file system
 is mounted: (Kernel) by Kernel Name, (Label) by File System Label, (UUID) by
 File System UUID, (ID) by Device ID, and (Path) by Device Path.");
+		if (Mode::normal())
+		    // helptext for table column and overview entry
+		    ret = ret + " " + _("A question mark (?) indicates that
+the file system is not listed in <tt>/etc/fstab</tt>. It is either mounted
+manually or by some automount system. When changing setting of this volume
+YaST will not update <tt>/etc/fstab</tt>.");
 		break;
 
 	    case `mount_point:
 		// helptext for table column and overview entry
 		ret = ret + _("<b>Mount Point</b> shows where the file system
 is mounted.");
-		if (Mode::normal() || true)
+		if (Mode::normal())
 		    // helptext for table column and overview entry
 		    ret = ret + " " + _("An asterisk (*) after the mount point
 indicates a file system that is currently not mounted (for example, because it
@@ -358,13 +378,18 @@ cylinders the hard disk has.");
 	    case `parity_algorithm:
 		// helptext for table column and overview entry
 		ret = ret + _("<b>Parity Algorithm</b> shows the parity
-algorithm for RAID devices with RAID type 5.");
+algorithm for RAID devices with RAID type 5, 6 or 10.");
 		break;
 
 	    case `pe_size:
 		// helptext for table column and overview entry
-		ret = ret + _("<b>PE Size</b> shows the physical extend size
+		ret = ret + _("<b>PE Size</b> shows the physical extent size
 for LVM volume groups.");
+		break;
+
+	    case `raid_version:
+		// helptext for table column and overview entry
+		ret = ret + _("<b>RAID Version</b> shows the RAID version.");
 		break;
 
 	    case `raid_type:
@@ -438,15 +463,18 @@ Identifier of the file system.");
     }
 
 
-    string MakeSubInfo(map disk, map part, symbol field, symbol style)
+    any MakeSubInfo(map disk, map part, symbol field, symbol style)
     {
 	map data = (part == nil ? disk : part);
+	symbol type = ( part == nil ? disk["type"]:`primary : part["type"]:`CT_DISK );
+
+	string device = data["device"]:"";
 
 	switch (field)
 	{
 	    case `device:
 	    {
-		string value = data["device"]:"";
+		string value = device;
 		if (style == `table)
 		    return value;
 		else
@@ -485,21 +513,21 @@ Identifier of the file system.");
 			{
 			    value = "RAID " + disk_device;
 			}
-			else if(disk["type"]:`CT_UNKNOWN==`CT_LVM)
+			else if (disk["type"]:`CT_UNKNOWN == `CT_LVM)
 			{
 			    value = "LVM" + (disk["lvm2"]:false ? "2 " : " ") + disk["name"]:"";
 			}
-			else if(disk["type"]:`CT_UNKNOWN==`CT_DMRAID)
+			else if (disk["type"]:`CT_UNKNOWN == `CT_DMRAID)
 			{
 			    value = "DM RAID " + disk["name"]:"";
 			}
-			else if(disk["type"]:`CT_UNKNOWN==`CT_DMMULTIPATH)
+			else if (disk["type"]:`CT_UNKNOWN == `CT_DMMULTIPATH)
 			{
 			    value = "DM Multipath " + disk["name"]:"";
 			}
-			else if(disk["type"]:`CT_UNKNOWN==`CT_MDPART)
+			else if (disk["type"]:`CT_UNKNOWN == `CT_MDPART)
 			{
-			    value = "MD " + disk["name"]:"";
+			    value = "MD RAID " + disk["name"]:"";
 			}
 			else
 			{
@@ -513,7 +541,7 @@ Identifier of the file system.");
 		    value = part["fstype"]:"";
 		}
 		if (style == `table)
-		    return value;
+		    return `cell(`icon(Directory::icondir + "22x22/apps/" + StorageIcons::IconMap(type)), value);
 		else
 		    // row label
 		    return sformat(_("Type: %1"), String::EscapeTags(value));
@@ -540,10 +568,13 @@ Identifier of the file system.");
 	    {
 		boolean value = data["enc_type"]:`none != `none;
 		if (style == `table)
-		{ 
+		{
 		    if (value)
 		    {
-			return "E";
+			if (UI::GetDisplayInfo()["HasIconSupport"]:false)
+			    return `cell(`icon(Directory::icondir + "22x22/apps/" + StorageIcons::encrypted_icon), "");
+			else
+			    return "E";
 		    }
 		    else
 			return "";
@@ -568,8 +599,13 @@ Identifier of the file system.");
 	    case `mount_point:
 	    {
 		string value = data["mount"]:"";
-		if (Mode::normal() && data["inactive"]:false )
-		    value = value + " *";
+
+		if (Mode::normal())
+		{
+		    if (data["inactive"]:false )
+			value = value + " *";
+		}
+
 		if (style == `table)
 		    return value;
 		else
@@ -580,11 +616,20 @@ Identifier of the file system.");
 	    case `mount_by:
 	    {
 		string value = "";
+
 		if (data["mount"]:"" != "") {
 		    map tmp = $[ `device : "Kernel", `uuid : "UUID", `label : "Label", `id : "ID", `path : "Path" ];
 		    symbol mount_by = data["mountby"]:`device;
 		    value = tmp[mount_by]:"";
 		}
+
+		if (Mode::normal())
+		{
+		    boolean tmp = false;
+		    if (Storage::GetIgnoreFstab(device, tmp) && tmp)
+			value = "?";
+		}
+
 		if (style == `table)
 		    return value;
 		else
@@ -594,12 +639,16 @@ Identifier of the file system.");
 
 	    case `used_by:
 	    {
-		string value = UsedByString(data["used_by_type"]:`UB_NONE, data["used_by_device"]:"");
 		if (style == `table)
-		    return value;
+		    return UsedByString(data["used_by", 0]:$[]);
 		else
-		    // row label, %1 is replace by used by device name e.g. /dev/system
-		    return sformat(_("Used By: %1"), String::EscapeTags(value));
+		{
+		    integer n = size(data["used_by"]:[]);
+		    return mergestring(maplist(integer i, Integer::Range(n == 0 ? 1 : n), {
+			// row label, %1 is replaced by number, %2 is replace by device name e.g. /dev/system
+			return sformat(_("Used By %1: %2"), i+1, String::EscapeTags(UsedByString(data["used_by", i]:$[])));
+		    }), HTML::Newline());
+		}
 	    }
 
 	    case `uuid:
@@ -687,7 +736,10 @@ Identifier of the file system.");
 
 	    case `bus:
 	    {
-		string value = data["bus"]:"";
+		map<symbol, string> names = $[ `sbp : "Firewire", `ata : "ATA",
+		    `fc : "Fibre Channel", `iscsi : "iSCSI", `sas : "SAS",
+		    `sata : "SATA", `spi : "SCSI", `usb : "USB" ];
+		string value = names[data["transport"]:`unknown]:"";
 		if (style == `table)
 		    return value;
 		else
@@ -711,7 +763,7 @@ Identifier of the file system.");
 	    {
 		string value = "";
 		if (disk["type"]:`CT_UNKNOWN == `CT_LVM && part == nil)
-		    value = Storage::ByteToHumanStringWithPrecision(disk["pesize"]:0, 2, true);
+		    value = Storage::ByteToHumanStringOmitZeroes(disk["pesize"]:0);
 		if (style == `table)
 		    return value;
 		else
@@ -729,13 +781,23 @@ Identifier of the file system.");
 		    if (stripes == 1)
 			value = sformat("%1", stripes);
 		    else
-			value = sformat("%1 (%2)", stripes, Storage::KByteToHumanStringWithPrecision(stripesize, 2, true));
+			value = sformat("%1 (%2)", stripes, Storage::KByteToHumanStringOmitZeroes(stripesize));
 		}
 		if (style == `table)
 		    return value;
 		else
 		    // row label, %1 is replace by integer
 		    return sformat(_("Stripes: %1"), value);
+	    }
+
+	    case `raid_version:
+	    {
+		string value = data["sb_ver"]:"";
+		if (style == `table)
+		    return value;
+		else
+		    // row label, %1 is replace by raid version e.g. "1.00"
+		    return sformat(_("RAID Version: %1"), value);
 	    }
 
 	    case `raid_type:
@@ -751,9 +813,10 @@ Identifier of the file system.");
 	    case `chunk_size:
 	    {
 		string value = "";
-		if (contains(["raid0", "raid5"], data["raid_type"]:"")) {
+		if (data["raid_type"]:""=="raid0" || 
+		    Storage::HasRaidParity(data["raid_type"]:"")) {
 		    integer chunksize = data["chunk_size"]:0;
-		    value = Storage::KByteToHumanStringWithPrecision(chunksize, 2, true);
+		    value = Storage::KByteToHumanStringOmitZeroes(chunksize);
 		}
 		if (style == `table)
 		    return value;
@@ -765,7 +828,7 @@ Identifier of the file system.");
 	    case `parity_algorithm:
 	    {
 		string value = "";
-		if (contains(["raid5"], data["raid_type"]:"")) {
+		if (Storage::HasRaidParity(data["raid_type"]:"")) {
 		    value = data["parity_algorithm"]:"";
 		    value = mergestring(splitstring(value, "_"), "-");
 		}
@@ -807,7 +870,7 @@ Identifier of the file system.");
 		    if (part == nil)
 			value = tostring(0);
 		    else
-			value = tostring(part["region", 0]:0);
+			value = tostring(Region::Start(part["region"]:[]));
 		}
 		if (style == `table)
 		    return value;
@@ -823,7 +886,7 @@ Identifier of the file system.");
 		    if (part == nil)
 			value = tostring(disk["cyl_count"]:0 - 1);
 		    else
-			value = tostring(part["region", 0]:0 + part["region", 1]:0 - 1);
+			value = tostring(Region::End(part["region"]:[]));
 		}
 		if (style == `table)
 		    return value;
@@ -836,7 +899,7 @@ Identifier of the file system.");
 	    {
 		string value = "";
 		if (part == nil && Storage::IsPartitionable(disk))
-		    value = Storage::ByteToHumanString(disk["sector_size"]:0);
+		    value = Storage::ByteToHumanStringOmitZeroes(disk["sector_size"]:0);
 		if (style == `table)
 		    return value;
 		else
@@ -913,6 +976,8 @@ Identifier of the file system.");
     term TableRow(list<symbol> fields, map disk, map part)
     {
 	string device = (part == nil) ? disk["device"]:"" : part["device"]:"";
+	if( disk["type"]:`CT_UNKNOWN == `CT_TMPFS )
+	    device = "tmpfs:"+part["mount"]:"";
 
 	term row = list::reduce(term tmp, symbol field, `item(`id(device)), fields, {
 	    return add(tmp, MakeSubInfo(disk, part, field, `table));
@@ -940,9 +1005,6 @@ Identifier of the file system.");
     global boolean AlwaysHidePartition(map<string, map> target_map, map disk, map partition)
     {
 	if (partition["fsid"]:0 == Partitions::fsid_mac_hidden)
-	    return true;
-
-	if (contains([ `UB_DMRAID, `UB_DMMULTIPATH, `UB_MDPART ], disk["used_by_type"]:`UB_NONE))
 	    return true;
 
 	return false;
@@ -1025,19 +1087,81 @@ Identifier of the file system.");
     {
 	if (partition == nil)
 	{
-	    if (contains(devices, disk["used_by_device"]:""))
+	    if (find(map used_by, disk["used_by"]:[], { return contains(devices, used_by["device"]:""); }) != nil)
 		return `showandfollow;
 	    else
 		return `follow;
 	}
 	else
 	{
-	    if (contains(devices, partition["used_by_device"]:""))
+	    if (find(map used_by, partition["used_by"]:[], { return contains(devices, used_by["device"]:""); }) != nil)
 		return `show;
 	    else
 		return `ignore;
 	}
     }
+
+
+    /**
+     * Predicate function for Table and TableContents.
+     */
+    global symbol PredicateMountpoint(map disk, map partition)
+    {
+	if (partition == nil)
+	{
+	    if (!isempty(disk["mount"]:""))
+		return `showandfollow;
+	    else
+		return `follow;
+	}
+	else
+	{
+	    if (!isempty(partition["mount"]:""))
+		return `show;
+	    else
+		return `ignore;
+	}
+    }
+
+    /**
+      * Predicate function for Table and TableContents.
+      */
+    global symbol PredicateBtrfs(map disk, map partition)
+    {
+	if (partition == nil)
+	{
+	    return `follow;
+	}
+	else
+	{
+	    if (partition["used_fs"]:`unknown==`btrfs && 
+	        !Storage::IsUsedBy(partition) &&
+		(partition["used_by",0,"type"]:`UB_NONE==`UB_BTRFS ||
+		 search( partition["device"]:"", "UUID=" ) == 0))
+		return `show;
+	    else
+		return `ignore;
+	}
+    }
+
+    /**
+      * Predicate function for Table and TableContents.
+      */
+    global symbol PredicateTmpfs(map disk, map partition)
+    {
+	if (partition == nil)
+	{
+	    return `follow;
+	}
+	else
+	{
+	    if (partition["used_fs"]:`unknown==`tmpfs)
+		return `show;
+	    else
+		return `ignore;
+	}
+    }
+
 
 
     /**
@@ -1183,7 +1307,8 @@ Identifier of the file system.");
 	list<string> List(list<symbol> fields)
 	{
 	    return maplist(symbol field, fields, {
-		return MakeSubInfo(disk, part, field, `overview);
+		// cast to string - overviews expect textual summary
+		return ( string ) MakeSubInfo(disk, part, field, `overview);
 	    });
 	};
 

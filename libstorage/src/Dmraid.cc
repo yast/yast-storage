@@ -19,41 +19,48 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
 #include <sstream>
 
-#include "y2storage/Dmraid.h"
-#include "y2storage/DmraidCo.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-
-using namespace storage;
-using namespace std;
+#include "storage/Dmraid.h"
+#include "storage/DmraidCo.h"
+#include "storage/SystemCmd.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
 
 
-Dmraid::Dmraid(const DmraidCo& d, unsigned nr, Partition* p)
-    : DmPart(d, nr, p)
+namespace storage
 {
-    y2mil("constructed dmraid " << dev << " on co " << cont->name());
-}
+    using namespace std;
 
 
-Dmraid::~Dmraid()
-{
-    y2deb("destructed dmraid " << dev);
-}
-
-
-string Dmraid::removeText( bool doing ) const
+    Dmraid::Dmraid(const DmraidCo& c, const string& name, const string& device, unsigned nr,
+		   Partition* p)
+	: DmPart(c, name, device, nr, p)
     {
-    string txt;
+	y2mil("constructed Dmraid " << dev << " on " << cont->device());
+    }
+
+
+    Dmraid::Dmraid(const DmraidCo& c, const Dmraid& v)
+	: DmPart(c, v)
+    {
+	y2deb("copy-constructed Dmraid from " << v.dev);
+    }
+
+
+    Dmraid::~Dmraid()
+    {
+	y2deb("destructed Dmraid " << dev);
+    }
+
+
+Text Dmraid::removeText( bool doing ) const
+    {
+    Text txt;
     string d = dev.substr(12);
     if( p && p->OrigNr()!=p->nr() )
-	d = co()->numToName(p->OrigNr());
+	d = co()->getPartName(p->OrigNr());
     if( doing )
 	{
 	// displayed text during action, %1$s is replaced by raid partition name e.g. pdc_dabaheedj_part1
@@ -69,9 +76,9 @@ string Dmraid::removeText( bool doing ) const
     return( txt );
     }
 
-string Dmraid::createText( bool doing ) const
+Text Dmraid::createText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev.substr(12);
     if( doing )
 	{
@@ -128,9 +135,9 @@ string Dmraid::createText( bool doing ) const
     return( txt );
     }
 
-string Dmraid::formatText( bool doing ) const
+Text Dmraid::formatText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev.substr(12);
     if( doing )
 	{
@@ -185,9 +192,9 @@ string Dmraid::formatText( bool doing ) const
     return( txt );
     }
 
-string Dmraid::resizeText( bool doing ) const
+Text Dmraid::resizeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev.substr(12);
     if( doing )
         {
@@ -199,8 +206,9 @@ string Dmraid::resizeText( bool doing ) const
 	    // displayed text during action, %1$s is replaced by raid partition e.g. pdc_dabaheedj_part1
 	    // %2$s is replaced by size (e.g. 623.5 MB)
 	    txt = sformat( _("Extending raid partition %1$s to %2$s"), d.c_str(), sizeString().c_str() );
+	txt += Text(" ", " ");
 	// text displayed during action
-	txt += string(" ") + _("(progress bar might not move)");
+	txt += _("(progress bar might not move)");
         }
     else
         {
@@ -217,9 +225,9 @@ string Dmraid::resizeText( bool doing ) const
     return( txt );
     }
 
-string Dmraid::setTypeText( bool doing ) const
+Text Dmraid::setTypeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     string d = dev.substr(12);
     if( doing )
         {
@@ -244,31 +252,24 @@ void Dmraid::getInfo( DmraidInfo& tinfo ) const
     tinfo.p = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const Dmraid &p )
     {
-    s << *(DmPart*)&p;
+    s << dynamic_cast<const DmPart&>(p);
     return( s );
     }
 
-}
 
 bool Dmraid::equalContent( const Dmraid& rhs ) const
     {
     return( DmPart::equalContent(rhs) );
     }
 
-void Dmraid::logDifference( const Dmraid& rhs ) const
+
+    void
+    Dmraid::logDifference(std::ostream& log, const Dmraid& rhs) const
     {
-    DmPart::logDifference(rhs);
+	DmPart::logDifference(log, rhs);
     }
 
-
-Dmraid& Dmraid::operator=(const Dmraid& rhs)
-{
-    y2deb("operator= from " << rhs.nm);
-    *((DmPart*)this) = rhs;
-    return *this;
 }

@@ -10,13 +10,14 @@ using namespace blocxx;
 using namespace std;
 using namespace storage;
 
-struct test_hdb { bool operator()(const Container&d) const {return( d.name().find( "hdb" )!=string::npos);}};
+struct test_sdb { bool operator()(const Container&d) const {return( d.name().find( "sdb" )!=string::npos);}};
+struct NotDeleted { bool operator()(const Container& d) const { return !d.deleted(); } };
 struct Smaller5 { bool operator()(const Volume&d) const {return(d.nr()<5);}};
-struct Smaller150 { bool operator()(const Disk&d) const {return(d.cylinders()<150);}};
-struct Larger150 { bool operator()(const Disk&d) const {return(d.cylinders()>150);}};
+struct Smaller20000 { bool operator()(const Disk&d) const {return(d.cylinders()<20000);}};
+struct Larger20000 { bool operator()(const Disk&d) const {return(d.cylinders()>20000);}};
 struct Equal150 { bool operator()(const Disk&d) const {return(d.cylinders()==150);}};
 struct Larger10 { bool operator()(const Partition&d) const {return(d.cylSize()>10);}};
-struct DiskStart { bool operator()(const Partition&d) const {return(d.cylStart()==1);}};
+struct DiskStart { bool operator()(const Partition&d) const {return(d.cylStart()==0);}};
 
 template <class C> struct First 
     { bool operator()(const C&d) const {return(d.nr()==0);}};
@@ -54,29 +55,29 @@ void PrintPair( ostream& s, const pair& p, const string& txt )
 int
 main( int argc_iv, char** argv_ppcv )
 {
-    Storage::initDefaultLogger();
+    initDefaultLogger();
     Storage Sto(Environment(true));
+    Sto.assertInit();
     for( Storage::ConstContIterator i=Sto.contBegin(); i!=Sto.contEnd(); ++i )
 	{
 	cout << *i << endl;
 	}
     {
-    struct test_hdb t;
-    Storage::ContCondIPair<test_hdb>::type p=Sto.contCondPair<test_hdb>(t); 
-    cout << "test_hdb pair empty:" << p.empty() << " length:" << p.length() << endl;
-    for( Storage::ConstContainerI<test_hdb>::type i=p.begin(); i!=p.end(); ++i )
+    struct test_sdb t;
+    Storage::ContCondIPair<test_sdb>::type p=Sto.contCondPair<test_sdb>(t); 
+    cout << "test_sdb pair empty:" << p.empty() << " length:" << p.length() << endl;
+    for( Storage::ConstContainerI<test_sdb>::type i=p.begin(); i!=p.end(); ++i )
 	{
 	cout << *i << endl;
 	}
     }
     {
-    Storage::ContCondIPair<Storage::SkipDeleted>::type p = 
-	Sto.contCondPair<Storage::SkipDeleted>( Storage::SkipDel );
-    cout << "SkipDeleted pair empty:" << p.empty() << " length:" << p.length() << endl;
-    for( Storage::ConstContainerI<Storage::SkipDeleted>::type i=p.begin();
-         i!=p.end(); ++i )
+	NotDeleted NotDel;
+	Storage::ContCondIPair<NotDeleted>::type p = Sto.contCondPair<NotDeleted>(NotDel);
+	cout << "NotDeleted pair empty:" << p.empty() << " length:" << p.length() << endl;
+	for (Storage::ConstContainerI<NotDeleted>::type i = p.begin(); i != p.end(); ++i)
 	{
-	cout << *i << endl;
+	    cout << *i << endl;
 	}
     }
     struct tmp { 
@@ -115,7 +116,7 @@ main( int argc_iv, char** argv_ppcv )
 	{
 	cout << *i << endl;
 	}
-    p = Sto.contPair( Storage::notDeleted );
+    p = Sto.contPair( Container::notDeleted );
     cout << "not deleted empty:" << p.empty() << " length:" << p.length() << endl;
     for( Storage::ConstContIterator i=p.begin(); i!=p.end(); ++i )
 	{
@@ -161,7 +162,9 @@ main( int argc_iv, char** argv_ppcv )
 	Storage::ConstVolIterator j = i;
 	//cout << endl << "type(j)=" << typeid(j).name() << endl;
 	//cout << "type(--j)=" << typeid(--j).name() << endl;
-	cout << " P Name:" << (*--j).device() << endl;
+	if( j!=p.begin() )
+	    cout << " P Name:" << (*--j).device();
+	cout << endl;
 	}
     cout << "Inverted order" << endl;
     for( Storage::ConstVolIterator i=p.end(); i!=p.begin(); )
@@ -169,11 +172,11 @@ main( int argc_iv, char** argv_ppcv )
 	--i;
 	cout << *i << endl;
 	}
-    p = Sto.volPair( Storage::notDeleted );
+    p = Sto.volPair( Container::notDeleted );
     PrintPair<Storage::ConstVolPair>( cout, p, "All Volumes on undel disks\n" );
     p = Sto.volPair( tmp::TestIsEven );
     PrintPair<Storage::ConstVolPair>( cout, p, "All Volumes with even numbers\n" );
-    p = Sto.volPair( tmp::TestIsEven, Storage::notDeleted );
+    p = Sto.volPair( tmp::TestIsEven, Container::notDeleted );
     PrintPair<Storage::ConstVolPair>( cout, p, "All Volumes with even numbers on undel disks\n" );
     cout << "Inverted order" << endl;
     for( Storage::ConstVolIterator i=p.end(); i!=p.begin(); )
@@ -191,27 +194,27 @@ main( int argc_iv, char** argv_ppcv )
     Storage::ConstDiskPair p = Sto.diskPair();
     PrintPair<Storage::ConstDiskPair>( cout, p, "Disks " );
     struct tmp { 
-	static bool TestLarger150( const Disk& d ) 
-	    { return( d.cylinders()>150 ); };
-	static bool TestSmaller150( const Disk& d ) 
-	    { return( d.cylinders()<150 ); };
+	static bool TestLarger20000( const Disk& d ) 
+	    { return( d.cylinders()>20000 ); };
+	static bool TestSmaller20000( const Disk& d ) 
+	    { return( d.cylinders()<20000 ); };
 	static bool TestEqual150( const Disk& d ) 
 	    { return( d.cylinders()==150 ); };
 	};
-    p = Sto.diskPair(tmp::TestLarger150);
-    PrintPair<Storage::ConstDiskPair>( cout, p, "Disks >150 " );
-    p = Sto.diskPair(tmp::TestSmaller150);
-    PrintPair<Storage::ConstDiskPair>( cout, p, "Disks <150 " );
+    p = Sto.diskPair(tmp::TestLarger20000);
+    PrintPair<Storage::ConstDiskPair>( cout, p, "Disks >20000 " );
+    p = Sto.diskPair(tmp::TestSmaller20000);
+    PrintPair<Storage::ConstDiskPair>( cout, p, "Disks <20000 " );
     p = Sto.diskPair(tmp::TestEqual150);
     PrintPair<Storage::ConstDiskPair>( cout, p, "Disks ==150 " );
     }
     {
-    Storage::DiskCondIPair<Larger150>::type p = Sto.diskCondPair<Larger150>( Larger150() );
-    PrintPair<Storage::DiskCondIPair<Larger150>::type>( cout, p, "Disks >150 " );
+    Storage::DiskCondIPair<Larger20000>::type p = Sto.diskCondPair<Larger20000>( Larger20000() );
+    PrintPair<Storage::DiskCondIPair<Larger20000>::type>( cout, p, "Disks >20000 " );
     }
     {
-    Storage::DiskCondIPair<Smaller150>::type p = Sto.diskCondPair<Smaller150>( Smaller150() );
-    PrintPair<Storage::DiskCondIPair<Smaller150>::type>( cout, p, "Disks <150 " );
+    Storage::DiskCondIPair<Smaller20000>::type p = Sto.diskCondPair<Smaller20000>( Smaller20000() );
+    PrintPair<Storage::DiskCondIPair<Smaller20000>::type>( cout, p, "Disks <20000 " );
     }
     {
     Storage::DiskCondIPair<Equal150>::type p = Sto.diskCondPair<Equal150>( Equal150() );
@@ -222,7 +225,7 @@ main( int argc_iv, char** argv_ppcv )
     PrintPair<Storage::ConstPartPair>( cout, p, "Part " );
     struct tmp { 
 	static bool TestStart( const Partition& d ) 
-	    { return( d.cylStart()==1 ); };
+	    { return( d.cylStart()==0 ); };
 	static bool TestLarger10( const Partition& d ) 
 	    { return( d.cylSize()>10 ); };
 	};

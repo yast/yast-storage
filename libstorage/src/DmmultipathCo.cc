@@ -19,24 +19,24 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream>
+#include <ostream>
 #include <sstream>
 #include <locale>
 #include <boost/algorithm/string.hpp>
 
-#include "y2storage/DmmultipathCo.h"
-#include "y2storage/Dmmultipath.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-#include "y2storage/StorageDefines.h"
+#include "storage/DmmultipathCo.h"
+#include "storage/Dmmultipath.h"
+#include "storage/SystemCmd.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/StorageDefines.h"
+#include "storage/SystemInfo.h"
 
-using namespace std;
-using namespace storage;
+
+namespace storage
+{
+    using namespace std;
 
 
     CmdMultipath::CmdMultipath()
@@ -45,8 +45,7 @@ using namespace storage;
 	if (c.retcode() != 0 || c.numLines() == 0)
 	    return;
 
-	vector<string> lines;
-	c.getStdout(lines);
+	const vector<string>& lines = c.stdout();
 	vector<string>::const_iterator it1 = lines.begin();
 
 	while (it1 != lines.end())
@@ -58,7 +57,9 @@ using namespace storage;
 	    string name = extractNthWord(0, *it1);
 	    y2mil("mp name:" << name);
 
-	    list<string> tmp = splitString(extractNthWord(2, *it1, true), ",");
+	    bool has_alias = boost::starts_with(extractNthWord(1, *it1), "(");
+
+	    list<string> tmp = splitString(extractNthWord(has_alias ? 3 : 2, *it1, true), ",");
 	    if (tmp.size() >= 2)
 	    {
 		list<string>::const_iterator it2 = tmp.begin();
@@ -120,41 +121,51 @@ using namespace storage;
     }
 
 
-DmmultipathCo::DmmultipathCo( Storage * const s, const string& Name, ProcPart& ppart ) :
-    DmPartCo(s, "/dev/mapper/"+Name, staticType(), ppart )
-{
-    DmPartCo::init( ppart );
-    getMultipathData( Name );
-    y2deb("constructing dmmultipath co " << Name);
-}
-
-
-DmmultipathCo::~DmmultipathCo()
-{
-    y2deb("destructed multipath co " << dev);
-}
-
-
-void
-DmmultipathCo::getMultipathData(const string& name)
-{
-    y2mil("name:" << name);
-
-    CmdMultipath::Entry entry;
-    if (CmdMultipath().getEntry(name, entry))
+    DmmultipathCo::DmmultipathCo(Storage* s, const string& name, const string& device,
+				 SystemInfo& systeminfo)
+	: DmPartCo(s, name, device, staticType(), systeminfo)
     {
-	vendor = entry.vendor;
-	model = entry.model;
+	getMultipathData(name, systeminfo);
 
-	Pv *pv = new Pv;
-	for (list<string>::const_iterator it = entry.devices.begin(); it != entry.devices.end(); ++it)
-	{
-	    pv->device = *it;
-	    addPv(pv);
-	}
-	delete pv;
+	const UdevMap& by_id = systeminfo.getUdevMap("/dev/disk/by-id");
+	UdevMap::const_iterator it = by_id.find("dm-" + decString(minorNr()));
+	if (it != by_id.end())
+	    setUdevData(it->second);
+
+	y2deb("constructing DmmultipathCo " << name);
     }
-}
+
+
+    DmmultipathCo::DmmultipathCo(const DmmultipathCo& c)
+	: DmPartCo(c), vendor(c.vendor), model(c.model)
+    {
+	y2deb("copy-constructed DmmultipathCo from " << c.dev);
+    }
+
+
+    DmmultipathCo::~DmmultipathCo()
+    {
+	y2deb("destructed DmMultipathCo " << dev);
+    }
+
+
+    void
+    DmmultipathCo::getMultipathData(const string& name, SystemInfo& systeminfo)
+    {
+	CmdMultipath::Entry entry;
+	if (systeminfo.getCmdMultipath().getEntry(name, entry))
+	{
+	    vendor = entry.vendor;
+	    model = entry.model;
+
+	    for (list<string>::const_iterator it = entry.devices.begin(); it != entry.devices.end(); ++it)
+	    {
+		Pv pv;
+		pv.device = *it;
+		addPv(pv);
+	    }
+	}
+    }
 
 
 void
@@ -162,8 +173,7 @@ DmmultipathCo::setUdevData(const list<string>& id)
 {
     y2mil("disk:" << nm << " id:" << id);
     udev_id = id;
-    udev_id.erase(remove_if(udev_id.begin(), udev_id.end(), find_begin("dm-")), udev_id.end());
-    udev_id.sort();
+    udev_id.remove_if(string_starts_with("dm-"));
     y2mil("id:" << udev_id);
 
     DmPartCo::setUdevData(udev_id);
@@ -180,23 +190,25 @@ void
 DmmultipathCo::newP( DmPart*& dm, unsigned num, Partition* p )
     {
     y2mil( "num:" << num );
-    dm = new Dmmultipath( *this, num, p );
+    dm = new Dmmultipath( *this, getPartName(num), getPartDevice(num), num, p );
     }
 
 
 void
-DmmultipathCo::addPv(Pv*& p)
+    DmmultipathCo::addPv(const Pv& p)
 {
-    PeContainer::addPv(p);
+	PeContainer::addPv(p);
     if (!deleted())
-	getStorage()->setUsedBy(p->device, UB_DMMULTIPATH, name());
-    p = new Pv;
+	    getStorage()->setUsedBy(p.device, UB_DMMULTIPATH, device());
 }
 
 
 void
 DmmultipathCo::activate(bool val)
 {
+	if (getenv("LIBSTORAGE_NO_DMMULTIPATH") != NULL)
+	    return;
+
     y2mil("old active:" << active << " val:" << val);
 
     if (active != val)
@@ -228,55 +240,26 @@ DmmultipathCo::activate(bool val)
 }
 
 
-    bool
-    DmmultipathCo::isActivated(const string& name)
-    {
-	SystemCmd c(DMSETUPBIN " table " + quote(name));
-	return c.retcode() == 0 && c.numLines() >= 1 && isdigit(c.stdout()[0]);
-    }
-
-
     list<string>
-    DmmultipathCo::getMultipaths()
+    DmmultipathCo::getMultipaths(SystemInfo& systeminfo)
     {
 	list<string> l;
 
-	list<string> entries = CmdMultipath().getEntries();
+	list<string> entries = systeminfo.getCmdMultipath().getEntries();
 	for (list<string>::const_iterator it = entries.begin(); it != entries.end(); ++it)
-	{
-	    if (isActivated(*it))
+        {
+	    CmdDmsetup::Entry entry;
+	    if (systeminfo.getCmdDmsetup().getEntry(*it, entry) && entry.segments > 0)
 		l.push_back(*it);
 	    else
 		y2mil("ignoring inactive dmmultipath " << *it);
-	}
+        }
 
 	if (!l.empty())
 	    active = true;
 
 	y2mil("detected multipaths " << l);
 	return l;
-    }
-
-
-string DmmultipathCo::setDiskLabelText( bool doing ) const
-    {
-    string txt;
-    string d = nm;
-    if( doing )
-        {
-        // displayed text during action, %1$s is replaced by multipath name (e.g. 3600508b400105f590000900000300000),
-	// %2$s is replaced by label name (e.g. msdos)
-        txt = sformat( _("Setting disk label of multipath disk %1$s to %2$s"),
-		       d.c_str(), labelName().c_str() );
-        }
-    else
-        {
-        // displayed text before action, %1$s is replaced by multipath name (e.g. 3600508b400105f590000900000300000),
-	// %2$s is replaced by label name (e.g. msdos)
-        txt = sformat( _("Set disk label of multipath disk %1$s to %2$s"),
-		      d.c_str(), labelName().c_str() );
-        }
-    return( txt );
     }
 
 
@@ -288,32 +271,39 @@ void DmmultipathCo::getInfo( DmmultipathCoInfo& tinfo ) const
     tinfo.model = model;
     }
 
-namespace storage
-{
 
 std::ostream& operator<<(std::ostream& s, const DmmultipathCo& d)
 {
-    s << *((DmPartCo*)&d);
+    s << dynamic_cast<const DmPartCo&>(d);
     s << " Vendor:" << d.vendor
       << " Model:" << d.model;
     return s;
 }
 
-}
 
-string DmmultipathCo::getDiffString( const Container& d ) const
-{
-    string log = DmPartCo::getDiffString(d);
-    const DmmultipathCo * p = dynamic_cast<const DmmultipathCo*>(&d);
-    if (p)
+    void
+    DmmultipathCo::logDifference(std::ostream& log, const DmmultipathCo& rhs) const
     {
-	if (vendor != p->vendor)
-	    log += " vendor:" + vendor + "-->" + p->vendor;
-	if (model != p->model)
-	    log += " model:" + model + "-->" + p->model;
+	DmPartCo::logDifference(log, rhs);
+
+	logDiff(log, "vendor", vendor, rhs.vendor);
+	logDiff(log, "model", model, rhs.model);
     }
-    return log;
-}
+
+
+    void
+    DmmultipathCo::logDifferenceWithVolumes(std::ostream& log, const Container& rhs_c) const
+    {
+	const DmmultipathCo& rhs = dynamic_cast<const DmmultipathCo&>(rhs_c);
+
+	logDifference(log, rhs);
+	log << endl;
+
+	ConstDmPartPair pp = dmpartPair();
+	ConstDmPartPair pc = rhs.dmpartPair();
+	logVolumesDifference(log, pp.begin(), pp.end(), pc.begin(), pc.end());
+    }
+
 
 bool DmmultipathCo::equalContent( const Container& rhs ) const
 {
@@ -327,12 +317,7 @@ bool DmmultipathCo::equalContent( const Container& rhs ) const
     return ret;
 }
 
-DmmultipathCo::DmmultipathCo( const DmmultipathCo& rhs ) : DmPartCo(rhs)
-{
-    vendor = rhs.vendor;
-    model = rhs.model;
-}
-
-void DmmultipathCo::logData( const string& Dir ) {}
 
 bool DmmultipathCo::active = false;
+
+}

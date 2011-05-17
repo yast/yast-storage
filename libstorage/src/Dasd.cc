@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -19,105 +19,92 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream>
 #include <stdio.h>
-
 #include <string>
-#include <sstream>
+#include <ostream>
+#include <fstream>
 #include <iomanip>
 #include <boost/algorithm/string.hpp>
 
-#include "y2storage/SystemCmd.h"
-#include "y2storage/ProcPart.h"
-#include "y2storage/Storage.h"
-#include "y2storage/OutputProcessor.h"
-#include "y2storage/Dasd.h"
-#include "y2storage/StorageDefines.h"
+#include "storage/SystemCmd.h"
+#include "storage/ProcParts.h"
+#include "storage/Storage.h"
+#include "storage/OutputProcessor.h"
+#include "storage/Dasd.h"
+#include "storage/StorageDefines.h"
+#include "storage/SystemInfo.h"
+#include "storage/Dasdview.h"
 
-using namespace std;
-using namespace storage;
 
-Dasd::Dasd( Storage * const s, const string& Name,
-            unsigned long long SizeK ) : 
-    Disk(s,Name,SizeK)
+namespace storage
+{
+    using namespace std;
+
+
+    Dasd::Dasd(Storage* s, const string& name, const string& device, unsigned long long SizeK,
+	       SystemInfo& systeminfo)
+	: Disk(s, name, device, SizeK, systeminfo), fmt(DASDF_NONE)
     {
-    fmt = DASDF_NONE;
-    y2deb("constructed dasd " << dev);
+	y2deb("constructed Dasd " << dev);
     }
 
-Dasd::~Dasd()
+
+    Dasd::Dasd(const Dasd& c)
+	: Disk(c), fmt(c.fmt)
     {
-    y2deb("destructed dasd " << dev);
+	y2deb("copy-constructed Dasd from " << c.dev);
     }
 
-bool Dasd::detectPartitionsFdasd( ProcPart& ppart )
+
+    Dasd::~Dasd()
+    {
+	y2deb("destructed Dasd " << dev);
+    }
+
+
+    bool
+    Dasd::detectPartitionsFdasd(SystemInfo& systeminfo)
     {
     bool ret = true;
-    string cmd_line = FDASDBIN " -p " + quote(device());
-    system_stderr.erase();
-    y2milestone( "executing cmd:%s", cmd_line.c_str() );
-    SystemCmd Cmd( cmd_line );
-    y2milestone( "retcode:%d", Cmd.retcode() );
-    if( Cmd.retcode() == 0 )
-	checkFdasdOutput( Cmd, ppart );
-    y2milestone( "ret:%d partitons:%zd", ret, vols.size() );
+	checkFdasdOutput(systeminfo);
+    y2mil("ret:" << ret << " partitions:" << vols.size());
     return( ret );
     }
 
-bool Dasd::detectPartitions( ProcPart& ppart )
+
+    bool
+    Dasd::detectPartitions(SystemInfo& systeminfo)
     {
     bool ret = true;
-    string cmd_line = DASDVIEWBIN " -x " + quote(device());
-    system_stderr.erase();
+
     detected_label = "dasd";
     setLabelData( "dasd" );
-    y2milestone( "executing cmd:%s", cmd_line.c_str() );
-    SystemCmd Cmd( cmd_line );
-    y2milestone( "retcode:%d", Cmd.retcode() );
-    if( Cmd.retcode() == 0 )
-	{
-	if( Cmd.select( "^format" )>0 )
-	    {
-	    string tmp = *Cmd.getLine(0, true);
-	    y2milestone( "Format line:%s", tmp.c_str() );
-	    tmp = tmp.erase( 0, tmp.find( ':' ) + 1 );
-	    tmp = boost::to_lower_copy(extractNthWord(4, tmp), locale::classic());
-	    if( tmp == "cdl" )
-		fmt = DASDF_CDL;
-	    else if( tmp == "ldl" )
-		fmt = DASDF_LDL;
-	    }
-	getGeometry( Cmd, cyl, head, sector );
-	new_cyl = cyl;
-	new_head = head;
-	new_sector = sector;
-	y2milestone( "After dasdview Head:%u Sector:%u Cylinder:%lu SizeK:%llu",
-		     head, sector, cyl, size_k );
-	byte_cyl = head * sector * 512;
-	y2milestone( "byte_cyl:%lu", byte_cyl );
+
+	Dasdview dasdview(device());
+	new_geometry = geometry = dasdview.getGeometry();
+	fmt = dasdview.getDasdFormat();
+	ronly = fmt != DASDF_CDL;
+
 	if( size_k==0 )
 	    {
-	    size_k = (head*sector*cyl)/2;
-	    y2milestone( "New SizeK:%llu", size_k );
+	    size_k = geometry.sizeK();
+	    y2mil("New SizeK:" << size_k);
 	    }
-	y2mil( "fmt:" << fmt );
+
 	switch( fmt )
 	    {
 	    case DASDF_CDL:
-		ret = Dasd::detectPartitionsFdasd(ppart);
+		ret = Dasd::detectPartitionsFdasd(systeminfo);
 		break;
 	    case DASDF_LDL:
 		{
 		max_primary = 1;
-		unsigned long long s = cylinderToKb(cyl);
-		Partition *p = new Partition( *this, 1, s, 0, cyl,
-					      PRIMARY, Partition::ID_LINUX,
-					      false );
-		if( ppart.getSize( p->device(), s ))
+		unsigned long long s = cylinderToKb(cylinders());
+		Partition *p = new Partition(*this, getPartName(1), getPartDevice(1), 1,
+					     systeminfo, s, Region(0, cylinders()), PRIMARY);
+		const ProcParts& parts = systeminfo.getProcParts();
+		if (parts.getSize(p->device(), s))
 		    {
 		    p->setSize( s );
 		    }
@@ -128,105 +115,84 @@ bool Dasd::detectPartitions( ProcPart& ppart )
 	    default:
 		break;
 	    }
-	}
-    else
-	{
-	new_sector = sector = 96;
-	y2milestone( "new sector:%u", sector );
-	}
-    byte_cyl = head * sector * 512;
-    y2milestone( "byte_cyl:%lu", byte_cyl );
-    y2milestone( "ret:%d partitons:%zd detected label:%s", ret, vols.size(), 
-                 label.c_str() );
-    ronly = fmt!=DASDF_CDL;
-    y2milestone( "fmt:%d readonly:%d", fmt, ronly );
-    return( ret );
+
+    y2mil("ret:" << ret << " partitions:" << vols.size() << " detected label:" << label);
+    y2mil("geometry:" << geometry << " fmt:" << toString(fmt) << " readonly:" << ronly);
+    return ret;
     }
 
-bool
-Dasd::scanFdasdLine( const string& Line, unsigned& nr, unsigned long& start,
-                     unsigned long& csize )
+
+    bool
+    Dasd::checkPartitionsValid(SystemInfo& systeminfo, const list<Partition*>& pl) const
     {
-    unsigned long StartM, EndM;
-    string PartitionType, TInfo;
+	const ProcParts& parts = systeminfo.getProcParts();
+	const Fdasd& fdasd = systeminfo.getFdasd(dev);
 
-    y2deb("Line:" << Line);
-    std::istringstream Data( Line );
-    classic(Data);
-
-    nr=0;
-    StartM = EndM = 0;
-    string devname;
-    Data >> devname >> StartM >> EndM;
-    devname.erase(0,device().size());
-    devname >> nr;
-    y2milestone( "Fields Num:%d Start:%lu End:%lu", nr, StartM, EndM );
-    if( nr>0 )
-      {
-      start = StartM/head;
-      csize = EndM/head-start+1;
-      if( start+csize > cylinders() )
-	  {
-	  csize = cylinders()-start;
-	  y2milestone( "new csize:%lu", csize );
-	  }
-      y2milestone( "Fields Num:%d Start:%ld Size:%ld", nr, start, csize );
-      }
-   return( nr>0 );
-   }
-
-bool
-Dasd::checkFdasdOutput( SystemCmd& cmd, ProcPart& ppart )
-    {
-    int cnt;
-    string line;
-    string tmp;
-    list<Partition *> pl;
-    Regex part( "^"+device()+"[0123456789]+$" );
-
-    cmd.select( device() );
-    cnt = cmd.numLines();
-    for( int i=0; i<cnt; i++)
+	list<string> ps = partitionsKernelKnowns(parts);
+	if (pl.size() != ps.size())
 	{
-	unsigned pnr;
-	unsigned long c_start;
-	unsigned long c_size;
+	    y2err("number of partitions fdasd and kernel see differs");
+	    return false;
+	}
 
-	line = *cmd.getLine(i);
-	tmp = extractNthWord( 0, line );
-	if( part.match(tmp) )
+	for (list<Partition*>::const_iterator i = pl.begin(); i != pl.end(); ++i)
+	{
+	    const Partition& p = **i;
+
+	    Fdasd::Entry entry;
+	    if (fdasd.getEntry(p.nr(), entry))
 	    {
-	    if( scanFdasdLine( line, pnr, c_start, c_size ))
+		// maybe too strict but should be ok
+
+		Region head_fdasd = entry.headRegion;
+		Region head_kernel = p.detectSysfsBlkRegion() / (geometry.headSize() / 512);
+
+		if (head_fdasd != head_kernel)
 		{
-		if( pnr<range )
+		    y2err("region mismatch dev:" << dev << " nr:" << p.nr() << " head_fdasd:" <<
+			  head_fdasd << " head_kernel:" << head_kernel);
+		    return false;
+		}
+	    }
+	}
+
+	return true;
+    }
+
+
+bool
+    Dasd::checkFdasdOutput(SystemInfo& systeminfo)
+    {
+	const ProcParts& parts = systeminfo.getProcParts();
+	const Fdasd& fdasd = systeminfo.getFdasd(dev);
+
+	assert(geometry == fdasd.getGeometry());
+
+    list<Partition *> pl;
+
+	for (Fdasd::const_iterator it = fdasd.getEntries().begin();
+	     it != fdasd.getEntries().end(); ++it)
+	{
+	    if( it->num < range )
 		    {
-		    unsigned long long s = cylinderToKb(c_size);
-		    Partition *p = new Partition( *this, pnr, s,
-						  c_start, c_size, PRIMARY,
-						  Partition::ID_LINUX, false );
-		    if( ppart.getSize( p->device(), s ))
+		    unsigned long long s = cylinderToKb(it->cylRegion.len());
+		    Partition *p = new Partition(*this, getPartName(it->num), getPartDevice(it->num),
+						 it->num, systeminfo, s, it->cylRegion, PRIMARY);
+		    if (parts.getSize(p->device(), s))
 			{
 			p->setSize( s );
 			}
 		    pl.push_back( p );
 		    }
 		else
-		    y2warning( "partition nr %d outside range %lu", pnr, range );
-		}
-	    }
+		    y2war("partition nr " << it->num << " outside range " << range);
 	}
-    y2mil( "nm:" << nm );
-    string reg = nm;
-    if( !reg.empty() && reg.find( '/' )!=string::npos &&
-	isdigit(reg[reg.length()-1]) )
-	reg += "p";
-    reg += "[0-9]+";
-    list<string> ps = ppart.getMatchingEntries( reg );
-    y2mil( "regex " << reg << " ps " << ps );
+
+    y2mil("nm:" << nm);
     unsigned long dummy = 0;
-    if( !checkPartedValid( ppart, nm, pl, dummy ) )
+    if (!checkPartedValid(systeminfo, pl, dummy))
 	{
-	string txt = sformat(
+	Text txt = sformat(
 	// popup text %1$s is replaced by disk name e.g. /dev/hda
 _("The partitioning on disk %1$s is not readable by\n"
 "the partitioning tool fdasd, which is used to change the\n"
@@ -247,58 +213,6 @@ _("The partitioning on disk %1$s is not readable by\n"
     return( true );
     }
 
-void Dasd::getGeometry( SystemCmd& cmd, unsigned long& c,
-                        unsigned& h, unsigned& s )
-    {
-    string tmp;
-    unsigned long val;
-    if( cmd.select( "cylinders" )>0 )
-	{
-	val = 0;
-	tmp = *cmd.getLine(0, true);
-	y2milestone( "Cylinder line:%s", tmp.c_str() );
-	tmp = tmp.erase( 0, tmp.find( ':' ) + 1 );
-	tmp = extractNthWord( 3, tmp );
-	tmp >> val;
-	y2mil( "val:" << val );
-	c=val;
-	}
-    if( cmd.select( "tracks per" )>0 )
-	{
-	val = 0;
-	tmp = *cmd.getLine(0, true);
-	y2milestone( "Tracks line:%s", tmp.c_str() );
-	tmp = tmp.erase( 0, tmp.find( ':' ) + 1 );
-	tmp = extractNthWord( 3, tmp );
-	tmp >> val;
-	y2mil( "val:" << val );
-	h=val;
-	}
-    if( cmd.select( "blocks per" )>0 )
-	{
-	val = 0;
-	tmp = *cmd.getLine(0, true);
-	y2milestone( "Blocks line:%s", tmp.c_str() );
-	tmp = tmp.erase( 0, tmp.find( ':' ) + 1 );
-	tmp = extractNthWord( 3, tmp );
-	tmp >> val;
-	y2mil( "val:" << val );
-	s=val;
-	}
-    if( cmd.select( "blocksize" )>0 )
-	{
-	val = 0;
-	tmp = *cmd.getLine(0, true);
-	y2milestone( "Bytes line:%s", tmp.c_str() );
-	tmp = tmp.erase( 0, tmp.find( ':' ) + 1 );
-	tmp = extractNthWord( 3, tmp );
-	tmp >> val;
-	y2mil( "val:" << val );
-	s*=val/512;
-	}
-    y2milestone( "c:%lu h:%u s:%u", c, h, s );
-    }
-
 
 int Dasd::doResize( Volume* v ) 
     { 
@@ -312,11 +226,11 @@ int Dasd::resizePartition( Partition* p, unsigned long newCyl )
 
 int Dasd::removePartition( unsigned nr )
     {
-    y2milestone( "begin nr %u", nr );
+    y2mil("begin nr:" << nr);
     int ret = Disk::removePartition( nr );
     if( ret==0 )
 	{
-	PartPair p = partPair( notDeleted );
+	PartPair p = partPair(Partition::notDeleted);
 	changeNumbers( p.begin(), p.end(), nr, -1 );
 	}
     y2mil("ret:" << ret);
@@ -327,9 +241,9 @@ int Dasd::createPartition( PartitionType type, unsigned long start,
                            unsigned long len, string& device,
 			   bool checkRelaxed )
     {
-    y2milestone( "begin type %d at %ld len %ld relaxed:%d", type, start, len,
-		 checkRelaxed );
-    int ret = createChecks( type, start, len, checkRelaxed );
+    y2mil("begin type:" << toString(type) << " start:" << start << " len:" << len << " relaxed:"
+	  << checkRelaxed);
+    int ret = createChecks(type, Region(start, len), checkRelaxed);
     int number = 0;
     if( ret==0 )
 	{
@@ -340,7 +254,7 @@ int Dasd::createPartition( PartitionType type, unsigned long start,
 	    }
 	else
 	    {
-	    PartPair p = partPair( notDeleted );
+	    PartPair p = partPair(Partition::notDeleted);
 	    number = 1;
 	    PartIter i = p.begin();
 	    while( i!=p.end() && i->cylStart()<start )
@@ -348,14 +262,14 @@ int Dasd::createPartition( PartitionType type, unsigned long start,
 		number++;
 		++i;
 		}
-	    y2milestone( "number %u", number );
+	    y2mil("number:" << number);
 	    changeNumbers( p.begin(), p.end(), number-1, 1 );
 	    }
 	}
     if( ret==0 )
 	{
-	Partition * p = new Partition( *this, number, cylinderToKb(len), start,
-				       len, type );
+	Partition * p = new Partition(*this, getPartName(number), getPartDevice(number), number,
+				      cylinderToKb(len), Region(start, len), type);
 	p->setCreated();
 	device = p->device();
 	addToList( p );
@@ -364,11 +278,11 @@ int Dasd::createPartition( PartitionType type, unsigned long start,
     return( ret );
     }
 
-string Dasd::fdasdText() const
+Text Dasd::fdasdText() const
     {
-    string txt;
+    Text txt;
     // displayed text during action, %1$s is replaced by disk name (e.g. /dev/dasda),
-    txt = sformat( _("Executing fdasd for disk %1$s..."), dev.c_str() );
+    txt = sformat( _("Executing fdasd for disk %1$s"), dev.c_str() );
     return( txt );
     }
 
@@ -382,12 +296,12 @@ int Dasd::doFdasd()
     string inpname = getStorage()->tmpDir()+"/fdasd_inp";
     ofstream inpfile( inpname.c_str() );
     classic(inpfile);
-    PartPair p = partPair( notDeleted );
+    PartPair p = partPair(Partition::notDeleted);
     PartIter i = p.begin();
     while( i!=p.end() )
 	{
-	string start = decString(i->cylStart()*new_head);
-	string end  = decString((i->cylEnd()+1)*new_head-1);
+	string start = decString(i->cylStart() * new_geometry.heads);
+	string end  = decString((i->cylEnd() + 1) * new_geometry.heads - 1);
 	if( i->cylStart()==0 )
 	    start = "first";
 	if( i->cylEnd()>=cylinders()-1 )
@@ -404,7 +318,7 @@ int Dasd::doFdasd()
 	}
     if( ret==0 )
 	{
-	ProcPart ppart;
+	ProcParts parts;
 	p = partPair();
 	i = p.begin();
 	list<Partition*> rem_list;
@@ -418,13 +332,13 @@ int Dasd::doFdasd()
 	    if( i->created() )
 		{
 		unsigned long long s;
-		getStorage()->waitForDevice( i->device() );
+		Storage::waitForDevice(i->device());
 		i->setCreated( false );
-		if( ppart.getSize( i->device(), s ))
+		if (parts.getSize(i->device(), s))
 		    {
 		    i->setSize( s );
 		    }
-		ret = i->zeroIfNeeded();
+		ret = i->zeroIfNeeded(); 
 		}
 	    ++i;
 	    }
@@ -441,68 +355,59 @@ int Dasd::doFdasd()
     return( ret );
     }
 
-void Dasd::getCommitActions( list<commitAction*>& l ) const
+
+void
+Dasd::getCommitActions(list<commitAction>& l) const
     {
-    y2mil( "begin:" << name() << " init_disk:" << init_disk );
+    y2mil("begin:" << name() << " init_disk:" << init_disk);
     Disk::getCommitActions( l );
     if( init_disk )
 	{
-	list<commitAction*>::iterator i = l.begin();
-	while( i!=l.end() )
-	    {
-	    if( (*i)->stage==DECREASE )
-		{
-		delete( *i );
-		i=l.erase( i );
-		}
-	    else
-		++i;
-	    }
-	l.push_front( new commitAction( DECREASE, staticType(),
-				        dasdfmtText(false), this, true ));
+	l.remove_if(stage_is(DECREASE));
+	l.push_front(commitAction(DECREASE, staticType(), dasdfmtText(false), this, true));
 	}
     }
 
-string Dasd::dasdfmtTexts( bool single, const string& devs )
+
+    Text
+    Dasd::dasdfmtTexts(bool doing, const list<string>& devs)
     {
-    string txt;
-    if( single )
+	Text txt;
+	if (doing)
 	{
-        // displayed text during action, %1$s is replaced by disk name (e.g. dasda),
-        txt = sformat( _("Executing dasdfmt for disk %1$s..."), devs.c_str() );
+	    // displayed text during action, %1$s is replaced by disk name (e.g. dasda)
+	    txt = sformat(_("Executing dasdfmt for disk %1$s",
+			    "Executing dasdfmt for disks %1$s", devs.size()),
+			  boost::join(devs, " ").c_str());
 	}
-    else
+	else
 	{
-        // displayed text during action, %1$s is replaced by list of disk names (e.g. dasda dasdb dasdc),
-        txt = sformat( _("Executing dasdfmt for disks: %1$s..."), devs.c_str() );
+	    // displayed text during action, %1$s is replaced by disk name (e.g. dasda)
+	    txt = sformat(_("Execute dasdfmt on disk %1$s",
+			    "Execute dasdfmt on disks %1$s", devs.size()),
+			  boost::join(devs, " ").c_str());
 	}
-    return( txt );
+	return txt;
     }
 
-string Dasd::dasdfmtText( bool doing ) const
+
+    Text
+    Dasd::dasdfmtText(bool doing) const
     {
-    string txt;
-    if( doing )
-        {
-	txt = dasdfmtTexts( true, dev );
-        }
-    else
-        {
-        // displayed text before action, %1$s is replaced by disk name (e.g. /dev/dasda),
-        txt = sformat( _("Execute dasdfmt on disk %1$s"), dev.c_str() );
-        }
-    return( txt );
+	list<string> tmp;
+	tmp.push_back(dev);
+	return dasdfmtTexts(doing, tmp);
     }
 
-int Dasd::getToCommit( CommitStage stage, list<Container*>& col,
-                       list<Volume*>& vol )
-    {
-    int ret = 0;
+
+void
+Dasd::getToCommit(CommitStage stage, list<const Container*>& col, list<const Volume*>& vol) const
+{
     unsigned long oco = col.size();
     unsigned long ovo = vol.size();
     if( stage==DECREASE ) 
 	{
-	VolPair p = volPair( stageDecrease );
+	ConstVolPair p = volPair( stageDecrease );
 	if( !p.empty() )
 	    vol.push_back( &(*(p.begin())) );
 	if( deleted() || init_disk )
@@ -510,20 +415,20 @@ int Dasd::getToCommit( CommitStage stage, list<Container*>& col,
 	}
     else if( stage==INCREASE )
 	{
-	VolPair p = volPair(stageIncrease);
+	ConstVolPair p = volPair(stageIncrease);
 	if( !p.empty() )
 	    vol.push_back( &(*(p.begin())) );
 	}
     else
-	ret = Disk::getToCommit( stage, col, vol );
+	Disk::getToCommit( stage, col, vol );
     if( col.size()!=oco || vol.size()!=ovo )
-	y2milestone( "ret:%d col:%zd vol:%zd", ret, col.size(), vol.size());
-    return( ret );
-    }
+	y2mil("stage:" << stage << " col:" << col.size() << " vol:" << vol.size());
+}
+
 
 int Dasd::commitChanges( CommitStage stage )
     {
-    y2milestone( "name %s stage %d", name().c_str(), stage );
+    y2mil("name:" << name() << " stage:" << stage);
     int ret = 0;
     if( stage==DECREASE && init_disk )
 	{
@@ -546,7 +451,7 @@ static bool needDasdfmt( const Disk&d )
 int Dasd::doDasdfmt()
     {
     int ret = 0;
-    y2milestone( "dasd:%s", device().c_str() );
+    y2mil("dasd:" << device());
     list<Disk*> dl;
     list<string> devs;
     getStorage()->getDiskList( needDasdfmt, dl );
@@ -556,58 +461,56 @@ int Dasd::doDasdfmt()
 	    {
 	    devs.push_back( undevDevice((*i)->device()) );
 	    }
-	y2mil( "devs:" << devs );
+	y2mil("devs:" << devs);
 	if( !silent ) 
 	    {
-	    string txt = dasdfmtTexts( dl.size()==1, mergeString(devs) );
+	    Text txt = dasdfmtTexts(true, devs);
 	    getStorage()->showInfoCb( txt );
 	    }
 	for( list<string>::iterator i = devs.begin(); i!=devs.end(); ++i )
 	    {
-	    normalizeDevice(*i);
-	    *i = "-f " + quote(*i);
+	    *i = "-f " + quote(normalizeDevice(*i));
 	    }
-	string cmd_line = DASDFMTBIN " -Y -P 4 -b 4096 -y -m 1 -d cdl " + mergeString(devs);
-	y2milestone( "cmdline:%s", cmd_line.c_str() );
+	string cmd_line = DASDFMTBIN " -Y -P 4 -b 4096 -y -m 1 -d cdl " + boost::join(devs, " ");
+	y2mil("cmdline:" << cmd_line);
 	CallbackProgressBar cb = getStorage()->getCallbackProgressBarTheOne();
-	ScrollBarHandler* sb = new DasdfmtScrollbar( cb );
+	ProgressBar* progressbar = new DasdfmtProgressBar( cb );
 	SystemCmd cmd;
-	cmd.setOutputProcessor( sb );
+	cmd.setOutputProcessor(progressbar);
 	if( execCheckFailed( cmd, cmd_line ) )
 	    {
 	    ret = DASD_DASDFMT_FAILED;
 	    }
 	if( ret==0 )
 	    {
-	    ProcPart ppart;
+	    SystemInfo systeminfo;
 	    for( list<Disk*>::iterator i = dl.begin(); i!=dl.end(); ++i )
 		{
 		Dasd * ds = static_cast<Dasd *>(*i);
-		ds->detectPartitions( ppart );
+		ds->detectPartitions(systeminfo);
 		ds->resetInitDisk();
 		ds->removeFromMemory();
 		}
 	    }
+	delete progressbar;
 	}
     return( ret );
     }
 
 int Dasd::initializeDisk( bool value )
     {
-    y2milestone( "value:%d old:%d", value, init_disk );
+    y2mil("value:" << value << " old:" << init_disk);
     int ret = 0;
     if( init_disk != value )
 	{
 	init_disk = value;
 	if( init_disk )
 	    {
-	    new_sector = sector = 96;
-	    new_head = head = 15;
-	    y2milestone( "new sector:%u head:%u", sector, head );
-	    size_k = (head*sector*cyl)/2;
-	    y2milestone( "new SizeK:%llu", size_k );
-	    byte_cyl = head * sector * 512;
-	    y2milestone( "new byte_cyl:%lu", byte_cyl );
+	    new_geometry.heads = geometry.heads = 15;
+	    new_geometry.sectors = geometry.sectors = 12;
+	    y2mil("new geometry:" << geometry);
+	    size_k = geometry.sizeK();
+	    y2mil("new SizeK:" << size_k);
 	    ret = destroyPartitionTable( "dasd" );
 	    }
 	else
@@ -639,26 +542,21 @@ int Dasd::initializeDisk( bool value )
     return( ret );
     }
 
-Dasd& Dasd::operator= ( const Dasd& rhs )
-    {
-    y2deb("operator= from " << rhs.nm);
-    *((Disk*)this) = rhs;
-    fmt = rhs.fmt;
-    return( *this );
-    }
 
-Dasd::Dasd( const Dasd& rhs ) : Disk(rhs)
-    {
-    fmt = DASDF_NONE;
-    y2deb("constructed dasd by copy constructor from " << rhs.nm);
-    }
-
-namespace storage
-{
 std::ostream& operator<< (std::ostream& s, const Dasd& d )
     {
-    s << *((Disk*)&d);
-    s << " fmt:" << d.fmt;
-    return( s );
+    s << dynamic_cast<const Disk&>(d);
+    s << " fmt:" << toString(d.fmt);
+    return s;
     }
+
+
+    static const string dasd_format_names[] = {
+	"NONE", "LDL", "CDL"
+    };
+
+    const vector<string> EnumInfo<Dasd::DasdFormat>::names(dasd_format_names, dasd_format_names +
+							   lengthof(dasd_format_names));
+
+
 }

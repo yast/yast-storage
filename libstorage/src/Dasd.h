@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -23,21 +23,30 @@
 #ifndef DASD_H
 #define DASD_H
 
-#include "y2storage/Disk.h"
+#include "storage/Disk.h"
+
 
 namespace storage
 {
+    using std::list;
 
-class SystemCmd;
-class ProcPart;
+
+    class ProcParts;
+
 
 class Dasd : public Disk
     {
     friend class Storage;
+
     public:
-	Dasd( Storage * const s, const string& Name, unsigned long long Size );
-	Dasd( const Dasd& rhs );
+
+	enum DasdFormat { DASDF_NONE, DASDF_LDL, DASDF_CDL };
+
+	Dasd(Storage* s, const string& name, const string& device, unsigned long long Size,
+	     SystemInfo& systeminfo);
+	Dasd(const Dasd& c);
 	virtual ~Dasd();
+
         int createPartition( storage::PartitionType type, long unsigned start,
 	                     long unsigned len, string& device,
 			     bool checkRelaxed=false );
@@ -45,26 +54,22 @@ class Dasd : public Disk
         int changePartitionId( unsigned nr, unsigned id ) { return 0; }
         int resizePartition( Partition* p, unsigned long newCyl );
 	int initializeDisk( bool value );
-	string fdasdText() const;
-	string dasdfmtText( bool doing ) const;
-	static string dasdfmtTexts( bool single, const string& devs );
-	void getCommitActions( std::list<storage::commitAction*>& l ) const;
-	int getToCommit( storage::CommitStage stage, std::list<Container*>& col,
-			 std::list<Volume*>& vol );
+	Text fdasdText() const;
+	Text dasdfmtText( bool doing ) const;
+	static Text dasdfmtTexts(bool doing, const list<string>& devs);
+	void getCommitActions(list<commitAction>& l) const;
+	void getToCommit(storage::CommitStage stage, list<const Container*>& col,
+			 list<const Volume*>& vol) const;
 	int commitChanges( storage::CommitStage stage );
 
     protected:
-	enum DasdFormat { DASDF_NONE, DASDF_LDL, DASDF_CDL };
 
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new Dasd( *this ) ); }
-	bool detectPartitionsFdasd(ProcPart& ppart);
-	bool detectPartitions( ProcPart& ppart );
-	bool checkFdasdOutput( SystemCmd& Cmd, ProcPart& ppart );
-	bool scanFdasdLine( const string& Line, unsigned& nr, 
-	                    unsigned long& start, unsigned long& csize );
-	void getGeometry( SystemCmd& cmd, unsigned long& c,
-			  unsigned& h, unsigned& s );
+	bool detectPartitionsFdasd(SystemInfo& systeminfo);
+	bool detectPartitions(SystemInfo& systeminfo);
+	virtual bool checkPartitionsValid(SystemInfo& systeminfo, const list<Partition*>& pl) const;
+	bool checkFdasdOutput(SystemInfo& systeminfo);
 	void redetectGeometry() {};
         int doCreate( Volume* v ) { return(doFdasd()); }
         int doRemove( Volume* v ) { return(init_disk?0:doFdasd()); }
@@ -73,12 +78,19 @@ class Dasd : public Disk
         int doSetType( Volume* v ) { return 0; }
         int doCreateLabel() { return 0; }
 	int doDasdfmt();
+
 	DasdFormat fmt;
 
-	Dasd& operator= ( const Dasd& rhs );
 	friend std::ostream& operator<< (std::ostream&, const Dasd& );
 
+    private:
+
+	Dasd& operator=(const Dasd&); // disallow
+
     };
+
+
+    template <> struct EnumInfo<Dasd::DasdFormat> { static const vector<string> names; };
 
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) [2004-2009] Novell, Inc.
+ * Copyright (c) [2004-2010] Novell, Inc.
  *
  * All Rights Reserved.
  *
@@ -25,30 +25,30 @@
 
 #include <algorithm>
 
+#include "storage/XmlFile.h"
+
+
 namespace storage
 {
 
-class Region 
+    class Region
     {
     public:
+
 	Region() : s(0), l(0) {}
-	Region( unsigned long start, unsigned long len ) : s(start), l(len) {}
-	Region( const Region& x ) 
-	    { *this = x; }
-	Region& operator=(const Region& r)
-	    { s = r.start(); l = r.len(); return( *this ); }
+	Region(unsigned long long start, unsigned long long len) : s(start), l(len) {}
+
 	bool doIntersect( const Region& r ) const
 	    { return( r.start() <= end() && r.end() >= start() ); }
 	Region intersect( const Region& r ) const
 	    {
-	    Region ret;
 	    if (doIntersect(r))
 		{
-		unsigned long s = std::max( r.start(), start() );
-		unsigned long e = std::min( r.end(), end() );
-		ret = Region( s, e-s+1 );
+		unsigned long long s = std::max(r.start(), start());
+		unsigned long long e = std::min(r.end(), end());
+		return Region(s, e - s + 1);
 		}
-	    return( ret );
+	    return Region(0, 0);
 	    }
 	bool inside( const Region& r ) const
 	    { return( start()>=r.start() && end() <= r.end() ); }
@@ -60,27 +60,41 @@ class Region
 	    { return( s < r.start() ); }
 	bool operator>(const Region& r) const
 	    { return( s > r.start() ); }
-	unsigned long start() const { return( s ); }
-	unsigned long end() const { return( s+l-1 ); }
-	unsigned long len() const { return( l ); }
+
+	unsigned long long start() const { return s; }
+	unsigned long long len() const { return l; }
+	unsigned long long end() const { return s + l - 1; }
+
+	bool empty() const { return l == 0; }
+
+	void setStart(unsigned long long start) { s = start; }
+	void setLen(unsigned long long len) { l = len; }
+
+	template <typename Type> friend
+	Region operator*(Type i, const Region& r)
+	{
+	    static_assert(std::is_integral<Type>::value, "not integral");
+	    return Region(i * r.s, i * r.l);
+	}
+
+	template <typename Type> friend
+	Region operator/(const Region& r, Type i)
+	{
+	    static_assert(std::is_integral<Type>::value, "not integral");
+	    return Region(r.s / i, r.l / i);
+	}
+
+	friend std::ostream& operator<<(std::ostream& s, const Region& p);
+
+	friend bool getChildValue(const xmlNode* node, const char* name, Region& value);
+	friend void setChildValue(xmlNode* node, const char* name, const Region& value);
+
     protected:
-	unsigned long s;
-	unsigned long l;
+
+	unsigned long long s;
+	unsigned long long l;
+
     };
-
-inline std::ostream& operator<< (std::ostream& s, const Region &p )
-    {
-    s << "[" << p.start() << "," << p.len() << "]";
-    return( s );
-    }
-
-inline std::istream& operator>> (std::istream& s, Region &p )
-    {
-    unsigned long start, len;
-    s >> start >> len;
-    p = Region( start, len );
-    return( s );
-    }
 
 }
 

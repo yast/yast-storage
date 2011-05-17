@@ -25,18 +25,14 @@
 
 #include <list>
 
-#include "y2storage/DmPartCo.h"
-#include "y2storage/Dmmultipath.h"
+#include "storage/DmPartCo.h"
+#include "storage/Dmmultipath.h"
 
 namespace storage
 {
-    using std::map;
-
 
 class Storage;
-class SystemCmd;
-class ProcPart;
-class Region;
+    class SystemInfo;
 
 
     class CmdMultipath
@@ -71,10 +67,9 @@ class DmmultipathCo : public DmPartCo
     friend class Storage;
 
     public:
-	DmmultipathCo( Storage * const s, const string& Name, ProcPart& ppart );
-	DmmultipathCo( Storage * const s, const string& Name, unsigned num,
-		       unsigned long long Size, ProcPart& ppart );
-	DmmultipathCo( const DmmultipathCo& rhs );
+
+	DmmultipathCo(Storage* s, const string& name, const string& device, SystemInfo& systeminfo);
+	DmmultipathCo(const DmmultipathCo& c);
 	virtual ~DmmultipathCo();
 
 	static storage::CType staticType() { return storage::DMMULTIPATH; }
@@ -83,8 +78,9 @@ class DmmultipathCo : public DmPartCo
 	void setUdevData(const list<string>& id);
 
 	bool equalContent( const Container& rhs ) const;
-	string getDiffString( const Container& d ) const;
-	DmmultipathCo& operator= ( const DmmultipathCo& rhs );
+
+	void logDifference(std::ostream& log, const DmmultipathCo& rhs) const;
+	virtual void logDifferenceWithVolumes(std::ostream& log, const Container& rhs) const;
 
     protected:
 
@@ -136,31 +132,26 @@ class DmmultipathCo : public DmPartCo
             return( ConstDmmultipathIter( DmmultipathCPIterator( p, CheckDmmultipath, true )) );
 	    }
 
-	DmmultipathCo( Storage * const s, const string& File );
 	virtual void print( std::ostream& s ) const { s << *this; }
 	virtual Container* getCopy() const { return( new DmmultipathCo( *this ) ); }
-	void getMultipathData( const string& name );
-	void addMultipath( const string& name );
-	void addPv( Pv*& p );
+	void getMultipathData(const string& name, SystemInfo& systeminfo);
+	void addPv(const Pv& pv);
 	void newP( DmPart*& dm, unsigned num, Partition* p );
-	string setDiskLabelText( bool doing ) const;
 
-	static string undevName( const string& name );
-
-	static void activate( bool val=true );
+	static void activate(bool val);
 	static bool isActive() { return active; }
 
-	static bool isActivated(const string& name);
-	static list<string> getMultipaths();
-
-	static bool multipathNotDeleted( const Dmmultipath&d ) { return( !d.deleted() ); }
-
-	void logData( const string& Dir );
+	static list<string> getMultipaths(SystemInfo& systeminfo);
 
 	string vendor;
 	string model;
 
 	static bool active;
+
+    private:
+
+	DmmultipathCo& operator=(const DmmultipathCo&); // disallow
+
     };
 
 }

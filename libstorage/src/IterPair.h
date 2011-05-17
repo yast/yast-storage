@@ -33,20 +33,26 @@ class IterPair
     {
     public:
 	typedef Iter itype; 
-	IterPair( const Iter b, const Iter e ) : m_begin(b), m_end(e) {}
+	IterPair(const Iter& b, const Iter& e) : m_begin(b), m_end(e) {}
 	IterPair( const IterPair& x ) 
 	    {
 	    *this = x;
 	    }
-	IterPair& operator=(const IterPair& x) 
+
+	template <class Ip>
+	IterPair(const Ip& x) : m_begin(x.begin()), m_end(x.end()) {}
+
+	template< class Ip >
+	IterPair& operator=(const Ip& x) 
 	    { 
-	    m_begin=x.m_begin; 
-	    m_end=x.m_end;
+	    m_begin=x.begin(); 
+	    m_end=x.end();
 	    return( *this );
 	    }
-	bool operator==(const IterPair& x) const
+	template< class Ip >
+	bool operator==(const Ip& x) const
 	    { 
-	    return( m_begin==x.m_begin && m_end==x.m_end );
+	    return( m_begin==x.begin() && m_end==x.end() );
 	    }
 	bool empty() const { return( m_begin==m_end ); }
 	unsigned length() const { return( std::distance( m_begin, m_end )); }

@@ -19,80 +19,135 @@
  * find current contact information at www.novell.com.
  */
 
-/*
-  Textdomain    "storage"
-*/
 
-#include <iostream>
+#include <ostream>
 #include <sstream>
 
-#include "y2storage/DmraidCo.h"
-#include "y2storage/Dmraid.h"
-#include "y2storage/MdPartCo.h"
-#include "y2storage/SystemCmd.h"
-#include "y2storage/AppUtil.h"
-#include "y2storage/Storage.h"
-#include "y2storage/StorageDefines.h"
-
-using namespace std;
-using namespace storage;
+#include "storage/DmraidCo.h"
+#include "storage/Dmraid.h"
+#include "storage/SystemCmd.h"
+#include "storage/AppUtil.h"
+#include "storage/Storage.h"
+#include "storage/StorageDefines.h"
+#include "storage/SystemInfo.h"
 
 
-DmraidCo::DmraidCo(Storage * const s, const string& Name, ProcPart& ppart)
-    : DmPartCo(s, "/dev/mapper/"+Name, staticType(), ppart)
+namespace storage
 {
-    DmPartCo::init(ppart);
-    getRaidData(Name);
-    y2deb("constructing dmraid co " << Name);
-}
+    using namespace std;
 
 
-DmraidCo::~DmraidCo()
-{
-    y2deb("destructed raid co " << dev);
-}
-
-
-void DmraidCo::getRaidData( const string& name )
+    CmdDmraid::CmdDmraid()
     {
-    y2milestone( "name:%s", name.c_str() );
-    SystemCmd c(DMRAIDBIN " -s -c -c -c " + quote(name));
-    list<string>::const_iterator ci;
-    list<string> sl;
-    if( c.numLines()>0 )
-	sl = splitString( *c.getLine(0), ":" );
-    Pv *pve = new Pv;
-    if( sl.size()>=4 )
+	SystemCmd c(DMRAIDBIN " -s -c -c -c");
+	if (c.retcode() != 0 || c.stdout().empty())
+	    return;
+
+	const vector<string>& lines = c.stdout();
+	vector<string>::const_iterator it = lines.begin();
+	while (it != lines.end())
 	{
-	ci = sl.begin();
-	++ci; ++ci; ++ci;
-	raidtype = *ci;
-	}
-    unsigned num = 1;
-    while( num<c.numLines() )
-	{
-	sl = splitString( *c.getLine(num), ":" );
-	y2mil( "sl:" << sl );
-	if( sl.size()>=3 )
+	    const list<string> sl = splitString(*it++, ":");
+	    if (sl.size() >= 4)
 	    {
-	    ci = sl.begin();
-	    ++ci; ++ci;
-	    if( *ci == name )
+		Entry entry;
+
+		list<string>::const_iterator ci = sl.begin();
+		string name = *ci;
+		advance(ci, 3);
+		entry.raidtype = *ci;
+
+		while (it != lines.end() && boost::starts_with(*it, "/dev/"))
 		{
-		--ci;
-		if( controller.empty() && !ci->empty() )
-		    controller = *ci;
-		--ci;
-		if( ci->find( "/dev/" )==0 )
+		    const list<string> sl = splitString(*it, ":");
+		    if (sl.size() >= 4)
 		    {
-		    pve->device = *ci;
-		    addPv( pve );
+			list<string>::const_iterator ci = sl.begin();
+			entry.devices.push_back(*ci);
+			advance(ci, 1);
+			entry.controller = *ci;
 		    }
+
+		    ++it;
 		}
+
+		data[name] = entry;
 	    }
-	++num;
 	}
-    delete( pve );
+
+	for (const_iterator it = data.begin(); it != data.end(); ++it)
+	    y2mil("data[" << it->first << "] -> controller:" << it->second.controller <<
+		  " raidtype:" << it->second.raidtype << " devices:" << it->second.devices);
+    }
+
+
+    list<string>
+    CmdDmraid::getEntries() const
+    {
+	list<string> ret;
+	for (const_iterator it = data.begin(); it != data.end(); ++it)
+	    ret.push_back(it->first);
+	return ret;
+    }
+
+
+    bool
+    CmdDmraid::getEntry(const string& name, Entry& entry) const
+    {
+	const_iterator it = data.find(name);
+	if (it == data.end())
+	    return false;
+
+	entry = it->second;
+	return true;
+    }
+
+
+    DmraidCo::DmraidCo(Storage* s, const string& name, const string& device, SystemInfo& systeminfo)
+	: DmPartCo(s, name, device, staticType(), systeminfo)
+    {
+	getRaidData(name, systeminfo);
+
+	const UdevMap& by_id = systeminfo.getUdevMap("/dev/disk/by-id");
+	UdevMap::const_iterator it = by_id.find("dm-" + decString(minorNr()));
+	if (it != by_id.end())
+	    setUdevData(it->second);
+
+	y2deb("constructing DmraidCo " << name);
+    }
+
+
+    DmraidCo::DmraidCo(const DmraidCo& c)
+	: DmPartCo(c), raidtype(c.raidtype), controller(c.controller)
+    {
+	y2deb("copy-constructed DmraidCo from " << c.dev);
+    }
+
+
+    DmraidCo::~DmraidCo()
+    {
+	y2deb("destructed DmraidCo " << dev);
+    }
+
+
+    void
+    DmraidCo::getRaidData(const string& name, SystemInfo& systeminfo)
+    {
+	y2mil("name:" << name);
+
+	CmdDmraid::Entry entry;
+	if (systeminfo.getCmdDmraid().getEntry(name, entry))
+	{
+	    controller = entry.controller;
+	    raidtype = entry.raidtype;
+
+	    for (list<string>::const_iterator it = entry.devices.begin(); it != entry.devices.end(); ++it)
+	    {
+		Pv pv;
+		pv.device = *it;
+		addPv(pv);
+	    }
+	}
     }
 
 
@@ -101,8 +156,7 @@ DmraidCo::setUdevData( const list<string>& id )
 {
     y2mil("disk:" << nm << " id:" << id);
     udev_id = id;
-    udev_id.erase(remove_if(udev_id.begin(), udev_id.end(), find_begin("dm-")), udev_id.end());
-    udev_id.sort();
+    udev_id.remove_if(string_starts_with("dm-"));
     y2mil("id:" << udev_id);
 
     DmPartCo::setUdevData(udev_id);
@@ -119,26 +173,32 @@ void
 DmraidCo::newP( DmPart*& dm, unsigned num, Partition* p )
     {
     y2mil( "num:" << num );
-    dm = new Dmraid( *this, num, p );
+    dm = new Dmraid( *this, getPartName(num), getPartDevice(num), num, p );
     }
 
-void DmraidCo::addPv( Pv*& p )
+
+    void
+    DmraidCo::addPv(const Pv& pv)
     {
-    PeContainer::addPv( p );
-    if( !deleted() )
-	getStorage()->setUsedBy( p->device, UB_DMRAID, name() );
-    p = new Pv;
+	PeContainer::addPv(pv);
+	if (!deleted())
+	    getStorage()->addUsedBy(pv.device, UB_DMRAID, device());
     }
+
 
 void DmraidCo::activate( bool val )
     {
-    y2milestone( "old active:%d val:%d", active, val );
+	if (getenv("LIBSTORAGE_NO_DMRAID") != NULL)
+	    return;
+
+    y2mil("old active:" << active << " val:" << val);
     if( active != val )
 	{
 	SystemCmd c;
 	if( val )
 	    {
 	    Dm::activate(true);
+	    // option '-p' since udev creates the partition nodes
 	    c.execute(DMRAIDBIN " -ay -p");
 	    }
 	else
@@ -147,53 +207,33 @@ void DmraidCo::activate( bool val )
 	    }
 	active = val;
 	}
-    }
-
-
-    bool
-    DmraidCo::isActivated(const string& name)
-    {
-	SystemCmd c(DMSETUPBIN " table " + quote(name));
-	return c.retcode() == 0 && c.numLines() >= 1 && isdigit(c.stdout()[0]);
+    Storage::waitForDevice();
     }
 
 
     list<string>
-    DmraidCo::getRaids()
+    DmraidCo::getRaids(SystemInfo& systeminfo)
     {
-	list<string> l;
+        list<string> l;
 
-	SystemCmd c(DMRAIDBIN " -s -c -c -c");
-	for( unsigned i=0; i<c.numLines(); ++i )
-	{
-	    list<string> sl = splitString( *c.getLine(i), ":" );
-	    if( sl.size()>=3 )
-	    {
-		list<string>::const_iterator ci = sl.begin();
-		if( !ci->empty()
-		    && ci->find( "/dev/" )==string::npos
-		    && find( l.begin(), l.end(), *ci )==l.end())
-		{
-		    if (isActivated(*ci))
-		    {
-			l.push_back( *ci );
-		    }
-		    else
-		    {
-			y2mil("ignoring inactive dmraid " << *ci);
-		    }
-		}
-	    }
-	}
+	list<string> entries = systeminfo.getCmdDmraid().getEntries();
+	for (list<string>::const_iterator it = entries.begin(); it != entries.end(); ++it)
+        {
+	    CmdDmsetup::Entry entry;
+	    if (systeminfo.getCmdDmsetup().getEntry(*it, entry) && entry.segments > 0)
+      		l.push_back(*it);
+	    else
+		y2mil("ignoring inactive dmraid " << *it);
+        }
 
-	y2mil("detected dmraids " << l);
-	return l;
+        y2mil("detected dmraids " << l);
+        return l;
     }
 
 
-string DmraidCo::removeText( bool doing ) const
+Text DmraidCo::removeText( bool doing ) const
     {
-    string txt;
+    Text txt;
     if( doing )
         {
         // displayed text during action, %1$s is replaced by a name (e.g. pdc_igeeeadj),
@@ -208,31 +248,10 @@ string DmraidCo::removeText( bool doing ) const
     }
 
 
-string DmraidCo::setDiskLabelText( bool doing ) const
-    {
-    string txt;
-    string d = nm;
-    if( doing )
-        {
-        // displayed text during action, %1$s is replaced by raid name (e.g. pdc_igeeeadj),
-	// %2$s is replaced by label name (e.g. msdos)
-        txt = sformat( _("Setting disk label of raid %1$s to %2$s"),
-		       d.c_str(), labelName().c_str() );
-        }
-    else
-        {
-        // displayed text before action, %1$s is replaced by raid name (e.g. pdc_igeeeadj),
-	// %2$s is replaced by label name (e.g. msdos)
-        txt = sformat( _("Set disk label of raid %1$s to %2$s"),
-		      d.c_str(), labelName().c_str() );
-        }
-    return( txt );
-    }
-
 int
 DmraidCo::doRemove()
     {
-    y2milestone( "Raid:%s", name().c_str() );
+    y2mil("Raid:" << name());
     int ret = 0;
     if( deleted() )
 	{
@@ -271,32 +290,39 @@ void DmraidCo::getInfo( DmraidCoInfo& tinfo ) const
     tinfo.p = info;
     }
 
-namespace storage
-{
 
 std::ostream& operator<< (std::ostream& s, const DmraidCo& d )
     {
-    s << *((DmPartCo*)&d);
+    s << dynamic_cast<const DmPartCo&>(d);
     s << " Cont:" << d.controller
       << " RType:" << d.raidtype;
     return( s );
     }
 
-}
 
-string DmraidCo::getDiffString( const Container& d ) const
+    void
+    DmraidCo::logDifference(std::ostream& log, const DmraidCo& rhs) const
     {
-    string log = DmPartCo::getDiffString( d );
-    const DmraidCo * p = dynamic_cast<const DmraidCo*>(&d);
-    if( p )
-	{
-	if( controller!=p->controller )
-	    log += " controller:" + controller + "-->" + p->controller;
-	if( raidtype!=p->raidtype )
-	    log += " raidtype:" + raidtype + "-->" + p->raidtype;
-	}
-    return( log );
+	DmPartCo::logDifference(log, rhs);
+
+	logDiff(log, "controller", controller, rhs.controller);
+	logDiff(log, "raidtype", raidtype, rhs.raidtype);
     }
+
+
+    void
+    DmraidCo::logDifferenceWithVolumes(std::ostream& log, const Container& rhs_c) const
+    {
+	const DmraidCo& rhs = dynamic_cast<const DmraidCo&>(rhs_c);
+
+	logDifference(log, rhs);
+	log << endl;
+
+	ConstDmPartPair pp = dmpartPair();
+	ConstDmPartPair pc = rhs.dmpartPair();
+	logVolumesDifference(log, pp.begin(), pp.end(), pc.begin(), pc.end());
+    }
+
 
 bool DmraidCo::equalContent( const Container& rhs ) const
     {
@@ -310,12 +336,7 @@ bool DmraidCo::equalContent( const Container& rhs ) const
     return( ret );
     }
 
-DmraidCo::DmraidCo( const DmraidCo& rhs ) : DmPartCo(rhs)
-    {
-    raidtype = rhs.raidtype;
-    controller = rhs.controller;
-    }
-
-void DmraidCo::logData( const string& Dir ) {;}
 
 bool DmraidCo::active = false;
+
+}
