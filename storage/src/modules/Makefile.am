@@ -7,6 +7,11 @@ YCPCFLAGS = -M ../../../libstorage/bindings/ycp
 YCPC_LD_LIBRARY_PATH = ../../../libstorage/src/.libs
 YCPC_Y2DIR = ../../../libstorage/src/.libs
 
+yncludedir = @yncludedir@/storage
+
+ynclude_DATA = storage_update.ycp
+
+
 module_DATA =				\
 	Partitions.ycp			\
 	FileSystems.ycp			\
@@ -27,6 +32,11 @@ module_DATA =				\
 	DualMultiSelectionBox.ycp	\
 	Region.ycp
 
-EXTRA_DIST = $(module_DATA)
+EXTRA_DIST = $(module_DATA) $(ynclude_DATA)
+
+include:
+	mkdir include && ln -sf ../../include include/partitioning
+
+ycpchook = include
 
 include $(top_srcdir)/Makefile.am.common

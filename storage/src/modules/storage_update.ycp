@@ -1,0 +1,449 @@
+/**
+ * Module:	storage_update.ycp
+ *
+ * Authors:	Thomas Fehr <fehr@suse.de>
+ *		Arvin Schnell <aschnell@suse.de>
+ */
+{
+    textdomain "storage";
+
+
+    import "AsciiFile";
+
+    // flag indicates calling Storage::Update()
+    boolean called_update = false;
+
+
+    void UpdateFstabSubfs()
+    {
+	y2milestone( "UpdateFstabSubfs removing fstab entries for cdrom and floppy" );
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	list<integer> rem_lines = [];
+	while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	    map l = AsciiFile::GetLine( fstab, line );
+	    if( search( l["fields",1]:"", "/media/floppy" )==0 )
+	    {
+		rem_lines = add( rem_lines, line );
+	    }
+	    else if( search( l["fields",1]:"", "/media/cdrom" )==0 ||
+		     search( l["fields",1]:"", "/media/dvd" )==0 ||
+		     search( l["fields",1]:"", "/media/cdrecorder" )==0 ||
+		     search( l["fields",1]:"", "/media/dvdrecorder" )==0 ||
+		     search( l["fields",1]:"", "/cdrom" )==0 ||
+		     search( l["fields",1]:"", "/dvd" )==0 ||
+		     search( l["fields",1]:"", "/cdrecorder" )==0 ||
+		     search( l["fields",1]:"", "/dvdrecorder" )==0 )
+	    {
+		rem_lines = add( rem_lines, line );
+	    }
+	    line = line+1;
+	}
+	y2milestone( "UpdateFstabSubfs %1", rem_lines );
+	if( size(rem_lines)>0 )
+	{
+	    rem_lines = sort(rem_lines);
+	    AsciiFile::RemoveLines( fstab, rem_lines );
+	}
+	AsciiFile::RewriteFile( fstab, tabpath );
+    }
+
+
+    void UpdateFstabSysfs()
+    {
+	y2milestone( "UpdateFstabSysfs called" );
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	boolean have_sysfs = false;
+	while( !have_sysfs && line<=AsciiFile::NumLines( fstab ) )
+	{
+	    map l = AsciiFile::GetLine( fstab, line );
+	    have_sysfs = l["fields",1]:"" == "/sys";
+	    line = line+1;
+	}
+	if( !have_sysfs )
+	{
+	    map entry = FileSystems::GetFstabDefaultMap( "sys" );
+	    list fstlist = [ entry["spec"]:"", entry["mount"]:"",
+			     entry["vfstype"]:"", entry["mntops"]:"",
+			     sformat("%1",entry["freq"]:0),
+			     sformat("%1",entry["passno"]:0) ];
+	    y2milestone( "UpdateFstabSysfs entry %1", entry );
+	    y2milestone( "UpdateFstabSysfs fstlist %1", fstlist );
+	    AsciiFile::AppendLine( fstab, fstlist );
+	    AsciiFile::RewriteFile( fstab, tabpath );
+	}
+    }
+
+
+define void UpdateFstabHotplugOption() 
+    {
+	y2milestone( "UpdateFstabHotplugOption" );
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	string n = "";
+	while( line<=AsciiFile::NumLines( fstab ) )
+	    {
+	    map l = AsciiFile::GetLine( fstab, line );
+	    string options = l["fields", 3]:"";
+	    if (regexpmatch (options, "^\(.*,\)\?hotplug\(,.*\)\?$")) {
+		options = regexpsub (options, "^\(.*,\)\?hotplug\(,.*\)\?$", "\\1nofail\\2");
+		AsciiFile::ChangeLineField( fstab, line, 3, options );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( fstab, tabpath );
+    }
+
+
+    void UpdateFstabPersistentNames()
+    {
+	y2milestone( "UpdateFstabPersistentDevNames updating to SLES10 names" );
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	string n = "";
+	while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	    map l = AsciiFile::GetLine( fstab, line );
+	    n = Storage::SLES9PersistentDevNames( l["fields",0]:"" );
+	    if( n != l["fields",0]:"" )
+	    {
+		AsciiFile::ChangeLineField( fstab, line, 0, n );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( fstab, tabpath );
+    }
+
+
+    void UpdateFstabEvms2Lvm()
+    {
+	y2milestone( "UpdateFstabEvms2Lvm migrating EVMS to LVM" );
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	string n = "";
+	while( line<=AsciiFile::NumLines( fstab ) ) {
+	    map l = AsciiFile::GetLine( fstab, line );
+	    n = l["fields",0]:"";
+	    if (substring (n, 0, 15) == "/dev/evms/lvm2/")
+	    {
+		n = "/dev/" + substring (n, 15);
+		AsciiFile::ChangeLineField( fstab, line, 0, n );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( fstab, tabpath );
+    }
+
+
+    void UpdateMdadm()
+    {
+	y2milestone( "UpdateMdadm" );
+	string cpath = Storage::PathToDestdir( "/etc/mdadm.conf" );
+	map file = $[];
+	AsciiFile::SetComment( file, "^[ \t]*#" );
+	AsciiFile::ReadFile( file, cpath );
+	integer line = 0;
+	boolean changed = false;
+	while( line<=AsciiFile::NumLines( file ) )
+	{
+	    if( search( file["l",line,"line"]:"", "DEVICE" )!=nil &&
+		search( file["l",line,"line"]:"", "/dev/" )!=nil )
+	    {
+		changed = true;
+		file["l",line,"line"] = "DEVICE partitions";
+		y2milestone( "UpdateMdadm %1", file["l",line]:$[] );
+	    }
+	    line = line+1;
+	}
+	if( changed )
+	    AsciiFile::RewriteFile( file, cpath );
+    }
+
+
+    void UpdateFstabDiskmap(map diskmap)
+    {
+	y2milestone( "UpdateFstabDiskmap map %1", diskmap );
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	string n = "";
+	while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	    map l = AsciiFile::GetLine( fstab, line );
+	    n = Storage::HdDiskMap( l["fields",0]:"", diskmap );
+	    if( n != l["fields",0]:"" )
+	    {
+		AsciiFile::ChangeLineField( fstab, line, 0, n );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( fstab, tabpath );
+	tabpath = Storage::PathToDestdir( "/etc/cryptotab" );
+	map crtab = Partitions::GetCrypto( tabpath );
+	line = 0;
+	while( line<=AsciiFile::NumLines( crtab ) )
+	{
+	    map l = AsciiFile::GetLine( crtab, line );
+	    n = Storage::HdDiskMap( l["fields",1]:"", diskmap );
+	    if( n != l["fields",1]:"" )
+	    {
+		AsciiFile::ChangeLineField( crtab, line, 1, n );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( crtab, tabpath );
+    }
+
+
+    void UpdateFstabUsbdevfs()
+    {
+	y2milestone( "UpdateFstabUsbdevfs updating usbdevfs to usbfs" );
+	boolean changed = false;
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	    map l = AsciiFile::GetLine( fstab, line );
+	    if( l["fields",2]:"" == "usbdevfs" )
+	    {
+		AsciiFile::ChangeLineField( fstab, line, 2, "usbfs" );
+		AsciiFile::ChangeLineField( fstab, line, 0, "usbfs" );
+		changed = true;
+	    }
+	    line = line+1;
+	}
+	if( changed )
+	{
+	    y2milestone( "UpdateFstabUsbdevfs changed" );
+	    AsciiFile::RewriteFile( fstab, tabpath );
+	}
+    }
+
+
+    void UpdateFstabIseriesVd()
+    {
+	y2milestone( "UpdateFstabIseriesVd updating hdx to iseries/vdx" );
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	string n = "";
+	while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	    map l = AsciiFile::GetLine( fstab, line );
+	    n = Storage::HdToIseries( l["fields",0]:"" );
+	    if( n != l["fields",0]:"" )
+	    {
+		AsciiFile::ChangeLineField( fstab, line, 0, n );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( fstab, tabpath );
+	tabpath = Storage::PathToDestdir( "/etc/cryptotab" );
+	map crtab = Partitions::GetCrypto( tabpath );
+	line = 0;
+	while( line<=AsciiFile::NumLines( crtab ) )
+	{
+	    map l = AsciiFile::GetLine( crtab, line );
+	    n = Storage::HdToIseries( l["fields",1]:"" );
+	    if( n != l["fields",1]:"" )
+	    {
+		AsciiFile::ChangeLineField( crtab, line, 1, n );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( crtab, tabpath );
+    }
+
+
+    void UpdateCryptoType()
+    {
+	y2milestone( "UpdateCryptoType" );
+	string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+	map fstab = Partitions::GetFstab( tabpath );
+	integer line = 0;
+	integer pos = 0;
+	string searchstr = "encryption=twofish256";
+	while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	    map l = AsciiFile::GetLine( fstab, line );
+	    pos = search( l["fields",3]:"", searchstr );
+	    if( pos != nil )
+	    {
+		string new = substring( l["fields",3]:"", 0, pos );
+		new = new + "encryption=twofishSL92";
+		new = new + substring( l["fields",3]:"", pos+size(searchstr) );
+		y2milestone( "new options line in %1 is %2", l, new );
+		AsciiFile::ChangeLineField( fstab, line, 3, new );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( fstab, tabpath );
+	tabpath = Storage::PathToDestdir( "/etc/cryptotab" );
+	map crtab = Partitions::GetCrypto( tabpath );
+	line = 0;
+	while( line<=AsciiFile::NumLines( crtab ) )
+	{
+	    map l = AsciiFile::GetLine( crtab, line );
+	    if( l["fields",4]:"" == "twofish256" )
+	    {
+		y2milestone( "set twofishSL92 in line %1", l );
+		AsciiFile::ChangeLineField( crtab, line, 4, "twofishSL92" );
+	    }
+	    line = line+1;
+	}
+	AsciiFile::RewriteFile( crtab, tabpath );
+    }
+
+void UpdateFstabCryptNofail()
+    {
+    y2milestone( "UpdateFstabCryptNofail called" );
+    string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    integer line = 0;
+    boolean update = false;
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	if( search( l["fields",0]:"", "/dev/mapper/cr_" )==0 )
+	    {
+	    list<string> ls = splitstring( l["fields",3]:"", "," );
+	    ls = filter( string s, ls, ``(s!="noauto"));
+	    if( size(filter( string s, ls, ``(s=="nofail")))==0 )
+		{
+		ls = add( ls, "nofail" );
+		AsciiFile::ChangeLineField( fstab, line, 3, 
+		                            mergestring( ls, "," ));
+		update = true;
+		}
+	    }
+	line = line+1;
+	}
+    if( update )
+	{
+	AsciiFile::RewriteFile( fstab, tabpath );
+	}
+    }
+
+    /**
+     * Updates fstab on disk
+     *
+     * @param map old version
+     * @param map new version
+     *
+     * @struct version $[
+     *   // This means version 9.1
+     *   "major" : 9,
+     *   "minor" : 1,
+     * ]
+     */
+    global void Update(map oldv, map newv)
+    {
+	if (!called_update)
+	{
+	    y2milestone( "Update old:%1 new:%2", oldv, newv );
+
+	    // Enterprise products do not have minor release number
+	    // map enterprise releases to corresponding code bases of SL
+	    map sles_major_to_minor = $[ 8 : 2, 9 : 1, 10 : 1 ];
+	    if( haskey( oldv, "major" ) && !haskey( oldv, "minor" ) )
+	    {
+		oldv["minor"] = sles_major_to_minor[oldv["major"]:0]:0;
+		y2milestone( "Update old:%1", oldv );
+	    }
+	    if( haskey( newv, "major" ) && !haskey( newv, "minor" ) )
+	    {
+		newv["minor"] = sles_major_to_minor[newv["major"]:0]:0;
+		y2milestone( "Update new:%1", newv );
+	    }
+	    if( !haskey( oldv, "major" ) || !haskey( newv, "major" ) )
+		y2error( "Missing key major or minor" );
+
+	    if( oldv["major"]:0<=9 )
+	    {
+		UpdateFstabSysfs();
+	    }
+	    if( oldv["major"]:0<9 )
+	    {
+		UpdateFstabUsbdevfs();
+	    }
+	    if( oldv["major"]:0==9 )
+            {
+		UpdateFstabPersistentNames();
+	    }
+
+	    if( oldv["major"]:0<=10 )
+	    {
+		UpdateFstabHotplugOption();
+	    }
+
+	    // remove EVMS
+	    // FIXME add appropriate condition if needed (does not seem so)
+	    UpdateFstabEvms2Lvm();
+
+	    map dm = Storage::BuildDiskmap( oldv );
+	    if( size(dm)>0 )
+	    {
+		UpdateFstabDiskmap( dm );
+		UpdateMdadm();
+	    }
+	    if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0<=2))
+	    {
+		UpdateCryptoType();
+	    }
+	    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0==0) )
+	    {
+		string of = "/etc/udev/rules.d/20-cdrom.rules";
+		y2milestone( "removing obsolete %1", of );
+		SCR::Execute( .target.remove, of );
+		of = "/etc/udev/rules.d/55-cdrom.rules";
+		y2milestone( "removing obsolete %1", of );
+		SCR::Execute( .target.remove, of );
+	    }
+	    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0<=2) )
+	    {
+		string of = "/etc/udev/rules.d/65-cdrom.rules";
+		y2milestone( "removing obsolete %1", of );
+		SCR::Execute( .target.remove, of );
+	    }
+	    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0==0))
+		UpdateFstabSubfs();
+	    if( oldv["major"]:0<9 || (oldv["major"]:0==9 && oldv["minor"]:0==0))
+	    {
+		if( Arch::board_iseries () )
+		{
+		    UpdateFstabIseriesVd();
+		}
+		string cmd = "cd / && /sbin/insserv -r /etc/init.d/boot.evms";
+		y2milestone( "Update cmd %1", cmd );
+		map bo = (map)SCR::Execute (.target.bash_output, cmd );
+		y2milestone( "Update bo %1", bo );
+	    }
+	    if( oldv["major"]:0<10 || (oldv["major"]:0==10 && oldv["minor"]:0<=2))
+	    {
+		string cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto";
+		map bo = (map)SCR::Execute (.target.bash_output, cmd );
+		y2milestone( "Update bo %1", bo );
+
+		cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto-early";
+		bo = (map)SCR::Execute (.target.bash_output, cmd );
+		y2milestone( "Update bo %1", bo );
+	    }
+	    if( oldv["major"]:0<11 || (oldv["major"]:0==11 && oldv["minor"]:0<=2))
+		UpdateFstabCryptNofail();
+	    // set flag -> it indicates that Update was already called
+	    called_update = true;
+	}
+	else
+	{
+	    y2milestone("Skip calling Update() -> It was already called");
+	}
+    }
+}
