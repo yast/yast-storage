@@ -11,6 +11,7 @@ client_DATA =				\
 	inst_prepdisk.ycp		\
 	inst_resize_ui.ycp		\
 	inst_resize_dialog.ycp		\
+	inst_do_resize.ycp		\
 	inst_target_part.ycp		\
 	inst_target_selection.ycp	\
 	storage_finish.ycp
