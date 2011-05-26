@@ -1803,11 +1803,16 @@ map<string,map> HandleBtrfsSimpleVolumes( map<string,map> tg )
 	tg["/dev/btrfs","partitions"] =
 	    filter( map p, tg["/dev/btrfs","partitions"]:[],
 		    ``(size(p["devices"]:[])>1));
-	y2milestone( "simple %1", simple );
+	y2milestone( "HandleBtrfsSimpleVolumes simple %1", simple );
+	list<string> keys = [ "subvol", "uuid", "format", "fstype", "inactive", "mount", "mountby", "used_fs" ];
 	foreach( map p, simple,
 	    {
-	    tg = SetPartitionData( tg, p["device"]:"", "subvol", p["subvol"]:[] );
-	    tg = SetPartitionData( tg, p["device"]:"", "uuid", p["uuid"]:"" );
+	    y2milestone( "HandleBtrfsSimpleVolumes before %1", GetPartition( tg, p["device"]:"" );
+	    foreach( string k, keys,
+		{
+		tg = SetPartitionData( tg, p["device"]:"", k, p[k]:(any)"" );
+		});
+	    y2milestone( "HandleBtrfsSimpleVolumes after  %1", GetPartition( tg, p["device"]:"" );
 	    });
 	}
     return( tg );
@@ -1876,7 +1881,7 @@ define void UpdateTargetMapDisk( string dev )
     conts = getContainers();
     map c = $[];
     c = find( map c, conts, ``(c["device"]:""==dev) );
-    map tg = StorageMap[targets_key]:$[];
+    map<string,map> tg = StorageMap[targets_key]:$[];
     //SCR::Write(.target.ycp, "/tmp/upd_disk_bef_"+sformat("%1",count), StorageMap[targets_key]:$[] );
     if( c==nil )
 	{
@@ -1890,6 +1895,8 @@ define void UpdateTargetMapDisk( string dev )
     else
 	{
 	tg[dev] = getContainerInfo(c);
+	if( dev=="/dev/btrfs" )
+	    tg = HandleBtrfsSimpleVolumes( tg );
 	}
     StorageMap[targets_key] = tg;
     //SCR::Write(.target.ycp, "/tmp/upd_disk_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
@@ -1902,6 +1909,8 @@ define void UpdateTargetMapDev( string dev )
     map<string,map> tg = StorageMap[targets_key]:$[];
     //SCR::Write(.target.ycp, "/tmp/upd_dev_bef_"+sformat("%1",count), tg );
     string cdev="";
+    map mdev = GetPartition( tg, dev );
+    y2milestone( "UpdateTargetMapDev mdev %1", mdev );
     foreach( string key, map d, tg,
 	``{
 	if( size(cdev)==0 &&
@@ -1940,6 +1949,11 @@ define void UpdateTargetMapDev( string dev )
 	}
     else
 	y2error( "UpdateTargetMapDev key %1 not found in target", disk["device"]:"" );
+    if( mdev["used_fs"]:`unknown == `btrfs )
+	{
+	tg["/dev/btrfs"] = getContainerInfo(tg["/dev/btrfs"]:$[]);
+	tg = HandleBtrfsSimpleVolumes( tg );
+	}
     StorageMap[targets_key] = tg;
     //SCR::Write(.target.ycp, "/tmp/upd_dev_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
     //count = count+1;
