@@ -514,6 +514,8 @@ global define map<string,map> GetTargetMap();
 global define void SetTargetMap( map<string,map> target );
 global define map<string,map> SetPartitionData( map<string,map> target, string device,
                                                 string key, any value );
+global define map<string,map> DelPartitionData( map<string,map> target, string device,
+                                                string key );
 
 
 define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
@@ -1804,13 +1806,26 @@ map<string,map> HandleBtrfsSimpleVolumes( map<string,map> tg )
 	    filter( map p, tg["/dev/btrfs","partitions"]:[],
 		    ``(size(p["devices"]:[])>1));
 	y2milestone( "HandleBtrfsSimpleVolumes simple %1", simple );
-	list<string> keys = [ "subvol", "uuid", "format", "fstype", "inactive", "mount", "mountby", "used_fs" ];
+	list<string> keys = [ "subvol", "uuid", "format", "inactive", "mount", "mountby", "used_fs" ];
 	foreach( map p, simple,
 	    {
-	    y2milestone( "HandleBtrfsSimpleVolumes before %1", GetPartition( tg, p["device"]:"" ));
+	    map mp = GetPartition( tg, p["device"]:"" );
+	    y2milestone( "HandleBtrfsSimpleVolumes before %1", mp );
 	    foreach( string k, keys,
 		{
-		tg = SetPartitionData( tg, p["device"]:"", k, p[k]:(any)"" );
+		if( p[k]:nil!=nil )
+		    {
+		    y2milestone( "HandleBtrfsSimpleVolumes set key %1", k );
+		    tg = SetPartitionData( tg, p["device"]:"", k, p[k]:nil );
+		    }
+		else
+		    { 
+		    if( haskey( mp, k ));
+			{
+			y2milestone( "HandleBtrfsSimpleVolumes remove key %1", k );
+			tg = DelPartitionData( tg, p["device"]:"", k );
+			}
+		    }
 		});
 	    y2milestone( "HandleBtrfsSimpleVolumes after  %1", GetPartition( tg, p["device"]:"" ));
 	    });
@@ -4233,6 +4248,15 @@ boolean DetectHomeFs( map p )
     }
 
 
+global define map AddSubvolRoot( map part )
+    {
+    list<string> def_subvol = [ "tmp", "var/tmp", "var/run" ];
+    part["subvol"] = maplist( string s, def_subvol, 
+			      { return $[ "create":true, "name":s ]; });
+    y2milestone( "AddSubvolRoot part:%1", part );
+    return( part );
+    }
+
 global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
                                  string fstab_opts, string label )
     {
@@ -4281,9 +4305,7 @@ global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
 	}
     if( ret["format"]:false && ret["used_fs"]:`unknown==`btrfs && mnt=="/" )
 	{
-	list<string> def_subvol = [ "tmp", "var/tmp", "var/run" ];
-	ret["subvol"] = maplist( string s, def_subvol, 
-				 { return $[ "create" :true, "name" :s ]; });
+	ret = AddSubvolRoot( ret );
 	}
     if( size(fstab_opts)>0 )
 	ret["fstopt"] = fstab_opts;
