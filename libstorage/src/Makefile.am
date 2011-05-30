@@ -88,7 +88,7 @@ liby2storage_la_SOURCES =				\
 	Region.cc		Region.h		\
 	StorageTmpl.h		StorageDefines.h
 
-liby2storage_la_LDFLAGS = -version-info 2:0
+liby2storage_la_LDFLAGS = -version-info 3:0
 liby2storage_la_LIBADD = -lblocxx -lxml2
 
 plugin_LTLIBRARIES = libpy2StorageCallbacks.la
