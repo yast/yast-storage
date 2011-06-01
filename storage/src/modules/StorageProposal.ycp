@@ -170,11 +170,31 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	    btmp = ProductFeatures::GetBooleanFeature("partitioning", "proposal_lvm");
 	    cfg_xml["prop_lvm"] = btmp ? true : false;
 
+	    itmp = ProductFeatures::GetIntegerFeature("partitioning", "btrfs_increase_percentage");
+	    cfg_xml["btrfs_increase_percentage"] = itmp;
+	    if (cfg_xml["btrfs_increase_percentage"]:0 == nil || cfg_xml["btrfs_increase_percentage"]:0 < 0)
+		cfg_xml["btrfs_increase_percentage"] = 100;
+
 	    SetProposalDefault(false);
 	    y2milestone("GetControlCfg cfg_xml:%1", cfg_xml);
 	}
+	map<string, any> ret = cfg_xml;
+	y2milestone("GetControlCfg GetProposalBtrfs:%1", GetProposalBtrfs());
+	if( GetProposalBtrfs() )
+	    {
+	    y2milestone( "GetControlCfg before:%1", ret );
+	    list<string> keys = [ "home_limit", "root_max", "root_base", "home_max", "vm_want" ];
+	    foreach( string k, keys, 
+		{
+		if( haskey( ret, k ) )
+		    ret[k] = ret[k]:0 + ret[k]:0*100/cfg_xml["btrfs_increase_percentage"]:0;
+		else
+		    y2warning( "GetControlCfg no key:%1", k );
+		});
+	    y2milestone( "GetControlCfg after :%1", ret );
+	    }
 
-	return cfg_xml;
+	return ret;
     }
 
     global string GetProposalVM()
