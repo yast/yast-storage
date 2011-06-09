@@ -19,6 +19,9 @@
  * find current contact information at www.novell.com.
  */
 
+/*
+  Textdomain    "storage"
+*/
 
 #include <glob.h>
 
