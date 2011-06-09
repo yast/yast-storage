@@ -19,6 +19,10 @@
  * find current contact information at www.novell.com.
  */
 
+/*
+  Textdomain    "storage"
+*/
+
 /*---------------------------------------------------------------------\
 |								       |
 |		       __   __	  ____ _____ ____		       |
