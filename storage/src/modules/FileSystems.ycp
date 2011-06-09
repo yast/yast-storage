@@ -1,4 +1,4 @@
-/**
+/*
  * Module: 		FileSystems.ycp
  *
  * Authors:		Johannes Buchhold (jbuch@suse.de)
@@ -68,6 +68,7 @@ integer fromSymbol( map<string,any> conv, symbol val )
     global list<string> crypt_m_points() { return [ "/", Partitions::BootMount(), "/usr" ]; }
     global const list<string> swap_m_points = [ "swap" ];
     global const list<string> tmp_m_points = [ "/tmp", "/var/tmp" ];
+    global string default_subvol = "A";
 
     list<string> suggest_m_points = [];
     list<string> suggest_tmp_points = [];
@@ -994,6 +995,18 @@ global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
     global void InitSlib(any value)
     {
 	sint = value;
+	if( sint!=nil )
+	    {
+	    string ret = LibStorage::StorageInterface::getDefaultSubvolName(sint);
+	    y2milestone( "InitSlib libstorage default_subvol:\"%1\"", ret );
+	    ret = "@";
+	    //ret = "";
+	    LibStorage::StorageInterface::setDefaultSubvolName(sint,ret);
+	    ret = LibStorage::StorageInterface::getDefaultSubvolName(sint);
+	    default_subvol = ret;
+	    y2milestone( "InitSlib used default_subvol:\"%1\"", default_subvol );
+	    }
+
     }
 
 
@@ -1288,6 +1301,10 @@ global define string DefaultFstabOptions( map part )
     if( part["format"]:false && contains( [`ext2, `ext3, `ext4, `reiser ], fsys ) )
 	{
 	fst_default = "acl,user_xattr";
+	}
+    else if( part["format"]:false && fsys == `btrfs && default_subvol!="" )
+	{
+	fst_default = "subvol=" + default_subvol;
 	}
     else if( !Arch::ia64() && contains( [`vfat, `ntfs], fsys ) )
 	{
