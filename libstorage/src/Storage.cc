@@ -1828,7 +1828,7 @@ Storage::changePartitionId( const string& partition, unsigned id )
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
-    else if( findVolume( partition, cont, vol ) )
+    else if( findVolume( partition, cont, vol, true ) )
 	{
 	if( cont->type()==DISK )
 	    {
@@ -1984,7 +1984,7 @@ Storage::forgetChangePartitionId( const string& partition )
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
-    else if( findVolume( partition, cont, vol ) )
+    else if( findVolume( partition, cont, vol, true ) )
 	{
 	if( cont->type()==DISK )
 	    {
@@ -2378,8 +2378,8 @@ Storage::changeFormatVolume( const string& device, bool format, FsType fs )
 		if( findVolume( device, vol ) && vol->cType()!=BTRFSC )
 		    {
 		    vol->updateFsData();
-		    vol->changeMount( mp );
 		    vol->clearUsedBy();
+		    vol->changeMount( mp );
 		    ret = vol->setFormat( format, fs );
 		    }
 		else
