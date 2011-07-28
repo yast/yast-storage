@@ -1534,7 +1534,6 @@ Disk::getCommitActions(list<commitAction>& l) const
     Container::getCommitActions( l );
     if( del_ptable )
 	{
-	l.remove_if(stage_is(DECREASE));
 	l.push_front(commitAction(DECREASE, staticType(), setDiskLabelText(false), this, true));
 	}
     }
@@ -1586,6 +1585,7 @@ int Disk::doCreateLabel()
     else
 	{
 	del_ptable = false;
+	detected_label = label;
 	removeFromMemory();
 	}
     if( ret==0 )
@@ -1860,8 +1860,6 @@ int Disk::doCreate( Volume* v )
 	if( detected_label != label )
 	    {
 	    ret = doCreateLabel();
-	    if( ret==0 )
-		detected_label = label;
 	    }
 	if( ret==0 && gpt_enlarge )
 	    {
@@ -2411,6 +2409,8 @@ void Disk::getInfo( DiskInfo& tinfo ) const
     info.sectorSize = sectorSize();
     info.cylSize = geometry.cylinderSize();
     info.disklabel = labelName();
+    if( label!=detected_label )
+	info.orig_disklabel = detected_label;
     info.maxPrimary = maxPrimary();
     info.extendedPossible = extendedPossible();
     info.maxLogical = maxLogical();
