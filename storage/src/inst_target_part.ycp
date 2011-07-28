@@ -247,7 +247,8 @@
 	    }
 	else if( ret == `next )
 	    {
-	    if( win_partition != $[] )
+	    ok = true;
+	    if( ok && win_partition != $[] )
 		{
 		if( UI::QueryWidget( `id(`resize), `Value) == true)
 		    {
@@ -354,6 +355,7 @@ Really delete your Windows partition?
 
 	    // now loop through partitions and check
 	    // if the partition is selected
+	    boolean all_del = true;
 	    partitions = maplist( map p, partitions, 
 		``{
 		y2milestone( "p:%1", p );
@@ -382,21 +384,31 @@ Really delete your Windows partition?
 			y2milestone ("Trailing `free partition marked for deletion");
 			}
 		    p["delete"] = selection;
+		    if( all_del && (!selection && p["type"]:`dummy!=`free))
+			all_del = false;
 		    }
 		return( p );
 		});
-	    partitions = StorageProposal::try_remove_sole_extended( partitions );
 
-	    y2milestone ("partitions '%1'", partitions);
-
-	    ok = create_partitions( targetMap, target, partitions );
-	    if( !ok )
+	    if( !all_del && StorageProposal::NeedNewDisklabel(target) )
 		{
-		string reason = _("Too few partitions are marked for removal
-or the disk is too small. 
+		Popup::Error( ia64_gpt_fix_text() );
+		ok = false;
+		}
+	    if( ok )
+		{
+		partitions = StorageProposal::try_remove_sole_extended( partitions );
+		y2milestone ("partitions '%1'", partitions);
+
+		ok = create_partitions( targetMap, target, partitions );
+		if( !ok )
+		    {
+		    string reason = _("Too few partitions are marked for removal or 
+the disk is too small. 
 To install Linux, select more partitions to 
 remove or select a larger disk.");
-		display_error_box (reason);
+		    display_error_box (reason);
+		    }
 		}
 	    }
 	} // while (true)
