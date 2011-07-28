@@ -333,12 +333,29 @@ symbol PropDefaultFs()
 	return no_propose_disks;
     }
 
+global boolean NeedNewDisklabel( map entry )
+    {
+    boolean ret = Partitions::EfiBoot();
+    if( ret )
+	{
+	string lab = entry["orig_label"]:"";
+	if( size(lab)==0 )
+	    lab = entry["label"]:"gpt";
+	ret = lab!="gpt";
+	}
+    y2milestone( "NeedNewDisklabel dev:%1 ret:%2", entry["device"]:"", ret );
+    return( ret );
+    }
 
     boolean ignore_disk(string dev, map entry, boolean soft)
     {
     boolean ret = !Storage::IsPartitionable(entry) || entry["readonly"]:false;
     // GPT is not required for uEFI on x86_64
     if( !ret && Arch::ia64() && entry["label"]:"gpt"!="gpt" )
+	{
+	ret = true;
+	}
+    if( !ret && soft && NeedNewDisklabel(entry) )
 	{
 	ret = true;
 	}
@@ -2800,6 +2817,7 @@ map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
     {
     list linux_pid = [ Partitions::fsid_native, Partitions::fsid_swap,
                        Partitions::fsid_lvm, Partitions::fsid_raid ];
+    list<string> remk = ["del_ptable", "disklabel"];
     foreach( string s, ddev,
 	``{
 	tg[s,"partitions"] = 
@@ -2817,6 +2835,11 @@ map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
 		    p["linux"] = false;
 		return( p );
 		});
+	foreach( string k, remk,
+	    ``{
+	    if( haskey( tg[s]:$[], k  ))
+		tg[s] = remove( tg[s]:$[], k );
+	    });
 	});
     return( tg );
     }
@@ -2994,7 +3017,6 @@ map remove_used_by( map tg, string disk )
     map opts = GetControlCfg();
     list<string> ddev = get_disk_try_list( target, true );
     string sol_disk = "";
-    list modes = [ `free, `reuse, `remove, `resize, `desparate ];
     map<string,boolean> valid = $[];
     map<string,list> size_mb = listmap( string s, ddev, ``($[s:[]]));
     map solution = listmap( string s, ddev, ``($[s:[]]));
@@ -3014,11 +3036,17 @@ map remove_used_by( map tg, string disk )
 		    ``{
 		    target[s,"partitions"] = 
 			remove_p_settings( target[s,"partitions"]:[], [] );
+		    if( NeedNewDisklabel(target[s]:$[]) )
+			{
+			target[s,"disklabel"] = "gpt";
+			target[s,"del_ptable"] = true;
+			}
 		    target[s,"partitions"] = 
 			maplist( map p, target[s,"partitions"]:[],
 			    ``{
-			    if( !contains( Partitions::do_not_delete, 
-					   p["fsid"]:0 ) &&
+			    if( (NeedNewDisklabel(target[s]:$[]) ||
+			         !contains( Partitions::do_not_delete, 
+					    p["fsid"]:0 )) &&
 				Storage::CanDelete( p, target[s]:$[], false))
 				{
 				if( usable_for_win_resize(p,false) )
@@ -3742,7 +3770,6 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	}
     list<string> ddev = get_disk_try_list( target, true );
     string sol_disk = "";
-    list modes = [ `free, `remove, `resize, `desparate ];
     map<string,boolean> valid = $[];
     map<string,integer> size_mb = listmap( string s, ddev, ``($[s:0]));
     map<string,boolean> keep_vg = $[];
@@ -3763,11 +3790,17 @@ map modify_vm( map vm, map opts, boolean need_swap )
 		    ``{
 		    target[s,"partitions"] = 
 			remove_p_settings( target[s,"partitions"]:[], [] );
+		    if( NeedNewDisklabel(target[s]:$[]) )
+			{
+			target[s,"disklabel"] = "gpt";
+			target[s,"del_ptable"] = true;
+			}
 		    target[s,"partitions"] = 
 			maplist( map p, target[s,"partitions"]:[],
 			    ``{
-			    if( !contains( Partitions::do_not_delete, 
-					   p["fsid"]:0 ) &&
+			    if( (NeedNewDisklabel(target[s]:$[]) ||
+			         !contains( Partitions::do_not_delete, 
+					    p["fsid"]:0 )) &&
 				Storage::CanDelete( p, target[s]:$[], false))
 				{
 				if( usable_for_win_resize(p,false) )
