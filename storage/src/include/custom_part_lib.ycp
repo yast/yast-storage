@@ -24,6 +24,7 @@
   import "Partitions";
   import "Product";
   import "FileSystems";
+  import "Greasemonkey";
 
   include "partitioning/partition_defines.ycp";
 
@@ -370,6 +371,49 @@ define boolean EmptyCryptPwdAllowed( map p )
     return( ret );
     }
 
+define term SubvolPart( boolean can_do_subvol )
+    {
+    term subvol = `Empty();
+    if( can_do_subvol )
+	subvol = `FrameWithMarginBox("", `PushButton( `id(`subvol), `opt(`hstretch),
+	                                              // button text 
+						      _("Subvolume Handling")));
+    return( Greasemonkey::Transform(subvol) );
+    }
+
+map<string,any> HandleSubvol( map<string,any> data )
+    {
+    map<string,any> ret = data;
+    if( ret["mount"]:""=="/" )
+	{
+	y2milestone( "before HandleSubvol fs:%1", ret["used_fs"]:`unknown );
+	y2milestone( "before HandleSubvol subvol:%1", ret["subvol"]:[] );
+	if( ret["used_fs"]:`unknown==`btrfs )
+	    {
+	    if( ret["format"]:false )
+		{
+		list<map> lsc = filter( map s, ret["subvol"]:[], 
+		                        ``(s["create"]:false));
+		y2milestone( "HandleSubvol list:%1", lsc );
+		if( size(lsc)==0 )
+		    {
+		    ret = (map<string,any>)Storage::AddSubvolRoot( ret );
+		    y2milestone( "HandleSubvol AddSubvolRoot subvol:%1", ret["subvol"]:[] );
+		    }
+		}
+	    else
+		ret["subvol"] = filter( map s, ret["subvol"]:[],
+		                        ``(!s["create"]:false&&!s["delete"]:false));
+	    }
+	else
+	    ret["subvol"] = [];
+	y2milestone( "after  HandleSubvol subvol:%1", ret["subvol"]:[] );
+	}
+    else
+	ret["subvol"] = [];
+    return( ret );
+    }
+
 map pkg_for_fs = $[
     `ext2 : [ "e2fsprogs" ],
     `ext3 : [ "e2fsprogs" ],
@@ -432,7 +476,7 @@ Really use this file system?
     if( apply_change && UI::WidgetExists( `id(`crypt_fs)) )
 	{
 	boolean cr = selected_fs[`crypt]:true && 
-	             new["type"]:`primary!=`btrfs;
+	             new["used_fs"]:`unknown!=`btrfs;
 	y2milestone( "HandleFsChanged cr:%1", cr );
 
 	UI::ChangeWidget( `id(`crypt_fs), `Enabled, cr );
@@ -441,6 +485,15 @@ Really use this file system?
 	    y2milestone( "HandleFsChanged crypt set to false" );
 	    UI::ChangeWidget(`id(`crypt_fs), `Value, false );
 	    }
+	}
+
+    if( !init && apply_change && UI::WidgetExists( `id(`subvol_rp)) )
+	{
+	boolean sv = new["used_fs"]:`unknown==`btrfs;
+	y2milestone( "HandleFsChanged sv:%1", sv );
+	UI::ReplaceWidget( `id(`subvol_rp), SubvolPart(sv) );
+	if( UI::WidgetExists( `id(`subvol)) )
+	    UI::ChangeWidget( `id(`subvol), `Enabled, sv );
 	}
 
     if( apply_change )
@@ -494,6 +547,8 @@ Really use this file system?
 	    {
 	    new["fs_options"] = FileSystems::DefaultFormatOptions(new);
 	    new["fstopt"] = fstopt;
+	    y2milestone( "HandleFsChanged fstopt:%1 new[\"fstopt\"]:%2", 
+			 fstopt, new["fstopt"]:"" );
 
 	    integer max_len = FileSystems::LabelLength( used_fs );
 	    if( size(new["label"]:"") > max_len )
@@ -510,6 +565,8 @@ Really use this file system?
 		{
 		new["label"] = "";
 		}
+	    if( used_fs!=`btrfs )
+		new["subvol"] = [];
 	    }
 	}
     y2milestone( "HandleFsChanged new %1", new );
@@ -535,11 +592,16 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	    new = filter(string key, any value, new, ``( key != "fstopt"));
 	    }
 	}
-    if( !init && ret == `mount_point &&
-        UI::WidgetExists( `id(`fstab_options) ))
+    if( !init && ret==`mount_point )
 	{
 	string mp = (string)UI::QueryWidget(`id(`mount_point), `Value);
-	UI::ChangeWidget( `id(`fstab_options), `Enabled, !isempty(mp) );
+	if( new["mount"]:""!=mp )
+	    {
+	    new["mount"] = mp;
+	    new = HandleSubvol( new );
+	    }
+	if( UI::WidgetExists( `id(`fstab_options) ))
+	    UI::ChangeWidget( `id(`fstab_options), `Enabled, !isempty(mp) );
 	}
     if( (init && UI::WidgetExists( `id(`format))) ||
         ret == `do_format || ret == `do_not_format)
@@ -577,6 +639,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	    if( new["used_fs"]:`unknown != old["used_fs"]:`unknown )
 		new = HandleFsChanged( init, new, old["used_fs"]:`unknown,
 		                       file_systems );
+	    new = HandleSubvol( new );
 	    if( format )
 		{
 		new["fs_options"] = FileSystems::DefaultFormatOptions(new);
@@ -644,6 +707,7 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 		    UI::ChangeWidget( `id(`fsid_point), `Value,
 				      selected_fs[`fsid_item]:"");
 		    }
+		new = HandleSubvol( new );
 		}
 	    }
 	}
@@ -709,7 +773,6 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
 	}
     if( ret == `fstab_options )
 	{
-	new["mount"] = UI::QueryWidget( `id(`mount_point), `Value );
 	new = FstabOptions( old, new );
 	}
     if( ret == `subvol )

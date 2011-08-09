@@ -181,18 +181,16 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	                              _("Do not mount partition"));
 	    }
 
-	term subvol = `Empty();
-	if( data["used_fs"]:`unknown==`btrfs )
-	    {
-	    subvol = `FrameWithMarginBox("", `PushButton( `id(`subvol), `opt(`hstretch),
-							  // button text 
-							  _("Subvolume Handling")));
-	    }
+	term subvol = 
+	    `ReplacePoint( `id(`subvol_rp), 
+			   SubvolPart(data["used_fs"]:`unknown==`btrfs) );
 
 	list mountpoints = ProposeMountpoints( used_fs, mount );
 
-	term contents = `HVSquash(`VStackFrames(
-				      fmt,
+	term contents = `HVSquash(
+	                    `HBox( fmt,
+			           `HSpacing(1),
+	                           `VStackFrames(
 				      `FrameWithMarginBox(_("Mounting Options"),
 					     `RadioButtonGroup(`id(`mount),
 							       `VBox(
@@ -210,9 +208,10 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 								   notmnt
 						 ))
 					  ),
-				      subvol
-				      )
-	    );
+				      subvol,
+				      `VStretch()
+				      ))
+	      );
 
 	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepFormatMountHelptext());
 
@@ -449,18 +448,6 @@ Also check the format option.
 
 	    if (!data["format"]:false)
 		data = filter(string key, any value, data, { return key != "fs_options"; });
-	    if( data["mount"]:""=="/" && data["used_fs"]:`unknown==`btrfs && 
-		data["format"]:false )
-		{
-		y2milestone( "before AddSubvolRoot subvol:%1", data["subvol"]:[] );
-		list<map> lsc = filter( map s, data["subvol"]:[], ``(s["create"]:false));
-		y2milestone( "before AddSubvolRoot list:%1", lsc );
-		if( size(lsc)==0 )
-		    {
-		    data = (map<string,any>)Storage::AddSubvolRoot( data );
-		    y2milestone( "after  AddSubvolRoot subvol:%1", data["subvol"]:[] );
-		    }
-		}
 
 	    if (contains([`primary, `extended, `logical], data["type"]:`unknown))
 		if (data["fsid"]:0 != orig_data["fsid"]:0)
