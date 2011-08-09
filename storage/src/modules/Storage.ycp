@@ -1707,9 +1707,34 @@ map getContainerInfo( map c )
 	    ls = splitstring( LibStorage::BtrfsInfo::swig_devices_rem_get(info), "\n" );
 	    if( size(ls)>0 )
 		c["devices_rem"] = ls;
+	    list<map> li = [];
+	    p["subvol"] = li;
 	    ls = splitstring(LibStorage::BtrfsInfo::swig_subvol_get(info), "\n");
 	    if( !isempty(ls) )
-		p["subvol"] = maplist( string s, ls, ``{ map m = $[ "name" : s ]; return( m ); });
+		{
+		li = maplist( string s, ls, 
+		              ``{ map m = $[ "name" : s ]; return( m ); });
+		p["subvol"] = li;
+		y2milestone( "subvol:%1", p["subvol"]:[] );
+		}
+	    ls = splitstring(LibStorage::BtrfsInfo::swig_subvol_add_get(info), "\n");
+	    if( !isempty(ls) )
+		{
+		li = maplist( string s, ls, 
+		              ``{ map m = $[ "create":true, "name" : s ]; 
+				  return( m ); });
+		p["subvol"] = union( p["subvol"]:[], li );
+		y2milestone( "subvol:%1", p["subvol"]:[] );
+		}
+	    ls = splitstring(LibStorage::BtrfsInfo::swig_subvol_rem_get(info), "\n");
+	    if( !isempty(ls) )
+		{
+		li = maplist( string s, ls, 
+		              ``{ map m = $[ "delete":true, "name" : s ]; 
+				  return( m ); });
+		p["subvol"] = union( p["subvol"]:[], li );
+		y2milestone( "subvol:%1", p["subvol"]:[] );
+		}
 	    if( size(p["devices"]:[])+size(p["devices_add"]:[])>1 )
 		p["device"] = "UUID=" + p["uuid"]:"";
 	    c["partitions"] = add( c["partitions"]:[], p );
@@ -2647,29 +2672,35 @@ global boolean ChangeVolumeProperties( map part )
 	y2milestone( "ChangeVolumeProperties cre:%1", cre );
 	while( ret==0 && size(rem)>0 )
 	    {
-	    changed = true;
 	    string pth = rem[0,"name"]:"";
-	    ret = LibStorage::StorageInterface::removeSubvolume( sint, d, pth );
-	    if( ret<0 )
-		y2error( "ChangeVolumeProperties sint ret:%1", ret );
-	    else
+	    if( LibStorage::StorageInterface::existSubvolume( sint, d, pth ))
 		{
-		y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
-		rem = remove( rem, 0 );
+		changed = true;
+		ret = LibStorage::StorageInterface::removeSubvolume( sint, d, pth );
+		if( ret<0 )
+		    y2error( "ChangeVolumeProperties sint ret:%1", ret );
+		else
+		    {
+		    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+		    }
 		}
+	    rem = remove( rem, 0 );
 	    }
 	while( ret==0 && size(cre)>0 )
 	    {
-	    changed = true;
 	    string pth = cre[0,"name"]:"";
-	    ret = LibStorage::StorageInterface::createSubvolume( sint, d, pth );
-	    if( ret<0 )
-		y2error( "ChangeVolumeProperties sint ret:%1", ret );
-	    else
+	    if( !LibStorage::StorageInterface::existSubvolume( sint, d, pth ))
 		{
-		y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
-		cre = remove( cre, 0 );
+		changed = true;
+		ret = LibStorage::StorageInterface::createSubvolume( sint, d, pth );
+		if( ret<0 )
+		    y2error( "ChangeVolumeProperties sint ret:%1", ret );
+		else
+		    {
+		    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
+		    }
 		}
+	    cre = remove( cre, 0 );
 	    }
 	}
     if( ret==0 )
