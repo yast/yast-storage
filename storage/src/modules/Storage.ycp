@@ -3110,6 +3110,39 @@ global boolean NeedCryptPwd( string device )
     return( ret );
     }
 
+global boolean IsVgEncrypted( map<string,map> tg, string vg_key )
+    {
+    boolean ret = false;
+    list<string> devs = tg[vg_key,"devices"]:[];
+    foreach( string s, devs,
+	``{
+	map p = GetPartition( tg, s );
+	if( !ret )
+	    ret = p["enc_type"]:`none==`luks;
+	y2milestone( "IsVgEncrypted ret:%1 p:%2", ret, p );
+	});
+    y2milestone( "IsVgEncrypted key:%1 ret:%2", vg_key, ret );
+    return( ret );
+    }
+
+global boolean NeedVgPassword( map<string,map> tg, string vg_key )
+    {
+    boolean ret = IsVgEncrypted( tg, vg_key );
+    y2milestone( "NeedVgPassword vg:%1", tg[vg_key]:$[] );
+    if( ret )
+	{
+	list<string> devs = tg[vg_key,"devices"]:[];
+	foreach( string s, devs,
+	    ``{
+	    ret = ret && NeedCryptPwd( s );
+	    y2milestone( "NeedVgPassword ret:%1 s:%2", ret, s );
+	    });
+	}
+    else
+	ret = !haskey( tg, vg_key );
+    y2milestone( "NeedVgPassword key:%1 ret:%2", vg_key, ret );
+    return( ret );
+    }
 
 global string CreateLoop( string file, boolean create, integer sizeK,
                           string mp )
