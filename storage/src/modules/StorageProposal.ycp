@@ -3436,6 +3436,9 @@ string find_vm( map<string,map> target, string ky, integer min_size )
     if( GetProposalLvm() && target[key,"lvm2"]:false && 
         target[key,"size_k"]:0 >= min_size )
 	ret = key;
+    if( size(ret)>0 && 
+	GetProposalEncrypt()!=Storage::IsVgEncrypted(target, key))
+	ret = "";
     y2milestone( "find_vm key:%1 min_size:%2 ret:%3", ky, min_size, ret );
     return( ret );
     }
@@ -4120,7 +4123,15 @@ global term AddCommonWidgets()
 
 boolean QueryProposalPassword()
     {
-    if (!isempty(StorageProposal::GetProposalPassword()))
+    boolean no_query = false;
+    Storage::CreateTargetBackup("query_prop_passwd");
+    Storage::RestoreTargetBackup("initial");
+    if (!isempty(StorageProposal::GetProposalPassword()) ||
+        !Storage::NeedVgPassword( Storage::GetTargetMap(), "/dev/system"))
+	no_query = true;
+    Storage::RestoreTargetBackup("query_prop_passwd");
+    Storage::DisposeTargetBackup("query_prop_passwd");
+    if( no_query )
 	return true;
 
     UI::OpenDialog(`VBox(
