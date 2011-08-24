@@ -48,6 +48,8 @@ namespace storage
 	    label = extractNthWord(2, cmd.getLine(0, true));
 	    if (label == "unknown")
 		label.clear();
+	    else if(label == LABEL_GPT_SYNC_MBR)
+		label = "gpt";
 	}
 	else
 	    y2war("could not find partition table");
