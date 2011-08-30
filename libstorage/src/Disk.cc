@@ -1785,7 +1785,7 @@ Disk::getPartedValues( Partition *p ) const
 
 	    ret = true;
 
-	    if( !dmp_slave && p->type() != EXTENDED )
+	    if( !no_addpart && p->type() != EXTENDED )
 		{
 		ProcParts parts;
 		unsigned long long s = 0;
