@@ -202,38 +202,69 @@ define symbol DoInputChecks( map entry, string query )
     string valid_chars = entry[`valid_chars]:"";
     integer str_length = entry[`str_length]:0;
 
-    if( between != [] && (size(query)>0 || !entry[`empty_allowed]:false))
+    if( entry[`query_key]:""=="tmpfs_size" )
 	{
-	y2milestone( "DoInputChecks entry:%1 query:\"%2\"", entry, query );
-	if( between[0]:0 > tointeger(query)  ||
-	    ( (between[1]:0 != -1) && (between[1]:0 < tointeger(query) ) ) )
+	integer sz=0;
+	integer pospct = search( query, "%" );
+	integer posdot = search( query, "." );
+	if( posdot == nil )
+	    posdot = search( query, "," );
+	if( posdot!=nil )
+	    {
+	    Popup::Error(_("No floating point number!"));
+	    ret = `error;
+	    }
+	else
+	    {
+	    if( pospct!=nil && (between[0]:0 > tointeger(query)  ||
+		( (between[1]:0 != -1) && (between[1]:0 < tointeger(query) )) ) )
+		{
+		Popup::Error(entry[`error_text_percent]:"");
+		ret = `error;
+		}
+	    else if( pospct==nil && 
+		     (!Storage::HumanStringToByte( query, sz ) || 
+		      sz<entry[`min_size]:1 ))
+		{
+		Popup::Error(entry[`error_text]:"");
+		ret = `error;
+		}
+	    }
+	}
+    else 
+	{
+	if( between != [] && (size(query)>0 || !entry[`empty_allowed]:false))
+	    {
+	    y2milestone( "DoInputChecks entry:%1 query:\"%2\"", entry, query );
+	    if( between[0]:0 > tointeger(query)  ||
+		( (between[1]:0 != -1) && (between[1]:0 < tointeger(query) ) ) )
+		{
+		Popup::Error(entry[`error_text]:"");
+		ret = `error;
+		}
+	    }
+	if( below != 0 && (size(query)>0 || !entry[`empty_allowed]:false))
+	    {
+	    y2milestone( "DoInputChecks entry:%1 query:\"%2\"", entry, query );
+	    if( below < tofloat(query) )
+		{
+		Popup::Error(entry[`error_text]:"");
+		ret = `error;
+		}
+	    }
+	if( valid_chars != "" && size(query)>0 && ret != `error )
+	    {
+	    if( nil != findfirstnotof( query, valid_chars ))
+		{
+		Popup::Error(entry[`error_text]:"");
+		ret = `error;
+		}
+	    }
+	if( str_length != 0 && size(query) > str_length && ret != `error )
 	    {
 	    Popup::Error(entry[`error_text]:"");
 	    ret = `error;
 	    }
-	}
-    if( below != 0 && (size(query)>0 || !entry[`empty_allowed]:false))
-	{
-	y2milestone( "DoInputChecks entry:%1 query:\"%2\"", entry, query );
-	if( below < tofloat(query) )
-	    {
-	    Popup::Error(entry[`error_text]:"");
-	    ret = `error;
-	    }
-	}
-    if( valid_chars != "" && size(query)>0 && ret != `error )
-	{
-	if( nil != findfirstnotof( query, valid_chars ))
-	    {
-	    Popup::Error(entry[`error_text]:"");
-	    ret = `error;
-	    }
-	}
-
-    if( str_length != 0 && size(query) > str_length && ret != `error )
-	{
-	Popup::Error(entry[`error_text]:"");
-	ret = `error;
 	}
     y2milestone( "DoInputChecks value %1 ret %2", query, ret );
     return( ret );
