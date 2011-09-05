@@ -832,8 +832,6 @@ int Volume::doFormatBtrfs()
     SystemCmd c;
     string defvol = getStorage()->getDefaultSubvolName();
     string cmd = "/sbin/mkfs.btrfs " + quote(mountDevice());
-    if( !label.empty() )
-	cmd += " -L" + label;
     c.execute( cmd );
     if( c.retcode()!=0 )
 	{
@@ -1112,7 +1110,7 @@ int Volume::doFormat()
 	    uuid = "testmode-0123-4567-6666-98765432"+decString(fcount++);
 	    }
 	}
-    if( ret==0 && !label.empty() && fs!=BTRFS )
+    if( ret==0 && !label.empty() )
 	{
 	ret = doSetLabel();
 	}
@@ -2427,6 +2425,10 @@ int Volume::doSetLabel()
 		if (!uuid.empty())
 		    cmd += " -U " + quote(uuid);
 		cmd += " " + quote(mountDevice());
+		break;
+	    case BTRFS:
+		cmd = BTRFSBIN " filesystem label " + quote(mountDevice());
+		cmd += " " + quote(label);
 		break;
 	    default:
 		ret = VOLUME_MKLABEL_FS_UNABLE;
