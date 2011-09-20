@@ -57,6 +57,13 @@ Dm::Dm( const PeContainer& d, const string& tn, unsigned mnum ) :
     nm = tn;
     init();
     getTableInfo();
+
+    list<storage::usedBy> tmp_uby;
+    getContainer()->getStorage()->fetchDanglingUsedBy(dev, tmp_uby);
+    for (list<string>::const_iterator it = alt_names.begin(); it != alt_names.end(); ++it)
+        getContainer()->getStorage()->fetchDanglingUsedBy(*it, tmp_uby);
+    if (!tmp_uby.empty())
+	setUsedBy(tmp_uby.front().type(), tmp_uby.front().name());
     }
 
 

@@ -236,6 +236,8 @@ void Storage::dumpObjectList()
 
 void Storage::detectObjects()
     {
+    danglingUsedBy.clear();
+
     ProcPart* ppart = new ProcPart;
     detectDisks( *ppart );
     if( instsys() )
@@ -270,6 +272,9 @@ void Storage::detectObjects()
     detectDm(*ppart, true);
     detectLvmVgs();
     detectDm(*ppart, false);
+
+    if (!danglingUsedBy.empty())
+        y2err("dangling used-by left after detection: " << danglingUsedBy);
 
     LvmVgPair p = lvgPair();
     y2mil( "p length:" << p.length() );
@@ -5678,6 +5683,9 @@ bool Storage::setUsedBy(const string& dev, UsedByType ub_type, const string& ub_
 	    ret = false;
 	    y2err("could not set ub_type:" << ub_type << " ub_name:" << ub_name <<
 		  "for dev: " << dev);
+	    danglingUsedBy[dev].push_back(storage::usedBy(ub_type, ub_name)); 
+	    y2mil("setting type:" << ub_type << " name:" << ub_name <<
+                  " for dev:" << dev << " to dangling usedby");
 	}
     }
     else
@@ -5717,6 +5725,23 @@ UsedByType Storage::usedBy( const string& dev )
     storage::usedBy ub;
     usedBy( dev, ub );
     return( ub.type() );
+    }
+
+
+    void
+    Storage::fetchDanglingUsedBy(const string& dev, list<storage::usedBy>& uby)
+    {
+	map<string, list<storage::usedBy> >::iterator pos = danglingUsedBy.find(dev);
+	if (pos != danglingUsedBy.end())
+	{
+	    uby.splice(uby.end(), pos->second);
+	    danglingUsedBy.erase(pos);
+	    y2mil("dev:" << dev << " usedby:" << uby);
+	}
+	else
+	{
+	    y2mil("dev:" << dev << " not found");
+	}
     }
 
 
