@@ -170,6 +170,7 @@ class Storage : public storage::StorageInterface
 	storage::UsedByType usedBy( const string& dev );
 	bool setUsedBy( const string& dev, storage::UsedByType typ,
 	                const string& name );
+	void fetchDanglingUsedBy(const string& dev, std::list<storage::usedBy>& uby);
 	bool canUseDevice( const string& dev, bool disks_allowed=false );
 	bool knownDevice( const string& dev, bool disks_allowed=false );
 	bool setDmcryptData( const string& dev, const string& dm, unsigned long long siz );
@@ -1413,6 +1414,8 @@ class Storage : public storage::StorageInterface
 	static storage::CallbackInfoPopup info_popup_cb_ycp;
 	static storage::CallbackYesNoPopup yesno_popup_cb_ycp;
 	friend std::ostream& operator<< (std::ostream& s, Storage &v );
+
+	std::map<string, std::list<storage::usedBy> > danglingUsedBy;
 
 	unsigned max_log_num;
 	string lastAction;
