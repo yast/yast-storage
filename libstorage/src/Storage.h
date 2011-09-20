@@ -280,6 +280,7 @@ class Storage : public storage::StorageInterface
 	bool clearUsedBy(const string& dev);
 	bool setUsedBy(const string& dev, storage::UsedByType ub_type,
 		       const string& ub_name);
+	void fetchDanglingUsedBy(const string& dev, std::list<storage::usedBy>& uby);
 	bool canUseDevice( const string& dev, bool disks_allowed=false );
 	bool knownDevice( const string& dev, bool disks_allowed=false );
 	bool setDmcryptData( const string& dev, const string& dm, 
@@ -1941,6 +1942,8 @@ class Storage : public storage::StorageInterface
         CallbackPasswordPopup password_popup_cb;
 
 	friend std::ostream& operator<< (std::ostream& s, Storage &v );
+
+	std::map<string, std::list<storage::usedBy> > danglingUsedBy;
 
 	unsigned max_log_num;
 	string lastAction;
