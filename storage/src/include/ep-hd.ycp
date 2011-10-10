@@ -242,6 +242,39 @@ selected hard disk.</p>");
     }
 
 
+    boolean DiskMaySupportSmart(string disk_device)
+    {
+	if (String::StartsWith(disk_device, "/dev/dasd"))
+	    return false;
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map disk = target_map[disk_device]:$[];
+
+	if (disk["type"]:`CT_UNKNOWN != `CT_DISK)
+	    return false;
+
+	if (contains([ "3w-9xxx" ], disk["driver"]:""))
+	    return false;
+
+	return true;
+    }
+
+
+    boolean DiskMaySupportHdparm(string disk_device)
+    {
+	if (String::StartsWith(disk_device, "/dev/dasd"))
+	    return false;
+
+	map<string, map> target_map = Storage::GetTargetMap();
+	map disk = target_map[disk_device]:$[];
+
+	if (disk["type"]:`CT_UNKNOWN != `CT_DISK)
+	    return false;
+
+	return true;
+    }
+
+
     void HandleHdDiskOverviewTab(any user_data, map event)
     {
 	string disk_device = (string) user_data;
@@ -250,27 +283,19 @@ selected hard disk.</p>");
 	{
 	    case `smart:
 	    {
-		map<string, map> target_map = Storage::GetTargetMap();
-		map disk = target_map[disk_device]:$[];
-		if (disk["type"]:`CT_UNKNOWN != `CT_DISK || substring(disk_device, 0, 9) == "/dev/dasd")
-		{
+		if (!DiskMaySupportSmart(disk_device))
 		    Popup::Error(_("SMART is not available for this disk."));
-		    break;
-		}
-		DisplayCommandOutput(sformat("/usr/sbin/smartctl --health '%1'", disk_device));
+		else
+		    DisplayCommandOutput(sformat("/usr/sbin/smartctl --health '%1'", disk_device));
 		break;
 	    }
 
 	    case `hdparm:
 	    {
-		map<string, map> target_map = Storage::GetTargetMap();
-		map disk = target_map[disk_device]:$[];
-		if (disk["type"]:`CT_UNKNOWN != `CT_DISK || substring(disk_device, 0, 9) == "/dev/dasd")
-		{
+		if (!DiskMaySupportHdparm(disk_device))
 		    Popup::Error(_("hdparm is not available for this disk."));
-		    break;
-		}
-		DisplayCommandOutput(sformat("/sbin/hdparm -aAgr '%1'", disk_device));
+		else
+		    DisplayCommandOutput(sformat("/sbin/hdparm -aAgr '%1'", disk_device));
 		break;
 	    }
 	}
@@ -325,7 +350,7 @@ selected hard disk.</p>");
 			      `Table(`id(`table), `opt(`keepSorting, `notify, `notifyContextMenu),
 				     table_header, table_contents),
 			      `HBox(
-				  ArrangeButtons(flatten([ 
+				  ArrangeButtons(flatten([
 				      [ // push button text
 				        `PushButton(`id(`add),`opt(`key_F3), _("Add...")) ],
 				      HdButtons(),
