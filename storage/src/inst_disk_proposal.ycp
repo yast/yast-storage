@@ -37,6 +37,24 @@
     include "partitioning/custom_part_dialogs.ycp";
     include "partitioning/ep-import.ycp";
 
+boolean CouldNotDoSeparateHome( map<string,map> prop )
+    {
+    boolean ret = false;
+    if( StorageProposal::GetProposalHome() )
+	{
+	list<map> ls = [];
+	foreach( string k, map d, prop,
+	    ``{
+	    ls = (list<map>)union( ls, filter( map p, d["partitions"]:[], 
+					       ``(!p["delete"]:false&&size(p["mount"]:"")>0) ));
+	    });
+	ret = size(filter( map p, ls, ``(p["mount"]:""=="/home")))==0;
+	y2milestone( "CouldNotDoSeparateHome ls:%1", ls );
+	}
+    y2milestone( "CouldNotDoSeparateHome ret:%1", ret );
+    return( ret );
+    }
+
 
 boolean AskOverwriteChanges()
     {
@@ -149,8 +167,15 @@ if( Storage::GetPartProposalFirst() )
     {
     map prop = StorageProposal::get_inst_prop(Storage::GetTargetMap());
     y2milestone( "prop ok:%1", prop["ok"]:false );
+    SCR::Write(.target.ycp, "/tmp/prop_first", prop );
+
     if( prop["ok"]:false )
         {
+	if( CouldNotDoSeparateHome( prop["target"]:$[] ))
+	    {
+	    StorageProposal::SetProposalHome(false);
+	    UI::ChangeWidget(`id(`home), `Value, false);
+	    }
 	Storage::SetTargetMap( prop["target"]:$[] );
 	targetMap = prop["target"]:$[];
 	Storage::SetPartProposalMode( "accept" );
@@ -294,6 +319,13 @@ if( !Storage::GetTestsuite() )
 		    }
 		else
 		    {
+		    if( CouldNotDoSeparateHome( prop["target"]:$[] ))
+			{
+			string reason = _("Not enough space available to propose separate /home.");
+			Popup::Error( reason );
+			StorageProposal::SetProposalHome(false);
+			UI::ChangeWidget(`id(`home), `Value, false);
+			}
 		    targetMap = prop["target"]:$[];
 		    Storage::SetPartProposalMode( "accept" );
 		    Storage::SetPartProposalActive( true );
