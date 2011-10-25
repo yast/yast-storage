@@ -510,6 +510,40 @@ global boolean HumanStringToKByteWithRangeCheck(string str, integer& bytes_k, in
 	return LibStorage::StorageInterface::getIgnoreFstab(sint, device, val) == 0;
     }
 
+symbol toSymbol( map<string,any> conv, integer val )
+    {
+    return( conv["m",val]:(conv["def_sym"]:`invalid_conv_map) );
+    }
+
+integer fromSymbol( map<string,any> conv, symbol val )
+    {
+    integer ret = conv["def_int"]:-1;
+    foreach( integer i, symbol s, conv["m"]:$[],
+	``{
+	if( s==val )
+	    ret = i;
+	});
+    return( ret );
+    }
+
+global boolean GetContVolInfo(string device, map<string, any>& info)
+    {
+    any tmp = LibStorage::ContVolInfo::new("LibStorage::ContVolInfo");
+    if (LibStorage::StorageInterface::getContVolInfo(sint, device, tmp) != 0)
+	return false;
+
+    info = $[ "ctype" : toSymbol(conv_ctype, LibStorage::ContVolInfo::swig_ctype_get(tmp)),
+	      "cname" : LibStorage::ContVolInfo::swig_cname_get(tmp),
+	      "cdevice" : LibStorage::ContVolInfo::swig_cdevice_get(tmp),
+	      "vname" : LibStorage::ContVolInfo::swig_vname_get(tmp),
+	      "vdevice" : LibStorage::ContVolInfo::swig_vdevice_get(tmp),
+	      "num" : LibStorage::ContVolInfo::swig_num_get(tmp) ];
+
+    y2milestone("GetContVolInfo device:%1 info:%2", device, info);
+    return true;
+    }
+
+
 
 global define map<string,map> GetTargetMap();
 global define void SetTargetMap( map<string,map> target );
@@ -519,8 +553,9 @@ global define map<string,map> DelPartitionData( map<string,map> target, string d
                                                 string key );
 
 
-define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
+define list<map> GetDiskPartitionTg( string inpdev, map<string,map> tg )
     ``{
+    string device = inpdev;
     list<map> ret = [];
     integer dlen = 0;
     boolean as_string = false;
@@ -739,6 +774,23 @@ define list<map> GetDiskPartitionTg( string device, map<string,map> tg )
 	if( size(tmp["disk"]:"")>0 && tmp["nr"]:(any)1 == -1 )
 	    {
 	    tmp["nr"] = "";
+	    }
+	if( size(tg)>0 && !haskey( tg, tmp["disk"]:"" ))
+	    {
+	    y2milestone( "GetDiskPartitionTg tmp:%1", tmp );
+	    map<string,any> r = $[];
+	    if( GetContVolInfo( inpdev, r ))
+		{
+		y2milestone( "GetDiskPartitionTg rtmp:%1", r );
+		if( haskey( tg, r["cdevice"]:"" ))
+		    {
+		    tmp["disk"] = r["cdevice"]:"";
+		    if( r["num"]:-1 != -1 )
+			tmp["nr"] = r["num"]:-1;
+		    else 
+			tmp["nr"] = r["vname"]:"";
+		    }
+		}
 	    }
 	ret = [ tmp ];
 	}
@@ -1185,22 +1237,6 @@ map<any, map> convertStringToFsOptionMap( string opts, symbol fs, symbol cmd )
 	y2milestone( "convertStringToFsOptionMap opts:%1 ret:%2", opts, ret );
 	}
     y2milestone( "convertStringToFsOptionMap ret:%1", ret );
-    return( ret );
-    }
-
-symbol toSymbol( map<string,any> conv, integer val )
-    {
-    return( conv["m",val]:(conv["def_sym"]:`invalid_conv_map) );
-    }
-
-integer fromSymbol( map<string,any> conv, symbol val )
-    {
-    integer ret = conv["def_int"]:-1;
-    foreach( integer i, symbol s, conv["m"]:$[],
-	``{
-	if( s==val )
-	    ret = i;
-	});
     return( ret );
     }
 
@@ -1849,7 +1885,7 @@ map<string,map> HandleBtrfsSimpleVolumes( map<string,map> tg )
 		    }
 		else
 		    { 
-		    if( haskey( mp, k ));
+		    if( haskey( mp, k ))
 			{
 			y2milestone( "HandleBtrfsSimpleVolumes remove key %1", k );
 			tg = DelPartitionData( tg, p["device"]:"", k );
@@ -2224,23 +2260,6 @@ global define void SetPartDisk( string value )
 	Storage::SetPartMode( "CUSTOM" );
 	Storage::SetPartProposalActive( false  );
 	}
-    }
-
-
-    global boolean GetContVolInfo(string device, map<string, any>& info)
-    {
-	any tmp = LibStorage::ContVolInfo::new("LibStorage::ContVolInfo");
-	if (LibStorage::StorageInterface::getContVolInfo(sint, device, tmp) != 0)
-	    return false;
-
-	info = $[ "ctype" : toSymbol(conv_ctype, LibStorage::ContVolInfo::swig_ctype_get(tmp)),
-		  "cname" : LibStorage::ContVolInfo::swig_cname_get(tmp),
-		  "cdevice" : LibStorage::ContVolInfo::swig_cdevice_get(tmp),
-		  "vname" : LibStorage::ContVolInfo::swig_vname_get(tmp),
-		  "vdevice" : LibStorage::ContVolInfo::swig_vdevice_get(tmp) ];
-
-	y2milestone("GetContVolInfo device:%1 info:%2", device, info);
-	return true;
     }
 
 
@@ -6077,6 +6096,90 @@ global list<list> AllowdParity( string mdtype, integer sz )
                               {return( [ toSymbol(conv_mdparity, i), 
 					 rev_conv_parstring[i]:"" ] );});
     y2milestone( "ret:%1", ret );
+    return( ret );
+    }
+
+list<string> GetUsedDisks( string device )
+    {
+    y2milestone( "GetUsedDisks device:%1", device );
+    list<string> ret = [];
+    map<string,map> tg = GetTargetMap();
+    map<string,any> info = $[];
+    if( GetContVolInfo(device, info))
+	{
+	y2milestone( "GetUsedDisks info:%1", info );
+	list<string> to_visit = [ device ];
+	list<string> visited_devs = [];
+	do
+	    {
+	    visited_devs = add( visited_devs, to_visit[0]:"" );
+	    to_visit = remove( to_visit, 0 );
+	    list<string> add_list = [];
+	    if( info["ctype"]:`CT_UNKNOWN==`CT_DISK )
+		{
+		if( !contains( ret, info["cdevice"]:"" ))
+		    ret = add( ret, info["cdevice"]:"" );
+		}
+	    else if( info["ctype"]:`CT_UNKNOWN==`CT_BTRFS )
+		{
+		map bt = find( map p, tg["/dev/btrfs","partitions"]:[],
+		               ``(contains( p["devices"]:[], info["vdevice"]:"" )));
+		y2milestone( "GetUsedDisks bt:%1", bt );
+		if( bt!=nil )
+		    add_list = bt["devices"]:[];
+		}
+	    else
+		{
+		add_list = tg[info["cdevice"]:"","devices"]:[];
+		}
+	    if( size(add_list)>0 )
+		y2milestone( "GetUsedDisks add_list:%1", add_list );
+	    foreach( string s, add_list,
+		``{
+		if( !contains( visited_devs, s ) && !contains( to_visit, s ) && 
+		    !contains( ret, s ))
+		    to_visit = add( to_visit, s );
+		});
+	    y2milestone( "GetUsedDisks to_visit:%1", to_visit );
+	    while( size(to_visit)>0 && !GetContVolInfo(to_visit[0]:"", info))
+		{
+		visited_devs = add( visited_devs, to_visit[0]:"" );
+		to_visit = remove( to_visit, 0 );
+		}
+	    if( size(to_visit)>0 )
+		y2milestone( "GetUsedDisks info:%1", info );
+	    }
+	while( size(to_visit)>0 );
+	if( size(ret)>1 )
+	    ret = sort( ret );
+	}
+    else if( substring(device,0,1)!="/" && search(device,":")>0 )
+	ret = [ "/dev/nfs" ];
+    y2milestone( "GetUsedDisks ret:%1", ret );
+    return( ret );
+    }
+
+global symbol IsDeviceOnNetwork( string device ) 
+    {
+    symbol ret = `no;
+    map<string,map> tg = GetTargetMap();
+
+    list<string> disks = GetUsedDisks( device );
+    if( disks[0]:""=="/dev/nfs" )
+	ret = `nfs;
+    else
+	{
+	foreach( string s, disks, 
+	    ``{
+	    if( ret == `no )
+		{
+		y2milestone( "disk:%1 tarnsport:%2", s, tg[s,"transport"]:`unknown );
+		if( contains( [ `fcoe, `iscsi ], tg[s,"transport"]:`unknown ))
+		    ret = tg[s,"transport"]:`unknown;
+		}
+	    });
+	}
+    y2milestone( "IsDeviceOnNetwork device:%1 ret:%2", device, ret );
     return( ret );
     }
 
