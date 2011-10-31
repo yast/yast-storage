@@ -411,6 +411,7 @@ global boolean NeedNewDisklabel( map entry )
 
 
 map<string, boolean> swapable = $[];
+map<string, boolean> ishome = $[];
 
 
     global void flex_init_swapable(map<string, map> tg)
@@ -2915,10 +2916,19 @@ list<map> remove_one_partition( map disk )
 			       Storage::CanDelete( p, disk, false )));
     if( size(pl)>0 )
 	{
+	foreach( map p, pl, 
+	    ``{
+	    if( !haskey( ishome, p["device"]:"" ))
+		ishome[p["device"]:""] = Storage::DetectHomeFs(p);
+	    });
 	pl = sort( map a, map b, pl, 
 		   ``(a["size_k"]:0>b["size_k"]:0));
-	pl = (list<map>) union( 
-	    filter( map p, pl, ``(!Storage::IsUsedBy(p)) ),
+	list<map> l1 = filter( map p, pl, ``(!Storage::IsUsedBy(p)) );
+	l1 = (list<map>) union( 
+	    filter( map p, l1, ``(!ishome[p["device"]:""]:false) ),
+	    filter( map p, l1, ``(ishome[p["device"]:""]:false) ));
+
+	pl = (list<map>) union( l1, 
 	    filter( map p, pl, ``(Storage::IsUsedBy(p)) ));
 
 	partitions = 
