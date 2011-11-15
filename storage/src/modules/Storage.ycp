@@ -5977,28 +5977,31 @@ global void AddHwPackage( string name )
     }
 
 
+string dbus_cookie = nil;
+
 global void SwitchUiAutomounter(boolean on)
 {
     y2milestone("SwitchUiAutomounter on:%1", on);
 
     if (!on)
     {
-	SCR::Execute(.dbus.system.method,
-		     $[ `destination : "org.freedesktop.Hal",
-			`path : "/org/freedesktop/Hal/Manager",
-			`interface : "org.freedesktop.Hal.Manager",
-			`method : "AcquireGlobalInterfaceLock" ],
-		     [ "org.freedesktop.Hal.Device.Storage",
-		       true ]);
+	any tmp = SCR::Execute(.dbus.system.method,
+			       $[ `destination : "org.freedesktop.UDisks",
+				  `path : "/org/freedesktop/UDisks",
+				  `interface : "org.freedesktop.UDisks",
+				  `method : "Inhibit" ],
+			       [ ]);
+	dbus_cookie = ((list) tmp)[0]:"";
     }
     else
     {
-	SCR::Execute(.dbus.system.method,
-		     $[ `destination : "org.freedesktop.Hal",
-			`path : "/org/freedesktop/Hal/Manager",
-			`interface : "org.freedesktop.Hal.Manager",
-			`method : "ReleaseGlobalInterfaceLock" ],
-		     [ "org.freedesktop.Hal.Device.Storage" ]);
+	any tmp = SCR::Execute(.dbus.system.method,
+			       $[ `destination : "org.freedesktop.UDisks",
+				  `path : "/org/freedesktop/UDisks",
+				  `interface : "org.freedesktop.UDisks",
+				  `method : "Uninhibit" ],
+			       [ dbus_cookie ]);
+	dbus_cookie = nil;
     }
 
     y2milestone("SwitchUiAutomounter exit");
