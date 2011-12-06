@@ -528,6 +528,15 @@ unsigned Md::mdMajor()
     }
 
 
+    list<string>
+    Md::getUsing() const
+    {
+	list<string> ret = devs;
+	ret.insert(ret.end(), spare.begin(), spare.end());
+	return ret;
+    }
+
+
 void Md::getInfo( MdInfo& tinfo ) const
     {
     Volume::getInfo(info.v);
