@@ -1356,29 +1356,46 @@ global define string DefaultFstabOptions( map part )
 	    }
 	}
 
-    any dp = LibStorage::ContVolInfo::new("LibStorage::ContVolInfo");
     string dev = part["device"]:"";
-    LibStorage::StorageInterface::getContVolInfo(sint, dev, dp);
-    integer t = LibStorage::ContVolInfo::swig_ctype_get(dp);
-    if( t == LibStorage::DISK() && part["mount"]:""!="/" )
+
+    if (part["mount"]:"" != "/")
+    {
+	boolean need_nofail = false;
+
+	list<string> devs = part["using_devices"]:[dev];
+	y2milestone("DefaultFstabOptions devs:%1", devs);
+
+	list<string> usedby_devices = [];
+	if (LibStorage::StorageInterface::getRecursiveUsedBy(sint, devs, true, usedby_devices) == 0)
 	{
-	any infos = LibStorage::DiskInfo::new("LibStorage::DiskInfo");
-	string disk = LibStorage::ContVolInfo::swig_cdevice_get(dp);
-	y2milestone( "DefaultFstabOptions disk:%1", disk );
-	integer r = LibStorage::StorageInterface::getDiskInfo(sint, disk, infos);
-	if( r==0 )
-	    {
-	    integer t = LibStorage::DiskInfo::swig_transport_get(infos);
-	    list<integer> hotpl = [ LibStorage::USB(), LibStorage::FCOE(), LibStorage::ISCSI() ];
-	    y2milestone( "DefaultFstabOptions transport:%1 list:%2", t, hotpl );
-	    if( contains( hotpl, t ))
+	    // USB since those might actually not be present during boot
+	    // iSCSI since the boot scripts need it
+	    list<integer> hotplug_transports = [ LibStorage::USB(), LibStorage::ISCSI() ];
+
+	    foreach (string usedby_device, usedby_devices, {
+		    
+		any dp = LibStorage::ContVolInfo::new("LibStorage::ContVolInfo");
+		if (LibStorage::StorageInterface::getContVolInfo(sint, usedby_device, dp) == 0 &&
+		    LibStorage::ContVolInfo::swig_ctype_get(dp) == LibStorage::DISK())
 		{
-		if( size(fst_default)>0 )
+		    string disk = LibStorage::ContVolInfo::swig_cdevice_get(dp);
+		    any infos = LibStorage::DiskInfo::new("LibStorage::DiskInfo");
+		    if (LibStorage::StorageInterface::getDiskInfo(sint, disk, infos) == 0 &&
+			contains(hotplug_transports, LibStorage::DiskInfo::swig_transport_get(infos)))
+		    {
+			need_nofail = true;
+		    }
+		}
+	    });
+
+	    if (need_nofail)
+	    {
+		if (!isempty(fst_default))
 		    fst_default = fst_default + ",";
 		fst_default = fst_default + "nofail";
-		}
 	    }
 	}
+    }
 
     if( substring(fst_default,0,1)=="," )
 	fst_default = substring(fst_default,1);
