@@ -413,6 +413,14 @@ global boolean NeedNewDisklabel( map entry )
 map<string, boolean> swapable = $[];
 map<string, boolean> ishome = $[];
 
+void fill_ishome( list<map> pl )
+    {
+    foreach( map p, pl, 
+	``{
+	if( !haskey( ishome, p["device"]:"" ))
+	    ishome[p["device"]:""] = Storage::DetectHomeFs(p);
+	});
+    }
 
     global void flex_init_swapable(map<string, map> tg)
     {
@@ -2614,13 +2622,13 @@ list<map> can_boot_reuse( string disk, string label, boolean boot,
     return( ret );
     }
 
-list<map> can_mp_reuse( string mp, integer min, integer max,
-                        list<map> partitions )
+list<map> can_home_reuse( integer min, integer max,
+			  list<map> partitions )
     {
     list<map> ret = [];
     if( max>0 )
 	max = max + max/10;
-    y2milestone( "can_mp_reuse mp %1 min %2 max %3", mp, min, max );
+    y2milestone( "can_home_reuse min %1 max %2", min, max );
     list<map> pl = [];
     pl = filter( map p, partitions, 
 		 ``(!p["delete"]:false &&
@@ -2631,23 +2639,79 @@ list<map> can_mp_reuse( string mp, integer min, integer max,
 		    p["size_k"]:0/1024 >= min &&
 		    (max==0 || p["size_k"]:0/1024 <= max) &&
 		    Storage::CanEdit( p, false )));
-    y2milestone( "can_mp_reuse normal %1", pl );
+    y2milestone( "can_home_reuse normal %1", pl );
     if( size(pl)>0 )
 	{
 	pl = sort( map a, map b, pl, ``(a["size_k"]:0>b["size_k"]:0));
-	y2milestone( "can_mp_reuse sorted %1", pl );
+	fill_ishome( pl );
+	pl = (list<map>) union( 
+	    filter( map p, pl, ``(ishome[p["device"]:""]:false) ),
+	    filter( map p, pl, ``(!ishome[p["device"]:""]:false) ));
+	y2milestone( "can_home_reuse sorted %1", pl );
 	ret = maplist( map p, partitions,
 		       ``{
 		       if( !p["delete"]:false &&
 			   p["device"]:""==pl[0,"device"]:"" )
 			   {
-			   p = Storage::SetVolOptions( p, mp, PropDefaultFs(),
+			   p = Storage::SetVolOptions( p, "/home", PropDefaultFs(),
 						       "", "", "" );
 			   }
 		       return( p );
 		       });
 	}
-    y2milestone( "can_mp_reuse ret %1", ret );
+    y2milestone( "can_home_reuse ret %1", ret );
+    return( ret );
+    }
+
+list<map> can_root_reuse( integer min, integer max,
+			  list<map> partitions )
+    {
+    list<map> ret = [];
+    if( max>0 )
+	max = max + max/10;
+    y2milestone( "can_root_reuse min %1 max %2", min, max );
+    list<map> pl = [];
+    pl = filter( map p, partitions, 
+		 ``(!p["delete"]:false &&
+		    p["fsid"]:Partitions::fsid_native == 
+		        Partitions::fsid_native &&
+		    !Storage::IsUsedBy(p) &&
+		    size(p["mount"]:"")==0 &&
+		    p["size_k"]:0/1024 >= min &&
+		    Storage::CanEdit( p, false )));
+    y2milestone( "can_root_reuse normal %1", pl );
+    if( size(pl)>0 )
+	{
+	fill_ishome( pl );
+	list<map> p1 = sort( map a, map b,
+	                     filter( map p, pl, ``(ishome[p["device"]:""]:false)),
+			     ``(a["size_k"]:0<b["size_k"]:0));
+	y2milestone( "can_root_reuse p1 %1", p1 );
+	list<map> p2 = sort( map a, map b,
+	                     filter( map p, pl, 
+			             ``(!ishome[p["device"]:""]:false&&p["size_k"]:0/1024>max)),
+			     ``(a["size_k"]:0<b["size_k"]:0));
+	y2milestone( "can_root_reuse p2 %1", p2 );
+	list<map> p3 = sort( map a, map b,
+	                     filter( map p, pl, 
+			             ``(!ishome[p["device"]:""]:false&&p["size_k"]:0/1024<=max)),
+			     ``(a["size_k"]:0>b["size_k"]:0));
+	y2milestone( "can_root_reuse p3 %1", p3 );
+	pl = (list<map>) union( p2, p1 );
+	pl = (list<map>) union( p3, pl );
+	y2milestone( "can_root_reuse sorted %1", pl );
+	ret = maplist( map p, partitions,
+		       ``{
+		       if( !p["delete"]:false &&
+			   p["device"]:""==pl[0,"device"]:"" )
+			   {
+			   p = Storage::SetVolOptions( p, "/", PropDefaultFs(),
+						       "", "", "" );
+			   }
+		       return( p );
+		       });
+	}
+    y2milestone( "can_root_reuse ret %1", ret );
     return( ret );
     }
 
@@ -2916,11 +2980,7 @@ list<map> remove_one_partition( map disk )
 			       Storage::CanDelete( p, disk, false )));
     if( size(pl)>0 )
 	{
-	foreach( map p, pl, 
-	    ``{
-	    if( !haskey( ishome, p["device"]:"" ))
-		ishome[p["device"]:""] = Storage::DetectHomeFs(p);
-	    });
+	fill_ishome( pl );
 	pl = sort( map a, map b, pl, 
 		   ``(a["size_k"]:0>b["size_k"]:0));
 	list<map> l1 = filter( map p, pl, ``(!Storage::IsUsedBy(p)) );
@@ -3197,28 +3257,24 @@ map remove_used_by( map tg, string disk )
 		if( mode == `reuse )
 		    {
 		    list<map> parts = disk["partitions"]:[];
-		    if( GetProposalHome() )
+		    list<map> tmp = [];
+		    if( GetProposalHome() && avail_size>opts["home_limit"]:0 )
 			{
-			if( avail_size > opts["home_limit"]:0 )
-			    parts = can_mp_reuse( "/home", 4*1024, 0, parts );
-			else
-			    parts = can_mp_reuse( "/", opts["root_base"]:0, 0, 
-			                          parts );
+			tmp = can_home_reuse( 4*1024, 0, parts );
+			if( size(tmp)>0 )
+			    {
+			    have_home = true;
+			    parts = tmp;
+			    }
 			}
-		    if( size(parts)>0 && avail_size > opts["home_limit"]:0 )
+		    tmp = can_root_reuse( opts["root_base"]:0, 
+					  opts["root_max"]:0, parts );
+		    if( size(tmp)>0 )
 			{
-			integer mx = 0;
-			if( GetProposalHome() )
-			    mx = opts["root_max"]:0;
-			parts = can_mp_reuse( "/", opts["root_base"]:0, 
-					      mx, parts );
-			}
-		    if( size(parts)>0 )
-			{
-			have_home = avail_size > opts["home_limit"]:0;
 			have_root = true;
-			disk["partitions"] = parts;
+			parts = tmp;
 			}
+		    disk["partitions"] = parts;
 		    y2milestone( "get_inst_proposal reuse have_home %1 have_root %2",
 		                 have_home, have_root );
 		    if( have_home && have_root )
