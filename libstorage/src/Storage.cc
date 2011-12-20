@@ -221,6 +221,12 @@ Storage::initialize()
 	y2mil(archinfo);
     }
 
+    if (instsys())
+    {
+	if (decideMultipath())
+	    DmmultipathCo::activate(true);
+    }
+
     detectObjects();
 
     for (list<std::pair<string, Text>>::const_iterator i = infoPopupTxts.begin(); 
@@ -479,6 +485,31 @@ bool Storage::rescanCryptedObjects()
 	    return "/boot/efi";
 	else
 	    return "/boot";
+    }
+
+
+    bool
+    Storage::decideMultipath()
+    {
+	y2mil("decideMultipath");
+
+	if (getenv("LIBSTORAGE_NO_DMMULTIPATH") != NULL)
+	    return false;
+
+	SystemCmd c(MODPROBEBIN " dm-multipath");
+
+	CmdMultipath cmdmultipath(true);
+	if (cmdmultipath.looksLikeRealMultipath())
+	{
+	    // popup text
+	    Text txt = _("The system seems to have multipath hardware.\n"
+			 "Do you want to activate multipath?");
+
+	    if (yesnoPopupCb(txt))
+		return true;
+	}
+
+	return false;
     }
 
 
