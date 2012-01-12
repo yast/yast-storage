@@ -844,7 +844,7 @@ int Volume::doFormatBtrfs()
     if( ret==0 && cType()==BTRFSC && getEncryption()==ENC_NONE )
 	{
 	const Btrfs* l = static_cast<const Btrfs*>(this);
-	list<string> li = l->getDevices();
+	list<string> li = l->getDevices(true);
 	y2mil( "devices:" << li );
 	if( li.size()>1 )
 	    {
@@ -1148,6 +1148,7 @@ int Volume::doFormat()
 
 void Volume::setUsedByUuid( UsedByType ubt, const string& uuid )
     {
+    y2mil( "device:" << device() << " to uuid:" << uuid );
     eraseUuid();
     eraseLabel();
     setMount( "" );
