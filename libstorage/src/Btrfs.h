@@ -44,8 +44,8 @@ class Btrfs : public Volume
 
 	void clearSubvol() { subvol.clear(); }
 	void addSubvol( const string& path );
-	const list<string>& getDevices() const { return devices; }
-	void getDevices( list<string>& devs ) const { devs=devices; }
+	list<string> getDevices( bool add_del=false ) const;
+	void getDevices( list<string>& devs, bool add_del=false ) const;
 	void getSubvolumes( list<Subvolume>& sv ) const { sv = subvol; }
 
 	bool existSubvolume( const string& name );
@@ -67,6 +67,7 @@ class Btrfs : public Volume
 	Text reduceText(bool doing, const string& device) const;
 	Text removeText( bool doing ) const;
 	Text formatText( bool doing ) const;
+	int setFormat( bool format, storage::FsType fs );
 
 	virtual string udevPath() const;
 	virtual list<string> udevId() const;
@@ -93,6 +94,7 @@ class Btrfs : public Volume
 	static bool needExtend( const Btrfs& v );
 
     protected:
+        BtrfsCo* co();
 	string subvolNames( bool added ) const; 
 	list<string> devices;
 	list<string> dev_add;
