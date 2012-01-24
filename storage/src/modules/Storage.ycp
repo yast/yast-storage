@@ -2558,6 +2558,8 @@ integer ChangeDescText( string dev, string txt )
     return( ret );
     }
 
+global symbol GetMountBy( string device );
+
 global boolean ChangeVolumeProperties( map part )
     {
     integer ret = 0;
@@ -2610,8 +2612,9 @@ global boolean ChangeVolumeProperties( map part )
 	else
 	    y2milestone( "ChangeVolumeProperties sint ret:%1", ret );
 	}
+    symbol defmb = GetMountBy( dev );
     if( ret==0 && size(part["mount"]:"")>0 &&
-        part["mountby"]:`id != curr["mountby"]:`id )
+        part["mountby"]:defmb != curr["mountby"]:defmb )
 	{
 	changed = true;
 	tmp = fromSymbol(conv_mountby,part["mountby"]:`device);
@@ -3267,8 +3270,6 @@ global boolean CreatePartitionTable(string disk, string label)
 }
 
 
-global symbol GetMountBy( string device );
-
 /**
  * Set the flag if a disk needs to be initialized
  * @param string the disk to be changed
@@ -3312,11 +3313,16 @@ boolean CreateAny( symbol ctype, map d, map& p )
     boolean ret = true;
     if( IsPartType(ctype) )
 	{
+	symbol mby = GetMountBy( p["device"]:"" );
+	if( p["used_fs"]:`unknown == `btrfs )
+	    mby = `uuid;
 	ret = Storage::CreatePartition( d["device"]:"", p["device"]:"",
 				        p["type"]:`primary,
 				        p["fsid"]:Partitions::fsid_native,
 				        p["region",0]:0, p["region",1]:0,
-					p["mountby"]:GetMountBy( p["device"]:"" ) );
+					p["mountby"]:mby );
+	if( !haskey( p, "mountby" ) &&  mby!=`device )
+	    p["mountby"] = mby;
 	}
     else if( ctype == `CT_MD )
 	{
