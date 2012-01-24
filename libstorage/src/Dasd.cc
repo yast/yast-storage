@@ -292,10 +292,7 @@ Text Dasd::fdasdText() const
 int Dasd::doFdasd()
     {
     int ret = 0;
-    if( !silent ) 
-	{
-	getStorage()->showInfoCb( fdasdText() );
-	}
+    getStorage()->showInfoCb( fdasdText(), silent );
     string inpname = getStorage()->tmpDir()+"/fdasd_inp";
     ofstream inpfile( inpname.c_str() );
     classic(inpfile);
@@ -466,11 +463,7 @@ int Dasd::doDasdfmt()
 	    devs.push_back( undevDevice((*i)->device()) );
 	    }
 	y2mil("devs:" << devs);
-	if( !silent ) 
-	    {
-	    Text txt = dasdfmtTexts(true, devs);
-	    getStorage()->showInfoCb( txt );
-	    }
+	getStorage()->showInfoCb( dasdfmtTexts(true, devs), silent );
 	for( list<string>::iterator i = devs.begin(); i!=devs.end(); ++i )
 	    {
 	    *i = "-f " + quote(normalizeDevice(*i));

@@ -504,10 +504,7 @@ MdCo::doCreate( Volume* v )
     int ret = 0;
     if( m != NULL )
 	{
-	if( !silent )
-	    {
-	    getStorage()->showInfoCb( m->createText(true) );
-	    }
+	getStorage()->showInfoCb( m->createText(true), silent );
 	ret =  m->checkDevices();
 	if( ret==0 )
 	    {
@@ -562,10 +559,7 @@ MdCo::doRemove( Volume* v )
 	{
 	if( !active )
 	    MdPartCo::activate(true, getStorage()->tmpDir());
-	if( !silent )
-	    {
-	    getStorage()->showInfoCb( m->removeText(true) );
-	    }
+	getStorage()->showInfoCb( m->removeText(true), silent );
 	ret = m->prepareRemove();
 	if( ret==0 )
 	    {

@@ -1207,10 +1207,7 @@ LvmVg::doCreateVg()
     if( created() )
 	{
 	checkConsistency();
-	if( !silent )
-	    {
-	    getStorage()->showInfoCb(createText(true));
-	    }
+	getStorage()->showInfoCb(createText(true),silent);
 	string devices;
 	if( pv_add.size()+pv.size()-pv_remove.size()<=0 )
 	    ret = LVM_VG_HAS_NONE_PV;
@@ -1265,10 +1262,7 @@ LvmVg::doRemoveVg()
 	{
 	if( !active )
 	    activate(true);
-	if( !silent )
-	    {
-	    getStorage()->showInfoCb(removeText(true));
-	    }
+	getStorage()->showInfoCb(removeText(true),silent);
 	checkConsistency();
 	string cmd = VGREMOVEBIN " " + quote(name());
 	SystemCmd c( cmd );
@@ -1299,10 +1293,7 @@ LvmVg::doExtendVg()
     while( ret==0 && d!=devs.end() )
 	{
 	checkConsistency();
-	if( !silent )
-	    {
-	    getStorage()->showInfoCb(extendText(true, d->device));
-	    }
+	getStorage()->showInfoCb(extendText(true, d->device),silent);
 	ret = doCreatePv(*d);
 	if( ret==0 )
 	    {
@@ -1348,10 +1339,7 @@ LvmVg::doReduceVg()
     while( ret==0 && d!=devs.end() )
 	{
 	checkConsistency();
-	if( !silent )
-	    {
-	    getStorage()->showInfoCb(reduceText(true, d->device));
-	    }
+	getStorage()->showInfoCb(reduceText(true, d->device),silent);
 	string cmd = VGREDUCEBIN " " + instSysString() + quote(name()) + " " + quote(d->realDevice());
 	SystemCmd c( cmd );
 	if( c.retcode()!=0 )
@@ -1386,10 +1374,7 @@ LvmVg::doCreate( Volume* v )
 	{
 	if( !active )
 	    activate(true);
-	if( !silent )
-	    {
-	    getStorage()->showInfoCb( l->createText(true) );
-	    }
+	getStorage()->showInfoCb( l->createText(true), silent );
 	checkConsistency();
 	string cmd = LVCREATEBIN " " + instSysString() + " -l " + decString(l->getLe());
 	if (l->getOrigin().empty())
@@ -1440,10 +1425,7 @@ int LvmVg::doRemove( Volume* v )
 	y2mil( "lv:" << *l );
 	if( !active )
 	    activate(true);
-	if( !silent )
-	    {
-	    getStorage()->showInfoCb( l->removeText(true) );
-	    }
+	getStorage()->showInfoCb( l->removeText(true), silent );
 	checkConsistency();
 	ret = v->prepareRemove();
 	if( ret==0 )
@@ -1487,9 +1469,9 @@ int LvmVg::doResize( Volume* v )
 	unsigned long new_le = l->getLe();
 	unsigned long old_le = sizeToLe(v->origSizeK());
 	getStorage()->getFsCapabilities( l->getFs(), caps );
-	if( !silent && old_le!=new_le )
+	if( old_le!=new_le )
 	    {
-	    getStorage()->showInfoCb( l->resizeText(true) );
+	    getStorage()->showInfoCb( l->resizeText(true), silent );
 	    }
 	checkConsistency();
 	if( v->isMounted() &&
