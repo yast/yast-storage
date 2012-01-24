@@ -654,10 +654,7 @@ int MdPartCo::doSetType( MdPart* md )
     int ret = p?0:MDPART_PARTITION_NOT_FOUND;
     if( ret==0 )
         {
-        if( !silent )
-            {
-            getStorage()->showInfoCb( md->setTypeText(true) );
-            }
+	getStorage()->showInfoCb( md->setTypeText(true), silent );
         ret = disk->doSetType( p );
         }
     y2mil("ret:" << ret);
@@ -668,10 +665,7 @@ int MdPartCo::doCreateLabel()
     {
     y2mil("label:" << labelName());
     int ret = 0;
-    if( !silent )
-        {
-        getStorage()->showInfoCb( setDiskLabelText(true) );
-        }
+    getStorage()->showInfoCb( setDiskLabelText(true), silent );
     getStorage()->removeDmMapsTo( device() );
     removePresentPartitions();
     ret = disk->doCreateLabel();
@@ -878,10 +872,7 @@ MdPartCo::doCreate( Volume* v )
     Partition *p = NULL;
     if( ret==0 )
         {
-        if( !silent )
-            {
-            getStorage()->showInfoCb( l->createText(true) );
-            }
+	getStorage()->showInfoCb( l->createText(true), silent );
         p = l->getPtr();
         if( p==NULL )
             ret = MDPART_PARTITION_NOT_FOUND;
@@ -953,10 +944,7 @@ int MdPartCo::doRemove()
         ret = MD_REMOVE_FAILED;
         setExtError( c );
         }
-      if( !silent )
-        {
-        getStorage()->showInfoCb( removeText(true) );
-        }
+      getStorage()->showInfoCb( removeText(true), silent );
       if( ret==0 && destrSb )
         {
         SystemCmd c;
@@ -986,10 +974,7 @@ int MdPartCo::doRemove( Volume* v )
         ret = MDPART_INVALID_VOLUME;
     if( ret==0 )
         {
-        if( !silent )
-            {
-            getStorage()->showInfoCb( l->removeText(true) );
-            }
+	getStorage()->showInfoCb( l->removeText(true), silent );
         ret = v->prepareRemove();
         }
     if( ret==0 )
@@ -1031,10 +1016,7 @@ int MdPartCo::doResize( Volume* v )
     if( ret==0 )
         {
         needExtend = !l->needShrink();
-        if( !silent )
-            {
-            getStorage()->showInfoCb( l->resizeText(true) );
-            }
+	getStorage()->showInfoCb( l->resizeText(true), silent );
         if( l->isMounted() )
             {
             ret = l->umount();

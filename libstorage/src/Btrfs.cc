@@ -335,8 +335,7 @@ int Btrfs::doExtend()
     SystemCmd c;
     while( ret==0 && d!=devs.end() )
 	{
-	if( !silent )
-	    getStorage()->showInfoCb(extendText(true, *d));
+	getStorage()->showInfoCb(extendText(true, *d),silent);
 	string cmd = BTRFSBIN " device add " + quote(*d) + " " + m;
 	c.execute( cmd );
 	if( c.retcode()==0 )
@@ -366,8 +365,7 @@ int Btrfs::doReduce()
     SystemCmd c;
     while( ret==0 && d!=devs.end() )
 	{
-	if( !silent )
-	    getStorage()->showInfoCb(reduceText(true, *d));
+	getStorage()->showInfoCb(reduceText(true, *d),silent);
 	string cmd = BTRFSBIN " device delete " + quote(*d) + " " + m;
 	c.execute( cmd );
 	if( c.retcode()==0 )
@@ -399,8 +397,7 @@ int Btrfs::doDeleteSubvol()
 	    {
 	    if( i->deleted() )
 		{
-		if( !silent )
-		    getStorage()->showInfoCb( deleteSubvolText(true,i->path()));
+		getStorage()->showInfoCb( deleteSubvolText(true,i->path()),silent);
 		c.execute( cmd + i->path() );
 		if( c.retcode()==0 )
 		    i->setDeleted(false);
@@ -428,8 +425,7 @@ int Btrfs::doCreateSubvol()
 	    {
 	    if( i->created() )
 		{
-		if( !silent )
-		    getStorage()->showInfoCb( createSubvolText(true,i->path()));
+		getStorage()->showInfoCb( createSubvolText(true,i->path()),silent);
 		y2mil( "dir:" << m << " path:" << i->path() );
 		string path = m + "/" + i->path();
 		string dir = path.substr( 0, path.find_last_of( "/" ) );
