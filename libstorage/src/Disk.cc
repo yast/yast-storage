@@ -1393,6 +1393,8 @@ int Disk::destroyPartitionTable( const string& new_label )
 	    {
 	    if( (*j)->created() )
 		{
+		if( (*j)->isUsedBy() )
+		    getStorage()->removeUsing( (*j)->device(), (*j)->getUsedBy() );
 		delete( *j );
 		j = vols.erase( j );
 		}
@@ -1625,6 +1627,8 @@ void Disk::removePresentPartitions()
 	    y2mil( "rem:" << *i );
 	    if( !i->created() )
 		l.push_front( i );
+	    else if( i->isUsedBy() )
+		getStorage()->removeUsing( i->device(), i->getUsedBy() );
 	    }
 	for( list<VolIterator>::const_iterator i=l.begin(); i!=l.end(); ++i )
 	    {
