@@ -1979,9 +1979,18 @@ define void UpdateTargetMapDisk( string dev )
     else
 	{
 	tg[dev] = getContainerInfo(c);
-	if( dev=="/dev/btrfs" )
-	    tg = HandleBtrfsSimpleVolumes( tg );
 	}
+    integer numbt = size(filter( map p, tg[dev,"partitions"]:[], ``(p["used_fs"]:`unknown==`btrfs )));
+    y2milestone( "UpdateTargetMapDisk btrfs:%1", numbt );
+    if( numbt>0 && dev!="/dev/btrfs" )
+	{
+	map bt = tg["/dev/btrfs"]:$[];
+	if( size(bt)==0 )
+	    bt["type"] = `CT_BTRFS;
+	tg["/dev/btrfs"] = getContainerInfo(bt);
+	}
+    if( numbt>0 || dev=="/dev/btrfs" )
+	tg = HandleBtrfsSimpleVolumes( tg );
     StorageMap[targets_key] = tg;
     //SCR::Write(.target.ycp, "/tmp/upd_disk_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
     //count = count+1;
@@ -1995,6 +2004,8 @@ define void UpdateTargetMapDev( string dev )
     string cdev="";
     map mdev = GetPartition( tg, dev );
     y2milestone( "UpdateTargetMapDev mdev %1", mdev );
+    boolean btrfs = mdev["used_fs"]:`unknown == `btrfs;
+    y2milestone( "UpdateTargetMapDev btrfs %1", btrfs );
     foreach( string key, map d, tg,
 	``{
 	if( size(cdev)==0 &&
@@ -2035,7 +2046,9 @@ define void UpdateTargetMapDev( string dev )
     else
 	y2error( "UpdateTargetMapDev key %1 not found in target", disk["device"]:"" );
     y2milestone( "UpdateTargetMapDev mdev %1", mdev );
-    if( mdev["used_fs"]:`unknown == `btrfs )
+    btrfs = btrfs || mdev["used_fs"]:`unknown == `btrfs;
+    y2milestone( "UpdateTargetMapDev btrfs %1", btrfs );
+    if( btrfs )
 	{
 	map bt = tg["/dev/btrfs"]:$[];
 	if( size(bt)==0 )
