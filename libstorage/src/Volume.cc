@@ -1451,9 +1451,16 @@ int Volume::canResize( unsigned long long newSizeK ) const
     {
     int ret=0;
     y2mil("val:" << newSizeK);
-    if (isUsedBy() && !getStorage()->isUsedBySingleBtrfs(*this))
+    if( isUsedBy() )
 	{
-	ret = VOLUME_ALREADY_IN_USE;
+	const Volume* btrfs = NULL;
+	if( getStorage()->isUsedBySingleBtrfs(*this, &btrfs) )
+	    {
+	    y2mil( "btrfs:" << btrfs );
+	    ret = btrfs->canResize( newSizeK );
+	    }
+	else 
+	    ret = VOLUME_ALREADY_IN_USE;
 	}
     else
 	{
