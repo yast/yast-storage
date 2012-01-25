@@ -69,7 +69,7 @@
 	    y2milestone( "GetPossibleVols parts:%1", devmap["partitions"]:[] );
 	    list<map> parts = 
 		filter( map part, devmap["partitions"]:[],
-			``( size(part["mount"]:"")==0 &&
+			``( (size(part["mount"]:"")==0 || part["used_by_type"]:`UB_NONE==`UB_BTRFS) &&
 			    !contains( types_no, part["type"]:`primary ) &&
 			    contains(allowed_enc_types, part["enc_type"]:`none) &&
 			    (!Storage::IsUsedBy(part) || part["used_by_type"]:`UB_NONE==`UB_BTRFS) &&
@@ -136,9 +136,10 @@
 
 	list<symbol> fields = StorageSettings::FilterTable([ `device, `udev_path, `udev_id, `size, `encrypted, `type ]);
 
-	map<string, map> target_map = Storage::GetTargetMap();
-	list<map> unused_pvs = filter(map pv, GetPossibleVols(target_map), { return !Storage::IsUsedBy(pv); });
-	list<map> used_pvs = filter(map pv, GetPossibleVols(target_map), { return pv["used_by_device"]:"" == data["uuid"]:""; });
+	list<map> poss_pvs = GetPossibleVols(Storage::GetTargetMap());
+	y2milestone( "MiniWorkflowStepResizeVolume poss:%1", maplist( map pv, poss_pvs, ``( [ pv["device"]:"", pv["used_by_device"]:"" ])));
+	list<map> unused_pvs = filter(map pv, poss_pvs, ``(pv["used_by_type"]:`UB_NONE==`UB_NONE));
+	list<map> used_pvs = filter(map pv, poss_pvs, ``(pv["used_by_device"]:""==data["uuid"]:""));
 
 	term contents = `VBox();
 
