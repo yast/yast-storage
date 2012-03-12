@@ -305,15 +305,6 @@ void Storage::detectObjects()
 	detectFsData( vBegin(), vEnd(), pm );
 	}
 
-    if( instsys() )
-	{
-	SystemCmd c( "grep ^md.*dm- /proc/mdstat" );
-	SystemCmd rm;
-	for( unsigned i=0; i<c.numLines(); i++ )
-	    {
-	    rm.execute(MDADMBIN " --stop " + quote("/dev/" + extractNthWord(0, *c.getLine(i))));
-	    }
-	}
     delete ppart;
     }
 
