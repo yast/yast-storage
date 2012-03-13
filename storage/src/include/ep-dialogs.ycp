@@ -771,6 +771,7 @@ because the filesystem seems to be inconsistent.
 	UI::ChangeWidget(`id(`custom_size_input), `Value, Storage::KByteToHumanString(size_k));
 
 	symbol widget = nil;
+        boolean asked_big_resize = false;
 
 	integer old_size_k = size_k;
 
@@ -848,6 +849,24 @@ because the filesystem seems to be inconsistent.
 			    widget = `again;
 			    continue;
 			}
+
+			if (!data["format"]:false && size(mountpoint)>0 && 
+                            !asked_big_resize && size_k-old_size_k >= 1024*1024*50 )
+                            {
+                            asked_big_resize = true;
+			    string txt = sformat( 
+_("You are extending a mounted filesystem by %1 Gigabyte. 
+This may be quite slow and can take hours. You might possibly want 
+to consider umounting the filesystem, which will increase speed of 
+resize task a lot."), (size_k-old_size_k)/(1024*1024) );
+                            boolean answ = Popup::YesNo( txt );
+                            y2milestone("ResizeDlg big_resize_while_mounted ret:%1", answ );
+                            if( answ )
+                                {
+                                widget = `again;
+                                continue;
+                                }
+                            }
 
 			switch (data["type"]:`unknown)
 			{
