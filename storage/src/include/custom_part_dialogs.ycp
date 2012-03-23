@@ -465,10 +465,15 @@ A volume label cannot contain the / character or spaces.
     list<map> opt_list = [];
     if( new["mount"]:"" != "swap" )
 	{
-	foreach( map entry, FileSystems::GetGeneralFstabOptions(),
-	    ``{
-	    opt_list = add( opt_list, entry );
+	foreach( map entry, FileSystems::GetGeneralFstabOptions(), {
 
+	    if (entry[`query_key]:"" == "opt_quota" && !FileSystems::CanDoQuota(new))
+		continue;
+
+	    if (entry[`query_key]:"" == "opt_readonly" && !FileSystems::CanMountRo(new))
+		continue;
+
+	    opt_list = add( opt_list, entry );
 	    contents = add( contents, entry[`widget]:emptyterm );
 	    helptext = helptext + entry[`help_text]:"";
 	    });
@@ -624,16 +629,6 @@ A volume label cannot contain the / character or spaces.
 	{
 	UI::ChangeWidget( `id("opt_user"), `Enabled,
 			  new["enc_type"]:`none==`none );
-	}
-    if( UI::WidgetExists( `id("opt_quota") ))
-	{
-	UI::ChangeWidget( `id("opt_quota"), `Enabled,
-			  FileSystems::CanDoQuota(new) );
-	}
-    if( UI::WidgetExists( `id("opt_readonly") ))
-	{
-	UI::ChangeWidget( `id("opt_readonly"), `Enabled,
-			  FileSystems::CanMountRo(new) );
 	}
     foreach( any key, any value, old_state,
 	``{
