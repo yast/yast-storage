@@ -648,19 +648,22 @@ on this partition does not support resizing.
 	    return false;
 	}
 
-
 	integer cyl_size = 0;
 	integer free_cyl_after = 0;
 
 	string device = data["device"]:"error";
 	symbol used_fs = data["used_fs"]:`none;
 
-
 	integer used_k = FileSystems::MinFsSizeK(used_fs);
+
 	if (!data["format"]:false)
 	{
 	    if (used_fs != `swap)
 	    {
+		if (used_fs == `ntfs && !TryUmount(device, _("It is not possible to check whether a NTFS
+can be resized while it is mounted."), false))
+		    return false;
+
 		map free_data = Storage::GetFreeSpace(device, used_fs, true);
 		if (isempty(free_data) || !free_data["ok"]:false)
 		{
@@ -834,12 +837,11 @@ because the filesystem seems to be inconsistent.
 
 		    if (size_k != old_size_k)
 		    {
-			string mountpoint = data["inactive"]:false ? "" : data["mount"]:"";
+			string mountpoint = Storage::DeviceMounted(device);
 			boolean lvm = data["type"]:`unknown == `lvm;
 
-			//1 - ask & be interactive, 2 - we are on lvm, 3 - cyl.diff, 4 - filesystem, 5 - mountpoint
 			if (!data["format"]:false &&
-			    !CheckResizePossible(false, lvm, size_k - old_size_k, used_fs, mountpoint))
+			    !CheckResizePossible(device, false, lvm, size_k - old_size_k, used_fs))
 			{
 			    //FIXME: To check whether the part. can be resized only
 			    //after user tries to do that is stupid - in some cases

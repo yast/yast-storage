@@ -820,30 +820,81 @@ define map<string,any> HandlePartWidgetChanges( boolean init, any ret,
     }
 
 
-define boolean CheckResizePossible( boolean ask, boolean lvm, integer resize,
-                                    symbol fsys, string mount )
-    ``{
-    map poss = FileSystems::IsResizable( fsys );
+boolean TryUmount(string device, string text, boolean allow_ignore)
+{
+    while (true)
+    {
+	string mountpoint = Storage::DeviceMounted(device);
+	if (isempty(mountpoint))
+	    return true;
+
+	if (allow_ignore)
+	{
+	    string full_text = sformat(_("The file system is currently mounted on %1."), mountpoint) + "\n\n" +
+		_("You can try to unmount it now, continue without unmounting or cancel.
+Click Cancel unless you know exactly what you are doing.");
+
+	    symbol ret = Popup::AnyQuestion3(Label::WarningMsg(), full_text,
+					     Label::ContinueButton(),
+					     Label::CancelButton(),
+					     // button text
+					     _("Unmount"),
+					     `focus_no);
+
+	    if (ret == `no)
+		return false;
+
+	    if (ret == `yes)
+		return true;
+	}
+	else
+	{
+	    string full_text = sformat(_("The file system is currently mounted on %1."), mountpoint) + "\n\n" +
+		_("You can try to unmount it now or cancel.
+Click Cancel unless you know exactly what you are doing.");
+
+	    boolean ret = Popup::AnyQuestion(Label::WarningMsg(), full_text,
+					     // button text
+					     _("Unmount"),
+					     Label::CancelButton(), `focus_no);
+
+	    if (ret == false)
+		return false;
+	}
+
+	if (Storage::Umount(device))
+	    return true;
+    }
+}
+
+
+boolean CheckResizePossible(string device, boolean ask, boolean lvm, integer resize,
+			    symbol fsys)
+{
+    map<string, boolean> poss = FileSystems::IsResizable(fsys);
+    string mountpoint = Storage::DeviceMounted(device);
+
     boolean ret = true;
 
-    y2milestone( "CheckResizePossible resize %1 ask %2 lvm %3 fsys %4 mount %5",
-                 resize, ask, lvm, fsys, mount );
-    if( size(mount)>0 && !Stage::initial() && resize < 0 &&
+    y2milestone("CheckResizePossible device:%1 ask:%2 lvm:%3 resize:%4 fsys:%5",
+		device, ask, lvm, resize, fsys);
+
+    if( !isempty(mountpoint) && !Stage::initial() && resize < 0 &&
         !poss["mount_shrink"]:false && poss["shrink"]:false )
         {
-	FsysCannotResizeMountPopup( lvm, mount );
-	ret = false;
+	if (!TryUmount(device, _("It is not possible to shrink the file system while it is mounted."), true))
+	    ret = false;
 	}
-    else if( size(mount)>0 && !Stage::initial() && resize > 0 &&
+    else if( !isempty(mountpoint) && !Stage::initial() && resize > 0 &&
              !poss["mount_extend"]:false && poss["extend"]:false )
         {
-	FsysCannotResizeMountPopup( lvm, mount );
-	ret = false;
+	if (!TryUmount(device, _("It is not possible to extend the file system while it is mounted."), true))
+	    ret = false;
 	}
-    else if( size(mount)>0 && !Stage::initial() && resize != 0 && !lvm )
+    else if( !isempty(mountpoint) && !Stage::initial() && resize != 0 && !lvm )
         {
-	FsysCannotResizeMountPopup( lvm, mount );
-	ret = false;
+	if (!TryUmount(device, _("It is not possible to resize the file system while it is mounted."), true))
+	    ret = false;
 	}
     else if( resize < 0 && !poss["shrink"]:false )
 	{
@@ -858,8 +909,7 @@ define boolean CheckResizePossible( boolean ask, boolean lvm, integer resize,
 	ret = FsysCannotGrowPopup( ask, lvm );
 	}
     y2milestone( "ret %1", ret );
-    return( ret );
-    }
-
+    return ret;
+}
 
 }
