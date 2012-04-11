@@ -4661,6 +4661,7 @@ global list<map> GetCommitInfos()
     return ret;
 }
 
+global map GetEntryForMountpoint(string mp);
 
 string save_chtxt = "";
 
@@ -4669,11 +4670,18 @@ global string ChangeText()
     list<string> texts = maplist(map info, GetCommitInfos(), {
 	string text = String::EscapeTags(info[`text]:"");
 	if (info[`destructive]:false)
-	    text = "<font color=red>" + text + "</font>";
+	    text = HTML::Colorize( text, "red" );
 	return text;
     });
 
     string ret = isempty(texts) ? "" : HTML::List(texts);
+
+    if( Stage::initial() && isempty(GetEntryForMountpoint( "/" )))
+        {
+        string wroot = _("Nothing assigned as root filesystem!") + HTML::Newline() +
+                       _("Installation will most certainly fail fatally!");
+        ret = ret + HTML::Para(HTML::Colorize( wroot, "red" ));
+        }
 
     if (ret != save_chtxt)
     {
@@ -5127,9 +5135,6 @@ global void SaveUsedFs()
     SCR::Write(.sysconfig.storage.USED_FS_LIST, mergestring(GetUsedFs(), " "));
     SCR::Write(.sysconfig.storage, nil);
 }
-
-
-global map GetEntryForMountpoint(string mp);
 
 
 global list<string> AddPackageList()
