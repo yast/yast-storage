@@ -2537,12 +2537,17 @@ Storage::changeFormatVolume( const string& device, bool format, FsType fs )
 	    if(haveBtrfs(co))
 		{
 		string mp = vol->getMount();
+                bool mby_uuid = vol->getMountBy()==MOUNTBY_UUID;
 		co->eraseVolume( &(*vol) );
 		if( findVolume( device, vol ) && vol->cType()!=BTRFSC )
 		    {
 		    vol->updateFsData();
 		    vol->clearUsedBy();
 		    vol->changeMount( mp );
+                    if( !mp.empty() )
+                        vol->setMount(mp);
+                    if( mby_uuid )
+                        vol->changeMountBy( vol->defaultMountBy() );
 		    ret = vol->setFormat( format, fs );
 		    }
 		else
