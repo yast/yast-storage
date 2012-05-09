@@ -684,21 +684,26 @@ A volume label cannot contain the / character or spaces.
 	{
 	list no_mountby_type = [ `loop ];
 	list mountby_id_path_type = [ `primary, `logical ];
+	map enab = $[];
+	boolean tmp = !contains( no_mountby_type, new["type"]:`primary );
+	enab[`label] = tmp && FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
+		       new["enc_type"]:`none==`none;
+	enab[`uuid] = tmp && (new["format"]:false || size(new["uuid"]:"")>0) &&
+		      FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
+		      new["enc_type"]:`none==`none;
+	tmp = contains(mountby_id_path_type, new["type"]:`none);
+	enab[`id] = tmp && size(new["udev_id"]:[])>0;
+	enab[`path] = tmp && size(new["udev_path"]:"")>0;
+	y2milestone( "FstabOptions enab %1", enab );
+	UI::ChangeWidget( `id(`label), `Enabled,  enab[`label]:false );
+	UI::ChangeWidget( `id(`uuid), `Enabled, enab[`uuid]:false );
+	UI::ChangeWidget( `id(`id), `Enabled, enab[`id]:false );
+	UI::ChangeWidget( `id(`path), `Enabled, enab[`path]:false );
 	symbol defmb = !Mode::config() ? Storage::GetMountBy( new["device"]:"" )
-	                               : `device;
+				       : `device;
 	y2milestone( "FstabOptions defmb %1", defmb );
-	UI::ChangeWidget( `id(`mt_group), `CurrentButton,
-	                  new["mountby"]:defmb );
-	UI::ChangeWidget( `id(`label), `Enabled,
-			  FileSystems::MountLabel( new["used_fs"]:`unknown ) &&
-			  new["enc_type"]:`none==`none &&
-			  !contains( no_mountby_type, new["type"]:`primary ) );
-	UI::ChangeWidget( `id(`uuid), `Enabled,
-			  (new["format"]:false || size(new["uuid"]:"")>0) &&
-			  FileSystems::MountUuid( new["used_fs"]:`unknown ) &&
-			  !contains( no_mountby_type, new["type"]:`primary ) );
-	UI::ChangeWidget( `id(`id), `Enabled, contains(mountby_id_path_type, new["type"]:`none) );
-	UI::ChangeWidget( `id(`path), `Enabled, contains(mountby_id_path_type, new["type"]:`none) );
+	if( haskey( enab, defmb ) && !enab[defmb]:false )
+	    defmb = `device;
 	}
 
     if( UI::WidgetExists( `id(`vol_label) ))
