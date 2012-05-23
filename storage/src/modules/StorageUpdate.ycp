@@ -360,6 +360,32 @@ void UpdateFstabCryptNofail()
 	}
     }
 
+void UpdateFstabWindowsMounts()
+    {
+    y2milestone( "UpdateFstabWindowsMounts called" );
+    string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    list<integer> rem_lines = [];
+    integer line = 0;
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	if( (search( l["fields",1]:"", "/windows/" )==0 && size(l["fields",1]:"")==10) ||
+	    (search( l["fields",1]:"", "/dos/" )==0 && size(l["fields",1]:"")==6))
+	    {
+            rem_lines = add( rem_lines, line );
+	    }
+        line = line+1;
+	}
+    if( size(rem_lines)>0 )
+	{
+        rem_lines = sort(rem_lines);
+	y2milestone( "UpdateFstabWindowsMounts %1", rem_lines );
+        AsciiFile::RemoveLines( fstab, rem_lines );
+	AsciiFile::RewriteFile( fstab, tabpath );
+	}
+    }
+
     /**
      * Updates fstab on disk
      *
@@ -466,6 +492,10 @@ void UpdateFstabCryptNofail()
 	    }
 	    if( oldv["major"]:0<11 || (oldv["major"]:0==11 && oldv["minor"]:0<=2))
 		UpdateFstabCryptNofail();
+            /*
+	    if( oldv["major"]:0<=11 || (oldv["major"]:0==12 && oldv["minor"]:0<=1))
+		UpdateFstabWindowsMounts();
+            */
 	    // set flag -> it indicates that Update was already called
 	    called_update = true;
 	}
