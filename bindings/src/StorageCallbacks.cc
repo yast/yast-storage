@@ -190,6 +190,7 @@ string Y2StorageCallbackFunction::name () const
 StorageCallbacks::StorageCallbacks ()
 {
     registerFunctions ();
+    registerLogHandlers();
 }
 
 /**
@@ -612,3 +613,16 @@ StorageCallbacks::PasswordPopup (const YCPString & callback)
 
     return YCPVoid ();
 }
+
+void
+log_do( int level, const string& component, const char* file, int line, const char* func,
+        const string& text)
+    {
+    y2_logger_function((loglevel_t)level, component, file, line, func, "%s", text.c_str());
+    }
+
+void StorageCallbacks::registerLogHandlers()
+    {
+    storage::setLogDoCallback(&log_do);
+    storage::setLogQueryCallback(&should_be_logged);
+    }

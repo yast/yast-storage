@@ -46,6 +46,7 @@ public:
 
     // builtin handling
     void registerFunctions ();
+    void registerLogHandlers();
     vector<string> _registered_functions;
 
     // callbacks
