@@ -38,9 +38,9 @@
 	foreach(string dev, devs, {
 	    Storage::SetPartitionId(dev, Partitions::fsid_raid);
 	    Storage::SetPartitionFormat(dev, false, `none);
-	    if (!Storage::ExtendMd(raid_nr, [ dev ]))
-		ret = false;
 	});
+        if (!Storage::ExtendMd(raid_nr, devs))
+            ret = false;
 
 	return ret;
     }
@@ -55,6 +55,20 @@
 	    if (!Storage::ShrinkMd(raid_nr, [ dev ]))
 		ret = false;
 	});
+
+	return ret;
+    }
+
+    boolean ReplaceDevices(integer raid_nr, list<string> devs)
+    {
+	boolean ret = true;
+
+	foreach(string dev, devs, {
+	    Storage::SetPartitionId(dev, Partitions::fsid_raid);
+	    Storage::SetPartitionFormat(dev, false, `none);
+	});
+        if (!Storage::ReplaceMd(raid_nr, devs))
+            ret = false;
 
 	return ret;
     }
@@ -174,22 +188,11 @@ resized. To resize %1, make sure it is not used."), device));
 	{
 	    integer raid_nr = data["nr"]:0;
 
-	    list<string> devices_old = data["devices"]:[];
 	    list<string> devices_new = data["devices_new"]:[];
-
-	    list<string> devices_added = AddedToList(devices_old, devices_new);
-	    list<string> devices_removed = RemovedFromList(devices_old, devices_new);
-
-	    if (size(devices_added) > 0 || size(devices_removed) > 0)
+            y2milestone( "devices_new:%1", devices_new );
+	    if (size(devices_new) > 0 )
 	    {
-		AddDevices(raid_nr, devices_added);
-
-		if (!RemoveDevices(raid_nr, devices_removed))
-		{
-		    // error popup
-		    Popup::Error(_("Failed to remove some devices."));
-		}
-
+		ReplaceDevices(raid_nr, devices_new);
 		UpdateMainStatus();
 		UpdateNavigationTree(nil);
 		TreePanel::Create();
