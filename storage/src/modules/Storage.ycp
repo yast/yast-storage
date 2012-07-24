@@ -4385,10 +4385,15 @@ global define map AddSubvolRoot( map part )
     {
     list<string> def_subvol = [ "tmp", "opt", "srv", "var/crash", "var/spool", "var/log", "var/run", "var/tmp" ];
     string sv_prepend = "";
+    y2milestone( "AddSubvolRoot subvol:%1", part["subvol"]:[] );
     if( FileSystems::default_subvol!="" )
 	sv_prepend = FileSystems::default_subvol + "/";
-    part["subvol"] = maplist( string s, def_subvol, 
-			      { return $[ "create":true, "name":sv_prepend+s ]; });
+    foreach( string s, def_subvol,
+        {
+        string svn = sv_prepend+s;
+        if( find( map p, part["subvol"]:[], ``(p["name"]:""==svn))==nil )
+            part["subvol"] = add( part["subvol"]:[], $[ "create":true, "name":svn ] );
+        });
     y2milestone( "AddSubvolRoot part:%1", part );
     return( part );
     }
@@ -4439,7 +4444,7 @@ global define map SetVolOptions( map p, string mnt, symbol fs, string fs_opts,
 	ret["format"] = false;
 	ret["used_fs"] = `swap;
 	}
-    if( ret["format"]:false && ret["used_fs"]:`unknown==`btrfs && mnt=="/" )
+    if( ret["used_fs"]:`unknown==`btrfs && mnt=="/" )
 	{
 	ret = AddSubvolRoot( ret );
 	}
