@@ -2014,7 +2014,7 @@ namespace storage
 	 */
 	virtual int createLvmLvPool(const string& vg, const string& name, 
                                     unsigned long long sizeK, 
-                                    string& SWIG_OUTPUT(device) ) = 0;
+                                    string& device ) = 0;
 
 	/**
 	 * Create a LVM logical volume that is thin provisioned
@@ -2028,7 +2028,7 @@ namespace storage
 	 */
 	virtual int createLvmLvThin(const string& vg, const string& name, 
                                     unsigned long long sizeK, const string& pool,
-                                    string& SWIG_OUTPUT(device) ) = 0;
+                                    string& device ) = 0;
 
 	/**
 	 * Change pool chunk size of a LVM pool.
