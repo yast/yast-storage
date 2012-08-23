@@ -43,6 +43,8 @@ class Dm : public Volume
 	Dm(const PeContainer& c, const Dm& v);
 	virtual ~Dm();
 
+        typedef std::map<string,unsigned long> PeMap;
+
 	void saveData(xmlNode* node) const;
 
 	const string& getTableName() const { return( tname ); }
@@ -54,8 +56,8 @@ class Dm : public Volume
 	void modifyPeSize( unsigned long long old, unsigned long long neww );
 	bool removeTable();
 	virtual void calcSize();
-	const std::map<string,unsigned long>& getPeMap() const { return( pe_map ); }
-	void setPeMap( const std::map<string,unsigned long>& m );
+	const PeMap& getPeMap() const { return( pe_map ); }
+	void setPeMap( const PeMap& m );
 	unsigned long long usingPe( const string& dev ) const;
 	bool mapsTo( const string& dev ) const;
 	void getTableInfo();
@@ -84,6 +86,7 @@ class Dm : public Volume
 	static bool isActive() { return active; }
 
 	static string devToTable( const string& dev );
+	static string lvmTableToDev( const string& table );
 
 	virtual list<string> getUsing() const;
 
@@ -98,6 +101,11 @@ class Dm : public Volume
 	void init();
 	const PeContainer* pec() const;
 	virtual const string shortPrintedName() const { return( "Dm" ); }
+        unsigned long computeLe( const string& lestr );
+        void computePe( const SystemCmd& cmd, PeMap& pe );
+        void accumulatePe( const string& majmin, unsigned long le, PeMap& pe );
+        void getMapRecursive( unsigned long mi, PeMap& pe );
+        static list<string> extractMajMin( const string& s );
 
 	string tname;
 	string target;
@@ -105,7 +113,8 @@ class Dm : public Volume
 	unsigned stripe;
 	unsigned long long stripe_size;
 	bool inactiv;
-	std::map<string,unsigned long> pe_map;
+	bool pe_larger;   // true for table like e.g. thin-pool where sum of used pe´s is larger than device size
+	PeMap pe_map;
 	static bool active;
 	static unsigned dm_major;
 

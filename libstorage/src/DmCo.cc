@@ -105,7 +105,9 @@ namespace storage
 	: PeContainer(s, "mapper", "/dev/mapper", staticType(), systeminfo)
     {
 	y2deb("constructing DmCo");
-	getDmData(systeminfo, only_crypt);
+        if(!only_crypt)
+            getDmData(systeminfo);
+        getDmDataCrypt(systeminfo);
     }
 
 
@@ -113,7 +115,9 @@ namespace storage
     DmCo::second(SystemInfo& systeminfo, bool only_crypt)
     {
 	y2deb("second DmCo");
-	getDmData(systeminfo, only_crypt);
+        if(!only_crypt)
+            getDmData(systeminfo);
+        getDmDataCrypt(systeminfo);
     }
 
 
@@ -185,9 +189,9 @@ DmCo::detectEncryption( const string& dev ) const
 }
 
 
-void
-    DmCo::getDmData(SystemInfo& systeminfo, bool only_crypt)
+void DmCo::getDmData(SystemInfo& systeminfo)
     {
+    y2mil( "begin:" );
     Storage::ConstLvmLvPair lv = getStorage()->lvmLvPair();
     Storage::ConstDmraidCoPair dmrco = getStorage()->dmraidCoPair();
     Storage::ConstDmraidPair dmr = getStorage()->dmrPair();
@@ -195,6 +199,26 @@ void
     Storage::ConstDmmultipathPair dmm = getStorage()->dmmPair();
 
     const CmdDmsetup& cmddmsetup = systeminfo.getCmdDmsetup();
+    list<string> lvm_pools;
+    for (CmdDmsetup::const_iterator it1 = cmddmsetup.begin(); it1 != cmddmsetup.end(); ++it1)
+        {
+        if( boost::ends_with(it1->first,"-tpool") )
+            {
+            string name = it1->first.substr( 0, it1->first.size()-6 );
+            if( find( lvm_pools.begin(), lvm_pools.end(), name )==lvm_pools.end() )
+                {
+                string tb = it1->first;
+                Dm* m = new Dm(*this, tb, "/dev/mapper/" + tb, tb, systeminfo);
+                if( m && m->getTargetName()=="thin-pool" )
+                    {
+                    lvm_pools.push_back( name );
+                    }
+                if(m)
+                    delete(m);
+                }
+            }
+        }
+    y2mil( "lvm_pools:" << lvm_pools );
     for (CmdDmsetup::const_iterator it1 = cmddmsetup.begin(); it1 != cmddmsetup.end(); ++it1)
     {
 	string table = it1->first;
@@ -250,59 +274,63 @@ void
 
 	    Dm* m = new Dm(*this, table, "/dev/mapper/" + table, table, systeminfo);
 	    y2mil("new Dm:" << *m);
-	    unsigned long long s = 0;
-	    string dev = "/dev/dm-" + decString(entry.mnr);
-	    if (systeminfo.getProcParts().getSize(dev, s))
-		{
-		y2mil( "new dm size:" << s );
-		m->setSize( s );
-		}
 	    bool in_use = false;
-	    const map<string,unsigned long>& pe = m->getPeMap();
 	    bool multipath = m->getTargetName()=="multipath" ||
 			     m->getTargetName()=="emc";
+	    const map<string,unsigned long>& pe = m->getPeMap();
 	    map<string,unsigned long>::const_iterator it;
 	    for( it=pe.begin(); it!=pe.end(); ++it )
 		{
 		if( !getStorage()->canUseDevice( it->first, true ))
 		    in_use = true;
+                y2mil( "dev:" << it->first << " in_use:" << in_use );
 		if( !in_use || multipath )
 		    getStorage()->setUsedBy(it->first, UB_DM, "/dev/mapper/" + table);
 		}
 	    string tmp = m->device();
 	    tmp.erase( 5, 7 );
-	    bool skip = getStorage()->knownDevice( tmp, true );
+	    bool skip = getStorage()->knownDevice( tmp, true ) || m->getTargetName()=="crypt";
 	    y2mil( "in_use:" << in_use << " multipath:" << multipath <<
 	           " known " << tmp << " is:" << skip );
-	    it=pe.begin();
-	    if( !skip && m->getTargetName()=="crypt" && it!=pe.end() &&
-		getStorage()->knownDevice( it->first ))
+            static Regex raid1( "_rimage_[0-9]+$" );
+            static Regex raid2( "_rmeta_[0-9]+$" );
+	    if( !skip && (raid1.match(table)||raid2.match(table)))
 		{
-		skip = true;
-		getStorage()->setDmcryptData( it->first, m->device(), entry.mnr,
-		                              m->sizeK(), detectEncryption (m->device()) );
-		if (getStorage()->isUsedBy(it->first, UB_DM))
-		    getStorage()->clearUsedBy(it->first);
-		}
+                string::size_type off = std::max( raid1.so(0), raid2.so(0) );
+                string nm = Dm::lvmTableToDev( table.substr( 0, off ) );
+                skip = getStorage()->knownDevice( nm );
+                y2mil( "raid table:" << table << " name:" << nm << " skip:" << skip );
+                }
+	    if( !skip && (boost::ends_with(table,"-tpool")||
+                          boost::ends_with(table,"_tdata")||
+                          boost::ends_with(table,"_tmeta")))
+		{
+                string nm = table.substr( 0, table.size()-6 );
+                skip = find( lvm_pools.begin(), lvm_pools.end(), nm )!=lvm_pools.end();
+                y2mil( "pool table:" << table << " name:" << nm << " skip:" << skip );
+                }
 	    if( !skip && (boost::ends_with(table,"-real")||
                           boost::ends_with(table,"-cow")))
 		{
-                static Regex delim( "[^-]-[^-]" );
                 string on = table;
                 if( boost::ends_with(on,"-real"))
                     on.erase( on.size()-5 );
                 if( boost::ends_with(tmp,"-cow"))
                     on.erase( on.size()-4 );
-                if( delim.match( on ) )
-                    {
-                    on[delim.so(0)+1] = '/';
-                    boost::replace_all(on,"--","-");
-                    on = "/dev/" + on;
-                    skip = getStorage()->knownDevice( on );
-                    y2mil( "devname:" << on << " skip:" << skip );
-                    }
+                on = Dm::lvmTableToDev( on );
+                skip = getStorage()->knownDevice( on );
+                y2mil( "snap devname:" << on << " skip:" << skip );
 		}
-	    if (!skip && m->sizeK()>0 && !only_crypt )
+            if( !skip )
+                {
+                unsigned long long s = 0;
+                if( getProcSize( systeminfo, entry.mnr, s ))
+                    {
+                    y2mil( "new dm size:" << s );
+                    m->setSize( s );
+                    }
+                }
+	    if (!skip && m->sizeK()>0)
 		addDm( m );
 	    else
 		delete( m );
@@ -320,6 +348,46 @@ DmCo::addDm( Dm* m )
 	y2war("addDm already exists " << m->nr());
 	delete m;
 	}
+    }
+
+void DmCo::getDmDataCrypt(SystemInfo& systeminfo)
+    {
+    y2mil( "begin:" );
+    const CmdDmsetup& cmddmsetup = systeminfo.getCmdDmsetup();
+    for (CmdDmsetup::const_iterator it1 = cmddmsetup.begin(); it1 != cmddmsetup.end(); ++it1)
+        {
+	string table = it1->first;
+        const CmdDmsetup::Entry& entry = it1->second;
+        string dev = "/dev/mapper/" + table;
+
+        if( boost::starts_with(entry.uuid, "CRYPT"))
+            {
+            Dm* m = new Dm(*this, table, "/dev/mapper/" + table, table, systeminfo);
+            y2mil("new Dm:" << *m);
+	    const map<string,unsigned long>& pe = m->getPeMap();
+	    map<string,unsigned long>::const_iterator it;
+	    it=pe.begin();
+	    if( m->getTargetName()=="crypt" && it!=pe.end() &&
+		getStorage()->knownDevice( it->first ))
+		{
+                unsigned long long s = 0;
+                if( getProcSize( systeminfo, entry.mnr, s ))
+                    m->setSize(s);
+		getStorage()->setDmcryptData( it->first, m->device(), entry.mnr,
+		                              m->sizeK(), detectEncryption (m->device()) );
+		if (getStorage()->isUsedBy(it->first, UB_DM))
+		    getStorage()->clearUsedBy(it->first);
+		}
+            delete( m );
+	    }
+	}
+    }
+
+bool DmCo::getProcSize(SystemInfo& si, unsigned nr, unsigned long long& s)
+    {
+    s=0;
+    string dev = "/dev/dm-" + decString(nr);
+    return( si.getProcParts().getSize(dev, s) );
     }
 
 bool

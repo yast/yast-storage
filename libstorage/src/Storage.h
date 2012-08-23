@@ -297,7 +297,6 @@ class DiskData;
 	bool isDisk( const string& dev );
 	const Volume* getVolume( const string& dev );
 	unsigned long long deviceSize( const string& dev );
-	string deviceByNumber(const string& majmin) const;
 	const Device* deviceByNumber( unsigned long maj, unsigned long min ) const;
 
 	void syncMdadm();
@@ -503,6 +502,13 @@ class DiskData;
 	int removeLvmLvSnapshot(const string& vg, const string& name);
 	int getLvmLvSnapshotStateInfo(const string& vg, const string& name, 
 				      LvmLvSnapshotStateInfo& info);
+        int createLvmLvPool( const string& vg, const string& name,
+                             unsigned long long sizeK, string& device );
+        int createLvmLvThin( const string& vg, const string& name,
+                             unsigned long long sizeK, const string& pool,
+                             string& device );
+        int changeLvPoolChunkSize( const string& vg, const string& name,
+                                   unsigned long long chunkSizeK );
 
 	int nextFreeMd(unsigned& nr, string &device);
 	bool checkMdNumber(unsigned num);

@@ -3738,6 +3738,44 @@ Storage::getLvmLvSnapshotStateInfo(const string& vg, const string& name,
     return ret;
 }
 
+int 
+Storage::createLvmLvPool( const string& vg, const string& name,
+                          unsigned long long sizeK, string& device )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("vg:" << vg << " name:" << name);
+
+    y2mil("ret:" << ret);
+    return ret;
+    }
+
+
+int 
+Storage::createLvmLvThin( const string& vg, const string& name,
+                          unsigned long long sizeK, const string& pool,
+                          string& device )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("vg:" << vg << " name:" << name);
+
+    y2mil("ret:" << ret);
+    return ret;
+    }
+
+
+int 
+Storage::changeLvPoolChunkSize( const string& vg, const string& name,
+                                unsigned long long chunkSizeK )
+    {
+    int ret = 0;
+    assertInit();
+    y2mil("vg:" << vg << " name:" << name);
+
+    y2mil("ret:" << ret);
+    return ret;
+    }
 
 int
 Storage::nextFreeMd(unsigned& nr, string &device)
@@ -4933,16 +4971,7 @@ static bool sort_vol_delete( const Volume* rhs, const Volume* lhs )
 
 static bool sort_vol_create( const Volume* rhs, const Volume* lhs )
     {
-    if( rhs->cType()==lhs->cType() )
-	{
-	if( rhs->cType()==LVM )
-	    return( static_cast<const Dm*>(rhs)->stripes() >
-	            static_cast<const Dm*>(lhs)->stripes() );
-	else
-	    return( *rhs < *lhs );
-	}
-    else
-	return( *rhs < *lhs );
+    return( *rhs < *lhs );
     }
 
 static bool sort_vol_mount( const Volume* rhs, const Volume* lhs )
@@ -6706,24 +6735,6 @@ Storage::deviceByNumber( unsigned long maj, unsigned long min ) const
 	    ret = &*ci;
 	}
     y2mil( "maj:" << maj << " min:" << min << " ret:" << (ret?ret->device():"NULL") );
-    return ret;
-    }
-
-string
-Storage::deviceByNumber(const string& majmin) const
-    {
-    string ret="";
-    string::size_type pos = majmin.find( ":" );
-    if( pos!=string::npos )
-	{
-	unsigned ma, mi;
-	majmin.substr( 0, pos ) >> ma;
-	majmin.substr( pos+1 ) >> mi;
-	const Device* dev = deviceByNumber( ma, mi );
-	if( dev )
-	    ret = dev->device();
-	}
-    y2mil("majmin:" << majmin << " ret:" << ret);
     return ret;
     }
 

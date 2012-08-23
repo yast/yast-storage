@@ -436,7 +436,9 @@ namespace storage
 	string dm_table;
 	string dm_target;
 	string origin;
-	unsigned long long sizeK;
+	string used_pool;
+        bool pool;
+        bool thin;
     };
 
     /**
@@ -2000,6 +2002,45 @@ namespace storage
 	 */
 	virtual int getLvmLvSnapshotStateInfo(const string& vg, const string& name,
 					      LvmLvSnapshotStateInfo& info) = 0;
+
+	/**
+	 * Create a LVM thin pool
+	 *
+	 * @param vg name of volume group
+	 * @param name of thin pool
+	 * @param sizeK size of thin pool in kilobytes
+	 * @param device is set to the device name of the new pool
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int createLvmLvPool(const string& vg, const string& name, 
+                                    unsigned long long sizeK, 
+                                    string& SWIG_OUTPUT(device) ) = 0;
+
+	/**
+	 * Create a LVM logical volume that is thin provisioned
+	 *
+	 * @param vg name of volume group
+	 * @param name of logical volume 
+	 * @param sizeK virtual size of logical volume in kilobytes
+	 * @param pool name of the pool this logical volume allocates from
+	 * @param device is set to the device name of the logical volume
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int createLvmLvThin(const string& vg, const string& name, 
+                                    unsigned long long sizeK, const string& pool,
+                                    string& SWIG_OUTPUT(device) ) = 0;
+
+	/**
+	 * Change pool chunk size of a LVM pool.
+	 * This can only be before the volume is created on disk.
+	 *
+	 * @param vg name of volume group
+	 * @param name of thin pool 
+	 * @param chunkSizeK new chunk size of the thin pool
+	 * @return zero if all is ok, a negative number to indicate an error
+	 */
+	virtual int changeLvPoolChunkSize( const string& vg, const string& name,
+                                           unsigned long long chunkSizeK) = 0;
 
 	/**
          * Determine the device name of the next created software raid device
