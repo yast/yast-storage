@@ -1,3 +1,4 @@
+#include <getopt.h>
 #include <iostream>
 
 #include <blocxx/AppenderLogger.hpp>
@@ -42,10 +43,29 @@ int doCommit( StorageInterface* s )
     return( ret );
     }
 
+struct option long_options[] = {
+    { "keep", 0, 0, 'k' },
+    { 0, 0, 0, 0 }
+    };
+
 int
-main( int argc_iv, char** argv_ppcv )
+main( int argc, char** argv )
     {
     int ret = 0;
+    int c;
+    bool keep = false;
+    while( (c=getopt_long(argc, argv, "k", long_options, 0))!=EOF )
+	{
+	switch(c)
+	    {
+	    case 'k':
+		keep = true;
+		break;
+	    default:
+		break;
+	    }
+	}
+
     initDefaultLogger();
     StorageInterface* s = createStorageInterface(Environment(false));
     s->setCallbackProgressBar( progressbarCb );
@@ -111,34 +131,37 @@ main( int argc_iv, char** argv_ppcv )
 	{
 	ret = doCommit( s );
 	}
-    if( ret==0 )
-	{
-	ret = s->removeLvmLvByDevice( device );
-	if( ret ) cerr << "retcode:" << ret << endl;
-	}
-    if( ret==0 )
-	{
-	ret = doCommit( s );
-	}
-    if( ret==0 )
-	{
-	deque<string> ds;
-	ds.push_back( ext_device );
-	ret = s->shrinkLvmVg( "testvg", ds );
-	if( ret ) cerr << "retcode:" << ret << endl;
-	}
-    if( ret==0 )
-	{
-	ret = doCommit( s );
-	}
-    if( ret==0 )
-	{
-	ret = s->removeLvmVg( "testvg" );
-	if( ret ) cerr << "retcode:" << ret << endl;
-	}
-    if( ret==0 )
-	{
-	ret = doCommit( s );
-	}
+    if( !keep )
+        {
+        if( ret==0 )
+            {
+            ret = s->removeLvmLvByDevice( device );
+            if( ret ) cerr << "retcode:" << ret << endl;
+            }
+        if( ret==0 )
+            {
+            ret = doCommit( s );
+            }
+        if( ret==0 )
+            {
+            deque<string> ds;
+            ds.push_back( ext_device );
+            ret = s->shrinkLvmVg( "testvg", ds );
+            if( ret ) cerr << "retcode:" << ret << endl;
+            }
+        if( ret==0 )
+            {
+            ret = doCommit( s );
+            }
+        if( ret==0 )
+            {
+            ret = s->removeLvmVg( "testvg" );
+            if( ret ) cerr << "retcode:" << ret << endl;
+            }
+        if( ret==0 )
+            {
+            ret = doCommit( s );
+            }
+        }
     delete(s);
     }

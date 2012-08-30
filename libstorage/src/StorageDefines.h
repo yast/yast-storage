@@ -82,6 +82,7 @@
 #define UDEVADM "/sbin/udevadm"
 
 #define MODPROBEBIN "/sbin/modprobe"
+#define GREPBIN        "/usr/bin/grep"
 
 
 #endif
