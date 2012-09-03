@@ -8,6 +8,7 @@ YCPC_LD_LIBRARY_PATH = $(top_builddir)/bindings/src/.libs
 YCPC_Y2DIR = $(top_builddir)/bindings/src/.libs
 
 module_DATA =				\
+	StorageInit.ycp      		\
 	Partitions.ycp			\
 	FileSystems.ycp			\
 	Storage.ycp			\

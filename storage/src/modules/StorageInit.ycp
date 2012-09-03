@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2012 Novell, Inc.
+ *
+ * All Rights Reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of version 2 of the GNU General Public License as published
+ * by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, contact Novell, Inc.
+ *
+ * To contact Novell about this file by physical or electronic mail, you may
+ * find current contact information at www.novell.com.
+ */
+
+/**
+ * Module:              StorageInit.ycp
+ *
+ * Authors:             Thomas Fehr (fehr@suse.de)
+ *
+ * Purpose:             Helper module to initialize libstorage
+ */
+
+{
+module "StorageInit";
+
+textdomain "storage";
+
+import "Popup";
+import "Mode";
+import "Stage";
+import "Label";
+
+import "LibStorage";
+import "LibStorage::Environment";
+
+any sint = nil;
+
+string GetProcessName(integer pid)
+    {
+    string name = (string) SCR::Read(.target.symlink, "/proc/" + tostring(pid) + "/exe");
+    if (name == nil)
+	return nil;
+
+    integer pos = findlastof(name, "/");
+    if (pos == nil)
+	return name;
+
+    return substring(name, pos + 1);
+    }
+
+global any CreateInterface(boolean readonly)
+    {
+    while (sint == nil)
+	{
+	any env = LibStorage::Environment::new("LibStorage::Environment", readonly);
+	LibStorage::Environment::swig_testmode_set(env, Mode::test());
+	LibStorage::Environment::swig_autodetect_set(env, !Mode::test());
+	LibStorage::Environment::swig_instsys_set(env, Stage::initial() || Mode::repair());
+
+	integer locker_pid = 0;
+	sint = LibStorage::createStorageInterfacePid(env, locker_pid);
+
+	if (sint == nil)
+	    {
+	    string locker_name = GetProcessName(locker_pid);
+	    y2milestone("locker_pid:%1 locker_name:%2", locker_pid, locker_name);
+
+	    if (locker_name == nil)
+		{
+		if (!Popup::AnyQuestion(Label::ErrorMsg(),
+					// error popup
+					_("The storage subsystem is locked by an unknown application.
+You must quit that application before you can continue."), Label::ContinueButton(),
+					Label::CancelButton(), `focus_no))
+		    break;
+		}
+	    else
+		{
+		if (!Popup::AnyQuestion(Label::ErrorMsg(),
+					// error popup
+					sformat(_("The storage subsystem is locked by the application \"%1\" (%2).
+You must quit that application before you can continue."), locker_name, locker_pid),
+					Label::ContinueButton(), Label::CancelButton(),
+					`focus_no))
+		    break;
+		}
+	    }
+	}
+    y2milestone("sint:%1", sint);
+    return sint;
+    }
+
+}

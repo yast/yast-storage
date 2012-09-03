@@ -60,6 +60,7 @@
   import "Report";
   import "Misc";
   import "HTML";
+  import "StorageInit";
   import "StorageDevices";
   import "StorageClients";
   import "Stage";
@@ -313,64 +314,6 @@ global boolean IsKernelDeviceName(string device)
     list<map> conts                     = [];
 
 
-string GetProcessName(integer pid)
-{
-    string name = (string) SCR::Read(.target.symlink, "/proc/" + tostring(pid) + "/exe");
-    if (name == nil)
-	return nil;
-
-    integer pos = findlastof(name, "/");
-    if (pos == nil)
-	return name;
-
-    return substring(name, pos + 1);
-}
-
-
-any CreateInterface(boolean readonly)
-{
-    while (sint == nil)
-    {
-	any env = LibStorage::Environment::new("LibStorage::Environment", readonly);
-	LibStorage::Environment::swig_testmode_set(env, Mode::test());
-	LibStorage::Environment::swig_autodetect_set(env, !Mode::test());
-	LibStorage::Environment::swig_instsys_set(env, Stage::initial() || Mode::repair());
-
-	integer locker_pid = 0;
-	sint = LibStorage::createStorageInterfacePid(env, locker_pid);
-
-	if (sint == nil)
-	{
-	    string locker_name = GetProcessName(locker_pid);
-	    y2milestone("locker_pid:%1 locker_name:%2", locker_pid, locker_name);
-
-	    if (locker_name == nil)
-	    {
-		if (!Popup::AnyQuestion(Label::ErrorMsg(),
-					// error popup
-					_("The storage subsystem is locked by an unknown application.
-You must quit that application before you can continue."), Label::ContinueButton(),
-					Label::CancelButton(), `focus_no))
-		    break;
-	    }
-	    else
-	    {
-		if (!Popup::AnyQuestion(Label::ErrorMsg(),
-					// error popup
-					sformat(_("The storage subsystem is locked by the application \"%1\" (%2).
-You must quit that application before you can continue."), locker_name, locker_pid),
-					Label::ContinueButton(), Label::CancelButton(),
-					`focus_no))
-		    break;
-	    }
-	}
-    }
-
-    y2milestone("sint:%1", sint);
-    return sint;
-}
-
-
 list<map> getContainers();
 
 global boolean InitLibstorage(boolean readonly)
@@ -379,10 +322,10 @@ global boolean InitLibstorage(boolean readonly)
 	return true;
 
     y2milestone("InitLibstorage");
-    sint = CreateInterface(readonly);
+    sint = StorageInit::CreateInterface(readonly);
     if (sint == nil)
     {
-	y2error("Storage::CreateInterface failed");
+	y2error("StorageInit::CreateInterface failed");
 	return false;
     }
 
