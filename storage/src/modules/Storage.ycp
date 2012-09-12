@@ -2837,6 +2837,21 @@ global boolean CreateLvmLv( string vgname, string lvname, integer sizeK,
     return( ret==0 );
     }
 
+global boolean CreateLvmThin( string vgname, string lvname, string pool,
+                              integer sizeK )
+    {
+    y2milestone("CreateLvmThin vg:%1 name:%2 pool:%3 sizeK:%4", vgname, lvname,
+                pool, sizeK);
+    integer ret = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::createLvmLvThin( sint, vgname, lvname,
+							 pool, sizeK, dummy );
+    if( ret<0 )
+	y2error( "CreateLvmLv sint ret:%1", ret );
+    UpdateTargetMapDisk( "/dev/"+vgname );
+    return( ret==0 );
+    }
+
 global boolean ChangeLvStripeSize( string vgname, string lvname,
 				   integer stripeSize )
     {
@@ -2865,6 +2880,23 @@ global boolean ChangeLvStripeCount( string vgname, string lvname,
 							     stripes );
     if( ret<0 )
 	y2error( "ChangeLvStripeCount sint ret:%1", ret );
+    UpdateTargetMapDisk( "/dev/"+vgname );
+    return( ret==0 );
+    }
+
+global boolean CreateLvmPool( string vgname, string lvname, integer sizeK,
+                              integer stripes )
+    {
+    y2milestone("CreateLvmPool vg:%1 name:%2 sizeK:%3 stripes:%4", vgname, 
+		lvname, sizeK, stripes);
+    integer ret = 0;
+    string dummy = "";
+    ret = LibStorage::StorageInterface::createLvmLvPool( sint, vgname, lvname,
+							 sizeK, dummy );
+    if( ret<0 )
+	y2error( "CreateLvmPool sint ret:%1", ret );
+    else if( stripes>1 && !ChangeLvStripeCount( vgname, lvname, stripes ))
+	ret = -1;
     UpdateTargetMapDisk( "/dev/"+vgname );
     return( ret==0 );
     }
@@ -3338,8 +3370,21 @@ boolean CreateAny( symbol ctype, map d, map& p )
 	}
     else if( ctype == `CT_LVM )
 	{
-	ret = Storage::CreateLvmLv( d["name"]:"", p["name"]:"", p["size_k"]:0,
-				    p["stripes"]:1 );
+	if( p["pool"]:false )
+	    {
+	    ret = Storage::CreateLvmPool( d["name"]:"", p["name"]:"", 
+	                                  p["size_k"]:0, p["stripes"]:1 );
+	    }
+	else if( !isempty(p["used_pool"]:""))
+	    {
+	    ret = Storage::CreateLvmThin( d["name"]:"", p["name"]:"", 
+					  p["used_pool"]:"", p["size_k"]:0 );
+	    }
+	else
+	    {
+	    ret = Storage::CreateLvmLv( d["name"]:"", p["name"]:"", p["size_k"]:0,
+					p["stripes"]:1 );
+	    }
 	if( ret && p["stripes"]:1>1 && p["stripesize"]:0>0 )
 	    {
 	    Storage::ChangeLvStripeSize( d["name"]:"", p["name"]:"",
@@ -4250,6 +4295,8 @@ global define void SetTargetMap( map<string,map> target )
 	                        ``(!p["delete"]:false&&p["create"]:false) );
 	if( size(dps)>1 && haskey( dps[0]:$[], "nr" ))
 	    dps = sort( map a, map b, dps, ``(a["nr"]:0<b["nr"]:0));
+	if( size(dps)>1 && haskey( dps[0]:$[], "name" ))
+	    dps = sort( map a, map b, dps, ``(a["pool"]:false>b["pool"]:false));
 	foreach( map p, dps,
 	    ``{
 	    CreateAny( target[k,"type"]:`CT_UNKNOWN, target[k]:$[], p );

@@ -30,6 +30,7 @@
 {
     textdomain "storage";
 
+    include "partitioning/ep-lib.ycp";
 
     boolean CheckVgName(string name)
     {
@@ -392,6 +393,14 @@ in volume group \"%2\"."),
 of stripes for the new logical volume. The number of stripes cannot be higher
 than the number of physical volumes of the volume group.</p>");
 
+	// helptext
+	helptext = helptext + _("<p>So called <b>Thin Volumes</b> can created
+with arbitrary volume size. The space required is taken on demand from the 
+assigned <b>Thin Pool</b>. So one can create Thin Volume of a size larger
+than the Thin Pool. Of course when there is really data written to a Thin
+Volume, the assigned Thin Pool must be able to meet this space requirement.
+Thin Volumes cannot have a Stripe Count.");
+
 	return helptext;
     }
 
@@ -406,6 +415,17 @@ than the number of physical volumes of the volume group.</p>");
 
 	symbol what = (size_k == max_size_k) ? `max_size : `manual_size;
 	string name = data["name"]:"";
+	string max_s = sformat(_("Maximum Size (%1)"), Storage::KByteToHumanString(max_size_k));
+	boolean thin = !isempty(data["used_pool"]:"");
+	if( thin )
+	    {
+	    what = `manual_size;
+	    max_size_k = 1024*1024*1024*1024*1024;
+	    size_k = 900*1024;
+	    integer pos = search( max_s, "(" );
+	    if( pos!=nil )
+		max_s = substring( max_s, 0, pos );
+	    }
 
 	integer max_stripes = data["max_stripes"]:1;
 	integer stripes = data["stripes"]:1;
@@ -417,8 +437,7 @@ than the number of physical volumes of the volume group.</p>");
 		     `FrameWithMarginBox(_("Size"),
 			    `RadioButtonGroup(`id(`size),
 					      `VBox(
-						  `LeftRadioButton(`id(`max_size), `opt(`notify),
-								   sformat(_("Maximum Size (%1)"), Storage::KByteToHumanString(max_size_k))),
+						  `LeftRadioButton(`id(`max_size), `opt(`notify), max_s),
 						  `LeftRadioButtonWithAttachment(`id(`manual_size), `opt(`notify), _("Custom Size"),
 										 `VBox(`id(`manual_size_attachment),
 										       `MinWidth(15, `InputField(`id(`size_input),
@@ -455,8 +474,10 @@ than the number of physical volumes of the volume group.</p>");
 	MiniWorkflow::SetLastStep(false);
 
 	UI::ChangeWidget(`id(`size), `Value, what);
+	UI::ChangeWidget(`id(`max_size), `Enabled, !thin );
 	UI::ChangeWidget(`id(`manual_size_attachment), `Enabled, what == `manual_size);
 	UI::ChangeWidget(`id(`size_input), `Value, Storage::KByteToHumanString(size_k));
+	UI::ChangeWidget(`id(`stripes), `Enabled, !thin );
 	UI::ChangeWidget(`id(`stripe_size), `Enabled, stripes > 1);
 
 	symbol widget = nil;
@@ -518,6 +539,9 @@ than the number of physical volumes of the volume group.</p>");
 
 	    data["stripes"] = stripes;
 	    data["stripesize"] = stripe_size/1024;
+
+	    if( data["pool"]:false )
+		widget = `finish;
 	}
 
 	y2milestone("MiniWorkflowStepLvSize data:%1 ret:%2", data, widget);
@@ -551,6 +575,16 @@ than the number of physical volumes of the volume group.</p>");
     {
 	// helptext
 	string helptext = _("<p>Enter the name of the new logical volume.</p>");
+	// helptext
+	helptext = helptext + _("<p>You can declare the logical volume as a <b>Normal Volume</b>.
+This is the default and means plain LVM Volumes like all volumes were before the feature of <b>Thin Provisioning</b> existed.
+If in doubt this is most probably the right choice</p>");
+	// helptext
+	helptext = helptext + _("<p>You can declare the logical volume as a <b>Thin Pool</b>.
+This means <b>Thin Volumes</b> allocate their needed space on demand from such a pool.</p>");
+	// helptext
+	helptext = helptext + _("<p>You can declare the logical volume as a <b>Thin Volume</b>.
+This means the volume allocates needed space on demand from a <b>Thin Pool</b>.</p>");
 
 	return helptext;
     }
@@ -563,20 +597,69 @@ than the number of physical volumes of the volume group.</p>");
 	map<string, map> target_map = Storage::GetTargetMap();
 
 	string vg_name = data["vg_name"]:"error";
+	string vg_key = "/dev/"+vg_name;
 
 	list<string> lvs = get_lv_names(target_map, vg_name);
+	list<string> pools = maplist( map l, 
+	                              filter( map p, target_map[vg_key,"partitions"]:[], ``(p["pool"]:false)),
+				      ``(l["name"]:"") );
 
 	string lv_name = data["name"]:"";
 
-	term contents = `HVSquash(`FrameWithMarginBox(_("Name"),
+	term frames = `VStackFrames();
+
+	// heading for frame
+	frames = add(frames, `FrameWithMarginBox(_("Name"),
 				`VBox(
 				    `Left(`InputField(`id(`lvname), _("Logical Volume"), lv_name)))
-				      )
-	    );
+				      ));
+
+	list<term> pool_list = maplist(string n, pools, { return `item(`id(n), n); });
+
+	frames = add(frames,
+		     // heading for frame
+		     `FrameWithMarginBox(_("Type"),
+					      `RadioButtonGroup( `id(`type), `VBox( 
+											     // radio button label
+						  `LeftRadioButton(`id(`normal), `opt(`notify), _("Normal Volume") ),
+											     // radio button label
+						  `LeftRadioButton(`id(`pool), `opt(`notify), _("Thin Pool") ),
+													   // radio button label
+						  `LeftRadioButtonWithAttachment(`id(`thin), `opt(`notify), _("Thin Volume"),
+										 `VBox(
+										       `Left(`ComboBoxSelected(`id(`used_pool), 
+										                               `opt(`notify), 
+													       // combo box label
+													       _("Used Pool"), 
+													       pool_list, 
+													       `id(`used_pool)))
+										      ))
+						   ))
+				));
+
+	term contents = `HVSquash(frames);
 
 	MiniWorkflow::SetContents(Greasemonkey::Transform(contents), MiniWorkflowStepLvNameHelptext());
 	MiniWorkflow::SetLastStep(false);
 	UI::SetFocus(`id(`lvname));
+	boolean used_enab = false;
+	if( data["pool"]:false )
+	    ChangeWidgetIfExists(`pool, `Value, true );
+	else if( !isempty(data["used_pool"]:"") || data["max_size_k"]:0==0 )
+	    {
+	    ChangeWidgetIfExists(`thin, `Value, true );
+	    if( !isempty(data["used_pool"]:"") )
+		ChangeWidgetIfExists(`used_pool, `Value, data["used_pool"]:"");
+	    used_enab = true;
+	    }
+	else if( data["max_size_k"]:0>0 )
+	    ChangeWidgetIfExists(`normal, `Value, true );
+	if( data["max_size_k"]:0==0 )
+	    {
+	    ChangeWidgetIfExists(`normal, `Enabled, false );
+	    ChangeWidgetIfExists(`pool, `Enabled, false );
+	    }
+	ChangeWidgetIfExists(`used_pool, `Enabled, used_enab);
 
 	symbol widget = nil;
 
@@ -586,6 +669,11 @@ than the number of physical volumes of the volume group.</p>");
 
 	    switch (widget)
 	    {
+		case `pool:
+		case `thin:
+		case `normal:
+		    UI::ChangeWidget(`id(`used_pool), `Enabled, (widget==`thin));
+		    break;
 		case `next:
 		    lv_name = (string) UI::QueryWidget(`id(`lvname), `Value);
 
@@ -603,6 +691,12 @@ than the number of physical volumes of the volume group.</p>");
 
 	    // ChangeVolumeProperties and thus addLogicalVolume need the device
 	    data["device"] = "/dev/" + vg_name + "/" + data["name"]:"";
+	    data = remove( data, "used_pool" );
+	    data = remove( data, "pool" );
+	    if( (boolean)UI::QueryWidget(`id(`pool), `Value) )
+		data["pool"] = true;
+	    if( (boolean)UI::QueryWidget(`id(`thin), `Value) )
+		data["used_pool"] = UI::QueryWidget(`id(`used_pool), `Value);
 	}
 
 	y2milestone("MiniWorkflowStepLvName data:%1 ret:%2", data, widget);

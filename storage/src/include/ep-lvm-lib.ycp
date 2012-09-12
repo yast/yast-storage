@@ -215,8 +215,9 @@ RAID device is required. Change your partition table accordingly."));
 	                           "create" : true ];
 
 	string vg_name = substring(device, 5);
+	list pools = filter( map p, target_map[device,"partitions"]:[], ``(p["pool"]:false));
 
-	if (target_map[device, "pe_free"]:0 == 0)
+	if (target_map[device, "pe_free"]:0 == 0 && size(pools)==0 )
 	{
 	    // error popup
 	    Popup::Error(sformat(_("No free space left in the volume group \"%1\"."), vg_name));
@@ -261,9 +262,17 @@ RAID device is required. Change your partition table accordingly."));
 	map<string, map> target_map = Storage::GetTargetMap();
 	map<string, any> data = Storage::GetPartition(target_map, device);
 
+	if (data["pool"]:false)
+	    {
+	    // error popup, %1 is replace by partition device name e.g. /dev/system/root
+	    Popup::Error(sformat(_("The volume %1 is a thin pool.
+It cannot be edited."), device));
+	    return;
+	    }
+
 	if (Storage::IsUsedBy(data))
 	    {
-	    // error popup, %1 is replace by partition device name e.g. /dev/sdb1
+	    // error popup, %1 is replace by partition device name e.g. /dev/system/root
 	    Popup::Error(sformat(_("The volume %1 is in use. It cannot be
 edited. To edit %1, make sure it is not used."), device));
 	    return;
