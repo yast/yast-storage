@@ -10,6 +10,7 @@
     textdomain "storage";
 
 
+    include "partitioning/ep-lib.ycp";
     include "partitioning/custom_part_lib.ycp";
 
 
@@ -50,12 +51,6 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	    all_filesystems[`tmpfs] = FileSystems::GetTmpfsFilesystem();
 	    }
 
-	void ChangeWidgetIfExists( symbol wid, symbol property, any value)
-	{
-	    if ( UI::WidgetExists(`id(wid)) )
-		UI::ChangeWidget(`id(wid), property, value);
-	}
-
 	list <string> ProposeMountpoints( symbol used_fs, string current_mp )
 	{
 	    map <symbol, any> fs_data = all_filesystems[used_fs]: $[];
@@ -81,7 +76,9 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	    map <symbol, any> fs_data = all_filesystems[used_fs]: $[];
 	    ChangeWidgetIfExists(`fs_options, `Enabled, fs_data[`options]:[] != []);
 	    ChangeWidgetIfExists(`crypt_fs, `Enabled, 
-	                         fs_data[`crypt]:true&&data["type"]:`primary!=`btrfs);
+	                         fs_data[`crypt]:true &&
+				 data["type"]:`primary!=`btrfs &&
+				 !data["pool"]:false );
 	}
 
 	boolean do_format = data["format"]:false;
@@ -133,13 +130,13 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	    if (mount_point_proposal == Partitions::BootMount())
 		used_fs = Partitions::DefaultBootFs();
 
-	    data["format"] = true;
+	    data["format"] = !data["pool"]:false;
 	    data["fsid"] = Partitions::fsid_native;
 	    data["ori_fsid"] = Partitions::fsid_native;
 	    data["used_fs"] = used_fs;
 
 	    //set globals
-	    do_format = true;
+	    do_format = data["format"]:false;
 	    mount = mount_point_proposal;
 	    do_mount = mount != "";
 
@@ -219,6 +216,7 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 	MiniWorkflow::SetLastStep(!AskPassword());
 
 	ChangeWidgetIfExists( `format, `Value, do_format ? `do_format : `do_not_format);
+	ChangeWidgetIfExists( `do_format, `Enabled, !data["pool"]:false);
 	ChangeWidgetIfExists( `do_format_attachment, `Enabled, do_format);
 	//not there in RAID/LVM/loop configuration (#483789)
 	ChangeWidgetIfExists( `do_not_format_attachment, `Enabled, !do_format );
@@ -228,8 +226,10 @@ be mounted and enter the mount point (/, /boot, /usr, /var, etc.).</p>");
 
 	//not there on s390s
 	ChangeWidgetIfExists( `crypt_fs, `Value, crypt_fs );
+	ChangeWidgetIfExists( `crypt_fs, `Enabled, !data["pool"]:false );
 
 	UI::ChangeWidget(`id(`mount), `Value, do_mount ? `do_mount : `do_not_mount);
+	ChangeWidgetIfExists( `do_mount, `Enabled, !data["pool"]:false);
 	UI::ChangeWidget(`id(`do_mount_attachment), `Enabled, do_mount);
 	UI::ChangeWidget(`id(`mount_point), `Value, mount);
 
