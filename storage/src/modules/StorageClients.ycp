@@ -31,6 +31,7 @@
     module "StorageClients";
 
     import "Label";
+    import "Mode";
     import "Popup";
     import "Report";
     import "SlideShow";
@@ -105,38 +106,48 @@ global boolean YesNoPopup (string text)
     }
 
 
-    global boolean CommitErrorPopup(integer error, string last_action, string extended_message)
+global boolean CommitErrorPopup(integer error, string last_action, string extended_message)
     {
-	y2milestone("CommitErrorPopup error:%1 last_action:%2 extended_message:%3", 
-	            error, last_action, extended_message);
+    y2milestone("CommitErrorPopup error:%1 last_action:%2 extended_message:%3", 
+		error, last_action, extended_message);
 
-	list<string> tmp1 = splitstring(extended_message, "\n");
-	if (size(tmp1) > 5)
+    list<string> tmp1 = splitstring(extended_message, "\n");
+    if (size(tmp1) > 5)
 	{
-	    tmp1 = sublist(tmp1, 0, 5);
-	    tmp1 = tmp1 + "...";
+	tmp1 = sublist(tmp1, 0, 5);
+	tmp1 = tmp1 + "...";
 	}
-	extended_message = mergestring(tmp1, "\n");
+    extended_message = mergestring(tmp1, "\n");
 
-	string text = _("Failure occurred during the following action:") + "\n" + last_action + "\n\n";
+    string text = _("Failure occurred during the following action:") + "\n" + last_action + "\n\n";
 
-	string tmp =  LibStorage::StorageInterface::getErrorString(sint, error);
-	if (!isempty(tmp))
+    string tmp =  LibStorage::StorageInterface::getErrorString(sint, error);
+    if (!isempty(tmp))
 	{
-	    text = text + tmp + "\n\n";
-	}
-
-	text = text + sformat(_("System error code was: %1"), error) + "\n\n";
-
-	if (!isempty(extended_message))
-	{
-	    text = text + extended_message + "\n\n";
+	text = text + tmp + "\n\n";
 	}
 
-	text = text + _("Continue despite the error?");
+    text = text + sformat(_("System error code was: %1"), error) + "\n\n";
 
-	return Report::ErrorAnyQuestion(Popup::NoHeadline(), text, Label::ContinueButton(),
-					Label::AbortButton(), `focus_no);
+    if (!isempty(extended_message))
+	{
+	text = text + extended_message + "\n\n";
+	}
+
+    text = text + _("Continue despite the error?");
+
+    boolean ret = Report::ErrorAnyQuestion(Popup::NoHeadline(), text,
+					   Label::ContinueButton(),
+					   Label::AbortButton(), `focus_no);
+    if( Mode::autoinst() )
+	{
+	map ex = Report::Export();
+	if( ex["yesno_messages","show"]:true==false ||
+	    ex["yesno_messages","timeout"]:0>0 )
+	    ret = true;
+	}
+    y2milestone( "CommitErrorPopup ret:%1", ret );
+    return ret;
     }
 
 
