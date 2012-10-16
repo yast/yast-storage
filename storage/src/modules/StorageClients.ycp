@@ -10,6 +10,7 @@
     module "StorageClients";
 
     import "Label";
+    import "Mode";
     import "Popup";
     import "Report";
     import "SlideShow";
@@ -84,30 +85,42 @@ global boolean YesNoPopup (string text)
     }
 
 
-    global boolean CommitErrorPopup(integer error, string last_action, string extended_message)
+global boolean CommitErrorPopup(integer error, string last_action, string extended_message)
     {
-	y2milestone("CommitErrorPopup error%1 last_action%2 extended_message:%3", error,
-		    last_action, extended_message);
+    y2milestone("CommitErrorPopup error%1 last_action%2 extended_message:%3", error,
+		last_action, extended_message);
 
-	string text = _("Failure occurred during the following action:") + "\n" + last_action + "\n\n";
+    string text = _("Failure occurred during the following action:") + "\n" + last_action + "\n\n";
 
-	string tmp =  LibStorage::StorageInterface::getErrorString(sint, error);
-	if (!isempty(tmp))
+    string tmp =  LibStorage::StorageInterface::getErrorString(sint, error);
+    if (!isempty(tmp))
 	{
-	    text = text + tmp + "\n\n";
+	text = text + tmp + "\n\n";
 	}
 
-	text = text + sformat(_("System error code was: %1"), error) + "\n\n";
+    text = text + sformat(_("System error code was: %1"), error) + "\n\n";
 
-	if (!isempty(extended_message))
+    if (!isempty(extended_message))
 	{
-	    text = text + extended_message + "\n\n";
+	text = text + extended_message + "\n\n";
 	}
 
-	text = text + _("Continue despite the error?");
+    text = text + _("Continue despite the error?");
 
-	return Report::ErrorAnyQuestion(Popup::NoHeadline(), text, Label::ContinueButton(),
-					Label::AbortButton(), `focus_no);
+    any ret = Report::ErrorAnyQuestion(Popup::NoHeadline(), text, 
+                                       Label::ContinueButton(),
+				       Label::AbortButton(), `focus_no);
+    y2milestone( "CommitErrorPopup autoinst:%1", Mode::autoinst() );
+    if( Mode::autoinst() )
+	{
+	map ex = Report::Export();
+	y2milestone( "CommitErrorPopup ex:%1", ex["yesno_messages"]:$[] );
+	if( ex["yesno_messages","show"]:true==false ||
+	    ex["yesno_messages","timeout"]:0>0 )
+	    ret = true;
+	}
+    y2milestone( "CommitErrorPopup ret:%1", ret );
+    return (boolean)ret;
     }
 
 
