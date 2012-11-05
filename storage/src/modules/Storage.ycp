@@ -4567,6 +4567,17 @@ global boolean IsUsedBy( map p )
     return( ret );
     }
 
+boolean TryUnaccessSwap( string device )
+    {
+    boolean ret = isempty(DeviceMounted(device));
+    if( !ret && Mode::live_installation() )
+	{
+	ret = Umount( device );
+	}
+    y2milestone( "TryUnaccessSwap device %1 ret:%2", device, ret );
+    return(ret);
+    }
+
 global boolean CanEdit( map p, boolean verbose )
     {
     boolean ret = true;
@@ -4576,8 +4587,10 @@ global boolean CanEdit( map p, boolean verbose )
 	    p["mount"]:""=="swap" )
 	    {
 	    ret = false;
-	    y2milestone( "CanEdit p:%1", p );
 	    if( verbose )
+		ret = TryUnaccessSwap( p["device"]:"" );
+	    y2milestone( "CanEdit ret:%1 p:%2", ret, p );
+	    if( verbose && !ret )
 		{
 		string txt = sformat( _("
 Device %1 cannot be modified because it contains activated swap
@@ -4608,6 +4621,8 @@ global boolean CanDelete( map p, map disk, boolean verbose )
     {
     string txt = "";
     boolean ret = CanEdit( p, false );
+    if( !ret && verbose && p["mount"]:""=="swap" )
+	ret = TryUnaccessSwap( p["device"]:"" );
     if( !ret && verbose )
 	{
 	if( p["mount"]:""=="swap" )
