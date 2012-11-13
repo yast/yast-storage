@@ -87,6 +87,7 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
     boolean root_lvm             = false;
     symbol  root_fs              = `unknown;
     symbol  boot_fs              = `unknown;
+    integer boot_fsid            = 0;
     integer boot_size_k          = 0;
     boolean boot_size_check      = !(Arch::board_chrp() || Arch::board_prep() || Arch::board_iseries() || Arch::board_mac());
     boolean fat_system_mount     = false;
@@ -157,6 +158,7 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 		    boot_end = Region::End(part["region"]:[]);
 		    boot_fs         = part["used_fs"]:`unknown;
 		    boot_size_k = part["size_k"]:0;
+		    boot_fsid = Partitions::fsid_prep_chrp_boot;
 		    }
 		else if( Arch::board_mac() && part["used_fs"]:`unknown==`hfs )
 		    {
@@ -164,6 +166,14 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 		    boot_end = Region::End(part["region"]:[]);
 		    boot_fs         = part["used_fs"]:`unknown;
 		    boot_size_k = part["size_k"]:0;
+		    }
+		else if( fsid == Partitions::fsid_bios_grub )
+		    {
+		    boot_found      = true;
+		    boot_end = Region::End(part["region"]:[]);
+		    boot_fs         = `none;
+		    boot_size_k = part["size_k"]:0;
+		    boot_fsid = Partitions::fsid_bios_grub;
 		    }
 		}
 
@@ -214,7 +224,7 @@ boolean check_created_partition_table(const map<string,map> targetMap, boolean i
 
     y2milestone("diskless:%1", diskless);
     y2milestone("root_found:%1 root_fs:%2", root_found, root_fs);
-    y2milestone("boot_found:%1 boot_fs:%2", boot_found, boot_fs);
+    y2milestone("boot_found:%1 boot_fs:%2 boot_fsid:%3", boot_found, boot_fs, boot_fsid);
     y2milestone("root_dmraid:%1 root_raid:%2 boot_raid:%3 raid_type:%4", 
 		root_dmraid, root_raid, boot_raid, raid_type);
 
@@ -262,7 +272,8 @@ Really use this setup?
 		ok = false;
 	}
 
-    if ((boot_found && contains([ `btrfs ], boot_fs)) || show_all_popups)
+    if( (boot_found && boot_fsid!=Partitions::fsid_bios_grub && contains([ `btrfs ], boot_fs)) ||
+        show_all_popups)
     {
 	// popup text
 	string message = _("You have mounted a partition with Btrfs to the
@@ -290,7 +301,7 @@ Really use this setup?
 	    ok = false;
     }
 
-    if( (boot_found) && installation || show_all_popups )
+    if( boot_found && installation || show_all_popups )
 	{
 	if( boot_end >= Partitions::BootCyl() || show_all_popups )
 	    {
