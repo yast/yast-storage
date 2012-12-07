@@ -10,11 +10,19 @@
 #include <sys/types.h>
 #include <regex.h>
 #include <string>
+#include <stdexcept>
 
 using std::string;
 
 namespace storage
 {
+
+    class regex_error : public std::runtime_error
+    {
+    public:
+	regex_error() : std::runtime_error("regex error") {}
+    };
+
 
 class Regex
 {
@@ -35,6 +43,8 @@ public:
     string cap (unsigned int) const;
     static const string& ws;
     static const string& number;
+
+    static string escape(const string& str);
 
 private:
     const string pattern;
