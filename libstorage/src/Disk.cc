@@ -849,7 +849,7 @@ bool Disk::checkPartedValid( const ProcPart& pp, const string& diskname,
 	    parted_l[(*i)->nr()] = (*i)->cylSize();
 	    }
 	}
-    string reg = diskname;
+    string reg = Regex::escape(diskname);
     if( !reg.empty() && reg.find( '/' )!=string::npos && 
         isdigit(reg[reg.length()-1]) )
 	reg += "p";
