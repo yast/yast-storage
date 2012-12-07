@@ -25,6 +25,8 @@
 
 #include "storage/Regex.h"
 
+#include <boost/algorithm/string.hpp>
+
 extern int _nl_msg_cat_cntr;
 
 
@@ -36,7 +38,9 @@ Regex::Regex (const char* pattern, int cflags, unsigned int nm)
       cflags (cflags),
       nm (cflags & REG_NOSUB ? 0 : nm)
 {
-    regcomp (&rx, pattern, cflags);
+    if (regcomp (&rx, pattern, cflags) != 0)
+	throw regex_error();
+
     my_nl_msg_cat_cntr = _nl_msg_cat_cntr;
     rm = new regmatch_t[nm];
 }
@@ -47,7 +51,9 @@ Regex::Regex (const string& pattern, int cflags, unsigned int nm)
       cflags (cflags),
       nm (cflags & REG_NOSUB ? 0 : nm)
 {
-    regcomp (&rx, pattern.c_str (), cflags);
+    if (regcomp (&rx, pattern.c_str (), cflags) != 0)
+	throw regex_error();
+
     my_nl_msg_cat_cntr = _nl_msg_cat_cntr;
     rm = new regmatch_t[nm];
 }
@@ -95,6 +101,32 @@ Regex::cap (unsigned int i) const
     if (i < nm && rm[i].rm_so > -1)
 	return last_str.substr (rm[i].rm_so, rm[i].rm_eo - rm[i].rm_so);
     return "";
+}
+
+
+string
+Regex::escape(const string& str)
+{
+    string ret = str;
+
+    boost::replace_all(ret, "\\", "\\\\");
+
+    boost::replace_all(ret, "{", "\\{");
+    boost::replace_all(ret, "}", "\\}");
+    boost::replace_all(ret, "[", "\\[");
+    boost::replace_all(ret, "]", "\\]");
+    boost::replace_all(ret, "(", "\\(");
+    boost::replace_all(ret, ")", "\\)");
+    boost::replace_all(ret, "|", "\\|");
+
+    boost::replace_all(ret, "*", "\\*");
+    boost::replace_all(ret, "+", "\\+");
+    boost::replace_all(ret, "?", "\\?");
+    boost::replace_all(ret, ".", "\\.");
+    boost::replace_all(ret, "^", "\\^");
+    boost::replace_all(ret, "$", "\\$");
+
+    return ret;
 }
 
 
