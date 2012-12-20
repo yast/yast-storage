@@ -7006,6 +7006,7 @@ Storage::mountDev( const string& device, const string& mp, bool ro,
                    const string& opts )
     {
     bool ret = true;
+    bool didCrsetup = false;
     assertInit();
     y2mil("device:" << device << " mp:" << mp << " ro:" << ro << " opts:" << opts);
     VolIterator vol;
@@ -7014,6 +7015,8 @@ Storage::mountDev( const string& device, const string& mp, bool ro,
 	if( vol->needCrsetup() )
 	    {
 	    ret = vol->doCrsetup()==0;
+	    if( ret==0 )
+		didCrsetup = true;
 	    }
 	if( ret )
 	    {
@@ -7022,7 +7025,7 @@ Storage::mountDev( const string& device, const string& mp, bool ro,
 	    ret = vol->mount( mp, ro )==0;
 	    vol->setFstabOption( save );
 	    }
-	if( !ret )
+	if( !ret && didCrsetup )
 	    vol->crUnsetup();
 	}
     else
