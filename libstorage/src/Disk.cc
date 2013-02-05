@@ -1096,7 +1096,7 @@ int Disk::createPartition( PartitionType type, unsigned long start,
 				      cylinderToKb(len), Region(start, len), type);
 	ConstPartPair pp = partPair();
 	ConstPartIter i = pp.begin();
-	while( i!=pp.end() && !(i->deleted() && i->cylStart()==start) )
+	while( i!=pp.end() && !(i->deleted() && i->cylStart()==start && i->type()==type) )
 	    ++i;
 	if( i!=pp.end() )
 	    {
