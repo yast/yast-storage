@@ -53,7 +53,7 @@ namespace storage
 	       unsigned long long SizeK, SystemInfo& systeminfo)
 	: Container(s, name, device, staticType(), systeminfo),
 	  init_disk(false), transport(TUNKNOWN), dmp_slave(false), no_addpart(false),
-	  gpt_enlarge(false), del_ptable(false)
+	  gpt_enlarge(false), del_ptable(false), has_fake_partition(false)
     {
     logfile_name = boost::replace_all_copy(nm, "/", "_");
     getMajorMinor();
@@ -71,7 +71,7 @@ namespace storage
 	       unsigned long long SizeK, SystemInfo& systeminfo)
 	: Container(s, name, device, staticType(), systeminfo),
 	  init_disk(false), transport(TUNKNOWN), dmp_slave(false), no_addpart(false),
-	  gpt_enlarge(false), del_ptable(false)
+	  gpt_enlarge(false), del_ptable(false), has_fake_partition(false)
     {
     y2mil("constructed Disk name:" << name << " nr " << num << " sizeK:" << SizeK);
     logfile_name = name + decString(num);
@@ -85,7 +85,7 @@ namespace storage
 	: Container(s, staticType(), node), label(), udev_path(),
 	  udev_id(), max_primary(0), ext_possible(false), max_logical(0),
 	  init_disk(false), transport(TUNKNOWN), dmp_slave(false), no_addpart(false),
-	  gpt_enlarge(false), range(4), del_ptable(false)
+	  gpt_enlarge(false), range(4), del_ptable(false), has_fake_partition(false)
     {
 	logfile_name = nm;
 
@@ -115,7 +115,7 @@ namespace storage
 	  init_disk(c.init_disk), transport(c.transport),
 	  dmp_slave(c.dmp_slave), no_addpart(c.no_addpart), 
 	  gpt_enlarge(c.gpt_enlarge), range(c.range),
-	  del_ptable(c.del_ptable)
+	  del_ptable(c.del_ptable), has_fake_partition(c.has_fake_partition)
     {
 	y2deb("copy-constructed Disk " << dev);
 
@@ -179,6 +179,18 @@ Disk::sysfsPath( const string& device )
     Disk::sysfsPath() const
     {
 	return SYSFSDIR "/" + boost::replace_all_copy(procName(), "/", "!");
+    }
+
+
+    Region
+    Disk::detectSysfsBlkRegion(bool log_error) const
+    {
+	string size_p = sysfsPath() + "/size";
+
+	unsigned long long len = 0;
+	read_sysfs_property(size_p, len, log_error);
+
+	return Region(0, len);
     }
 
 
@@ -485,6 +497,9 @@ bool
     y2mil("nm:" << nm);
     if (!dmp_slave && !checkPartedValid(systeminfo, pl, range_exceed))
 	{
+	ronly = true;
+	has_fake_partition = checkFakePartition(systeminfo, pl);
+
 	Text txt = sformat(
 	// popup text %1$s is replaced by disk name e.g. /dev/hda
 _("The partitioning on disk %1$s is not readable by\n"
@@ -496,8 +511,8 @@ _("The partitioning on disk %1$s is not readable by\n"
 "cannot add, edit, resize, or remove partitions from that\n"
 "disk with this tool."), dev.c_str() );
 
-	getStorage()->addInfoPopupText( dev, txt );
-	ronly = true;
+	if (!has_fake_partition)
+	    getStorage()->addInfoPopupText( dev, txt );
 	}
     if( range_exceed>0 )
 	{
@@ -570,7 +585,7 @@ Disk::checkPartitionsValid(SystemInfo& systeminfo, const list<Partition*>& pl) c
 	}
     }
 
-    // But if parted sees no disk the kernel must also see no disks.
+    // But if parted sees no partitions the kernel must also see no partitions.
 
     if (pl.empty())
     {
@@ -585,6 +600,30 @@ Disk::checkPartitionsValid(SystemInfo& systeminfo, const list<Partition*>& pl) c
     }
 
     return true;
+}
+
+
+bool
+Disk::checkFakePartition(SystemInfo& systeminfo, const list<Partition*>& pl) const
+{
+    // For FBA DASDs without an partition table the kernel generates a fake
+    // partition spanning almost the whole disk.
+
+    if (isDasd() && detected_label.empty() && pl.size() == 1 && pl.front()->nr() == 1)
+    {
+	Region disk_region = detectSysfsBlkRegion();
+	Region part_region = pl.front()->detectSysfsBlkRegion();
+
+	y2mil("disk:" << disk_region << " part:" << part_region);
+
+	if (disk_region.end() == part_region.end() && part_region.start() == 2)
+	{
+	    y2mil("found fake partition on " << device());
+	    return true;
+	}
+    }
+
+    return false;
 }
 
 
@@ -2448,6 +2487,8 @@ std::ostream& operator<< (std::ostream& s, const Disk& d )
 	s << " GptEnlarge";
     if (d.del_ptable)
 	s << " delPT";
+    if (d.has_fake_partition)
+	s << " has_fake_partition";
     return( s );
     }
 
@@ -2471,6 +2512,8 @@ std::ostream& operator<< (std::ostream& s, const Disk& d )
 	logDiffEnum(log, "transport", transport, rhs.transport);
 
 	logDiff(log, "del_ptable", del_ptable, rhs.del_ptable);
+
+	logDiff(log, "has_fake_partition", has_fake_partition, rhs.has_fake_partition);
     }
 
 
