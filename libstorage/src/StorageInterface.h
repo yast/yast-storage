@@ -309,6 +309,7 @@ namespace storage
 	unsigned maxLogical;
 	bool initDisk;
 	Transport transport;
+	bool has_fake_partition;
 	bool iscsi;		// deprecated
     };
 

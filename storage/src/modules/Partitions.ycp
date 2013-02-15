@@ -747,13 +747,16 @@ global string FsIdToString(integer fs_id)
     }
 
 
-global define string RdonlyText( string disk, boolean expert_partitioner )
-    ``{
+global string RdonlyText(map<string, any> disk, boolean expert_partitioner)
+{
     string text = "";
     if( expert_partitioner )
 	{
-	text = sformat( "Operation not permitted on disk %1 !\n", disk );
+	text = sformat( "Operation not permitted on disk %1 !\n", disk["device"]:"" );
 	}
+
+    if (!disk["has_fake_partition"]:false)
+    {
     // popup text %1 is replaced by disk name e.g. /dev/hda
     text = text + sformat( _("
 The partitioning on your disk %1 is either not readable or not 
@@ -763,7 +766,22 @@ partition table.
 You can use the partitions on disk %1 as they are or
 format them and assign mount points, but you cannot add, edit, 
 resize, or remove partitions from that disk here.
-"), disk );
+"), disk["device"]:"" );
+    }
+    else
+    {
+	// popup text %1 is replaced by disk name e.g. /dev/dasda
+	text = text + sformat(_("
+The disk %1 does not contain a partition table but for
+compatibility the kernel has automatically generated a
+partition spanning almost the entire disk.
+
+You can use the partition on disk %1 as it is or
+format it and assign a mount point, but you cannot resize
+or remove the partition from that disk here.
+"), disk["device"]:"");
+    }
+
     if( expert_partitioner )
 	{
 	// popup text 
@@ -783,7 +801,6 @@ Safely ignore this message if you do not intend to use
 this disk during installation.
 ");
 	}
-    return( text );
+    return text;
     }
-
 }
