@@ -226,7 +226,14 @@ RAID device is required. Change your partition table accordingly."));
 
 	data["vg_name"] = vg_name;
 	data["pesize"] = target_map[device, "pesize"]:0;
-	data["max_size_k"] = (target_map[device, "pe_free"]:0 * target_map[device, "pesize"]:0) / 1024;
+	integer maxs = target_map[device, "pe_free"]:0 * target_map[device, "pesize"]:0 / 1024;
+	foreach( map p, target_map[device,"partitions"]:[],
+	    {
+	    if( p["create"]:false && p["pool"]:false )
+		maxs = maxs - ComputePoolMetadataSize( p["size_k"]:0, 
+		                                       target_map[device,"pesize"]:1024 );
+	    });
+	data["max_size_k"] = maxs;
 	data["max_stripes"] = size(MergeDevices((map<string, any>) target_map[device]:$[]));
 
 	data["using_devices"] = [ device ];

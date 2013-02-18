@@ -201,6 +201,24 @@ in volume group \"%2\"."),
     }
 
 
+    integer ComputePoolMetadataSize( integer siz, integer pesize )
+	{
+	integer chunk = 64;
+	integer metasize = siz/chunk/(1024/64);
+	if( metasize<2*1024 )
+	    metasize = 2*1024;
+	while( chunk<=1048576 && metasize>128*1024 )
+	    {
+	    chunk = chunk*2;
+	    metasize = metasize/2;
+	    }
+	integer pe_k = pesize/1024;
+	metasize = (metasize+pe_k-1)/pe_k*pe_k;
+	y2milestone( "ComputePoolMetadataSize size:%1 pe:%2 chunk:%3 ret:%4", 
+		     siz, pe_k, chunk, metasize );
+	return( metasize );
+	}
+
     string MiniWorkflowStepVgHelptext()
     {
 	// helptext
@@ -411,17 +429,22 @@ Thin Volumes cannot have a Stripe Count.");
 
 	integer min_size_k = data["pesize"]:0 / 1024;
 	integer max_size_k = data["max_size_k"]:0;
+	boolean thin = !isempty(data["used_pool"]:"");
+	boolean pool = data["pool"]:false;
+	if( pool )
+	    max_size_k = max_size_k - 
+	                 ComputePoolMetadataSize(data["max_size_k"]:0,
+			                         data["pesize"]:0);
 	integer size_k = data["size_k"]:max_size_k;
 
 	symbol what = (size_k == max_size_k) ? `max_size : `manual_size;
 	string name = data["name"]:"";
 	string max_s = sformat(_("Maximum Size (%1)"), Storage::KByteToHumanString(max_size_k));
-	boolean thin = !isempty(data["used_pool"]:"");
 	if( thin )
 	    {
 	    what = `manual_size;
 	    max_size_k = 1024*1024*1024*1024*1024;
-	    size_k = 900*1024;
+	    size_k = 2*1024*1024;
 	    integer pos = search( max_s, "(" );
 	    if( pos!=nil )
 		max_s = substring( max_s, 0, pos );
