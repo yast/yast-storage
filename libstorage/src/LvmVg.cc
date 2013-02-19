@@ -1408,7 +1408,7 @@ LvmVg::doRemoveVg()
 	    activate(true);
 	getStorage()->showInfoCb(removeText(true),silent);
 	checkConsistency();
-	string cmd = VGREMOVEBIN " " + quote(name());
+	string cmd = VGREMOVEBIN " -f " + quote(name());
 	SystemCmd c( cmd );
 	if( c.retcode()!=0 )
 	    {
