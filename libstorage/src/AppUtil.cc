@@ -487,6 +487,14 @@ logStreamClose(LogLevel level, const char* file, unsigned line, const char* func
 	return s + "-part" + decString(num);
     }
 
+string afterLast(const string& s, const string& pat )
+    {
+    string ret(s);
+    string::size_type pos = s.find_last_of(pat);
+    if( pos!=string::npos )
+	ret.erase( 0, pos+pat.length() );
+    return( ret );
+    }
 
     string
     udevEncode(const string& s)

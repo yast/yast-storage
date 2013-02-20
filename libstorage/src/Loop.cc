@@ -149,7 +149,6 @@ Loop::setDmcryptDev( const string& dm_dev, bool active )
     if( active )
 	{
 	getMajorMinor();
-	replaceAltName( "/dev/dm-", "/dev/dm-"+decString(mnr) );
 	}
     Volume::setDmcryptDev( dm_dev, active );
     }
