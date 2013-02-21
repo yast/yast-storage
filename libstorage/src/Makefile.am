@@ -86,7 +86,8 @@ liby2storage_la_SOURCES =				\
 	FilterIterator.h	ListListIterator.h	\
 	DerefIterator.h		IterPair.h		\
 	Region.cc		Region.h		\
-	StorageTmpl.h		StorageDefines.h
+	StorageTmpl.h		StorageDefines.h        \
+	gen_md5sum.cc           gen_md5sum.h
 
 liby2storage_la_LDFLAGS = -version-info 3:0
 liby2storage_la_LIBADD = -lblocxx -lxml2
@@ -100,6 +101,13 @@ libpy2StorageCallbacks_la_SOURCES =					\
 
 libpy2StorageCallbacks_la_LDFLAGS = -version-info 2:0
 libpy2StorageCallbacks_la_LIBADD = -L$(libdir) -ly2 -lycp liby2storage.la
+
+$(srcdir)/gen_md5sum.cc: $(filter-out gen_md5sum.cc,$(liby2storage_la_SOURCES))
+	./create_md5sum_date_file $(filter-out gen_md5sum.cc,$(liby2storage_la_SOURCES))
+
+noinst_SCRIPTS = create_md5sum_date_file generate_md5_sources
+
+EXTRA_DIST = $(noinst_SCRIPTS)
 
 pkgincludedir = $(includedir)/y2storage
 
