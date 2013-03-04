@@ -466,6 +466,7 @@ namespace storage
 	unsigned long chunkSizeK;
 	string devices;
 	string spares;
+	bool inactive;
     };
 
     /**
