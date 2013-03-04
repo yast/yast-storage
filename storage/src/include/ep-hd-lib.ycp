@@ -544,18 +544,11 @@ disks that could have the same partitioning layout."));
 		    continue;
 		}
 
+		// collect partitions to delete
 		list <string> partitions_to_delete = [];
-
-		//collect partitions to delete
 		foreach (string this_disk, selected_disks, {
-		    list <map> partitions = target_map[ this_disk, "partitions" ]:[];
-
-		    if (!isempty(partitions)) {
-			list <string> tmp = maplist( map one_part, partitions, {
-			    return one_part["device"]:"";
-			});
-			partitions_to_delete = (list <string>) union( partitions_to_delete, tmp);
-		    }
+		    partitions_to_delete = (list <string>)
+			union(partitions_to_delete, Storage::GetAffectedDevices(this_disk));
 		});
 
 		//if there is anything to delete, ask user if s/he really wants to delete
@@ -572,23 +565,8 @@ disks that could have the same partitioning layout."));
 
 		foreach (string this_disk, selected_disks, {
 		    map <string,any> disk_info = Storage::GetDisk( target_map, this_disk );
-		    list <map> partitions = target_map[ this_disk, "partitions" ]:[];
-		    list<string> pnames = maplist(map part, partitions, { return part["device"]:""; });
-		    string part_table_type = disk_info["label"]:Storage::DefaultDiskLabel(disk_info["device"]:"");
 
-		    y2milestone("Deleting these partitions: %1", pnames);
-
-		    if (!isempty(partitions)) {
-			foreach( string one_partition, pnames,{
-			    Storage::DeleteDevice(one_partition);
-			});
-		    }
-
-		    if( mypart_table_type != part_table_type ) {
-			y2milestone("%1 has different type of partition table: %2, will create a new one",
-			    this_disk, part_table_type);
-			Storage::CreatePartitionTable( disk_info["device"]:"", mypart_table_type );
-		    }
+		    Storage::CreatePartitionTable( disk_info["device"]:"", mypart_table_type );
 
 		    foreach( map one_partition, myparts, {
 		        map next = Storage::NextPartition( this_disk, one_partition["type"]:`none);
