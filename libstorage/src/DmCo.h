@@ -47,6 +47,7 @@ namespace storage
 	    unsigned long mnr;
 	    unsigned segments;
 	    string uuid;
+	    string table;
 	};
 
 	bool getEntry(const string& name, Entry& entry) const;

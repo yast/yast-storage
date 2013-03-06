@@ -47,6 +47,30 @@ namespace storage
 	if (c.retcode() != 0 || c.numLines() == 0)
 	    return;
 
+	SystemCmd d(DMSETUPBIN " table");
+	map<string,string> tmap;
+	for (vector<string>::const_iterator it = d.stdout().begin(); it != d.stdout().end(); ++it)
+	    {
+	    list<string> sl = splitString(*it, ":");
+	    if (sl.size() >= 2)
+		{
+		list<string>::iterator i = sl.begin();
+		string key = *i++;
+		if( tmap.find(key)==tmap.end() )
+		    {
+		    string s = *i;
+		    sl = splitString( s, " " );
+		    if( sl.size()>= 3 )
+			{
+			i = sl.begin();
+			++i;
+			++i;
+			tmap[key] = *i;
+			}
+		    }
+		}
+	    }
+	y2mil( "tmap:" << tmap );
 	for (vector<string>::const_iterator it = c.stdout().begin(); it != c.stdout().end(); ++it)
 	{
 	    list<string> sl = splitString(*it, ":");
@@ -59,8 +83,9 @@ namespace storage
 		*ci++ >> entry.mjr;
 		*ci++ >> entry.mnr;
 		*ci++ >> entry.segments;
-		entry.uuid = *ci++;
-
+		if( sl.size()>4 )
+		    entry.uuid = *ci++;
+		entry.table = tmap[name];
 		data[name] = entry;
 	    }
 	}
@@ -68,7 +93,7 @@ namespace storage
 	for (const_iterator it = data.begin(); it != data.end(); ++it)
 	    y2mil("data[" << it->first << "] -> mjr:" << it->second.mjr << " mnr:" <<
 		  it->second.mnr << " segments:" << it->second.segments << " uuid:" <<
-		  it->second.uuid);
+		  it->second.uuid << " table:" << it->second.table );
     }
 
 
@@ -359,8 +384,7 @@ void DmCo::getDmDataCrypt(SystemInfo& systeminfo)
 	string table = it1->first;
         const CmdDmsetup::Entry& entry = it1->second;
         string dev = "/dev/mapper/" + table;
-
-        if( boost::starts_with(entry.uuid, "CRYPT"))
+        if( entry.table=="crypt")
             {
             Dm* m = new Dm(*this, table, "/dev/mapper/" + table, table, systeminfo);
             y2mil("new Dm:" << *m);
