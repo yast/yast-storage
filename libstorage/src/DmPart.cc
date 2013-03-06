@@ -42,8 +42,7 @@ namespace storage
 		   Partition* pa)
 	: Dm(c, name, device, name), p(pa)
     {
-	Dm::init();
-
+    Dm::init();
     numeric = true;
     num = nr;
     getTableInfo();
@@ -51,6 +50,20 @@ namespace storage
 	setSize( pa->sizeK() );
     y2mil("constructed DmPart " << dev << " on " << cont->device());
 }
+
+    DmPart::DmPart(const DmPartCo& c, const string& name, const string& device, unsigned nr,
+		   Partition* pa, SystemInfo& si)
+	: Dm(c, name, device, name), p(pa)
+    {
+    Dm::init();
+    numeric = true;
+    num = nr;
+    getTableInfo();
+    if( pa )
+        setSize( pa->sizeK() );
+    Dm::setUdevData(si);
+    y2mil("constructed DmPart " << dev << " on " << cont->device());
+    }
 
 
     DmPart::DmPart(const DmPartCo& c, const DmPart& v)
@@ -87,8 +100,8 @@ void DmPart::updateMinor()
     getMajorMinor();
     if (mjr != old_mjr || mnr != old_mnr)
 	{
-	addDmNames(mnr);
 	getTableInfo();
+	replaceAltName("/dev/dm-", "/dev/dm-" + decString(mnr));
 	}
     }
 
@@ -107,7 +120,7 @@ void DmPart::updateSize()
     {
     unsigned long long si = 0;
     updateSize();
-	if (mjr > 0 && parts.getSize("/dev/dm-" + decString(mnr), si))
+    if (mjr > 0 && parts.getSize("/dev/dm-" + decString(mnr), si))
 	setSize( si );
     }
 
@@ -121,12 +134,13 @@ void DmPart::addUdevData()
     void
     DmPart::addAltUdevId(unsigned num)
     {
-	alt_names.remove_if(string_contains("/by-id/"));
-
 	const list<string> tmp = co()->udevId();
 	for (list<string>::const_iterator i = tmp.begin(); i != tmp.end(); ++i)
-	    alt_names.push_back("/dev/disk/by-id/" + udevAppendPart(*i, num));
-
+	    {
+	    string s = "/dev/disk/by-id/"+udevAppendPart(*i, num);
+	    if( find( alt_names.begin(), alt_names.end(), s )==alt_names.end() )
+		alt_names.push_back(s);
+	    }
 	mount_by = orig_mount_by = defaultMountBy();
     }
 
