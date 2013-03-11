@@ -214,12 +214,12 @@ int Container::commitChanges( CommitStage stage, Volume* vol )
 	    else if( vol->needExtend() )
 		ret = doResize( vol );
 	    if (vol->needCrsetup(false))
-		ret = vol->doCrsetup();
+		ret = vol->doCrsetup(!vol->isUsedBy(UB_LVM));
 	    break;
 
 	case FORMAT:
 	    if (vol->needCrsetup(true))
-		ret = vol->doCrsetup();
+		ret = vol->doCrsetup(false);
 	    if( ret==0 && vol->getFormat() )
 		ret = vol->doFormat();
 	    if( ret==0 && vol->needLabel() )
@@ -230,7 +230,7 @@ int Container::commitChanges( CommitStage stage, Volume* vol )
 	    if( vol->needRemount() )
 		{
 		if (vol->needCrsetup(true))
-		    vol->doCrsetup();
+		    vol->doCrsetup(true);
 		ret = vol->doMount();
 		}
 	    if( ret==0 && vol->needFstabUpdate() )
