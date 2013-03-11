@@ -153,7 +153,7 @@ checkNormalFile(const string& Path_Cv)
 
 
     bool
-    getMajorMinor(const string& device, unsigned long& major, unsigned long& minor)
+    getMajorMinor(const string& device, unsigned long& major, unsigned long& minor, bool may_fail)
     {
 	bool ret = false;
 	string dev = normalizeDevice(device);
@@ -167,9 +167,10 @@ checkNormalFile(const string& Path_Cv)
 		minor = gnu_dev_minor(sbuf.st_rdev);
 		}
 	}
-	else
+	else 
 	{
-	    y2err("stat for " << device << " failed errno:" << errno << " (" << strerror(errno) << ")");
+	    if( !may_fail )
+		y2err("stat for " << device << " failed errno:" << errno << " (" << strerror(errno) << ")");
 	}
 	return ret;
     }
