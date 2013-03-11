@@ -2992,7 +2992,7 @@ Storage::setCryptType( const string& device, bool val, EncryptType typ )
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
-    else if( findVolume( device, cont, vol ) )
+    else if( findVolume( device, cont, vol, true ) )
 	{
 	ret = vol->setEncryption( val, typ );
 	}
@@ -3018,7 +3018,7 @@ Storage::getCrypt( const string& device, bool& val )
     y2mil("device:" << device);
     ConstVolIterator vol;
     ConstContIterator cont;
-    if( findVolume( device, cont, vol ) )
+    if( findVolume( device, cont, vol, true ) )
 	{
 	val = vol->getEncryption();
 	}
@@ -3046,7 +3046,7 @@ Storage::verifyCryptPassword( const string& device, const string& pwd,
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
-    else if( findVolume( device, vol ) )
+    else if( findVolume( device, vol, false, true ) )
 	{
 	ret = vol->setCryptPwd( pwd );
 	if( ret==0 && vol->detectEncryption()==ENC_UNKNOWN )
@@ -3110,7 +3110,7 @@ Storage::setCryptPassword( const string& device, const string& pwd )
 	{
 	ret = STORAGE_CHANGE_READONLY;
 	}
-    else if( findVolume( device, vol ) )
+    else if( findVolume( device, vol, false, true ) )
 	{
 	ret = vol->setCryptPwd( pwd );
 	if( i!=pwdBuf.end() )
@@ -6386,7 +6386,7 @@ Storage::findDevice( const string& dev, const Device* &vol,
     void
     Storage::setUsedBy(const string& dev, UsedByType type, const string& device)
     {
-	Device* tmp = findDevice(dev);
+	Device* tmp = findDevice(dev,true);
 	if (tmp)
 	{
 	    tmp->setUsedBy(type, device);

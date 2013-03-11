@@ -223,7 +223,7 @@ LvmVg::extendVg( const list<string>& devs )
 	    pvn.device = d;
 
 	    const Volume* v;
-	    if (getStorage()->findVolume(d, v) && v->dmcrypt())
+	    if (getStorage()->findVolume(d, v, true) && v->dmcrypt())
 		pvn.dmcryptDevice = v->dmcryptDevice();
 
 	    pv_add.push_back( pvn );
@@ -944,7 +944,7 @@ void LvmVg::getVgData( const string& name, bool exists )
 		    p->device = extractNthWord( 2, line );
 
 		    const Volume* v;
-		    if (getStorage()->findVolume(p->device, v))
+		    if (getStorage()->findVolume(p->device, v, true))
 			{
 			p->device = v->device();
 			p->dmcryptDevice = v->dmcryptDevice();
