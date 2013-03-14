@@ -73,6 +73,7 @@
     integer fsid_boot = 0;
     integer boot_cyl = 0;
     string boot_mount_point = "";
+    integer memory_size = 0;
 
     global boolean no_fsid_menu = Arch::s390 ();
 
@@ -362,47 +363,42 @@ global define boolean IsSwapPartition( integer fsid )
     return( !IsDosWinNtPartition( fsid ) && fsid==fsid_swap );
     }
 
-global integer SwapSizeMb( integer slot_size )
+integer SwapSizeMbforSwap( integer slot_size )
     {
-    map mem_info_map = (map) SCR::Read(.proc.meminfo);
-    integer mem = mem_info_map["memtotal"]:0 / 1024;
-    y2milestone("mem_info_map:%1 mem:%2", mem_info_map, mem);
-
-    // a good approach swap == mem x 2
     integer swap_size = 0;
 
     if( slot_size==0 )
 	{
-	if( mem <= 256 )
+	if( memory_size <= 256 )
 	    {
-	    swap_size = mem * 2;
+	    swap_size = memory_size * 2;
 	    }
 	else
 	    {
-	    swap_size = mem + mem/2;
+	    swap_size = memory_size + memory_size/2;
 	    }
 	}
     else
 	{
-	if( mem * 9 < slot_size )
+	if( memory_size * 9 < slot_size )
 	    {
-	    swap_size = mem * 2; 
+	    swap_size = memory_size * 2; 
 	    }
-	else if( mem * 5 < slot_size )
+	else if( memory_size * 5 < slot_size )
 	    {
-	    swap_size = mem; 
+	    swap_size = memory_size; 
 	    }
-	else if( mem * 3 < slot_size )
+	else if( memory_size * 3 < slot_size )
 	    {
-	    swap_size = mem / 2; 
+	    swap_size = memory_size / 2; 
 	    }
-	else if( mem * 2 < slot_size )
+	else if( memory_size * 2 < slot_size )
 	    {
-	    swap_size = mem / 3; 
+	    swap_size = memory_size / 3; 
 	    }
 	else 
 	    {
-	    swap_size = mem / 4;
+	    swap_size = memory_size / 4;
 	    }
 	}
 
@@ -422,32 +418,57 @@ global integer SwapSizeMb( integer slot_size )
     // 10G   -> 512MB
     // 40G   -> 1GB
 
-    if( slot_size > (40 * 1024) &&  (swap_size + mem) < 1024 )
+    if( slot_size > (40 * 1024) &&  (swap_size + memory_size) < 1024 )
 	{
-	swap_size = 1024 - mem;
+	swap_size = 1024 - memory_size;
 	}
-    else if( slot_size > (10 * 1024)  &&  (swap_size + mem) < 512 )
+    else if( slot_size > (10 * 1024)  &&  (swap_size + memory_size) < 512 )
 	{
-	swap_size = 512 - mem;
+	swap_size = 512 - memory_size;
 	}
-    else if( slot_size > (2 * 1024)  &&  (swap_size + mem) < 256 )
+    else if( slot_size > (2 * 1024)  &&  (swap_size + memory_size) < 256 )
 	{
-	swap_size = 256 - mem;
+	swap_size = 256 - memory_size;
 	}
-    else if( slot_size > (1 * 1024)  &&  (swap_size + mem) < 128 )
+    else if( slot_size > (1 * 1024)  &&  (swap_size + memory_size) < 128 )
 	{
-	swap_size = 128 - mem;
+	swap_size = 128 - memory_size;
 	}
 
     if( swap_size == 0 )
 	{
 	swap_size = -1;
 	}
-    y2milestone( "SwapSizeMb mem %1 slot_size %2 swap_size %3", mem,
-                 slot_size, swap_size );
+    y2milestone( "SwapSizeMbforSwap mem %1 slot_size %2 swap_size %3", 
+                 memory_size, slot_size, swap_size );
     return( swap_size );
     }
 
+integer SwapSizeMbforSuspend()
+    {
+    integer ret = (memory_size+511)/512*512;
+    y2milestone( "SwapSizeMbforSuspend %1", ret );
+    return( ret );
+    }
+
+global integer SwapSizeMb( integer slot_size, boolean suspend )
+    {
+    if( memory_size==0 )
+	{
+	map mem_info_map = (map) SCR::Read(.proc.meminfo);
+	memory_size = mem_info_map["memtotal"]:0 / 1024;
+	y2milestone("mem_info_map:%1 mem:%2", mem_info_map, memory_size);
+	}
+    integer sw = SwapSizeMbforSwap(slot_size);
+    if( suspend )
+	{
+	integer news = SwapSizeMbforSuspend();
+	if( news>sw )
+	    sw = news;
+	}
+    y2milestone( "SwapSizeMb suspend:%1 ret:%2", suspend, sw );
+    return( sw );
+    }
 
 global define boolean IsResizable( integer fsid )
     ``{

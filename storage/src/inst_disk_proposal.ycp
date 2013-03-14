@@ -162,6 +162,17 @@ void execSubscreens(symbol mode)
 	}
     }
 
+boolean EnableSuspend()
+    {
+    list swaps = Storage::GetCreatedSwaps();
+    integer susps = Partitions::SwapSizeMb(0,true);
+    boolean ret = size(swaps)==1 && swaps[0,"size_k"]:0/1024<susps;
+    ret = ret || StorageProposal::GetProposalSuspend();
+    y2milestone( "EnableSuspend csw:%1 swsize:%2 suspsize:%3 ret:%4", 
+                 size(swaps), swaps[0,"size_k"]:0/1024, susps, ret );
+    return( ret );
+    }
+
 map<string,map> targetMap       = Storage::GetTargetMap();
 
 if( Mode::test() && size(targetMap)==0 )
@@ -307,6 +318,7 @@ if( !Storage::GetTestsuite() )
 	Wizard::SetTitleIcon( "yast-partitioning" );
 
     UI::ChangeWidget(`id(`encrypt), `Enabled, StorageProposal::GetProposalLvm());
+    UI::ChangeWidget(`id(`suspend), `Enabled, EnableSuspend() );
 
     repeat
 	{
@@ -318,7 +330,7 @@ if( !Storage::GetTestsuite() )
 	if( ret == `abort && Popup::ReallyAbort(true) )
 	    return `abort;
 
-	if( contains( [ `lvm, `home, `btrfs, `encrypt ], ret ) )
+	if( contains( [ `lvm, `home, `btrfs, `encrypt, `suspend ], ret ) )
 	    {
 	    val = (boolean) UI::QueryWidget(`id(ret), `Value);
 	    if( AskOverwriteChanges() )
@@ -405,6 +417,9 @@ if( !Storage::GetTestsuite() )
 	                      StorageProposal::GetProposalHome() );
 	    UI::ChangeWidget(`id(`btrfs), `Value, 
 	                      StorageProposal::GetProposalBtrfs() );
+	    UI::ChangeWidget(`id(`suspend), `Value, 
+	                      StorageProposal::GetProposalSuspend() );
+	    UI::ChangeWidget(`id(`suspend), `Enabled, EnableSuspend() );
 	    }
 
 	} until ( ret == `next || ret == `back || ret == `cancel );

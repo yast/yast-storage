@@ -72,6 +72,7 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
     boolean proposal_lvm = false;
     boolean proposal_encrypt = false;
     boolean proposal_btrfs = false;
+    boolean proposal_suspend = false;
     string proposal_password = "";
     boolean proposal_create_vg = false;
 
@@ -128,6 +129,17 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	y2milestone("SetProposalBtrfs val:%1", val);
     }
 
+    global boolean GetProposalSuspend()
+    {
+	return proposal_suspend;
+    }
+
+    global void SetProposalSuspend(boolean val)
+    {
+	proposal_suspend = val;
+	y2milestone("SetProposalSuspend val:%1", val);
+    }
+
     global string GetProposalPassword()
     {
 	return proposal_password;
@@ -147,11 +159,12 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	    SetProposalLvm(cfg_xml["prop_lvm"]:false);
 	    SetProposalEncrypt(false);
 	    SetProposalPassword("");
+	    SetProposalSuspend(cfg_xml["suspend"]:false);
 	}
 	SetProposalBtrfs(cfg_xml["btrfs"]:false);
-	y2milestone("SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 btrfs:%5", 
+	y2milestone("SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 btrfs:%5 suspend:%6", 
 	            proposal_home, proposal_lvm, proposal_encrypt, home_only, 
-		    proposal_btrfs);
+		    proposal_btrfs,proposal_suspend);
     }
 
 
@@ -202,7 +215,8 @@ integer big_cyl = 4 * 1024 * 1024 * 1024;
 	    cfg_xml["btrfs_increase_percentage"] = itmp;
 	    if (cfg_xml["btrfs_increase_percentage"]:0 == nil || cfg_xml["btrfs_increase_percentage"]:0 < 0)
 		cfg_xml["btrfs_increase_percentage"] = 100;
-
+	    btmp = ProductFeatures::GetBooleanFeature("partitioning", "swap_for_suspend");
+	    cfg_xml["suspend"] = btmp ? true : false;
 	    SetProposalDefault(false);
 	    y2milestone("GetControlCfg cfg_xml:%1", cfg_xml);
 	}
@@ -2276,7 +2290,7 @@ map read_partition_xml_config()
 
 	    if( partition["size"]:0 == -1 && partition["mount"]:"" == "swap" )
 		{
-		partition["size"] = 1024*1024*Partitions::SwapSizeMb(0);
+		partition["size"] = 1024*1024*Partitions::SwapSizeMb(0,StorageProposal::GetProposalSuspend());
 		}
 	    if( partition["mount"]:"" == Partitions::BootMount() )
 		{
@@ -2495,7 +2509,7 @@ map read_partition_config( string fpath )
 	y2milestone( "part %1", part );
 	if( part["size"]:0 == -1 && part["mount"]:"" == "swap" )
 	    {
-	    part["size"] = 1024*1024*Partitions::SwapSizeMb(0);
+	    part["size"] = 1024*1024*Partitions::SwapSizeMb(0,StorageProposal::GetProposalSuspend());
 	    }
 	if( part["mount"]:"" == Partitions::BootMount() )
 	    {
@@ -2755,7 +2769,8 @@ integer get_avail_size_mb( list<map> parts )
 
     list<integer> get_swap_sizes(integer space)
     {
-	list<integer> l = [ Partitions::SwapSizeMb(0), Partitions::SwapSizeMb(space) ];
+	list<integer> l = [ Partitions::SwapSizeMb(0,StorageProposal::GetProposalSuspend()), 
+	                    Partitions::SwapSizeMb(space,StorageProposal::GetProposalSuspend()) ];
 	y2milestone("get_swap_sizes space %1 ret %2", space, l);
 	return l;
     }
@@ -4231,6 +4246,12 @@ global term AddCommonWidgets()
 	            // Label text
 		    _("Use &Btrfs as Default File System"), 
 		    GetProposalBtrfs() ))));
+    vb = add( vb, `VSpacing(space) );
+    vb = add( vb,
+	      `Left(`HBox(`HSpacing(3), `CheckBox(`id(`suspend), `opt(`notify),
+	            // Label text
+		    _("Enlarge &Swap for Suspend"), 
+		    GetProposalSuspend() ))));
     term frame = `VBox( `VSpacing(3*space), 
                         `HVCenter( `VBox( `Left(`Label( `opt(`boldFont), _("Proposal settings"))), `VSpacing(0.3), `HVCenter(vb)) ));
                         //`HVCenter(`Frame( _("Proposal settings"), `HVCenter(vb) )));
@@ -4352,6 +4373,11 @@ global boolean HandleCommonWidgets( symbol id )
 
 	case `home:
 	    StorageProposal::SetProposalHome(val);
+	    ret = true;
+	    break;
+
+	case `suspend:
+	    StorageProposal::SetProposalSuspend(val);
 	    ret = true;
 	    break;
 	}
