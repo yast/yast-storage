@@ -977,9 +977,12 @@ void LvmVg::getVgData( const string& name, bool exists )
     for( LvmLvIter i=p.begin(); i!=p.end(); ++i )
 	{
 	//cout << "Deleted:" << *i << endl;
-	map<string,unsigned long> pe_map = i->getPeMap();
-	remLvPeDistribution( i->getLe(), pe_map, pv, pv_add );
-	free_pe += i->getLe();
+	if( !i->isThin() )
+	    {
+	    map<string,unsigned long> pe_map = i->getPeMap();
+	    remLvPeDistribution( i->getLe(), pe_map, pv, pv_add );
+	    free_pe += i->getLe();
+	    }
 	}
     p=lvmLvPair(lvCreated);
     for( LvmLvIter i=p.begin(); i!=p.end(); ++i )
