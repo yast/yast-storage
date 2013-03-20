@@ -553,7 +553,7 @@ LvmVg::removeLv( const string& name )
     {
     int ret = 0;
     y2mil("name:" << name);
-    LvmLv* i;
+    LvmLv* i=NULL;
     checkConsistency();
     if( readonly() )
 	{
@@ -575,14 +575,15 @@ LvmVg::removeLv( const string& name )
 	else
 	    ret = LVM_LV_REMOVE_USED_BY;
 	}
-    if( ret==0 )
+    if( ret==0 && !i->isThin())
 	{
 	map<string,unsigned long> pe_map = i->getPeMap();
 	ret = remLvPeDistribution( i->getLe(), pe_map, pv, pv_add );
 	}
     if( ret==0 )
 	{
-	free_pe += i->getLe();
+	if( !i->isThin() )
+	    free_pe += i->getLe();
 	if( i->created() )
 	    {
 	    if( !removeFromList( &(*i) ))
