@@ -31,6 +31,8 @@
  *
  * Authors:
  *   Michael Hager <mike@suse.de>
+ *   Michal Svec <msvec@suse.com>
+ *   Arvin Schnell <aschnell@suse.de>
  *
  * Wrapper file for inst_disk.ycp
  */
@@ -39,6 +41,7 @@
 
     import "CommandLine";
     import "Storage";
+    import "StorageFields";
 
 
     any DiskSequence()
@@ -57,16 +60,87 @@
     }
 
 
-    /* -- the command line description map -------------------------------------- */
-    map cmdline = $[
-	"id"		: "disk",
-	// translators: command line help text for disk module
-	"help"		: _("Disk partitioner"),
-	// custum help text (should replace default one)
-	"customhelp"	: _("Command line interface for the partitioner module is not available."),
-	"guihandler"	: DiskSequence,
-    ];
+    boolean Dummy() { return true; }
 
+
+    boolean StorageCmdline(map<string, string> options)
+    {
+	boolean disks = true;
+	boolean partitions = true;
+
+	if (!isempty(options))
+	{
+	    disks = haskey(options, "disks");
+	    partitions = haskey(options, "partitions");
+	}
+
+	list<symbol> fields = [ `device, `size, `fs_type, `mount_point, `label, `model ];
+
+	symbol Predicate(map disk, map partition)
+	{
+	    list<symbol> returns = [ `tmpfs, `nfs, `nfs4, `unknown ];
+
+	    if (partition == nil)
+	    {
+		if (disks)
+		    return `showandfollow;
+		else
+		    return `follow;
+	    }
+	    else
+	    {
+		if (partitions)
+		{
+		    if (contains(returns, partition["used_fs"]:`unknown))
+			return `ignore;
+		    else
+			return `show;
+		}
+		else
+		    return `ignore;
+	    }
+	}
+
+	map<string, map> target_map = Storage::GetTargetMap();
+
+	term header = StorageFields::TableHeader(fields);
+	list<term> content = StorageFields::TableContents(fields, target_map, Predicate);
+
+	CommandLine::PrintTable(header, content);
+
+	return true;
+    }
+
+
+    map cmdline = $[
+	// Commandline help title
+	"help" : _("Storage Configuration"),
+	"id" : "disk",
+	"guihandler" : DiskSequence,
+	"initialize" : Dummy,
+	"finish" : Dummy,
+	"actions" : $[
+	    "list" : $[
+		// Commandline command help
+		"help" : _("List disks and partitions"),
+		"example" : "storage list partitions",
+		"handler" : StorageCmdline,
+		]
+	    ],
+	"options" : $[
+	    "disks" : $[
+		// Command line option help text
+		"help" : _("List disks"),
+		],
+	    "partitions" : $[
+		// Command line option help text
+		"help" : _("List partitions"),
+		],
+	    ],
+	"mappings" : $[
+	    "list" : [ "disks", "partitions" ]
+	    ]
+	];
 
     CommandLine::Run(cmdline);
     return true;
