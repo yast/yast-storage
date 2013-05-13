@@ -5920,7 +5920,7 @@ Storage::getFsCapabilities (FsType fstype, FsCapabilities& fscapabilities) const
 				    false, 0, 16);
 
     static FsCapabilitiesX swapCaps (true, false, true, false, true, true,
-				     false, 16, 64);
+				     false, 15, 64);
 
     static FsCapabilitiesX jfsCaps (false, false, false, false, true, true,
 				    false, 16, 16*1024);
