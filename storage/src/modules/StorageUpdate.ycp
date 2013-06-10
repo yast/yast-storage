@@ -386,6 +386,33 @@ void UpdateFstabWindowsMounts()
 	}
     }
 
+void UpdateFstabRemoveSystemdMps()
+    {
+    y2milestone( "UpdateFstabRemoveSystemdMps called" );
+    string tabpath = Storage::PathToDestdir( "/etc/fstab" );
+    map fstab = Partitions::GetFstab( tabpath );
+    list<integer> rem_lines = [];
+    list<string> rem_dirs = [ "/proc", "/sys", "/sys/kernel/debug", "/dev/pts",
+                              "/proc/bus/usb" ];
+    integer line = 0;
+    while( line<=AsciiFile::NumLines( fstab ) )
+	{
+	map l = AsciiFile::GetLine( fstab, line );
+	if( contains( rem_dirs, l["fields",1]:"" ))
+	    {
+            rem_lines = add( rem_lines, line );
+	    }
+        line = line+1;
+	}
+    if( size(rem_lines)>0 )
+	{
+        rem_lines = sort(rem_lines);
+	y2milestone( "UpdateFstabRemoveSystemdMps %1", rem_lines );
+        AsciiFile::RemoveLines( fstab, rem_lines );
+	AsciiFile::RewriteFile( fstab, tabpath );
+	}
+    }
+
     /**
      * Updates fstab on disk
      *
@@ -496,6 +523,8 @@ void UpdateFstabWindowsMounts()
 	    if( oldv["major"]:0<=11 || (oldv["major"]:0==12 && oldv["minor"]:0<=1))
 		UpdateFstabWindowsMounts();
             */
+	    if( oldv["major"]:0<13 )
+		UpdateFstabRemoveSystemdMps();
 	    // set flag -> it indicates that Update was already called
 	    called_update = true;
 	}
