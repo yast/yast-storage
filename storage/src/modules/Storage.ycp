@@ -66,6 +66,7 @@
   import "Stage";
   import "String";
   import "Hotplug";
+  import "Service";
 
   import "LibStorage";
   import "LibStorage::StorageInterface";
@@ -5794,20 +5795,21 @@ global define list<string> GetTranslatedDevices( map oldv, map newv,
     }
 
 
-void CallInsserv( boolean on, string name )
+/**
+ * Enables or disables the given service if it exists.
+ *
+ * @param string service name
+ * @param boolean enable
+ */
+void AdjustService(string name, boolean enable)
     {
-    y2milestone( "CallInsserv on:%1 name:%2", on, name );
-    string scrname = "/etc/init.d/" + name;
-    if( SCR::Read( .target.size, scrname )>0 )
-	{
-	string cmd = "cd / && /sbin/insserv ";
-	if( !on )
-	    cmd = cmd + "-r ";
-	cmd = cmd + scrname;
-	y2milestone( "CallInsserv cmd %1", cmd );
-	map bo = (map)SCR::Execute (.target.bash_output, cmd );
-	y2milestone( "CallInsserv bo %1", bo );
-	}
+    if (Service::Status(name) != -1)
+        {
+        if(enable)
+            y2milestone("Enabling service %1: %2", name, Service::Adjust(name, "enable"));
+        else
+            y2milestone("Disabling service %1: %2", name, Service::Adjust(name, "disable"));
+        }
     }
 
 
@@ -5848,15 +5850,15 @@ global void FinishInstall()
 
     if( need_crypt )
     {
-	CallInsserv( true, "boot.crypto" );
-	CallInsserv( true, "boot.crypto-early" );
+	AdjustService("boot.crypto", true);
+	AdjustService("boot.crypto-early", true);
     }
 
-    CallInsserv( need_md, "boot.md" );
-    CallInsserv( need_lvm, "boot.lvm" );
-    CallInsserv( need_dmraid, "boot.dmraid" );
-    CallInsserv( need_dmmultipath, "boot.multipath" );
-    CallInsserv( need_dmmultipath, "multipathd" );
+    AdjustService("boot.md", need_md);
+    AdjustService("boot.lvm", need_lvm);
+    AdjustService("boot.dmraid", need_dmraid);
+    AdjustService("boot.multipath", need_dmmultipath);
+    AdjustService("multipathd", need_dmmultipath);
 
     y2milestone("FinishInstall done");
 }
