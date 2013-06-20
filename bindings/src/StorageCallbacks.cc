@@ -156,7 +156,6 @@ bool Y2StorageCallbackFunction::appendParameter (const YCPValue& arg)
 
 bool Y2StorageCallbackFunction::finishParameters ()
 {
-    y2internal ("finishParameters not implemented");
     return true;
 }
 
