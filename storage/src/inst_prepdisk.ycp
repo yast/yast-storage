@@ -45,7 +45,17 @@
   import "String";
   import "SlideShow";
   import "StorageClients";
-  
+  import "FileUtils";
+
+  define void MountTarget(string dir, string device, string options)
+  {
+      string dest = Storage::PathToDestdir(dir);
+
+      if (!FileUtils::Exists(dest)) SCR::Execute(.target.mkdir, dest);
+
+      SCR::Execute (.target.mount, [device, dest], options);
+  }
+
   if (Mode::update ())
     return `auto;
 
@@ -105,10 +115,9 @@
       y2milestone( "cmd %1", cmd );
       map m = (map) SCR::Execute(.target.bash_output, cmd );
       y2milestone( "ret %1", m );
-      string destproc = Storage::PathToDestdir("/proc");
-      SCR::Execute (.target.mount, ["proc", destproc], "-t proc");
-      destproc = Storage::PathToDestdir("/sys");
-      SCR::Execute (.target.mount, ["sysfs", destproc], "-t sysfs");
+
+      MountTarget("/proc", "proc", "-t proc");
+      MountTarget("/sys", "sysfs", "-t sysfs");
 
       // mounting /run for udev (bnc#717321)
       cmd = "mkdir -vp '" + String::Quote(Storage::PathToDestdir("/run")) + "'; " +
