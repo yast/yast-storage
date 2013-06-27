@@ -4184,6 +4184,7 @@ global boolean GetRecursiveRemoval()
 
 global define void SetTargetMap( map<string,map> target )
     {
+    map<string,string> save_crypt = $[];
     y2milestone( "SetTargetMap" );
     if( !GetRecursiveRemoval() )
         SetRecursiveRemoval(true);
@@ -4240,7 +4241,13 @@ global define void SetTargetMap( map<string,map> target )
 	    dps = sort( map a, map b, dps, ``(a["nr"]:0>b["nr"]:0));
 	    y2milestone( "SetTargetMap dps:%1", dps );
 	    }
-	foreach( map p, dps, ``{DeleteDevice( p["device"]:"" );});
+	foreach( map p, dps, 
+	    ``{
+	    string tdev = p["device"]:"";
+	    if( p["enc_type"]:`none!=`none )
+		save_crypt[tdev] = GetCryptPwd( tdev );
+	    DeleteDevice( tdev );
+	    });
 	if( tg[k,"create"]:false )
 	    {
 	    if( tg[k,"type"]:`CT_UNKNOWN==`CT_LVM )
@@ -4330,6 +4337,10 @@ global define void SetTargetMap( map<string,map> target )
 	foreach( map p, dps,
 	    ``{
 	    CreateAny( target[k,"type"]:`CT_UNKNOWN, target[k]:$[], p );
+	    string tdev = p["device"]:"";
+	    if( p["enc_type"]:`none!=`none && 
+	        !isempty(save_crypt[tdev]:"") && isempty(GetCryptPwd(tdev)) )
+		SetCryptPwd( tdev, save_crypt[tdev]:"" );
 	    if( p["type"]:`primary != `extended )
 		ChangeVolumeProperties( p );
 	    });
