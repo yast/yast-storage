@@ -637,19 +637,24 @@ map do_flexible_disk_conf( map disk, map co, boolean ignore_boot,
     }
 
 
-map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
+map do_vm_disk_conf( map disk, map boot, map boot2, string vmkey, string key )
     {
     string dev = disk["device"]:"";
-    y2milestone( "do_vm_disk_conf dev %1 vmkey %2 key %3 boot %4", 
-                 dev, vmkey, key, boot );
+    y2milestone( "do_vm_disk_conf dev %1 vmkey %2 key %3 boot %4 boot2:%5", 
+                 dev, vmkey, key, boot, boot2 );
     y2milestone( "do_vm_disk_conf parts %1", disk["partitions"]:[] );
-    map conf = $[ "partitions" : [ $[ "id" : 0x8E ] ] ];
+    map conf = $[];
     if( size(boot)>0 )
 	conf["partitions"] = add( conf["partitions"]:[], boot );
+    if( size(boot2)>0 )
+	conf["partitions"] = add( conf["partitions"]:[], boot2 );
+    if( isempty(vmkey) )
+	conf["partitions"] = add( conf["partitions"]:[], $[ "id" : Partitions::fsid_lvm ] );
+    y2milestone( "do_vm_disk_conf conf %1", conf );
     map ret = $[];
     ret["ok"] = false;
 
-    integer fsid = conf["partitions",0,"id"]:0;
+    integer fsid = Partitions::fsid_lvm;
     if( Storage::IsPartitionable( disk ))
 	{
 	y2milestone( "do_vm_disk_conf processing disk %1", dev );
@@ -672,76 +677,36 @@ map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		});
 	    y2milestone( "do_vm_disk_conf gap %1", gap["gap"]:[] );
 	    }
-	boolean ok = size(boot)==0;
-	if( !ok )
-	    {
-	    integer gstart = -1;
-	    map bo = find( map p, (list<map>)tc["partitions"]:[], 
-	                   ``(p["mount"]:""==boot["mount"]:"") );
-	    y2milestone( "do_vm_disk_conf boot %1", bo );
+	boolean ok = true;
+	integer count = 0;
+	list<map> smallp = (list<map>)filter( map p,  (list<map>)tc["partitions"]:[],
+	                                      ``(p["id"]:0!=Partitions::fsid_lvm) );
+	y2milestone( "do_vm_disk_conf smallp %1", smallp );
+	foreach( map bo, smallp,
+	    ``{
+	    y2milestone( "do_vm_disk_conf bo %1", bo );
 	    integer cyl_num = bo["cylinders"]:1;
-	    y2milestone( "do_vm_disk_conf boot cyl %1", cyl_num );
+	    boolean found = false;
 	    gap["gap"] = maplist( map g, gap["gap"]:[],
 		``{
-		if( !g["exists"]:false && !ok && g["cylinders"]:0>=cyl_num &&
-		    ((g["extended"]:false && size(gap["ext_pnr"]:[])>1)||
-		     (!g["extended"]:false && size(gap["free_pnr"]:[])>1)))
+		if( !g["exists"]:false && g["cylinders"]:0>=cyl_num &&
+		    ((g["extended"]:false && size(gap["ext_pnr"]:[])>0)||
+		     (!g["extended"]:false && size(gap["free_pnr"]:[])>0)))
 		    {
-		    ok = true;
-		    gstart = g["start"]:-1;
+		    found = true;
 		    string key = g["extended"]:false ? "ext_pnr" : "free_pnr";
-		    g["added"] = [ [ 1, gap[key,0]:0, cyl_num ] ];
+		    g["added"] = add( g["added"]:[], [ count, gap[key,0]:0, cyl_num ] );
 		    g["cylinders"] = g["cylinders"]:0-cyl_num;
 		    gap[key] = remove( gap[key]:[], 0 );
-		    if( g["cylinders"]:0 > 1 )
-			{
-		        integer vg_size = GetControlCfg()["vm_want"]:(15*1024);
-		        // get only limited amount of the gap so that there is free
-		        // space left (fate #303594)
-		        y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
-			integer add_cylinders = g["cylinders"]:0;  // whole partition as default
-			if (vg_size != nil && vg_size > 0 && GetControlCfg()["vm_keep_unpartitioned_region"]:false)
-			{
-			    integer cyl_size = g["size"]:0 / g["cylinders"]:0;
-			    add_cylinders = (vg_size * 1024 * 1024) / cyl_size;
-			    if (add_cylinders > g["cylinders"]:0)
-				add_cylinders = g["cylinders"]:0;
-			}
-			g["added"] = add( g["added"]:[],
-			                  [ 0, gap[key,0]:0, add_cylinders ] );
-		        y2milestone ("do_vm_disk_conf added new partition: %1", g);
-			g["cylinders"] = 0; // do not use the rest of the gap, if not set to zero, it is used, don't know why
-			gap[key] = remove( gap[key]:[], 0 );
-			}
 		    }
 		return( g );
 		});
-	    if( !ok )
-		{
-		gap["gap"] = maplist( map g, gap["gap"]:[],
-		    ``{
-		    if( !g["exists"]:false && !ok && g["cylinders"]:0>=cyl_num &&
-			((g["extended"]:false && size(gap["ext_pnr"]:[])>0)||
-			 (!g["extended"]:false && size(gap["free_pnr"]:[])>0)))
-			{
-			ok = true;
-			gstart = g["start"]:-1;
-			string key = g["extended"]:false ? "ext_pnr" : "free_pnr";
-			g["added"] = [ [ 1, gap[key,0]:0, cyl_num ] ];
-			g["cylinders"] = g["cylinders"]:0-cyl_num;
-			gap[key] = remove( gap[key]:[], 0 );
-			}
-		    return( g );
-		    });
-		}
-	    if( ok && size(vmkey)>0 )
-		{
-		gap["gap"] = filter( map g, gap["gap"]:[], 
-		                     ``(g["start"]:0==gstart));
-		}
-	    y2milestone( "do_vm_disk_conf gap %1", gap["gap"]:[] );
-	    }
-	else if( size(vmkey)>0 )
+	    if( !found )
+		ok = false;
+	    count = count+1;
+	    });
+	y2milestone( "do_vm_disk_conf ok:%1 gap %2", ok, gap["gap"]:[] );
+	if( !isempty(vmkey) )
 	    gap = $[];
 	map sol = $[];
 	sol["solution"] = gap;
@@ -812,7 +777,7 @@ map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		    if( acur!=nil )
 			{
 			g["resize"] = acur["end"]:0;
-			g["fsid"] = fsid;
+			g["fsid"] = Partitions::fsid_lvm;
 			}
 		    }
 		return( g );
@@ -827,38 +792,39 @@ map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
 		return( a["cylinders"]:0>b["cylinders"]:0 );
 		});
 	    y2milestone( "do_vm_disk_conf sorted gap %1", gap["gap"]:[] );
+	    integer vg_size = GetControlCfg()["vm_want"]:(15*1024);
+	    boolean keep_unpart = GetControlCfg()["vm_keep_unpartitioned_region"]:false;
 	    gap["gap"] = maplist( map g, gap["gap"]:[],
 		``{
 		if( !g["exists"]:false && g["cylinders"]:0>0 &&
 		    ((g["extended"]:false && size(gap["ext_pnr"]:[])>0)||
 		     (!g["extended"]:false && size(gap["free_pnr"]:[])>0)))
 		    {
+		    integer cyl_num = g["cylinders"]:0;  // whole partition as default
+		    if( vg_size != nil && vg_size > 0 && keep_unpart )
+			{
+			// get only limited amount of the gap so that there is free
+			// space left (fate #303594)
+			y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
+			integer cyl_size = g["size"]:0 / g["cylinders"]:0;
+			cyl_num = (vg_size * 1024 * 1024) / cyl_size;
+			if (cyl_num > g["cylinders"]:0)
+			    cyl_num = g["cylinders"]:0;
+			}
 		    string key = g["extended"]:false ? "ext_pnr" : "free_pnr";
-		    // get only limited amount of the gap so that there is free
-		    // space left (fate #303594)
-		    integer vg_size = GetControlCfg()["vm_want"]:(15*1024);
-		    y2milestone ("do_vm_disk_conf maximum volume group size from control file: %1", vg_size);
-		    integer add_cylinders = g["cylinders"]:0; // whole partition as default
-		    if (vg_size != nil && vg_size > 0 && GetControlCfg()["vm_keep_unpartitioned_region"]:false)
-		    {
-		        integer cyl_size = g["size"]:0 / g["cylinders"]:0;
-		        add_cylinders = (vg_size * 1024 * 1024) / cyl_size;
-		        if (add_cylinders > g["cylinders"]:0)
-			    add_cylinders = g["cylinders"]:0;
-		    }
 		    g["added"] = add( g["added"]:[], 
-		                      [ 0, gap[key,0]:0, add_cylinders ]);
+		                      [ size(conf["partitions"]:[])-1, gap[key,0]:0, cyl_num ]);
 		    y2milestone ("do_vm_disk_conf added new partition: %1", g);
-		    g["cylinders"] = 0; // otherwise it get another chunk - don't know why :-(
 		    gap[key] = remove( gap[key]:[], 0 );
 		    }
 		return( g );
 		});
+	    y2milestone( "do_vm_disk_conf gap %1", gap );
 	    gap["gap"] = maplist( map g, gap["gap"]:[],
 		``{
-		if( g["exists"]:false && fsid!=0 && g["fsid"]:0!=fsid )
+		if( g["exists"]:false && g["fsid"]:0!=Partitions::fsid_lvm )
 		    {
-		    g["fsid"] = fsid;
+		    g["fsid"] = Partitions::fsid_lvm;
 		    }
 		return( g );
 		});
@@ -870,7 +836,6 @@ map do_vm_disk_conf( map disk, map boot, string vmkey, string key )
     y2milestone( "do_vm_disk_conf ret %1", ret["ok"]:false );
     if( ret["ok"]:false )
 	{
-	y2milestone( "do_vm_disk_conf weight %1", ret["weight"]:-2 );
 	y2milestone( "do_vm_disk_conf parts %1", ret["disk","partitions"]:[] );
 	}
     return( ret );
@@ -2660,6 +2625,44 @@ list<map> can_boot_reuse( string disk, string label, boolean boot,
     return( ret );
     }
 
+list<map> can_rboot_reuse( string disk, string label, boolean boot,
+                           integer max_prim, list<map> partitions )
+    {
+    list<map> ret = [];
+    y2milestone( "can_rboot_reuse boot:%1", boot );
+    if( boot )
+	{
+	y2milestone( "can_rboot_reuse disk:%1 max_prim:%2 label:%3 part:%4", 
+	             disk, max_prim, label, partitions );
+	list<map> pl = [];
+	pl = filter( map p, partitions, 
+		     ``(!p["delete"]:false &&
+			p["size_k"]:0*1024 >= 
+			    Partitions::MinimalBootsize()));
+	map boot = find( map p, pl,
+			 ``(p["fsid"]:0 == Partitions::fsid_native && 
+			    p["size_k"]:0*1024 <= Partitions::MaximalBootsize() &&
+			    FileSystems::IsSupported(p["used_fs"]:`unknown)));
+	if( boot != nil )
+	    {
+	    ret = maplist( map p, partitions,
+			   ``{
+			   if( !p["delete"]:false && 
+			       p["device"]:""==boot["device"]:"" &&
+			       Storage::CanEdit(p,false) )
+			       {
+			       p = Storage::SetVolOptions( p, "/boot",
+			                                   Partitions::DefaultFs(), 
+							   "", "", "" );
+			       }
+			   return( p );
+			   });
+	    }
+	y2milestone( "can_rboot_reuse ret:%1", ret );
+	}
+    return( ret );
+    }
+
 list<map> can_home_reuse( integer min, integer max,
 			  list<map> partitions )
     {
@@ -3890,6 +3893,14 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	{
 	boot["primary"] = true;
 	}
+    map boot2 = $[];
+    if( GetProposalEncrypt() && Partitions::EfiBoot() )
+	{
+        boot2 = $[ "mount" : "/boot",
+                   "size" : 400 * 1024 * 1024,
+		   "fsys" : Partitions::DefaultFs(),
+		   "id" : Partitions::fsid_native ];
+	}
     list<string> ddev = get_disk_try_list( target, true );
     string sol_disk = "";
     map<string,boolean> valid = $[];
@@ -4016,10 +4027,22 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	    boolean have_boot = size(p)>0;
 	    if( have_boot )
 	        disk["partitions"] = p;
+	    if( !isempty(boot2) )
+		{
+		p = can_rboot_reuse( s, disk["label"]:"msdos", true,
+		                     disk["max_primary"]:4,
+				     disk["partitions"]:[] );
+		if( size(p)>0 )
+		    {
+		    disk["partitions"] = p;
+		    boot2 = $[];
+		    }
+		}
 	    string vg = vg_key;
 	    if( size(vg)>0 && did_remove_vg( disk["partitions"]:[], key ))
 		vg = "";
-	    map ps = do_vm_disk_conf( disk, have_boot?($[]):boot, vg, key );
+	    map ps = do_vm_disk_conf( disk, have_boot?($[]):boot, boot2,
+	                              vg, key );
 	    if( ps["ok"]:false )
 		{
 		integer mb = get_vm_sol( ps );
@@ -4149,6 +4172,14 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	{
 	boot["primary"] = true;
 	}
+    map boot2 = $[];
+    if( GetProposalEncrypt() && Partitions::EfiBoot() )
+	{
+        boot2 = $[ "mount" : "/boot",
+                   "size" : Partitions::ProposedBootsize(),
+		   "fsys" : Partitions::DefaultFs(),
+		   "id" : Partitions::fsid_native ];
+	}
     map conf = $[ "partitions" : [] ];
     list<map> p = can_boot_reuse( ddev, disk["label"]:"msdos", true,
 				  disk["max_primary"]:4,
@@ -4157,7 +4188,18 @@ map modify_vm( map vm, map opts, boolean need_swap )
     boolean have_boot = size(p)>0;
     if( have_boot )
 	disk["partitions"] = p;
-    map ps = do_vm_disk_conf( disk, have_boot?($[]):boot, "", key );
+    if( !isempty(boot2) )
+	{
+	p = can_rboot_reuse( ddev, disk["label"]:"msdos", true,
+			     disk["max_primary"]:4,
+			     disk["partitions"]:[] );
+	if( size(p)>0 )
+	    {
+	    disk["partitions"] = p;
+	    boot2 = $[];
+	    }
+	}
+    map ps = do_vm_disk_conf( disk, have_boot?($[]):boot, boot2, "", key );
     ret["ok"] = ps["ok"]:false;
     if( ret["ok"]:false )
 	{
