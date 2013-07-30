@@ -2,10 +2,5 @@
 # Makefile.am for storage/storage/doc/autodocs
 #
 
-htmldir = @docdir@/autodocs
+include $(top_srcdir)/autodocs-ycp.ami
 
-html_DATA = index.html $(filter-out index.html, $(wildcard *.html))
-CLEANFILES = $(html_DATA)
-
-index.html: $(srcdir)/../../src/*.ycp $(srcdir)/../../src/include/*.ycp $(srcdir)/../../src/modules/*.ycp
-	@ybindir@/ycpdoc -d. $^

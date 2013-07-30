@@ -7,9 +7,9 @@
 SUBDIRS = data
 
 AUTOMAKE_OPTIONS = dejagnu
-EXTRA_DIST = $(wildcard tests/*.out) $(wildcard tests/*.err) $(wildcard tests/*.ycp) $(wildcard tests/*.yh)
+EXTRA_DIST = $(wildcard tests/*.out) $(wildcard tests/*.err) $(wildcard tests/*.rb)
 
-Y2BASEFLAGS = -M $(top_builddir)/bindings/ycp
+Y2BASEFLAGS = -M $(top_builddir)/bindings/ycp -I tests
 export Y2BASEFLAGS
 
 Y2BASE_LD_LIBRARY_PATH = $(top_builddir)/bindings/src/.libs

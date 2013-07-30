@@ -11,4 +11,4 @@ PLUGLIB_DEPEND =					\
 
 include $(top_srcdir)/pluglib-bindings.ami
 
-EXTRA_DIST = LibStorage.i example.ycp
+EXTRA_DIST = LibStorage.i example.rb callback.rb
