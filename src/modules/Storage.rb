@@ -41,6 +41,7 @@
 #
 # $Id$
 require "yast"
+require "dbus"
 
 module Yast
   class StorageClass < Module
@@ -8172,36 +8173,29 @@ module Yast
       nil
     end
 
+
     def SwitchUiAutomounter(on)
       Builtins.y2milestone("SwitchUiAutomounter on:%1", on)
 
-      if !on
-        tmp = SCR.Execute(
-          path(".dbus.system.method"),
-          {
-            :destination => "org.freedesktop.UDisks",
-            :path        => "/org/freedesktop/UDisks",
-            :interface   => "org.freedesktop.UDisks",
-            :method      => "Inhibit"
-          },
-          []
-        )
-        @dbus_cookie = Ops.get_string(Convert.to_list(tmp), 0, "")
-      else
-        tmp = SCR.Execute(
-          path(".dbus.system.method"),
-          {
-            :destination => "org.freedesktop.UDisks",
-            :path        => "/org/freedesktop/UDisks",
-            :interface   => "org.freedesktop.UDisks",
-            :method      => "Uninhibit"
-          },
-          [@dbus_cookie]
-        )
-        @dbus_cookie = nil
-      end
+      begin
 
-      Builtins.y2milestone("SwitchUiAutomounter exit")
+        system_bus = DBus::SystemBus.instance
+        service = system_bus.service("org.freedesktop.UDisks")
+        dbus_object = service.object("/org/freedesktop/UDisks")
+        dbus_object.default_iface = "org.freedesktop.UDisks"
+        dbus_object.introspect
+
+        if !on
+          @dbus_cookie = dbus_object.Inhibit().first
+        else
+          dbus_object.Uninhibit(@dbus_cookie)
+          @dbus_cookie = nil
+        end
+
+      rescue Exception => e
+        Builtins.y2error("SwitchUiAutomounter failed %1", e.message)
+
+      end
 
       nil
     end
