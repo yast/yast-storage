@@ -102,8 +102,10 @@ module Yast
 
       Builtins.foreach(devs) do |dev|
         Storage.SetPartitionId(dev, Partitions.fsid_native)
-        Storage.SetPartitionFormat(dev, false, :none)
-        ret = false if !Storage.ExtendBtrfsVolume(device, dev)
+	if dev!=device
+	  Storage.SetPartitionFormat(dev, false, :none)
+	  ret = false if !Storage.ExtendBtrfsVolume(device, dev)
+	end
       end
       ret
     end
