@@ -108,11 +108,11 @@ module Yast
     end
 
 
-    def MakeNavigationTree(open_items, tree, data)
+    def MakeNavigationTree(open_items)
       open_items = deep_copy(open_items)
       # TODO: somehow use AlwaysHideDisk
 
-      data.value = {
+      data = {
         :all         => {
           :create => fun_ref(method(:CreateAllPanel), "void (any)"),
           :handle => fun_ref(method(:HandleAllPanel), "void (any, map)")
@@ -211,8 +211,8 @@ module Yast
             tmp,
             Item(Id(part_device), part_displayname, open.call(part_device))
           )
-          data.value = Builtins.add(
-            data.value,
+          data = Builtins.add(
+            data,
             part_device,
             Builtins.union(a, { :user_data => part_device })
           )
@@ -233,8 +233,8 @@ module Yast
               )
             )
           )
-          data.value = Builtins.add(
-            data.value,
+          data = Builtins.add(
+            data,
             disk_device,
             Builtins.union(b, { :user_data => disk_device })
           )
@@ -368,7 +368,7 @@ module Yast
       short_hostname = Hostname.CurrentHostname
 
       # TODO: same ordering as with IterateTargetMap
-      tree.value = [
+      tree = [
         Item(
           Id(:all),
           term(:icon, StorageIcons.all_icon),
@@ -449,8 +449,8 @@ module Yast
 
       if UI.HasSpecialWidget(:Graph)
         # tree node label
-        tree.value = Builtins.add(
-          tree.value,
+        tree = Builtins.add(
+          tree,
           Item(
             Id(:devicegraph),
             term(:icon, StorageIcons.graph_icon),
@@ -459,8 +459,8 @@ module Yast
           )
         )
         # tree node label
-        tree.value = Builtins.add(
-          tree.value,
+        tree = Builtins.add(
+          tree,
           Item(
             Id(:mountgraph),
             term(:icon, StorageIcons.graph_icon),
@@ -472,8 +472,8 @@ module Yast
 
 
       # tree node label
-      tree.value = Builtins.add(
-        tree.value,
+      tree = Builtins.add(
+        tree,
         Item(
           Id(:summary),
           term(:icon, StorageIcons.summary_icon),
@@ -483,8 +483,8 @@ module Yast
       )
 
       # tree node label
-      tree.value = Builtins.add(
-        tree.value,
+      tree = Builtins.add(
+        tree,
         Item(
           Id(:settings),
           term(:icon, StorageIcons.settings_icon),
@@ -495,8 +495,8 @@ module Yast
 
       if Mode.normal
         # tree node label
-        tree.value = Builtins.add(
-          tree.value,
+        tree = Builtins.add(
+          tree,
           Item(
             Id(:log),
             term(:icon, StorageIcons.log_icon),
@@ -506,22 +506,24 @@ module Yast
         )
       end
 
-      nil
+      return tree, data
+
     end
+
+
     def UpdateNavigationTree(new_focus)
       new_focus = deep_copy(new_focus)
-      tree = []
-      data = {}
+
       open_items = Convert.to_map(UI.QueryWidget(Id(:tree), :OpenItems))
-      tree_ref = arg_ref(tree)
-      data_ref = arg_ref(data)
-      MakeNavigationTree(open_items, tree_ref, data_ref)
-      tree = tree_ref.value
-      data = data_ref.value
+
+      tree, data = MakeNavigationTree(open_items)
+
       TreePanel.Update(data, tree, new_focus)
 
       nil
     end
+
+
     def EpContextMenuDevice(device)
       target_map = Storage.GetTargetMap
 
@@ -659,13 +661,7 @@ module Yast
 
       Storage.CreateTargetBackup("expert-partitioner")
 
-      tree = []
-      data = {}
-      tree_ref = arg_ref(tree)
-      data_ref = arg_ref(data)
-      MakeNavigationTree({ :all => "ID" }, tree_ref, data_ref)
-      tree = tree_ref.value
-      data = data_ref.value
+      tree, data = MakeNavigationTree({ :all => "ID" })
 
       back_label = Label.BackButton
       next_label = Mode.normal ? Label.FinishButton : Label.AcceptButton
