@@ -57,8 +57,7 @@ module Yast
 
 
     def CreateDeviceGraphPanel(user_data)
-      user_data = deep_copy(user_data)
-      filename = Ops.add(Directory.tmpdir, "/device.gv")
+      filename = "#{Directory.tmpdir}/device.gv"
       Storage.SaveDeviceGraph(filename)
 
       UI.ReplaceWidget(
@@ -96,18 +95,18 @@ module Yast
 
 
     def RefreshDeviceGraphPanel(user_data)
-      user_data = deep_copy(user_data)
-      filename = Ops.add(Directory.tmpdir, "/device.gv")
+      filename = "#{Directory.tmpdir}/device.gv"
       Storage.SaveDeviceGraph(filename)
 
       UI.ChangeWidget(Id(:graph), :Filename, filename)
+
+      SCR.Execute(path(".target.remove"), filename)
 
       nil
     end
 
 
     def HandleDeviceGraphPanel(user_data, event)
-      user_data = deep_copy(user_data)
       event = deep_copy(event)
       _GotoDevice = lambda do |device|
         TreePanel.SwitchToNew(device)
@@ -153,8 +152,7 @@ module Yast
 
 
     def CreateMountGraphPanel(user_data)
-      user_data = deep_copy(user_data)
-      filename = Ops.add(Directory.tmpdir, "/mount.gv")
+      filename = "#{Directory.tmpdir}/mount.gv"
       Storage.SaveMountGraph(filename)
 
       UI.ReplaceWidget(
@@ -192,18 +190,18 @@ module Yast
 
 
     def RefreshMountGraphPanel(user_data)
-      user_data = deep_copy(user_data)
-      filename = Ops.add(Directory.tmpdir, "/mount.gv")
+      filename = "#{Directory.tmpdir}/mount.gv"
       Storage.SaveMountGraph(filename)
 
       UI.ChangeWidget(Id(:graph), :Filename, filename)
+
+      SCR.Execute(path(".target.remove"), filename)
 
       nil
     end
 
 
     def HandleMountGraphPanel(user_data, event)
-      user_data = deep_copy(user_data)
       event = deep_copy(event)
       _GotoDevice = lambda do |device|
         TreePanel.SwitchToNew(device)
