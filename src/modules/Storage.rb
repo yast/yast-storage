@@ -6837,14 +6837,14 @@ module Yast
 
 
     def SaveDeviceGraph(filename)
-      ret = @sint.saveDeviceGraph(filename)
+      ret = ::Storage::saveDeviceGraph(@sint, filename)
       Builtins.y2milestone("SaveDeviceGraph filename:%1 ret:%2", filename, ret)
       ret
     end
 
 
     def SaveMountGraph(filename)
-      ret = @sint.saveMountGraph(filename);
+      ret = ::Storage::saveMountGraph(@sint, filename);
       Builtins.y2milestone("SaveMountGraph filename:%1 ret:%2", filename, ret)
       ret
     end
