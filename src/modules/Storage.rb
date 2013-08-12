@@ -354,28 +354,12 @@ module Yast
 
 
     def ClassicStringToByte(str)
-      bytes = 0
-      if !(
-          bytes_ref = arg_ref(bytes);
-          humanStringToByte_result = ::Storage::humanStringToByte(
-            str,
-            true,
-            bytes_ref
-          );
-          bytes = bytes_ref.value;
-          humanStringToByte_result
-        )
+      ret, bytes = ::Storage::humanStringToByte(str,true)
+      if( !ret )
         ts = Ops.add(str, "b")
-        if !(
-            bytes_ref = arg_ref(bytes);
-            humanStringToByte_result = ::Storage::humanStringToByte(
-              ts,
-              true,
-              bytes_ref
-            );
-            bytes = bytes_ref.value;
-            humanStringToByte_result
-          )
+	ret, bytes = ::Storage::humanStringToByte(ts,true)
+	if( !ret )
+	  bytes = 0 
           Builtins.y2error("cannot parse %1 or %2", str, ts)
         end
       end
