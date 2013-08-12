@@ -42,6 +42,7 @@
 # $Id$
 require "yast"
 require "dbus"
+require "storage"
 
 module Yast
   class StorageClass < Module
@@ -71,38 +72,6 @@ module Yast
       Yast.import "String"
       Yast.import "Hotplug"
 
-      Yast.import "LibStorage"
-      Yast.import "LibStorage::StorageInterface"
-      Yast.import "LibStorage::VolumeInfo"
-      Yast.import "LibStorage::PartitionInfo"
-      Yast.import "LibStorage::LvmLvInfo"
-      Yast.import "LibStorage::MdInfo"
-      Yast.import "LibStorage::LoopInfo"
-      Yast.import "LibStorage::DmInfo"
-      Yast.import "LibStorage::DmPartInfo"
-      Yast.import "LibStorage::DmraidInfo"
-      Yast.import "LibStorage::DmmultipathInfo"
-      Yast.import "LibStorage::MdPartCoInfo"
-      Yast.import "LibStorage::MdPartInfo"
-      Yast.import "LibStorage::NfsInfo"
-      Yast.import "LibStorage::ContainerInfo"
-      Yast.import "LibStorage::DiskInfo"
-      Yast.import "LibStorage::LvmVgInfo"
-      Yast.import "LibStorage::PartitionAddInfo"
-      Yast.import "LibStorage::DmPartCoInfo"
-      Yast.import "LibStorage::DmraidCoInfo"
-      Yast.import "LibStorage::DmmultipathCoInfo"
-      Yast.import "LibStorage::BtrfsInfo"
-      Yast.import "LibStorage::TmpfsInfo"
-      Yast.import "LibStorage::PartitionSlotInfo"
-      Yast.import "LibStorage::CommitInfo"
-      Yast.import "LibStorage::DlabelCapabilities"
-      Yast.import "LibStorage::ContVolInfo"
-      Yast.import "LibStorage::ResizeInfo"
-      Yast.import "LibStorage::ContentInfo"
-      Yast.import "LibStorage::Environment"
-
-
       # simple resize functionality - dialog to set size of Linux and Windows before proposal
 
       @resize_partition = nil
@@ -116,133 +85,133 @@ module Yast
 
       @conv_ctype = {
         "def_sym" => :CT_UNKNOWN,
-        "def_int" => LibStorage.CUNKNOWN,
+        "def_int" => ::Storage::CUNKNOWN,
         "m"       => {
-          LibStorage.DISK        => :CT_DISK,
-          LibStorage.MD          => :CT_MD,
-          LibStorage.LOOP        => :CT_LOOP,
-          LibStorage.LVM         => :CT_LVM,
-          LibStorage.DMRAID      => :CT_DMRAID,
-          LibStorage.DMMULTIPATH => :CT_DMMULTIPATH,
-          LibStorage.DM          => :CT_DM,
-          LibStorage.MDPART      => :CT_MDPART,
-          LibStorage.NFSC        => :CT_NFS,
-          LibStorage.BTRFSC      => :CT_BTRFS,
-          LibStorage.TMPFSC      => :CT_TMPFS
+          ::Storage::DISK        => :CT_DISK,
+          ::Storage::MD          => :CT_MD,
+          ::Storage::LOOP        => :CT_LOOP,
+          ::Storage::LVM         => :CT_LVM,
+          ::Storage::DMRAID      => :CT_DMRAID,
+          ::Storage::DMMULTIPATH => :CT_DMMULTIPATH,
+          ::Storage::DM          => :CT_DM,
+          ::Storage::MDPART      => :CT_MDPART,
+          ::Storage::NFSC        => :CT_NFS,
+          ::Storage::BTRFSC      => :CT_BTRFS,
+          ::Storage::TMPFSC      => :CT_TMPFS
         }
       }
 
       @conv_usedby = {
         "def_sym" => :UB_NONE,
-        "def_int" => LibStorage.UB_NONE,
+        "def_int" => ::Storage::UB_NONE,
         "m"       => {
-          LibStorage.UB_LVM         => :UB_LVM,
-          LibStorage.UB_MD          => :UB_MD,
-          LibStorage.UB_DMRAID      => :UB_DMRAID,
-          LibStorage.UB_DMMULTIPATH => :UB_DMMULTIPATH,
-          LibStorage.UB_MDPART      => :UB_MDPART,
-          LibStorage.UB_DM          => :UB_DM,
-          LibStorage.UB_BTRFS       => :UB_BTRFS
+          ::Storage::UB_LVM         => :UB_LVM,
+          ::Storage::UB_MD          => :UB_MD,
+          ::Storage::UB_DMRAID      => :UB_DMRAID,
+          ::Storage::UB_DMMULTIPATH => :UB_DMMULTIPATH,
+          ::Storage::UB_MDPART      => :UB_MDPART,
+          ::Storage::UB_DM          => :UB_DM,
+          ::Storage::UB_BTRFS       => :UB_BTRFS
         }
       }
 
       @conv_ptype = {
         "def_sym" => :primary,
-        "def_int" => LibStorage.PRIMARY,
+        "def_int" => ::Storage::PRIMARY,
         "m"       => {
-          LibStorage.LOGICAL  => :logical,
-          LibStorage.EXTENDED => :extended
+          ::Storage::LOGICAL  => :logical,
+          ::Storage::EXTENDED => :extended
         }
       }
 
       @conv_mountby = {
         "def_sym" => :device,
-        "def_int" => LibStorage.MOUNTBY_DEVICE,
+        "def_int" => ::Storage::MOUNTBY_DEVICE,
         "m"       => {
-          LibStorage.MOUNTBY_UUID  => :uuid,
-          LibStorage.MOUNTBY_LABEL => :label,
-          LibStorage.MOUNTBY_ID    => :id,
-          LibStorage.MOUNTBY_PATH  => :path
+          ::Storage::MOUNTBY_UUID  => :uuid,
+          ::Storage::MOUNTBY_LABEL => :label,
+          ::Storage::MOUNTBY_ID    => :id,
+          ::Storage::MOUNTBY_PATH  => :path
         }
       }
 
       @conv_encryption = {
         "def_sym" => :none,
-        "def_int" => LibStorage.ENC_NONE,
+        "def_int" => ::Storage::ENC_NONE,
         "m"       => {
-          LibStorage.ENC_TWOFISH        => :twofish,
-          LibStorage.ENC_TWOFISH_OLD    => :twofish_old,
-          LibStorage.ENC_TWOFISH256_OLD => :twofish_256_old,
-          LibStorage.ENC_LUKS           => :luks,
-          LibStorage.ENC_UNKNOWN        => :unknown
+          ::Storage::ENC_TWOFISH        => :twofish,
+          ::Storage::ENC_TWOFISH_OLD    => :twofish_old,
+          ::Storage::ENC_TWOFISH256_OLD => :twofish_256_old,
+          ::Storage::ENC_LUKS           => :luks,
+          ::Storage::ENC_UNKNOWN        => :unknown
         }
       }
 
       @conv_mdtype = {
         "def_sym" => :raid_unknown,
-        "def_int" => LibStorage.RAID_UNK,
+        "def_int" => ::Storage::RAID_UNK,
         "m"       => {
-          LibStorage.RAID0     => :raid0,
-          LibStorage.RAID1     => :raid1,
-          LibStorage.RAID5     => :raid5,
-          LibStorage.RAID6     => :raid6,
-          LibStorage.RAID10    => :raid10,
-          LibStorage.MULTIPATH => :multipath
+          ::Storage::RAID0     => :raid0,
+          ::Storage::RAID1     => :raid1,
+          ::Storage::RAID5     => :raid5,
+          ::Storage::RAID6     => :raid6,
+          ::Storage::RAID10    => :raid10,
+          ::Storage::MULTIPATH => :multipath
         }
       }
 
       @conv_mdstring = {
-        "raid0"     => LibStorage.RAID0,
-        "raid1"     => LibStorage.RAID1,
-        "raid5"     => LibStorage.RAID5,
-        "raid6"     => LibStorage.RAID6,
-        "raid10"    => LibStorage.RAID10,
-        "multipath" => LibStorage.MULTIPATH
+        "raid0"     => ::Storage::RAID0,
+        "raid1"     => ::Storage::RAID1,
+        "raid5"     => ::Storage::RAID5,
+        "raid6"     => ::Storage::RAID6,
+        "raid10"    => ::Storage::RAID10,
+        "multipath" => ::Storage::MULTIPATH
       }
 
       @conv_mdparity = {
         "def_sym" => :par_default,
-        "def_int" => LibStorage.PAR_DEFAULT,
+        "def_int" => ::Storage::PAR_DEFAULT,
         "m"       => {
-          LibStorage.LEFT_ASYMMETRIC    => :left_asymmetric,
-          LibStorage.LEFT_SYMMETRIC     => :left_symmetric,
-          LibStorage.RIGHT_ASYMMETRIC   => :right_asymmetric,
-          LibStorage.RIGHT_SYMMETRIC    => :right_symmetric,
-          LibStorage.PAR_FIRST          => :par_first,
-          LibStorage.PAR_LAST           => :par_last,
-          LibStorage.LEFT_ASYMMETRIC_6  => :left_asymmetric_6,
-          LibStorage.LEFT_SYMMETRIC_6   => :left_symmetric_6,
-          LibStorage.RIGHT_ASYMMETRIC_6 => :right_asymmetric_6,
-          LibStorage.RIGHT_SYMMETRIC_6  => :right_symmetric_6,
-          LibStorage.PAR_FIRST_6        => :par_first_6,
-          LibStorage.PAR_NEAR_2         => :par_near_2,
-          LibStorage.PAR_OFFSET_2       => :par_offset_2,
-          LibStorage.PAR_FAR_2          => :par_far_2,
-          LibStorage.PAR_NEAR_3         => :par_near_3,
-          LibStorage.PAR_OFFSET_3       => :par_offset_3,
-          LibStorage.PAR_FAR_3          => :par_far_3
+          ::Storage::LEFT_ASYMMETRIC    => :left_asymmetric,
+          ::Storage::LEFT_SYMMETRIC     => :left_symmetric,
+          ::Storage::RIGHT_ASYMMETRIC   => :right_asymmetric,
+          ::Storage::RIGHT_SYMMETRIC    => :right_symmetric,
+          ::Storage::PAR_FIRST          => :par_first,
+          ::Storage::PAR_LAST           => :par_last,
+          ::Storage::LEFT_ASYMMETRIC_6  => :left_asymmetric_6,
+          ::Storage::LEFT_SYMMETRIC_6   => :left_symmetric_6,
+          ::Storage::RIGHT_ASYMMETRIC_6 => :right_asymmetric_6,
+          ::Storage::RIGHT_SYMMETRIC_6  => :right_symmetric_6,
+          ::Storage::PAR_FIRST_6        => :par_first_6,
+          ::Storage::PAR_NEAR_2         => :par_near_2,
+          ::Storage::PAR_OFFSET_2       => :par_offset_2,
+          ::Storage::PAR_FAR_2          => :par_far_2,
+          ::Storage::PAR_NEAR_3         => :par_near_3,
+          ::Storage::PAR_OFFSET_3       => :par_offset_3,
+          ::Storage::PAR_FAR_3          => :par_far_3
         }
       }
 
       @conv_parstring = {
-        "default"            => LibStorage.PAR_DEFAULT,
-        "left_asymmetric"    => LibStorage.LEFT_ASYMMETRIC,
-        "left_symmetric"     => LibStorage.LEFT_SYMMETRIC,
-        "right_asymmetric"   => LibStorage.RIGHT_ASYMMETRIC,
-        "right_symmetric"    => LibStorage.RIGHT_SYMMETRIC,
-        "parity_first"       => LibStorage.PAR_FIRST,
-        "parity_last"        => LibStorage.PAR_LAST,
-        "left_asymmetric_6"  => LibStorage.LEFT_ASYMMETRIC_6,
-        "left_symmetric_6"   => LibStorage.LEFT_SYMMETRIC_6,
-        "right_asymmetric_6" => LibStorage.RIGHT_ASYMMETRIC_6,
-        "right_symmetric_6"  => LibStorage.RIGHT_SYMMETRIC_6,
-        "parity_first_6"     => LibStorage.PAR_FIRST_6,
-        "n2"                 => LibStorage.PAR_NEAR_2,
-        "o2"                 => LibStorage.PAR_OFFSET_2,
-        "f2"                 => LibStorage.PAR_FAR_2,
-        "n3"                 => LibStorage.PAR_NEAR_3,
-        "o3"                 => LibStorage.PAR_OFFSET_3,
-        "f3"                 => LibStorage.PAR_FAR_3
+        "default"            => ::Storage::PAR_DEFAULT,
+        "left_asymmetric"    => ::Storage::LEFT_ASYMMETRIC,
+        "left_symmetric"     => ::Storage::LEFT_SYMMETRIC,
+        "right_asymmetric"   => ::Storage::RIGHT_ASYMMETRIC,
+        "right_symmetric"    => ::Storage::RIGHT_SYMMETRIC,
+        "parity_first"       => ::Storage::PAR_FIRST,
+        "parity_last"        => ::Storage::PAR_LAST,
+        "left_asymmetric_6"  => ::Storage::LEFT_ASYMMETRIC_6,
+        "left_symmetric_6"   => ::Storage::LEFT_SYMMETRIC_6,
+        "right_asymmetric_6" => ::Storage::RIGHT_ASYMMETRIC_6,
+        "right_symmetric_6"  => ::Storage::RIGHT_SYMMETRIC_6,
+        "parity_first_6"     => ::Storage::PAR_FIRST_6,
+        "n2"                 => ::Storage::PAR_NEAR_2,
+        "o2"                 => ::Storage::PAR_OFFSET_2,
+        "f2"                 => ::Storage::PAR_FAR_2,
+        "n3"                 => ::Storage::PAR_NEAR_3,
+        "o3"                 => ::Storage::PAR_OFFSET_3,
+        "f3"                 => ::Storage::PAR_FAR_3
       }
 
       @rev_conv_parstring = Builtins.mapmap(@conv_parstring) do |s, i|
@@ -251,26 +220,26 @@ module Yast
 
       @conv_partalign = {
         "def_sym" => :align_optimal,
-        "def_int" => LibStorage.ALIGN_OPTIMAL,
+        "def_int" => ::Storage::ALIGN_OPTIMAL,
         "m"       => {
-          LibStorage.ALIGN_OPTIMAL  => :align_optimal,
-          LibStorage.ALIGN_CYLINDER => :align_cylinder
+          ::Storage::ALIGN_OPTIMAL  => :align_optimal,
+          ::Storage::ALIGN_CYLINDER => :align_cylinder
         }
       }
 
       @conv_transport = {
         "def_sym" => :unknown,
-        "def_int" => LibStorage.TUNKNOWN,
+        "def_int" => ::Storage::TUNKNOWN,
         "m"       => {
-          LibStorage.SBP   => :sbp,
-          LibStorage.ATA   => :ata,
-          LibStorage.FC    => :fc,
-          LibStorage.ISCSI => :iscsi,
-          LibStorage.SAS   => :sas,
-          LibStorage.SATA  => :sata,
-          LibStorage.SPI   => :spi,
-          LibStorage.USB   => :usb,
-          LibStorage.FCOE  => :fcoe
+          ::Storage::SBP   => :sbp,
+          ::Storage::ATA   => :ata,
+          ::Storage::FC    => :fc,
+          ::Storage::ISCSI => :iscsi,
+          ::Storage::SAS   => :sas,
+          ::Storage::SATA  => :sata,
+          ::Storage::SPI   => :spi,
+          ::Storage::USB   => :usb,
+          ::Storage::FCOE  => :fcoe
         }
       }
 
@@ -356,16 +325,11 @@ module Yast
       StorageClients.InstallCallbacks(@sint)
 
       if Stage.initial
-        LibStorage::StorageInterface.setDetectMountedVolumes(@sint, false)
-        destdir_ref = arg_ref(Installation.destdir)
-        LibStorage::StorageInterface.setRootPrefix(@sint, destdir_ref)
-        Installation.destdir = destdir_ref.value
+        @sint.setDetectMountedVolumes(false)
+        @sint.setRootPrefix(Installation.destdir)
 
         if Mode.autoinst || Mode.autoupgrade
-          LibStorage::StorageInterface.setMultipathAutostart(
-            @sint,
-            LibStorage.MPAS_OFF
-          )
+          @sint.setMultipathAutostart(::Storage::MPAS_OFF)
         end
       end
 
@@ -382,7 +346,7 @@ module Yast
       return if @sint == nil
 
       Builtins.y2milestone("FinishLibstorage")
-      LibStorage.destroyStorageInterface(@sint)
+      ::Storage::destroyStorageInterface(@sint)
       @sint = nil
 
       nil
@@ -392,27 +356,23 @@ module Yast
     def ClassicStringToByte(str)
       bytes = 0
       if !(
-          str_ref = arg_ref(str);
           bytes_ref = arg_ref(bytes);
-          humanStringToByte_result = LibStorage.humanStringToByte(
-            str_ref,
+          humanStringToByte_result = ::Storage::humanStringToByte(
+            str,
             true,
             bytes_ref
           );
-          str = str_ref.value;
           bytes = bytes_ref.value;
           humanStringToByte_result
         )
         ts = Ops.add(str, "b")
         if !(
-            ts_ref = arg_ref(ts);
             bytes_ref = arg_ref(bytes);
-            humanStringToByte_result = LibStorage.humanStringToByte(
-              ts_ref,
+            humanStringToByte_result = ::Storage::humanStringToByte(
+              ts,
               true,
               bytes_ref
             );
-            ts = ts_ref.value;
             bytes = bytes_ref.value;
             humanStringToByte_result
           )
@@ -424,40 +384,29 @@ module Yast
 
 
     def ByteToHumanString(bytes)
-      LibStorage.byteToHumanString(bytes, false, 2, false)
+      ::Storage::byteToHumanString(bytes, false, 2, false)
     end
 
 
     def KByteToHumanString(bytes_k)
-      LibStorage.byteToHumanString(Ops.multiply(bytes_k, 1024), false, 2, false)
+      ::Storage::byteToHumanString(bytes_k*1024, false, 2, false)
     end
 
 
     def ByteToHumanStringOmitZeroes(bytes)
-      LibStorage.byteToHumanString(bytes, false, 2, true)
+      ::Storage::byteToHumanString(bytes, false, 2, true)
     end
 
 
     def KByteToHumanStringOmitZeroes(bytes_k)
-      LibStorage.byteToHumanString(Ops.multiply(bytes_k, 1024), false, 2, true)
+      ::Storage::byteToHumanString(bytes_k*1024, false, 2, true)
     end
 
 
     def HumanStringToByte(str, bytes)
       i = 0
       bytes.value = i # bnc #408829 and #408891
-      ret = (
-        str_ref = arg_ref(str);
-        bytes_ref = arg_ref(bytes.value);
-        humanStringToByte_result = LibStorage.humanStringToByte(
-          str_ref,
-          false,
-          bytes_ref
-        );
-        str = str_ref.value;
-        bytes.value = bytes_ref.value;
-        humanStringToByte_result
-      )
+      ret, bytes.value = ::Storage::humanStringToByte( str, false )
       Builtins.y2milestone(
         "HumanStringToByte ret:%1 str:%2 bytes:%3",
         ret,
@@ -469,20 +418,9 @@ module Yast
 
 
     def HumanStringToKByte(str, bytes_k)
-      bytes = 0 # bnc #408829
-      ret = (
-        str_ref = arg_ref(str);
-        bytes_ref = arg_ref(bytes);
-        humanStringToByte_result = LibStorage.humanStringToByte(
-          str_ref,
-          false,
-          bytes_ref
-        );
-        str = str_ref.value;
-        bytes = bytes_ref.value;
-        humanStringToByte_result
-      )
-      bytes_k.value = Ops.divide(bytes, 1024)
+      ret, bytes = ::Storage::humanStringToByte( str, false )
+      bytes = 0 if !ret  # bnc #408829
+      bytes_k.value = bytes.div(1024)
       Builtins.y2milestone(
         "HumanStringToKByte ret:%1 str:%2 bytes_k:%3",
         ret,
@@ -534,20 +472,10 @@ module Yast
     # @example Storage::GetDeviceName("/dev/md", 1)
     # @example Storage::GetDeviceName("/dev/system", "root")
     def GetDeviceName(disk, partition)
-      partition = deep_copy(partition)
       ret = disk
       if Ops.is_integer?(partition)
-        ret = (
-          disk_ref = arg_ref(disk);
-          getPartitionName_result = LibStorage::StorageInterface.getPartitionName(
-            @sint,
-            disk_ref,
-            Convert.to_integer(partition)
-          );
-          disk = disk_ref.value;
-          getPartitionName_result
-        )
-      elsif Ops.greater_than(Builtins.size(Convert.to_string(partition)), 0)
+        ret = @sint.getPartitionName(disk, Convert.to_integer(partition));
+      elsif !Builtins.isempty(Convert.to_string(partition))
         ret = Ops.add(Ops.add(ret, "/"), Convert.to_string(partition))
       end
       ret
@@ -555,32 +483,13 @@ module Yast
 
 
     def SetIgnoreFstab(device, val)
-      (
-        device_ref = arg_ref(device);
-        setIgnoreFstab_result = LibStorage::StorageInterface.setIgnoreFstab(
-          @sint,
-          device_ref,
-          val
-        );
-        device = device_ref.value;
-        setIgnoreFstab_result
-      ) == 0
+      @sint.setIgnoreFstab(device, val)==0
     end
 
 
     def GetIgnoreFstab(device, val)
-      (
-        device_ref = arg_ref(device);
-        val_ref = arg_ref(val.value);
-        getIgnoreFstab_result = LibStorage::StorageInterface.getIgnoreFstab(
-          @sint,
-          device_ref,
-          val_ref
-        );
-        device = device_ref.value;
-        val.value = val_ref.value;
-        getIgnoreFstab_result
-      ) == 0
+      ret, val.value = @sint.getIgnoreFstab(device);
+      ret == 0
     end
 
     def toSymbol(conv, val)
@@ -600,30 +509,18 @@ module Yast
     end
 
     def GetContVolInfo(device, info)
-      tmp = LibStorage::ContVolInfo.new("LibStorage::ContVolInfo")
-      if (
-          device_ref = arg_ref(device);
-          getContVolInfo_result = LibStorage::StorageInterface.getContVolInfo(
-            @sint,
-            device_ref,
-            tmp
-          );
-          device = device_ref.value;
-          getContVolInfo_result
-        ) != 0
+      tmp = ::Storage::ContVolInfo.new()
+      if @sint.getContVolInfo(device, tmp) != 0
         return false
       end
 
       info.value = {
-        "ctype"   => toSymbol(
-          @conv_ctype,
-          LibStorage::ContVolInfo.swig_ctype_get(tmp)
-        ),
-        "cname"   => LibStorage::ContVolInfo.swig_cname_get(tmp),
-        "cdevice" => LibStorage::ContVolInfo.swig_cdevice_get(tmp),
-        "vname"   => LibStorage::ContVolInfo.swig_vname_get(tmp),
-        "vdevice" => LibStorage::ContVolInfo.swig_vdevice_get(tmp),
-        "num"     => LibStorage::ContVolInfo.swig_num_get(tmp)
+        "ctype"   => toSymbol(@conv_ctype, tmp.ctype),
+        "cname"   => tmp.cname,
+        "cdevice" => tmp.cdevice,
+        "vname"   => tmp.vname,
+        "vdevice" => tmp.vdevice,
+        "num"     => tmp.num
       }
 
       Builtins.y2milestone(
@@ -642,7 +539,7 @@ module Yast
       dlen = 0
       as_string = false
       ls = Builtins.filter(Builtins.splitstring(device, "/")) do |s|
-        Ops.greater_than(Builtins.size(s), 0)
+        !Builtins.isempty(s)
       end
       if Builtins.search(device, "LABEL=") == 0 ||
           Builtins.search(device, "UUID=") == 0
@@ -777,15 +674,7 @@ module Yast
           dlen = 9
         elsif Builtins.search(device, "/dev/i2o/hd") == 0
           dlen = 12
-        elsif (
-            device_ref = arg_ref(device);
-            getPartitionPrefix_result = LibStorage::StorageInterface.getPartitionPrefix(
-              @sint,
-              device_ref
-            );
-            device = device_ref.value;
-            getPartitionPrefix_result
-          ) == "p"
+        elsif @sint.getPartitionPrefix(device)=="p"
           pos = Builtins.findlastof(device, "p")
           dlen = Builtins.size(device)
           dlen = pos if pos != nil
@@ -1006,39 +895,27 @@ module Yast
       resize_info.value = {}
       content_info.value = {}
 
-      tmp1 = LibStorage::ResizeInfo.new("LibStorage::ResizeInfo")
-      tmp2 = LibStorage::ContentInfo.new("LibStorage::ContentInfo")
+      tmp1 = ::Storage::ResizeInfo.new()
+      tmp2 = ::Storage::ContentInfo.new()
 
-      ret = (
-        device_ref = arg_ref(device);
-        getFreeInfo_result = LibStorage::StorageInterface.getFreeInfo(
-          @sint,
-          device_ref,
-          get_resize,
-          tmp1,
-          get_content,
-          tmp2,
-          use_cache
-        );
-        device = device_ref.value;
-        getFreeInfo_result
-      )
+      ret = @sint.getFreeInfo(device, get_resize, tmp1, get_content,
+          tmp2, use_cache)
 
       if ret
         if get_resize
           resize_info.value = {
-            :df_free_k     => LibStorage::ResizeInfo.swig_df_freeK_get(tmp1),
-            :resize_free_k => LibStorage::ResizeInfo.swig_resize_freeK_get(tmp1),
-            :used_k        => LibStorage::ResizeInfo.swig_usedK_get(tmp1),
-            :resize_ok     => LibStorage::ResizeInfo.swig_resize_ok_get(tmp1)
+            :df_free_k     => tmp1.df_freeK,
+            :resize_free_k => tmp1.resize_freeK,
+            :used_k        => tmp1.usedK,
+            :resize_ok     => tmp1.resize_ok
           }
         end
 
         if get_content
           content_info.value = {
-            :windows => LibStorage::ContentInfo.swig_windows_get(tmp2),
-            :efi     => LibStorage::ContentInfo.swig_efi_get(tmp2),
-            :homes   => LibStorage::ContentInfo.swig_homes_get(tmp2)
+            :windows => tmp2.windows,
+            :efi     => tmp2.efi,
+            :homes   => tmp2.homes
           }
         end
       end
@@ -1074,12 +951,9 @@ module Yast
         _GetFreeInfo_result
       )
 
-      used = Ops.multiply(1024, Ops.get_integer(resize_info, :used_k, 0))
-      resize_free = Ops.multiply(
-        1024,
-        Ops.get_integer(resize_info, :resize_free_k, 0)
-      )
-      df_free = Ops.multiply(1024, Ops.get_integer(resize_info, :df_free_k, 0))
+      used = 1024*Ops.get_integer(resize_info, :used_k, 0)
+      resize_free = 1024*Ops.get_integer(resize_info, :resize_free_k, 0)
+      df_free = 1024*Ops.get_integer(resize_info, :df_free_k, 0)
       resize_ok = Ops.get_boolean(resize_info, :resize_ok, false)
 
       win_disk = Ops.get_boolean(content_info, :windows, false)
@@ -1171,7 +1045,7 @@ module Yast
       )
 
       ret = {
-        "free"         => Ops.greater_than(resize_free, 0) ? resize_free : 0,
+        "free"         => (resize_free>0) ? resize_free : 0,
         "df_free"      => df_free,
         "used"         => used,
         "win_disk"     => win_disk,
@@ -1186,53 +1060,26 @@ module Yast
       }
       Ops.set(ret, "ok", r)
       Builtins.y2milestone("GetFreeSpace %1 ret %2", device, ret)
-      deep_copy(ret)
+      ret
     end
 
 
     def GetUnusedPartitionSlots(device, slots)
-      swig_slots = []
-
-      ret = (
-        device_ref = arg_ref(device);
-        swig_slots_ref = arg_ref(swig_slots);
-        getUnusedPartitionSlots_result = LibStorage::StorageInterface.getUnusedPartitionSlots(
-          @sint,
-          device_ref,
-          swig_slots_ref
-        );
-        device = device_ref.value;
-        swig_slots = swig_slots_ref.value;
-        getUnusedPartitionSlots_result
-      )
-
-      slots.value = Builtins.maplist(swig_slots) do |swig_slot|
-        {
-          "region"            => [
-            LibStorage::PartitionSlotInfo.swig_cylStart_get(swig_slot),
-            LibStorage::PartitionSlotInfo.swig_cylSize_get(swig_slot)
-          ],
-          "primary_slot"      => LibStorage::PartitionSlotInfo.swig_primarySlot_get(
-            swig_slot
-          ),
-          "primary_possible"  => LibStorage::PartitionSlotInfo.swig_primaryPossible_get(
-            swig_slot
-          ),
-          "extended_slot"     => LibStorage::PartitionSlotInfo.swig_extendedSlot_get(
-            swig_slot
-          ),
-          "extended_possible" => LibStorage::PartitionSlotInfo.swig_extendedPossible_get(
-            swig_slot
-          ),
-          "logical_Slot"      => LibStorage::PartitionSlotInfo.swig_logicalSlot_get(
-            swig_slot
-          ),
-          "logical_possible"  => LibStorage::PartitionSlotInfo.swig_logicalPossible_get(
-            swig_slot
-          )
+      swig_slots = ::Storage::ListPartitionSlotInfo.new()
+      ret = @sint.getUnusedPartitionSlots(device, swig_slots)
+      slots.value = []
+      swig_slots.each do |swig_slot|
+        m = {
+          "region"            => [ swig_slot.cylStart, swig_slot.cylSize ],
+          "primary_slot"      => swig_slot.primarySlot,
+          "primary_possible"  => swig_slot.primaryPossible,
+          "extended_slot"     => swig_slot.extendedSlot,
+          "extended_possible" => swig_slot.extendedPossible,
+          "logical_Slot"      => swig_slot.logicalSlot,
+          "logical_possible"  => swig_slot.logicalPossible
         }
+	slots.value.push( m )
       end
-
       ret
     end
 
@@ -1390,50 +1237,41 @@ module Yast
     def CheckBackupState(who)
       Builtins.y2milestone("CheckBackupStates who:%1", who)
       return nil if !InitLibstorage(false)
-      ret = (
-        who_ref = arg_ref(who);
-        checkBackupState_result = LibStorage::StorageInterface.checkBackupState(
-          @sint,
-          who_ref
-        );
-        who = who_ref.value;
-        checkBackupState_result
-      )
+      ret = @sint.checkBackupState(who)
       Builtins.y2milestone("CheckBackupStates ret:%1", ret)
       ret
     end
 
     def diskMap(dinfo, d)
-      dinfo = deep_copy(dinfo)
       d = deep_copy(d)
-      Ops.set(d, "size_k", LibStorage::DiskInfo.swig_sizeK_get(dinfo))
-      Ops.set(d, "cyl_size", LibStorage::DiskInfo.swig_cylSize_get(dinfo))
-      Ops.set(d, "cyl_count", LibStorage::DiskInfo.swig_cyl_get(dinfo))
-      Ops.set(d, "sector_size", LibStorage::DiskInfo.swig_sectorSize_get(dinfo))
-      Ops.set(d, "label", LibStorage::DiskInfo.swig_disklabel_get(dinfo))
-      tmp = LibStorage::DiskInfo.swig_orig_disklabel_get(dinfo)
+      Ops.set(d, "size_k", dinfo.sizeK)
+      Ops.set(d, "cyl_size", dinfo.cylSize)
+      Ops.set(d, "cyl_count", dinfo.cyl)
+      Ops.set(d, "sector_size", dinfo.sectorSize)
+      Ops.set(d, "label", dinfo.disklabel)
+      tmp = dinfo.orig_disklabel
       Ops.set(d, "orig_label", tmp) if Ops.greater_than(Builtins.size(tmp), 0)
-      Ops.set(d, "max_logical", LibStorage::DiskInfo.swig_maxLogical_get(dinfo))
-      Ops.set(d, "max_primary", LibStorage::DiskInfo.swig_maxPrimary_get(dinfo))
+      Ops.set(d, "max_logical", dinfo.maxLogical)
+      Ops.set(d, "max_primary", dinfo.maxPrimary)
 
-      t = LibStorage::DiskInfo.swig_transport_get(dinfo)
+      t = dinfo.transport
       Ops.set(d, "transport", toSymbol(@conv_transport, t))
 
-      bt = LibStorage::DiskInfo.swig_iscsi_get(dinfo)
+      bt = dinfo.iscsi
       if bt
         Ops.set(d, "iscsi", true)
       elsif Builtins.haskey(d, "iscsi")
         d = Builtins.remove(d, "iscsi")
       end
 
-      bt = LibStorage::DiskInfo.swig_has_fake_partition_get(dinfo)
+      bt = dinfo.has_fake_partition
       if bt
         Ops.set(d, "has_fake_partition", true)
       elsif Builtins.haskey(d, "has_fake_partition")
         d = Builtins.remove(d, "has_fake_partition")
       end
 
-      bt = LibStorage::DiskInfo.swig_initDisk_get(dinfo)
+      bt = dinfo.initDisk
       if bt
         Ops.set(d, "dasdfmt", true)
       elsif Builtins.haskey(d, "dasdfmt")
@@ -1444,56 +1282,39 @@ module Yast
     end
 
     def dmPartCoMap(infos, d)
-      infos = deep_copy(infos)
       d = deep_copy(d)
-      dinfo = LibStorage::DmPartCoInfo.swig_d_get(infos)
+      dinfo = infos.d
       d = diskMap(dinfo, d)
-      ls = Builtins.splitstring(
-        LibStorage::DmPartCoInfo.swig_devices_get(infos),
-        " "
-      )
-      Builtins.y2milestone("ls=%1", ls)
+      ls = Builtins.splitstring(infos.devices, " ")
       Ops.set(d, "devices", ls)
-      t = LibStorage::DmPartCoInfo.swig_minor_get(infos)
-      Ops.set(d, "minor", t)
+      Ops.set(d, "minor", infos.minor)
       Builtins.y2milestone("dmPartCoMap ret:%1", d)
       deep_copy(d)
     end
 
     def volumeMap(vinfo, p)
-      vinfo = deep_copy(vinfo)
       p = deep_copy(p)
-      Ops.set(p, "device", LibStorage::VolumeInfo.swig_device_get(vinfo))
-      tmp = LibStorage::VolumeInfo.swig_crypt_device_get(vinfo)
-      Ops.set(p, "crypt_device", tmp) if Ops.greater_than(Builtins.size(tmp), 0)
-      Ops.set(p, "size_k", LibStorage::VolumeInfo.swig_sizeK_get(vinfo))
-      Ops.set(p, "name", LibStorage::VolumeInfo.swig_name_get(vinfo))
-      t = LibStorage::VolumeInfo.swig_fs_get(vinfo)
-      fs = toSymbol(FileSystems.conv_fs, t)
+      Ops.set(p, "device", vinfo.device)
+      tmp = vinfo.crypt_device
+      Ops.set(p, "crypt_device", tmp) if !Builtins.isempty(tmp)
+      Ops.set(p, "size_k", vinfo.sizeK)
+      Ops.set(p, "name", vinfo.name)
+      fs = toSymbol(FileSystems.conv_fs, vinfo.fs)
       Ops.set(p, "used_fs", fs) if fs != :unknown
-      t = LibStorage::VolumeInfo.swig_detected_fs_get(vinfo)
-      fs = toSymbol(FileSystems.conv_fs, t)
+      fs = toSymbol(FileSystems.conv_fs, vinfo.detected_fs)
       Ops.set(p, "detected_fs", fs)
-      tbool = LibStorage::VolumeInfo.swig_format_get(vinfo)
-      Ops.set(p, "format", true) if tbool
-      tbool = LibStorage::VolumeInfo.swig_create_get(vinfo)
-      Ops.set(p, "create", true) if tbool
-      tmp = LibStorage::VolumeInfo.swig_mount_get(vinfo)
-      if Ops.greater_than(Builtins.size(tmp), 0)
+      Ops.set(p, "format", true) if vinfo.format
+      Ops.set(p, "create", true) if vinfo.create
+      tmp = vinfo.mount
+      if !Builtins.isempty(tmp)
         Ops.set(p, "mount", tmp)
-        tbool = LibStorage::VolumeInfo.swig_is_mounted_get(vinfo)
-        Ops.set(p, "inactive", true) if !tbool
-        t = LibStorage::VolumeInfo.swig_mount_by_get(vinfo)
-        Ops.set(p, "mountby", toSymbol(@conv_mountby, t))
+        Ops.set(p, "inactive", true) if !vinfo.is_mounted
+        Ops.set(p, "mountby", toSymbol(@conv_mountby, vinfo.mount_by))
       end
-      t = LibStorage::VolumeInfo.swig_usedByType_get(vinfo)
-      if t != LibStorage.UB_NONE
+      t = vinfo.usedByType
+      if t != ::Storage::UB_NONE
         Ops.set(p, "used_by_type", toSymbol(@conv_usedby, t))
-        Ops.set(
-          p,
-          "used_by_device",
-          LibStorage::VolumeInfo.swig_usedByDevice_get(vinfo)
-        )
+        Ops.set(p, "used_by_device", vinfo.usedByDevice)
         Ops.set(
           p,
           "used_by",
@@ -1505,15 +1326,15 @@ module Yast
           ]
         )
       end
-      tmp = LibStorage::VolumeInfo.swig_fstab_options_get(vinfo)
-      if Ops.greater_than(Builtins.size(tmp), 0)
+      tmp = vinfo.fstab_options
+      if !Builtins.isempty(tmp)
         Ops.set(p, "fstopt", tmp)
         if Builtins.find(Builtins.splitstring(tmp, ",")) { |s| s == "noauto" } != nil
           Ops.set(p, "noauto", true)
         end
       end
-      tmp = LibStorage::VolumeInfo.swig_mkfs_options_get(vinfo)
-      if Ops.greater_than(Builtins.size(tmp), 0)
+      tmp = vinfo.mkfs_options
+      if !Builtins.isempty(tmp)
         Ops.set(p, "mkfs_opt", tmp)
         Ops.set(
           p,
@@ -1527,8 +1348,8 @@ module Yast
       else
         p = Builtins.remove(p, "fs_options") if Builtins.haskey(p, "fs_options")
       end
-      tmp = LibStorage::VolumeInfo.swig_tunefs_options_get(vinfo)
-      if Ops.greater_than(Builtins.size(tmp), 0)
+      tmp = vinfo.tunefs_options
+      if !Builtins.isempty(tmp)
         Ops.set(p, "tunefs_opt", tmp)
         Ops.set(
           p,
@@ -1543,35 +1364,29 @@ module Yast
           )
         )
       end
-      tmp = LibStorage::VolumeInfo.swig_dtxt_get(vinfo)
-      Ops.set(p, "dtxt", tmp) if Ops.greater_than(Builtins.size(tmp), 0)
-      tmp = LibStorage::VolumeInfo.swig_uuid_get(vinfo)
-      Ops.set(p, "uuid", tmp) if Ops.greater_than(Builtins.size(tmp), 0)
-      tmp = LibStorage::VolumeInfo.swig_label_get(vinfo)
-      Ops.set(p, "label", tmp) if Ops.greater_than(Builtins.size(tmp), 0)
-      t = LibStorage::VolumeInfo.swig_encryption_get(vinfo)
-      if t != LibStorage.ENC_NONE
+      tmp = vinfo.dtxt
+      Ops.set(p, "dtxt", tmp) if !Builtins.isempty(tmp)
+      tmp = vinfo.uuid
+      Ops.set(p, "uuid", tmp) if !Builtins.isempty(tmp)
+      tmp = vinfo.label
+      Ops.set(p, "label", tmp) if !Builtins.isempty(tmp)
+      t = vinfo.encryption
+      if t != ::Storage::ENC_NONE
         Ops.set(p, "enc_type", toSymbol(@conv_encryption, t))
       end
-      tbool = LibStorage::VolumeInfo.swig_resize_get(vinfo)
+      tbool = vinfo.resize
       if tbool
         Ops.set(p, "resize", true)
-        Ops.set(
-          p,
-          "orig_size_k",
-          LibStorage::VolumeInfo.swig_origSizeK_get(vinfo)
-        )
+        Ops.set(p, "orig_size_k", vinfo.origSizeK)
       end
-      tbool = LibStorage::VolumeInfo.swig_ignore_fs_get(vinfo)
-      Ops.set(p, "ignore_fs", true) if tbool
-      tbool = LibStorage::VolumeInfo.swig_ignore_fstab_get(vinfo)
-      Ops.set(p, "ignore_fstab", true) if tbool
-      tmp = LibStorage::VolumeInfo.swig_loop_get(vinfo)
-      Ops.set(p, "loop", tmp) if Ops.greater_than(Builtins.size(tmp), 0)
+      Ops.set(p, "ignore_fs", true) if vinfo.ignore_fs
+      Ops.set(p, "ignore_fstab", true) if vinfo.ignore_fstab
+      tmp = vinfo.loop
+      Ops.set(p, "loop", tmp) if !Builtins.isempty(tmp)
 
-      tmp = LibStorage::VolumeInfo.swig_udevPath_get(vinfo)
+      tmp = vinfo.udevPath
       Ops.set(p, "udev_path", tmp) if !Builtins.isempty(tmp)
-      tmp = LibStorage::VolumeInfo.swig_udevId_get(vinfo)
+      tmp = vinfo.udevId
       if !Builtins.isempty(tmp)
         Ops.set(p, "udev_id", Builtins.splitstring(tmp, " "))
       end
@@ -1580,10 +1395,9 @@ module Yast
     end
 
     def partAddMap(info, p)
-      info = deep_copy(info)
       p = deep_copy(p)
-      Ops.set(p, "nr", LibStorage::PartitionAddInfo.swig_nr_get(info))
-      Ops.set(p, "fsid", LibStorage::PartitionAddInfo.swig_id_get(info))
+      Ops.set(p, "nr", info.nr)
+      Ops.set(p, "fsid", info.id)
       Ops.set(
         p,
         "fstype",
@@ -1592,28 +1406,22 @@ module Yast
       Ops.set(
         p,
         "region",
-        [
-          LibStorage::PartitionAddInfo.swig_cylStart_get(info),
-          LibStorage::PartitionAddInfo.swig_cylSize_get(info)
-        ]
+        [ info.cylStart, info.cylSize ]
       )
-      t = LibStorage::PartitionAddInfo.swig_partitionType_get(info)
-      Ops.set(p, "type", toSymbol(@conv_ptype, t))
-      boot = LibStorage::PartitionAddInfo.swig_boot_get(info)
-      Ops.set(p, "boot", true) if boot
+      Ops.set(p, "type", toSymbol(@conv_ptype, info.partitionType))
+      Ops.set(p, "boot", true) if info.boot
       Builtins.y2milestone("partAddMap ret:%1", p)
       deep_copy(p)
     end
 
     def dmPartMap(info, p)
-      info = deep_copy(info)
       p = deep_copy(p)
-      vinfo = LibStorage::DmPartInfo.swig_v_get(info)
+      vinfo = info.v
       p = volumeMap(vinfo, p)
       Ops.set(p, "nr", 0)
-      part = LibStorage::DmPartInfo.swig_part_get(info)
+      part = info.part
       if part
-        pinfo = LibStorage::DmPartInfo.swig_p_get(info)
+        pinfo = info.p
         p = partAddMap(pinfo, p)
       end
       Builtins.y2milestone("dmPartMap ret:%1", p)
@@ -1621,14 +1429,13 @@ module Yast
     end
 
     def mdPartMap(info, p)
-      info = deep_copy(info)
       p = deep_copy(p)
-      vinfo = LibStorage::MdPartInfo.swig_v_get(info)
+      vinfo = info.v
       p = volumeMap(vinfo, p)
       Ops.set(p, "nr", 0)
-      part = LibStorage::MdPartInfo.swig_part_get(info)
+      part = info.part
       if part
-        pinfo = LibStorage::MdPartInfo.swig_p_get(info)
+        pinfo = info.p
         p = partAddMap(pinfo, p)
       end
       Builtins.y2milestone("mdPartMap ret:%1", p)
@@ -1640,25 +1447,15 @@ module Yast
     end
 
     def getContainerInfo(c)
-      c = deep_copy(c)
       Builtins.y2milestone("getContainerInfo %1", c)
       ret = 0
       t = 0
-      vinfo = LibStorage::VolumeInfo.new("LibStorage::VolumeInfo")
+      vinfo = ::Storage::VolumeInfo.new()
       if Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_DISK
-        pinfos = []
-        infos = LibStorage::DiskInfo.new("LibStorage::DiskInfo")
+        pinfos = ::Storage::DequePartitionInfo.new()
+        infos = ::Storage::DiskInfo.new()
         d = Ops.get_string(c, "device", "")
-        ret = (
-          d_ref = arg_ref(d);
-          getDiskInfo_result = LibStorage::StorageInterface.getDiskInfo(
-            @sint,
-            d_ref,
-            infos
-          );
-          d = d_ref.value;
-          getDiskInfo_result
-        )
+        ret = @sint.getDiskInfo( d, infos)
         if ret == 0
           c = diskMap(infos, c)
         else
@@ -1669,25 +1466,14 @@ module Yast
           )
         end
         Ops.set(c, "partitions", [])
-        ret = (
-          d_ref = arg_ref(d);
-          pinfos_ref = arg_ref(pinfos);
-          getPartitionInfo_result = LibStorage::StorageInterface.getPartitionInfo(
-            @sint,
-            d_ref,
-            pinfos_ref
-          );
-          d = d_ref.value;
-          pinfos = pinfos_ref.value;
-          getPartitionInfo_result
-        )
-        Builtins.foreach(pinfos) do |info|
+        ret = @sint.getPartitionInfo(d, pinfos)
+        pinfos.each do |info|
           tmp = ""
           p = {}
-          vinfo = LibStorage::PartitionInfo.swig_v_get(info)
+          vinfo = info.v
           p = volumeMap(vinfo, p)
-          Ops.set(p, "nr", LibStorage::PartitionInfo.swig_nr_get(info))
-          Ops.set(p, "fsid", LibStorage::PartitionInfo.swig_id_get(info))
+          Ops.set(p, "nr", info.nr)
+          Ops.set(p, "fsid", info.id)
           Ops.set(
             p,
             "fstype",
@@ -1697,13 +1483,13 @@ module Yast
             p,
             "region",
             [
-              LibStorage::PartitionInfo.swig_cylStart_get(info),
-              LibStorage::PartitionInfo.swig_cylSize_get(info)
+              info.cylStart,
+              info.cylSize
             ]
           )
-          t = LibStorage::PartitionInfo.swig_partitionType_get(info)
+          t = info.partitionType
           Ops.set(p, "type", toSymbol(@conv_ptype, t))
-          boot = LibStorage::PartitionInfo.swig_boot_get(info)
+          boot = info.boot
           Ops.set(p, "boot", true) if boot
           Ops.set(
             c,
@@ -1712,44 +1498,23 @@ module Yast
           )
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_DMRAID
-        pinfos = []
-        infos = LibStorage::DmraidCoInfo.new("LibStorage::DmraidCoInfo")
+        pinfos = ::Storage::DequeDmraidInfo.new()
+        infos = ::Storage::DmraidCoInfo.new()
         d = Ops.get_string(c, "device", "")
-        ret = (
-          d_ref = arg_ref(d);
-          getDmraidCoInfo_result = LibStorage::StorageInterface.getDmraidCoInfo(
-            @sint,
-            d_ref,
-            infos
-          );
-          d = d_ref.value;
-          getDmraidCoInfo_result
-        )
+        ret = @sint.getDmraidCoInfo(d,infos)
         if ret == 0
-          pinfo = LibStorage::DmraidCoInfo.swig_p_get(infos)
+          pinfo = infos.p
           c = dmPartCoMap(pinfo, c)
         else
           Builtins.y2warning(
             "disk \"%1\" ret:%2",
             Ops.get_string(c, "device", ""),
-            ret
-          )
+            ret)
         end
         Ops.set(c, "partitions", [])
-        ret = (
-          d_ref = arg_ref(d);
-          pinfos_ref = arg_ref(pinfos);
-          getDmraidInfo_result = LibStorage::StorageInterface.getDmraidInfo(
-            @sint,
-            d_ref,
-            pinfos_ref
-          );
-          d = d_ref.value;
-          pinfos = pinfos_ref.value;
-          getDmraidInfo_result
-        )
-        Builtins.foreach(pinfos) do |info|
-          pinfo = LibStorage::DmraidInfo.swig_p_get(info)
+        ret = @sint.getDmraidInfo( d, pinfos)
+        pinfos.each do |info|
+          pinfo = info.p
           p = {}
           p = dmPartMap(pinfo, p)
           Ops.set(p, "fstype", Partitions.dmraid_name)
@@ -1762,23 +1527,12 @@ module Yast
           end
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_DMMULTIPATH
-        pinfos = []
-        infos = LibStorage::DmmultipathCoInfo.new(
-          "LibStorage::DmmultipathCoInfo"
-        )
+        pinfos = ::Storage::DequePartitionInfo.new()
+        infos = ::Storage::DmmultipathCoInfo.new()
         d = Ops.get_string(c, "device", "")
-        ret = (
-          d_ref = arg_ref(d);
-          getDmmultipathCoInfo_result = LibStorage::StorageInterface.getDmmultipathCoInfo(
-            @sint,
-            d_ref,
-            infos
-          );
-          d = d_ref.value;
-          getDmmultipathCoInfo_result
-        )
+        ret = @sint.getDmmultipathCoInfo(d, infos)
         if ret == 0
-          pinfo = LibStorage::DmmultipathCoInfo.swig_p_get(infos)
+          pinfo = infos.p
           c = dmPartCoMap(pinfo, c)
         else
           Builtins.y2warning(
@@ -1788,20 +1542,9 @@ module Yast
           )
         end
         Ops.set(c, "partitions", [])
-        ret = (
-          d_ref = arg_ref(d);
-          pinfos_ref = arg_ref(pinfos);
-          getDmmultipathInfo_result = LibStorage::StorageInterface.getDmmultipathInfo(
-            @sint,
-            d_ref,
-            pinfos_ref
-          );
-          d = d_ref.value;
-          pinfos = pinfos_ref.value;
-          getDmmultipathInfo_result
-        )
-        Builtins.foreach(pinfos) do |info|
-          pinfo = LibStorage::DmmultipathInfo.swig_p_get(info)
+        ret = @sint.getDmmultipathInfo( d, pinfos )
+        pinfos.each do |info|
+          pinfo = info.p
           p = {}
           p = dmPartMap(pinfo, p)
           Ops.set(p, "fstype", Partitions.dmmultipath_name)
@@ -1814,21 +1557,12 @@ module Yast
           end
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_MDPART
-        pinfos = []
-        infos = LibStorage::MdPartCoInfo.new("LibStorage::MdPartCoInfo")
+        pinfos = ::Storage::DequeMdPartInfo.new()
+        infos = ::Storage::MdPartCoInfo.new()
         d = Ops.get_string(c, "device", "")
-        ret = (
-          d_ref = arg_ref(d);
-          getMdPartCoInfo_result = LibStorage::StorageInterface.getMdPartCoInfo(
-            @sint,
-            d_ref,
-            infos
-          );
-          d = d_ref.value;
-          getMdPartCoInfo_result
-        )
+        ret = @sint.getMdPartCoInfo( d, infos)
         if ret == 0
-          dinfo = LibStorage::MdPartCoInfo.swig_d_get(infos)
+          dinfo = infos.d
           c = diskMap(dinfo, c)
         else
           Builtins.y2warning(
@@ -1838,19 +1572,13 @@ module Yast
           )
         end
 
-        ls = Builtins.splitstring(
-          LibStorage::MdPartCoInfo.swig_devices_get(infos),
-          " "
-        )
+        ls = Builtins.splitstring(infos.devices, " ")
         Ops.set(c, "devices", ls)
 
-        ls = Builtins.splitstring(
-          LibStorage::MdPartCoInfo.swig_spares_get(infos),
-          " "
-        )
+        ls = Builtins.splitstring(infos.spares, " ")
         Ops.set(c, "spares", ls) if !Builtins.isempty(ls)
 
-        t2 = LibStorage::MdPartCoInfo.swig_type_get(infos)
+        t2 = infos.type
         Ops.set(
           c,
           "raid_type",
@@ -1860,30 +1588,19 @@ module Yast
           )
         )
         if HasRaidParity(Ops.get_string(c, "raid_type", ""))
-          t2 = LibStorage::MdPartCoInfo.swig_parity_get(infos)
+          t2 = infos.parity
           pt = toSymbol(@conv_mdparity, t2)
           if pt != :par_default
             Ops.set(c, "parity_algorithm", Ops.get(@rev_conv_parstring, t2, ""))
           end
         end
-        t2 = LibStorage::MdPartCoInfo.swig_chunkSizeK_get(infos)
-        Ops.set(c, "chunk_size", t2) if Ops.greater_than(t2, 0)
-        Ops.set(c, "sb_ver", LibStorage::MdPartCoInfo.swig_sb_ver_get(infos))
+        t2 = infos.chunkSizeK
+        Ops.set(c, "chunk_size", t2) if t2>0
+        Ops.set(c, "sb_ver", infos.sb_ver)
 
         Ops.set(c, "partitions", [])
-        ret = (
-          d_ref = arg_ref(d);
-          pinfos_ref = arg_ref(pinfos);
-          getMdPartInfo_result = LibStorage::StorageInterface.getMdPartInfo(
-            @sint,
-            d_ref,
-            pinfos_ref
-          );
-          d = d_ref.value;
-          pinfos = pinfos_ref.value;
-          getMdPartInfo_result
-        )
-        Builtins.foreach(pinfos) do |info|
+        ret = @sint.getMdPartInfo(d, pinfos)
+        pinfos.each do |info|
           p = {}
           p = mdPartMap(info, p)
           Ops.set(p, "fstype", Partitions.raid_name)
@@ -1896,53 +1613,27 @@ module Yast
           end
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_LVM
-        pinfos = []
-        infos = LibStorage::LvmVgInfo.new("LibStorage::LvmVgInfo")
+        pinfos = ::Storage::DequeLvmLvInfo.new()
+        infos = ::Storage::LvmVgInfo.new()
         n = Ops.get_string(c, "name", "")
-        ret = (
-          n_ref = arg_ref(n);
-          getLvmVgInfo_result = LibStorage::StorageInterface.getLvmVgInfo(
-            @sint,
-            n_ref,
-            infos
-          );
-          n = n_ref.value;
-          getLvmVgInfo_result
-        )
+        ret = @sint.getLvmVgInfo(n, infos)
         if ret == 0
-          Ops.set(c, "create", LibStorage::LvmVgInfo.swig_create_get(infos))
-          Ops.set(c, "size_k", LibStorage::LvmVgInfo.swig_sizeK_get(infos))
-          Ops.set(
-            c,
-            "cyl_size",
-            Ops.multiply(1024, LibStorage::LvmVgInfo.swig_peSizeK_get(infos))
-          )
-          Ops.set(
-            c,
-            "pesize",
-            Ops.multiply(1024, LibStorage::LvmVgInfo.swig_peSizeK_get(infos))
-          )
-          Ops.set(c, "cyl_count", LibStorage::LvmVgInfo.swig_peCount_get(infos))
-          Ops.set(c, "pe_free", LibStorage::LvmVgInfo.swig_peFree_get(infos))
-          Ops.set(c, "lvm2", LibStorage::LvmVgInfo.swig_lvm2_get(infos))
-          ls = Builtins.splitstring(
-            LibStorage::LvmVgInfo.swig_devices_get(infos),
-            " "
-          )
+          Ops.set(c, "create", infos.create)
+          Ops.set(c, "size_k", infos.sizeK)
+          Ops.set(c, "cyl_size", 1024*infos.peSizeK)
+          Ops.set(c, "pesize", 1024*infos.peSizeK)
+          Ops.set(c, "cyl_count", infos.peCount)
+          Ops.set(c, "pe_free", infos.peFree)
+          Ops.set(c, "lvm2", infos.lvm2)
+          ls = Builtins.splitstring(infos.devices, " ")
           Builtins.y2milestone("ls=%1", ls)
           Ops.set(c, "devices", ls)
-          ls = Builtins.splitstring(
-            LibStorage::LvmVgInfo.swig_devices_add_get(infos),
-            " "
-          )
-          if Ops.greater_than(Builtins.size(ls), 0)
+          ls = Builtins.splitstring(infos.devices_add, " ")
+          if !Builtins.isempty(ls)
             Ops.set(c, "devices_add", ls)
           end
-          ls = Builtins.splitstring(
-            LibStorage::LvmVgInfo.swig_devices_rem_get(infos),
-            " "
-          )
-          if Ops.greater_than(Builtins.size(ls), 0)
+          ls = Builtins.splitstring(infos.devices_rem, " ")
+          if !Builtins.isempty(ls)
             Ops.set(c, "devices_rem", ls)
           end
         else
@@ -1952,31 +1643,19 @@ module Yast
             ret
           )
         end
-        ret = (
-          n_ref = arg_ref(n);
-          pinfos_ref = arg_ref(pinfos);
-          getLvmLvInfo_result = LibStorage::StorageInterface.getLvmLvInfo(
-            @sint,
-            n_ref,
-            pinfos_ref
-          );
-          n = n_ref.value;
-          pinfos = pinfos_ref.value;
-          getLvmLvInfo_result
-        )
-        Builtins.foreach(pinfos) do |info|
+        ret = @sint.getLvmLvInfo(n, pinfos)
+        pinfos.each do |info|
           p = {}
-          vinfo = LibStorage::LvmLvInfo.swig_v_get(info)
+          vinfo = info.v
           p = volumeMap(vinfo, p)
-          Ops.set(p, "stripes", LibStorage::LvmLvInfo.swig_stripes_get(info))
-          t = LibStorage::LvmLvInfo.swig_stripeSizeK_get(info)
-          Ops.set(p, "stripesize", t) if Ops.greater_than(t, 0)
-          s = LibStorage::LvmLvInfo.swig_origin_get(info)
+          Ops.set(p, "stripes", info.stripes)
+          t = info.stripeSizeK
+          Ops.set(p, "stripesize", t) if t>0
+          s = info.origin
           Ops.set(p, "origin", s) if !Builtins.isempty(s)
-          s = LibStorage::LvmLvInfo.swig_used_pool_get(info)
+          s = info.used_pool
           Ops.set(p, "used_pool", s) if !Builtins.isempty(s)
-          b = LibStorage::LvmLvInfo.swig_pool_get(info)
-          Ops.set(p, "pool", true) if b
+          Ops.set(p, "pool", true) if info.pool
           Ops.set(p, "type", :lvm)
           Ops.set(p, "fstype", Partitions.lv_name)
           Ops.set(
@@ -1986,23 +1665,15 @@ module Yast
           )
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_MD
-        pinfos = []
-        ret = (
-          pinfos_ref = arg_ref(pinfos);
-          getMdInfo_result = LibStorage::StorageInterface.getMdInfo(
-            @sint,
-            pinfos_ref
-          );
-          pinfos = pinfos_ref.value;
-          getMdInfo_result
-        )
-        Builtins.y2warning("getMdInfo ret:%1", ret) if Ops.less_than(ret, 0)
-        Builtins.foreach(pinfos) do |info|
+        pinfos = ::Storage::DequeMdInfo.new()
+        ret = @sint.getMdInfo(pinfos)
+        Builtins.y2warning("getMdInfo ret:%1", ret) if ret<0
+        pinfos.each do |info|
           p = {}
-          vinfo = LibStorage::MdInfo.swig_v_get(info)
+          vinfo = info.v
           p = volumeMap(vinfo, p)
-          Ops.set(p, "nr", LibStorage::MdInfo.swig_nr_get(info))
-          t2 = LibStorage::MdInfo.swig_type_get(info)
+          Ops.set(p, "nr", info.nr)
+          t2 = info.type
           Ops.set(
             p,
             "raid_type",
@@ -2012,33 +1683,24 @@ module Yast
             )
           )
           if HasRaidParity(Ops.get_string(p, "raid_type", ""))
-            t2 = LibStorage::MdInfo.swig_parity_get(info)
-            pt = toSymbol(@conv_mdparity, t2)
+            pt = toSymbol(@conv_mdparity, info.parity)
             if pt != :par_default
               Ops.set(
                 p,
                 "parity_algorithm",
-                Ops.get(@rev_conv_parstring, t2, "")
+                Ops.get(@rev_conv_parstring, info.parity, "")
               )
             end
           end
           Ops.set(p, "type", :sw_raid)
           Ops.set(p, "fstype", Partitions.raid_name)
-          t2 = LibStorage::MdInfo.swig_chunkSizeK_get(info)
-          Ops.set(p, "chunk_size", t2) if Ops.greater_than(t2, 0)
-          d = LibStorage::MdInfo.swig_sb_ver_get(info)
-          Ops.set(p, "sb_ver", d)
-          tbool = LibStorage::MdInfo.swig_inactive_get(info)
-          Ops.set(p, "raid_inactive", true) if tbool
-          ls = Builtins.splitstring(
-            LibStorage::MdInfo.swig_devices_get(info),
-            " "
-          )
+          t2 = info.chunkSizeK
+          Ops.set(p, "chunk_size", t2) if t2>0
+          Ops.set(p, "sb_ver", info.sb_ver)
+          Ops.set(p, "raid_inactive", true) if info.inactive
+          ls = Builtins.splitstring(info.devices, " ")
           Ops.set(p, "devices", ls)
-          ls = Builtins.splitstring(
-            LibStorage::MdInfo.swig_spares_get(info),
-            " "
-          )
+          ls = Builtins.splitstring(info.spares, " ")
           Ops.set(p, "spares", ls) if !Builtins.isempty(ls)
           Ops.set(
             c,
@@ -2047,32 +1709,20 @@ module Yast
           )
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_LOOP
-        pinfos = []
-        ret = (
-          pinfos_ref = arg_ref(pinfos);
-          getLoopInfo_result = LibStorage::StorageInterface.getLoopInfo(
-            @sint,
-            pinfos_ref
-          );
-          pinfos = pinfos_ref.value;
-          getLoopInfo_result
-        )
-        Builtins.y2warning("getLoopInfo ret:%1", ret) if Ops.less_than(ret, 0)
-        Builtins.foreach(pinfos) do |info|
+        pinfos = ::Storage::DequeLoopInfo.new()
+        ret = @sint.getLoopInfo(pinfos)
+        Builtins.y2warning("getLoopInfo ret:%1", ret) if ret<0
+        pinfos.each do |info|
           p = {}
-          vinfo = LibStorage::LoopInfo.swig_v_get(info)
+          vinfo = info.v
           p = volumeMap(vinfo, p)
-          Ops.set(p, "nr", LibStorage::LoopInfo.swig_nr_get(info))
+          Ops.set(p, "nr", info.nr)
           Ops.set(p, "type", :loop)
           Ops.set(p, "fstype", Partitions.loop_name)
-          Ops.set(p, "fpath", LibStorage::LoopInfo.swig_file_get(info))
-          Ops.set(
-            p,
-            "create_file",
-            !LibStorage::LoopInfo.swig_reuseFile_get(info)
-          )
+          Ops.set(p, "fpath", info.file)
+          Ops.set(p, "create_file", !info.reuseFile)
           if Ops.get_symbol(p, "enc_type", :unknown) != :luks &&
-              Ops.greater_than(Builtins.size(Ops.get_string(p, "loop", "")), 0)
+              !Builtins.isempty(Ops.get_string(p, "loop", ""))
             Ops.set(p, "device", Ops.get_string(p, "loop", ""))
           end
           Ops.set(
@@ -2082,22 +1732,14 @@ module Yast
           )
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_DM
-        pinfos = []
-        ret = (
-          pinfos_ref = arg_ref(pinfos);
-          getDmInfo_result = LibStorage::StorageInterface.getDmInfo(
-            @sint,
-            pinfos_ref
-          );
-          pinfos = pinfos_ref.value;
-          getDmInfo_result
-        )
-        Builtins.y2warning("getDmInfo ret:%1", ret) if Ops.less_than(ret, 0)
-        Builtins.foreach(pinfos) do |info|
+        pinfos = ::Storage::DequeDmInfo.new()
+        ret = @sint.getDmInfo(pinfos)
+        Builtins.y2warning("getDmInfo ret:%1", ret) if ret<0
+        pinfos.each do |info|
           p = {}
-          vinfo = LibStorage::DmInfo.swig_v_get(info)
+          vinfo = info.v
           p = volumeMap(vinfo, p)
-          Ops.set(p, "nr", LibStorage::DmInfo.swig_nr_get(info))
+          Ops.set(p, "nr", info.nr)
           Ops.set(p, "type", :dm)
           Ops.set(p, "fstype", Partitions.dm_name)
           Ops.set(
@@ -2107,22 +1749,14 @@ module Yast
           )
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_NFS
-        pinfos = []
+        pinfos = ::Storage::DequeNfsInfo.new()
         Builtins.y2milestone("before getNfsInfo")
-        ret = (
-          pinfos_ref = arg_ref(pinfos);
-          getNfsInfo_result = LibStorage::StorageInterface.getNfsInfo(
-            @sint,
-            pinfos_ref
-          );
-          pinfos = pinfos_ref.value;
-          getNfsInfo_result
-        )
+        ret = @sint.getNfsInfo(pinfos)
         Builtins.y2milestone("after getNfsInfo")
-        Builtins.y2warning("getNfsInfo ret:%1", ret) if Ops.less_than(ret, 0)
-        Builtins.foreach(pinfos) do |info|
+        Builtins.y2warning("getNfsInfo ret:%1", ret) if ret<0
+        pinfos.each do |info|
           p = {}
-          vinfo = LibStorage::NfsInfo.swig_v_get(info)
+          vinfo = info.v
           p = volumeMap(vinfo, p)
           Ops.set(p, "type", :nfs)
           Ops.set(p, "fstype", Partitions.nfs_name)
@@ -2133,50 +1767,30 @@ module Yast
           )
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_BTRFS
-        pinfos = []
+        pinfos = ::Storage::DequeBtrfsInfo.new()
         Builtins.y2milestone("before getBtrfsInfo")
-        ret = (
-          pinfos_ref = arg_ref(pinfos);
-          getBtrfsInfo_result = LibStorage::StorageInterface.getBtrfsInfo(
-            @sint,
-            pinfos_ref
-          );
-          pinfos = pinfos_ref.value;
-          getBtrfsInfo_result
-        )
+        ret = @sint.getBtrfsInfo(pinfos)
         Builtins.y2milestone("after getBtrfsInfo")
-        Builtins.y2warning("getBtrfsInfo ret:%1", ret) if Ops.less_than(ret, 0)
-        Builtins.foreach(pinfos) do |info|
+        Builtins.y2warning("getBtrfsInfo ret:%1", ret) if ret<0
+        pinfos.each do |info|
           p = {}
-          vinfo = LibStorage::BtrfsInfo.swig_v_get(info)
+          vinfo = info.v
           p = volumeMap(vinfo, p)
           Ops.set(p, "type", :btrfs)
           Ops.set(p, "fstype", Partitions.btrfs_name)
-          ls = Builtins.splitstring(
-            LibStorage::BtrfsInfo.swig_devices_get(info),
-            "\n"
-          )
+          ls = Builtins.splitstring(info.devices, "\n")
           Ops.set(p, "devices", ls)
-          ls = Builtins.splitstring(
-            LibStorage::BtrfsInfo.swig_devices_add_get(info),
-            "\n"
-          )
-          if Ops.greater_than(Builtins.size(ls), 0)
+          ls = Builtins.splitstring(info.devices_add, "\n")
+          if !Builtins.isempty(ls)
             Ops.set(c, "devices_add", ls)
           end
-          ls = Builtins.splitstring(
-            LibStorage::BtrfsInfo.swig_devices_rem_get(info),
-            "\n"
-          )
-          if Ops.greater_than(Builtins.size(ls), 0)
+          ls = Builtins.splitstring(info.devices_rem, "\n")
+          if !Builtins.isempty(ls)
             Ops.set(c, "devices_rem", ls)
           end
           li = []
           Ops.set(p, "subvol", li)
-          ls = Builtins.splitstring(
-            LibStorage::BtrfsInfo.swig_subvol_get(info),
-            "\n"
-          )
+          ls = Builtins.splitstring(info.subvol, "\n")
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "name" => s }
@@ -2185,10 +1799,7 @@ module Yast
             Ops.set(p, "subvol", li)
             Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          ls = Builtins.splitstring(
-            LibStorage::BtrfsInfo.swig_subvol_add_get(info),
-            "\n"
-          )
+          ls = Builtins.splitstring(info.subvol_add, "\n")
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "create" => true, "name" => s }
@@ -2201,10 +1812,7 @@ module Yast
             )
             Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          ls = Builtins.splitstring(
-            LibStorage::BtrfsInfo.swig_subvol_rem_get(info),
-            "\n"
-          )
+          ls = Builtins.splitstring(info.subvol_rem, "\n")
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "delete" => true, "name" => s }
@@ -2217,13 +1825,11 @@ module Yast
             )
             Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          if Ops.greater_than(
-              Ops.add(
-                Builtins.size(Ops.get_list(p, "devices", [])),
-                Builtins.size(Ops.get_list(p, "devices_add", []))
-              ),
-              1
-            )
+	  vols = 0;
+	  vols += p["devices"].size if( p.has_key?("devices") )
+	  vols += p["devices_add"].size if( p.has_key?("devices_add") )
+          if vols>1 
+             !Builtins.isempty(Ops.get_list(p, "devices_add", []))
             Ops.set(
               p,
               "device",
@@ -2237,22 +1843,14 @@ module Yast
           )
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_TMPFS
-        pinfos = []
+        pinfos = ::Storage::DequeTmpfsInfo.new()
         Builtins.y2milestone("before getTmpfsInfo")
-        ret = (
-          pinfos_ref = arg_ref(pinfos);
-          getTmpfsInfo_result = LibStorage::StorageInterface.getTmpfsInfo(
-            @sint,
-            pinfos_ref
-          );
-          pinfos = pinfos_ref.value;
-          getTmpfsInfo_result
-        )
+        ret = @sint.getTmpfsInfo(pinfos)
         Builtins.y2milestone("after getTmpfsInfo")
-        Builtins.y2warning("getTmpfsInfo ret:%1", ret) if Ops.less_than(ret, 0)
-        Builtins.foreach(pinfos) do |info|
+        Builtins.y2warning("getTmpfsInfo ret:%1", ret) if ret<0
+        pinfos.each do |info|
           p = {}
-          vinfo = LibStorage::TmpfsInfo.swig_v_get(info)
+          vinfo = info.v
           p = volumeMap(vinfo, p)
           Ops.set(p, "type", :tmpfs)
           Ops.set(p, "fstype", Partitions.tmpfs_name)
@@ -2307,23 +1905,21 @@ module Yast
     end
     def getContainers
       ret = []
-      cinfos = []
-      cinfos_ref = arg_ref(cinfos)
-      LibStorage::StorageInterface.getContainers(@sint, cinfos_ref)
-      cinfos = cinfos_ref.value
-      Builtins.foreach(cinfos) do |info|
+      cinfos = ::Storage::DequeContainerInfo.new()
+      @sint.getContainers(cinfos)
+      cinfos.each do |info|
         c = {}
-        Ops.set(c, "name", LibStorage::ContainerInfo.swig_name_get(info))
-        Ops.set(c, "device", LibStorage::ContainerInfo.swig_device_get(info))
-        t = LibStorage::ContainerInfo.swig_type_get(info)
+        Ops.set(c, "name", info.name)
+        Ops.set(c, "device", info.device)
+        t = info.type
         Ops.set(c, "type", toSymbol(@conv_ctype, t))
-        t = LibStorage::ContainerInfo.swig_usedByType_get(info)
-        if t != LibStorage.UB_NONE
+        t = info.usedByType
+        if t != ::Storage::UB_NONE
           Ops.set(c, "used_by_type", toSymbol(@conv_usedby, t))
           Ops.set(
             c,
             "used_by_device",
-            LibStorage::ContainerInfo.swig_usedByDevice_get(info)
+            info.usedByDevice
           )
           Ops.set(
             c,
@@ -2336,11 +1932,12 @@ module Yast
             ]
           )
         end
-        b = LibStorage::ContainerInfo.swig_readonly_get(info)
+	Builtins.y2milestone("c:%1",c)
+        b = info.readonly
         Ops.set(c, "readonly", true) if b
-        tmp = LibStorage::ContainerInfo.swig_udevPath_get(info)
+        tmp = info.udevPath
         Ops.set(c, "udev_path", tmp) if !Builtins.isempty(tmp)
-        tmp = LibStorage::ContainerInfo.swig_udevId_get(info)
+        tmp = info.udevId
         if !Builtins.isempty(tmp)
           Ops.set(c, "udev_id", Builtins.splitstring(tmp, " "))
         end
@@ -2659,16 +2256,8 @@ module Yast
       @count = Ops.add(@count, 1)
       SCR.Write(path(".target.ycp"), SaveDumpPath(t), GetTargetMap())
       Builtins.y2milestone("CreateTargetBackup who:%1", who)
-      ret = (
-        who_ref = arg_ref(who);
-        createBackupState_result = LibStorage::StorageInterface.createBackupState(
-          @sint,
-          who_ref
-        );
-        who = who_ref.value;
-        createBackupState_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.createBackupState(who)
+      if ret<0
         Builtins.y2error("CreateTargetBackup sint ret:%1", ret)
       end
 
@@ -2677,16 +2266,8 @@ module Yast
 
     def DisposeTargetBackup(who)
       Builtins.y2milestone("DisposeTargetBackup who:%1", who)
-      ret = (
-        who_ref = arg_ref(who);
-        removeBackupState_result = LibStorage::StorageInterface.removeBackupState(
-          @sint,
-          who_ref
-        );
-        who = who_ref.value;
-        removeBackupState_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.removeBackupState(who)
+      if ret<0
         Builtins.y2error("DisposeTargetBackup sint ret:%1", ret)
       end
 
@@ -2696,39 +2277,16 @@ module Yast
     def EqualBackupStates(s1, s2, vb)
       Builtins.y2milestone(
         "EqualBackupStates s1:\"%1\" s2:\"%2\" verbose:%3",
-        s1,
-        s2,
-        vb
-      )
-      ret = (
-        s1_ref = arg_ref(s1);
-        s2_ref = arg_ref(s2);
-        equalBackupStates_result = LibStorage::StorageInterface.equalBackupStates(
-          @sint,
-          s1_ref,
-          s2_ref,
-          vb
-        );
-        s1 = s1_ref.value;
-        s2 = s2_ref.value;
-        equalBackupStates_result
-      )
+        s1, s2, vb)
+      ret = @sint.equalBackupStates(s1, s2, vb)
       Builtins.y2milestone("EqualBackupStates ret:%1", ret)
       ret
     end
 
     def RestoreTargetBackup(who)
       Builtins.y2milestone("RestoreTargetBackup who:%1", who)
-      ret = (
-        who_ref = arg_ref(who);
-        restoreBackupState_result = LibStorage::StorageInterface.restoreBackupState(
-          @sint,
-          who_ref
-        );
-        who = who_ref.value;
-        restoreBackupState_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.restoreBackupState(who)
+      if ret<0
         Builtins.y2error("RestoreTargetBackup sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -2901,25 +2459,10 @@ module Yast
       Builtins.y2milestone("NextPartition disk:%1 ptype:%2", disk, ptype)
       pt = fromSymbol(@conv_ptype, ptype)
       Builtins.y2milestone("NextPartition type:%1 pt:%2", ptype, pt)
-      num = 0
-      dev = ""
-      r = (
-        disk_ref = arg_ref(disk);
-        num_ref = arg_ref(num);
-        dev_ref = arg_ref(dev);
-        nextFreePartition_result = LibStorage::StorageInterface.nextFreePartition(
-          @sint,
-          disk_ref,
-          pt,
-          num_ref,
-          dev_ref
-        );
-        disk = disk_ref.value;
-        num = num_ref.value;
-        dev = dev_ref.value;
-        nextFreePartition_result
-      )
-      Builtins.y2error("NextPartition ret %1", r) if Ops.less_than(r, 0)
+      r, num, dev = @sint.nextFreePartition(disk, pt)
+      Builtins.y2error("NextPartition ret %1", r) if r<0
+      num = 0 if r<0
+      dev = "" if r<0
       ret = { "device" => dev, "nr" => num }
       Builtins.y2milestone("NextPartition sint ret:%1 map:%2", r, ret)
       deep_copy(ret)
@@ -2928,21 +2471,10 @@ module Yast
 
     def NextMd
       Builtins.y2milestone("NextMd")
-      num = 0
-      dev = ""
-      r = (
-        num_ref = arg_ref(num);
-        dev_ref = arg_ref(dev);
-        nextFreeMd_result = LibStorage::StorageInterface.nextFreeMd(
-          @sint,
-          num_ref,
-          dev_ref
-        );
-        num = num_ref.value;
-        dev = dev_ref.value;
-        nextFreeMd_result
-      )
-      Builtins.y2error("NextMd ret %1", r) if Ops.less_than(r, 0)
+      r, num, dev = @sint.nextFreeMd()
+      Builtins.y2error("NextMd ret %1", r) if r<0
+      num = 0 if r<0
+      dev = "" if r<0
       ret = { "device" => dev, "nr" => num }
       Builtins.y2milestone("NextMd sint ret:%1 map:%2", r, ret)
       deep_copy(ret)
@@ -2995,43 +2527,18 @@ module Yast
         len,
         mby
       )
-      cdev = ""
       pt = fromSymbol(@conv_ptype, ptype)
       Builtins.y2milestone("CreatePartition type:%1 pt:%2", ptype, pt)
-      ret = (
-        disk_ref = arg_ref(disk);
-        cdev_ref = arg_ref(cdev);
-        createPartition_result = LibStorage::StorageInterface.createPartition(
-          @sint,
-          disk_ref,
-          pt,
-          start,
-          len,
-          cdev_ref
-        );
-        disk = disk_ref.value;
-        cdev = cdev_ref.value;
-        createPartition_result
-      )
+      ret, cdev = @sint.createPartition(disk, pt, start, len)
+      cdev = "" if ret<0
       if device != cdev
         Builtins.y2error("CreatePartition device:%1 cdev:%2", device, cdev)
       end
-      Builtins.y2error("CreatePartition ret %1", ret) if Ops.less_than(ret, 0)
-      ret = (
-        device_ref = arg_ref(device);
-        changePartitionId_result = LibStorage::StorageInterface.changePartitionId(
-          @sint,
-          device_ref,
-          id
-        );
-        device = device_ref.value;
-        changePartitionId_result
-      )
-      Builtins.y2error("CreatePartition ret %1", ret) if Ops.less_than(ret, 0)
+      Builtins.y2error("CreatePartition ret %1", ret) if ret<0
+      ret = @sint.changePartitionId(device, id)
+      Builtins.y2error("CreatePartition ret %1", ret) if ret<0
       tmp = fromSymbol(@conv_mountby, mby)
-      device_ref = arg_ref(device)
-      LibStorage::StorageInterface.changeMountBy(@sint, device_ref, tmp)
-      device = device_ref.value
+      @sint.changeMountBy(device, tmp)
       Builtins.y2milestone("CreatePartition sint ret:%1", ret)
       UpdateTargetMap()
       ret == 0
@@ -3045,19 +2552,8 @@ module Yast
         start,
         len
       )
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        updatePartitionArea_result = LibStorage::StorageInterface.updatePartitionArea(
-          @sint,
-          device_ref,
-          start,
-          len
-        );
-        device = device_ref.value;
-        updatePartitionArea_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.updatePartitionArea(device start, len)
+      if ret<0
         Builtins.y2error("UpdatePartition sint ret:%1", ret)
       end
       UpdateTargetMapDev(device)
@@ -3071,20 +2567,8 @@ module Yast
     # @return [Boolean] if successful
     def SetPartitionMount(device, mp)
       Builtins.y2milestone("SetPartitionMount device:%1 mp:%2", device, mp)
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        mp_ref = arg_ref(mp);
-        changeMountPoint_result = LibStorage::StorageInterface.changeMountPoint(
-          @sint,
-          device_ref,
-          mp_ref
-        );
-        device = device_ref.value;
-        mp = mp_ref.value;
-        changeMountPoint_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.changeMountPoint(device, mp)
+      if ret<0
         Builtins.y2error("SetPartitionMount sint ret:%1", ret)
       end
       UpdateTargetMapDev(device)
@@ -3104,21 +2588,10 @@ module Yast
         format,
         fs
       )
-      ret = 0
       tmp = fromSymbol(FileSystems.conv_fs, fs)
       Builtins.y2milestone("SetPartitionFormat fs:%1", tmp)
-      ret = (
-        device_ref = arg_ref(device);
-        changeFormatVolume_result = LibStorage::StorageInterface.changeFormatVolume(
-          @sint,
-          device_ref,
-          format,
-          tmp
-        );
-        device = device_ref.value;
-        changeFormatVolume_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.changeFormatVolume(device, format, tmp)
+      if ret<0
         Builtins.y2error("SetPartitionFormat sint ret:%1", ret)
       end
       UpdateTargetMapDev(device)
@@ -3134,18 +2607,8 @@ module Yast
     # @see #UnchangePartitionId()
     def SetPartitionId(device, id)
       Builtins.y2milestone("SetPartitionId device:%1 id:%2", device, id)
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        changePartitionId_result = LibStorage::StorageInterface.changePartitionId(
-          @sint,
-          device_ref,
-          id
-        );
-        device = device_ref.value;
-        changePartitionId_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.changePartitionId(device, id)
+      if ret<0
         Builtins.y2error("SetPartitionId sint ret:%1", ret)
       end
       UpdateTargetMapDev(device)
@@ -3160,17 +2623,8 @@ module Yast
     # @see #SetPartitionId()
     def UnchangePartitionId(device)
       Builtins.y2milestone("UnchangePartitionId device:%1", device)
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        forgetChangePartitionId_result = LibStorage::StorageInterface.forgetChangePartitionId(
-          @sint,
-          device_ref
-        );
-        device = device_ref.value;
-        forgetChangePartitionId_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.forgetChangePartitionId(device)
+      if ret<0
         Builtins.y2error("UnchangePartitionId sint ret:%1", ret)
       end
       UpdateTargetMapDev(device)
@@ -3191,18 +2645,8 @@ module Yast
         disk,
         new_cyls
       )
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        resizePartition_result = LibStorage::StorageInterface.resizePartition(
-          @sint,
-          device_ref,
-          new_cyls
-        );
-        device = device_ref.value;
-        resizePartition_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.resizePartition(device, new_cyls)
+      if ret<0
         Builtins.y2error("ResizePartition sint ret:%1", ret)
       end
       UpdateTargetMapDisk(disk)
@@ -3223,18 +2667,8 @@ module Yast
         disk,
         new_size_k
       )
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        resizeVolume_result = LibStorage::StorageInterface.resizeVolume(
-          @sint,
-          device_ref,
-          new_size_k
-        );
-        device = device_ref.value;
-        resizeVolume_result
-      )
-      Builtins.y2error("ResizeVolume sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.resizeVolume(device, new_size_k)
+      Builtins.y2error("ResizeVolume sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk(disk)
       ret == 0
     end
@@ -3247,33 +2681,13 @@ module Yast
         crpt,
         format
       )
-      is_crypt = false
-      ret = (
-        device_ref = arg_ref(device);
-        is_crypt_ref = arg_ref(is_crypt);
-        getCrypt_result = LibStorage::StorageInterface.getCrypt(
-          @sint,
-          device_ref,
-          is_crypt_ref
-        );
-        device = device_ref.value;
-        is_crypt = is_crypt_ref.value;
-        getCrypt_result
-      )
+      ret, is_crypt = @sint.getCrypt(device)
+      is_crypt = false if ret<0
       if ret == 0 && !format && is_crypt == crpt
         Builtins.y2milestone("SetCrypt crypt already set")
       else
-        ret = (
-          device_ref = arg_ref(device);
-          setCrypt_result = LibStorage::StorageInterface.setCrypt(
-            @sint,
-            device_ref,
-            crpt
-          );
-          device = device_ref.value;
-          setCrypt_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.setCrypt(device, crpt)
+        if ret<0
           Builtins.y2error("SetCrypt sint ret:%1", ret)
           if !format && crpt
             Popup.Error(
@@ -3288,9 +2702,7 @@ module Yast
               )
             )
           end
-          device_ref = arg_ref(device)
-          LibStorage::StorageInterface.forgetCryptPassword(@sint, device_ref)
-          device = device_ref.value
+          @sint.forgetCryptPassword(device)
         else
           Builtins.y2milestone("SetCrypt sint ret:%1", ret)
         end
@@ -3299,19 +2711,7 @@ module Yast
     end
 
     def ChangeDescText(dev, txt)
-      ret = (
-        dev_ref = arg_ref(dev);
-        txt_ref = arg_ref(txt);
-        changeDescText_result = LibStorage::StorageInterface.changeDescText(
-          @sint,
-          dev_ref,
-          txt_ref
-        );
-        dev = dev_ref.value;
-        txt = txt_ref.value;
-        changeDescText_result
-      )
-      ret
+      ret = @sint.changeDescText(dev, txt)
     end
 
     def ChangeVolumeProperties(part)
@@ -3321,17 +2721,8 @@ module Yast
       changed = false
       ts = ""
       dev = Ops.get_string(part, "device", "")
-      vinfo = LibStorage::VolumeInfo.new("LibStorage::VolumeInfo")
-      ret = (
-        dev_ref = arg_ref(dev);
-        getVolume_result = LibStorage::StorageInterface.getVolume(
-          @sint,
-          dev_ref,
-          vinfo
-        );
-        dev = dev_ref.value;
-        getVolume_result
-      )
+      vinfo = ::Storage::VolumeInfo.new()
+      ret = @sint.getVolume(dev, vinfo)
       if ret != 0
         Builtins.y2error("ChangeVolumeProperties device:%1 not found", dev)
       end
@@ -3341,19 +2732,8 @@ module Yast
           Ops.get_string(part, "mount", "") != Ops.get_string(curr, "mount", "")
         changed = true
         ts = Ops.get_string(part, "mount", "")
-        ret = (
-          dev_ref = arg_ref(dev);
-          ts_ref = arg_ref(ts);
-          changeMountPoint_result = LibStorage::StorageInterface.changeMountPoint(
-            @sint,
-            dev_ref,
-            ts_ref
-          );
-          dev = dev_ref.value;
-          ts = ts_ref.value;
-          changeMountPoint_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.changeMountPoint(dev, ts)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3374,18 +2754,11 @@ module Yast
           tmp,
           Ops.get_symbol(part, "used_fs", :none)
         )
-        ret = (
-          dev_ref = arg_ref(dev);
-          changeFormatVolume_result = LibStorage::StorageInterface.changeFormatVolume(
-            @sint,
-            dev_ref,
+        ret = @sint.changeFormatVolume(dev,
             Ops.get_boolean(part, "format", false),
             tmp
           );
-          dev = dev_ref.value;
-          changeFormatVolume_result
-        )
-        if Ops.less_than(ret, 0)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3397,19 +2770,8 @@ module Yast
             Ops.get_string(curr, "fstopt", "")
         changed = true
         ts = Ops.get_string(part, "fstopt", "")
-        ret = (
-          dev_ref = arg_ref(dev);
-          ts_ref = arg_ref(ts);
-          changeFstabOptions_result = LibStorage::StorageInterface.changeFstabOptions(
-            @sint,
-            dev_ref,
-            ts_ref
-          );
-          dev = dev_ref.value;
-          ts = ts_ref.value;
-          changeFstabOptions_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.changeFstabOptions(dev, ts)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3426,17 +2788,8 @@ module Yast
           Ops.get_symbol(part, "mountby", :device)
         )
         Builtins.y2milestone("ChangeVolumeProperties mby:%1", tmp)
-        ret = (
-          dev_ref = arg_ref(dev);
-          changeMountBy_result = LibStorage::StorageInterface.changeMountBy(
-            @sint,
-            dev_ref,
-            tmp
-          );
-          dev = dev_ref.value;
-          changeMountBy_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.changeMountBy(dev, tmp)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3446,19 +2799,8 @@ module Yast
           Ops.get_string(part, "label", "") != Ops.get_string(curr, "label", "")
         changed = true
         ts = Ops.get_string(part, "label", "")
-        ret = (
-          dev_ref = arg_ref(dev);
-          ts_ref = arg_ref(ts);
-          changeLabelVolume_result = LibStorage::StorageInterface.changeLabelVolume(
-            @sint,
-            dev_ref,
-            ts_ref
-          );
-          dev = dev_ref.value;
-          ts = ts_ref.value;
-          changeLabelVolume_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.changeLabelVolume(dev, ts)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3473,19 +2815,8 @@ module Yast
           :mkfs
         )
         Builtins.y2milestone("FsOption ts:%1", ts)
-        ret = (
-          dev_ref = arg_ref(dev);
-          ts_ref = arg_ref(ts);
-          changeMkfsOptVolume_result = LibStorage::StorageInterface.changeMkfsOptVolume(
-            @sint,
-            dev_ref,
-            ts_ref
-          );
-          dev = dev_ref.value;
-          ts = ts_ref.value;
-          changeMkfsOptVolume_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.changeMkfsOptVolume(dev, ts)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3498,19 +2829,8 @@ module Yast
         changed = true
         ts = Ops.get_string(part, "mkfs_options", "")
         Builtins.y2milestone("FsOption ts:%1", ts)
-        ret = (
-          dev_ref = arg_ref(dev);
-          ts_ref = arg_ref(ts);
-          changeMkfsOptVolume_result = LibStorage::StorageInterface.changeMkfsOptVolume(
-            @sint,
-            dev_ref,
-            ts_ref
-          );
-          dev = dev_ref.value;
-          ts = ts_ref.value;
-          changeMkfsOptVolume_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.changeMkfsOptVolume(dev, ts)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3528,19 +2848,8 @@ module Yast
           :tunefs
         )
         Builtins.y2milestone("FsOption ts:%1", ts)
-        ret = (
-          dev_ref = arg_ref(dev);
-          ts_ref = arg_ref(ts);
-          changeTunefsOptVolume_result = LibStorage::StorageInterface.changeTunefsOptVolume(
-            @sint,
-            dev_ref,
-            ts_ref
-          );
-          dev = dev_ref.value;
-          ts = ts_ref.value;
-          changeTunefsOptVolume_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.changeTunefsOptVolume(dev, ts)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3573,40 +2882,14 @@ module Yast
         if Ops.get_boolean(part, "resize", false)
           Builtins.y2milestone("ChangeVolumeProperties resize to %1 cyl", i)
           if Ops.get_boolean(part, "ignore_fs", false)
-            ret = (
-              d_ref = arg_ref(d);
-              resizePartitionNoFs_result = LibStorage::StorageInterface.resizePartitionNoFs(
-                @sint,
-                d_ref,
-                i
-              );
-              d = d_ref.value;
-              resizePartitionNoFs_result
-            )
+            ret = @sint.resizePartitionNoFs(d, i)
           else
-            ret = (
-              d_ref = arg_ref(d);
-              resizePartition_result = LibStorage::StorageInterface.resizePartition(
-                @sint,
-                d_ref,
-                i
-              );
-              d = d_ref.value;
-              resizePartition_result
-            )
+            ret = @sint.resizePartition(d, i)
           end
         else
-          ret = (
-            d_ref = arg_ref(d);
-            forgetResizeVolume_result = LibStorage::StorageInterface.forgetResizeVolume(
-              @sint,
-              d_ref
-            );
-            d = d_ref.value;
-            forgetResizeVolume_result
-          )
+          ret = @sint.forgetResizeVolume(d)
         end
-        if Ops.less_than(ret, 0)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3618,24 +2901,14 @@ module Yast
         d = Ops.get_string(part, "device", "")
         i = Ops.get_integer(part, "fsid", 0)
         Builtins.y2milestone("ChangeVolumeProperties fsid to %1", i)
-        ret = (
-          d_ref = arg_ref(d);
-          changePartitionId_result = LibStorage::StorageInterface.changePartitionId(
-            @sint,
-            d_ref,
-            i
-          );
-          d = d_ref.value;
-          changePartitionId_result
-        )
-        if Ops.less_than(ret, 0)
+        ret = @sint.changePartitionId(d, i)
+        if ret<0
           Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
         else
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
         end
       end
-      if ret == 0 &&
-          Ops.greater_than(Builtins.size(Ops.get_list(part, "subvol", [])), 0)
+      if ret == 0 && !Builtins.isempty(Ops.get_list(part, "subvol", []))
         d = Ops.get_string(part, "device", "")
         rem = Builtins.filter(Ops.get_list(part, "subvol", [])) do |p|
           Ops.get_boolean(p, "delete", false)
@@ -3645,34 +2918,12 @@ module Yast
         end
         Builtins.y2milestone("ChangeVolumeProperties rem:%1", rem)
         Builtins.y2milestone("ChangeVolumeProperties cre:%1", cre)
-        while ret == 0 && Ops.greater_than(Builtins.size(rem), 0)
+        while ret == 0 && !Builtins.isempty(rem)
           pth = Ops.get_string(rem, [0, "name"], "")
-          if (
-              d_ref = arg_ref(d);
-              pth_ref = arg_ref(pth);
-              existSubvolume_result = LibStorage::StorageInterface.existSubvolume(
-                @sint,
-                d_ref,
-                pth_ref
-              );
-              d = d_ref.value;
-              pth = pth_ref.value;
-              existSubvolume_result
-            )
+          if @sint.existSubvolume(d, pth)
             changed = true
-            ret = (
-              d_ref = arg_ref(d);
-              pth_ref = arg_ref(pth);
-              removeSubvolume_result = LibStorage::StorageInterface.removeSubvolume(
-                @sint,
-                d_ref,
-                pth_ref
-              );
-              d = d_ref.value;
-              pth = pth_ref.value;
-              removeSubvolume_result
-            )
-            if Ops.less_than(ret, 0)
+            ret = @sint.removeSubvolume(d, pth)
+            if ret<0
               Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
             else
               Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3680,34 +2931,12 @@ module Yast
           end
           rem = Builtins.remove(rem, 0)
         end
-        while ret == 0 && Ops.greater_than(Builtins.size(cre), 0)
+        while ret == 0 && !Builtins.isempty(cre)
           pth = Ops.get_string(cre, [0, "name"], "")
-          if !(
-              d_ref = arg_ref(d);
-              pth_ref = arg_ref(pth);
-              existSubvolume_result = LibStorage::StorageInterface.existSubvolume(
-                @sint,
-                d_ref,
-                pth_ref
-              );
-              d = d_ref.value;
-              pth = pth_ref.value;
-              existSubvolume_result
-            )
+          if ! @sint.existSubvolume(d, pth)
             changed = true
-            ret = (
-              d_ref = arg_ref(d);
-              pth_ref = arg_ref(pth);
-              createSubvolume_result = LibStorage::StorageInterface.createSubvolume(
-                @sint,
-                d_ref,
-                pth_ref
-              );
-              d = d_ref.value;
-              pth = pth_ref.value;
-              createSubvolume_result
-            )
-            if Ops.less_than(ret, 0)
+            ret = @sint.createSubvolume(d, pth)
+            if ret<0
               Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
             else
               Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
@@ -3727,65 +2956,32 @@ module Yast
 
     def DeleteDevice(device)
       Builtins.y2milestone("DeleteDevice device:%1", device)
-      ret = (
-        device_ref = arg_ref(device);
-        removeVolume_result = LibStorage::StorageInterface.removeVolume(
-          @sint,
-          device_ref
-        );
-        device = device_ref.value;
-        removeVolume_result
-      )
-      Builtins.y2error("DeleteDevice sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.removeVolume(device)
+      Builtins.y2error("DeleteDevice sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
     def DeleteLvmVg(name)
       Builtins.y2milestone("DeleteLvmVg name:%1", name)
-      ret = (
-        name_ref = arg_ref(name);
-        removeLvmVg_result = LibStorage::StorageInterface.removeLvmVg(
-          @sint,
-          name_ref
-        );
-        name = name_ref.value;
-        removeLvmVg_result
-      )
-      Builtins.y2error("DeleteLvmVg sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.removeLvmVg(name)
+      Builtins.y2error("DeleteLvmVg sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
     def DeleteDmraid(name)
       Builtins.y2milestone("DeleteDmraid name:%1", name)
-      ret = (
-        name_ref = arg_ref(name);
-        removeDmraid_result = LibStorage::StorageInterface.removeDmraid(
-          @sint,
-          name_ref
-        );
-        name = name_ref.value;
-        removeDmraid_result
-      )
-      Builtins.y2error("DeleteDmraid sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.removeDmraid(name)
+      Builtins.y2error("DeleteDmraid sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
     def DeleteMdPartCo(name)
       Builtins.y2milestone("DeleteMdPartCo name:%1", name)
-      ret = (
-        name_ref = arg_ref(name);
-        removeMdPartCo_result = LibStorage::StorageInterface.removeMdPartCo(
-          @sint,
-          name_ref,
-          true
-        );
-        name = name_ref.value;
-        removeMdPartCo_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.removeMdPartCo(name, true)
+      if ret<0
         Builtins.y2error("DeleteMdPartCo sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -3799,29 +2995,23 @@ module Yast
         pesize,
         lvm2
       )
-      devs = []
-      ret = 0
-      ret = (
-        name_ref = arg_ref(name);
-        devs_ref = arg_ref(devs);
-        createLvmVg_result = LibStorage::StorageInterface.createLvmVg(
-          @sint,
-          name_ref,
-          Ops.divide(pesize, 1024),
-          !lvm2,
-          devs_ref
-        );
-        name = name_ref.value;
-        devs = devs_ref.value;
-        createLvmVg_result
-      )
-      Builtins.y2error("CreateLvmVg sint ret:%1", ret) if Ops.less_than(ret, 0)
+      devs = ::Storage::DequeString.new()
+      ret = @sint.createLvmVg(name, pesize.div(1024), !lvm2, devs)
+      Builtins.y2error("CreateLvmVg sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
+    def StringDequeFromList(devs)
+      devd = ::Storage::DequeString.new()
+      Builtins.foreach(devs) do |s|
+        devd.push(s)
+      end
+      devd
+    end
+
     def CreateLvmVgWithDevs(name, pesize, lvm2, devs)
-      devs = deep_copy(devs)
+      devd = StringDequeFromList(devs)
       Builtins.y2milestone(
         "CreateLvmVgWithDevs name:%1 pesize:%2 lvm2:%3 devs:%4",
         name,
@@ -3829,22 +3019,8 @@ module Yast
         lvm2,
         devs
       )
-      ret = 0
-      ret = (
-        name_ref = arg_ref(name);
-        devs_ref = arg_ref(devs);
-        createLvmVg_result = LibStorage::StorageInterface.createLvmVg(
-          @sint,
-          name_ref,
-          Ops.divide(pesize, 1024),
-          !lvm2,
-          devs_ref
-        );
-        name = name_ref.value;
-        devs = devs_ref.value;
-        createLvmVg_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.createLvmVg(name, pesize.div(1024), !lvm2, devd)
+      if ret<0
         Builtins.y2error("CreateLvmVgWithDevs sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -3853,42 +3029,20 @@ module Yast
 
     def ExtendLvmVg(name, device)
       Builtins.y2milestone("ExtendLvmVg name:%1 device:%2", name, device)
-      ret = 0
-      devs = [device]
-      ret = (
-        name_ref = arg_ref(name);
-        devs_ref = arg_ref(devs);
-        extendLvmVg_result = LibStorage::StorageInterface.extendLvmVg(
-          @sint,
-          name_ref,
-          devs_ref
-        );
-        name = name_ref.value;
-        devs = devs_ref.value;
-        extendLvmVg_result
-      )
-      Builtins.y2error("ExtendLvmVg sint ret:%1", ret) if Ops.less_than(ret, 0)
+      devd = ::Storage::DequeString.new()
+      devd.push(device)
+      ret = @sint.extendLvmVg(name, devd)
+      Builtins.y2error("ExtendLvmVg sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
     def ReduceLvmVg(name, device)
       Builtins.y2milestone("ReduceLvmVg name:%1 device:%2", name, device)
-      ret = 0
-      devs = [device]
-      ret = (
-        name_ref = arg_ref(name);
-        devs_ref = arg_ref(devs);
-        shrinkLvmVg_result = LibStorage::StorageInterface.shrinkLvmVg(
-          @sint,
-          name_ref,
-          devs_ref
-        );
-        name = name_ref.value;
-        devs = devs_ref.value;
-        shrinkLvmVg_result
-      )
-      Builtins.y2error("ReduceLvmVg sint ret:%1", ret) if Ops.less_than(ret, 0)
+      devd = ::Storage::DequeString.new()
+      devd.push(device)
+      ret = @sint.shrinkLvmVg(name, devd)
+      Builtins.y2error("ReduceLvmVg sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
@@ -3902,26 +3056,9 @@ module Yast
         sizeK,
         stripes
       )
-      ret = 0
-      dummy = ""
-      ret = (
-        vgname_ref = arg_ref(vgname);
-        lvname_ref = arg_ref(lvname);
-        dummy_ref = arg_ref(dummy);
-        createLvmLv_result = LibStorage::StorageInterface.createLvmLv(
-          @sint,
-          vgname_ref,
-          lvname_ref,
-          sizeK,
-          stripes,
-          dummy_ref
-        );
-        vgname = vgname_ref.value;
-        lvname = lvname_ref.value;
-        dummy = dummy_ref.value;
-        createLvmLv_result
-      )
-      Builtins.y2error("CreateLvmLv sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret, dummy = @sint.createLvmLv(vgname, lvname, sizeK, stripes)
+      dummy = "" if ret<0
+      Builtins.y2error("CreateLvmLv sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk(Ops.add("/dev/", vgname))
       ret == 0
     end
@@ -3935,28 +3072,9 @@ module Yast
         pool,
         sizeK
       )
-      ret = 0
-      dummy = ""
-      ret = (
-        vgname_ref = arg_ref(vgname);
-        lvname_ref = arg_ref(lvname);
-        pool_ref = arg_ref(pool);
-        dummy_ref = arg_ref(dummy);
-        createLvmLvThin_result = LibStorage::StorageInterface.createLvmLvThin(
-          @sint,
-          vgname_ref,
-          lvname_ref,
-          pool_ref,
-          sizeK,
-          dummy_ref
-        );
-        vgname = vgname_ref.value;
-        lvname = lvname_ref.value;
-        pool = pool_ref.value;
-        dummy = dummy_ref.value;
-        createLvmLvThin_result
-      )
-      Builtins.y2error("CreateLvmLv sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret, dummy = @sint.createLvmLvThin(vgname, lvname, pool, sizeK)
+      dummy = "" if ret<0
+      Builtins.y2error("CreateLvmLv sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk(Ops.add("/dev/", vgname))
       ret == 0
     end
@@ -3969,22 +3087,8 @@ module Yast
         lvname,
         stripeSize
       )
-      ret = 0
-      dummy = ""
-      ret = (
-        vgname_ref = arg_ref(vgname);
-        lvname_ref = arg_ref(lvname);
-        changeLvStripeSize_result = LibStorage::StorageInterface.changeLvStripeSize(
-          @sint,
-          vgname_ref,
-          lvname_ref,
-          stripeSize
-        );
-        vgname = vgname_ref.value;
-        lvname = lvname_ref.value;
-        changeLvStripeSize_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.changeLvStripeSize(vgname, lvname, stripeSize)
+      if ret<0
         Builtins.y2error("ChangeLvStripeSize sint ret:%1", ret)
       end
       UpdateTargetMapDisk(Ops.add("/dev/", vgname))
@@ -3999,22 +3103,8 @@ module Yast
         lvname,
         stripes
       )
-      ret = 0
-      dummy = ""
-      ret = (
-        vgname_ref = arg_ref(vgname);
-        lvname_ref = arg_ref(lvname);
-        changeLvStripeCount_result = LibStorage::StorageInterface.changeLvStripeCount(
-          @sint,
-          vgname_ref,
-          lvname_ref,
-          stripes
-        );
-        vgname = vgname_ref.value;
-        lvname = lvname_ref.value;
-        changeLvStripeCount_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.changeLvStripeCount(vgname, lvname, stripes)
+      if ret<0
         Builtins.y2error("ChangeLvStripeCount sint ret:%1", ret)
       end
       UpdateTargetMapDisk(Ops.add("/dev/", vgname))
@@ -4030,25 +3120,9 @@ module Yast
         sizeK,
         stripes
       )
-      ret = 0
-      dummy = ""
-      ret = (
-        vgname_ref = arg_ref(vgname);
-        lvname_ref = arg_ref(lvname);
-        dummy_ref = arg_ref(dummy);
-        createLvmLvPool_result = LibStorage::StorageInterface.createLvmLvPool(
-          @sint,
-          vgname_ref,
-          lvname_ref,
-          sizeK,
-          dummy_ref
-        );
-        vgname = vgname_ref.value;
-        lvname = lvname_ref.value;
-        dummy = dummy_ref.value;
-        createLvmLvPool_result
-      )
-      if Ops.less_than(ret, 0)
+      ret, dummy = @sint.createLvmLvPool(vgname, lvname, sizeK)
+      dummy = "" if ret<0
+      if ret<0
         Builtins.y2error("CreateLvmPool sint ret:%1", ret)
       elsif Ops.greater_than(stripes, 1) &&
           !ChangeLvStripeCount(vgname, lvname, stripes)
@@ -4061,20 +3135,10 @@ module Yast
     def ExtendBtrfsVolume(uuid, device)
       Builtins.y2milestone("ExtendBtrfsVolume uuid:%1 device:%2", uuid, device)
       ret = 0
-      devs = [device]
-      ret = (
-        uuid_ref = arg_ref(uuid);
-        devs_ref = arg_ref(devs);
-        extendBtrfsVolume_result = LibStorage::StorageInterface.extendBtrfsVolume(
-          @sint,
-          uuid_ref,
-          devs_ref
-        );
-        uuid = uuid_ref.value;
-        devs = devs_ref.value;
-        extendBtrfsVolume_result
-      )
-      if Ops.less_than(ret, 0)
+      devd = ::Storage::DequeString.new()
+      devd.push(device)
+      ret = @sint.extendBtrfsVolume(uuid, devd)
+      if ret<0
         Builtins.y2error("ExtendBtrfsVolume sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -4084,20 +3148,10 @@ module Yast
     def ReduceBtrfsVolume(uuid, device)
       Builtins.y2milestone("ReduceBtrfsVolume uuid:%1 device:%2", uuid, device)
       ret = 0
-      devs = [device]
-      ret = (
-        uuid_ref = arg_ref(uuid);
-        devs_ref = arg_ref(devs);
-        shrinkBtrfsVolume_result = LibStorage::StorageInterface.shrinkBtrfsVolume(
-          @sint,
-          uuid_ref,
-          devs_ref
-        );
-        uuid = uuid_ref.value;
-        devs = devs_ref.value;
-        shrinkBtrfsVolume_result
-      )
-      if Ops.less_than(ret, 0)
+      devd = ::Storage::DequeString.new()
+      devd.push(device)
+      ret = @sint.shrinkBtrfsVolume(uuid, devd)
+      if ret<0
         Builtins.y2error("ReduceBtrfsVolume sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -4113,26 +3167,8 @@ module Yast
         mp,
         nfs4
       )
-      ret = 0
-      dummy = ""
-      ret = (
-        nfsdev_ref = arg_ref(nfsdev);
-        opts_ref = arg_ref(opts);
-        mp_ref = arg_ref(mp);
-        addNfsDevice_result = LibStorage::StorageInterface.addNfsDevice(
-          @sint,
-          nfsdev_ref,
-          opts_ref,
-          sz,
-          mp_ref,
-          nfs4
-        );
-        nfsdev = nfsdev_ref.value;
-        opts = opts_ref.value;
-        mp = mp_ref.value;
-        addNfsDevice_result
-      )
-      Builtins.y2error("AddNfsVolume sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.addNfsDevice(nfsdev, opts, sz, mp, nfs4)
+      Builtins.y2error("AddNfsVolume sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk("/dev/nfs")
       ret == 0
     end
@@ -4144,26 +3180,9 @@ module Yast
         opts,
         nfs4
       )
-      ret = 0
-      sz = 0
-      dummy = ""
-      ret = (
-        nfsdev_ref = arg_ref(nfsdev);
-        opts_ref = arg_ref(opts);
-        sz_ref = arg_ref(sz);
-        checkNfsDevice_result = LibStorage::StorageInterface.checkNfsDevice(
-          @sint,
-          nfsdev_ref,
-          opts_ref,
-          nfs4,
-          sz_ref
-        );
-        nfsdev = nfsdev_ref.value;
-        opts = opts_ref.value;
-        sz = sz_ref.value;
-        checkNfsDevice_result
-      )
-      if Ops.less_than(ret, 0)
+      ret, sz = @sint.checkNfsDevice(nfsdev, opts, nfs4)
+      sz = 0 if ret<0
+      if ret<0
         Builtins.y2error("CheckNfsVolume sint ret:%1", ret)
       else
         ret = sz
@@ -4174,21 +3193,8 @@ module Yast
 
     def AddTmpfsVolume(mount, opts)
       Builtins.y2milestone("AddTmpfsVolume mount:%1 opts:%2", mount, opts)
-      ret = 0
-      dummy = ""
-      ret = (
-        mount_ref = arg_ref(mount);
-        opts_ref = arg_ref(opts);
-        addTmpfsMount_result = LibStorage::StorageInterface.addTmpfsMount(
-          @sint,
-          mount_ref,
-          opts_ref
-        );
-        mount = mount_ref.value;
-        opts = opts_ref.value;
-        addTmpfsMount_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.addTmpfsMount(mount, opts)
+      if ret<0
         Builtins.y2error("AddTmpfsVolume sint ret:%1", ret)
       end
       UpdateTargetMapDisk("/dev/tmpfs")
@@ -4197,18 +3203,8 @@ module Yast
 
     def DelTmpfsVolume(mount)
       Builtins.y2milestone("DelTmpfsVolume mount:%1", mount)
-      ret = 0
-      dummy = ""
-      ret = (
-        mount_ref = arg_ref(mount);
-        removeTmpfsMount_result = LibStorage::StorageInterface.removeTmpfsMount(
-          @sint,
-          mount_ref
-        );
-        mount = mount_ref.value;
-        removeTmpfsMount_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.removeTmpfsMount(mount)
+      if ret<0
         Builtins.y2error("DelTmpfsVolume sint ret:%1", ret)
       end
       UpdateTargetMapDisk("/dev/tmpfs")
@@ -4217,65 +3213,39 @@ module Yast
 
     def CreateMd(nr, type)
       Builtins.y2milestone("CreateMd nr:%1 type:%2", nr, type)
-      ret = 0
       tmp = Ops.get(@conv_mdstring, type, 0)
-      dummy = []
+      empty = ::Storage::ListString.new()
       rd = Builtins.sformat("/dev/md%1", nr)
-      ret = (
-        rd_ref = arg_ref(rd);
-        dummy_ref = arg_ref(dummy);
-        dummy_ref = arg_ref(dummy);
-        createMd_result = LibStorage::StorageInterface.createMd(
-          @sint,
-          rd_ref,
-          tmp,
-          dummy_ref,
-          dummy_ref
-        );
-        rd = rd_ref.value;
-        dummy = dummy_ref.value;
-        dummy = dummy_ref.value;
-        createMd_result
-      )
-      Builtins.y2error("CreateMd sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.createMd(rd, tmp, empty, empty)
+      Builtins.y2error("CreateMd sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk("/dev/md")
       ret == 0
     end
 
+    def StringListFromList(devs)
+      ret = ::Storage::ListString.new()
+      Builtins.foreach(devs) do |s|
+        ret.push(s)
+      end
+      ret
+    end
+
     def CreateMdWithDevs(nr, type, devices)
-      devices = deep_copy(devices)
       Builtins.y2milestone(
         "CreateMdWithDevs nr:%1 type:%2 devices:%3",
         nr,
         type,
         devices
       )
-      ret = 0
-
-      tmp = LibStorage.RAID_UNK
+      tmp = ::Storage::RAID_UNK
       Builtins.foreach(Ops.get_map(@conv_mdtype, "m", {})) do |k, v|
         tmp = k if v == type
       end
-
-      dummy = []
+      empty = ::Storage::ListString.new()
+      devs = StringListFromList(devices);
       rd = Builtins.sformat("/dev/md%1", nr)
-      ret = (
-        rd_ref = arg_ref(rd);
-        devices_ref = arg_ref(devices);
-        dummy_ref = arg_ref(dummy);
-        createMd_result = LibStorage::StorageInterface.createMd(
-          @sint,
-          rd_ref,
-          tmp,
-          devices_ref,
-          dummy_ref
-        );
-        rd = rd_ref.value;
-        devices = devices_ref.value;
-        dummy = dummy_ref.value;
-        createMd_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.createMd(rd, tmp, devs, empty)
+      if ret<0
         Builtins.y2error("CreateMdWithDevs sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -4283,119 +3253,54 @@ module Yast
     end
 
     def ReplaceMd(nr, devs)
-      devs = deep_copy(devs)
       Builtins.y2milestone("ReplaceMd nr:%1 devs:%2", nr, devs)
-      ret = 0
-      dummy = []
+      empty = ::Storage::ListString.new()
+      devices = StringListFromList(devs);
       rd = Builtins.sformat("/dev/md%1", nr)
-      ret = (
-        rd_ref = arg_ref(rd);
-        devs_ref = arg_ref(devs);
-        dummy_ref = arg_ref(dummy);
-        updateMd_result = LibStorage::StorageInterface.updateMd(
-          @sint,
-          rd_ref,
-          devs_ref,
-          dummy_ref
-        );
-        rd = rd_ref.value;
-        devs = devs_ref.value;
-        dummy = dummy_ref.value;
-        updateMd_result
-      )
-      Builtins.y2error("ReplaceMd sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.updateMd(rd, devices, empty)
+      Builtins.y2error("ReplaceMd sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
     def ExtendMd(nr, devs)
-      devs = deep_copy(devs)
       Builtins.y2milestone("ExtendMd nr:%1 devs:%2", nr, devs)
-      ret = 0
-      dummy = []
+      empty = ::Storage::ListString.new()
+      devices = StringListFromList(devs);
       rd = Builtins.sformat("/dev/md%1", nr)
-      ret = (
-        rd_ref = arg_ref(rd);
-        devs_ref = arg_ref(devs);
-        dummy_ref = arg_ref(dummy);
-        extendMd_result = LibStorage::StorageInterface.extendMd(
-          @sint,
-          rd_ref,
-          devs_ref,
-          dummy_ref
-        );
-        rd = rd_ref.value;
-        devs = devs_ref.value;
-        dummy = dummy_ref.value;
-        extendMd_result
-      )
-      Builtins.y2error("ExtendMd sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.extendMd(rd, devices, empty)
+      Builtins.y2error("ExtendMd sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
     def ShrinkMd(nr, devs)
-      devs = deep_copy(devs)
       Builtins.y2milestone("ShrinkMd nr:%1 devs:%2", nr, devs)
-      ret = 0
-      dummy = []
+      empty = ::Storage::ListString.new()
+      devices = StringListFromList(devs);
       rd = Builtins.sformat("/dev/md%1", nr)
-      ret = (
-        rd_ref = arg_ref(rd);
-        devs_ref = arg_ref(devs);
-        dummy_ref = arg_ref(dummy);
-        shrinkMd_result = LibStorage::StorageInterface.shrinkMd(
-          @sint,
-          rd_ref,
-          devs_ref,
-          dummy_ref
-        );
-        rd = rd_ref.value;
-        devs = devs_ref.value;
-        dummy = dummy_ref.value;
-        shrinkMd_result
-      )
-      Builtins.y2error("ShrinkMd sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.shrinkMd(rd, devices, empty)
+      Builtins.y2error("ShrinkMd sint ret:%1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
     def ChangeMdType(nr, mdtype)
       Builtins.y2milestone("ChangeMdType nr:%1 mdtype:%2", nr, mdtype)
-      ret = 0
       rd = Builtins.sformat("/dev/md%1", nr)
       tmp = Ops.get(@conv_mdstring, mdtype, 0)
-      ret = (
-        rd_ref = arg_ref(rd);
-        changeMdType_result = LibStorage::StorageInterface.changeMdType(
-          @sint,
-          rd_ref,
-          tmp
-        );
-        rd = rd_ref.value;
-        changeMdType_result
-      )
-      Builtins.y2error("ChangeMdType sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.changeMdType(rd, tmp)
+      Builtins.y2error("ChangeMdType sint ret:%1", ret) if ret<0
       UpdateTargetMapDev(rd)
       ret == 0
     end
 
     def ChangeMdParity(nr, ptype)
       Builtins.y2milestone("ChangeMdParity nr:%1 parity:%2", nr, ptype)
-      ret = 0
       rd = Builtins.sformat("/dev/md%1", nr)
       tmp = Ops.get(@conv_parstring, ptype, 0)
-      ret = (
-        rd_ref = arg_ref(rd);
-        changeMdParity_result = LibStorage::StorageInterface.changeMdParity(
-          @sint,
-          rd_ref,
-          tmp
-        );
-        rd = rd_ref.value;
-        changeMdParity_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.changeMdParity(rd, tmp)
+      if ret<0
         Builtins.y2error("ChangeMdParity sint ret:%1", ret)
       end
       UpdateTargetMapDev(rd)
@@ -4404,20 +3309,10 @@ module Yast
 
     def ChangeMdParitySymbol(nr, ptype)
       Builtins.y2milestone("ChangeMdParitySymbol nr:%1 parity:%2", nr, ptype)
-      ret = 0
       rd = Builtins.sformat("/dev/md%1", nr)
       tmp = fromSymbol(@conv_mdparity, ptype)
-      ret = (
-        rd_ref = arg_ref(rd);
-        changeMdParity_result = LibStorage::StorageInterface.changeMdParity(
-          @sint,
-          rd_ref,
-          tmp
-        );
-        rd = rd_ref.value;
-        changeMdParity_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.changeMdParity(rd, tmp)
+      if ret<0
         Builtins.y2error("ChangeMdParitySymbol sint ret:%1", ret)
       end
       UpdateTargetMapDev(rd)
@@ -4426,19 +3321,9 @@ module Yast
 
     def ChangeMdChunk(nr, chunk)
       Builtins.y2milestone("ChangeMdChunk nr:%1 chunk:%2", nr, chunk)
-      ret = 0
       rd = Builtins.sformat("/dev/md%1", nr)
-      ret = (
-        rd_ref = arg_ref(rd);
-        changeMdChunk_result = LibStorage::StorageInterface.changeMdChunk(
-          @sint,
-          rd_ref,
-          chunk
-        );
-        rd = rd_ref.value;
-        changeMdChunk_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.changeMdChunk(rd, chunk)
+      if ret<0
         Builtins.y2error("ChangeMdChunk sint ret:%1", ret)
       end
       UpdateTargetMapDev(rd)
@@ -4449,63 +3334,31 @@ module Yast
       Builtins.y2milestone("CheckMd nr:%1", nr)
       ret = 0
       rd = Builtins.sformat("/dev/md%1", nr)
-      ret = (
-        rd_ref = arg_ref(rd);
-        checkMd_result = LibStorage::StorageInterface.checkMd(@sint, rd_ref);
-        rd = rd_ref.value;
-        checkMd_result
-      )
+      ret = @sint.checkMd(rd)
       Builtins.y2milestone("CheckMd sint ret:%1", ret) if ret != 0
       ret
     end
 
     def ComputeMdSize(md_type, devices, sizeK)
-      devices = deep_copy(devices)
-      ret = 0
-
-      tmp = LibStorage.RAID_UNK
+      tmp = ::Storage::RAID_UNK
       Builtins.foreach(Ops.get_map(@conv_mdtype, "m", {})) do |k, v|
         tmp = k if v == md_type
       end
-
-      dummy = []
-      ret = (
-        devices_ref = arg_ref(devices);
-        dummy_ref = arg_ref(dummy);
-        sizeK_ref = arg_ref(sizeK.value);
-        computeMdSize_result = LibStorage::StorageInterface.computeMdSize(
-          @sint,
-          tmp,
-          devices_ref,
-          dummy_ref,
-          sizeK_ref
-        );
-        devices = devices_ref.value;
-        dummy = dummy_ref.value;
-        sizeK.value = sizeK_ref.value;
-        computeMdSize_result
-      )
+      Builtins.y2milestone("ComputeMdSize devices:%1", devices)
+      empty = ::Storage::ListString.new()
+      devs = StringListFromList(devices);
+      ret, s = @sint.computeMdSize(tmp, devs, empty)
+      sizeK.value=s if ret==0
       Builtins.y2milestone("ComputeMdSize sint ret:%1", ret) if ret != 0
+      Builtins.y2milestone("ComputeMdSize sizeK:%1", sizeK)
       ret
     end
 
     def GetCryptPwd(device)
-      pwd = ""
       Builtins.y2milestone("GetCryptPwd device:%1", device)
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        pwd_ref = arg_ref(pwd);
-        getCryptPassword_result = LibStorage::StorageInterface.getCryptPassword(
-          @sint,
-          device_ref,
-          pwd_ref
-        );
-        device = device_ref.value;
-        pwd = pwd_ref.value;
-        getCryptPassword_result
-      )
-      if Ops.less_than(ret, 0)
+      ret, pwd = @sint.getCryptPassword(device)
+      pwd = "" if ret<0
+      if ret<0
         Builtins.y2error("GetCryptPwd sint ret:%1", ret)
       else
         Builtins.y2milestone("GetCryptPwd empty:%1", Builtins.size(pwd) == 0)
@@ -4515,20 +3368,8 @@ module Yast
 
     def SetCryptPwd(device, pwd)
       Builtins.y2milestone("SetCryptPwd device:%1", device)
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        pwd_ref = arg_ref(pwd);
-        setCryptPassword_result = LibStorage::StorageInterface.setCryptPassword(
-          @sint,
-          device_ref,
-          pwd_ref
-        );
-        device = device_ref.value;
-        pwd = pwd_ref.value;
-        setCryptPassword_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.setCryptPassword(device, pwd)
+      if ret<0
         Builtins.y2error("SetCryptPwd sint ret:%1", ret)
       else
         Builtins.y2milestone("SetCryptPwd sint ret:%1", ret)
@@ -4538,18 +3379,8 @@ module Yast
 
     def ActivateCrypt(device, on)
       Builtins.y2milestone("ActivateCrypt device:%1 on:%2", device, on)
-      ret = 0
-      ret = (
-        device_ref = arg_ref(device);
-        activateEncryption_result = LibStorage::StorageInterface.activateEncryption(
-          @sint,
-          device_ref,
-          on
-        );
-        device = device_ref.value;
-        activateEncryption_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.activateEncryption(device, on)
+      if ret<0
         Builtins.y2error("ActivateCrypt ret:%1", ret)
       else
         Builtins.y2milestone("ActivateCrypt ret:%1", ret)
@@ -4558,22 +3389,12 @@ module Yast
     end
 
     def NeedCryptPwd(device)
-      ret = false
-      ret = (
-        device_ref = arg_ref(device);
-        needCryptPassword_result = LibStorage::StorageInterface.needCryptPassword(
-          @sint,
-          device_ref
-        );
-        device = device_ref.value;
-        needCryptPassword_result
-      )
+      ret = @sint.needCryptPassword(device)
       Builtins.y2milestone("NeedCryptPwd device:%1 ret:%2", device, ret)
       ret
     end
 
     def IsVgEncrypted(tg, vg_key)
-      tg = deep_copy(tg)
       ret = false
       devs = Ops.get_list(tg, [vg_key, "devices"], [])
       Builtins.foreach(devs) do |s|
@@ -4586,7 +3407,6 @@ module Yast
     end
 
     def NeedVgPassword(tg, vg_key)
-      tg = deep_copy(tg)
       ret = IsVgEncrypted(tg, vg_key)
       Builtins.y2milestone("NeedVgPassword vg:%1", Ops.get(tg, vg_key, {}))
       if ret
@@ -4611,33 +3431,11 @@ module Yast
         sizeK,
         mp
       )
-      dev = ""
-      ret = 0
       pwd = GetCryptPwd(file)
-      ret = (
-        file_ref = arg_ref(file);
-        mp_ref = arg_ref(mp);
-        pwd_ref = arg_ref(pwd);
-        dev_ref = arg_ref(dev);
-        createFileLoop_result = LibStorage::StorageInterface.createFileLoop(
-          @sint,
-          file_ref,
-          !create,
-          sizeK,
-          mp_ref,
-          pwd_ref,
-          dev_ref
-        );
-        file = file_ref.value;
-        mp = mp_ref.value;
-        pwd = pwd_ref.value;
-        dev = dev_ref.value;
-        createFileLoop_result
-      )
-      Builtins.y2error("CreateLoop sint ret:%1", ret) if Ops.less_than(ret, 0)
-      file_ref = arg_ref(file)
-      LibStorage::StorageInterface.forgetCryptPassword(@sint, file_ref)
-      file = file_ref.value
+      ret, dev = @sint.createFileLoop(file, !create, sizeK, mp, pwd)
+      dev = "" if ret<0
+      Builtins.y2error("CreateLoop sint ret:%1", ret) if ret<0
+      @sint.forgetCryptPassword(file)
       UpdateTargetMapDisk("/dev/loop")
       Builtins.y2milestone("CreateLoop dev:%1", dev)
       dev
@@ -4652,21 +3450,8 @@ module Yast
         create,
         sizeK
       )
-      ret = (
-        dev_ref = arg_ref(dev);
-        file_ref = arg_ref(file);
-        modifyFileLoop_result = LibStorage::StorageInterface.modifyFileLoop(
-          @sint,
-          dev_ref,
-          file_ref,
-          !create,
-          sizeK
-        );
-        dev = dev_ref.value;
-        file = file_ref.value;
-        modifyFileLoop_result
-      )
-      Builtins.y2error("UpdateLoop sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.modifyFileLoop(dev, file, !create, sizeK)
+      Builtins.y2error("UpdateLoop sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk("/dev/loop")
       HandleModulesOnBoot(GetTargetMap())
       ret == 0
@@ -4679,32 +3464,15 @@ module Yast
         file,
         remove_file
       )
-      ret = (
-        file_ref = arg_ref(file);
-        removeFileLoop_result = LibStorage::StorageInterface.removeFileLoop(
-          @sint,
-          file_ref,
-          remove_file
-        );
-        file = file_ref.value;
-        removeFileLoop_result
-      )
-      Builtins.y2error("DeleteLoop sint ret:%1", ret) if Ops.less_than(ret, 0)
+      ret = @sint.removeFileLoop(file, remove_file)
+      Builtins.y2error("DeleteLoop sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk(disk)
       ret == 0
     end
 
 
     def DefaultDiskLabel(disk)
-      label = (
-        disk_ref = arg_ref(disk);
-        defaultDiskLabel_result = LibStorage::StorageInterface.defaultDiskLabel(
-          @sint,
-          disk_ref
-        );
-        disk = disk_ref.value;
-        defaultDiskLabel_result
-      )
+      label = @sint.defaultDiskLabel(disk)
       Builtins.y2milestone("DefaultDiskLabel disk:%1 label:%2", disk, label)
       label
     end
@@ -4715,20 +3483,9 @@ module Yast
     # @return [Boolean]
     def DeletePartitionTable(disk, label)
       Builtins.y2milestone("DeletePartitionTable disk:%1 label:%2", disk, label)
-      label = DefaultDiskLabel(disk) if Builtins.size(label) == 0
-      ret = (
-        disk_ref = arg_ref(disk);
-        label_ref = arg_ref(label);
-        destroyPartitionTable_result = LibStorage::StorageInterface.destroyPartitionTable(
-          @sint,
-          disk_ref,
-          label_ref
-        );
-        disk = disk_ref.value;
-        label = label_ref.value;
-        destroyPartitionTable_result
-      )
-      if Ops.less_than(ret, 0)
+      label = DefaultDiskLabel(disk) if isempty(label)
+      ret = @sin.destroyPartitionTable(disk, label)
+      if ret<0
         Builtins.y2error("DeletePartitionTable sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -4738,19 +3495,8 @@ module Yast
 
     def CreatePartitionTable(disk, label)
       Builtins.y2milestone("CreatePartitionTable %1 label:%2", disk, label)
-      ret = (
-        disk_ref = arg_ref(disk);
-        label_ref = arg_ref(label);
-        destroyPartitionTable_result = LibStorage::StorageInterface.destroyPartitionTable(
-          @sint,
-          disk_ref,
-          label_ref
-        );
-        disk = disk_ref.value;
-        label = label_ref.value;
-        destroyPartitionTable_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.destroyPartitionTable(disk, label)
+      if ret<0
         Builtins.y2error("CreatePartitionTable sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -4764,17 +3510,8 @@ module Yast
     def InitializeDisk(disk, value)
       rbool = true
       Builtins.y2milestone("InitializeDisk %1 value %2", disk, value)
-      ret = (
-        disk_ref = arg_ref(disk);
-        initializeDisk_result = LibStorage::StorageInterface.initializeDisk(
-          @sint,
-          disk_ref,
-          value
-        );
-        disk = disk_ref.value;
-        initializeDisk_result
-      )
-      if Ops.less_than(ret, 0)
+      ret = @sint.initializeDisk(disk, value)
+      if ret<0
         Builtins.y2error("InitializeDisk sint ret:%1", ret)
         rbool = false
       end
@@ -4804,7 +3541,6 @@ module Yast
 
 
     def CreateAny(ctype, d, p)
-      d = deep_copy(d)
       ret = true
       if IsPartType(ctype)
         mby = GetMountBy(Ops.get_string(p.value, "device", ""))
@@ -5044,10 +3780,7 @@ module Yast
     def RemoveDmMapsTo(device)
       Builtins.y2milestone("RemoveDmMapsTo device:%1", device)
       return if !InitLibstorage(false)
-      device_ref = arg_ref(device)
-      LibStorage::StorageInterface.removeDmTableTo(@sint, device_ref)
-      device = device_ref.value
-
+      @sint.removeDmTableTo(device)
       nil
     end
 
@@ -5110,19 +3843,7 @@ module Yast
 
 
     def CheckCryptOk(dev, fs_passwd, silent, erase)
-      i = (
-        dev_ref = arg_ref(dev);
-        fs_passwd_ref = arg_ref(fs_passwd);
-        verifyCryptPassword_result = LibStorage::StorageInterface.verifyCryptPassword(
-          @sint,
-          dev_ref,
-          fs_passwd_ref,
-          erase
-        );
-        dev = dev_ref.value;
-        fs_passwd = fs_passwd_ref.value;
-        verifyCryptPassword_result
-      )
+      i = @sint.verifyCryptPassword(dev, fs_passwd, erase)
       if i != 0 && !silent
         Popup.Error(
           Builtins.sformat(
@@ -5146,7 +3867,7 @@ module Yast
     end
 
     def RescanCrypted
-      ret = LibStorage::StorageInterface.rescanCryptedObjects(@sint)
+      ret = @sint.rescanCryptedObjects()
       Builtins.y2milestone("RescanCrypted ret:%1", ret)
       ret
     end
@@ -5520,28 +4241,14 @@ module Yast
           dev = Ops.get_string(l, ["fields", 1], "")
           nm = Ops.get_string(l, ["fields", 0], "")
           if !Builtins.isempty(dev) && !Builtins.isempty(nm)
-            r = (
-              dev_ref = arg_ref(dev);
-              nm_ref = arg_ref(nm);
-              renameCryptDm_result = LibStorage::StorageInterface.renameCryptDm(
-                @sint,
-                dev_ref,
-                nm_ref
-              );
-              dev = dev_ref.value;
-              nm = nm_ref.value;
-              renameCryptDm_result
-            )
+            r = @sint.renameCryptDm(dev, nm)
             Builtins.y2milestone(
               "ChangeDmNamesFromCrypttab rename dm of %1 to %2 ret:%3",
-              dev,
-              nm,
-              r
-            )
+              dev, nm, r)
           end
           i = Ops.add(i, 1)
         end
-        LibStorage::StorageInterface.dumpObjectList(@sint)
+        @sint.dumpObjectList()
       end
 
       nil
@@ -5781,34 +4488,27 @@ module Yast
 
 
     def GetAffectedDevices(dev)
-      devs = [dev]
-      r = []
-      ret = (
-        devs_ref = arg_ref(devs);
-        r_ref = arg_ref(r);
-        getRecursiveUsing_result = LibStorage::StorageInterface.getRecursiveUsing(
-          @sint,
-          devs_ref,
-          false,
-          r_ref
-        );
-        devs = devs_ref.value;
-        r = r_ref.value;
-        getRecursiveUsing_result
-      )
-      Builtins.y2milestone("GetAffectedDevices dev:%1 ret:%2 r:%3", dev, ret, r)
-      deep_copy(r)
+      devs = ::Storage::ListString.new();
+      devs.push(dev)
+      r = ::Storage::ListString.new();
+      res = @sint.getRecursiveUsing(devs, false, r);
+      Builtins.y2milestone("GetAffectedDevices dev:%1 ret:%2", dev, res)
+      ret = []
+      r.each do |s|
+	ret.push(s)
+      end
+      Builtins.y2milestone("GetAffectedDevices ret:%1", ret)
+      ret
     end
 
     def SetRecursiveRemoval(val)
       Builtins.y2milestone("SetRecursiveRemoval val:%1", val)
-      LibStorage::StorageInterface.setRecursiveRemoval(@sint, val)
-
+      @sint.setRecursiveRemoval(val)
       nil
     end
 
     def GetRecursiveRemoval
-      LibStorage::StorageInterface.getRecursiveRemoval(@sint)
+      @sint.getRecursiveRemoval()
     end
 
     def SetTargetMap(target)
@@ -6067,7 +4767,7 @@ module Yast
 
       Builtins.y2milestone("start reread need_reread:%1", need_reread)
       @probe_done = false
-      LibStorage::StorageInterface.rescanEverything(@sint) if need_reread
+      @sint.rescanEverything() if need_reread
       @conts = getContainers
       GetTargetMap()
     end
@@ -6077,8 +4777,8 @@ module Yast
     # @return [Fixnum]
     def CommitChanges
       Builtins.y2milestone("CommitChanges")
-      ret = LibStorage::StorageInterface.commit(@sint)
-      if Ops.less_than(ret, 0)
+      ret = @sint.commit()
+      if ret<0
         Builtins.y2error("CommitChanges sint ret:%1", ret)
       end
       UpdateTargetMap()
@@ -6090,16 +4790,16 @@ module Yast
     end
 
     def DeviceMounted(dev)
-      ret = []
-      dev_ref = arg_ref(dev)
-      ret_ref = arg_ref(ret)
-      LibStorage::StorageInterface.checkDeviceMounted(@sint, dev_ref, ret_ref)
-      dev = dev_ref.value
-      ret = ret_ref.value
-      if !Builtins.isempty(ret)
-        Builtins.y2milestone("DeviceMounted %1 at %2", dev, Ops.get(ret, 0, ""))
+      ret = ::Storage::ListString.new()
+      @sint.checkDeviceMounted(dev, ret)
+      if !ret.empty?
+        Builtins.y2milestone("DeviceMounted %1 at %2", dev, ret.front())
       end
-      Ops.get(ret, 0, "")
+      if !ret.empty?
+         ret.front()
+      else
+	 ""
+      end
     end
 
     # Umounts a device
@@ -6109,16 +4809,7 @@ module Yast
     #
     # @see #Mount()
     def Umount(dev, unsetup)
-      ret = (
-        dev_ref = arg_ref(dev);
-        umountDeviceUns_result = LibStorage::StorageInterface.umountDeviceUns(
-          @sint,
-          dev_ref,
-          unsetup
-        );
-        dev = dev_ref.value;
-        umountDeviceUns_result
-      )
+      ret = @sint.umountDeviceUns(dev, unsetup)
       Builtins.y2milestone("Umount %1 unsetup %2 ret %3", dev, unsetup, ret)
       ret
     end
@@ -6132,21 +4823,7 @@ module Yast
     #
     # @see #Umount()
     def MountOpt(dev, mp, fstopt)
-      ret = (
-        dev_ref = arg_ref(dev);
-        mp_ref = arg_ref(mp);
-        fstopt_ref = arg_ref(fstopt);
-        mountDeviceRo_result = LibStorage::StorageInterface.mountDeviceRo(
-          @sint,
-          dev_ref,
-          mp_ref,
-          fstopt_ref
-        );
-        dev = dev_ref.value;
-        mp = mp_ref.value;
-        fstopt = fstopt_ref.value;
-        mountDeviceRo_result
-      )
+      ret = @sint.mountDeviceRo(dev, mp, fstopt)
       Builtins.y2milestone(
         "MountOpt %1 to %2 with %3 ret %4",
         dev,
@@ -6545,30 +5222,19 @@ module Yast
     # @return [Array] fstab?
     def ReadFstab(dir)
       ret = []
-      vinfos = []
-      r = (
-        dir_ref = arg_ref(dir);
-        vinfos_ref = arg_ref(vinfos);
-        readFstab_result = LibStorage::StorageInterface.readFstab(
-          @sint,
-          dir_ref,
-          vinfos_ref
-        );
-        dir = dir_ref.value;
-        vinfos = vinfos_ref.value;
-        readFstab_result
-      )
+      vinfos = ::Storage::DequeVolumeInfo.new()
+      r = @sint.readFstab(dir, vinfos)
       if !r
         Builtins.y2error("ReadFstab sint dir %1 ret %2", dir, r)
       else
-        Builtins.foreach(vinfos) do |info|
+        vinfos.each do |info|
           p = {}
           p = volumeMap(info, p)
           ret = Builtins.add(ret, p)
         end
       end
       Builtins.y2milestone("ReadFstab from %1 ret %2", dir, ret)
-      deep_copy(ret)
+      ret
     end
 
     def mountedPartitionsOnDisk(disk)
@@ -6585,17 +5251,17 @@ module Yast
 
     # FIXME: please, add description of the list that is returned by this function.
     def GetCommitInfos
-      infos = []
-      infos_ref = arg_ref(infos)
-      LibStorage::StorageInterface.getCommitInfos(@sint, infos_ref)
-      infos = infos_ref.value
-      ret = Builtins.maplist(infos) do |info|
-        {
-          :destructive => LibStorage::CommitInfo.swig_destructive_get(info),
-          :text        => LibStorage::CommitInfo.swig_text_get(info)
+      infos = ::Storage::ListCommitInfo.new()
+      @sint.getCommitInfos(infos)
+      ret = []
+      infos.each do |info|
+        m = {
+          :destructive => info.destructive,
+          :text        => info.text
         }
+	ret.push(m)
       end
-      deep_copy(ret)
+      ret
     end
 
     def ChangeText
@@ -6618,8 +5284,8 @@ module Yast
       end
 
       if ret != @save_chtxt
-        LibStorage::StorageInterface.dumpObjectList(@sint)
-        LibStorage::StorageInterface.dumpCommitInfos(@sint)
+        @sint.dumpObjectList()
+        @sint.dumpCommitInfos()
       end
 
       ret
@@ -6627,18 +5293,18 @@ module Yast
 
 
     def LastAction
-      ret = LibStorage::StorageInterface.getLastAction(@sint)
+      ret = @sint.getLastAction()
       ret
     end
 
     def ExtendedErrorMsg
-      ret = LibStorage::StorageInterface.getExtendedErrorMessage(@sint)
+      ret = @sint.getExtendedErrorMessage()
       ret
     end
 
     def SetZeroNewPartitions(val)
       Builtins.y2milestone("SetZeroNewPartitions val:%1", val)
-      LibStorage::StorageInterface.setZeroNewPartitions(@sint, val)
+      @sint.setZeroNewPartitions(val)
 
       nil
     end
@@ -6646,13 +5312,13 @@ module Yast
     def SetPartitionAlignment(pal)
       Builtins.y2milestone("SetPartitionAlignment val:%1", pal)
       val = fromSymbol(@conv_partalign, pal)
-      LibStorage::StorageInterface.setPartitionAlignment(@sint, val)
+      @sint.setPartitionAlignment(val)
 
       nil
     end
 
     def GetPartitionAlignment
-      val = LibStorage::StorageInterface.getPartitionAlignment(@sint)
+      val = @sint.getPartitionAlignment()
       pal = toSymbol(@conv_partalign, val)
       Builtins.y2milestone("GetPartitionAlignment val:%1", pal)
       pal
@@ -7105,9 +5771,13 @@ module Yast
     def GetUsedFs
       return nil if !InitLibstorage(false)
 
-      r = LibStorage::StorageInterface.getAllUsedFs(@sint)
-      Builtins.y2milestone("GetUsedFs ret:%1", r)
-      deep_copy(r)
+      ret = []
+      r = @sint.getAllUsedFs()
+      r.each do |s|
+	ret.push(s)
+      end
+      Builtins.y2milestone( "GetUsedFs ret:%1", ret )
+      ret
     end
 
 
@@ -7292,21 +5962,9 @@ module Yast
 
 
     def FreeCylindersAroundPartition(device, free_before, free_after)
-      ret = (
-        device_ref = arg_ref(device);
-        free_before_ref = arg_ref(free_before.value);
-        free_after_ref = arg_ref(free_after.value);
-        freeCylindersAroundPartition_result = LibStorage::StorageInterface.freeCylindersAroundPartition(
-          @sint,
-          device_ref,
-          free_before_ref,
-          free_after_ref
-        );
-        device = device_ref.value;
-        free_before.value = free_before_ref.value;
-        free_after.value = free_after_ref.value;
-        freeCylindersAroundPartition_result
-      ) == 0
+      r, free_before.value, free_after.value = 
+	@sint.freeCylindersAroundPartition(device)
+      ret = r==0
       Builtins.y2milestone(
         "FreeCylindersAfterPartition ret:%1 free_before:%2 free_after:%3",
         ret,
@@ -7394,34 +6052,15 @@ module Yast
       m = Ops.get_string(e, "mount", "")
       vfs = Ops.get_string(e, "vfstype", "auto")
       opts = Ops.get_string(e, "mntops", "defaults")
-      ret = (
-        dev_ref = arg_ref(dev);
-        m_ref = arg_ref(m);
-        vfs_ref = arg_ref(vfs);
-        opts_ref = arg_ref(opts);
-        addFstabEntry_result = LibStorage::StorageInterface.addFstabEntry(
-          @sint,
-          dev_ref,
-          m_ref,
-          vfs_ref,
-          opts_ref,
-          freq,
-          passno
-        );
-        dev = dev_ref.value;
-        m = m_ref.value;
-        vfs = vfs_ref.value;
-        opts = opts_ref.value;
-        addFstabEntry_result
-      )
-      Builtins.y2error("ret:%1 entry:%2", ret, e) if Ops.less_than(ret, 0)
+      ret = @sint.addFstabEntry(dev, m, vfs, opts, freq, passno)
+      Builtins.y2error("ret:%1 entry:%2", ret, e) if ret<0
       ret
     end
 
 
     def ActivateHld(val)
       Builtins.y2milestone("ActivateHld val:%1", val)
-      LibStorage::StorageInterface.activateHld(@sint, val)
+      @sint.activateHld(val)
 
       nil
     end
@@ -7429,7 +6068,7 @@ module Yast
 
     def ActivateMultipath(val)
       Builtins.y2milestone("ActivateMultipath val:%1", val)
-      LibStorage::StorageInterface.activateMultipath(@sint, val)
+      @sint.activateMultipath(val)
 
       nil
     end
@@ -7534,17 +6173,8 @@ module Yast
       crypt_ok = SetCryptPwd(device, pwd) && SetCrypt(device, true, false) &&
         Mount(device, mdir)
       if crypt_ok
-        vinfo = LibStorage::VolumeInfo.new("LibStorage::VolumeInfo")
-        ret = (
-          device_ref = arg_ref(device);
-          getVolume_result = LibStorage::StorageInterface.getVolume(
-            @sint,
-            device_ref,
-            vinfo
-          );
-          device = device_ref.value;
-          getVolume_result
-        )
+        vinfo = ::Storage::VolumeInfo.new()
+        ret = @sint.getVolume(device, vinfo)
         if ret != 0
           Builtins.y2error(
             "PerformLosetup device:%1 not found (ret:%2)",
@@ -7582,17 +6212,8 @@ module Yast
     def DetectFs(device)
       ret = :unknown
       Builtins.y2milestone("DetectFs:%1", device)
-      vinfo = LibStorage::VolumeInfo.new("LibStorage::VolumeInfo")
-      r = (
-        device_ref = arg_ref(device);
-        getVolume_result = LibStorage::StorageInterface.getVolume(
-          @sint,
-          device_ref,
-          vinfo
-        );
-        device = device_ref.value;
-        getVolume_result
-      )
+      vinfo = ::Storage::VolumeInfo.new()
+      r = @sint.getVolume(device, vinfo)
       if r != 0
         Builtins.y2error("DetectFs device:%1 not found (ret:%2)", device, r)
       else
@@ -8203,66 +6824,43 @@ module Yast
 
     def DumpObjectList
       return if !InitLibstorage(false)
-
-      LibStorage::StorageInterface.dumpObjectList(@sint)
-
+      @sint.dumpObjectList()
       nil
     end
 
 
     def SetDefaultMountBy(mby)
       val = fromSymbol(@conv_mountby, mby)
-      LibStorage::StorageInterface.setDefaultMountBy(@sint, val)
+      @sint.setDefaultMountBy(val)
 
       nil
     end
 
 
     def GetDefaultMountBy
-      val = LibStorage::StorageInterface.getDefaultMountBy(@sint)
+      val = @sint.getDefaultMountBy()
       ret = toSymbol(@conv_mountby, val)
       ret
     end
 
 
     def GetMountBy(device)
-      val = 0
-      r = (
-        device_ref = arg_ref(device);
-        val_ref = arg_ref(val);
-        getMountBy_result = LibStorage::StorageInterface.getMountBy(
-          @sint,
-          device_ref,
-          val_ref
-        );
-        device = device_ref.value;
-        val = val_ref.value;
-        getMountBy_result
-      )
+      r, val = @sint.getMountBy(device)
+      val = 0 if r<0
       ret = toSymbol(@conv_mountby, val)
       ret
     end
 
 
     def SaveDeviceGraph(filename)
-      ret = (
-        filename_ref = arg_ref(filename);
-        saveDeviceGraph_result = LibStorage.saveDeviceGraph(@sint, filename_ref);
-        filename = filename_ref.value;
-        saveDeviceGraph_result
-      )
+      ret = @sint.saveDeviceGraph(filename)
       Builtins.y2milestone("SaveDeviceGraph filename:%1 ret:%2", filename, ret)
       ret
     end
 
 
     def SaveMountGraph(filename)
-      ret = (
-        filename_ref = arg_ref(filename);
-        saveMountGraph_result = LibStorage.saveMountGraph(@sint, filename_ref);
-        filename = filename_ref.value;
-        saveMountGraph_result
-      )
+      ret = @sint.saveMountGraph(filename);
       Builtins.y2milestone("SaveMountGraph filename:%1 ret:%2", filename, ret)
       ret
     end
@@ -8321,12 +6919,14 @@ module Yast
 
     def AllowdParity(mdtype, sz)
       mdt = Ops.get(@conv_mdstring, mdtype, 0)
-      pars = LibStorage::StorageInterface.getMdAllowedParity(@sint, mdt, sz)
-      ret = Builtins.maplist(pars) do |i|
-        [toSymbol(@conv_mdparity, i), Ops.get(@rev_conv_parstring, i, "")]
+      pars = @sint.getMdAllowedParity(mdt, sz)
+      ret = []
+      pars.each do |i|
+        l = [toSymbol(@conv_mdparity, i), Ops.get(@rev_conv_parstring, i, "")]
+	ret.push(l)
       end
       Builtins.y2milestone("ret:%1", ret)
-      deep_copy(ret)
+      ret
     end
 
     def GetUsedDisks(device)
@@ -8334,9 +6934,7 @@ module Yast
       ret = []
       tg = GetTargetMap()
       info = {}
-      if (
-          info_ref = arg_ref(info);
-          _GetContVolInfo_result = GetContVolInfo(device, info_ref);
+      if ( _GetContVolInfo_result = GetContVolInfo(device, info_ref);
           info = info_ref.value;
           _GetContVolInfo_result
         )
@@ -8452,9 +7050,13 @@ module Yast
     end
 
     def GetDetectedDiskPaths
-      disks = LibStorage.getPresentDisks
-      Builtins.y2milestone("disks:%1", disks)
-      deep_copy(disks)
+      ret = [];
+      disks = @sint.getPresentDisks
+      disks.each do |d|
+	ret.push(d)
+      end
+      Builtins.y2milestone("disks:%1", ret)
+      ret
     end
 
     publish :variable => :resize_partition, :type => "string"

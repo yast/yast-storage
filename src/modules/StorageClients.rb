@@ -26,6 +26,8 @@
 #
 # Purpose:		Define callbacks for libstorage.
 require "yast"
+require "storage"
+
 
 module Yast
   class StorageClientsClass < Module
@@ -38,9 +40,6 @@ module Yast
       Yast.import "Report"
       Yast.import "SlideShow"
       Yast.import "StorageCallbacks"
-
-      Yast.import "LibStorage"
-      Yast.import "LibStorage::StorageInterface"
 
       textdomain "storage"
 
@@ -143,7 +142,9 @@ module Yast
         "\n\n"
       )
 
-      tmp = LibStorage::StorageInterface.getErrorString(@sint, error)
+      Builtins.y2milestone("before getErrorString error:%1", error )
+      tmp = @sint.getErrorString(error)
+      Builtins.y2milestone("before getErrorString ret:%1", tmp )
       text = Ops.add(Ops.add(text, tmp), "\n\n") if !Builtins.isempty(tmp)
 
       text = Ops.add(
@@ -220,10 +221,9 @@ module Yast
 
 
     def InstallCallbacks(value)
-      value = deep_copy(value)
       Builtins.y2milestone("InstallCallbacks")
 
-      @sint = deep_copy(value)
+      @sint = value
 
       StorageCallbacks.ProgressBar("StorageClients::ProgressBar")
       StorageCallbacks.ShowInstallInfo("StorageClients::ShowInstallInfo")

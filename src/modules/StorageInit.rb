@@ -24,6 +24,7 @@
 # Authors:             Thomas Fehr (fehr@suse.de)
 #
 # Purpose:             Helper module to initialize libstorage
+require "storage"
 require "yast"
 
 module Yast
@@ -36,9 +37,6 @@ module Yast
       Yast.import "Mode"
       Yast.import "Stage"
       Yast.import "Label"
-
-      Yast.import "LibStorage"
-      Yast.import "LibStorage::Environment"
 
       @sint = nil
     end
@@ -59,27 +57,27 @@ module Yast
     end
 
     def CreateInterface(readonly)
+
       while @sint == nil
-        env = LibStorage::Environment.new("LibStorage::Environment", readonly)
-        LibStorage::Environment.swig_testmode_set(env, Mode.test)
-        LibStorage::Environment.swig_autodetect_set(env, !Mode.test)
-        LibStorage::Environment.swig_instsys_set(
-          env,
-          Stage.initial || Mode.repair
-        )
-
+        Builtins.y2milestone("ro:%1", readonly )
+        env = ::Storage::Environment.new(readonly)
+        Builtins.y2milestone("ro:%1 test:%2 auto:%3 instsys:%4", 
+	                     env.readonly, env.testmode, env.autodetect, 
+			     env.instsys )
+	env.testmode = Mode.test;
+	env.autodetect = !Mode.test;
+	env.instsys = Stage.initial || Mode.repair;
+        Builtins.y2milestone("ro:%1 test:%2 auto:%3 instsys:%4", 
+	                     env.readonly, env.testmode, env.autodetect, 
+			     env.instsys )
         locker_pid = 0
-        @sint = (
-          locker_pid_ref = arg_ref(locker_pid);
-          createStorageInterfacePid_result = LibStorage.createStorageInterfacePid(
-            env,
-            locker_pid_ref
-          );
-          locker_pid = locker_pid_ref.value;
-          createStorageInterfacePid_result
-        )
-
-        if @sint == nil
+        Builtins.y2milestone("@sint:%1 pid:%2", @sint, locker_pid )
+        @sint, locker_pid = ::Storage::createStorageInterfacePid(env)
+        Builtins.y2milestone("@sint:%1 pid:%2", @sint, locker_pid )
+        Builtins.y2milestone("@sint is a %1 int:%2", @sint.class, @sint.kind_of?(Fixnum) )
+        if @sint.kind_of?(Fixnum)
+	  locker_pid = @sint
+	  @sint = nil
           locker_name = GetProcessName(locker_pid)
           Builtins.y2milestone(
             "locker_pid:%1 locker_name:%2",
@@ -121,7 +119,7 @@ module Yast
         end
       end
       Builtins.y2milestone("sint:%1", @sint)
-      deep_copy(@sint)
+      @sint
     end
 
     publish :function => :CreateInterface, :type => "any (boolean)"

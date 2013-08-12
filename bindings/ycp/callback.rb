@@ -19,104 +19,49 @@
 # To contact Novell about this file by physical or electronic mail, you may
 # find current contact information at www.novell.com.
 
+require 'storage'
 
-# /usr/lib/YaST2/bin/y2base callback.ycp stdio
+
+# /usr/lib/YaST2/bin/y2base callback.rb stdio
 module Yast
   class CallbackClient < Client
     def main
       Yast.import "Storage"
-      Yast.import "LibStorage"
-      Yast.import "LibStorage::StorageInterface"
-      Yast.import "LibStorage::Environment"
       Yast.import "StorageCallbacks"
 
-      # // place this in Storage.ycp
-      # global define void test_log_progress (string id, integer cur, integer max)
-      # {
-      # 	y2milestone ("IN YCP %1 %2 %3", id, cur, max);
-      # }
+      # // place this in Storage.rb
+      # def test_log_progress (id, cur, max)
+      #   Builtins.y2milestone("IN YCP %1 %2 %3", id, cur, max)
+      #	  nil
+      # end
+      # publish :function => :test_log_progress, :type => "void (integer,integer,integer)"
 
-      @logdir = "/var/log/YaST2"
-      logdir_ref = arg_ref(@logdir)
-      LibStorage.initDefaultLogger(logdir_ref)
-      @logdir = logdir_ref.value
-
-      @env = LibStorage::Environment.new("LibStorage::Environment", true)
-      @o = LibStorage.createStorageInterface(@env)
-
-      @r = 0
+      env = ::Storage::Environment.new(false)
+      @o = ::Storage::createStorageInterface(env)
 
       StorageCallbacks.ProgressBar("Storage::test_log_progress")
 
-      LibStorage::StorageInterface.setRecursiveRemoval(@o, true)
+      @o.setRecursiveRemoval(true)
 
-      @tmp1 = "/dev/sdb"
-      @tmp2 = "msdos"
-      @r = (
-        tmp1_ref = arg_ref(@tmp1);
-        tmp2_ref = arg_ref(@tmp2);
-        destroyPartitionTable_result = LibStorage::StorageInterface.destroyPartitionTable(
-          @o,
-          tmp1_ref,
-          tmp2_ref
-        );
-        @tmp1 = tmp1_ref.value;
-        @tmp2 = tmp2_ref.value;
-        destroyPartitionTable_result
-      )
-      Builtins.y2milestone("destroyPartitionTable ret = %1", @r)
+      @disk = "/dev/sdb"
 
-      @tmp3 = "/dev/sdb"
-      @name = ""
-      @r = (
-        tmp3_ref = arg_ref(@tmp3);
-        name_ref = arg_ref(@name);
-        createPartition_result = LibStorage::StorageInterface.createPartition(
-          @o,
-          tmp3_ref,
-          LibStorage.PRIMARY,
-          0,
-          1100,
-          name_ref
-        );
-        @tmp3 = tmp3_ref.value;
-        @name = name_ref.value;
-        createPartition_result
-      )
-      Builtins.y2milestone("createPartition ret = %1, name = %2", @r, @name)
+      r = @o.destroyPartitionTable(@disk, "msdos")
+      Builtins.y2milestone("destroyPartitionTable ret = %1", r)
 
-      @r = (
-        name_ref = arg_ref(@name);
-        changeFormatVolume_result = LibStorage::StorageInterface.changeFormatVolume(
-          @o,
-          name_ref,
-          true,
-          LibStorage.EXT4
-        );
-        @name = name_ref.value;
-        changeFormatVolume_result
-      )
-      Builtins.y2milestone("changeFormatVolume ret = %1", @r)
+      r, name = @o.createPartition(@disk, ::Storage::PRIMARY, 0, 1100)
+      name = "" if r<0
+      Builtins.y2milestone("createPartition ret = %1, name = %2", r, name)
 
-      @tmp4 = "/foo"
-      @r = (
-        name_ref = arg_ref(@name);
-        tmp4_ref = arg_ref(@tmp4);
-        changeMountPoint_result = LibStorage::StorageInterface.changeMountPoint(
-          @o,
-          name_ref,
-          tmp4_ref
-        );
-        @name = name_ref.value;
-        @tmp4 = tmp4_ref.value;
-        changeMountPoint_result
-      )
-      Builtins.y2milestone("changeMountPoint ret = %1", @r)
+      r = @o.changeFormatVolume(name, true, ::Storage::EXT4)
+      Builtins.y2milestone("changeFormatVolume ret = %1", r)
 
-      @r = LibStorage::StorageInterface.commit(@o)
-      Builtins.y2milestone("commit ret = %1", @r)
+      r = @o.changeMountPoint(name, "/foo")
+      Builtins.y2milestone("changeMountPoint ret = %1", r)
 
-      LibStorage.destroyStorageInterface(@o)
+      r = @o.commit()
+      Builtins.y2milestone("commit ret = %1", r)
+
+      ::Storage::destroyStorageInterface(@o)
 
       nil
     end

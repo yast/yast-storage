@@ -29,6 +29,7 @@
 #
 #
 # $Id$
+require "storage"
 require "yast"
 
 module Yast
@@ -44,31 +45,25 @@ module Yast
       Yast.import "Stage"
       Yast.import "StorageInit"
 
-      Yast.import "LibStorage"
-      Yast.import "LibStorage::StorageInterface"
-      Yast.import "LibStorage::FsCapabilities"
-      Yast.import "LibStorage::DiskInfo"
-      Yast.import "LibStorage::ContVolInfo"
-
       @conv_fs = {
         "def_sym" => :unknown,
-        "def_int" => LibStorage.FSUNKNOWN,
+        "def_int" => ::Storage::FSUNKNOWN,
         "m"       => {
-          LibStorage.REISERFS => :reiser,
-          LibStorage.EXT2     => :ext2,
-          LibStorage.EXT3     => :ext3,
-          LibStorage.EXT4     => :ext4,
-          LibStorage.BTRFS    => :btrfs,
-          LibStorage.VFAT     => :vfat,
-          LibStorage.XFS      => :xfs,
-          LibStorage.JFS      => :jfs,
-          LibStorage.HFS      => :hfs,
-          LibStorage.NTFS     => :ntfs,
-          LibStorage.SWAP     => :swap,
-          LibStorage.NFS      => :nfs,
-          LibStorage.NFS4     => :nfs4,
-          LibStorage.TMPFS    => :tmpfs,
-          LibStorage.FSNONE   => :none
+          ::Storage::REISERFS => :reiser,
+          ::Storage::EXT2     => :ext2,
+          ::Storage::EXT3     => :ext3,
+          ::Storage::EXT4     => :ext4,
+          ::Storage::BTRFS    => :btrfs,
+          ::Storage::VFAT     => :vfat,
+          ::Storage::XFS      => :xfs,
+          ::Storage::JFS      => :jfs,
+          ::Storage::HFS      => :hfs,
+          ::Storage::NTFS     => :ntfs,
+          ::Storage::SWAP     => :swap,
+          ::Storage::NFS      => :nfs,
+          ::Storage::NFS4     => :nfs4,
+          ::Storage::TMPFS    => :tmpfs,
+          ::Storage::FSNONE   => :none
         }
       }
 
@@ -1409,16 +1404,13 @@ module Yast
 
 
     def InitSlib(value)
-      value = deep_copy(value)
-      @sint = deep_copy(value)
+      @sint = value
       if @sint != nil
-        ret = LibStorage::StorageInterface.getDefaultSubvolName(@sint)
+        ret = @sint.getDefaultSubvolName
         Builtins.y2milestone("InitSlib libstorage default_subvol:\"%1\"", ret)
         ret = ""
-        ret_ref = arg_ref(ret)
-        LibStorage::StorageInterface.setDefaultSubvolName(@sint, ret_ref)
-        ret = ret_ref.value
-        ret = LibStorage::StorageInterface.getDefaultSubvolName(@sint)
+        @sint.setDefaultSubvolName(ret)
+        ret = @sint.getDefaultSubvolName
         @default_subvol = ret
         Builtins.y2milestone(
           "InitSlib used default_subvol:\"%1\"",
@@ -1531,9 +1523,9 @@ module Yast
       ret = 0
       assertInit
       id = fromSymbol(@conv_fs, fsys)
-      caps = LibStorage::FsCapabilities.new("LibStorage::FsCapabilities")
-      if LibStorage::StorageInterface.getFsCapabilities(@sint, id, caps)
-        ret = LibStorage::FsCapabilities.swig_minimalFsSizeK_get(caps)
+      caps = ::Storage::FsCapabilities.new()
+      if @sint.getFsCapabilities(id, caps)
+        ret = caps.minimalFsSizeK
       end
       Builtins.y2milestone("MinFsSizeK fsys:%1 ret:%2", fsys, ret)
       ret
@@ -1544,9 +1536,9 @@ module Yast
       ret = false
       assertInit
       id = fromSymbol(@conv_fs, fsys)
-      caps = LibStorage::FsCapabilities.new("LibStorage::FsCapabilities")
-      if LibStorage::StorageInterface.getFsCapabilities(@sint, id, caps)
-        ret = LibStorage::FsCapabilities.swig_supportsUuid_get(caps)
+      caps = ::Storage::FsCapabilities.new()
+      if @sint.getFsCapabilities(id, caps)
+        ret = caps.supportsUuid
       end
       Builtins.y2milestone("MountUuid fsys:%1 ret:%2", fsys, ret)
       ret
@@ -1557,9 +1549,9 @@ module Yast
       ret = false
       assertInit
       id = fromSymbol(@conv_fs, fsys)
-      caps = LibStorage::FsCapabilities.new("LibStorage::FsCapabilities")
-      if LibStorage::StorageInterface.getFsCapabilities(@sint, id, caps)
-        ret = LibStorage::FsCapabilities.swig_supportsLabel_get(caps)
+      caps = ::Storage::FsCapabilities.new()
+      if @sint.getFsCapabilities(id, caps)
+        ret = caps.supportsLabel
       end
       Builtins.y2milestone("MountLabel fsys:%1 ret:%2", fsys, ret)
       ret
@@ -1570,9 +1562,9 @@ module Yast
       ret = false
       assertInit
       id = fromSymbol(@conv_fs, fsys)
-      caps = LibStorage::FsCapabilities.new("LibStorage::FsCapabilities")
-      if LibStorage::StorageInterface.getFsCapabilities(@sint, id, caps)
-        ret = LibStorage::FsCapabilities.swig_labelWhileMounted_get(caps)
+      caps = ::Storage::FsCapabilities.new()
+      if @sint.getFsCapabilities(id, caps)
+        ret = caps.labelWhileMounted
       end
       Builtins.y2milestone("ChangeLabelMounted fsys:%1 ret:%2", fsys, ret)
       ret
@@ -1583,9 +1575,9 @@ module Yast
       ret = 0
       assertInit
       id = fromSymbol(@conv_fs, fsys)
-      caps = LibStorage::FsCapabilities.new("LibStorage::FsCapabilities")
-      if LibStorage::StorageInterface.getFsCapabilities(@sint, id, caps)
-        ret = LibStorage::FsCapabilities.swig_labelLength_get(caps)
+      caps = ::Storage::FsCapabilities.new()
+      if @sint.getFsCapabilities(id, caps)
+        ret = caps.labelLength
       end
       Builtins.y2milestone("LabelLength fsys:%1 ret:%2", fsys, ret)
       ret
@@ -1596,21 +1588,13 @@ module Yast
       ret = {}
       assertInit
       id = fromSymbol(@conv_fs, fsys)
-      caps = LibStorage::FsCapabilities.new("LibStorage::FsCapabilities")
-      if LibStorage::StorageInterface.getFsCapabilities(@sint, id, caps)
+      caps = ::Storage::FsCapabilities.new()
+      if @sint.getFsCapabilities(id, caps)
         ret = {
-          "extend"       => LibStorage::FsCapabilities.swig_isExtendable_get(
-            caps
-          ),
-          "shrink"       => LibStorage::FsCapabilities.swig_isReduceable_get(
-            caps
-          ),
-          "mount_extend" => LibStorage::FsCapabilities.swig_isExtendableWhileMounted_get(
-            caps
-          ),
-          "mount_shrink" => LibStorage::FsCapabilities.swig_isReduceableWhileMounted_get(
-            caps
-          )
+          "extend"       => caps.isExtendable,
+          "shrink"       => caps.isReduceable,
+          "mount_extend" => caps.isExtendableWhileMounted,
+          "mount_shrink" => caps.isReduceableWhileMounted
         }
       end
       Builtins.y2milestone("IsResizable fsys:%1 ret:%2", fsys, ret)
@@ -1776,53 +1760,22 @@ module Yast
         )
         Builtins.y2milestone("DefaultFstabOptions devs:%1", devs)
 
-        usedby_devices = []
-        if (
-            devs_ref = arg_ref(devs);
-            usedby_devices_ref = arg_ref(usedby_devices);
-            getRecursiveUsedBy_result = LibStorage::StorageInterface.getRecursiveUsedBy(
-              @sint,
-              devs_ref,
-              true,
-              usedby_devices_ref
-            );
-            devs = devs_ref.value;
-            usedby_devices = usedby_devices_ref.value;
-            getRecursiveUsedBy_result
-          ) == 0
+        usedby_devices = ::Storage::ListString.new()
+	dv = ::Storage::ListString.new()
+	devs.each { |x| dv.push(x) }
+        if @sint.getRecursiveUsedBy( dv, true, usedby_devices)==0 
           # USB since those might actually not be present during boot
           # iSCSI since the boot scripts need it
-          hotplug_transports = [LibStorage.USB, LibStorage.ISCSI]
+          hotplug_transports = [::Storage::USB, ::Storage::ISCSI]
 
-          Builtins.foreach(usedby_devices) do |usedby_device|
-            dp = LibStorage::ContVolInfo.new("LibStorage::ContVolInfo")
-            if (
-                usedby_device_ref = arg_ref(usedby_device);
-                getContVolInfo_result = LibStorage::StorageInterface.getContVolInfo(
-                  @sint,
-                  usedby_device_ref,
-                  dp
-                );
-                usedby_device = usedby_device_ref.value;
-                getContVolInfo_result
-              ) == 0 &&
-                LibStorage::ContVolInfo.swig_ctype_get(dp) == LibStorage.DISK
-              disk = LibStorage::ContVolInfo.swig_cdevice_get(dp)
-              infos = LibStorage::DiskInfo.new("LibStorage::DiskInfo")
-              if (
-                  disk_ref = arg_ref(disk);
-                  getDiskInfo_result = LibStorage::StorageInterface.getDiskInfo(
-                    @sint,
-                    disk_ref,
-                    infos
-                  );
-                  disk = disk_ref.value;
-                  getDiskInfo_result
-                ) == 0 &&
-                  Builtins.contains(
-                    hotplug_transports,
-                    LibStorage::DiskInfo.swig_transport_get(infos)
-                  )
+          usedby_devices.each do |usedby_device|
+            dp = ::Storage::ContVolInfo.new()
+            if @sint.getContVolInfo(usedby_device, dp)==0 &&
+                dp.ctype == ::Storage::DISK
+              disk = dp.cdevice
+              infos = ::Storage::DiskInfo.new()
+              if @sint.getDiskInfo(disk, infos)==0 &&
+                  Builtins.contains(hotplug_transports, infos.transport)
                 need_nofail = true
               end
             end

@@ -27,6 +27,7 @@
 # Purpose:	Provides information about partitions
 #
 # $Id$
+require "storage"
 require "yast"
 
 module Yast
@@ -40,10 +41,6 @@ module Yast
       Yast.import "Stage"
       Yast.import "AsciiFile"
       Yast.import "StorageInit"
-
-      Yast.import "LibStorage"
-      Yast.import "LibStorage::StorageInterface"
-      Yast.import "LibStorage::DlabelCapabilities"
 
       # The filesystem ids for the partitions
       @fsid_empty = 0
@@ -128,9 +125,7 @@ module Yast
     end
 
     def InitSlib(value)
-      value = deep_copy(value)
-      @sint = deep_copy(value)
-
+      @sint = value
       nil
     end
 
@@ -146,7 +141,7 @@ module Yast
 
     def EfiBoot
       assertInit
-      ret = LibStorage::StorageInterface.getEfiBoot(@sint)
+      ret = @sint.getEfiBoot
       Builtins.y2milestone("EfiBoot ret:%1", ret)
       ret
     end
@@ -856,20 +851,9 @@ module Yast
     def MaxPrimary(dlabel)
       ret = 0
       assertInit
-      caps = LibStorage::DlabelCapabilities.new(
-        "LibStorage::DlabelCapabilities"
-      )
-      if (
-          dlabel_ref = arg_ref(dlabel);
-          getDlabelCapabilities_result = LibStorage::StorageInterface.getDlabelCapabilities(
-            @sint,
-            dlabel_ref,
-            caps
-          );
-          dlabel = dlabel_ref.value;
-          getDlabelCapabilities_result
-        )
-        ret = LibStorage::DlabelCapabilities.swig_maxPrimary_get(caps)
+      caps = Stroager::DlabelCapabilities.new()
+      if( @sint.getDlabelCapabilities(dlabel, caps))
+        ret = caps.maxPrimary
       end
       Builtins.y2milestone("MaxPrimary dlabel:%1 ret:%2", dlabel, ret)
       ret
@@ -879,20 +863,9 @@ module Yast
     def HasExtended(dlabel)
       ret = false
       assertInit
-      caps = LibStorage::DlabelCapabilities.new(
-        "LibStorage::DlabelCapabilities"
-      )
-      if (
-          dlabel_ref = arg_ref(dlabel);
-          getDlabelCapabilities_result = LibStorage::StorageInterface.getDlabelCapabilities(
-            @sint,
-            dlabel_ref,
-            caps
-          );
-          dlabel = dlabel_ref.value;
-          getDlabelCapabilities_result
-        )
-        ret = LibStorage::DlabelCapabilities.swig_extendedPossible_get(caps)
+      caps = Stroager::DlabelCapabilities.new()
+      if( @sint.getDlabelCapabilities( dlabel, caps))
+        ret = caps.extendedPossible
       end
       Builtins.y2milestone("HasExtended dlabel:%1 ret:%2", dlabel, ret)
       ret
@@ -902,20 +875,9 @@ module Yast
     def MaxLogical(dlabel)
       ret = 0
       assertInit
-      caps = LibStorage::DlabelCapabilities.new(
-        "LibStorage::DlabelCapabilities"
-      )
-      if (
-          dlabel_ref = arg_ref(dlabel);
-          getDlabelCapabilities_result = LibStorage::StorageInterface.getDlabelCapabilities(
-            @sint,
-            dlabel_ref,
-            caps
-          );
-          dlabel = dlabel_ref.value;
-          getDlabelCapabilities_result
-        )
-        ret = LibStorage::DlabelCapabilities.swig_maxLogical_get(caps)
+      caps = Stroager::DlabelCapabilities.new()
+      if( @sint.getDlabelCapabilities( dlabel, caps))
+        ret = caps.maxLogical
       end
       Builtins.y2milestone("MaxLogical dlabel:%1 ret:%2", dlabel, ret)
       ret
@@ -925,20 +887,9 @@ module Yast
     def MaxSectors(dlabel)
       ret = 0
       assertInit
-      caps = LibStorage::DlabelCapabilities.new(
-        "LibStorage::DlabelCapabilities"
-      )
-      if (
-          dlabel_ref = arg_ref(dlabel);
-          getDlabelCapabilities_result = LibStorage::StorageInterface.getDlabelCapabilities(
-            @sint,
-            dlabel_ref,
-            caps
-          );
-          dlabel = dlabel_ref.value;
-          getDlabelCapabilities_result
-        )
-        ret = LibStorage::DlabelCapabilities.swig_maxSectors_get(caps)
+      caps = Stroager::DlabelCapabilities.new()
+      if( @sint.getDlabelCapabilities( dlabel, caps))
+        ret = caps.maxSectors
       end
       Builtins.y2milestone("MaxSizeK dlabel:%1 ret:%2", dlabel, ret)
       ret
