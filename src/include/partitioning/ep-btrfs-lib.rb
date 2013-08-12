@@ -97,12 +97,15 @@ module Yast
     end
 
     def AddVols(device, devs)
-      devs = deep_copy(devs)
       ret = true
+      tg = Storage.GetTargetMap
 
       Builtins.foreach(devs) do |dev|
-        Storage.SetPartitionId(dev, Partitions.fsid_native)
 	if dev!=device
+	  p = Storage.GetPartition(tg, dev)
+	  if( p.key?("fsid") && p["fsid"]!=Partitions.fsid_native )
+	    Storage.SetPartitionId(dev, Partitions.fsid_native)
+	  end
 	  Storage.SetPartitionFormat(dev, false, :none)
 	  ret = false if !Storage.ExtendBtrfsVolume(device, dev)
 	end
@@ -112,7 +115,6 @@ module Yast
 
 
     def RemoveVols(device, devs)
-      devs = deep_copy(devs)
       ret = true
 
       Builtins.foreach(devs) do |dev|
