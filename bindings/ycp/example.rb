@@ -26,18 +26,10 @@ module Yast
   class ExampleClient < Client
     def main
 
-      Yast.import "Storage"
-
       @o = nil
 
       @env = ::Storage::Environment.new(true)
       @o = ::Storage::createStorageInterface(@env)
-
-      bytes = 0
-      bytes_ref = arg_ref(bytes);
-      r = Storage::HumanStringToByte("3G",bytes_ref)
-      bytes=bytes_ref.value
-      y2milestone("bytes(3G)=%1 ret:%2",bytes,r);
 
       test1
       test2
