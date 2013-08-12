@@ -851,7 +851,7 @@ module Yast
     def MaxPrimary(dlabel)
       ret = 0
       assertInit
-      caps = Stroager::DlabelCapabilities.new()
+      caps = ::Storage::DlabelCapabilities.new()
       if( @sint.getDlabelCapabilities(dlabel, caps))
         ret = caps.maxPrimary
       end
@@ -863,7 +863,7 @@ module Yast
     def HasExtended(dlabel)
       ret = false
       assertInit
-      caps = Stroager::DlabelCapabilities.new()
+      caps = ::Storage::DlabelCapabilities.new()
       if( @sint.getDlabelCapabilities( dlabel, caps))
         ret = caps.extendedPossible
       end
@@ -875,7 +875,7 @@ module Yast
     def MaxLogical(dlabel)
       ret = 0
       assertInit
-      caps = Stroager::DlabelCapabilities.new()
+      caps = ::Storage::DlabelCapabilities.new()
       if( @sint.getDlabelCapabilities( dlabel, caps))
         ret = caps.maxLogical
       end
@@ -887,7 +887,7 @@ module Yast
     def MaxSectors(dlabel)
       ret = 0
       assertInit
-      caps = Stroager::DlabelCapabilities.new()
+      caps = ::Storage::DlabelCapabilities.new()
       if( @sint.getDlabelCapabilities( dlabel, caps))
         ret = caps.maxSectors
       end
