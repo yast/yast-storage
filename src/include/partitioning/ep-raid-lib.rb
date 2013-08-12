@@ -131,7 +131,9 @@ module Yast
               "parity_algorithm",
               :par_default
             )
-            Storage.ChangeMdParitySymbol(nr, parity_algorithm)
+	    if( parity_algorithm!=:par_default )
+	      Storage.ChangeMdParitySymbol(nr, parity_algorithm)
+	    end
           end
 
           Storage.ChangeVolumeProperties(data)
