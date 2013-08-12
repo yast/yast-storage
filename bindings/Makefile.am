@@ -2,4 +2,4 @@
 # Makefile.am for storage/bindings
 #
 
-SUBDIRS = ycp src
+SUBDIRS = ruby src

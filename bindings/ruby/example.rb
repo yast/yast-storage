@@ -26,8 +26,6 @@ module Yast
   class ExampleClient < Client
     def main
 
-      @o = nil
-
       @env = ::Storage::Environment.new(true)
       @o = ::Storage::createStorageInterface(@env)
 
