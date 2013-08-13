@@ -5929,17 +5929,9 @@ module Yast
           end
         end
       end
-      Ops.set(
-        ret,
-        "device",
-        Partitions.IsResizable(Ops.get_integer(part, "fsid", 0)) &&
-          Builtins.substring(Ops.get_string(part, "device", ""), 0, 9) != "/dev/dasd"
-      )
-      Builtins.y2milestone(
-        "sub:%1 is:%2",
-        Builtins.substring(Ops.get_string(part, "device", ""), 0, 9),
-        Builtins.substring(Ops.get_string(part, "device", ""), 0, 9) != "/dev/dasd"
-      )
+      ret["device"] = (Partitions.IsResizable(part["fsid"]||0) &&
+                       part["device"][0,9]!="/dev/dasd") ||
+		      (part["type"]||:none)==:lvm
       Builtins.y2milestone("IsResizable part:%1 ret:%2", part, ret)
       deep_copy(ret)
     end
