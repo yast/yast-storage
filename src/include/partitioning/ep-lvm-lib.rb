@@ -118,7 +118,7 @@ module Yast
       vgname = Ops.get_string(data, "name", "error")
 
 
-      _Commit = lambda do
+      _Commit = lambda do |data|
         devices_old = MergeDevices(data)
         devices_new = Ops.get_list(data, "devices_new", [])
 
@@ -147,7 +147,7 @@ module Yast
           data_ref = arg_ref(data);
           _DlgResizeVolumeGroup_result = DlgResizeVolumeGroup(
             data_ref,
-            fun_ref(_Commit, "symbol ()")
+            fun_ref(_Commit, "symbol (map)")
           );
           data = data_ref.value;
           _DlgResizeVolumeGroup_result
@@ -278,18 +278,15 @@ module Yast
 
       Ops.set(data, "using_devices", [device])
 
-      _Commit = lambda do
-        return :back if !addLogicalVolume(data, Builtins.substring(device, 5))
-
-        :finish
+      _Commit = lambda do |data|
+        return addLogicalVolume(data, Builtins.substring(device, 5)) ? :finish : :back
       end
-
 
       if (
           data_ref = arg_ref(data);
           _DlgCreateLogicalVolume_result = DlgCreateLogicalVolume(
             data_ref,
-            fun_ref(_Commit, "symbol ()")
+            fun_ref(_Commit, "symbol (map)")
           );
           data = data_ref.value;
           _DlgCreateLogicalVolume_result

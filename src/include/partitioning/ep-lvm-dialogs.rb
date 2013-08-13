@@ -435,7 +435,7 @@ module Yast
 
             if !CheckNumberOfDevicesForVg(Builtins.size(pvs_new))
               widget = :again
-            end 
+            end
 
             # TODO: overall size check
         end
@@ -731,17 +731,18 @@ module Yast
 
     def DlgResizeVolumeGroup(data, _Commit)
       _Commit = deep_copy(_Commit)
-      aliases = { "TheOne" => lambda do
+
+      aliases = {
+        "TheOne" => lambda do
         (
           data_ref = arg_ref(data.value);
           _MiniWorkflowStepResizeVg_result = MiniWorkflowStepResizeVg(data_ref);
           data.value = data_ref.value;
           _MiniWorkflowStepResizeVg_result
         )
-      end, "Commit" => lambda(
-      ) do
-        _Commit.call
-      end }
+        end,
+        "Commit" => lambda { _Commit.call(data.value) }
+      }
 
       sequence = {
         "TheOne" => { :finish => "Commit" },
@@ -998,7 +999,7 @@ module Yast
             _MiniWorkflowStepPassword_result
           )
         end,
-        "Commit"      => lambda { _Commit.call }
+        "Commit"      => lambda { _Commit.call(data.value) }
       }
 
       sequence = {

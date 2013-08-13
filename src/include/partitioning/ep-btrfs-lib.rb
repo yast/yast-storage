@@ -139,7 +139,7 @@ module Yast
         data
       )
 
-      _Commit = lambda do
+      _Commit = lambda do |data|
         devices_old = MergeDevices(data)
         devices_new = Ops.get_list(data, "devices_new", [])
 
@@ -180,7 +180,7 @@ module Yast
           data_ref = arg_ref(data);
           _DlgResizeBtrfsVolume_result = DlgResizeBtrfsVolume(
             data_ref,
-            fun_ref(_Commit, "symbol ()")
+            fun_ref(_Commit, "symbol (map)")
           );
           data = data_ref.value;
           _DlgResizeBtrfsVolume_result

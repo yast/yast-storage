@@ -263,7 +263,8 @@ module Yast
 
     def DlgResizeBtrfsVolume(data, _Commit)
       _Commit = deep_copy(_Commit)
-      aliases = { "TheOne" => lambda do
+      aliases = {
+        "TheOne" => lambda do
         (
           data_ref = arg_ref(data.value);
           _MiniWorkflowStepResizeVolume_result = MiniWorkflowStepResizeVolume(
@@ -272,10 +273,9 @@ module Yast
           data.value = data_ref.value;
           _MiniWorkflowStepResizeVolume_result
         )
-      end, "Commit" => lambda(
-      ) do
-        _Commit.call
-      end }
+      end,
+        "Commit" => lambda { _Commit.call(data.value) }
+      }
 
       sequence = {
         "TheOne" => { :finish => "Commit" },
