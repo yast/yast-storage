@@ -248,7 +248,6 @@ module Yast
 
       # All supported filesystems
       @support = {
-        :reiser     => true,
         :xfs        => true,
         :ext2       => true,
         :ext3       => true,
