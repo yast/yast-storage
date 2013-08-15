@@ -46,10 +46,10 @@ module Yast
       Yast.import "Region"
     end
 
+
     # Call callback for every disk of target_map in a well defined sorted order.
     def IterateTargetMap(target_map, callback)
-      target_map = deep_copy(target_map)
-      callback = deep_copy(callback)
+
       disk_order = {
         :CT_DMRAID      => 0,
         :CT_DMMULTIPATH => 1,
@@ -64,27 +64,19 @@ module Yast
         :CT_TMPFS       => 10
       }
 
-      keys = Builtins.maplist(target_map) { |dev, disk| dev }
-      keys = Builtins.sort(keys) do |a, b|
-        oa = Ops.get_integer(
-          disk_order,
-          Ops.get_symbol(target_map, [a, "type"], :CT_UNKNOWN),
-          10
-        )
-        ob = Ops.get_integer(
-          disk_order,
-          Ops.get_symbol(target_map, [b, "type"], :CT_UNKNOWN),
-          10
-        )
-        oa == ob ? Ops.less_than(a, b) : Ops.less_than(oa, ob)
+      keys = target_map.keys()
+
+      keys.sort! do |a, b|
+        oa = disk_order.fetch(target_map.fetch(a).fetch("type", :CT_UNKNOWN))
+        ob = disk_order.fetch(target_map.fetch(b).fetch("type", :CT_UNKNOWN))
+        oa == ob ? a <=> b : oa <=> ob
       end
 
-      Builtins.foreach(keys) do |dev|
-        disk = Ops.get(target_map, dev, {})
+      keys.each do |dev|
+        disk = target_map.fetch(dev)
         callback.call(target_map, disk)
       end
 
-      nil
     end
 
 
