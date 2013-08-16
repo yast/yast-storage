@@ -171,31 +171,14 @@ module Yast
       nil
     end
 
+
     def Summary
       tmp = [
-        Ops.add(
-          _("Default Mount-by:") + " ",
-          Builtins.substring(Builtins.tostring(Storage.GetDefaultMountBy), 1)
-        ),
-        Ops.add(
-          _("Default File System:") + " ",
-          Builtins.substring(Builtins.tostring(Partitions.DefaultFs), 1)
-        ),
-        Ops.add(
-          _("Show Storage Devices by:") + " ",
-          Builtins.substring(Builtins.tostring(@display_name), 1)
-        ),
-        Ops.add(
-          _("Partition Alignment:") + " ",
-          Builtins.substring(
-            Builtins.tostring(Storage.GetPartitionAlignment),
-            7
-          )
-        ),
-        Ops.add(
-          _("Visible Information on Storage Devices:") + " ",
-          HTML.List(@visible_fields)
-        )
+        _("Default Mount-by:") + " " + Storage.GetDefaultMountBy().id2name,
+        _("Default File System:") + " " + Partitions.DefaultFs().id2name,
+        _("Show Storage Devices by:") + " " + GetDisplayName().id2name,
+        _("Partition Alignment:") + " " + Storage.GetPartitionAlignment().id2name[6..-1],
+        _("Visible Information on Storage Devices:") + " " + HTML.List(@visible_fields)
       ]
 
       HTML.List(tmp)
@@ -204,40 +187,31 @@ module Yast
 
     def Save
       if @display_name != nil
-        tmp = Builtins.substring(Builtins.tostring(@display_name), 1)
+        tmp = @display_name.id2name
         SCR.Write(path(".sysconfig.storage.DISPLAY_NAME"), tmp)
       end
 
       if @hidden_fields != nil
-        tmp = Builtins.mergestring(Builtins.maplist(@hidden_fields) do |field|
-          Builtins.substring(Builtins.tostring(field), 1)
-        end, " ")
+        tmp = (@hidden_fields.map { |field| field.id2name }).join(" ")
         SCR.Write(path(".sysconfig.storage.HIDDEN_FIELDS"), tmp)
       end
 
       if true
-        tmp = Builtins.substring(
-          Builtins.tostring(Storage.GetDefaultMountBy),
-          1
-        )
+        tmp = Storage.GetDefaultMountBy().id2name
         SCR.Write(path(".sysconfig.storage.DEVICE_NAMES"), tmp)
       end
 
       if true
-        tmp = Builtins.substring(Builtins.tostring(Partitions.DefaultFs), 1)
+        tmp = Partitions.DefaultFs().id2name
         SCR.Write(path(".sysconfig.storage.DEFAULT_FS"), tmp)
       end
 
       if true
-        tmp = Builtins.substring(
-          Builtins.tostring(Storage.GetPartitionAlignment),
-          7
-        )
+        tmp = Storage.GetPartitionAlignment().id2name[6..-1]
         SCR.Write(path(".sysconfig.storage.PARTITION_ALIGN"), tmp)
       end
-
-      nil
     end
+
 
     publish :function => :GetModified, :type => "boolean ()"
     publish :function => :SetModified, :type => "void ()"
