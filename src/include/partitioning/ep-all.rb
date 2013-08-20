@@ -23,6 +23,7 @@
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+require "yast"
 require "storage/ui_ext"
 
 module Yast
@@ -35,7 +36,10 @@ module Yast
     end
 
 
-    class AllPanel
+    class AllPanel # TODO move to lib instead of include
+      include I18n # for translations
+      include Yast # for reference and deep_copy
+      include UIShortcuts # for UI shortcuts
 
       # include PartitioningEpLibInclude # don't like this
 
