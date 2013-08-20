@@ -30,80 +30,46 @@ require "yast"
 
 module Yast
   class TreePanelClass < Module
+
+
     def main
       Yast.import "UI"
-
-
       Yast.import "Event"
-
 
       @data = nil
 
       @current_item = nil
 
-
       @empty_panel = VBox(VStretch(), HStretch())
     end
 
-    def CallCreate
-      tmp = Ops.get(@data, @current_item)
-      create_func = Convert.convert(
-        Ops.get(tmp, :create),
-        :from => "any",
-        :to   => "void (any)"
-      )
-      if create_func != nil
-        user_data = Ops.get(tmp, :user_data)
-        create_func.call(user_data)
-      end
 
-      nil
+    def CallCreate()
+      tmp = Ops.get(@data, @current_item)
+      user_data = Ops.get(tmp, :user_data)
+      tmp[:x].create(user_data)
     end
 
-    def CallRefresh
-      tmp = Ops.get(@data, @current_item)
-      refresh_func = Convert.convert(
-        Ops.get(tmp, :refresh),
-        :from => "any",
-        :to   => "void (any)"
-      )
-      if refresh_func != nil
-        user_data = Ops.get(tmp, :user_data)
-        refresh_func.call(user_data)
-      end
 
-      nil
+    def CallRefresh()
+      tmp = Ops.get(@data, @current_item)
+      user_data = Ops.get(tmp, :user_data)
+      tmp[:x].refresh(user_data)
     end
+
 
     def CallHandle(event)
       event = deep_copy(event)
       tmp = Ops.get(@data, @current_item)
-      handle_func = Convert.convert(
-        Ops.get(tmp, :handle),
-        :from => "any",
-        :to   => "void (any, map)"
-      )
-      if handle_func != nil
-        user_data = Ops.get(tmp, :user_data)
-        handle_func.call(user_data, event)
-      end
-
-      nil
+      user_data = Ops.get(tmp, :user_data)
+      tmp[:x].handle(user_data, event)
     end
 
-    def CallDestroy
-      tmp = Ops.get(@data, @current_item)
-      destroy_func = Convert.convert(
-        Ops.get(tmp, :destroy),
-        :from => "any",
-        :to   => "void (any)"
-      )
-      if destroy_func != nil
-        user_data = Ops.get(tmp, :user_data)
-        destroy_func.call(user_data)
-      end
 
-      nil
+    def CallDestroy()
+      tmp = Ops.get(@data, @current_item)
+      user_data = Ops.get(tmp, :user_data)
+      tmp[:x].destroy(user_data)
     end
 
 
