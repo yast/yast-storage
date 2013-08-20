@@ -23,6 +23,8 @@
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+require "storage/ui_ext"
+
 module Yast
   module PartitioningEpAllInclude
     def initialize_partitioning_ep_all(include_target)
@@ -32,7 +34,12 @@ module Yast
       Yast.import "PackageSystem"
     end
 
-    def CreateAllPanel(user_data)
+
+    class AllPanel
+
+      # include PartitioningEpLibInclude # don't like this
+
+    def create(user_data)
       user_data = deep_copy(user_data)
       _IsAvailable = lambda do |client|
         #in the installed system, we don't care if the client isn't there
@@ -175,7 +182,7 @@ module Yast
               table_header,
               table_contents
             ),
-            ArrangeButtons(buttons)
+            UI::arrange_buttons(buttons)
           )
         )
       )
@@ -211,7 +218,7 @@ module Yast
     end
 
 
-    def HandleAllPanel(user_data, event)
+    def handle(user_data, event)
       user_data = deep_copy(user_data)
       event = deep_copy(event)
       _CheckAndInstallPackages = lambda do |pkgs|
@@ -351,5 +358,8 @@ module Yast
 
       nil
     end
+
+    end
+
   end
 end

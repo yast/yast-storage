@@ -113,10 +113,7 @@ module Yast
       # TODO: somehow use AlwaysHideDisk
 
       data = {
-        :all         => {
-          :create => fun_ref(method(:CreateAllPanel), "void (any)"),
-          :handle => fun_ref(method(:HandleAllPanel), "void (any, map)")
-        },
+        :all         => { x: PartitioningEpAllInclude::AllPanel.new() },
         :hd          => {
           :create => fun_ref(method(:CreateHdMainPanel), "void (any)"),
           :handle => fun_ref(method(:HandleHdMainPanel), "void (any, map)")
