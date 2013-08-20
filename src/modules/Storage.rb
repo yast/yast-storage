@@ -4767,8 +4767,8 @@ module Yast
       end
       UpdateTargetMap()
 
-      env = Builtins.getenv("YAST2_STORAGE_SLEEP_AFTER_COMMIT")
-      SCR.Execute(path(".target.bash"), Ops.add("sleep ", env)) if env != nil
+      env = ENV["YAST2_STORAGE_SLEEP_AFTER_COMMIT"]
+      SCR.Execute(path(".target.bash"), "sleep " + env) if env != nil
 
       ret
     end
