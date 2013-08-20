@@ -6893,7 +6893,7 @@ module Yast
       ret
     end
 
-    def AllowdParity(mdtype, sz)
+    def AllowedParity(mdtype, sz)
       mdt = Ops.get(@conv_mdstring, mdtype, 0)
       pars = @sint.getMdAllowedParity(mdt, sz)
       ret = []
@@ -7234,7 +7234,7 @@ module Yast
     publish :function => :SaveMountGraph, :type => "boolean (string)"
     publish :function => :DeviceMatchFstab, :type => "boolean (string, string)"
     publish :function => :IsPersistent, :type => "boolean (map)"
-    publish :function => :AllowdParity, :type => "list <list> (string, integer)"
+    publish :function => :AllowedParity, :type => "list <list> (string, integer)"
     publish :function => :IsDeviceOnNetwork, :type => "symbol (string)"
     publish :function => :GetCreatedSwaps, :type => "list ()"
     publish :function => :GetDetectedDiskPaths, :type => "list <string> ()"

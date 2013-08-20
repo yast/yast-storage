@@ -340,7 +340,7 @@ module Yast
     end
 
     def getParTerms(mdtype, sz)
-      pars = Storage.AllowdParity(mdtype, sz)
+      pars = Storage.AllowedParity(mdtype, sz)
       Builtins.maplist(pars) do |e|
         Item(Id(Ops.get_symbol(e, 0, :par_default)), Ops.get_string(e, 1, ""))
       end
