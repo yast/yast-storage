@@ -649,10 +649,7 @@ module Yast
 
 
     def ToHexString(num)
-      Ops.add(
-        "0x",
-        Builtins.toupper(Builtins.substring(Builtins.tohexstring(num, 2), 2))
-      )
+      sprintf("0x%02X", num)
     end
 
 
