@@ -5930,7 +5930,7 @@ module Yast
         end
       end
       ret["device"] = (Partitions.IsResizable(part.fetch("fsid",0)) &&
-                       part.fetch("device","").start_with?("/dev/dasd")) ||
+                       !part.fetch("device","").start_with?("/dev/dasd")) ||
 		      part.fetch("type",:none)==:lvm
       Builtins.y2milestone("IsResizable part:%1 ret:%2", part, ret)
       deep_copy(ret)
