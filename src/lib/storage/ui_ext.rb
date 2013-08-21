@@ -1,3 +1,5 @@
+# encoding: utf-8
+
 require "yast"
 
 module Yast
@@ -5,6 +7,8 @@ module Yast
 
   module UI
     extend UIShortcuts
+
+
     def self.arrange_buttons(buttons)
       # Unfortunately the UI does not provide functionality to rearrange
       # buttons in two or more lines if the available space is
@@ -48,5 +52,8 @@ module Yast
       ret.params << line
       ret
     end
+
+
   end
+
 end

@@ -25,6 +25,7 @@
 # Authors:     Arvin Schnell <aschnell@suse.de>
 require "yast"
 require "storage/ui_ext"
+require "storage/ep-utils"
 
 module Yast
   module PartitioningEpAllInclude
@@ -41,7 +42,6 @@ module Yast
       include Yast # for reference and deep_copy
       include UIShortcuts # for UI shortcuts
 
-      # include PartitioningEpLibInclude # don't like this
 
     def create(user_data)
       user_data = deep_copy(user_data)
@@ -254,7 +254,7 @@ module Yast
               WFM.call(call)
             end
 
-            RescanDisks()
+            EP.RescanDisks()
             Storage.CreateTargetBackup("expert-partitioner")
 
             UpdateMainStatus()
@@ -356,8 +356,8 @@ module Yast
 
       case Event.IsWidgetContextMenuActivated(event)
         when :table
-          @device = Convert.to_string(UI.QueryWidget(Id(:table), :CurrentItem))
-          EpContextMenuDevice(@device)
+          device = Convert.to_string(UI.QueryWidget(Id(:table), :CurrentItem))
+          EP.EpContextMenuDevice(device)
       end
 
       nil

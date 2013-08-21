@@ -1197,18 +1197,10 @@ module Yast
 
 
     def RescanDisks
-      UI.OpenDialog(
-        Opt(:decorated),
-        # popup text
-        MarginBox(2, 1, Label(_("Rescanning disks...")))
-      )
-
-      Storage.ReReadTargetMap
-
-      UI.CloseDialog
-
-      nil
+      EP.RescanDisks
     end
+
+
     def ConfirmRecursiveDelete(device, devices, headline, text_before, text_after)
       devices = deep_copy(devices)
       button_box = ButtonBox(
