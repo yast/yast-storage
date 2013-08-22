@@ -3467,8 +3467,8 @@ module Yast
     # @return [Boolean]
     def DeletePartitionTable(disk, label)
       Builtins.y2milestone("DeletePartitionTable disk:%1 label:%2", disk, label)
-      label = DefaultDiskLabel(disk) if isempty(label)
-      ret = @sin.destroyPartitionTable(disk, label)
+      label = DefaultDiskLabel(disk) if Builtins.isempty(label)
+      ret = @sint.destroyPartitionTable(disk, label)
       if ret<0
         Builtins.y2error("DeletePartitionTable sint ret:%1", ret)
       end
