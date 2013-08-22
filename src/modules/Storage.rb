@@ -6922,7 +6922,8 @@ module Yast
       ret = []
       tg = GetTargetMap()
       info = {}
-      if ( _GetContVolInfo_result = GetContVolInfo(device, info_ref);
+      if ( info_ref = arg_ref(info);
+          _GetContVolInfo_result = GetContVolInfo(device, info_ref);
           info = info_ref.value;
           _GetContVolInfo_result
         )
