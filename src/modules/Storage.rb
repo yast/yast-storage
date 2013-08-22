@@ -7027,7 +7027,7 @@ module Yast
 
     def GetDetectedDiskPaths
       ret = [];
-      disks = @sint.getPresentDisks
+      disks = ::Storage::getPresentDisks
       disks.each do |d|
 	ret.push(d)
       end
