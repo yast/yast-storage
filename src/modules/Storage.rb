@@ -80,6 +80,8 @@ module Yast
 
       @resize_cyl_size = nil
 
+      @default_multipathing = false
+
       # end of resizing functions
 
 
@@ -329,7 +331,8 @@ module Yast
         @sint.setRootPrefix(Installation.destdir)
 
         if Mode.autoinst || Mode.autoupgrade
-          @sint.setMultipathAutostart(::Storage::MPAS_OFF)
+	  val = @default_multipathing ? ::Storage::MPAS_ON : ::Storage::MPAS_OFF
+          @sint.setMultipathAutostart(val)
         end
       end
 
@@ -1511,7 +1514,7 @@ module Yast
           end
         end
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_DMMULTIPATH
-        pinfos = ::Storage::DequePartitionInfo.new()
+        pinfos = ::Storage::DequeDmmultipathInfo.new()
         infos = ::Storage::DmmultipathCoInfo.new()
         d = Ops.get_string(c, "device", "")
         ret = @sint.getDmmultipathCoInfo(d, infos)
@@ -6046,6 +6049,15 @@ module Yast
       Builtins.y2milestone("ActivateMultipath val:%1", val)
       @sint.activateMultipath(val)
 
+      nil
+    end
+
+    def SetMultipathStartup(val)
+      Builtins.y2milestone("SetMultipathStartup val:%1", val)
+      if( @default_multipathing != val )
+	  @default_multipathing = val
+	  ActivateMultipath(val) if @sint
+      end
       nil
     end
 
