@@ -2895,18 +2895,15 @@ module Yast
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
         end
       end
-      if ret == 0 && !Builtins.isempty(Ops.get_list(part, "subvol", []))
-        d = Ops.get_string(part, "device", "")
-        rem = Builtins.filter(Ops.get_list(part, "subvol", [])) do |p|
-          Ops.get_boolean(p, "delete", false)
-        end
-        cre = Builtins.filter(Ops.get_list(part, "subvol", [])) do |p|
-          Ops.get_boolean(p, "create", false)
-        end
+      if ret == 0 && !part.fetch("subvol",[]).empty?
+        d = part.fetch("device","")
+        fmt = part.fetch("format",false)
+        rem = part["subvol"].select { |p| p.fetch("delete",false) }
+        cre = part["subvol"].select { |p| p.fetch("create",false)||fmt }
         Builtins.y2milestone("ChangeVolumeProperties rem:%1", rem)
         Builtins.y2milestone("ChangeVolumeProperties cre:%1", cre)
-        while ret == 0 && !Builtins.isempty(rem)
-          pth = Ops.get_string(rem, [0, "name"], "")
+        while ret == 0 && !rem.empty?
+          pth = rem.first.fetch("name","")
           if @sint.existSubvolume(d, pth)
             changed = true
             ret = @sint.removeSubvolume(d, pth)
@@ -2916,10 +2913,10 @@ module Yast
               Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
             end
           end
-          rem = Builtins.remove(rem, 0)
+          rem = rem.drop(1)
         end
-        while ret == 0 && !Builtins.isempty(cre)
-          pth = Ops.get_string(cre, [0, "name"], "")
+        while ret == 0 && !cre.empty?
+          pth = cre.first.fetch("name","")
           if ! @sint.existSubvolume(d, pth)
             changed = true
             ret = @sint.createSubvolume(d, pth)
@@ -2929,7 +2926,7 @@ module Yast
               Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
             end
           end
-          cre = Builtins.remove(cre, 0)
+          cre = cre.drop(1)
         end
       end
       UpdateTargetMapDev(dev) if changed
