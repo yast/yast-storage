@@ -4868,15 +4868,34 @@ module Yast
 
     def AddSubvolRoot(part)
       part = deep_copy(part)
+
       def_subvol = [
-        "tmp",
+        "home",
         "opt",
         "srv",
+        "tmp",
+        "usr/local",
         "var/crash",
-        "var/spool",
         "var/log",
+        "var/opt",
+        "var/spool",
         "var/tmp"
       ]
+
+      if Arch.i386
+        def_subvol.push("boot/grub2/i386-pc")
+      end
+
+      if Arch.x86_64
+        def_subvol.push("boot/grub2/x86_64-efi")
+      end
+
+      if Arch.ppc
+        def_subvol.push("boot/grub2/power-ieee1275")
+      end
+
+      def_subvol.sort!()
+
       sv_prepend = ""
       Builtins.y2milestone(
         "AddSubvolRoot subvol:%1",
