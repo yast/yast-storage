@@ -93,7 +93,7 @@ module Yast
         if Mode.installation
           @part = Storage.GetEntryForMountpoint("/")
           if Ops.get_symbol(@part, "used_fs", :unknown) == :btrfs
-            if SCR.Execute(path(".target.bash"), "/usr/bin/snapper create-config --fstype=btrfs /") == 0
+            if SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus create-config --fstype=btrfs /") == 0
               SCR.Write(path(".sysconfig.yast2.USE_SNAPPER"), "yes")
             end
           end
