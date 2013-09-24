@@ -2539,13 +2539,14 @@ module Yast
         start,
         len
       )
-      ret = @sint.updatePartitionArea(device start, len)
+      ret = @sint.updatePartitionArea(device, start, len)
       if ret<0
         Builtins.y2error("UpdatePartition sint ret:%1", ret)
       end
       UpdateTargetMapDev(device)
       ret == 0
     end
+
 
     # Sets a mountpoint for partition
     #
