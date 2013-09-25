@@ -3196,11 +3196,22 @@ module Yast
       ret == 0
     end
 
+    def MdToDev(nr_or_string)
+      Builtins.y2milestone("MdToDev nr_or:%1", nr_or_string)
+      if Ops.is_string?(nr_or_string)
+         ret = nr_or_string
+      else 
+         ret = "/dev/md"+nr_or_string.to_s
+      end
+      Builtins.y2milestone("MdToDev ret:%1", ret)
+      ret
+    end
+
     def CreateMd(nr, type)
       Builtins.y2milestone("CreateMd nr:%1 type:%2", nr, type)
       tmp = Ops.get(@conv_mdstring, type, 0)
       empty = ::Storage::ListString.new()
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       ret = @sint.createMd(rd, tmp, empty, empty)
       Builtins.y2error("CreateMd sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk("/dev/md")
@@ -3228,7 +3239,7 @@ module Yast
       end
       empty = ::Storage::ListString.new()
       devs = StringListFromList(devices);
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       ret = @sint.createMd(rd, tmp, devs, empty)
       if ret<0
         Builtins.y2error("CreateMdWithDevs sint ret:%1", ret)
@@ -3241,7 +3252,7 @@ module Yast
       Builtins.y2milestone("ReplaceMd nr:%1 devs:%2", nr, devs)
       empty = ::Storage::ListString.new()
       devices = StringListFromList(devs);
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       ret = @sint.updateMd(rd, devices, empty)
       Builtins.y2error("ReplaceMd sint ret:%1", ret) if ret<0
       UpdateTargetMap()
@@ -3252,7 +3263,7 @@ module Yast
       Builtins.y2milestone("ExtendMd nr:%1 devs:%2", nr, devs)
       empty = ::Storage::ListString.new()
       devices = StringListFromList(devs);
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       ret = @sint.extendMd(rd, devices, empty)
       Builtins.y2error("ExtendMd sint ret:%1", ret) if ret<0
       UpdateTargetMap()
@@ -3263,7 +3274,7 @@ module Yast
       Builtins.y2milestone("ShrinkMd nr:%1 devs:%2", nr, devs)
       empty = ::Storage::ListString.new()
       devices = StringListFromList(devs);
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       ret = @sint.shrinkMd(rd, devices, empty)
       Builtins.y2error("ShrinkMd sint ret:%1", ret) if ret<0
       UpdateTargetMap()
@@ -3272,7 +3283,7 @@ module Yast
 
     def ChangeMdType(nr, mdtype)
       Builtins.y2milestone("ChangeMdType nr:%1 mdtype:%2", nr, mdtype)
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       tmp = Ops.get(@conv_mdstring, mdtype, 0)
       ret = @sint.changeMdType(rd, tmp)
       Builtins.y2error("ChangeMdType sint ret:%1", ret) if ret<0
@@ -3282,7 +3293,7 @@ module Yast
 
     def ChangeMdParity(nr, ptype)
       Builtins.y2milestone("ChangeMdParity nr:%1 parity:%2", nr, ptype)
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       tmp = Ops.get(@conv_parstring, ptype, 0)
       ret = @sint.changeMdParity(rd, tmp)
       if ret<0
@@ -3294,7 +3305,7 @@ module Yast
 
     def ChangeMdParitySymbol(nr, ptype)
       Builtins.y2milestone("ChangeMdParitySymbol nr:%1 parity:%2", nr, ptype)
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       tmp = fromSymbol(@conv_mdparity, ptype)
       ret = @sint.changeMdParity(rd, tmp)
       if ret<0
@@ -3306,7 +3317,7 @@ module Yast
 
     def ChangeMdChunk(nr, chunk)
       Builtins.y2milestone("ChangeMdChunk nr:%1 chunk:%2", nr, chunk)
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       ret = @sint.changeMdChunk(rd, chunk)
       if ret<0
         Builtins.y2error("ChangeMdChunk sint ret:%1", ret)
@@ -3318,7 +3329,7 @@ module Yast
     def CheckMd(nr)
       Builtins.y2milestone("CheckMd nr:%1", nr)
       ret = 0
-      rd = Builtins.sformat("/dev/md%1", nr)
+      rd = MdToDev(nr)
       ret = @sint.checkMd(rd)
       Builtins.y2milestone("CheckMd sint ret:%1", ret) if ret != 0
       ret
@@ -3543,28 +3554,16 @@ module Yast
           Ops.set(p.value, "mountby", mby)
         end
       elsif ctype == :CT_MD
-        ret = CreateMd(
-          Ops.get_integer(p.value, "nr", 0),
-          Ops.get_string(p.value, "raid_type", "raid1")
-        )
-        if ret && Builtins.haskey(p.value, "chunk_size")
-          ChangeMdChunk(
-            Ops.get_integer(p.value, "nr", 0),
-            Ops.get_integer(p.value, "chunk_size", 4)
-          )
+        ret = CreateMd( p.value["device"], p.value.fetch("raid_type","raid1") )
+        if ret && p.value.has_key?("chunk_size")
+          ChangeMdChunk( p.value["device"], p.value.fetch("chunk_size",4) )
         end
-        if ret && HasRaidParity(Ops.get_string(p.value, "raid_type", "")) &&
-            Builtins.haskey(p.value, "parity_algorithm")
-          ChangeMdParity(
-            Ops.get_integer(p.value, "nr", 0),
-            Ops.get_string(p.value, "parity_algorithm", "")
-          )
+        if ret && HasRaidParity(p.value.fetch("raid_type","")) &&
+            p.value.has_key?("parity_algorithm")
+          ChangeMdParity( p.value["device"], p.value.fetch("parity_algorithm",""))
         end
         if ret
-          ret = ExtendMd(
-            Ops.get_integer(p.value, "nr", 0),
-            Ops.get_list(p.value, "devices", [])
-          )
+          ret = ExtendMd( p.value["device"], p.value.fetch("devices",[]))
         end
       elsif ctype == :CT_LOOP
         Builtins.y2milestone("CreateAny Loop p:%1", p.value)

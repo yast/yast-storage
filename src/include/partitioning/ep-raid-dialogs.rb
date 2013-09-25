@@ -24,6 +24,7 @@
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
 module Yast
+  Yast.import "String"
   module PartitioningEpRaidDialogsInclude
     def initialize_partitioning_ep_raid_dialogs(include_target)
       textdomain "storage"
@@ -113,6 +114,16 @@ module Yast
       helptext = Ops.add(
         helptext,
         _(
+          "<p><b>Raid Name</b> gives you the possibility to provide a meaningful\n" +
+            "name for the raid. This is optional. If name is provided, the device is\n" +
+	    "available as <tt>/dev/md/&lt;name&gt;</tt>.</p>\n"
+        )
+      )
+
+      # helptext
+      helptext = Ops.add(
+        helptext,
+        _(
           "<p>Add partitions to your RAID. According to\n" +
             "the RAID type, the usable disk size is the sum of these partitions (RAID0), the size\n" +
             "of the smallest partition (RAID 1), or (N-1)*smallest partition (RAID 5).</p>\n"
@@ -174,59 +185,69 @@ module Yast
         Left(
           # heading
           HVSquash(
-            term(
-              :FrameWithMarginBox,
-              _("RAID Type"),
-              RadioButtonGroup(
-                Id(:raid_type),
-                VBox(
-                  # Translators, 'Striping' is a technical term here. Translate only if
-                  # you are sure!! If in doubt, leave it in English.
-                  term(
-                    :LeftRadioButton,
-                    Id(:raid0),
-                    Opt(:notify),
-                    _("RAID &0  (Striping)"),
-                    raid_type == "raid0"
-                  ),
-                  # Translators, 'Mirroring' is a technical term here. Translate only if
-                  # you are sure!! If in doubt, leave it in English.
-                  term(
-                    :LeftRadioButton,
-                    Id(:raid1),
-                    Opt(:notify),
-                    _("RAID &1  (Mirroring)"),
-                    raid_type == "raid1"
-                  ),
-                  # Translators, 'Redundant Striping' is a technical term here. Translate
-                  # only if you are sure!! If in doubt, leave it in English.
-                  term(
-                    :LeftRadioButton,
-                    Id(:raid5),
-                    Opt(:notify),
-                    _("RAID &5  (Redundant Striping)"),
-                    raid_type == "raid5"
-                  ),
-                  # Translators, 'Redundant Striping' is a technical term here. Translate only if
-                  # you are sure!! If in doubt, leave it in English.
-                  term(
-                    :LeftRadioButton,
-                    Id(:raid6),
-                    Opt(:notify),
-                    _("RAID &6  (Dual Redundant Striping)"),
-                    raid_type == "raid6"
-                  ),
-                  # Translators, 'Mirroring' and 'Striping' are technical terms here. Translate only if
-                  # you are sure!! If in doubt, leave it in English.
-                  term(
-                    :LeftRadioButton,
-                    Id(:raid10),
-                    Opt(:notify),
-                    _("RAID &10  (Mirroring and Striping)"),
-                    raid_type == "raid10"
-                  )
-                )
-              )
+	    HBox(
+	      term(
+		:FrameWithMarginBox,
+		_("RAID Type"),
+		RadioButtonGroup(
+		  Id(:raid_type),
+		  VBox(
+		    # Translators, 'Striping' is a technical term here. Translate only if
+		    # you are sure!! If in doubt, leave it in English.
+		    term(
+		      :LeftRadioButton,
+		      Id(:raid0),
+		      Opt(:notify),
+		      _("RAID &0  (Striping)"),
+		      raid_type == "raid0"
+		    ),
+		    # Translators, 'Mirroring' is a technical term here. Translate only if
+		    # you are sure!! If in doubt, leave it in English.
+		    term(
+		      :LeftRadioButton,
+		      Id(:raid1),
+		      Opt(:notify),
+		      _("RAID &1  (Mirroring)"),
+		      raid_type == "raid1"
+		    ),
+		    # Translators, 'Redundant Striping' is a technical term here. Translate
+		    # only if you are sure!! If in doubt, leave it in English.
+		    term(
+		      :LeftRadioButton,
+		      Id(:raid5),
+		      Opt(:notify),
+		      _("RAID &5  (Redundant Striping)"),
+		      raid_type == "raid5"
+		    ),
+		    # Translators, 'Redundant Striping' is a technical term here. Translate only if
+		    # you are sure!! If in doubt, leave it in English.
+		    term(
+		      :LeftRadioButton,
+		      Id(:raid6),
+		      Opt(:notify),
+		      _("RAID &6  (Dual Redundant Striping)"),
+		      raid_type == "raid6"
+		    ),
+		    # Translators, 'Mirroring' and 'Striping' are technical terms here. Translate only if
+		    # you are sure!! If in doubt, leave it in English.
+		    term(
+		      :LeftRadioButton,
+		      Id(:raid10),
+		      Opt(:notify),
+		      _("RAID &10  (Mirroring and Striping)"),
+		      raid_type == "raid10"
+		    )
+		  )
+		)
+	      ),
+	      HSpacing(1),
+	      Top(
+		TextEntry(
+		  Id(:raid_name),
+		  # label text
+		  _("Raid &Name (optional)")
+		)
+	      )
             )
           )
         )
@@ -254,6 +275,8 @@ module Yast
       )
       MiniWorkflow.SetLastStep(false)
 
+      UI.ChangeWidget(Id(:raid_name), :ValidChars, Builtins.deletechars(String.CGraph, "'\""))
+
       widget = nil
       begin
         widget = MiniWorkflow.UserInput
@@ -280,8 +303,14 @@ module Yast
       end until widget == :abort || widget == :back || widget == :next
 
       if widget == :next
-        Ops.set(data.value, "raid_type", raid_type)
-        Ops.set(data.value, "devices", devices)
+        rname = UI.QueryWidget(Id(:raid_name), :Value)
+	if !rname.empty?
+	  data.value["device"] = "/dev/md/"+rname
+	else
+	  data.value["device"] = "/dev/md"+data.value.fetch("nr",0).to_s
+	end
+        data.value["raid_type"] = raid_type
+        data.value["devices"] = devices
 
         size_k = 0
         size_k_ref = arg_ref(size_k)

@@ -29,7 +29,7 @@ module Yast
       textdomain "storage"
     end
 
-    def AddDevices(raid_nr, devs)
+    def AddDevices(raid_dev, devs)
       devs = deep_copy(devs)
       ret = true
 
@@ -37,25 +37,25 @@ module Yast
         Storage.SetPartitionId(dev, Partitions.fsid_raid)
         Storage.SetPartitionFormat(dev, false, :none)
       end
-      ret = false if !Storage.ExtendMd(raid_nr, devs)
+      ret = false if !Storage.ExtendMd(raid_dev, devs)
 
       ret
     end
 
 
-    def RemoveDevices(raid_nr, devs)
+    def RemoveDevices(raid_dev, devs)
       devs = deep_copy(devs)
       ret = true
 
       Builtins.foreach(devs) do |dev|
         Storage.UnchangePartitionId(dev)
-        ret = false if !Storage.ShrinkMd(raid_nr, [dev])
+        ret = false if !Storage.ShrinkMd(raid_dev, [dev])
       end
 
       ret
     end
 
-    def ReplaceDevices(raid_nr, devs)
+    def ReplaceDevices(raid_dev, devs)
       devs = deep_copy(devs)
       ret = true
 
@@ -63,7 +63,7 @@ module Yast
         Storage.SetPartitionId(dev, Partitions.fsid_raid)
         Storage.SetPartitionFormat(dev, false, :none)
       end
-      ret = false if !Storage.ReplaceMd(raid_nr, devs)
+      ret = false if !Storage.ReplaceMd(raid_dev, devs)
 
       ret
     end
@@ -113,17 +113,15 @@ module Yast
           data = data_ref.value;
           _DlgCreateRaidNew_result
         )
-        nr = Ops.get_integer(data, "nr", 0)
-        raid_type = Builtins.tosymbol(
-          Ops.get_string(data, "raid_type", "raid0")
-        )
+        dev = data.fetch("device","")
+        raid_type = Builtins.tosymbol(data.fetch("raid_type","raid0"))
 
-        if Storage.CreateMdWithDevs(nr, raid_type, [])
+        if Storage.CreateMdWithDevs(dev, raid_type, [])
           devices = Ops.get_list(data, "devices", [])
-          AddDevices(nr, devices)
+          AddDevices(dev, devices)
 
           chunk_size_k = Ops.get_integer(data, "chunk_size_k", 4)
-          Storage.ChangeMdChunk(nr, chunk_size_k)
+          Storage.ChangeMdChunk(dev, chunk_size_k)
 
           if Builtins.haskey(data, "parity_algorithm")
             parity_algorithm = Ops.get_symbol(
@@ -132,7 +130,7 @@ module Yast
               :par_default
             )
 	    if( parity_algorithm!=:par_default )
-	      Storage.ChangeMdParitySymbol(nr, parity_algorithm)
+	      Storage.ChangeMdParitySymbol(dev, parity_algorithm)
 	    end
           end
 
@@ -236,12 +234,11 @@ module Yast
           data = data_ref.value;
           _DlgResizeRaid_result
         )
-        raid_nr = Ops.get_integer(data, "nr", 0)
-
+        dev = data.fetch("device","")
         devices_new = Ops.get_list(data, "devices_new", [])
         Builtins.y2milestone("devices_new:%1", devices_new)
         if Ops.greater_than(Builtins.size(devices_new), 0)
-          ReplaceDevices(raid_nr, devices_new)
+          ReplaceDevices(dev, devices_new)
           UpdateMainStatus()
           UpdateNavigationTree(nil)
           TreePanel.Create
