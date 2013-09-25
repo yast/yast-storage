@@ -4694,23 +4694,14 @@ module Yast
           !Ops.get_boolean(p, "delete", false) &&
             Ops.get_boolean(p, "create", false)
         end
-        if Ops.greater_than(Builtins.size(dps), 1) &&
-            Builtins.haskey(Ops.get(dps, 0, {}), "nr")
-          dps = Builtins.sort(dps) do |a, b|
-            Ops.less_than(
-              Ops.get_integer(a, "nr", 0),
-              Ops.get_integer(b, "nr", 0)
-            )
+        if dps.size>1
+	  Builtins.y2milestone("SetTargetMap dps:%1",dps)
+	  if dps.fetch(0,{}).has_key?("nr")
+	    dps.sort! { |a, b| a.fetch("nr",0)<=>b.fetch("nr",0) }
+	  elsif dps.fetch(0,{}).fetch("type",:none)==:lvm
+	    dps = dps.partition { |a| a.fetch("pool",false) }
           end
-        end
-        if Ops.greater_than(Builtins.size(dps), 1) &&
-            Builtins.haskey(Ops.get(dps, 0, {}), "name")
-          dps = Builtins.sort(dps) do |a, b|
-            Ops.greater_than(
-              Ops.get_boolean(a, "pool", false),
-              Ops.get_boolean(b, "pool", false)
-            )
-          end
+	  Builtins.y2milestone("SetTargetMap dps:%1",dps)
         end
         Builtins.foreach(dps) do |p|
           p_ref = arg_ref(p)
