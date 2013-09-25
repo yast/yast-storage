@@ -86,13 +86,6 @@ module Yast
       @changes = ""
       if Storage.GetPartProposalFirst
 
-        # see bnc#839700
-        if Popup.YesNo(_("Would you like to use the next generation\n" +
-                         "Linux file system \"btrfs\" by default?"))
-          StorageProposal.GetControlCfg()
-          StorageProposal.SetProposalBtrfs(true)
-        end
-
         @prop = StorageProposal.get_inst_prop(Storage.GetTargetMap)
         Builtins.y2milestone("prop ok:%1", Ops.get_boolean(@prop, "ok", false))
 
