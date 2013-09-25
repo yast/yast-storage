@@ -169,6 +169,8 @@ module Yast
       # close progress on running system
       SlideShow.CloseDialog if Mode.normal
 
+      Builtins.y2debug("writing target-map %1", Storage.GetTargetMap)
+
       SCR.Write(
         path(".target.ycp"),
         Storage.SaveDumpPath("targetMap_pe"),
