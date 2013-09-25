@@ -4422,12 +4422,12 @@ module Yast
             Builtins.foreach(tmp) do |dev, c|
               if Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_DMRAID &&
                   Ops.get_integer(c, "minor", 0) == minor
-                Builtins.y2milestone("addind bios_id %1 to %2", bios, dev)
+                Builtins.y2milestone("adding bios_id %1 to %2", bios, dev)
                 Ops.set(tmp, [dev, "bios_id"], bios)
               end
               if Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_MDPART &&
                   Ops.get_string(c, "device", "") == dm
-                Builtins.y2milestone("addind bios_id %1 to %2", bios, dev)
+                Builtins.y2milestone("adding bios_id %1 to %2", bios, dev)
                 Ops.set(tmp, [dev, "bios_id"], bios)
               end
             end
