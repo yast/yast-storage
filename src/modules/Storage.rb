@@ -2900,7 +2900,7 @@ module Yast
         d = part.fetch("device","")
         fmt = part.fetch("format",false)
         rem = part["subvol"].select { |p| p.fetch("delete",false) }
-        cre = part["subvol"].select { |p| p.fetch("create",false)||fmt }
+        cre = part["subvol"].select { |p| !p.fetch("delete",false)&&(p.fetch("create",false)||fmt) }
         Builtins.y2milestone("ChangeVolumeProperties rem:%1", rem)
         Builtins.y2milestone("ChangeVolumeProperties cre:%1", cre)
         while ret == 0 && !rem.empty?
@@ -4888,30 +4888,28 @@ module Yast
       def_subvol.sort!()
 
       sv_prepend = ""
-      Builtins.y2milestone(
-        "AddSubvolRoot subvol:%1",
-        Ops.get_list(part, "subvol", [])
-      )
+      lst = part.fetch("subvol",[])
+      Builtins.y2milestone("AddSubvolRoot subvol:%1", lst)
       if FileSystems.default_subvol != ""
-        sv_prepend = Ops.add(FileSystems.default_subvol, "/")
+        sv_prepend = FileSystems.default_subvol+"/"
       end
-      Builtins.foreach(def_subvol) do |s|
-        svn = Ops.add(sv_prepend, s)
-        if Builtins.find(Ops.get_list(part, "subvol", [])) do |p|
-            Ops.get_string(p, "name", "") == svn
-          end == nil
-          Ops.set(
-            part,
-            "subvol",
-            Builtins.add(
-              Ops.get_list(part, "subvol", []),
-              { "create" => true, "name" => svn }
-            )
-          )
+      fmt = part.fetch("format",false)
+      names = []
+      if !fmt
+	names = ls.select { |s| !s.fetch("delete",false) }.each { |s| s.fetch("name","") }
+      else
+	lst = []
+      end
+      Builtins.y2milestone("AddSubvolRoot subvol names:%1 lst:%2", names, lst)
+      def_subvol.each do |s|
+        svn = sv_prepend+s
+        if !names.include?( svn )
+	  lst.push( { "create" => true, "name" => svn } )
         end
       end
+      part["subvol"] = lst;
       Builtins.y2milestone("AddSubvolRoot part:%1", part)
-      deep_copy(part)
+      part
     end
 
 
