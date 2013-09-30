@@ -70,11 +70,10 @@ module Yast
         Builtins.y2milestone("ro:%1 test:%2 auto:%3 instsys:%4", 
 	                     env.readonly, env.testmode, env.autodetect, 
 			     env.instsys )
+
         locker_pid = 0
-        Builtins.y2milestone("@sint:%1 pid:%2", @sint, locker_pid )
         @sint, locker_pid = ::Storage::createStorageInterfacePid(env)
-        Builtins.y2milestone("@sint:%1 pid:%2", @sint, locker_pid )
-        Builtins.y2milestone("@sint is a %1 int:%2", @sint.class, @sint.kind_of?(Fixnum) )
+
         if @sint.kind_of?(Fixnum)
 	  locker_pid = @sint
 	  @sint = nil
