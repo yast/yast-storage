@@ -27,7 +27,7 @@
 # Purpose:	Provides information about partitions
 #
 # $Id$
-require "storage"
+require "storage_utf8"
 require "yast"
 
 module Yast

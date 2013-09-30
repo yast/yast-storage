@@ -26,7 +26,7 @@
 #
 # Purpose:		Define callbacks for libstorage.
 require "yast"
-require "storage"
+require "storage_utf8"
 
 
 module Yast
