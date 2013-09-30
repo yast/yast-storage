@@ -42,7 +42,7 @@
 # $Id$
 require "yast"
 require "dbus"
-require "storage"
+require "storage_utf8"
 
 module Yast
   class StorageClass < Module
