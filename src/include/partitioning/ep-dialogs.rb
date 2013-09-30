@@ -121,7 +121,7 @@ module Yast
           :crypt_fs,
           :Enabled,
           Ops.get_boolean(fs_data, :crypt, true) &&
-            Ops.get_symbol(data, "type", :primary) != :btrfs &&
+            Ops.get_symbol(data, "used_fs", :unknown) != :btrfs &&
             !Ops.get_boolean(data, "pool", false)
         )
 
