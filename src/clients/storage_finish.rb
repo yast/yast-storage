@@ -41,7 +41,6 @@ module Yast
       Yast.import "StorageUpdate"
       Yast.import "Mode"
       Yast.import "Installation"
-      Yast.import "Initrd"
 
       @ret = nil
       @func = ""
