@@ -39,7 +39,6 @@ module Yast
       Yast.import "Arch"
       Yast.import "ModuleLoading"
       Yast.import "HwStatus"
-      Yast.import "Initrd"
       Yast.import "Storage"
       Yast.import "StorageDevices"
       Yast.import "StorageClients"
@@ -396,9 +395,9 @@ module Yast
         end
         Builtins.y2milestone("Initialize ModToInitrd %1", @ModToInitrd)
       end
-      Builtins.foreach(@ModToInitrd) do |s|
-        Initrd.AddModule(Ops.get_string(s, 0, ""), Ops.get_string(s, 1, ""))
-      end
+      # Builtins.foreach(@ModToInitrd) do |s|
+      #   Initrd.AddModule(Ops.get_string(s, 0, ""), Ops.get_string(s, 1, ""))
+      # end
 
       # load all raid personalities
       SCR.Execute(path(".target.modprobe"), "raid0", "")
