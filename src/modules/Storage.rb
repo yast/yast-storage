@@ -5794,10 +5794,12 @@ module Yast
       need_nfs = false
       need_quota = false
       need_crypt = false
+      need_iscsi = false
 
       Builtins.foreach(target_map) do |k, e|
         need_lvm = true if Ops.get_symbol(e, "type", :CT_UNKNOWN) == :CT_LVM
         need_nfs = true if Ops.get_symbol(e, "type", :CT_UNKNOWN) == :CT_NFS
+        need_iscsi = true if Ops.get_boolean(e, "iscsi", :CT_UNKNOWN) == true
         if Builtins.find(Ops.get_list(e, "partitions", [])) do |part2|
             FileSystems.HasQuota(part2)
           end != nil
@@ -5811,57 +5813,41 @@ module Yast
       end
 
       Builtins.y2milestone(
-        "AddPackageList need_lvm:%1 need_nfs:%2 need_quota:%3 need_crypt:%4",
-        need_lvm,
-        need_nfs,
-        need_quota,
-        need_crypt
+        "AddPackageList need_lvm:%1 need_nfs:%2 need_quota:%3 need_crypt:%4 need_iscsi:%5",
+        need_lvm, need_nfs, need_quota, need_crypt, need_iscsi
       )
 
       if need_lvm
-        pl = Convert.convert(
-          Builtins.union(pl, ["lvm2"]),
-          :from => "list",
-          :to   => "list <string>"
-        )
+        pl << "lvm2"
       end
 
-      #nfs-client needs to be marked for installation if we have
-      #some NFS shares. It will pull in portmapper package(#436897)
+      # nfs-client needs to be marked for installation if we have some NFS
+      # shares. It will pull in portmapper package(#436897)
       if need_nfs
-        pl = Convert.convert(
-          Builtins.union(pl, ["nfs-client", "yast2-nfs-client"]),
-          :from => "list",
-          :to   => "list <string>"
-        )
+        pl << "nfs-client" << "yast2-nfs-client"
       end
+
       if need_quota
-        pl = Convert.convert(
-          Builtins.union(pl, ["quota"]),
-          :from => "list",
-          :to   => "list <string>"
-        )
+        pl << "quota"
       end
+
       if need_crypt
-        pl = Convert.convert(
-          Builtins.union(pl, ["cryptsetup", "cryptsetup-mkinitrd", "pam_mount"]),
-          :from => "list",
-          :to   => "list <string>"
-        )
+        pl << "cryptsetup" << "cryptsetup-mkinitrd" << "pam_mount"
+      end
+
+      if need_iscsi
+        pl << "open-iscsi"
       end
 
       part = GetEntryForMountpoint("/")
       if Ops.get_symbol(part, "used_fs", :unknown) == :btrfs
-        pl = Convert.convert(
-          Builtins.union(pl, ["snapper", "yast2-snapper"]),
-          :from => "list",
-          :to   => "list <string>"
-        )
+        pl << "snapper" << "yast2-snapper"
       end
 
       Builtins.y2milestone("AddPackageList ret %1", pl)
       deep_copy(pl)
     end
+
 
     # Takes care of selecting packages needed by storage
     # in installation
