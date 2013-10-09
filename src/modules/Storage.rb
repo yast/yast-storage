@@ -6454,13 +6454,7 @@ module Yast
         need_dmmultipath
       )
 
-      if need_crypt
-        CallInsserv(true, "boot.crypto")
-        CallInsserv(true, "boot.crypto-early")
-      end
-
       CallInsserv(need_md, "boot.md")
-      CallInsserv(need_lvm, "boot.lvm")
       CallInsserv(need_dmraid, "boot.dmraid")
       CallInsserv(need_dmmultipath, "boot.multipath")
       CallInsserv(need_dmmultipath, "multipathd")
