@@ -695,7 +695,7 @@ module Yast
         tmp = {}
         Ops.set(tmp, "disk", Builtins.substring(device, 0, dlen))
         device = Builtins.substring(device, dlen)
-        if Builtins.search(device, "_part") == 0
+        if Builtins.search(device, "-part") == 0
           device = Builtins.substring(device, 5)
         end
         if Ops.greater_than(Builtins.size(device), 0) &&
