@@ -100,6 +100,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_ydatadir}/*.ycp
 
 %doc %dir %{yast_docdir}
+%doc %{yast_docdir}/README*
 %doc %{yast_docdir}/COPY*
 
 # agents-scr
