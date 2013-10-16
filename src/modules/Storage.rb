@@ -4885,6 +4885,10 @@ module Yast
         def_subvol.push("boot/grub2/power-ieee1275")
       end
 
+      if Arch.s390
+        def_subvol.push("boot/grub2/s390x")
+      end
+
       def_subvol.sort!()
 
       sv_prepend = ""
