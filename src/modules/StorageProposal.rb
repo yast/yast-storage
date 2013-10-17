@@ -5043,7 +5043,7 @@ module Yast
 
     def sizek_to_pe(pek, pebyte, pvcreate)
       ret = Ops.divide(
-        Ops.subtract(pek, pvcreate ? 500 : 0),
+        Ops.subtract(pek, pvcreate ? 4000 : 0),
         Ops.divide(pebyte, 1024)
       )
       Builtins.y2milestone(
