@@ -6069,70 +6069,68 @@ module Yast
       tg = deep_copy(tg)
       have_ppc_boot = false
       Builtins.foreach(tg) do |dev, disk|
-        Builtins.foreach(Ops.get_list(disk, "partitions", [])) do |part|
+        disk.fetch("partitions",[]).each do |part|
           if !have_ppc_boot &&
-              Ops.get_integer(part, "fsid", 0) == Partitions.fsid_prep_chrp_boot &&
-              Builtins.size(Ops.get_string(part, "mount", "")) == 0 &&
-              Ops.get_boolean(part, "create", false)
+             part.fetch("fsid",0) == Partitions.fsid_prep_chrp_boot &&
+             part.fetch("mount","").empty? &&
+             part.fetch("create",false)
             have_ppc_boot = true
           end
         end
       end
-      Builtins.y2milestone(
-        "SpecialBootHandling: have_ppc_boot:%1",
-        have_ppc_boot
-      )
+      Builtins.y2milestone( "SpecialBootHandling: ppc_boot:%1", have_ppc_boot)
       Builtins.foreach(tg) do |dev, disk|
         new_part = []
-        Builtins.foreach(Ops.get_list(disk, "partitions", [])) do |part|
+        disk.fetch("partitions",[]).each do |part|
           # convert a mount point of /boot to a 41 PReP boot partition
           if Partitions.PrepBoot &&
-              Ops.get_string(part, "mount", "") == Partitions.BootMount &&
-              !have_ppc_boot
+             part.fetch("mount","") == Partitions.BootMount &&
+             !have_ppc_boot
             id = Partitions.fsid_prep_chrp_boot
-            Ops.set(part, "format", false)
-            Ops.set(part, "mount", "")
-            Ops.set(part, "fstype", Partitions.FsIdToString(id))
-            Ops.set(part, "prep_install", true)
-            if !Ops.get_boolean(part, "create", false) &&
-                Ops.get_integer(part, "fsid", 0) != id
-              Ops.set(part, "ori_fsid", Ops.get_integer(part, "fsid", 0))
-              Ops.set(part, "change_fsid", true)
+            part["format"]=false
+            part["mount"]=""
+            part["fstype"]=Partitions.FsIdToString(id)
+            part["prep_install"]=true
+            if !part.fetch("create",false) &&
+               part.fetch("fsid",0) != id
+              part["ori_fsid"] = part.fetch("fsid",0)
+              part["change_fsid"] = true
             end
-            Ops.set(part, "fsid", id)
-            Builtins.y2milestone(
-              "SpecialBootHandling modified Prep part=%1",
-              part
-            )
+            part["fsid"] = id
+            Builtins.y2milestone( "SpecialBootHandling modified Prep part=%1", part)
           end
           if Arch.board_mac &&
-              Ops.get_string(part, "mount", "") == Partitions.BootMount
+             part.fetch("mount","") == Partitions.BootMount
             id = Partitions.fsid_mac_hfs
-            Ops.set(part, "mount", "")
-            Ops.set(part, "fstype", Partitions.FsIdToString(id))
-            Ops.set(part, "fsid", id)
-            Ops.set(part, "used_fs", :hfs)
-            Ops.set(part, "detected_fs", :hfs)
-            Builtins.y2milestone(
-              "SpecialBootHandling modified hfs part=%1",
-              part
-            )
+            part["mount"] = ""
+            part["fstype"] = Partitions.FsIdToString(id)
+            part["fsid"] = id
+            part["used_fs"] = :hfs
+            part["detected_fs"] = :hfs
+            Builtins.y2milestone( "SpecialBootHandling modified hfs part=%1", part)
           end
           if Arch.ia64 &&
-              Ops.get_string(part, "mount", "") == Partitions.BootMount
+             part.fetch("mount","") == Partitions.BootMount
             id = Partitions.fsid_gpt_boot
-            Ops.set(part, "fsid", id)
-            Ops.set(part, "fstype", Partitions.FsIdToString(id))
-            if !Ops.get_boolean(part, "create", false) &&
-                Ops.get_symbol(part, "detected_fs", :none) == :vfat
-              Ops.set(part, "format", false)
+            part["fsid"] = id
+            part["fstype"] = Partitions.FsIdToString(id)
+            if !part.fetch("create",false) &&
+               part.fetch("detected_fs",:none)==:vfat
+              part["format"] = false
             end
-            Builtins.y2milestone(
-              "SpecialBootHandling modified GPT boot part=%1",
-              part
-            )
+            Builtins.y2milestone( "SpecialBootHandling modified GPT boot part=%1", part)
           end
-          new_part = Builtins.add(new_part, part)
+          if !Partitions.EfiBoot && (Arch.i386||Arch.x86_64) &&
+	     disk.fetch("label","") == "gpt" &&
+             part.fetch("mount","") == Partitions.BootMount
+            id = Partitions.fsid_bios_grub
+            part["fsid"] = id
+            part["fstype"] = Partitions.FsIdToString(id)
+	    part["format"] = false
+	    part["mount"] = ""
+            Builtins.y2milestone( "SpecialBootHandling modified BIOS grub part=%1", part)
+          end
+          new_part.push(part)
         end
         Ops.set(tg, [dev, "partitions"], new_part)
       end

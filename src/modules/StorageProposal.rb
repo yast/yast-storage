@@ -604,71 +604,51 @@ module Yast
 
 
     def need_boot(disk)
-      disk = deep_copy(disk)
       Builtins.y2milestone(
         "need_boot NeedBoot:%1 GetProposalBtrfs:%2 type:%3",
         Partitions.NeedBoot,
         GetProposalBtrfs(),
-        Ops.get_symbol(disk, "type", :CT_UNKNOWN)
+        disk.fetch("type",:CT_UNKNOWN)
       )
       ret = Partitions.NeedBoot ||
-        Ops.get_symbol(disk, "type", :CT_UNKNOWN) == :CT_DMRAID
+        disk.fetch("type",:CT_UNKNOWN) == :CT_DMRAID ||
+	(disk.fetch("label","")=="gpt" && !Partitions.EfiBoot)
       Builtins.y2milestone("need_boot ret:%1", ret)
       ret
     end
 
 
     def try_add_boot(conf, disk, force)
-      conf = deep_copy(conf)
-      disk = deep_copy(disk)
-      boot = Ops.greater_than(
-        Builtins.size(Builtins.filter(Ops.get_list(conf, "partitions", [])) do |e|
-          Ops.get_string(e, "mount", "") == Partitions.BootMount
-        end),
-        0
-      )
-      root = Ops.greater_than(
-        Builtins.size(Builtins.filter(Ops.get_list(conf, "partitions", [])) do |e|
-          Ops.get_string(e, "mount", "") == "/"
-        end),
-        0
-      )
+      pl = conf.fetch("partitions", [])
+      boot = pl.index { |e| e.fetch("mount","")==Partitions.BootMount }!=nil
+      root = pl.index { |e| e.fetch("mount","")=="/" }!=nil
       tc = deep_copy(conf)
       Builtins.y2milestone("try_add_boot conf %1", conf)
       Builtins.y2milestone(
         "try_add_boot boot %1 root %2 force %3 need_boot:%4",
-        boot,
-        root,
-        force,
-        need_boot(disk)
-      )
+        boot, root, force, need_boot(disk))
       if !boot && (root || force) &&
-          (Ops.greater_than(
-            Ops.get_integer(disk, "cyl_count", 0),
-            Partitions.BootCyl
-          ) ||
-            need_boot(disk))
+         disk.fetch("cyl_count",0)>Partitions.BootCyl ||
+	 need_boot(disk)
         pb = {}
-        Ops.set(pb, "mount", Partitions.BootMount)
-        Ops.set(pb, "size", Partitions.ProposedBootsize)
-        Ops.set(pb, "fsys", Partitions.DefaultBootFs)
-        Ops.set(pb, "id", Partitions.FsidBoot)
-        Ops.set(pb, "auto_added", true)
-        Ops.set(pb, "max_cyl", Partitions.BootCyl)
-        Ops.set(pb, "primary", Partitions.BootPrimary)
-        Ops.set(pb, "maxsize", Partitions.MaximalBootsize)
-        Ops.set(
-          tc,
-          "partitions",
-          Builtins.add(Ops.get_list(tc, "partitions", []), pb)
-        )
+	pb["mount"] = Partitions.BootMount
+	pb["size"] = Partitions.ProposedBootsize
+	if disk.fetch("label","")=="gpt" && !Partitions.EfiBoot
+	  sz = disk.fetch("cyl_size",0)-1024
+	  sz = 200*1024 if sz<200*1024
+	  pb["size"] = sz
+	end
+	pb["fsys"] = Partitions.DefaultBootFs
+	pb["id"] = Partitions.FsidBoot
+        pb["auto_added"] = true
+        pb["max_cyl"] = Partitions.BootCyl
+        pb["primary"] = Partitions.BootPrimary
+        pb["maxsize"] = Partitions.MaximalBootsize
+        tc["partitions"].push( pb )
         Builtins.y2milestone(
           "try_add_boot disk_cyl %1 boot_cyl %2 need_boot %3 typ %4",
-          Ops.get_integer(disk, "cyl_count", 0),
-          Partitions.BootCyl,
-          Partitions.NeedBoot,
-          Ops.get_symbol(disk, "type", :CT_UNKNOWN)
-        )
+          disk.fetch("cyl_count",0), Partitions.BootCyl,
+          Partitions.NeedBoot, disk.fetch("type",:CT_UNKNOWN))
         Builtins.y2milestone("try_add_boot boot added automagically pb %1", pb)
       end
       deep_copy(tc)
@@ -3592,55 +3572,44 @@ module Yast
 
 
     def can_boot_reuse(disk, label, boot, max_prim, partitions)
-      partitions = deep_copy(partitions)
       ret = []
       Builtins.y2milestone("can_boot_reuse boot:%1", boot)
       if boot && !Partitions.PrepBoot
         Builtins.y2milestone(
           "can_boot_reuse disk:%1 max_prim:%2 label:%3 part:%4",
-          disk,
-          max_prim,
-          label,
-          partitions
-        )
-        pl = []
-        pl = Builtins.filter(partitions) do |p|
-          !Ops.get_boolean(p, "delete", false) &&
-            Ops.greater_or_equal(
-              Ops.multiply(Ops.get_integer(p, "size_k", 0), 1024),
-              Partitions.MinimalBootsize
-            )
+          disk, max_prim, label, partitions)
+        pl = partitions.select do |p|
+          !p.fetch("delete",false) &&
+          (p.fetch("size_k",0)*1024>=Partitions.MinimalBootsize||
+	   p.fetch("fsid",0)==Partitions.fsid_bios_grub)
         end
+        Builtins.y2milestone( "can_boot_reuse pl:%1", pl )
         boot2 = Builtins.find(pl) do |p|
-          Ops.get_integer(p, "fsid", 0) == Partitions.fsid_gpt_boot ||
-            Ops.get_integer(p, "fsid", 0) == Partitions.FsidBoot &&
-              Ops.less_or_equal(
-                Ops.multiply(Ops.get_integer(p, "size_k", 0), 1024),
-                Partitions.MaximalBootsize
-              ) ||
-            Ops.get_symbol(p, "detected_fs", :unknown) == :hfs &&
-              Ops.get_boolean(p, "boot", false) &&
-              label == "mac" ||
-            Ops.get_integer(p, "fsid", 0) == Partitions.fsid_prep_chrp_boot &&
-              Ops.less_or_equal(Ops.get_integer(p, "nr", 0), max_prim) &&
-              Partitions.PrepBoot
+          p.fetch("fsid",0) == Partitions.fsid_gpt_boot ||
+	  p.fetch("fsid",0) == Partitions.FsidBoot &&
+	    p.fetch("size_k",0)*1024<=Partitions.MaximalBootsize ||
+	  p.fetch("detected_fs",:unknown) == :hfs &&
+	    p.fetch("boot",false) &&
+	    label == "mac" ||
+	  p.fetch("fsid",0) == Partitions.fsid_prep_chrp_boot &&
+	    p.fetch("nr",0)<=max_prim &&
+	    Partitions.PrepBoot ||
+	  p.fetch("fsid",0) == Partitions.fsid_bios_grub &&
+	    label=="gpt" &&
+	    !Partitions.EfiBoot
         end
-        ret = Builtins.maplist(partitions) do |p|
-          if !Ops.get_boolean(p, "delete", false) &&
-              Ops.get_string(p, "device", "") ==
-                Ops.get_string(boot2, "device", "") &&
-              Storage.CanEdit(p, false)
-            p = Storage.SetVolOptions(
-              p,
-              Partitions.BootMount,
-              Partitions.DefaultBootFs,
-              "",
-              "",
-              ""
-            )
-          end
-          deep_copy(p)
-        end if boot2 != nil
+	Builtins.y2milestone("can_boot_reuse boot2:%1", boot2)
+	if boot2 != nil
+	  ret = partitions.map do |p|
+	    if !p.fetch("delete",false) &&
+		p.fetch("device","") == boot2.fetch("device","") &&
+		Storage.CanEdit(p, false)
+	      p = Storage.SetVolOptions( p, Partitions.BootMount,
+		Partitions.DefaultBootFs, "", "", "")
+	    end
+          p
+	  end 
+	end 
         Builtins.y2milestone("can_boot_reuse ret:%1", ret)
       end
       deep_copy(ret)
@@ -4119,7 +4088,8 @@ module Yast
         Partitions.fsid_native,
         Partitions.fsid_swap,
         Partitions.fsid_lvm,
-        Partitions.fsid_raid
+        Partitions.fsid_raid,
+        Partitions.fsid_bios_grub
       ]
       remk = ["del_ptable", "disklabel"]
       Builtins.foreach(ddev) do |s|
