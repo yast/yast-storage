@@ -125,7 +125,7 @@ module Yast
       @devices = Builtins.flatten([unselected_devices, selected_devices])
 
       @selected_size_function = new_selected_size_function != nil ?
-        new_selected_size_function :
+        deep_copy(new_selected_size_function) :
         fun_ref(method(:Sum), "integer (list <map>)")
 
       device_names = Builtins.maplist(@devices) do |device|
