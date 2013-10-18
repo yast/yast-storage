@@ -487,7 +487,7 @@ module Yast
     def MakeSubInfo(disk, part, field, style)
       disk = deep_copy(disk)
       part = deep_copy(part)
-      data = part == nil ? disk : part
+      data = part == nil ? deep_copy(disk) : deep_copy(part)
       type = part == nil ?
         Ops.get_symbol(disk, "type", :primary) :
         Ops.get_symbol(part, "type", :CT_DISK)
