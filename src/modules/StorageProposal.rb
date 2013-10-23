@@ -6044,13 +6044,9 @@ module Yast
           )
         )
       )
+
       frame = VBox(
-        VSpacing(
-          Ops.multiply(
-            Convert.convert(3, :from => "integer", :to => "float"),
-            space
-          )
-        ),
+        VSpacing(3.0 * space),
         HVCenter(
           VBox(
             Left(Label(Opt(:boldFont), _("Proposal settings"))),
@@ -6059,7 +6055,7 @@ module Yast
           )
         )
       )
-      #`HVCenter(`Frame( _("Proposal settings"), `HVCenter(vb) )));
+
       Builtins.y2milestone(
         "AddCommonWidgets Home:%1 Btrfs:%2",
         GetProposalHome(),
@@ -6067,6 +6063,7 @@ module Yast
       )
       deep_copy(frame)
     end
+
 
     def QueryProposalPassword
       no_query = false
