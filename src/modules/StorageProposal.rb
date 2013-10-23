@@ -5951,6 +5951,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def SaveHeight
       display_info = UI.GetDisplayInfo
       ret = false
@@ -5961,12 +5962,10 @@ module Yast
       ret
     end
 
+
     def AddCommonWidgets
       vb = VBox()
-      space = 0.5
-      if SaveHeight()
-        space = Convert.convert(0, :from => "integer", :to => "float")
-      end
+      space = SaveHeight() ? 0.0 : 0.5
       vb = Builtins.add(
         vb,
         Left(
