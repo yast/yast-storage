@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2013] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -592,6 +592,71 @@ module Yast
       nil
     end
 
+
+    def UpdateFstabDmraidToMdadm()
+      Builtins.y2milestone("UpdateFstabDmraidToMdadm")
+
+      mapping = Storage.GetDmraidToMdadm()
+      if mapping.empty?
+        return
+      end
+
+      fstab_path = Storage.PathToDestdir("/etc/fstab")
+      fstab = Partitions.GetFstab(fstab_path)
+
+      for line in 1..AsciiFile.NumLines(fstab)
+        l = (
+          fstab_ref = arg_ref(fstab);
+          _GetLine_result = AsciiFile.GetLine(fstab_ref, line);
+          fstab = fstab_ref.value;
+          _GetLine_result
+        )
+
+        device = Ops.get_string(l, ["fields", 0], "")
+
+        device = Storage.TranslateDeviceDmraidToMdadm(device, mapping)
+
+        if device != Ops.get_string(l, ["fields", 0], "")
+          fstab_ref = arg_ref(fstab)
+          AsciiFile.ChangeLineField(fstab_ref, line, 0, device)
+          fstab = fstab_ref.value
+        end
+      end
+
+      fstab_ref = arg_ref(fstab)
+      AsciiFile.RewriteFile(fstab_ref, fstab_path)
+      fstab = fstab_ref.value
+
+      crtab_path = Storage.PathToDestdir("/etc/cryptotab")
+      crtab = Partitions.GetCrypto(crtab_path)
+
+      for line in 1..AsciiFile.NumLines(crtab)
+        l = (
+          crtab_ref = arg_ref(crtab);
+          _GetLine_result = AsciiFile.GetLine(crtab_ref, line);
+          crtab = crtab_ref.value;
+          _GetLine_result
+        )
+
+        device = Ops.get_string(l, ["fields", 1], "")
+
+        device = Storage.TranslateDeviceDmraidToMdadm(device, mapping)
+
+        if device != Ops.get_string(l, ["fields", 1], "")
+          crtab_ref = arg_ref(crtab)
+          AsciiFile.ChangeLineField(crtab_ref, line, 1, device)
+          crtab = crtab_ref.value
+        end
+      end
+
+      crtab_ref = arg_ref(crtab)
+      AsciiFile.RewriteFile(crtab_ref, crtab_path)
+      crtab = crtab_ref.value
+
+      return
+    end
+
+
     # Updates fstab on disk
     #
     # @param map old version
@@ -657,6 +722,8 @@ module Yast
         # remove EVMS
         # FIXME add appropriate condition if needed (does not seem so)
         UpdateFstabEvms2Lvm()
+
+        UpdateFstabDmraidToMdadm()
 
         dm = Storage.BuildDiskmap(oldv)
         if Ops.greater_than(Builtins.size(dm), 0)

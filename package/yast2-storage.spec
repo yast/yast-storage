@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.0
+Version:        3.1.1
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -32,9 +32,9 @@ BuildRequires:	libstorage-devel >= 2.24.0 yast2 >= 2.19.4 yast2-core-devel >= 2.
 BuildRequires:  yast2-devtools >= 3.0.6
 BuildRequires:	yast2-testsuite >= 2.19.0
 BuildRequires:	rubygem-ruby-dbus
-BuildRequires:	libstorage-ruby >= 2.25.0
-Requires:	libstorage4 >= 2.24.5
-Requires:	libstorage-ruby >= 2.25.0
+BuildRequires:	libstorage-ruby >= 2.25.2
+Requires:	libstorage4 >= 2.25.2
+Requires:	libstorage-ruby >= 2.25.2
 Requires:	yast2-core >= 2.18.3 yast2 >= 2.19.4 yast2-libyui >= 2.18.7
 Requires:	rubygem-ruby-dbus
 %ifarch s390 s390x

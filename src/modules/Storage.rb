@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2013] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -308,11 +308,30 @@ module Yast
       Storage()
     end
 
+
     def IsKernelDeviceName(device)
       Builtins.substring(device, 0, 6) != "LABEL=" &&
         Builtins.substring(device, 0, 5) != "UUID=" &&
         Builtins.substring(device, 0, 13) != "/dev/disk/by-"
     end
+
+
+    def DeviceNameMightNeedAdaption(device)
+
+      if IsKernelDeviceName(device)
+        return true
+      end
+
+      if device.start_with?("/dev/disk/by-id/raid-") ||
+          device.start_with?("/dev/disk/by-id/dm-name-") ||
+          device.start_with?("/dev/disk/by-id/dm-uuid-DMRAID-")
+        return true
+      end
+
+      return false
+
+    end
+
 
     def InitLibstorage(readonly)
       return true if @sint != nil
@@ -6360,6 +6379,16 @@ module Yast
     end
 
 
+    def TranslateDeviceDmraidToMdadm(device, mapping)
+      ret = device
+      mapping.each do |name, uuid|
+        ret = ret.sub("/dev/disk/by-id/raid-" + name, "/dev/disk/by-id/md-uuid-" + uuid)
+        ret = ret.sub("/dev/disk/by-id/dm-name-" + name, "/dev/disk/by-id/md-uuid-" + uuid)
+        ret = ret.sub("/dev/disk/by-id/dm-uuid-DMRAID-" + name, "/dev/disk/by-id/md-uuid-" + uuid)
+      end
+      return ret
+    end
+
 
     def GetTranslatedDevices(oldv, newv, names)
       oldv = deep_copy(oldv)
@@ -6384,6 +6413,7 @@ module Yast
         "major",
         0
       ) == 9
+
       # convert EVMS names to LVM
       # FIXME: add version checking, but does not seem necessary, since non-LVM
       # installations will not be affected by this conversion at all
@@ -6393,6 +6423,13 @@ module Yast
         end
         n
       end
+
+      # convert dmraid names to mdadm names
+      mapping = GetDmraidToMdadm()
+      if !mapping.empty?
+        ret.map! { |name| TranslateDeviceDmraidToMdadm(name, mapping) }
+      end
+
       Builtins.y2milestone("GetTranslatedDevices ret %1", ret)
       deep_copy(ret)
     end
@@ -6845,7 +6882,7 @@ module Yast
       ret = false
       tg = GetTargetMap()
       ts = fstab_spec
-      if IsKernelDeviceName(fstab_spec)
+      if DeviceNameMightNeedAdaption(fstab_spec)
         # translate fstab_spec from old to new kernel device name
         ts = Ops.get(GetTranslatedDevices({}, {}, [fstab_spec]), 0, "")
         if ts != fstab_spec
@@ -7025,8 +7062,9 @@ module Yast
       deep_copy(ret)
     end
 
+
     def GetDetectedDiskPaths
-      ret = [];
+      ret = []
       disks = ::Storage::getPresentDisks
       disks.each do |d|
 	ret.push(d)
@@ -7034,6 +7072,18 @@ module Yast
       Builtins.y2milestone("disks:%1", ret)
       ret
     end
+
+
+    def GetDmraidToMdadm()
+      mapping = {}
+      tmp = ::Storage::DmraidToMdadm()
+      tmp.each do |a, b|
+        mapping[a] = b
+      end
+      Builtins.y2milestone("dmraid to mdadm mapping %1", mapping)
+      return mapping
+    end
+
 
     publish :variable => :resize_partition, :type => "string"
     publish :variable => :resize_partition_data, :type => "map"
@@ -7218,6 +7268,7 @@ module Yast
     publish :function => :SLES9PersistentDevNames, :type => "string (string)"
     publish :function => :HdDiskMap, :type => "string (string, map)"
     publish :function => :BuildDiskmap, :type => "map (map)"
+    publish :function => :TranslateDeviceDmraidToMdadm, :type => "string (string, map<string, string>)"
     publish :function => :GetTranslatedDevices, :type => "list <string> (map, map, list <string>)"
     publish :function => :FinishInstall, :type => "void ()"
     publish :function => :GetRootInitrdModules, :type => "list ()"
