@@ -42,7 +42,7 @@
 # $Id$
 require "yast"
 require "dbus"
-require "storage_utf8"
+require "storage"
 
 module Yast
   class StorageClass < Module
@@ -371,22 +371,22 @@ module Yast
 
 
     def ByteToHumanString(bytes)
-      ::Storage::byteToHumanString(bytes, false, 2, false)
+      return ::Storage::byteToHumanString(bytes, false, 2, false).force_encoding("UTF-8")
     end
 
 
     def KByteToHumanString(bytes_k)
-      ::Storage::byteToHumanString(bytes_k*1024, false, 2, false)
+      return ::Storage::byteToHumanString(bytes_k*1024, false, 2, false).force_encoding("UTF-8")
     end
 
 
     def ByteToHumanStringOmitZeroes(bytes)
-      ::Storage::byteToHumanString(bytes, false, 2, true)
+      return ::Storage::byteToHumanString(bytes, false, 2, true).force_encoding("UTF-8")
     end
 
 
     def KByteToHumanStringOmitZeroes(bytes_k)
-      ::Storage::byteToHumanString(bytes_k*1024, false, 2, true)
+      return ::Storage::byteToHumanString(bytes_k*1024, false, 2, true).force_encoding("UTF-8")
     end
 
 
@@ -5249,7 +5249,7 @@ module Yast
       infos.each do |info|
         m = {
           :destructive => info.destructive,
-          :text        => info.text
+          :text => info.text.force_encoding("UTF-8")
         }
 	ret.push(m)
       end
@@ -5285,14 +5285,14 @@ module Yast
 
 
     def LastAction
-      ret = @sint.getLastAction()
-      ret
+      return @sint.getLastAction().force_encoding("UTF-8")
     end
 
+
     def ExtendedErrorMsg
-      ret = @sint.getExtendedErrorMessage()
-      ret
+      return @sint.getExtendedErrorMessage().force_encoding("UTF-8")
     end
+
 
     def SetZeroNewPartitions(val)
       Builtins.y2milestone("SetZeroNewPartitions val:%1", val)
