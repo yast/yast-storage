@@ -24,7 +24,7 @@
 # Authors:             Thomas Fehr (fehr@suse.de)
 #
 # Purpose:             Helper module to initialize libstorage
-require "storage_utf8"
+require "storage"
 require "yast"
 
 module Yast

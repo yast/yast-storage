@@ -26,7 +26,7 @@
 #
 # Purpose:		Define callbacks for libstorage.
 require "yast"
-require "storage_utf8"
+require "storage"
 
 
 module Yast
@@ -143,7 +143,7 @@ module Yast
       )
 
       Builtins.y2milestone("before getErrorString error:%1", error )
-      tmp = @sint.getErrorString(error)
+      tmp = @sint.getErrorString(error).force_encoding("UTF-8")
       Builtins.y2milestone("before getErrorString ret:%1", tmp )
       text = Ops.add(Ops.add(text, tmp), "\n\n") if !Builtins.isempty(tmp)
 

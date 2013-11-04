@@ -29,7 +29,7 @@
 #
 #
 # $Id$
-require "storage_utf8"
+require "storage"
 require "yast"
 
 module Yast
