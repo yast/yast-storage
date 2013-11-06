@@ -6091,18 +6091,15 @@ module Yast
 
 
     def HandleModulesOnBoot(targetMap)
-      targetMap = deep_copy(targetMap)
       need_cryptoloop = false
       need_fish2 = false
 
-      Builtins.foreach(targetMap) do |disk, e|
-        Builtins.foreach(Ops.get_list(e, "partitions", [])) do |p|
-          if Ops.get_boolean(p, "noauto", false) &&
-              Ops.get_symbol(p, "enc_type", :none) != :none
-            if Ops.get_symbol(p, "enc_type", :none) == :twofish
+      targetMap.each do |disk, e|
+        e.fetch("partitions", []).each do |p|
+          if p.fetch("noauto", false) && p.fetch("enc_type", :none) != :none
+            if p.fetch("enc_type", :none) == :twofish
               need_cryptoloop = true
-            elsif Ops.get_symbol(p, "enc_type", :none) == :twofish_old ||
-                Ops.get_symbol(p, "enc_type", :none) == :twofish_256_old
+            elsif p.fetch("enc_type", :none) == :twofish_old || p.fetch("enc_type", :none) == :twofish_256_old
               need_fish2 = true
             end
           end
