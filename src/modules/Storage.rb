@@ -5864,7 +5864,7 @@ module Yast
 
       part = GetEntryForMountpoint("/")
       if Ops.get_symbol(part, "used_fs", :unknown) == :btrfs
-        pl << "snapper" << "yast2-snapper"
+        pl << "snapper"
       end
 
       Builtins.y2milestone("AddPackageList ret %1", pl)
