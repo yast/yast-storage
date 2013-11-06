@@ -73,6 +73,7 @@ module Yast
       Yast.import "String"
       Yast.import "Hotplug"
       Yast.import "ProductFeatures"
+      Yast.import "Kernel"
 
       # simple resize functionality - dialog to set size of Linux and Windows before proposal
 
@@ -6091,18 +6092,9 @@ module Yast
 
     def HandleModulesOnBoot(targetMap)
       targetMap = deep_copy(targetMap)
-      ml = Builtins.filter(
-        Builtins.splitstring(
-          Misc.SysconfigRead(
-            path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-            ""
-          ),
-          " \t"
-        )
-      ) { |e| Ops.greater_than(Builtins.size(e), 0) }
-      Builtins.y2milestone("HandleModulesOnBoot ml %1", ml)
       need_cryptoloop = false
       need_fish2 = false
+
       Builtins.foreach(targetMap) do |disk, e|
         Builtins.foreach(Ops.get_list(e, "partitions", [])) do |p|
           if Ops.get_boolean(p, "noauto", false) &&
@@ -6116,34 +6108,21 @@ module Yast
           end
         end
       end
+
       Builtins.y2milestone(
-        "HandleModulesOnBoot need_fish2 %1 need_cryptoloop %2",
-        need_fish2,
-        need_cryptoloop
+        "HandleModulesOnBoot need_fish2 #{need_fish2} need_cryptoloop #{need_cryptoloop}"
       )
-      if need_fish2 && Builtins.find(ml) { |e| e == "loop_fish2" } == nil
-        ml = Builtins.add(ml, "loop_fish2")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
-      end
-      if need_cryptoloop && Builtins.find(ml) { |e| e == "cryptoloop" } == nil
-        ml = Builtins.add(ml, "cryptoloop")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
-      end
-      if need_cryptoloop && Builtins.find(ml) { |e| e == "twofish" } == nil
-        ml = Builtins.add(ml, "twofish")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
+
+      if need_fish2
+        Kernel.AddModuleToLoad("loop_fish2") unless Kernel.module_to_be_loaded?("loop_fish2")
       end
 
-      nil
+      if need_cryptoloop
+        Kernel.AddModuleToLoad("cryptoloop") unless Kernel.module_to_be_loaded?("cryptoloop")
+        Kernel.AddModuleToLoad("twofish")    unless Kernel.module_to_be_loaded?("twofish")
+      end
+
+      Kernel.SaveModulesToLoad
     end
 
 
