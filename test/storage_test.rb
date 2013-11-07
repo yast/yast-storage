@@ -47,6 +47,30 @@ KERNEL_MODULES_TARGET_MAP = {
         "udev_path" => "pci-0000:00:1f.2-scsi-0:0:0:0-part7",
         "used_fs" => :ext4,
         "uuid" => "5583b026-8e4c-4934-9e48-9c45f4b8febe"
+       },
+      {
+        "detected_fs" => :ext4,
+        "device" => "/dev/sda8",
+        "fsid" => 131,
+        "fstopt" => "acl,user_xattr",
+        "fstype" => "Linux native",
+        "mount" => "/var",
+        "mountby" => :device,
+        "name" => "sda8",
+        "noauto" => false,
+        "nr" => 8,
+        "region" => [114776, 124097],
+        "size_k" => 193556480,
+        "type" => :logical,
+        "udev_id" => [
+          "ata-HITACHI_HTS723232A7A364_E3834563J0X2PN-part8",
+          "scsi-1ATA_HITACHI_HTS723232A7A364_E3834563J0X2PN-part8",
+          "scsi-SATA_HITACHI_HTS72323_E3834563J0X2PN-part8",
+          "wwn-0x5000cca61ddc9871-part8"
+        ],
+        "udev_path" => "pci-0000:00:1f.2-scsi-0:0:0:0-part8",
+        "used_fs" => :ext4,
+        "uuid" => "5583b026-8e4c-4934-9e48-9c45f4b8febf"
        }
     ],
     "sector_size" => 512,
