@@ -6090,16 +6090,21 @@ module Yast
     end
 
 
+    # Searches for encrypted partitions that are not automatically mounted.
+    # If they are found, required Kernel modules are added into the list
+    # of modules loaded on boot.
+    #
+    # @param [Hash] target map
     def HandleModulesOnBoot(targetMap)
       need_cryptoloop = false
       need_fish2 = false
 
       targetMap.each do |disk, e|
         e.fetch("partitions", []).each do |p|
-          if p.fetch("noauto", false) && p.fetch("enc_type", :none) != :none
-            if p.fetch("enc_type", :none) == :twofish
+          if p["noauto"] == true
+            if p["enc_type"] == :twofish
               need_cryptoloop = true
-            elsif p.fetch("enc_type", :none) == :twofish_old || p.fetch("enc_type", :none) == :twofish_256_old
+            elsif p["enc_type"] == :twofish_old || p["enc_type"] == :twofish_256_old
               need_fish2 = true
             end
           end
