@@ -6116,12 +6116,12 @@ module Yast
       )
 
       if need_fish2
-        Kernel.AddModuleToLoad("loop_fish2") unless Kernel.module_to_be_loaded?("loop_fish2")
+        Kernel.AddModuleToLoad("loop_fish2")
       end
 
       if need_cryptoloop
-        Kernel.AddModuleToLoad("cryptoloop") unless Kernel.module_to_be_loaded?("cryptoloop")
-        Kernel.AddModuleToLoad("twofish")    unless Kernel.module_to_be_loaded?("twofish")
+        Kernel.AddModuleToLoad("cryptoloop")
+        Kernel.AddModuleToLoad("twofish")
       end
 
       Kernel.SaveModulesToLoad
