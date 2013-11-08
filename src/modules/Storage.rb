@@ -6096,20 +6096,11 @@ module Yast
     #
     # @param [Hash] target map
     def HandleModulesOnBoot(targetMap)
-      need_cryptoloop = false
-      need_fish2 = false
-
-      targetMap.each do |disk, e|
-        e.fetch("partitions", []).each do |p|
-          if p["noauto"] == true
-            if p["enc_type"] == :twofish
-              need_cryptoloop = true
-            elsif p["enc_type"] == :twofish_old || p["enc_type"] == :twofish_256_old
-              need_fish2 = true
-            end
-          end
-        end
-      end
+      enc_partitions = encoded_partitions(targetMap)
+      enc_noauto_partitions = enc_partitions.select { |p|  p["noauto"] }
+      used_encodings =  enc_noauto_partitions.map { |p|  p["enc_type"] }
+      need_cryptoloop = used_encodings.include?(:twofish)
+      need_fish2 = used_encodings.include?(:twofish_old) || used_encodings.include?(:twofish_256_old)
 
       Builtins.y2milestone(
         "HandleModulesOnBoot need_fish2 #{need_fish2} need_cryptoloop #{need_cryptoloop}"
@@ -6127,6 +6118,15 @@ module Yast
       Kernel.SaveModulesToLoad
     end
 
+    # Returns all partitions that use encryption
+    #
+    # @param [Hash] TargetMap
+    # @return [Array] of partitions
+    def encoded_partitions(target_map)
+      partitions = target_map.values.map { |e| e.fetch("partitions", []) }
+      partitions.flatten!
+      partitions.select { |p| p["enc_type"] != :none }
+    end
 
     # Adds an entry into the fstab
     #
