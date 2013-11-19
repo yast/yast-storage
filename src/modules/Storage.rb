@@ -6414,16 +6414,6 @@ module Yast
         0
       ) == 9
 
-      # convert EVMS names to LVM
-      # FIXME: add version checking, but does not seem necessary, since non-LVM
-      # installations will not be affected by this conversion at all
-      ret = Builtins.maplist(ret) do |n|
-        if Builtins.substring(n, 0, 15) == "/dev/evms/lvm2/"
-          n = Ops.add("/dev/", Builtins.substring(n, 15))
-        end
-        n
-      end
-
       # convert dmraid names to mdadm names
       mapping = GetDmraidToMdadm()
       if !mapping.empty?

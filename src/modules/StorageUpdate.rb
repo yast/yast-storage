@@ -209,36 +209,6 @@ module Yast
     end
 
 
-    def UpdateFstabEvms2Lvm
-      Builtins.y2milestone("UpdateFstabEvms2Lvm migrating EVMS to LVM")
-      tabpath = Storage.PathToDestdir("/etc/fstab")
-      fstab = Partitions.GetFstab(tabpath)
-      line = 0
-      n = ""
-      while Ops.less_or_equal(line, AsciiFile.NumLines(fstab))
-        l = (
-          fstab_ref = arg_ref(fstab);
-          _GetLine_result = AsciiFile.GetLine(fstab_ref, line);
-          fstab = fstab_ref.value;
-          _GetLine_result
-        )
-        n = Ops.get_string(l, ["fields", 0], "")
-        if Builtins.substring(n, 0, 15) == "/dev/evms/lvm2/"
-          n = Ops.add("/dev/", Builtins.substring(n, 15))
-          fstab_ref = arg_ref(fstab)
-          AsciiFile.ChangeLineField(fstab_ref, line, 0, n)
-          fstab = fstab_ref.value
-        end
-        line = Ops.add(line, 1)
-      end
-      fstab_ref = arg_ref(fstab)
-      AsciiFile.RewriteFile(fstab_ref, tabpath)
-      fstab = fstab_ref.value
-
-      nil
-    end
-
-
     def UpdateMdadm
       Builtins.y2milestone("UpdateMdadm")
       cpath = Storage.PathToDestdir("/etc/mdadm.conf")
@@ -719,10 +689,6 @@ module Yast
           UpdateFstabHotplugOption()
         end
 
-        # remove EVMS
-        # FIXME add appropriate condition if needed (does not seem so)
-        UpdateFstabEvms2Lvm()
-
         UpdateFstabDmraidToMdadm()
 
         dm = Storage.BuildDiskmap(oldv)
@@ -761,10 +727,6 @@ module Yast
             Ops.get_integer(oldv, "major", 0) == 9 &&
               Ops.get_integer(oldv, "minor", 0) == 0
           UpdateFstabIseriesVd() if Arch.board_iseries
-          cmd = "cd / && /sbin/insserv -r /etc/init.d/boot.evms"
-          Builtins.y2milestone("Update cmd %1", cmd)
-          bo = Convert.to_map(SCR.Execute(path(".target.bash_output"), cmd))
-          Builtins.y2milestone("Update bo %1", bo)
         end
         if Ops.less_than(Ops.get_integer(oldv, "major", 0), 10) ||
             Ops.get_integer(oldv, "major", 0) == 10 &&
