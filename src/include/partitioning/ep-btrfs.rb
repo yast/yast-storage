@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2013] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -32,26 +32,32 @@ module Yast
       Yast.include include_target, "partitioning/ep-btrfs-lib.rb"
     end
 
+
     def EpContextMenuBtrfs(device)
       widget = ContextMenu.Simple(
         [
+          # TRANSLATORS: context menu entry
           Item(Id(:edit), _("Edit")),
-          Item(Id(:delete), _("Delete")),
-          Item(Id(:resize), _("Resize"))
+          # TRANSLATORS: context menu entry
+          # disabled, see bnc #832196
+          # Item(Id(:resize), _("Resize")),
+          # TRANSLATORS: context menu entry
+          Item(Id(:delete), _("Delete"))
         ]
       )
 
       case widget
         when :edit
           EpEditBtrfsDevice(device)
-        when :delete
-          EpDeleteBtrfsDevice(device)
         when :resize
           EpResizeBtrfsDevice(device)
+        when :delete
+          EpDeleteBtrfsDevice(device)
       end
 
       nil
     end
+
 
     def HandleBtrfsButtons(user_data, device, event)
       user_data = deep_copy(user_data)
@@ -84,10 +90,13 @@ module Yast
           EpEditBtrfsDevice(device)
         when :resize
           EpResizeBtrfsDevice(device)
+        when :delete
+          EpDeleteBtrfsDevice(device)
       end
 
       nil
     end
+
 
     def CreateBtrfsMainPanel(user_data)
       user_data = deep_copy(user_data)
@@ -127,11 +136,15 @@ module Yast
             ),
             ArrangeButtons(
               [
+                # TRANSLATORS: push button text
                 PushButton(Id(:edit), Opt(:key_F4), _("Edit...")),
-                # push button text
-                PushButton(Id(:resize), Opt(:key_F8), _("Resize...")),
+                # TRANSLATORS: push button text
+                # disabled, see bnc #832196
+                # PushButton(Id(:resize), Opt(:key_F8), _("Resize...")),
+                # TRANSLATORS: push button text
+                PushButton(Id(:delete), Opt(:key_F5), _("Delete...")),
                 HStretch()
-              ] # push button text
+              ]
             )
           )
         )
