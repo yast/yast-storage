@@ -59,13 +59,12 @@ module Yast
       @proposal_home = false
       @proposal_lvm = false
       @proposal_encrypt = false
-      @proposal_btrfs = false
+      @proposal_snapshots = false
       @proposal_suspend = false
       @proposal_password = ""
       @proposal_create_vg = false
 
       @cfg_xml = {}
-
 
       @swapable = {}
       @ishome = {}
@@ -112,16 +111,16 @@ module Yast
       nil
     end
 
-    def GetProposalBtrfs
-      @proposal_btrfs
+
+    def GetProposalSnapshots()
+      @proposal_snapshots
     end
 
-    def SetProposalBtrfs(val)
-      @proposal_btrfs = val
-      Builtins.y2milestone("SetProposalBtrfs val:%1", val)
-
-      nil
+    def SetProposalSnapshots(val)
+      @proposal_snapshots = val
+      Builtins.y2milestone("SetProposalSnapshots val:%1", val)
     end
+
 
     def GetProposalSuspend
       @proposal_suspend
@@ -145,6 +144,7 @@ module Yast
       nil
     end
 
+
     def SetProposalDefault(home_only)
       SetProposalHome(Ops.get_boolean(@cfg_xml, "home", false))
       if !home_only
@@ -153,14 +153,14 @@ module Yast
         SetProposalPassword("")
         SetProposalSuspend(Ops.get_boolean(@cfg_xml, "suspend", false))
       end
-      SetProposalBtrfs(Ops.get_boolean(@cfg_xml, "btrfs", false))
+      SetProposalSnapshots(Ops.get_boolean(@cfg_xml, "prop_snapshots", false))
       Builtins.y2milestone(
-        "SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 btrfs:%5 suspend:%6",
+        "SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 snapshots:%5 suspend:%6",
         @proposal_home,
         @proposal_lvm,
         @proposal_encrypt,
         home_only,
-        @proposal_btrfs,
+        @proposal_snapshots,
         @proposal_suspend
       )
 
@@ -257,6 +257,9 @@ module Yast
         btmp = ProductFeatures.GetBooleanFeature("partitioning", "proposal_lvm")
         Ops.set(@cfg_xml, "prop_lvm", btmp ? true : false)
 
+        btmp = ProductFeatures.GetBooleanFeature("partitioning", "proposal_snapshots")
+        Ops.set(@cfg_xml, "prop_snapshots", btmp ? true : false)
+
         itmp = ProductFeatures.GetIntegerFeature(
           "partitioning",
           "btrfs_increase_percentage"
@@ -269,20 +272,22 @@ module Yast
             )
           Ops.set(@cfg_xml, "btrfs_increase_percentage", 100)
         end
+
         btmp = ProductFeatures.GetBooleanFeature(
           "partitioning",
           "swap_for_suspend"
         )
         Ops.set(@cfg_xml, "suspend", btmp ? true : false)
+
         SetProposalDefault(false)
         Builtins.y2milestone("GetControlCfg cfg_xml:%1", @cfg_xml)
       end
       ret = deep_copy(@cfg_xml)
       Builtins.y2milestone(
-        "GetControlCfg GetProposalBtrfs:%1",
-        GetProposalBtrfs()
+        "GetControlCfg GetProposalSnapshots:%1",
+        GetProposalSnapshots()
       )
-      if GetProposalBtrfs()
+      if GetProposalSnapshots()
         Builtins.y2milestone("GetControlCfg before:%1", ret)
         keys = ["home_limit", "root_max", "root_base", "home_max", "vm_want"]
         Builtins.foreach(keys) do |k|
@@ -308,6 +313,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def GetProposalVM
       ret = ""
       ret = "system" if @proposal_lvm
@@ -315,10 +321,14 @@ module Yast
       ret
     end
 
-    def PropDefaultFs
-      ret = Partitions.DefaultFs
-      ret = :btrfs if GetProposalBtrfs()
-      ret
+
+    def PropDefaultFs()
+      Partitions.DefaultFs()
+    end
+
+
+    def PropDefaultHomeFs()
+      Partitions.DefaultHomeFs()
     end
 
 
@@ -605,9 +615,8 @@ module Yast
 
     def need_boot(disk)
       Builtins.y2milestone(
-        "need_boot NeedBoot:%1 GetProposalBtrfs:%2 type:%3",
+        "need_boot NeedBoot:%1 type:%2",
         Partitions.NeedBoot,
-        GetProposalBtrfs(),
         disk.fetch("type",:CT_UNKNOWN)
       )
       ret = Partitions.NeedBoot ||
@@ -3714,7 +3723,7 @@ module Yast
           if !Ops.get_boolean(p, "delete", false) &&
               Ops.get_string(p, "device", "") ==
                 Ops.get_string(pl, [0, "device"], "")
-            p = Storage.SetVolOptions(p, "/home", PropDefaultFs(), "", "", "")
+            p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
           end
           deep_copy(p)
         end
@@ -3872,7 +3881,7 @@ module Yast
         home = {
           "mount"       => "/home",
           "increasable" => true,
-          "fsys"        => PropDefaultFs(),
+          "fsys"        => PropDefaultHomeFs(),
           "size"        => 512 * 1024 * 1024,
           "pct"         => Ops.subtract(
             100,
@@ -4639,7 +4648,7 @@ module Yast
               home = {
                 "mount"       => "/home",
                 "increasable" => true,
-                "fsys"        => PropDefaultFs(),
+                "fsys"        => PropDefaultHomeFs(),
                 "size"        => 512 * 1024 * 1024,
                 "pct"         => Ops.subtract(
                   100,
@@ -5414,7 +5423,7 @@ module Yast
           "device" => Ops.add(Ops.get_string(ret, "device", ""), "/home"),
           "size_k" => pe_to_sizek(home_pe, pe)
         }
-        p = Storage.SetVolOptions(p, "/home", PropDefaultFs(), "", "", "")
+        p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
         Builtins.y2milestone("modify_vm created %1", p)
         Ops.set(
           ret,
@@ -5427,7 +5436,7 @@ module Yast
           "partitions",
           Builtins.maplist(Ops.get_list(ret, "partitions", [])) do |p|
             if Ops.get_string(p, "name", "") == "home"
-              p = Storage.SetVolOptions(p, "/home", PropDefaultFs(), "", "", "")
+              p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
               Builtins.y2milestone("modify_vm reuse %1", p)
             end
             deep_copy(p)
@@ -5964,8 +5973,9 @@ module Yast
 
 
     def AddCommonWidgets
-      vb = VBox()
       space = SaveHeight() ? 0.0 : 0.5
+
+      vb = VBox()
       vb = Builtins.add(
         vb,
         Left(
@@ -6019,11 +6029,11 @@ module Yast
           HBox(
             HSpacing(3),
             CheckBox(
-              Id(:btrfs),
+              Id(:snapshots),
               Opt(:notify),
               # Label text
-              _("Use &Btrfs as Default File System"),
-              GetProposalBtrfs()
+              _("Enable Snapshots"),
+              GetProposalSnapshots()
             )
           )
         )
@@ -6057,9 +6067,9 @@ module Yast
       )
 
       Builtins.y2milestone(
-        "AddCommonWidgets Home:%1 Btrfs:%2",
+        "AddCommonWidgets Home:%1 Snapshots:%2",
         GetProposalHome(),
-        GetProposalBtrfs()
+        GetProposalSnapshots()
       )
       deep_copy(frame)
     end
@@ -6142,6 +6152,12 @@ module Yast
       end
     end
 
+
+    def IsCommonWidget(id)
+      return [ :lvm, :home, :encrypt, :snapshots, :suspend ].include?(id)
+    end
+
+
     def HandleCommonWidgets(id)
       ret = false
       val = Convert.to_boolean(UI.QueryWidget(Id(id), :Value))
@@ -6162,11 +6178,11 @@ module Yast
             SetProposalEncrypt(false)
           end
           ret = true
-        when :btrfs
-          SetProposalBtrfs(val)
-          ret = true
         when :home
           SetProposalHome(val)
+          ret = true
+        when :snapshots
+          SetProposalSnapshots(val)
           ret = true
         when :suspend
           SetProposalSuspend(val)
@@ -6175,6 +6191,7 @@ module Yast
       ret
     end
 
+
     publish :function => :SetCreateVg, :type => "void (boolean)"
     publish :function => :GetProposalHome, :type => "boolean ()"
     publish :function => :SetProposalHome, :type => "void (boolean)"
@@ -6182,8 +6199,8 @@ module Yast
     publish :function => :SetProposalLvm, :type => "void (boolean)"
     publish :function => :GetProposalEncrypt, :type => "boolean ()"
     publish :function => :SetProposalEncrypt, :type => "void (boolean)"
-    publish :function => :GetProposalBtrfs, :type => "boolean ()"
-    publish :function => :SetProposalBtrfs, :type => "void (boolean)"
+    publish :function => :GetProposalSnapshots, :type => "boolean ()"
+    publish :function => :SetProposalSnapshots, :type => "void (boolean)"
     publish :function => :GetProposalSuspend, :type => "boolean ()"
     publish :function => :SetProposalSuspend, :type => "void (boolean)"
     publish :function => :GetProposalPassword, :type => "string ()"

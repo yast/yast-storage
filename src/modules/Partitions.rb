@@ -117,7 +117,7 @@ module Yast
 
       @default_fs = :unknown
       @default_boot_fs = :unknown
-
+      @default_home_fs = :xfs
 
       @sint = nil
 
@@ -186,6 +186,16 @@ module Yast
         end
       end
       @default_boot_fs
+    end
+
+
+    def DefaultHomeFs()
+      @default_home_fs
+    end
+
+
+    def SetDefaultHomeFs(new_default_home_fs)
+      @default_home_fs = new_default_home_fs
     end
 
 

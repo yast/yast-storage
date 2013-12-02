@@ -237,7 +237,7 @@ module Yast
 
         if @ret == :abort && Popup.ReallyAbort(true)
           break
-        elsif Builtins.contains([:lvm, :home, :btrfs, :encrypt, :suspend], @ret)
+        elsif StorageProposal.IsCommonWidget(@ret)
           StorageProposal.HandleCommonWidgets(@ret)
         elsif @ret == :full
           # Set all checkboxes

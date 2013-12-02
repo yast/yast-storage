@@ -250,7 +250,7 @@ module Yast
 
           return :abort if @ret == :abort && Popup.ReallyAbort(true)
 
-          if Builtins.contains([:lvm, :home, :btrfs, :encrypt, :suspend], @ret)
+          if StorageProposal.IsCommonWidget(@ret)
             @val = Convert.to_boolean(UI.QueryWidget(Id(@ret), :Value))
             if AskOverwriteChanges()
               @target_is = "SUGGESTION"
@@ -311,22 +311,10 @@ module Yast
             @val = StorageProposal.GetProposalLvm
             UI.ChangeWidget(Id(:lvm), :Value, @val)
             UI.ChangeWidget(Id(:encrypt), :Enabled, @val)
-            UI.ChangeWidget(
-              Id(:encrypt),
-              :Value,
-              @val && StorageProposal.GetProposalEncrypt
-            )
+            UI.ChangeWidget(Id(:encrypt), :Value, @val && StorageProposal.GetProposalEncrypt)
             UI.ChangeWidget(Id(:home), :Value, StorageProposal.GetProposalHome)
-            UI.ChangeWidget(
-              Id(:btrfs),
-              :Value,
-              StorageProposal.GetProposalBtrfs
-            )
-            UI.ChangeWidget(
-              Id(:suspend),
-              :Value,
-              StorageProposal.GetProposalSuspend
-            )
+            UI.ChangeWidget(Id(:snapshots), :Value, StorageProposal.GetProposalSnapshots())
+            UI.ChangeWidget(Id(:suspend), :Value, StorageProposal.GetProposalSuspend)
             UI.ChangeWidget(Id(:suspend), :Enabled, EnableSuspend())
           end
         end until @ret == :next || @ret == :back || @ret == :cancel

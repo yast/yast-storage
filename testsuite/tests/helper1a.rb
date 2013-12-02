@@ -16,7 +16,7 @@ module Yast
           "meminfo" => { "memtotal" => 256 * 1024 }
         },
         "sysconfig" => {
-          "storage"    => { "DEFAULT_FS" => "ext4" },
+          "storage"    => { "DEFAULT_FS" => "btrfs" },
           "bootloader" => { "LOADER_TYPE" => "grub" },
           "language"   => { "RC_LANG" => "en_US.UTF-8", "RC_LC_MESSAGES" => "" }
         },
