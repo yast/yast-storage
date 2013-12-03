@@ -1262,9 +1262,7 @@ module Yast
 
       t = dinfo.transport
       Ops.set(d, "transport", toSymbol(@conv_transport, t))
-
-      bt = dinfo.iscsi
-      if bt
+      if t == ::Storage::ISCSI
         Ops.set(d, "iscsi", true)
       elsif Builtins.haskey(d, "iscsi")
         d = Builtins.remove(d, "iscsi")
@@ -1298,6 +1296,29 @@ module Yast
       deep_copy(d)
     end
 
+
+    def usedbyMap(d)
+
+      tmp = []
+      d.usedBy.each do |used_by|
+        tmp.push({ "type" => toSymbol(@conv_usedby, used_by.type), "device" => used_by.device })
+      end
+
+      ret = { "used_by" => tmp }
+
+      if tmp.empty?
+        ret["used_by_type"] = :UB_NONE
+        ret["used_by_device"] = ""
+      else
+        ret["used_by_type"] = tmp[0]["type"]
+        ret["used_by_device"] = tmp[0]["device"]
+      end
+
+      return ret
+
+    end
+
+
     def volumeMap(vinfo, p)
       p = deep_copy(p)
       Ops.set(p, "device", vinfo.device)
@@ -1317,21 +1338,9 @@ module Yast
         Ops.set(p, "inactive", true) if !vinfo.is_mounted
         Ops.set(p, "mountby", toSymbol(@conv_mountby, vinfo.mount_by))
       end
-      t = vinfo.usedByType
-      if t != ::Storage::UB_NONE
-        Ops.set(p, "used_by_type", toSymbol(@conv_usedby, t))
-        Ops.set(p, "used_by_device", vinfo.usedByDevice)
-        Ops.set(
-          p,
-          "used_by",
-          [
-            {
-              "type"   => Ops.get_symbol(p, "used_by_type", :UB_NONE),
-              "device" => Ops.get_string(p, "used_by_device", "")
-            }
-          ]
-        )
-      end
+
+      p.merge!(usedbyMap(vinfo))
+
       tmp = vinfo.fstab_options
       if !Builtins.isempty(tmp)
         Ops.set(p, "fstopt", tmp)
@@ -1390,15 +1399,17 @@ module Yast
       tmp = vinfo.loop
       Ops.set(p, "loop", tmp) if !Builtins.isempty(tmp)
 
-      tmp = vinfo.udevPath
-      Ops.set(p, "udev_path", tmp) if !Builtins.isempty(tmp)
-      tmp = vinfo.udevId
-      if !Builtins.isempty(tmp)
-        Ops.set(p, "udev_id", Builtins.splitstring(tmp, " "))
+      p["udev_path"] = vinfo.udevPath if !vinfo.udevPath.empty?
+
+      if !vinfo.udevId.empty?
+        tmp = []
+        vinfo.udevId.each { |udev_id| tmp.push(udev_id) }
+        p["udev_id"] = tmp
       end
 
       deep_copy(p)
     end
+
 
     def partAddMap(info, p)
       p = deep_copy(p)
@@ -1909,6 +1920,8 @@ module Yast
       end
       deep_copy(disk)
     end
+
+
     def getContainers
       ret = []
       cinfos = ::Storage::DequeContainerInfo.new()
@@ -1919,39 +1932,27 @@ module Yast
         Ops.set(c, "device", info.device)
         t = info.type
         Ops.set(c, "type", toSymbol(@conv_ctype, t))
-        t = info.usedByType
-        if t != ::Storage::UB_NONE
-          Ops.set(c, "used_by_type", toSymbol(@conv_usedby, t))
-          Ops.set(
-            c,
-            "used_by_device",
-            info.usedByDevice
-          )
-          Ops.set(
-            c,
-            "used_by",
-            [
-              {
-                "type"   => Ops.get_symbol(c, "used_by_type", :UB_NONE),
-                "device" => Ops.get_string(c, "used_by_device", "")
-              }
-            ]
-          )
-        end
+
+        c.merge!(usedbyMap(info))
+
 	Builtins.y2milestone("c:%1",c)
         b = info.readonly
         Ops.set(c, "readonly", true) if b
-        tmp = info.udevPath
-        Ops.set(c, "udev_path", tmp) if !Builtins.isempty(tmp)
-        tmp = info.udevId
-        if !Builtins.isempty(tmp)
-          Ops.set(c, "udev_id", Builtins.splitstring(tmp, " "))
+
+        c["udev_path"] = info.udevPath if !info.udevPath.empty?
+
+        if !info.udevId.empty?
+          tmp = []
+          info.udevId.each { |udev_id| tmp.push(udev_id) }
+          c["udev_id"] = tmp
         end
+
         ret = Builtins.add(ret, c)
       end
       Builtins.y2milestone("getContainers ret:%1", ret)
       deep_copy(ret)
     end
+
 
     def IsDiskType(t)
       Builtins.contains([:CT_DISK, :CT_DMRAID, :CT_DMMULTIPATH, :CT_MDPART], t)
