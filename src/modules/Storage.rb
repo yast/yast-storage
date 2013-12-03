@@ -1289,7 +1289,8 @@ module Yast
       d = deep_copy(d)
       dinfo = infos.d
       d = diskMap(dinfo, d)
-      ls = Builtins.splitstring(infos.devices, " ")
+      ls = []
+      infos.devices.each { |device| ls.push(device) }
       Ops.set(d, "devices", ls)
       Ops.set(d, "minor", infos.minor)
       Builtins.y2milestone("dmPartCoMap ret:%1", d)
@@ -1589,10 +1590,12 @@ module Yast
           )
         end
 
-        ls = Builtins.splitstring(infos.devices, " ")
+        ls = []
+        infos.devices.each { |device| ls.push(device) }
         Ops.set(c, "devices", ls)
 
-        ls = Builtins.splitstring(infos.spares, " ")
+        ls = []
+        infos.spares.each { |spare| ls.push(spare) }
         Ops.set(c, "spares", ls) if !Builtins.isempty(ls)
 
         t2 = infos.type
@@ -1642,14 +1645,17 @@ module Yast
           Ops.set(c, "cyl_count", infos.peCount)
           Ops.set(c, "pe_free", infos.peFree)
           Ops.set(c, "lvm2", infos.lvm2)
-          ls = Builtins.splitstring(infos.devices, " ")
+          ls = []
+          infos.devices.each { |device| ls.push(device) }
           Builtins.y2milestone("ls=%1", ls)
           Ops.set(c, "devices", ls)
-          ls = Builtins.splitstring(infos.devices_add, " ")
+          ls = []
+          infos.devices_add.each { |device_add| ls.push(device_add) }
           if !Builtins.isempty(ls)
             Ops.set(c, "devices_add", ls)
           end
-          ls = Builtins.splitstring(infos.devices_rem, " ")
+          ls = []
+          infos.devices_rem.each { |device_rem| ls.push(device_rem) }
           if !Builtins.isempty(ls)
             Ops.set(c, "devices_rem", ls)
           end
@@ -1715,9 +1721,11 @@ module Yast
           Ops.set(p, "chunk_size", t2) if t2>0
           Ops.set(p, "sb_ver", info.sb_ver)
           Ops.set(p, "raid_inactive", true) if info.inactive
-          ls = Builtins.splitstring(info.devices, " ")
+          ls = []
+          info.devices.each { |device| ls.push(device) }
           Ops.set(p, "devices", ls)
-          ls = Builtins.splitstring(info.spares, " ")
+          ls = []
+          info.spares.each { |spare| ls.push(spare) }
           Ops.set(p, "spares", ls) if !Builtins.isempty(ls)
           Ops.set(
             c,
@@ -1795,19 +1803,23 @@ module Yast
           p = volumeMap(vinfo, p)
           Ops.set(p, "type", :btrfs)
           Ops.set(p, "fstype", Partitions.btrfs_name)
-          ls = Builtins.splitstring(info.devices, "\n")
+          ls = []
+          info.devices.each { |device| ls.push(device) }
           Ops.set(p, "devices", ls)
-          ls = Builtins.splitstring(info.devices_add, "\n")
+          ls = []
+          info.devices_add.each { |device_add| ls.push(device_add) }
           if !Builtins.isempty(ls)
             Ops.set(c, "devices_add", ls)
           end
-          ls = Builtins.splitstring(info.devices_rem, "\n")
+          ls = []
+          info.devices_rem.each { |device_rem| ls.push(device_rem) }
           if !Builtins.isempty(ls)
             Ops.set(c, "devices_rem", ls)
           end
           li = []
           Ops.set(p, "subvol", li)
-          ls = Builtins.splitstring(info.subvol, "\n")
+          ls = []
+          info.subvol.each { |subvol| ls.push(subvol) }
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "name" => s }
@@ -1816,7 +1828,8 @@ module Yast
             Ops.set(p, "subvol", li)
             Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          ls = Builtins.splitstring(info.subvol_add, "\n")
+          ls = []
+          info.subvol_add.each { |subvol_add| ls.push(subvol_add) }
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "create" => true, "name" => s }
@@ -1829,7 +1842,8 @@ module Yast
             )
             Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          ls = Builtins.splitstring(info.subvol_rem, "\n")
+          ls = []
+          info.subvol_rem.each { |subvol_rem| ls.push(subvol_rem) }
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "delete" => true, "name" => s }
