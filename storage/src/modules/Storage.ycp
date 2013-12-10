@@ -5657,12 +5657,35 @@ global define map BuildDiskmap( map oldv )
     }
 
 
+global string TranslateEvmsDeviceName(string dev)
+{
+    if (substring(dev, 0, 15) == "/dev/evms/lvm2/")
+	return "/dev/" + substring(dev, 15);
+
+    if (substring(dev, 0, 13) == "/dev/evms/md/")
+	return "/dev/" + substring(dev, 13);
+
+    if (substring(dev, 0, 10) == "/dev/evms/")
+	return "/dev/" + substring(dev, 10);
+
+    return dev;
+}
+
+
 global define list<string> GetTranslatedDevices( map oldv, map newv,
 						 list<string> names )
     {
     y2milestone( "GetTranslatedDevices old:%1 new:%2", oldv, newv );
     y2milestone( "GetTranslatedDevices names %1", names );
     list<string> ret = names;
+
+    // convert EVMS names to LVM
+    // FIXME: add version checking, but does not seem necessary, since non-LVM
+    // installations will not be affected by this conversion at all
+    ret = maplist (string n, ret, {
+	return TranslateEvmsDeviceName(n);
+    });
+
     map dm = BuildDiskmap( oldv );
     if( size(dm)>0 )
 	{
@@ -5677,14 +5700,7 @@ global define list<string> GetTranslatedDevices( map oldv, map newv,
 	{
 	ret = maplist( string n, ret, ``(SLES9PersistentDevNames( n )));
 	}
-    // convert EVMS names to LVM
-    // FIXME: add version checking, but does not seem necessary, since non-LVM
-    // installations will not be affected by this conversion at all
-    ret = maplist (string n, ret, {
-	if (substring (n, 0, 15) == "/dev/evms/lvm2/")
-	    n = "/dev/" + substring (n, 15);
-	return n;
-    });
+
     y2milestone( "GetTranslatedDevices ret %1", ret );
     return( ret );
     }
