@@ -1296,22 +1296,29 @@ module Yast
     end
 
 
-    def usedbyMap(d)
+    def deviceMap(info)
+
+      ret = {
+        "device" => info.device,
+        "name" => info.name
+      }
 
       tmp = []
-      d.usedBy.each do |used_by|
+      info.usedBy.each do |used_by|
         tmp.push({ "type" => toSymbol(@conv_usedby, used_by.type), "device" => used_by.device })
       end
-
-      ret = { "used_by" => tmp }
 
       if tmp.empty?
         ret["used_by_type"] = :UB_NONE
         ret["used_by_device"] = ""
       else
+        ret["used_by"] = tmp
         ret["used_by_type"] = tmp[0]["type"]
         ret["used_by_device"] = tmp[0]["device"]
       end
+
+      ret["udev_path"] = info.udevPath if !info.udevPath.empty?
+      ret["udev_id"] = info.udevId.to_a if !info.udevId.empty?
 
       return ret
 
@@ -1320,11 +1327,10 @@ module Yast
 
     def volumeMap(vinfo, p)
       p = deep_copy(p)
-      Ops.set(p, "device", vinfo.device)
+      p.merge!(deviceMap(vinfo))
       tmp = vinfo.crypt_device
       Ops.set(p, "crypt_device", tmp) if !Builtins.isempty(tmp)
       Ops.set(p, "size_k", vinfo.sizeK)
-      Ops.set(p, "name", vinfo.name)
       fs = toSymbol(FileSystems.conv_fs, vinfo.fs)
       Ops.set(p, "used_fs", fs) if fs != :unknown
       fs = toSymbol(FileSystems.conv_fs, vinfo.detected_fs)
@@ -1337,8 +1343,6 @@ module Yast
         Ops.set(p, "inactive", true) if !vinfo.is_mounted
         Ops.set(p, "mountby", toSymbol(@conv_mountby, vinfo.mount_by))
       end
-
-      p.merge!(usedbyMap(vinfo))
 
       tmp = vinfo.fstab_options
       if !Builtins.isempty(tmp)
@@ -1397,9 +1401,6 @@ module Yast
       Ops.set(p, "ignore_fstab", true) if vinfo.ignore_fstab
       tmp = vinfo.loop
       Ops.set(p, "loop", tmp) if !Builtins.isempty(tmp)
-
-      p["udev_path"] = vinfo.udevPath if !vinfo.udevPath.empty?
-      p["udev_id"] = vinfo.udevId.to_a if !vinfo.udevId.empty?
 
       deep_copy(p)
     end
@@ -1909,21 +1910,10 @@ module Yast
       cinfos = ::Storage::DequeContainerInfo.new()
       @sint.getContainers(cinfos)
       cinfos.each do |info|
-        c = {}
-        Ops.set(c, "name", info.name)
-        Ops.set(c, "device", info.device)
-        t = info.type
-        Ops.set(c, "type", toSymbol(@conv_ctype, t))
-
-        c.merge!(usedbyMap(info))
-
+        c = deviceMap(info)
+        c["type"] = toSymbol(@conv_ctype, info.type)
 	Builtins.y2milestone("c:%1",c)
-        b = info.readonly
-        Ops.set(c, "readonly", true) if b
-
-        c["udev_path"] = info.udevPath if !info.udevPath.empty?
-        c["udev_id"] = info.udevId.to_a if !info.udevId.empty?
-
+        c["readonly"] = true if info.readonly
         ret = Builtins.add(ret, c)
       end
       Builtins.y2milestone("getContainers ret:%1", ret)
