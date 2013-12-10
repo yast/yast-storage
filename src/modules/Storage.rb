@@ -1289,9 +1289,7 @@ module Yast
       d = deep_copy(d)
       dinfo = infos.d
       d = diskMap(dinfo, d)
-      ls = []
-      infos.devices.each { |device| ls.push(device) }
-      Ops.set(d, "devices", ls)
+      d["devices"] = infos.devices.to_a
       Ops.set(d, "minor", infos.minor)
       Builtins.y2milestone("dmPartCoMap ret:%1", d)
       deep_copy(d)
@@ -1401,12 +1399,7 @@ module Yast
       Ops.set(p, "loop", tmp) if !Builtins.isempty(tmp)
 
       p["udev_path"] = vinfo.udevPath if !vinfo.udevPath.empty?
-
-      if !vinfo.udevId.empty?
-        tmp = []
-        vinfo.udevId.each { |udev_id| tmp.push(udev_id) }
-        p["udev_id"] = tmp
-      end
+      p["udev_id"] = vinfo.udevId.to_a if !vinfo.udevId.empty?
 
       deep_copy(p)
     end
@@ -1590,13 +1583,8 @@ module Yast
           )
         end
 
-        ls = []
-        infos.devices.each { |device| ls.push(device) }
-        Ops.set(c, "devices", ls)
-
-        ls = []
-        infos.spares.each { |spare| ls.push(spare) }
-        Ops.set(c, "spares", ls) if !Builtins.isempty(ls)
+        c["devices"] = infos.devices.to_a
+        c["spares" ] = infos.spares.to_a if !infos.spares.empty?
 
         t2 = infos.type
         Ops.set(
@@ -1645,20 +1633,10 @@ module Yast
           Ops.set(c, "cyl_count", infos.peCount)
           Ops.set(c, "pe_free", infos.peFree)
           Ops.set(c, "lvm2", infos.lvm2)
-          ls = []
-          infos.devices.each { |device| ls.push(device) }
-          Builtins.y2milestone("ls=%1", ls)
-          Ops.set(c, "devices", ls)
-          ls = []
-          infos.devices_add.each { |device_add| ls.push(device_add) }
-          if !Builtins.isempty(ls)
-            Ops.set(c, "devices_add", ls)
-          end
-          ls = []
-          infos.devices_rem.each { |device_rem| ls.push(device_rem) }
-          if !Builtins.isempty(ls)
-            Ops.set(c, "devices_rem", ls)
-          end
+
+          c["devices"] = infos.devices.to_a
+          c["devices_add"] = infos.devices_add.to_a if !infos.devices_add.empty?
+          c["devices_rem"] = infos.devices_rem.to_a if !infos.devices_rem.empty?
         else
           Builtins.y2warning(
             "LVM Vg \"%1\" ret:%2",
@@ -1721,12 +1699,10 @@ module Yast
           Ops.set(p, "chunk_size", t2) if t2>0
           Ops.set(p, "sb_ver", info.sb_ver)
           Ops.set(p, "raid_inactive", true) if info.inactive
-          ls = []
-          info.devices.each { |device| ls.push(device) }
-          Ops.set(p, "devices", ls)
-          ls = []
-          info.spares.each { |spare| ls.push(spare) }
-          Ops.set(p, "spares", ls) if !Builtins.isempty(ls)
+
+          p["devices"] = info.devices.to_a
+          p["spares"] = info.spares.to_a if !info.spares.empty
+
           Ops.set(
             c,
             "partitions",
@@ -1803,19 +1779,11 @@ module Yast
           p = volumeMap(vinfo, p)
           Ops.set(p, "type", :btrfs)
           Ops.set(p, "fstype", Partitions.btrfs_name)
-          ls = []
-          info.devices.each { |device| ls.push(device) }
-          Ops.set(p, "devices", ls)
-          ls = []
-          info.devices_add.each { |device_add| ls.push(device_add) }
-          if !Builtins.isempty(ls)
-            Ops.set(c, "devices_add", ls)
-          end
-          ls = []
-          info.devices_rem.each { |device_rem| ls.push(device_rem) }
-          if !Builtins.isempty(ls)
-            Ops.set(c, "devices_rem", ls)
-          end
+
+          p["devices"] = info.devices.to_a
+          p["devices_add"] = info.devices_add.to_a if !info.devices_add.empty?
+          p["devices_rem"] = info.devices_rem.to_a if !info.devices_rem.empty?
+
           li = []
           Ops.set(p, "subvol", li)
           ls = []
@@ -1954,12 +1922,7 @@ module Yast
         Ops.set(c, "readonly", true) if b
 
         c["udev_path"] = info.udevPath if !info.udevPath.empty?
-
-        if !info.udevId.empty?
-          tmp = []
-          info.udevId.each { |udev_id| tmp.push(udev_id) }
-          c["udev_id"] = tmp
-        end
+        c["udev_id"] = info.udevId.to_a if !info.udevId.empty?
 
         ret = Builtins.add(ret, c)
       end
@@ -4511,10 +4474,7 @@ module Yast
       r = ::Storage::ListString.new();
       res = @sint.getRecursiveUsing(devs, false, r);
       Builtins.y2milestone("GetAffectedDevices dev:%1 ret:%2", dev, res)
-      ret = []
-      r.each do |s|
-	ret.push(s)
-      end
+      ret = r.to_a
       Builtins.y2milestone("GetAffectedDevices ret:%1", ret)
       ret
     end
@@ -5801,11 +5761,8 @@ module Yast
     def GetUsedFs
       return nil if !InitLibstorage(false)
 
-      ret = []
       r = @sint.getAllUsedFs()
-      r.each do |s|
-	ret.push(s)
-      end
+      ret = r.to_a
       Builtins.y2milestone( "GetUsedFs ret:%1", ret )
       ret
     end
@@ -7069,11 +7026,8 @@ module Yast
 
 
     def GetDetectedDiskPaths
-      ret = []
       disks = ::Storage::getPresentDisks
-      disks.each do |d|
-	ret.push(d)
-      end
+      ret = disks.to_a
       Builtins.y2milestone("disks:%1", ret)
       ret
     end
