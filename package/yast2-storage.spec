@@ -31,7 +31,7 @@ BuildRequires:	docbook-xsl-stylesheets doxygen libxslt perl-XML-Writer sgml-skel
 BuildRequires:	libstorage-devel >= 2.25.4
 BuildRequires:  yast2 >= 2.19.4
 BuildRequires:  yast2-core-devel >= 2.23.1
-BuildRequires:  yast2-devtools >= 3.0.6
+BuildRequires:  yast2-devtools >= 3.1.10
 BuildRequires:	yast2-testsuite >= 2.19.0
 BuildRequires:	rubygem-ruby-dbus
 BuildRequires:	libstorage-ruby >= 2.25.4
