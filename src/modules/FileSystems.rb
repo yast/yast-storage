@@ -1405,12 +1405,7 @@ module Yast
     def InitSlib(value)
       @sint = value
       if @sint != nil
-        ret = @sint.getDefaultSubvolName
-        Builtins.y2milestone("InitSlib libstorage default_subvol:\"%1\"", ret)
-        ret = ""
-        @sint.setDefaultSubvolName(ret)
-        ret = @sint.getDefaultSubvolName
-        @default_subvol = ret
+        @default_subvol = @sint.getDefaultSubvolName()
         Builtins.y2milestone(
           "InitSlib used default_subvol:\"%1\"",
           @default_subvol
@@ -1419,6 +1414,7 @@ module Yast
 
       nil
     end
+
 
     def assertInit
       if @sint == nil

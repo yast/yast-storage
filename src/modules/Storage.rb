@@ -71,6 +71,7 @@ module Yast
       Yast.import "Stage"
       Yast.import "String"
       Yast.import "Hotplug"
+      Yast.import "ProductFeatures"
 
       # simple resize functionality - dialog to set size of Linux and Windows before proposal
 
@@ -344,6 +345,10 @@ module Yast
       end
 
       StorageClients.InstallCallbacks(@sint)
+
+      btrfs_default_subvolume = ProductFeatures.GetStringFeature("partitioning",
+                                                                 "btrfs_default_subvolume")
+      @sint.setDefaultSubvolName(btrfs_default_subvolume) if btrfs_default_subvolume
 
       if Stage.initial
         @sint.setDetectMountedVolumes(false)
