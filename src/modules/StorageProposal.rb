@@ -146,7 +146,13 @@ module Yast
     end
 
     def SetProposalDefault(home_only)
-      SetProposalHome(Ops.get_boolean(@cfg_xml, "home", false))
+      # on S/390 there is no space for dedicated /home partition
+      # to be possibly improved - as applies only for DASD (TODO)
+      if Arch.s390
+        SetProposalHome(false)
+      else
+        SetProposalHome(Ops.get_boolean(@cfg_xml, "home", false))
+      end
       if !home_only
         SetProposalLvm(Ops.get_boolean(@cfg_xml, "prop_lvm", false))
         SetProposalEncrypt(false)
@@ -6027,22 +6033,26 @@ module Yast
           )
         )
       )
-      vb = Builtins.add(vb, VSpacing(space))
-      vb = Builtins.add(
-        vb,
-        Left(
-          HBox(
-            HSpacing(3),
-            CheckBox(
-              Id(:home),
-              Opt(:notify),
-              # Label text
-              _("Propose Separate &Home Partition"),
-              GetProposalHome()
+      # No space for another partition on DASD devices
+      # TODO: Handle different device types well
+      if ! Arch.s390
+        vb = Builtins.add(vb, VSpacing(space))
+        vb = Builtins.add(
+          vb,
+          Left(
+            HBox(
+              HSpacing(3),
+              CheckBox(
+                Id(:home),
+                Opt(:notify),
+                # Label text
+                _("Propose Separate &Home Partition"),
+                GetProposalHome()
+              )
             )
           )
         )
-      )
+      end
       vb = Builtins.add(vb, VSpacing(space))
       vb = Builtins.add(
         vb,
