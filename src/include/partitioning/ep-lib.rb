@@ -23,6 +23,8 @@
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+require "storage/ui_ext"
+
 module Yast
   module PartitioningEpLibInclude
     def initialize_partitioning_ep_lib(include_target)
@@ -500,54 +502,7 @@ module Yast
 
 
     def ArrangeButtons(buttons)
-      buttons = deep_copy(buttons)
-      # Unfortunately the UI does not provide functionality to rearrange
-      # buttons in two or more lines if the available space is
-      # limited. This implementation in YCP has several drawbacks, e.g. it
-      # does not know anything about the font size, the font metric, the
-      # button frame size, the actually available space nor is it run when
-      # the dialog is resized. Also see fate #314971.
-
-      display_info = UI.GetDisplayInfo
-      textmode = Ops.get_boolean(display_info, "TextMode", false)
-      width = Ops.get_integer(display_info, "DefaultWidth", 1024)
-
-      max_buttons = 6
-
-      if textmode && Ops.less_or_equal(width, 140) ||
-          !textmode && Mode.installation && Ops.less_or_equal(width, 1280)
-        max_buttons = 2
-      end
-
-      ret = VBox()
-
-      line = HBox()
-
-      i = 0
-      j = 0
-
-      Builtins.foreach(buttons) do |button|
-        line = Builtins.add(line, button)
-        i = Ops.add(i, 1)
-        if Builtins.contains(
-            [:PushButton, :MenuButton],
-            Builtins.symbolof(button)
-          )
-          j = Ops.add(j, 1)
-
-          if j == max_buttons
-            line = Builtins.add(line, HStretch()) if i != Builtins.size(buttons)
-
-            ret = Builtins.add(ret, line)
-            line = HBox()
-            j = 0
-          end
-        end
-      end
-
-      ret = Builtins.add(ret, line)
-
-      deep_copy(ret)
+      UI.arrange_buttons buttons
     end
 
     def ChangeWidgetIfExists(wid, property, value)

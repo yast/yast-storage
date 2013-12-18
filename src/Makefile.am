@@ -107,6 +107,11 @@ desktop_DATA = \
 fillup_DATA = \
   fillup/sysconfig.storage-yast2-storage
 
-EXTRA_DIST = $(module_DATA) $(client_DATA) $(ynclude_DATA) $(scrconf_DATA) $(ybin_SCRIPTS) $(ydata_DATA) $(desktop_DATA) $(fillup_DATA)
+ylibdir = "${yast2dir}/lib/storage"
+ylib_DATA = \
+  lib/storage/ui_ext.rb \
+  lib/storage/ep-utils.rb
+
+EXTRA_DIST = $(module_DATA) $(client_DATA) $(ynclude_DATA) $(scrconf_DATA) $(ybin_SCRIPTS) $(ydata_DATA) $(desktop_DATA) $(fillup_DATA) $(ylib_DATA)
 
 include $(top_srcdir)/Makefile.am.common
