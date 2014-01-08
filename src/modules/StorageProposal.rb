@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -37,10 +37,10 @@ require "yast"
 module Yast
   class StorageProposalClass < Module
     def main
-      Yast.import "UI"
 
       textdomain "storage"
 
+      Yast.import "UI"
       Yast.import "FileSystems"
       Yast.import "Partitions"
       Yast.import "Label"
@@ -3617,8 +3617,8 @@ module Yast
 		Partitions.DefaultBootFs, "", "", "")
 	    end
           p
-	  end 
-	end 
+	  end
+	end
         Builtins.y2milestone("can_boot_reuse ret:%1", ret)
       end
       deep_copy(ret)
@@ -5972,7 +5972,7 @@ module Yast
     end
 
 
-    def AddCommonWidgets
+    def CommonWidgets()
       space = SaveHeight() ? 0.0 : 0.5
 
       vb = VBox()
@@ -6067,11 +6067,38 @@ module Yast
       )
 
       Builtins.y2milestone(
-        "AddCommonWidgets Home:%1 Snapshots:%2",
+        "CommonWidgets Home:%1 Snapshots:%2",
         GetProposalHome(),
         GetProposalSnapshots()
       )
       deep_copy(frame)
+    end
+
+
+    def CommonWidgetsHelp()
+
+      # TRANSLATORS: help text
+      help_text =
+        _(
+          "<p>To create an LVM-based proposal, choose the corresponding button.</p>\n"
+          )
+
+      # TRANSLATORS: help text
+      help_text +=
+        _(
+          "<p>Selecting \"Enable Snapshots\" will incease the size for the root\n" +
+          "filesystem and enable snapshots. Only works with the filesystem btrfs.</p>"
+          )
+
+      # TRANSLATORS: help text
+      help_text +=
+        _(
+          "<p>Use the button \"Enlarge Swap for Suspend\" to make the swap partition\n" +
+          "large enough to be used to suspend the system to disk.</p>"
+          )
+
+      return help_text
+
     end
 
 
@@ -6218,7 +6245,9 @@ module Yast
     publish :function => :get_proposal_vm, :type => "map <string, any> (map <string, map>, string, map)"
     publish :function => :get_inst_prop, :type => "map <string, any> (map <string, map>)"
     publish :function => :SaveHeight, :type => "boolean ()"
-    publish :function => :AddCommonWidgets, :type => "term ()"
+    publish :function => :CommonWidgets, :type => "term ()"
+    publish :function => :CommonWidgetsHelp, :type => "string ()"
+    publish :function => :IsCommonWidgets, :type => "boolean (symbol)"
     publish :function => :HandleCommonWidgets, :type => "boolean (symbol)"
   end
 

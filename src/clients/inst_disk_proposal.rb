@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -41,9 +41,10 @@
 module Yast
   class InstDiskProposalClient < Client
     def main
-      Yast.import "UI"
+
       textdomain "storage"
 
+      Yast.import "UI"
       Yast.import "Arch"
       Yast.import "Wizard"
       Yast.import "Mode"
@@ -127,7 +128,7 @@ module Yast
 
       @rframe = HBox(
         HSpacing(20),
-        StorageProposal.AddCommonWidgets,
+        StorageProposal.CommonWidgets(),
         HSpacing(3)
       )
 
@@ -159,7 +160,7 @@ module Yast
 
 
       # help on suggested partitioning
-      @help_text = _(
+      help_text = _(
         "<p>\n" +
           "Your hard disks have been checked. The partition setup\n" +
           "displayed is proposed for your hard drive.</p>"
@@ -167,8 +168,7 @@ module Yast
 
       # help text continued
       # %1 is replaced by button text
-      @help_text = Ops.add(
-        @help_text,
+      help_text +=
         Builtins.sformat(
           _(
             "<p>\n" +
@@ -179,12 +179,10 @@ module Yast
           ),
           Builtins.deletechars(@modify_str, "&")
         )
-      )
 
       # help text continued
       # %1 is replaced by button text
-      @help_text = Ops.add(
-        @help_text,
+      help_text +=
         Builtins.sformat(
           _(
             "<p>\n" +
@@ -194,11 +192,9 @@ module Yast
           ),
           Builtins.deletechars(@import_str, "&")
         )
-      )
 
       # help text continued
-      @help_text = Ops.add(
-        @help_text,
+      help_text +=
         Builtins.sformat(
           _(
             "<p>\n" +
@@ -211,17 +207,8 @@ module Yast
           ),
           Builtins.deletechars(@detailed_str, "&")
         )
-      )
 
-      # help text continued
-      # %1 is replaced by button text
-      @help_text = Ops.add(
-        @help_text,
-        _(
-          "<p>\nTo create an LVM-based proposal, choose the corresponding button.</p>\n"
-        )
-      )
-
+      help_text += "\n" + StorageProposal.CommonWidgetsHelp()
 
       @ret = nil
 
@@ -234,7 +221,7 @@ module Yast
         Wizard.SetContents(
           @title,
           @contents,
-          @help_text,
+          help_text,
           Ops.get_boolean(@enab, "enable_back", false),
           Ops.get_boolean(@enab, "enable_next", false)
         )

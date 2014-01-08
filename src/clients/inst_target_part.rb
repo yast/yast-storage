@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -33,9 +33,10 @@
 module Yast
   class InstTargetPartClient < Client
     def main
-      Yast.import "UI"
+
       textdomain "storage"
 
+      Yast.import "UI"
       Yast.import "Mode"
       Yast.import "Popup"
       Yast.import "Storage"
@@ -159,7 +160,7 @@ module Yast
             @partitions,
             Ops.get_integer(@target, "cyl_size", 1)
           )
-          @vbox = Builtins.add(@vbox, StorageProposal.AddCommonWidgets)
+          @vbox = Builtins.add(@vbox, StorageProposal.CommonWidgets())
           Builtins.y2milestone("can resize !")
         else
           # this is the normal case
@@ -171,12 +172,12 @@ module Yast
           )
           @vbox = Builtins.add(
             Ops.get_term(@tmp, "term", VBox()),
-            StorageProposal.AddCommonWidgets
+            StorageProposal.CommonWidgets()
           )
         end
       else
         @vbox = create_whole_disk_dialog
-        @vbox = Builtins.add(@vbox, StorageProposal.AddCommonWidgets)
+        @vbox = Builtins.add(@vbox, StorageProposal.CommonWidgets())
       end
 
       # Since resize case and normal case have different help texts we need

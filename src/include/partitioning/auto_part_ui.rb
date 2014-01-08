@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -203,26 +203,25 @@ module Yast
     #
     def open_auto_dialog(targetname, targetbox)
       targetbox = deep_copy(targetbox)
-      # helptext for semi-automatic partitioning
-      # part 1 of 4
+
+      # TRANSLATORS: helptext, part 1 of 4
       helptext = _(
         "<p>\n" +
           "Select where on your hard disk to install &product;.\n" +
           "</p>\n"
       )
-      # helptext, part 2 of 4
-      helptext = Ops.add(
-        helptext,
+
+      # TRANSLATORS: helptext, part 2 of 4
+      helptext +=
         _(
           "<p>\n" +
             "Use either the <b>entire hard disk</b> or one or more of the\n" +
             "partitions or free regions shown.\n" +
             "</p>\n"
         )
-      )
-      # helptext, part 3 of 4
-      helptext = Ops.add(
-        helptext,
+
+      # TRANSLATORS: helptext, part 3 of 4
+      helptext +=
         _(
           "<p>\n" +
             "Notice: If you select a region that is not shown as <i>free</i>, you\n" +
@@ -230,17 +229,17 @@ module Yast
             "other operating systems.\n" +
             "</p>"
         )
-      )
-      # helptext, part 4 of 4
-      helptext = Ops.add(
-        helptext,
+
+      # TRANSLATORS: helptext, part 4 of 4
+      helptext +=
         _(
           "<p>\n" +
             "<b><i>The marked regions will be deleted. All data there will be\n" +
             "lost. </i></b> There will be no way to recover this data.\n" +
             "</p>\n"
         )
-      )
+
+      helptext += "\n" + StorageProposal.CommonWidgetsHelp()
 
       # Information what to do, background information
       Wizard.SetContents(
