@@ -57,8 +57,10 @@ module Yast
       @no_propose_disks = nil
 
       @proposal_home = false
+      @proposal_home_fs = :xfs
       @proposal_lvm = false
       @proposal_encrypt = false
+      @proposal_root_fs = :btrfs
       @proposal_snapshots = false
       @proposal_suspend = false
       @proposal_password = ""
@@ -70,11 +72,10 @@ module Yast
       @ishome = {}
     end
 
+
     def SetCreateVg(val)
       @proposal_create_vg = val
       Builtins.y2milestone("SetCreateVg val:%1", @proposal_create_vg)
-
-      nil
     end
 
 
@@ -85,9 +86,17 @@ module Yast
     def SetProposalHome(val)
       @proposal_home = val
       Builtins.y2milestone("SetProposalHome val:%1", @proposal_home)
-
-      nil
     end
+
+    def GetProposalHomeFs
+      @proposal_home_fs
+    end
+
+    def SetProposalHomeFs(val)
+      @proposal_home_fs = val
+      Builtins.y2milestone("SetProposalHomeFs val:%1", @proposal_home_fs)
+    end
+
 
     def GetProposalLvm
       @proposal_lvm
@@ -96,8 +105,6 @@ module Yast
     def SetProposalLvm(val)
       @proposal_lvm = val
       Builtins.y2milestone("SetProposalLvm val:%1", val)
-
-      nil
     end
 
     def GetProposalEncrypt
@@ -107,10 +114,17 @@ module Yast
     def SetProposalEncrypt(val)
       @proposal_encrypt = val
       Builtins.y2milestone("SetProposalEncrypt val:%1", val)
-
-      nil
     end
 
+
+    def GetProposalRootFs
+      @proposal_root_fs
+    end
+
+    def SetProposalRootFs(val)
+      @proposal_root_fs = val
+      Builtins.y2milestone("SetProposalRootFs val:%1", @proposal_root_fs)
+    end
 
     def GetProposalSnapshots()
       @proposal_snapshots
@@ -129,9 +143,8 @@ module Yast
     def SetProposalSuspend(val)
       @proposal_suspend = val
       Builtins.y2milestone("SetProposalSuspend val:%1", val)
-
-      nil
     end
+
 
     def GetProposalPassword
       @proposal_password
@@ -140,8 +153,6 @@ module Yast
     def SetProposalPassword(val)
       @proposal_password = val
       Builtins.y2milestone("SetProposalPassword")
-
-      nil
     end
 
 
@@ -152,16 +163,20 @@ module Yast
         SetProposalEncrypt(false)
         SetProposalPassword("")
         SetProposalSuspend(Ops.get_boolean(@cfg_xml, "suspend", false))
+        SetProposalRootFs(Partitions.DefaultFs())
+        SetProposalHomeFs(Partitions.DefaultHomeFs())
       end
       SetProposalSnapshots(Ops.get_boolean(@cfg_xml, "prop_snapshots", false))
       Builtins.y2milestone(
-        "SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 snapshots:%5 suspend:%6",
+        "SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 snapshots:%5 suspend:%6 root_fs:%7 home_fs:%8",
         @proposal_home,
         @proposal_lvm,
         @proposal_encrypt,
         home_only,
         @proposal_snapshots,
-        @proposal_suspend
+        @proposal_suspend,
+        @proposal_root_fs,
+        @proposal_home_fs
       )
 
       nil
@@ -323,12 +338,12 @@ module Yast
 
 
     def PropDefaultFs()
-      Partitions.DefaultFs()
+      @proposal_root_fs
     end
 
 
     def PropDefaultHomeFs()
-      Partitions.DefaultHomeFs()
+      @proposal_home_fs
     end
 
 
@@ -5973,9 +5988,15 @@ module Yast
 
 
     def CommonWidgets()
-      space = SaveHeight() ? 0.0 : 0.5
+
+      filesystems = [
+        Item(Id(:btrfs), "BtrFS"),
+        Item(Id(:ext4), "Ext4"),
+        Item(Id(:xfs), "XFS")
+      ]
 
       vb = VBox()
+
       vb = Builtins.add(
         vb,
         Left(
@@ -5984,8 +6005,8 @@ module Yast
             CheckBox(
               Id(:lvm),
               Opt(:notify),
-              # Label text
-              _("Create &LVM Based Proposal"),
+              # TRANSLATORS: checkbox text
+              _("Create &LVM-based Proposal"),
               GetProposalLvm()
             )
           )
@@ -5999,14 +6020,48 @@ module Yast
             CheckBox(
               Id(:encrypt),
               Opt(:notify),
-              # Label text
+              # TRANSLATORS: checkbox text
               _("Encr&ypt Volume Group"),
               GetProposalEncrypt()
             )
           )
         )
       )
-      vb = Builtins.add(vb, VSpacing(space))
+
+      vb = Builtins.add(vb, VSpacing(1))
+
+      vb = Builtins.add(
+        vb,
+        Left(
+          HBox(
+            HSpacing(4),
+            ComboBox(
+              Id(:root_fs),
+              Opt(:notify),
+              # TRANSLATORS: combobox label
+              _("File System for Root Partition"),
+              filesystems
+            )
+          )
+        )
+      )
+      vb = Builtins.add(
+        vb,
+        Left(
+          HBox(
+            HSpacing(7),
+            CheckBox(
+              Id(:snapshots),
+              # TRANSLATORS: checkbox text
+              _("Enable Snapshots"),
+              GetProposalSnapshots()
+            )
+          )
+        )
+      )
+
+      vb = Builtins.add(vb, VSpacing(1))
+
       vb = Builtins.add(
         vb,
         Left(
@@ -6015,30 +6070,30 @@ module Yast
             CheckBox(
               Id(:home),
               Opt(:notify),
-              # Label text
+              # TRANSLATORS: checkbox text
               _("Propose Separate &Home Partition"),
               GetProposalHome()
             )
           )
         )
       )
-      vb = Builtins.add(vb, VSpacing(space))
       vb = Builtins.add(
         vb,
         Left(
           HBox(
-            HSpacing(3),
-            CheckBox(
-              Id(:snapshots),
-              Opt(:notify),
-              # Label text
-              _("Enable Snapshots"),
-              GetProposalSnapshots()
+            HSpacing(7),
+            ComboBox(
+              Id(:home_fs),
+              # TRANSLATORS: combobox label
+              _("File System for Home Partition"),
+              filesystems
             )
           )
         )
       )
-      vb = Builtins.add(vb, VSpacing(space))
+
+      vb = Builtins.add(vb, VSpacing(1))
+
       vb = Builtins.add(
         vb,
         Left(
@@ -6046,8 +6101,7 @@ module Yast
             HSpacing(3),
             CheckBox(
               Id(:suspend),
-              Opt(:notify),
-              # Label text
+              # TRANSLATORS: checkbox text
               _("Enlarge &Swap for Suspend"),
               GetProposalSuspend()
             )
@@ -6056,21 +6110,15 @@ module Yast
       )
 
       frame = VBox(
-        VSpacing(3.0 * space),
         HVCenter(
           VBox(
-            Left(Label(Opt(:boldFont), _("Proposal settings"))),
-            VSpacing(0.3),
+            Left(Label(Opt(:boldFont), _("Proposal Settings"))),
+            VSpacing(0.4),
             HVCenter(vb)
           )
         )
       )
 
-      Builtins.y2milestone(
-        "CommonWidgets Home:%1 Snapshots:%2",
-        GetProposalHome(),
-        GetProposalSnapshots()
-      )
       deep_copy(frame)
     end
 
@@ -6080,21 +6128,30 @@ module Yast
       # TRANSLATORS: help text
       help_text =
         _(
-          "<p>To create an LVM-based proposal, choose the corresponding button.</p>\n"
+          "<p>To create an LVM-based proposal, choose the corresponding button. The\n" +
+          "LVM-based proposal can be encrypted.</p>\n"
           )
 
       # TRANSLATORS: help text
       help_text +=
         _(
-          "<p>Selecting \"Enable Snapshots\" will incease the size for the root\n" +
-          "filesystem and enable snapshots. Only works with the filesystem btrfs.</p>"
+          "<p>The filesystem for the root partition can be selected with the\n" +
+          "corresponding combo box. With the filesystem BtrFS the proposal can\n" +
+          "enable snapshots. This will also increase the size for the root partition.</p>"
           )
 
       # TRANSLATORS: help text
       help_text +=
         _(
-          "<p>Use the button \"Enlarge Swap for Suspend\" to make the swap partition\n" +
-          "large enough to be used to suspend the system to disk.</p>"
+          "<p>The proposal can create a separate home partition. The filesystem for\n" +
+          "the home partition can be selected with the corresponding combo box.</p>"
+          )
+
+      # TRANSLATORS: help text
+      help_text +=
+        _(
+          "<p>The swap partition can be made large enough to be used to suspend\n" +
+          "the system to disk in most cases.</p>"
           )
 
       return help_text
@@ -6181,41 +6238,105 @@ module Yast
 
 
     def IsCommonWidget(id)
-      return [ :lvm, :home, :encrypt, :snapshots, :suspend ].include?(id)
+      return [ :lvm, :encrypt, :root_fs, :snapshots, :home, :home_fs, :suspend ].include?(id)
     end
 
 
     def HandleCommonWidgets(id)
-      ret = false
-      val = Convert.to_boolean(UI.QueryWidget(Id(id), :Value))
-      Builtins.y2milestone("id:%1 val:%2", ret, val)
+
+      val = UI.QueryWidget(Id(id), :Value)
+      Builtins.y2milestone("haha %1 %2", id, val)
+
       case id
+
         when :lvm
-          SetProposalLvm(val)
           UI.ChangeWidget(Id(:encrypt), :Enabled, val)
-          ret = true
+
         when :encrypt
           if val
-            if QueryProposalPassword()
-              SetProposalEncrypt(true)
-            else
+            if !QueryProposalPassword()
               UI.ChangeWidget(Id(:encrypt), :Value, false)
             end
-          else
-            SetProposalEncrypt(false)
           end
-          ret = true
+
+        when :root_fs
+          UI.ChangeWidget(Id(:snapshots), :Enabled, val == :btrfs)
+
         when :home
-          SetProposalHome(val)
-          ret = true
-        when :snapshots
-          SetProposalSnapshots(val)
-          ret = true
-        when :suspend
-          SetProposalSuspend(val)
-          ret = true
+          UI.ChangeWidget(Id(:home_fs), :Enabled, val)
+
       end
+    end
+
+
+    def EnableSuspend
+      swaps = Storage.GetCreatedSwaps
+      susps = Partitions.SwapSizeMb(0, true)
+      ret = Builtins.size(swaps) == 1 &&
+        Ops.less_than(
+          Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
+          susps
+        )
+      ret = ret || StorageProposal.GetProposalSuspend
+      Builtins.y2milestone(
+        "EnableSuspend csw:%1 swsize:%2 suspsize:%3 ret:%4",
+        Builtins.size(swaps),
+        Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
+        susps,
+        ret
+      )
       ret
+    end
+
+
+    def CommonWidgetsPopup()
+
+      UI.OpenDialog(
+        Opt(:decorated),
+        MarginBox(2, 1,
+          VBox(
+            CommonWidgets(),
+            VSpacing(1),
+            ButtonBox(
+              PushButton(Id(:help), Opt(:helpButton), Label.HelpButton),
+              PushButton(Id(:ok), Opt(:default), Label.OKButton),
+              PushButton(Id(:cancel), Label.CancelButton)
+            )
+          )
+        )
+      )
+
+      UI.ChangeWidget(Id(:encrypt), :Enabled, GetProposalLvm())
+      UI.ChangeWidget(Id(:root_fs), :Value, GetProposalRootFs())
+      UI.ChangeWidget(Id(:snapshots), :Enabled, GetProposalRootFs() == :btrfs)
+      UI.ChangeWidget(Id(:home_fs), :Enabled, StorageProposal.GetProposalHome())
+      UI.ChangeWidget(Id(:home_fs), :Value, StorageProposal.GetProposalHomeFs())
+      UI.ChangeWidget(Id(:suspend), :Enabled, EnableSuspend())
+
+      UI.ChangeWidget(Id(:help), :HelpText, StorageProposal.CommonWidgetsHelp())
+
+      begin
+        ret = Convert.to_symbol(UI.UserInput)
+        if StorageProposal.IsCommonWidget(ret)
+          StorageProposal.HandleCommonWidgets(ret)
+        end
+      end until [ :ok, :cancel ].include?(ret)
+
+      if ret == :ok
+        y2milestone("setting storage proposal settings")
+        SetProposalLvm(UI.QueryWidget(Id(:lvm), :Value))
+        SetProposalEncrypt(UI.QueryWidget(Id(:encrypt), :Value))
+        SetProposalRootFs(UI.QueryWidget(Id(:root_fs), :Value))
+        SetProposalSnapshots(UI.QueryWidget(Id(:snapshots), :Value))
+        SetProposalHome(UI.QueryWidget(Id(:home), :Value))
+        SetProposalHomeFs(UI.QueryWidget(Id(:home_fs), :Value))
+        SetProposalSuspend(UI.QueryWidget(Id(:suspend), :Value))
+      end
+
+      UI.CloseDialog()
+
+      return ret == :ok
+
     end
 
 
@@ -6245,10 +6366,7 @@ module Yast
     publish :function => :get_proposal_vm, :type => "map <string, any> (map <string, map>, string, map)"
     publish :function => :get_inst_prop, :type => "map <string, any> (map <string, map>)"
     publish :function => :SaveHeight, :type => "boolean ()"
-    publish :function => :CommonWidgets, :type => "term ()"
-    publish :function => :CommonWidgetsHelp, :type => "string ()"
-    publish :function => :IsCommonWidgets, :type => "boolean (symbol)"
-    publish :function => :HandleCommonWidgets, :type => "boolean (symbol)"
+    publish :function => :CommonWidgetsPopup, :type => "boolean ()"
   end
 
   StorageProposal = StorageProposalClass.new

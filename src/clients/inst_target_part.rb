@@ -160,7 +160,8 @@ module Yast
             @partitions,
             Ops.get_integer(@target, "cyl_size", 1)
           )
-          @vbox = Builtins.add(@vbox, StorageProposal.CommonWidgets())
+          @vbox = Builtins.add(@vbox, VSpacing(1.5))
+          @vbox = Builtins.add(@vbox, PushButton(Id(:settings), _("Edit Proposal Settings")))
           Builtins.y2milestone("can resize !")
         else
           # this is the normal case
@@ -172,12 +173,16 @@ module Yast
           )
           @vbox = Builtins.add(
             Ops.get_term(@tmp, "term", VBox()),
-            StorageProposal.CommonWidgets()
+            VBox(
+              VSpacing(1.5),
+              PushButton(Id(:settings), _("Edit Proposal Settings"))
+            )
           )
         end
       else
         @vbox = create_whole_disk_dialog
-        @vbox = Builtins.add(@vbox, StorageProposal.CommonWidgets())
+        @vbox = Builtins.add(@vbox, VSpacing(1.5))
+        @vbox = Builtins.add(@vbox, PushButton(Id(:settings), _("Edit Proposal Settings")))
       end
 
       # Since resize case and normal case have different help texts we need
@@ -214,18 +219,6 @@ module Yast
         UI.ChangeWidget(Id(:full), :Enabled, false)
       end
 
-      UI.ChangeWidget(
-        Id(:encrypt),
-        :Enabled,
-        Convert.to_boolean(UI.QueryWidget(Id(:lvm), :Value))
-      )
-      @susp_enab = Ops.less_than(
-        Partitions.SwapSizeMb(0, false),
-        Partitions.SwapSizeMb(0, true)
-      )
-      UI.ChangeWidget(Id(:suspend), :Value, false) if !@susp_enab
-      UI.ChangeWidget(Id(:suspend), :Enabled, @susp_enab)
-
       # Event handling
 
       @ret = nil
@@ -238,8 +231,8 @@ module Yast
 
         if @ret == :abort && Popup.ReallyAbort(true)
           break
-        elsif StorageProposal.IsCommonWidget(@ret)
-          StorageProposal.HandleCommonWidgets(@ret)
+        elsif @ret == :settings
+          StorageProposal.CommonWidgetsPopup()
         elsif @ret == :full
           # Set all checkboxes
           Builtins.foreach(@partitions) do |pentry|

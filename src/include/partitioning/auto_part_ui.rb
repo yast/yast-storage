@@ -239,8 +239,6 @@ module Yast
             "</p>\n"
         )
 
-      helptext += "\n" + StorageProposal.CommonWidgetsHelp()
-
       # Information what to do, background information
       Wizard.SetContents(
         _("Preparing Hard Disk"),

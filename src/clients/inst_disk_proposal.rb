@@ -126,10 +126,11 @@ module Yast
 
       Builtins.y2milestone("current proposal: %1", @changes)
 
-      @rframe = HBox(
-        HSpacing(20),
-        StorageProposal.CommonWidgets(),
-        HSpacing(3)
+      @rframe = VBox(
+        VSpacing(0.2),
+        # TRANSLATORS: button text
+        PushButton(Id(:settings), _("Edit Proposal Settings")),
+        HSpacing(0.2)
       )
 
       @bframe = VBox(
@@ -208,8 +209,6 @@ module Yast
           Builtins.deletechars(@detailed_str, "&")
         )
 
-      help_text += "\n" + StorageProposal.CommonWidgetsHelp()
-
       @ret = nil
 
       # Attention! besides the testsuite, AutoYaST is using this to turn off
@@ -227,8 +226,6 @@ module Yast
         )
         Wizard.SetTitleIcon("yast-partitioning") if Stage.initial
 
-        UI.ChangeWidget(Id(:encrypt), :Enabled, StorageProposal.GetProposalLvm)
-        UI.ChangeWidget(Id(:suspend), :Enabled, EnableSuspend())
         begin
           @val = false
           Wizard.SetFocusToNextButton
@@ -237,11 +234,9 @@ module Yast
 
           return :abort if @ret == :abort && Popup.ReallyAbort(true)
 
-          if StorageProposal.IsCommonWidget(@ret)
-            @val = Convert.to_boolean(UI.QueryWidget(Id(@ret), :Value))
-            if AskOverwriteChanges()
+          if @ret == :settings
+            if AskOverwriteChanges() && StorageProposal.CommonWidgetsPopup()
               @target_is = "SUGGESTION"
-              StorageProposal.HandleCommonWidgets(@ret)
               Storage.ResetOndiskTarget
               Storage.AddMountPointsForWin(Storage.GetTargetMap)
               @prop = StorageProposal.get_inst_prop(Storage.GetTargetMap)
@@ -255,9 +250,6 @@ module Yast
                   )
                   Popup.Error(@reason)
                   StorageProposal.SetProposalHome(false)
-                  if UI.WidgetExists(Id(:home))
-                    UI.ChangeWidget(Id(:home), :Value, false)
-                  end
                 end
                 @targetMap = Ops.get_map(@prop, "target", {})
                 Storage.SetPartProposalMode("accept")
@@ -267,8 +259,6 @@ module Yast
               Storage.SetTargetMap(@targetMap)
               @changes = Storage.ChangeText
               UI.ChangeWidget(Id(:richtext), :Value, @changes)
-            else
-              UI.ChangeWidget(Id(@ret), :Value, !@val)
             end
           elsif Builtins.contains([:modify, :detailed, :import], @ret)
             Storage.SetPartProposalFirst(false)
@@ -295,14 +285,6 @@ module Yast
             execSubscreens(@ret)
             @changes = Storage.ChangeText
             UI.ChangeWidget(Id(:richtext), :Value, @changes)
-            @val = StorageProposal.GetProposalLvm
-            UI.ChangeWidget(Id(:lvm), :Value, @val)
-            UI.ChangeWidget(Id(:encrypt), :Enabled, @val)
-            UI.ChangeWidget(Id(:encrypt), :Value, @val && StorageProposal.GetProposalEncrypt)
-            UI.ChangeWidget(Id(:home), :Value, StorageProposal.GetProposalHome)
-            UI.ChangeWidget(Id(:snapshots), :Value, StorageProposal.GetProposalSnapshots())
-            UI.ChangeWidget(Id(:suspend), :Value, StorageProposal.GetProposalSuspend)
-            UI.ChangeWidget(Id(:suspend), :Enabled, EnableSuspend())
           end
         end until @ret == :next || @ret == :back || @ret == :cancel
       end
@@ -442,24 +424,6 @@ module Yast
       nil
     end
 
-    def EnableSuspend
-      swaps = Storage.GetCreatedSwaps
-      susps = Partitions.SwapSizeMb(0, true)
-      ret = Builtins.size(swaps) == 1 &&
-        Ops.less_than(
-          Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
-          susps
-        )
-      ret = ret || StorageProposal.GetProposalSuspend
-      Builtins.y2milestone(
-        "EnableSuspend csw:%1 swsize:%2 suspsize:%3 ret:%4",
-        Builtins.size(swaps),
-        Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
-        susps,
-        ret
-      )
-      ret
-    end
   end
 end
 
