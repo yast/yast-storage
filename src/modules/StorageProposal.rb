@@ -6245,7 +6245,6 @@ module Yast
     def HandleCommonWidgets(id)
 
       val = UI.QueryWidget(Id(id), :Value)
-      Builtins.y2milestone("haha %1 %2", id, val)
 
       case id
 
