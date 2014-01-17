@@ -1588,6 +1588,7 @@ module Yast
       deep_copy(items)
     end
 
+
     # Dialog: Subvolume handling
     # @parm old map with original partition
     # @parm new map with changes filled in

@@ -422,6 +422,7 @@ module Yast
       Greasemonkey.Transform(subvol)
     end
 
+
     def HandleSubvol(data)
       data = deep_copy(data)
       ret = deep_copy(data)
@@ -644,9 +645,6 @@ module Yast
       Builtins.y2milestone("HandleFsChanged new %1", new)
       deep_copy(new)
     end
-
-
-
 
 
     def HandlePartWidgetChanges(init, ret, file_systems, old, new)

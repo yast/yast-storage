@@ -32,6 +32,7 @@
 #
 module Yast
   class StorageFinishClient < Client
+
     def main
 
       textdomain "storage"
@@ -109,6 +110,7 @@ module Yast
       Builtins.y2milestone("storage_finish finished")
       deep_copy(@ret)
     end
+
   end
 end
 

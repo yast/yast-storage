@@ -36,6 +36,7 @@ require "yast"
 
 module Yast
   class StorageProposalClass < Module
+
     def main
 
       textdomain "storage"
@@ -480,6 +481,7 @@ module Yast
       deep_copy(@no_propose_disks)
     end
 
+
     def NeedNewDisklabel(entry)
       entry = deep_copy(entry)
       ret = Partitions.EfiBoot
@@ -495,6 +497,7 @@ module Yast
       )
       ret
     end
+
 
     def ignore_disk(dev, entry, soft)
       entry = deep_copy(entry)
@@ -559,6 +562,7 @@ module Yast
       deep_copy(targets)
     end
 
+
     def fill_ishome(pl)
       pl = deep_copy(pl)
       Builtins.foreach(pl) do |p|
@@ -573,6 +577,7 @@ module Yast
 
       nil
     end
+
 
     def flex_init_swapable(tg)
       tg = deep_copy(tg)
@@ -724,7 +729,6 @@ module Yast
       end
       deep_copy(ret)
     end
-
 
 
     def do_flexible_disk_conf(disk, co, ignore_boot, reuse)
@@ -1354,6 +1358,8 @@ module Yast
       Builtins.y2milestone("conf:%1", conf)
       do_pflex(target, conf)
     end
+
+
     def find_matching_disk(disks, target, conf)
       disks = deep_copy(disks)
       target = deep_copy(target)
@@ -1454,6 +1460,8 @@ module Yast
       end
       deep_copy(ret)
     end
+
+
     def process_partition_data(dev, solution, vgname)
       solution = deep_copy(solution)
       disk = Ops.get_map(solution, "disk", {})
@@ -1907,6 +1915,8 @@ module Yast
       Builtins.y2milestone("process_partition_data disk %1", disk)
       deep_copy(disk)
     end
+
+
     def add_cylinder_info(conf, gap)
       conf = deep_copy(conf)
       gap = deep_copy(gap)
@@ -2014,6 +2024,8 @@ module Yast
       )
       deep_copy(conf)
     end
+
+
     def get_perfect_list(ps, g)
       ps = deep_copy(ps)
       g = deep_copy(g)
@@ -2098,6 +2110,8 @@ module Yast
       )
       deep_copy(ret)
     end
+
+
     def add_part_recursive(ps, g)
       ps = deep_copy(ps)
       g = deep_copy(g)
@@ -2233,6 +2247,8 @@ module Yast
 
       nil
     end
+
+
     def normalize_gaps(ps, g)
       ps = deep_copy(ps)
       g = deep_copy(g)
@@ -2549,6 +2565,8 @@ module Yast
       Builtins.y2milestone("normalize_gaps gap %1", g)
       deep_copy(g)
     end
+
+
     def distribute_space(rest, weights, added, ps)
       weights = deep_copy(weights)
       added = deep_copy(added)
@@ -2656,6 +2674,8 @@ module Yast
       Builtins.y2milestone("distribute_space ret %1", ret)
       deep_copy(ret)
     end
+
+
     def do_weighting(ps, g)
       ps = deep_copy(ps)
       g = deep_copy(g)
@@ -2821,6 +2841,8 @@ module Yast
       end
       deep_copy(ret)
     end
+
+
     def remove_possible_partitions(disk, conf)
       disk = deep_copy(disk)
       conf = deep_copy(conf)
@@ -2858,6 +2880,8 @@ module Yast
       )
       deep_copy(ret)
     end
+
+
     def try_resize_windows(disk)
       disk = deep_copy(disk)
       cyl_size = Ops.get_integer(disk, "cyl_size", 1)
@@ -2909,7 +2933,6 @@ module Yast
     end
 
 
-
     def get_gaps(start, _end, part, add_exist_linux)
       part = deep_copy(part)
       Builtins.y2milestone(
@@ -2954,6 +2977,8 @@ module Yast
       Builtins.y2milestone("get_gaps ret %1", ret)
       deep_copy(ret)
     end
+
+
     def get_gap_info(disk, add_exist_linux)
       disk = deep_copy(disk)
       ret = {}
@@ -3157,6 +3182,8 @@ module Yast
       Builtins.y2milestone("get_gap_info ret %1", ret)
       deep_copy(ret)
     end
+
+
     def read_partition_xml_config
       xmlflex = Convert.to_map(
         ProductFeatures.GetFeature("partitioning", "flexible_partitioning")
@@ -3291,6 +3318,8 @@ module Yast
       Builtins.y2milestone("conf %1", conf)
       deep_copy(conf)
     end
+
+
     def read_partition_config(fpath)
       pos = 0
       line = ""
