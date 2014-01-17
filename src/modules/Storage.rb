@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) [2012-2013] Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -1335,6 +1335,15 @@ module Yast
       ret["udev_path"] = info.udevPath if !info.udevPath.empty?
       ret["udev_id"] = info.udevId.to_a if !info.udevId.empty?
 
+      if !info.userdata.empty?
+        # there's no to_h for the swig stl map object
+        tmp = {}
+        info.userdata.each do |a, b|
+          tmp[a] = b
+        end
+        ret["userdata"] = tmp
+      end
+
       return ret
 
     end
@@ -1912,7 +1921,8 @@ module Yast
         "dasdfmt",
         "udev_id",
         "udev_path",
-        "has_fake_partition"
+        "has_fake_partition",
+        "userdata"
       ]
       Builtins.foreach(l) do |s|
         if Builtins.haskey(cinfo, s)
@@ -1970,7 +1980,8 @@ module Yast
           "inactive",
           "mount",
           "mountby",
-          "used_fs"
+          "used_fs",
+          "userdata"
         ]
         Builtins.foreach(simple) do |p|
           mp = GetPartition(tg, Ops.get_string(p, "device", ""))
@@ -2051,6 +2062,12 @@ module Yast
             Ops.get_string(p, "device", ""),
             "subvol",
             Ops.get_list(p, "subvol", [])
+          )
+          tg = SetPartitionData(
+            tg,
+            Ops.get_string(p, "device", ""),
+            "userdata",
+            Ops.get_map(p, "userdata", {})
           )
         end
       end
@@ -2970,6 +2987,23 @@ module Yast
           cre = cre.drop(1)
         end
       end
+
+      if ret == 0 && part.fetch("userdata", {}) != curr.fetch("userdata", {})
+        changed = true
+        d = part.fetch("device", "")
+        userdata = ::Storage::MapStringString.new()
+        part["userdata"].each do |a, b|
+          userdata[a]= b
+        end
+        Builtins.y2milestone("ChangeVolumeProperties userdata to %1", userdata.to_s)
+        ret = @sint.setUserdata(d, userdata)
+        if ret < 0
+          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+        else
+          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+        end
+      end
+
       UpdateTargetMapDev(dev) if changed
       if ret != 0
         Builtins.y2milestone("ChangeVolumeProperties ret:%1", ret)

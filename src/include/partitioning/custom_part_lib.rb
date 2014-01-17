@@ -432,8 +432,9 @@ module Yast
           Ops.get_symbol(ret, "used_fs", :unknown)
         )
         Builtins.y2milestone(
-          "before HandleSubvol subvol:%1",
-          Ops.get_list(ret, "subvol", [])
+          "before HandleSubvol subvol:%1 userdata:%2",
+          Ops.get_list(ret, "subvol", []),
+          Ops.get_map(ret, "userdata", {})
         )
         if Ops.get_symbol(ret, "used_fs", :unknown) == :btrfs
           if Ops.get_boolean(ret, "format", false)
@@ -442,9 +443,11 @@ module Yast
               :from => "map",
               :to   => "map <string, any>"
             )
+            ret["userdata"] = { "/" => "snapshots" }
             Builtins.y2milestone(
-              "HandleSubvol AddSubvolRoot subvol:%1",
-              Ops.get_list(ret, "subvol", [])
+              "HandleSubvol AddSubvolRoot subvol:%1 userdata:%2",
+              Ops.get_list(ret, "subvol", []),
+              Ops.get_map(ret, "userdata", {})
             )
           else
             Ops.set(
@@ -460,8 +463,9 @@ module Yast
           Ops.set(ret, "subvol", [])
         end
         Builtins.y2milestone(
-          "after  HandleSubvol subvol:%1",
-          Ops.get_list(ret, "subvol", [])
+          "after HandleSubvol subvol:%1 userdata:%2",
+          Ops.get_list(ret, "subvol", []),
+          Ops.get_map(ret, "userdata", {})
         )
       else
         Ops.set(ret, "subvol", [])

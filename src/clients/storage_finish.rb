@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -40,6 +40,7 @@ module Yast
       Yast.import "Storage"
       Yast.import "StorageSettings"
       Yast.import "StorageUpdate"
+      Yast.import "StorageUtils"
       Yast.import "Mode"
       Yast.import "Installation"
 
@@ -91,14 +92,7 @@ module Yast
         StorageSettings.Save
 
         if Mode.installation
-          @part = Storage.GetEntryForMountpoint("/")
-          if Ops.get_symbol(@part, "used_fs", :unknown) == :btrfs
-            if SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus create-config --fstype=btrfs /") == 0
-              SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus set-config " <<
-                          "NUMBER_CLEANUP=yes NUMBER_LIMIT=20 NUMBER_LIMIT_IMPORTANT=10")
-              SCR.Write(path(".sysconfig.yast2.USE_SNAPPER"), "yes")
-            end
-          end
+          StorageUtils.ConfigureSnapper()
         end
 
       else

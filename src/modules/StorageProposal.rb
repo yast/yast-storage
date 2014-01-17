@@ -166,8 +166,8 @@ module Yast
         SetProposalSuspend(Ops.get_boolean(@cfg_xml, "suspend", false))
         SetProposalRootFs(Partitions.DefaultFs())
         SetProposalHomeFs(Partitions.DefaultHomeFs())
+        SetProposalSnapshots(Ops.get_boolean(@cfg_xml, "prop_snapshots", false))
       end
-      SetProposalSnapshots(Ops.get_boolean(@cfg_xml, "prop_snapshots", false))
       Builtins.y2milestone(
         "SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 snapshots:%5 suspend:%6 root_fs:%7 home_fs:%8",
         @proposal_home,
@@ -273,8 +273,9 @@ module Yast
         btmp = ProductFeatures.GetBooleanFeature("partitioning", "proposal_lvm")
         Ops.set(@cfg_xml, "prop_lvm", btmp ? true : false)
 
-        btmp = ProductFeatures.GetBooleanFeature("partitioning", "proposal_snapshots")
-        Ops.set(@cfg_xml, "prop_snapshots", btmp ? true : false)
+        # GetBooleanFeature cannot distinguish between missing and false
+        tmp = ProductFeatures.GetFeature("partitioning", "proposal_snapshots")
+        Ops.set(@cfg_xml, "prop_snapshots", tmp == "" || tmp == true ? true : false)
 
         itmp = ProductFeatures.GetIntegerFeature(
           "partitioning",
@@ -3849,6 +3850,9 @@ module Yast
               Ops.get_string(p, "device", "") ==
                 Ops.get_string(pl, [0, "device"], "")
             p = Storage.SetVolOptions(p, "/", PropDefaultFs(), "", "", "")
+            if GetProposalSnapshots() && PropDefaultFs() == :btrfs
+              p["userdata"] = { "/" => "snapshots" }
+            end
           end
           deep_copy(p)
         end
@@ -3892,6 +3896,9 @@ module Yast
         "fsys"        => PropDefaultFs(),
         "size"        => 0
       }
+      if GetProposalSnapshots() && PropDefaultFs() == :btrfs
+        root["userdata"] = { "/" => "snapshots" }
+      end
       opts = GetControlCfg()
       conf = { "partitions" => [] }
       swap_sizes = []
@@ -4397,6 +4404,9 @@ module Yast
         "fsys"        => PropDefaultFs(),
         "size"        => 0
       }
+      if GetProposalSnapshots() && PropDefaultFs() == :btrfs
+        root["userdata"] = { "/" => "snapshots" }
+      end
       opts = GetControlCfg()
       ddev = get_disk_try_list(target, true)
       sol_disk = ""
@@ -5414,6 +5424,9 @@ module Yast
           "size_k" => pe_to_sizek(root_pe, pe)
         }
         p = Storage.SetVolOptions(p, "/", PropDefaultFs(), "", "", "")
+        if GetProposalSnapshots() && PropDefaultFs() == :btrfs
+          p["userdata"] = { "/" => "snapshots" }
+        end
         Builtins.y2milestone("modify_vm created %1", p)
         Ops.set(
           ret,
@@ -5427,6 +5440,9 @@ module Yast
           Builtins.maplist(Ops.get_list(ret, "partitions", [])) do |p|
             if Ops.get_string(p, "name", "") == "root"
               p = Storage.SetVolOptions(p, "/", PropDefaultFs(), "", "", "")
+              if GetProposalSnapshots() && PropDefaultFs() == :btrfs
+                p["userdata"] = { "/" => "snapshots" }
+              end
               Builtins.y2milestone("modify_vm reuse %1", p)
             end
             deep_copy(p)
@@ -6166,7 +6182,8 @@ module Yast
         _(
           "<p>The filesystem for the root partition can be selected with the\n" +
           "corresponding combo box. With the filesystem BtrFS the proposal can\n" +
-          "enable snapshots. This will also increase the size for the root partition.</p>"
+          "enable automatic snapshots with snapper. This will also increase the\n" +
+          "size for the root partition.</p>"
           )
 
       # TRANSLATORS: help text
