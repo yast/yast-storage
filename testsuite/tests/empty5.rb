@@ -14,6 +14,7 @@ module Yast
 
       ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", false)
       ProductFeatures.SetBooleanFeature("partitioning", "proposal_lvm", true)
+      ProductFeatures.SetBooleanFeature("partitioning", "proposal_snapshots", false)
       ProductFeatures.SetStringFeature("partitioning", "vm_desired_size", "30 GB")
       ProductFeatures.SetStringFeature("partitioning", "root_base_size", "20 GB")
 
