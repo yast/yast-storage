@@ -4991,7 +4991,7 @@ module Yast
         "var/tmp"
       ]
 
-      if Arch.i386
+      if Arch.i386 || Arch.x86_64
         def_subvol.push("boot/grub2/i386-pc")
       end
 
