@@ -4391,6 +4391,31 @@ module Yast
     end
 
 
+    def post_process_target(target)
+
+      target.each do |device, container|
+        container["partitions"].each do |volume|
+
+          # if we have a home partition remove the home subvolume
+          if PropDefaultFs() == :btrfs && GetProposalHome()
+            if volume["mount"] == "/"
+              if FileSystems.default_subvol.empty?
+                home = "home"
+              else
+                home = FileSystems.default_subvol + "/" + "home"
+              end
+              volume["subvol"].delete_if { |subvol| subvol["name"] == home }
+            end
+          end
+
+        end
+      end
+
+      return target
+
+    end
+
+
     def get_inst_proposal(target)
       target = deep_copy(target)
       Builtins.y2milestone("get_inst_proposal start")
@@ -4962,6 +4987,7 @@ module Yast
           "get_inst_proposal sol:%1",
           Ops.get_map(ret, ["target", sol_disk], {})
         )
+        ret["target"] = post_process_target(ret["target"])
       end
       Builtins.y2milestone(
         "get_inst_proposal ret[ok]:%1",
