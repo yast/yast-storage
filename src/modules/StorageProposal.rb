@@ -3850,9 +3850,6 @@ module Yast
               Ops.get_string(p, "device", "") ==
                 Ops.get_string(pl, [0, "device"], "")
             p = Storage.SetVolOptions(p, "/", PropDefaultFs(), "", "", "")
-            if GetProposalSnapshots() && PropDefaultFs() == :btrfs
-              p["userdata"] = { "/" => "snapshots" }
-            end
           end
           deep_copy(p)
         end
@@ -3896,9 +3893,6 @@ module Yast
         "fsys"        => PropDefaultFs(),
         "size"        => 0
       }
-      if GetProposalSnapshots() && PropDefaultFs() == :btrfs
-        root["userdata"] = { "/" => "snapshots" }
-      end
       opts = GetControlCfg()
       conf = { "partitions" => [] }
       swap_sizes = []
@@ -4396,7 +4390,7 @@ module Yast
       target.each do |device, container|
         container["partitions"].each do |volume|
 
-          # if we have a home partition remove the home subvolume
+          # if we have a home volume remove the home subvolume
           if PropDefaultFs() == :btrfs && GetProposalHome()
             if volume["mount"] == "/"
               if FileSystems.default_subvol.empty?
@@ -4405,6 +4399,13 @@ module Yast
                 home = FileSystems.default_subvol + "/" + "home"
               end
               volume["subvol"].delete_if { |subvol| subvol["name"] == home }
+            end
+          end
+
+          # enable snapshots for root volume if desired
+          if PropDefaultFs() == :btrfs && GetProposalSnapshots()
+            if volume["mount"] == "/"
+              volume["userdata"] = { "/" => "snapshots" }
             end
           end
 
@@ -4429,9 +4430,6 @@ module Yast
         "fsys"        => PropDefaultFs(),
         "size"        => 0
       }
-      if GetProposalSnapshots() && PropDefaultFs() == :btrfs
-        root["userdata"] = { "/" => "snapshots" }
-      end
       opts = GetControlCfg()
       ddev = get_disk_try_list(target, true)
       sol_disk = ""
@@ -5450,9 +5448,6 @@ module Yast
           "size_k" => pe_to_sizek(root_pe, pe)
         }
         p = Storage.SetVolOptions(p, "/", PropDefaultFs(), "", "", "")
-        if GetProposalSnapshots() && PropDefaultFs() == :btrfs
-          p["userdata"] = { "/" => "snapshots" }
-        end
         Builtins.y2milestone("modify_vm created %1", p)
         Ops.set(
           ret,
@@ -5466,9 +5461,6 @@ module Yast
           Builtins.maplist(Ops.get_list(ret, "partitions", [])) do |p|
             if Ops.get_string(p, "name", "") == "root"
               p = Storage.SetVolOptions(p, "/", PropDefaultFs(), "", "", "")
-              if GetProposalSnapshots() && PropDefaultFs() == :btrfs
-                p["userdata"] = { "/" => "snapshots" }
-              end
               Builtins.y2milestone("modify_vm reuse %1", p)
             end
             deep_copy(p)
