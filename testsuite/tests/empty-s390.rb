@@ -29,6 +29,7 @@ module Yast
         "20 GB"
       )
 
+      # FIXME: architecture should be set from arch.info
       @READ = {
         "probe"     => {
           "architecture" => "s390_64",
