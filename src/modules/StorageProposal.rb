@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -36,11 +36,12 @@ require "yast"
 
 module Yast
   class StorageProposalClass < Module
+
     def main
-      Yast.import "UI"
 
       textdomain "storage"
 
+      Yast.import "UI"
       Yast.import "FileSystems"
       Yast.import "Partitions"
       Yast.import "Label"
@@ -57,25 +58,25 @@ module Yast
       @no_propose_disks = nil
 
       @proposal_home = false
+      @proposal_home_fs = :xfs
       @proposal_lvm = false
       @proposal_encrypt = false
-      @proposal_btrfs = false
+      @proposal_root_fs = :btrfs
+      @proposal_snapshots = false
       @proposal_suspend = false
       @proposal_password = ""
       @proposal_create_vg = false
 
       @cfg_xml = {}
 
-
       @swapable = {}
       @ishome = {}
     end
 
+
     def SetCreateVg(val)
       @proposal_create_vg = val
       Builtins.y2milestone("SetCreateVg val:%1", @proposal_create_vg)
-
-      nil
     end
 
 
@@ -86,9 +87,17 @@ module Yast
     def SetProposalHome(val)
       @proposal_home = val
       Builtins.y2milestone("SetProposalHome val:%1", @proposal_home)
-
-      nil
     end
+
+    def GetProposalHomeFs
+      @proposal_home_fs
+    end
+
+    def SetProposalHomeFs(val)
+      @proposal_home_fs = val
+      Builtins.y2milestone("SetProposalHomeFs val:%1", @proposal_home_fs)
+    end
+
 
     def GetProposalLvm
       @proposal_lvm
@@ -97,8 +106,6 @@ module Yast
     def SetProposalLvm(val)
       @proposal_lvm = val
       Builtins.y2milestone("SetProposalLvm val:%1", val)
-
-      nil
     end
 
     def GetProposalEncrypt
@@ -108,20 +115,27 @@ module Yast
     def SetProposalEncrypt(val)
       @proposal_encrypt = val
       Builtins.y2milestone("SetProposalEncrypt val:%1", val)
-
-      nil
     end
 
-    def GetProposalBtrfs
-      @proposal_btrfs
+
+    def GetProposalRootFs
+      @proposal_root_fs
     end
 
-    def SetProposalBtrfs(val)
-      @proposal_btrfs = val
-      Builtins.y2milestone("SetProposalBtrfs val:%1", val)
-
-      nil
+    def SetProposalRootFs(val)
+      @proposal_root_fs = val
+      Builtins.y2milestone("SetProposalRootFs val:%1", @proposal_root_fs)
     end
+
+    def GetProposalSnapshots()
+      @proposal_snapshots
+    end
+
+    def SetProposalSnapshots(val)
+      @proposal_snapshots = val
+      Builtins.y2milestone("SetProposalSnapshots val:%1", val)
+    end
+
 
     def GetProposalSuspend
       @proposal_suspend
@@ -130,9 +144,8 @@ module Yast
     def SetProposalSuspend(val)
       @proposal_suspend = val
       Builtins.y2milestone("SetProposalSuspend val:%1", val)
-
-      nil
     end
+
 
     def GetProposalPassword
       @proposal_password
@@ -141,9 +154,8 @@ module Yast
     def SetProposalPassword(val)
       @proposal_password = val
       Builtins.y2milestone("SetProposalPassword")
-
-      nil
     end
+
 
     def SetProposalDefault(home_only)
       # on S/390 there is no space for dedicated /home partition
@@ -158,16 +170,20 @@ module Yast
         SetProposalEncrypt(false)
         SetProposalPassword("")
         SetProposalSuspend(Ops.get_boolean(@cfg_xml, "suspend", false))
+        SetProposalRootFs(Partitions.DefaultFs())
+        SetProposalHomeFs(Partitions.DefaultHomeFs())
+        SetProposalSnapshots(Ops.get_boolean(@cfg_xml, "prop_snapshots", false))
       end
-      SetProposalBtrfs(Ops.get_boolean(@cfg_xml, "btrfs", false))
       Builtins.y2milestone(
-        "SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 btrfs:%5 suspend:%6",
+        "SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 snapshots:%5 suspend:%6 root_fs:%7 home_fs:%8",
         @proposal_home,
         @proposal_lvm,
         @proposal_encrypt,
         home_only,
-        @proposal_btrfs,
-        @proposal_suspend
+        @proposal_snapshots,
+        @proposal_suspend,
+        @proposal_root_fs,
+        @proposal_home_fs
       )
 
       nil
@@ -263,6 +279,10 @@ module Yast
         btmp = ProductFeatures.GetBooleanFeature("partitioning", "proposal_lvm")
         Ops.set(@cfg_xml, "prop_lvm", btmp ? true : false)
 
+        # GetBooleanFeature cannot distinguish between missing and false
+        tmp = ProductFeatures.GetFeature("partitioning", "proposal_snapshots")
+        Ops.set(@cfg_xml, "prop_snapshots", tmp == "" || tmp == true ? true : false)
+
         itmp = ProductFeatures.GetIntegerFeature(
           "partitioning",
           "btrfs_increase_percentage"
@@ -275,20 +295,22 @@ module Yast
             )
           Ops.set(@cfg_xml, "btrfs_increase_percentage", 100)
         end
+
         btmp = ProductFeatures.GetBooleanFeature(
           "partitioning",
           "swap_for_suspend"
         )
         Ops.set(@cfg_xml, "suspend", btmp ? true : false)
+
         SetProposalDefault(false)
         Builtins.y2milestone("GetControlCfg cfg_xml:%1", @cfg_xml)
       end
       ret = deep_copy(@cfg_xml)
       Builtins.y2milestone(
-        "GetControlCfg GetProposalBtrfs:%1",
-        GetProposalBtrfs()
+        "GetControlCfg GetProposalSnapshots:%1",
+        GetProposalSnapshots()
       )
-      if GetProposalBtrfs()
+      if GetProposalSnapshots()
         Builtins.y2milestone("GetControlCfg before:%1", ret)
         keys = ["home_limit", "root_max", "root_base", "home_max", "vm_want"]
         Builtins.foreach(keys) do |k|
@@ -314,6 +336,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def GetProposalVM
       ret = ""
       ret = "system" if @proposal_lvm
@@ -321,10 +344,14 @@ module Yast
       ret
     end
 
-    def PropDefaultFs
-      ret = Partitions.DefaultFs
-      ret = :btrfs if GetProposalBtrfs()
-      ret
+
+    def PropDefaultFs()
+      @proposal_root_fs
+    end
+
+
+    def PropDefaultHomeFs()
+      @proposal_home_fs
     end
 
 
@@ -461,6 +488,7 @@ module Yast
       deep_copy(@no_propose_disks)
     end
 
+
     def NeedNewDisklabel(entry)
       entry = deep_copy(entry)
       ret = Partitions.EfiBoot
@@ -476,6 +504,7 @@ module Yast
       )
       ret
     end
+
 
     def ignore_disk(dev, entry, soft)
       entry = deep_copy(entry)
@@ -540,6 +569,7 @@ module Yast
       deep_copy(targets)
     end
 
+
     def fill_ishome(pl)
       pl = deep_copy(pl)
       Builtins.foreach(pl) do |p|
@@ -554,6 +584,7 @@ module Yast
 
       nil
     end
+
 
     def flex_init_swapable(tg)
       tg = deep_copy(tg)
@@ -610,71 +641,50 @@ module Yast
 
 
     def need_boot(disk)
-      disk = deep_copy(disk)
       Builtins.y2milestone(
-        "need_boot NeedBoot:%1 GetProposalBtrfs:%2 type:%3",
+        "need_boot NeedBoot:%1 type:%2",
         Partitions.NeedBoot,
-        GetProposalBtrfs(),
-        Ops.get_symbol(disk, "type", :CT_UNKNOWN)
+        disk.fetch("type",:CT_UNKNOWN)
       )
       ret = Partitions.NeedBoot ||
-        Ops.get_symbol(disk, "type", :CT_UNKNOWN) == :CT_DMRAID
+        disk.fetch("type",:CT_UNKNOWN) == :CT_DMRAID ||
+	(disk.fetch("label","")=="gpt" && !Partitions.EfiBoot)
       Builtins.y2milestone("need_boot ret:%1", ret)
       ret
     end
 
 
     def try_add_boot(conf, disk, force)
-      conf = deep_copy(conf)
-      disk = deep_copy(disk)
-      boot = Ops.greater_than(
-        Builtins.size(Builtins.filter(Ops.get_list(conf, "partitions", [])) do |e|
-          Ops.get_string(e, "mount", "") == Partitions.BootMount
-        end),
-        0
-      )
-      root = Ops.greater_than(
-        Builtins.size(Builtins.filter(Ops.get_list(conf, "partitions", [])) do |e|
-          Ops.get_string(e, "mount", "") == "/"
-        end),
-        0
-      )
+      pl = conf.fetch("partitions", [])
+      boot = pl.index { |e| e.fetch("mount","")==Partitions.BootMount }!=nil
+      root = pl.index { |e| e.fetch("mount","")=="/" }!=nil
       tc = deep_copy(conf)
       Builtins.y2milestone("try_add_boot conf %1", conf)
       Builtins.y2milestone(
         "try_add_boot boot %1 root %2 force %3 need_boot:%4",
-        boot,
-        root,
-        force,
-        need_boot(disk)
-      )
+        boot, root, force, need_boot(disk))
       if !boot && (root || force) &&
-          (Ops.greater_than(
-            Ops.get_integer(disk, "cyl_count", 0),
-            Partitions.BootCyl
-          ) ||
-            need_boot(disk))
+         disk.fetch("cyl_count",0)>Partitions.BootCyl ||
+	 need_boot(disk)
         pb = {}
-        Ops.set(pb, "mount", Partitions.BootMount)
-        Ops.set(pb, "size", Partitions.ProposedBootsize)
-        Ops.set(pb, "fsys", Partitions.DefaultBootFs)
-        Ops.set(pb, "id", Partitions.FsidBoot)
-        Ops.set(pb, "auto_added", true)
-        Ops.set(pb, "max_cyl", Partitions.BootCyl)
-        Ops.set(pb, "primary", Partitions.BootPrimary)
-        Ops.set(pb, "maxsize", Partitions.MaximalBootsize)
-        Ops.set(
-          tc,
-          "partitions",
-          Builtins.add(Ops.get_list(tc, "partitions", []), pb)
-        )
+	pb["mount"] = Partitions.BootMount
+	pb["size"] = Partitions.ProposedBootsize
+	if disk.fetch("label","")=="gpt" && !Partitions.EfiBoot
+	  sz = disk.fetch("cyl_size",0)-1024
+	  sz = 200*1024 if sz<200*1024
+	  pb["size"] = sz
+	end
+	pb["fsys"] = Partitions.DefaultBootFs
+	pb["id"] = Partitions.FsidBoot
+        pb["auto_added"] = true
+        pb["max_cyl"] = Partitions.BootCyl
+        pb["primary"] = Partitions.BootPrimary
+        pb["maxsize"] = Partitions.MaximalBootsize
+        tc["partitions"].push( pb )
         Builtins.y2milestone(
           "try_add_boot disk_cyl %1 boot_cyl %2 need_boot %3 typ %4",
-          Ops.get_integer(disk, "cyl_count", 0),
-          Partitions.BootCyl,
-          Partitions.NeedBoot,
-          Ops.get_symbol(disk, "type", :CT_UNKNOWN)
-        )
+          disk.fetch("cyl_count",0), Partitions.BootCyl,
+          Partitions.NeedBoot, disk.fetch("type",:CT_UNKNOWN))
         Builtins.y2milestone("try_add_boot boot added automagically pb %1", pb)
       end
       deep_copy(tc)
@@ -726,7 +736,6 @@ module Yast
       end
       deep_copy(ret)
     end
-
 
 
     def do_flexible_disk_conf(disk, co, ignore_boot, reuse)
@@ -1356,6 +1365,8 @@ module Yast
       Builtins.y2milestone("conf:%1", conf)
       do_pflex(target, conf)
     end
+
+
     def find_matching_disk(disks, target, conf)
       disks = deep_copy(disks)
       target = deep_copy(target)
@@ -1456,6 +1467,8 @@ module Yast
       end
       deep_copy(ret)
     end
+
+
     def process_partition_data(dev, solution, vgname)
       solution = deep_copy(solution)
       disk = Ops.get_map(solution, "disk", {})
@@ -1909,6 +1922,8 @@ module Yast
       Builtins.y2milestone("process_partition_data disk %1", disk)
       deep_copy(disk)
     end
+
+
     def add_cylinder_info(conf, gap)
       conf = deep_copy(conf)
       gap = deep_copy(gap)
@@ -2016,6 +2031,8 @@ module Yast
       )
       deep_copy(conf)
     end
+
+
     def get_perfect_list(ps, g)
       ps = deep_copy(ps)
       g = deep_copy(g)
@@ -2100,6 +2117,8 @@ module Yast
       )
       deep_copy(ret)
     end
+
+
     def add_part_recursive(ps, g)
       ps = deep_copy(ps)
       g = deep_copy(g)
@@ -2235,6 +2254,8 @@ module Yast
 
       nil
     end
+
+
     def normalize_gaps(ps, g)
       ps = deep_copy(ps)
       g = deep_copy(g)
@@ -2551,6 +2572,8 @@ module Yast
       Builtins.y2milestone("normalize_gaps gap %1", g)
       deep_copy(g)
     end
+
+
     def distribute_space(rest, weights, added, ps)
       weights = deep_copy(weights)
       added = deep_copy(added)
@@ -2658,6 +2681,8 @@ module Yast
       Builtins.y2milestone("distribute_space ret %1", ret)
       deep_copy(ret)
     end
+
+
     def do_weighting(ps, g)
       ps = deep_copy(ps)
       g = deep_copy(g)
@@ -2823,6 +2848,8 @@ module Yast
       end
       deep_copy(ret)
     end
+
+
     def remove_possible_partitions(disk, conf)
       disk = deep_copy(disk)
       conf = deep_copy(conf)
@@ -2860,6 +2887,8 @@ module Yast
       )
       deep_copy(ret)
     end
+
+
     def try_resize_windows(disk)
       disk = deep_copy(disk)
       cyl_size = Ops.get_integer(disk, "cyl_size", 1)
@@ -2911,7 +2940,6 @@ module Yast
     end
 
 
-
     def get_gaps(start, _end, part, add_exist_linux)
       part = deep_copy(part)
       Builtins.y2milestone(
@@ -2956,6 +2984,8 @@ module Yast
       Builtins.y2milestone("get_gaps ret %1", ret)
       deep_copy(ret)
     end
+
+
     def get_gap_info(disk, add_exist_linux)
       disk = deep_copy(disk)
       ret = {}
@@ -3159,6 +3189,8 @@ module Yast
       Builtins.y2milestone("get_gap_info ret %1", ret)
       deep_copy(ret)
     end
+
+
     def read_partition_xml_config
       xmlflex = Convert.to_map(
         ProductFeatures.GetFeature("partitioning", "flexible_partitioning")
@@ -3293,6 +3325,8 @@ module Yast
       Builtins.y2milestone("conf %1", conf)
       deep_copy(conf)
     end
+
+
     def read_partition_config(fpath)
       pos = 0
       line = ""
@@ -3598,55 +3632,44 @@ module Yast
 
 
     def can_boot_reuse(disk, label, boot, max_prim, partitions)
-      partitions = deep_copy(partitions)
       ret = []
       Builtins.y2milestone("can_boot_reuse boot:%1", boot)
       if boot && !Partitions.PrepBoot
         Builtins.y2milestone(
           "can_boot_reuse disk:%1 max_prim:%2 label:%3 part:%4",
-          disk,
-          max_prim,
-          label,
-          partitions
-        )
-        pl = []
-        pl = Builtins.filter(partitions) do |p|
-          !Ops.get_boolean(p, "delete", false) &&
-            Ops.greater_or_equal(
-              Ops.multiply(Ops.get_integer(p, "size_k", 0), 1024),
-              Partitions.MinimalBootsize
-            )
+          disk, max_prim, label, partitions)
+        pl = partitions.select do |p|
+          !p.fetch("delete",false) &&
+          (p.fetch("size_k",0)*1024>=Partitions.MinimalBootsize||
+	   p.fetch("fsid",0)==Partitions.fsid_bios_grub)
         end
+        Builtins.y2milestone( "can_boot_reuse pl:%1", pl )
         boot2 = Builtins.find(pl) do |p|
-          Ops.get_integer(p, "fsid", 0) == Partitions.fsid_gpt_boot ||
-            Ops.get_integer(p, "fsid", 0) == Partitions.FsidBoot &&
-              Ops.less_or_equal(
-                Ops.multiply(Ops.get_integer(p, "size_k", 0), 1024),
-                Partitions.MaximalBootsize
-              ) ||
-            Ops.get_symbol(p, "detected_fs", :unknown) == :hfs &&
-              Ops.get_boolean(p, "boot", false) &&
-              label == "mac" ||
-            Ops.get_integer(p, "fsid", 0) == Partitions.fsid_prep_chrp_boot &&
-              Ops.less_or_equal(Ops.get_integer(p, "nr", 0), max_prim) &&
-              Partitions.PrepBoot
+          p.fetch("fsid",0) == Partitions.fsid_gpt_boot ||
+	  p.fetch("fsid",0) == Partitions.FsidBoot &&
+	    p.fetch("size_k",0)*1024<=Partitions.MaximalBootsize ||
+	  p.fetch("detected_fs",:unknown) == :hfs &&
+	    p.fetch("boot",false) &&
+	    label == "mac" ||
+	  p.fetch("fsid",0) == Partitions.fsid_prep_chrp_boot &&
+	    p.fetch("nr",0)<=max_prim &&
+	    Partitions.PrepBoot ||
+	  p.fetch("fsid",0) == Partitions.fsid_bios_grub &&
+	    label=="gpt" &&
+	    !Partitions.EfiBoot
         end
-        ret = Builtins.maplist(partitions) do |p|
-          if !Ops.get_boolean(p, "delete", false) &&
-              Ops.get_string(p, "device", "") ==
-                Ops.get_string(boot2, "device", "") &&
-              Storage.CanEdit(p, false)
-            p = Storage.SetVolOptions(
-              p,
-              Partitions.BootMount,
-              Partitions.DefaultBootFs,
-              "",
-              "",
-              ""
-            )
-          end
-          deep_copy(p)
-        end if boot2 != nil
+	Builtins.y2milestone("can_boot_reuse boot2:%1", boot2)
+	if boot2 != nil
+	  ret = partitions.map do |p|
+	    if !p.fetch("delete",false) &&
+		p.fetch("device","") == boot2.fetch("device","") &&
+		Storage.CanEdit(p, false)
+	      p = Storage.SetVolOptions( p, Partitions.BootMount,
+		Partitions.DefaultBootFs, "", "", "")
+	    end
+          p
+	  end
+	end
         Builtins.y2milestone("can_boot_reuse ret:%1", ret)
       end
       deep_copy(ret)
@@ -3751,7 +3774,7 @@ module Yast
           if !Ops.get_boolean(p, "delete", false) &&
               Ops.get_string(p, "device", "") ==
                 Ops.get_string(pl, [0, "device"], "")
-            p = Storage.SetVolOptions(p, "/home", PropDefaultFs(), "", "", "")
+            p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
           end
           deep_copy(p)
         end
@@ -3909,7 +3932,7 @@ module Yast
         home = {
           "mount"       => "/home",
           "increasable" => true,
-          "fsys"        => PropDefaultFs(),
+          "fsys"        => PropDefaultHomeFs(),
           "size"        => 512 * 1024 * 1024,
           "pct"         => Ops.subtract(
             100,
@@ -4125,7 +4148,8 @@ module Yast
         Partitions.fsid_native,
         Partitions.fsid_swap,
         Partitions.fsid_lvm,
-        Partitions.fsid_raid
+        Partitions.fsid_raid,
+        Partitions.fsid_bios_grub
       ]
       remk = ["del_ptable", "disklabel"]
       Builtins.foreach(ddev) do |s|
@@ -4364,6 +4388,38 @@ module Yast
         end
       end
       deep_copy(tg)
+    end
+
+
+    def post_process_target(target)
+
+      target.each do |device, container|
+        container["partitions"].each do |volume|
+
+          # if we have a home volume remove the home subvolume
+          if PropDefaultFs() == :btrfs && GetProposalHome()
+            if volume["mount"] == "/"
+              if FileSystems.default_subvol.empty?
+                home = "home"
+              else
+                home = FileSystems.default_subvol + "/" + "home"
+              end
+              volume["subvol"].delete_if { |subvol| subvol["name"] == home }
+            end
+          end
+
+          # enable snapshots for root volume if desired
+          if PropDefaultFs() == :btrfs && GetProposalSnapshots()
+            if volume["mount"] == "/"
+              volume["userdata"] = { "/" => "snapshots" }
+            end
+          end
+
+        end
+      end
+
+      return target
+
     end
 
 
@@ -4675,7 +4731,7 @@ module Yast
               home = {
                 "mount"       => "/home",
                 "increasable" => true,
-                "fsys"        => PropDefaultFs(),
+                "fsys"        => PropDefaultHomeFs(),
                 "size"        => 512 * 1024 * 1024,
                 "pct"         => Ops.subtract(
                   100,
@@ -4935,6 +4991,7 @@ module Yast
           "get_inst_proposal sol:%1",
           Ops.get_map(ret, ["target", sol_disk], {})
         )
+        ret["target"] = post_process_target(ret["target"])
       end
       Builtins.y2milestone(
         "get_inst_proposal ret[ok]:%1",
@@ -5049,7 +5106,7 @@ module Yast
 
     def sizek_to_pe(pek, pebyte, pvcreate)
       ret = Ops.divide(
-        Ops.subtract(pek, pvcreate ? 500 : 0),
+        Ops.subtract(pek, pvcreate ? 4000 : 0),
         Ops.divide(pebyte, 1024)
       )
       Builtins.y2milestone(
@@ -5450,7 +5507,7 @@ module Yast
           "device" => Ops.add(Ops.get_string(ret, "device", ""), "/home"),
           "size_k" => pe_to_sizek(home_pe, pe)
         }
-        p = Storage.SetVolOptions(p, "/home", PropDefaultFs(), "", "", "")
+        p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
         Builtins.y2milestone("modify_vm created %1", p)
         Ops.set(
           ret,
@@ -5463,7 +5520,7 @@ module Yast
           "partitions",
           Builtins.maplist(Ops.get_list(ret, "partitions", [])) do |p|
             if Ops.get_string(p, "name", "") == "home"
-              p = Storage.SetVolOptions(p, "/home", PropDefaultFs(), "", "", "")
+              p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
               Builtins.y2milestone("modify_vm reuse %1", p)
             end
             deep_copy(p)
@@ -5987,6 +6044,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def SaveHeight
       display_info = UI.GetDisplayInfo
       ret = false
@@ -5997,12 +6055,17 @@ module Yast
       ret
     end
 
-    def AddCommonWidgets
+
+    def CommonWidgets()
+
+      filesystems = [
+        Item(Id(:btrfs), "BtrFS"),
+        Item(Id(:ext4), "Ext4"),
+        Item(Id(:xfs), "XFS")
+      ]
+
       vb = VBox()
-      space = 0.5
-      if SaveHeight()
-        space = Convert.convert(0, :from => "integer", :to => "float")
-      end
+
       vb = Builtins.add(
         vb,
         Left(
@@ -6011,8 +6074,8 @@ module Yast
             CheckBox(
               Id(:lvm),
               Opt(:notify),
-              # Label text
-              _("Create &LVM Based Proposal"),
+              # TRANSLATORS: checkbox text
+              _("Create &LVM-based Proposal"),
               GetProposalLvm()
             )
           )
@@ -6026,50 +6089,104 @@ module Yast
             CheckBox(
               Id(:encrypt),
               Opt(:notify),
-              # Label text
+              # TRANSLATORS: checkbox text
               _("Encr&ypt Volume Group"),
               GetProposalEncrypt()
             )
           )
         )
       )
-      # No space for another partition on DASD devices
-      # TODO: Handle different device types well
-      if ! Arch.s390
-        vb = Builtins.add(vb, VSpacing(space))
-        vb = Builtins.add(
-          vb,
-          Left(
-            HBox(
-              HSpacing(3),
-              CheckBox(
-                Id(:home),
-                Opt(:notify),
-                # Label text
-                _("Propose Separate &Home Partition"),
-                GetProposalHome()
-              )
+#<<<<<<< HEAD
+#      # No space for another partition on DASD devices
+#      # TODO: Handle different device types well
+#      if ! Arch.s390
+#        vb = Builtins.add(vb, VSpacing(space))
+#        vb = Builtins.add(
+#          vb,
+#          Left(
+#            HBox(
+#              HSpacing(3),
+#              CheckBox(
+#                Id(:home),
+#                Opt(:notify),
+#                # Label text
+#                _("Propose Separate &Home Partition"),
+#                GetProposalHome()
+#              )
+#            )
+#          )
+#        )
+#      end
+#      vb = Builtins.add(vb, VSpacing(space))
+#=======
+
+      vb = Builtins.add(vb, VSpacing(1))
+
+      vb = Builtins.add(
+        vb,
+        Left(
+          HBox(
+            HSpacing(4),
+            ComboBox(
+              Id(:root_fs),
+              Opt(:notify),
+              # TRANSLATORS: combobox label
+              _("File System for Root Partition"),
+              filesystems
             )
           )
         )
-      end
-      vb = Builtins.add(vb, VSpacing(space))
+      )
+      vb = Builtins.add(
+        vb,
+        Left(
+          HBox(
+            HSpacing(7),
+            CheckBox(
+              Id(:snapshots),
+              # TRANSLATORS: checkbox text
+              _("Enable Snapshots"),
+              GetProposalSnapshots()
+            )
+          )
+        )
+      )
+
+      vb = Builtins.add(vb, VSpacing(1))
+
       vb = Builtins.add(
         vb,
         Left(
           HBox(
             HSpacing(3),
             CheckBox(
-              Id(:btrfs),
+              Id(:home),
               Opt(:notify),
-              # Label text
-              _("Use &Btrfs as Default File System"),
-              GetProposalBtrfs()
+              # TRANSLATORS: checkbox text
+              _("Propose Separate &Home Partition"),
+              GetProposalHome()
             )
           )
         )
       )
-      vb = Builtins.add(vb, VSpacing(space))
+#>>>>>>> upstream/master
+      vb = Builtins.add(
+        vb,
+        Left(
+          HBox(
+            HSpacing(7),
+            ComboBox(
+              Id(:home_fs),
+              # TRANSLATORS: combobox label
+              _("File System for Home Partition"),
+              filesystems
+            )
+          )
+        )
+      )
+
+      vb = Builtins.add(vb, VSpacing(1))
+
       vb = Builtins.add(
         vb,
         Left(
@@ -6077,37 +6194,64 @@ module Yast
             HSpacing(3),
             CheckBox(
               Id(:suspend),
-              Opt(:notify),
-              # Label text
+              # TRANSLATORS: checkbox text
               _("Enlarge &Swap for Suspend"),
               GetProposalSuspend()
             )
           )
         )
       )
+
       frame = VBox(
-        VSpacing(
-          Ops.multiply(
-            Convert.convert(3, :from => "integer", :to => "float"),
-            space
-          )
-        ),
         HVCenter(
           VBox(
-            Left(Label(Opt(:boldFont), _("Proposal settings"))),
-            VSpacing(0.3),
+            Left(Label(Opt(:boldFont), _("Proposal Settings"))),
+            VSpacing(0.4),
             HVCenter(vb)
           )
         )
       )
-      #`HVCenter(`Frame( _("Proposal settings"), `HVCenter(vb) )));
-      Builtins.y2milestone(
-        "AddCommonWidgets Home:%1 Btrfs:%2",
-        GetProposalHome(),
-        GetProposalBtrfs()
-      )
+
       deep_copy(frame)
     end
+
+
+    def CommonWidgetsHelp()
+
+      # TRANSLATORS: help text
+      help_text =
+        _(
+          "<p>To create an LVM-based proposal, choose the corresponding button. The\n" +
+          "LVM-based proposal can be encrypted.</p>\n"
+          )
+
+      # TRANSLATORS: help text
+      help_text +=
+        _(
+          "<p>The filesystem for the root partition can be selected with the\n" +
+          "corresponding combo box. With the filesystem BtrFS the proposal can\n" +
+          "enable automatic snapshots with snapper. This will also increase the\n" +
+          "size for the root partition.</p>"
+          )
+
+      # TRANSLATORS: help text
+      help_text +=
+        _(
+          "<p>The proposal can create a separate home partition. The filesystem for\n" +
+          "the home partition can be selected with the corresponding combo box.</p>"
+          )
+
+      # TRANSLATORS: help text
+      help_text +=
+        _(
+          "<p>The swap partition can be made large enough to be used to suspend\n" +
+          "the system to disk in most cases.</p>"
+          )
+
+      return help_text
+
+    end
+
 
     def QueryProposalPassword
       no_query = false
@@ -6186,38 +6330,108 @@ module Yast
       end
     end
 
+
+    def IsCommonWidget(id)
+      return [ :lvm, :encrypt, :root_fs, :snapshots, :home, :home_fs, :suspend ].include?(id)
+    end
+
+
     def HandleCommonWidgets(id)
-      ret = false
-      val = Convert.to_boolean(UI.QueryWidget(Id(id), :Value))
-      Builtins.y2milestone("id:%1 val:%2", ret, val)
+
+      val = UI.QueryWidget(Id(id), :Value)
+
       case id
+
         when :lvm
-          SetProposalLvm(val)
           UI.ChangeWidget(Id(:encrypt), :Enabled, val)
-          ret = true
+
         when :encrypt
           if val
-            if QueryProposalPassword()
-              SetProposalEncrypt(true)
-            else
+            if !QueryProposalPassword()
               UI.ChangeWidget(Id(:encrypt), :Value, false)
             end
-          else
-            SetProposalEncrypt(false)
           end
-          ret = true
-        when :btrfs
-          SetProposalBtrfs(val)
-          ret = true
+
+        when :root_fs
+          UI.ChangeWidget(Id(:snapshots), :Enabled, val == :btrfs)
+
         when :home
-          SetProposalHome(val)
-          ret = true
-        when :suspend
-          SetProposalSuspend(val)
-          ret = true
+          UI.ChangeWidget(Id(:home_fs), :Enabled, val)
+
       end
+    end
+
+
+    def EnableSuspend
+      swaps = Storage.GetCreatedSwaps
+      susps = Partitions.SwapSizeMb(0, true)
+      ret = Builtins.size(swaps) == 1 &&
+        Ops.less_than(
+          Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
+          susps
+        )
+      ret = ret || StorageProposal.GetProposalSuspend
+      Builtins.y2milestone(
+        "EnableSuspend csw:%1 swsize:%2 suspsize:%3 ret:%4",
+        Builtins.size(swaps),
+        Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
+        susps,
+        ret
+      )
       ret
     end
+
+
+    def CommonWidgetsPopup()
+
+      UI.OpenDialog(
+        Opt(:decorated),
+        MarginBox(2, 1,
+          VBox(
+            CommonWidgets(),
+            VSpacing(1),
+            ButtonBox(
+              PushButton(Id(:help), Opt(:helpButton), Label.HelpButton),
+              PushButton(Id(:ok), Opt(:default), Label.OKButton),
+              PushButton(Id(:cancel), Label.CancelButton)
+            )
+          )
+        )
+      )
+
+      UI.ChangeWidget(Id(:encrypt), :Enabled, GetProposalLvm())
+      UI.ChangeWidget(Id(:root_fs), :Value, GetProposalRootFs())
+      UI.ChangeWidget(Id(:snapshots), :Enabled, GetProposalRootFs() == :btrfs)
+      UI.ChangeWidget(Id(:home_fs), :Enabled, StorageProposal.GetProposalHome())
+      UI.ChangeWidget(Id(:home_fs), :Value, StorageProposal.GetProposalHomeFs())
+      UI.ChangeWidget(Id(:suspend), :Enabled, EnableSuspend())
+
+      UI.ChangeWidget(Id(:help), :HelpText, StorageProposal.CommonWidgetsHelp())
+
+      begin
+        ret = Convert.to_symbol(UI.UserInput)
+        if StorageProposal.IsCommonWidget(ret)
+          StorageProposal.HandleCommonWidgets(ret)
+        end
+      end until [ :ok, :cancel ].include?(ret)
+
+      if ret == :ok
+        y2milestone("setting storage proposal settings")
+        SetProposalLvm(UI.QueryWidget(Id(:lvm), :Value))
+        SetProposalEncrypt(UI.QueryWidget(Id(:encrypt), :Value))
+        SetProposalRootFs(UI.QueryWidget(Id(:root_fs), :Value))
+        SetProposalSnapshots(UI.QueryWidget(Id(:snapshots), :Value))
+        SetProposalHome(UI.QueryWidget(Id(:home), :Value))
+        SetProposalHomeFs(UI.QueryWidget(Id(:home_fs), :Value))
+        SetProposalSuspend(UI.QueryWidget(Id(:suspend), :Value))
+      end
+
+      UI.CloseDialog()
+
+      return ret == :ok
+
+    end
+
 
     publish :function => :SetCreateVg, :type => "void (boolean)"
     publish :function => :GetProposalHome, :type => "boolean ()"
@@ -6226,8 +6440,8 @@ module Yast
     publish :function => :SetProposalLvm, :type => "void (boolean)"
     publish :function => :GetProposalEncrypt, :type => "boolean ()"
     publish :function => :SetProposalEncrypt, :type => "void (boolean)"
-    publish :function => :GetProposalBtrfs, :type => "boolean ()"
-    publish :function => :SetProposalBtrfs, :type => "void (boolean)"
+    publish :function => :GetProposalSnapshots, :type => "boolean ()"
+    publish :function => :SetProposalSnapshots, :type => "void (boolean)"
     publish :function => :GetProposalSuspend, :type => "boolean ()"
     publish :function => :SetProposalSuspend, :type => "void (boolean)"
     publish :function => :GetProposalPassword, :type => "string ()"
@@ -6245,8 +6459,7 @@ module Yast
     publish :function => :get_proposal_vm, :type => "map <string, any> (map <string, map>, string, map)"
     publish :function => :get_inst_prop, :type => "map <string, any> (map <string, map>)"
     publish :function => :SaveHeight, :type => "boolean ()"
-    publish :function => :AddCommonWidgets, :type => "term ()"
-    publish :function => :HandleCommonWidgets, :type => "boolean (symbol)"
+    publish :function => :CommonWidgetsPopup, :type => "boolean ()"
   end
 
   StorageProposal = StorageProposalClass.new

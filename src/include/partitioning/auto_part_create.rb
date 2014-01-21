@@ -102,7 +102,7 @@ module Yast
           Builtins.y2milestone("create_partitions keep %1", keep)
           if keep != nil && Ops.greater_than(Builtins.size(r), 0) &&
               !StorageProposal.GetProposalHome &&
-              !StorageProposal.GetProposalBtrfs &&
+              !StorageProposal.GetProposalSnapshots &&
               num_del_exist == 1 &&
               num_del_free == 0
             Builtins.y2milestone("create_partitions single special")

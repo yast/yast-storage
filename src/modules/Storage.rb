@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -42,10 +42,11 @@
 # $Id$
 require "yast"
 require "dbus"
-require "storage_utf8"
+require "storage"
 
 module Yast
   class StorageClass < Module
+
     def main
       Yast.import "Pkg"
       Yast.import "UI"
@@ -71,6 +72,7 @@ module Yast
       Yast.import "Stage"
       Yast.import "String"
       Yast.import "Hotplug"
+      Yast.import "ProductFeatures"
 
       # simple resize functionality - dialog to set size of Linux and Windows before proposal
 
@@ -308,11 +310,30 @@ module Yast
       Storage()
     end
 
+
     def IsKernelDeviceName(device)
       Builtins.substring(device, 0, 6) != "LABEL=" &&
         Builtins.substring(device, 0, 5) != "UUID=" &&
         Builtins.substring(device, 0, 13) != "/dev/disk/by-"
     end
+
+
+    def DeviceNameMightNeedAdaption(device)
+
+      if IsKernelDeviceName(device)
+        return true
+      end
+
+      if device.start_with?("/dev/disk/by-id/raid-") ||
+          device.start_with?("/dev/disk/by-id/dm-name-") ||
+          device.start_with?("/dev/disk/by-id/dm-uuid-DMRAID-")
+        return true
+      end
+
+      return false
+
+    end
+
 
     def InitLibstorage(readonly)
       return true if @sint != nil
@@ -325,6 +346,10 @@ module Yast
       end
 
       StorageClients.InstallCallbacks(@sint)
+
+      btrfs_default_subvolume = ProductFeatures.GetStringFeature("partitioning",
+                                                                 "btrfs_default_subvolume")
+      @sint.setDefaultSubvolName(btrfs_default_subvolume) if btrfs_default_subvolume
 
       if Stage.initial
         @sint.setDetectMountedVolumes(false)
@@ -371,22 +396,22 @@ module Yast
 
 
     def ByteToHumanString(bytes)
-      ::Storage::byteToHumanString(bytes, false, 2, false)
+      return ::Storage::byteToHumanString(bytes, false, 2, false).force_encoding("UTF-8")
     end
 
 
     def KByteToHumanString(bytes_k)
-      ::Storage::byteToHumanString(bytes_k*1024, false, 2, false)
+      return ::Storage::byteToHumanString(bytes_k*1024, false, 2, false).force_encoding("UTF-8")
     end
 
 
     def ByteToHumanStringOmitZeroes(bytes)
-      ::Storage::byteToHumanString(bytes, false, 2, true)
+      return ::Storage::byteToHumanString(bytes, false, 2, true).force_encoding("UTF-8")
     end
 
 
     def KByteToHumanStringOmitZeroes(bytes_k)
-      ::Storage::byteToHumanString(bytes_k*1024, false, 2, true)
+      return ::Storage::byteToHumanString(bytes_k*1024, false, 2, true).force_encoding("UTF-8")
     end
 
 
@@ -416,7 +441,6 @@ module Yast
       )
       ret
     end
-
 
 
     # Converts a string into a integer and checks the allowed range for the
@@ -488,12 +512,14 @@ module Yast
       )
     end
 
+
     def fromSymbol(conv, val)
       conv = deep_copy(conv)
       ret = Ops.get_integer(conv, "def_int", -1)
       Builtins.foreach(Ops.get_map(conv, "m", {})) { |i, s| ret = i if s == val }
       ret
     end
+
 
     def GetContVolInfo(device, info)
       tmp = ::Storage::ContVolInfo.new()
@@ -695,7 +721,7 @@ module Yast
         tmp = {}
         Ops.set(tmp, "disk", Builtins.substring(device, 0, dlen))
         device = Builtins.substring(device, dlen)
-        if Builtins.search(device, "_part") == 0
+        if Builtins.search(device, "-part") == 0
           device = Builtins.substring(device, 5)
         end
         if Ops.greater_than(Builtins.size(device), 0) &&
@@ -743,6 +769,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     # Returns map describing the disk partition
     #
     # @param [String] device
@@ -757,6 +784,7 @@ module Yast
       Ops.get(GetDiskPartitionTg(device, GetTargetMap()), 0, {})
     end
 
+
     def UpdateChangeTime
       change_time = Builtins.time
       Builtins.y2milestone("UpdateChangeTime time %1", change_time)
@@ -764,6 +792,7 @@ module Yast
 
       nil
     end
+
 
     # return list of partitions of map <tg>
     def GetPartitionLst(tg, device)
@@ -819,6 +848,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def GetPartition(tg, device)
       tg = deep_copy(tg)
       Convert.convert(
@@ -827,6 +857,7 @@ module Yast
         :to   => "map <string, any>"
       )
     end
+
 
     # Returns disk identified by 'device' taken from the 'tg' (target) map
     #
@@ -875,7 +906,6 @@ module Yast
       Builtins.y2milestone("SwappingPartitions %1", ret)
       deep_copy(ret)
     end
-
 
 
     def GetFreeInfo(device, get_resize, resize_info, get_content, content_info, use_cache)
@@ -1134,6 +1164,7 @@ module Yast
       ret
     end
 
+
     def convertStringToFsOptionMap(opts, fs, cmd)
       ret = {}
       Builtins.y2milestone(
@@ -1221,6 +1252,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def CheckBackupState(who)
       Builtins.y2milestone("CheckBackupStates who:%1", who)
       return nil if !InitLibstorage(false)
@@ -1228,6 +1260,7 @@ module Yast
       Builtins.y2milestone("CheckBackupStates ret:%1", ret)
       ret
     end
+
 
     def diskMap(dinfo, d)
       d = deep_copy(d)
@@ -1243,9 +1276,7 @@ module Yast
 
       t = dinfo.transport
       Ops.set(d, "transport", toSymbol(@conv_transport, t))
-
-      bt = dinfo.iscsi
-      if bt
+      if t == ::Storage::ISCSI
         Ops.set(d, "iscsi", true)
       elsif Builtins.haskey(d, "iscsi")
         d = Builtins.remove(d, "iscsi")
@@ -1268,24 +1299,62 @@ module Yast
       deep_copy(d)
     end
 
+
     def dmPartCoMap(infos, d)
       d = deep_copy(d)
       dinfo = infos.d
       d = diskMap(dinfo, d)
-      ls = Builtins.splitstring(infos.devices, " ")
-      Ops.set(d, "devices", ls)
+      d["devices"] = infos.devices.to_a
       Ops.set(d, "minor", infos.minor)
       Builtins.y2milestone("dmPartCoMap ret:%1", d)
       deep_copy(d)
     end
 
+
+    def deviceMap(info)
+
+      ret = {
+        "device" => info.device,
+        "name" => info.name
+      }
+
+      tmp = []
+      info.usedBy.each do |used_by|
+        tmp.push({ "type" => toSymbol(@conv_usedby, used_by.type), "device" => used_by.device })
+      end
+
+      if tmp.empty?
+        ret["used_by_type"] = :UB_NONE
+        ret["used_by_device"] = ""
+      else
+        ret["used_by"] = tmp
+        ret["used_by_type"] = tmp[0]["type"]
+        ret["used_by_device"] = tmp[0]["device"]
+      end
+
+      ret["udev_path"] = info.udevPath if !info.udevPath.empty?
+      ret["udev_id"] = info.udevId.to_a if !info.udevId.empty?
+
+      if !info.userdata.empty?
+        # there's no to_h for the swig stl map object
+        tmp = {}
+        info.userdata.each do |a, b|
+          tmp[a] = b
+        end
+        ret["userdata"] = tmp
+      end
+
+      return ret
+
+    end
+
+
     def volumeMap(vinfo, p)
       p = deep_copy(p)
-      Ops.set(p, "device", vinfo.device)
+      p.merge!(deviceMap(vinfo))
       tmp = vinfo.crypt_device
       Ops.set(p, "crypt_device", tmp) if !Builtins.isempty(tmp)
       Ops.set(p, "size_k", vinfo.sizeK)
-      Ops.set(p, "name", vinfo.name)
       fs = toSymbol(FileSystems.conv_fs, vinfo.fs)
       Ops.set(p, "used_fs", fs) if fs != :unknown
       fs = toSymbol(FileSystems.conv_fs, vinfo.detected_fs)
@@ -1298,21 +1367,7 @@ module Yast
         Ops.set(p, "inactive", true) if !vinfo.is_mounted
         Ops.set(p, "mountby", toSymbol(@conv_mountby, vinfo.mount_by))
       end
-      t = vinfo.usedByType
-      if t != ::Storage::UB_NONE
-        Ops.set(p, "used_by_type", toSymbol(@conv_usedby, t))
-        Ops.set(p, "used_by_device", vinfo.usedByDevice)
-        Ops.set(
-          p,
-          "used_by",
-          [
-            {
-              "type"   => Ops.get_symbol(p, "used_by_type", :UB_NONE),
-              "device" => Ops.get_string(p, "used_by_device", "")
-            }
-          ]
-        )
-      end
+
       tmp = vinfo.fstab_options
       if !Builtins.isempty(tmp)
         Ops.set(p, "fstopt", tmp)
@@ -1371,15 +1426,9 @@ module Yast
       tmp = vinfo.loop
       Ops.set(p, "loop", tmp) if !Builtins.isempty(tmp)
 
-      tmp = vinfo.udevPath
-      Ops.set(p, "udev_path", tmp) if !Builtins.isempty(tmp)
-      tmp = vinfo.udevId
-      if !Builtins.isempty(tmp)
-        Ops.set(p, "udev_id", Builtins.splitstring(tmp, " "))
-      end
-
       deep_copy(p)
     end
+
 
     def partAddMap(info, p)
       p = deep_copy(p)
@@ -1401,6 +1450,7 @@ module Yast
       deep_copy(p)
     end
 
+
     def dmPartMap(info, p)
       p = deep_copy(p)
       vinfo = info.v
@@ -1414,6 +1464,7 @@ module Yast
       Builtins.y2milestone("dmPartMap ret:%1", p)
       deep_copy(p)
     end
+
 
     def mdPartMap(info, p)
       p = deep_copy(p)
@@ -1429,9 +1480,11 @@ module Yast
       deep_copy(p)
     end
 
+
     def HasRaidParity(rt)
       Builtins.contains(["raid5", "raid6", "raid10"], rt)
     end
+
 
     def getContainerInfo(c)
       Builtins.y2milestone("getContainerInfo %1", c)
@@ -1559,11 +1612,8 @@ module Yast
           )
         end
 
-        ls = Builtins.splitstring(infos.devices, " ")
-        Ops.set(c, "devices", ls)
-
-        ls = Builtins.splitstring(infos.spares, " ")
-        Ops.set(c, "spares", ls) if !Builtins.isempty(ls)
+        c["devices"] = infos.devices.to_a
+        c["spares" ] = infos.spares.to_a if !infos.spares.empty?
 
         t2 = infos.type
         Ops.set(
@@ -1612,17 +1662,10 @@ module Yast
           Ops.set(c, "cyl_count", infos.peCount)
           Ops.set(c, "pe_free", infos.peFree)
           Ops.set(c, "lvm2", infos.lvm2)
-          ls = Builtins.splitstring(infos.devices, " ")
-          Builtins.y2milestone("ls=%1", ls)
-          Ops.set(c, "devices", ls)
-          ls = Builtins.splitstring(infos.devices_add, " ")
-          if !Builtins.isempty(ls)
-            Ops.set(c, "devices_add", ls)
-          end
-          ls = Builtins.splitstring(infos.devices_rem, " ")
-          if !Builtins.isempty(ls)
-            Ops.set(c, "devices_rem", ls)
-          end
+
+          c["devices"] = infos.devices.to_a
+          c["devices_add"] = infos.devices_add.to_a if !infos.devices_add.empty?
+          c["devices_rem"] = infos.devices_rem.to_a if !infos.devices_rem.empty?
         else
           Builtins.y2warning(
             "LVM Vg \"%1\" ret:%2",
@@ -1685,10 +1728,10 @@ module Yast
           Ops.set(p, "chunk_size", t2) if t2>0
           Ops.set(p, "sb_ver", info.sb_ver)
           Ops.set(p, "raid_inactive", true) if info.inactive
-          ls = Builtins.splitstring(info.devices, " ")
-          Ops.set(p, "devices", ls)
-          ls = Builtins.splitstring(info.spares, " ")
-          Ops.set(p, "spares", ls) if !Builtins.isempty(ls)
+
+          p["devices"] = info.devices.to_a
+          p["spares"] = info.spares.to_a if !info.spares.empty
+
           Ops.set(
             c,
             "partitions",
@@ -1765,19 +1808,15 @@ module Yast
           p = volumeMap(vinfo, p)
           Ops.set(p, "type", :btrfs)
           Ops.set(p, "fstype", Partitions.btrfs_name)
-          ls = Builtins.splitstring(info.devices, "\n")
-          Ops.set(p, "devices", ls)
-          ls = Builtins.splitstring(info.devices_add, "\n")
-          if !Builtins.isempty(ls)
-            Ops.set(c, "devices_add", ls)
-          end
-          ls = Builtins.splitstring(info.devices_rem, "\n")
-          if !Builtins.isempty(ls)
-            Ops.set(c, "devices_rem", ls)
-          end
+
+          p["devices"] = info.devices.to_a
+          p["devices_add"] = info.devices_add.to_a if !info.devices_add.empty?
+          p["devices_rem"] = info.devices_rem.to_a if !info.devices_rem.empty?
+
           li = []
           Ops.set(p, "subvol", li)
-          ls = Builtins.splitstring(info.subvol, "\n")
+          ls = []
+          info.subvol.each { |subvol| ls.push(subvol) }
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "name" => s }
@@ -1786,7 +1825,8 @@ module Yast
             Ops.set(p, "subvol", li)
             Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          ls = Builtins.splitstring(info.subvol_add, "\n")
+          ls = []
+          info.subvol_add.each { |subvol_add| ls.push(subvol_add) }
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "create" => true, "name" => s }
@@ -1799,7 +1839,8 @@ module Yast
             )
             Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          ls = Builtins.splitstring(info.subvol_rem, "\n")
+          ls = []
+          info.subvol_rem.each { |subvol_rem| ls.push(subvol_rem) }
           if !Builtins.isempty(ls)
             li = Builtins.maplist(ls) do |s|
               m = { "delete" => true, "name" => s }
@@ -1854,6 +1895,7 @@ module Yast
       deep_copy(c)
     end
 
+
     def toDiskMap(disk, cinfo)
       disk = deep_copy(disk)
       cinfo = deep_copy(cinfo)
@@ -1879,7 +1921,8 @@ module Yast
         "dasdfmt",
         "udev_id",
         "udev_path",
-        "has_fake_partition"
+        "has_fake_partition",
+        "userdata"
       ]
       Builtins.foreach(l) do |s|
         if Builtins.haskey(cinfo, s)
@@ -1890,53 +1933,28 @@ module Yast
       end
       deep_copy(disk)
     end
+
+
     def getContainers
       ret = []
       cinfos = ::Storage::DequeContainerInfo.new()
       @sint.getContainers(cinfos)
       cinfos.each do |info|
-        c = {}
-        Ops.set(c, "name", info.name)
-        Ops.set(c, "device", info.device)
-        t = info.type
-        Ops.set(c, "type", toSymbol(@conv_ctype, t))
-        t = info.usedByType
-        if t != ::Storage::UB_NONE
-          Ops.set(c, "used_by_type", toSymbol(@conv_usedby, t))
-          Ops.set(
-            c,
-            "used_by_device",
-            info.usedByDevice
-          )
-          Ops.set(
-            c,
-            "used_by",
-            [
-              {
-                "type"   => Ops.get_symbol(c, "used_by_type", :UB_NONE),
-                "device" => Ops.get_string(c, "used_by_device", "")
-              }
-            ]
-          )
-        end
+        c = deviceMap(info)
+        c["type"] = toSymbol(@conv_ctype, info.type)
 	Builtins.y2milestone("c:%1",c)
-        b = info.readonly
-        Ops.set(c, "readonly", true) if b
-        tmp = info.udevPath
-        Ops.set(c, "udev_path", tmp) if !Builtins.isempty(tmp)
-        tmp = info.udevId
-        if !Builtins.isempty(tmp)
-          Ops.set(c, "udev_id", Builtins.splitstring(tmp, " "))
-        end
+        c["readonly"] = true if info.readonly
         ret = Builtins.add(ret, c)
       end
       Builtins.y2milestone("getContainers ret:%1", ret)
       deep_copy(ret)
     end
 
+
     def IsDiskType(t)
       Builtins.contains([:CT_DISK, :CT_DMRAID, :CT_DMMULTIPATH, :CT_MDPART], t)
     end
+
 
     def HandleBtrfsSimpleVolumes(tg)
       tg = deep_copy(tg)
@@ -1962,7 +1980,8 @@ module Yast
           "inactive",
           "mount",
           "mountby",
-          "used_fs"
+          "used_fs",
+          "userdata"
         ]
         Builtins.foreach(simple) do |p|
           mp = GetPartition(tg, Ops.get_string(p, "device", ""))
@@ -1994,6 +2013,7 @@ module Yast
       end
       deep_copy(tg)
     end
+
 
     # Updates target map
     #
@@ -2043,6 +2063,12 @@ module Yast
             "subvol",
             Ops.get_list(p, "subvol", [])
           )
+          tg = SetPartitionData(
+            tg,
+            Ops.get_string(p, "device", ""),
+            "userdata",
+            Ops.get_map(p, "userdata", {})
+          )
         end
       end
       Builtins.y2milestone("UpdateTargetMap rem_keys:%1", rem_keys)
@@ -2064,6 +2090,7 @@ module Yast
 
       nil
     end
+
 
     def UpdateTargetMapDisk(dev)
       Builtins.y2milestone("UpdateTargetMapDisk")
@@ -2099,6 +2126,7 @@ module Yast
 
       nil
     end
+
 
     def UpdateTargetMapDev(dev)
       Builtins.y2milestone("UpdateTargetMapDev %1", dev)
@@ -2166,6 +2194,7 @@ module Yast
       nil
     end
 
+
     # Returns map with disk info
     #
     # @param [String] device
@@ -2199,6 +2228,7 @@ module Yast
       deep_copy(disk)
     end
 
+
     def SaveExitKey(key)
       if key == :next || key == :back
         @exit_key = key
@@ -2207,6 +2237,7 @@ module Yast
 
       nil
     end
+
 
     def GetExitKey
       @exit_key
@@ -2251,6 +2282,7 @@ module Yast
       nil
     end
 
+
     def DisposeTargetBackup(who)
       Builtins.y2milestone("DisposeTargetBackup who:%1", who)
       ret = @sint.removeBackupState(who)
@@ -2261,6 +2293,7 @@ module Yast
       nil
     end
 
+
     def EqualBackupStates(s1, s2, vb)
       Builtins.y2milestone(
         "EqualBackupStates s1:\"%1\" s2:\"%2\" verbose:%3",
@@ -2269,6 +2302,7 @@ module Yast
       Builtins.y2milestone("EqualBackupStates ret:%1", ret)
       ret
     end
+
 
     def RestoreTargetBackup(who)
       Builtins.y2milestone("RestoreTargetBackup who:%1", who)
@@ -2283,25 +2317,30 @@ module Yast
       nil
     end
 
+
     def ResetOndiskTarget
       RestoreTargetBackup("initial")
 
       nil
     end
 
+
     def GetTargetChangeTime
       Ops.get_integer(@StorageMap, "targets_time", 0)
     end
 
+
     def GetPartProposalActive
       Ops.get_boolean(@StorageMap, @part_proposal_active_key, true)
     end
+
 
     def SetPartProposalActive(value)
       Ops.set(@StorageMap, @part_proposal_active_key, value)
 
       nil
     end
+
 
     def GetPartMode
       Builtins.y2milestone(
@@ -2311,6 +2350,7 @@ module Yast
       Ops.get_string(@StorageMap, @part_mode_key, "")
     end
 
+
     def SetPartMode(value)
       Builtins.y2milestone("SetPartMode %1", value)
       Ops.set(@StorageMap, @part_mode_key, value)
@@ -2318,9 +2358,11 @@ module Yast
       nil
     end
 
+
     def GetCustomDisplay
       Ops.get_boolean(@StorageMap, @custom_display_key, false)
     end
+
 
     def SetCustomDisplay(value)
       Ops.set(@StorageMap, @custom_display_key, value)
@@ -2328,9 +2370,11 @@ module Yast
       nil
     end
 
+
     def GetPartDisk
       Ops.get_string(@StorageMap, @part_disk_key, "")
     end
+
 
     def SetPartDisk(value)
       Ops.set(@StorageMap, @part_disk_key, value)
@@ -2343,15 +2387,18 @@ module Yast
       Ops.get_boolean(@StorageMap, @testsuite_key, false)
     end
 
+
     def SetTestsuite(value)
       @StorageMap = Builtins.add(@StorageMap, @testsuite_key, value)
 
       nil
     end
 
+
     def GetDoResize
       Ops.get_string(@StorageMap, @do_resize_key, "NO")
     end
+
 
     def SetDoResize(value)
       @StorageMap = Builtins.add(@StorageMap, @do_resize_key, value)
@@ -2359,9 +2406,11 @@ module Yast
       nil
     end
 
+
     def GetPartProposalMode
       Ops.get_string(@StorageMap, @part_proposal_mode_key, "accept")
     end
+
 
     def SetPartProposalMode(value)
       @StorageMap = Builtins.add(@StorageMap, @part_proposal_mode_key, value)
@@ -2369,9 +2418,11 @@ module Yast
       nil
     end
 
+
     def GetPartProposalFirst
       Ops.get_boolean(@StorageMap, @part_proposal_first_key, true)
     end
+
 
     def SetPartProposalFirst(value)
       @StorageMap = Builtins.add(@StorageMap, @part_proposal_first_key, value)
@@ -2379,9 +2430,11 @@ module Yast
       nil
     end
 
+
     def GetWinDevice
       Ops.get_boolean(@StorageMap, @win_device_key, false)
     end
+
 
     def SetWinDevice(value)
       @StorageMap = Builtins.add(@StorageMap, @win_device_key, value)
@@ -2492,7 +2545,6 @@ module Yast
     end
 
 
-
     # Creates a new partition
     #
     # @param [String] disk
@@ -2563,6 +2615,7 @@ module Yast
       ret == 0
     end
 
+
     # Sets whether a partition should be formatted
     #
     # @param [String] device name
@@ -2586,6 +2639,7 @@ module Yast
       ret == 0
     end
 
+
     # Sets partition ID
     #
     # @param [String] device name
@@ -2602,6 +2656,7 @@ module Yast
       UpdateTargetMapDev(device)
       ret == 0
     end
+
 
     # Restores the original partition ID
     #
@@ -2698,9 +2753,11 @@ module Yast
       ret == 0
     end
 
+
     def ChangeDescText(dev, txt)
       ret = @sint.changeDescText(dev, txt)
     end
+
 
     def ChangeVolumeProperties(part)
       part = deep_copy(part)
@@ -2930,6 +2987,23 @@ module Yast
           cre = cre.drop(1)
         end
       end
+
+      if ret == 0 && part.fetch("userdata", {}) != curr.fetch("userdata", {})
+        changed = true
+        d = part.fetch("device", "")
+        userdata = ::Storage::MapStringString.new()
+        part["userdata"].each do |a, b|
+          userdata[a]= b
+        end
+        Builtins.y2milestone("ChangeVolumeProperties userdata to %1", userdata.to_s)
+        ret = @sint.setUserdata(d, userdata)
+        if ret < 0
+          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+        else
+          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+        end
+      end
+
       UpdateTargetMapDev(dev) if changed
       if ret != 0
         Builtins.y2milestone("ChangeVolumeProperties ret:%1", ret)
@@ -2939,6 +3013,7 @@ module Yast
       ret == 0
     end
 
+
     def DeleteDevice(device)
       Builtins.y2milestone("DeleteDevice device:%1", device)
       ret = @sint.removeVolume(device)
@@ -2946,6 +3021,7 @@ module Yast
       UpdateTargetMap()
       ret == 0
     end
+
 
     def DeleteLvmVg(name)
       Builtins.y2milestone("DeleteLvmVg name:%1", name)
@@ -2955,6 +3031,7 @@ module Yast
       ret == 0
     end
 
+
     def DeleteDmraid(name)
       Builtins.y2milestone("DeleteDmraid name:%1", name)
       ret = @sint.removeDmraid(name)
@@ -2962,6 +3039,7 @@ module Yast
       UpdateTargetMap()
       ret == 0
     end
+
 
     def DeleteMdPartCo(name)
       Builtins.y2milestone("DeleteMdPartCo name:%1", name)
@@ -2972,6 +3050,7 @@ module Yast
       UpdateTargetMap()
       ret == 0
     end
+
 
     def CreateLvmVg(name, pesize, lvm2)
       Builtins.y2milestone(
@@ -2987,6 +3066,7 @@ module Yast
       ret == 0
     end
 
+
     def StringDequeFromList(devs)
       devd = ::Storage::DequeString.new()
       Builtins.foreach(devs) do |s|
@@ -2994,6 +3074,7 @@ module Yast
       end
       devd
     end
+
 
     def CreateLvmVgWithDevs(name, pesize, lvm2, devs)
       devd = StringDequeFromList(devs)
@@ -3012,6 +3093,7 @@ module Yast
       ret == 0
     end
 
+
     def ExtendLvmVg(name, device)
       Builtins.y2milestone("ExtendLvmVg name:%1 device:%2", name, device)
       devd = ::Storage::DequeString.new()
@@ -3021,6 +3103,7 @@ module Yast
       UpdateTargetMap()
       ret == 0
     end
+
 
     def ReduceLvmVg(name, device)
       Builtins.y2milestone("ReduceLvmVg name:%1 device:%2", name, device)
@@ -3117,6 +3200,7 @@ module Yast
       ret == 0
     end
 
+
     def ExtendBtrfsVolume(uuid, device)
       Builtins.y2milestone("ExtendBtrfsVolume uuid:%1 device:%2", uuid, device)
       ret = 0
@@ -3130,6 +3214,7 @@ module Yast
       ret == 0
     end
 
+
     def ReduceBtrfsVolume(uuid, device)
       Builtins.y2milestone("ReduceBtrfsVolume uuid:%1 device:%2", uuid, device)
       ret = 0
@@ -3142,6 +3227,7 @@ module Yast
       UpdateTargetMap()
       ret == 0
     end
+
 
     def AddNfsVolume(nfsdev, opts, sz, mp, nfs4)
       Builtins.y2milestone(
@@ -3157,6 +3243,7 @@ module Yast
       UpdateTargetMapDisk("/dev/nfs")
       ret == 0
     end
+
 
     def CheckNfsVolume(nfsdev, opts, nfs4)
       Builtins.y2milestone(
@@ -3176,6 +3263,7 @@ module Yast
       ret
     end
 
+
     def AddTmpfsVolume(mount, opts)
       Builtins.y2milestone("AddTmpfsVolume mount:%1 opts:%2", mount, opts)
       ret = @sint.addTmpfsMount(mount, opts)
@@ -3186,6 +3274,7 @@ module Yast
       ret == 0
     end
 
+
     def DelTmpfsVolume(mount)
       Builtins.y2milestone("DelTmpfsVolume mount:%1", mount)
       ret = @sint.removeTmpfsMount(mount)
@@ -3195,6 +3284,7 @@ module Yast
       UpdateTargetMapDisk("/dev/tmpfs")
       ret == 0
     end
+
 
     def MdToDev(nr_or_string)
       Builtins.y2milestone("MdToDev nr_or:%1", nr_or_string)
@@ -3207,6 +3297,7 @@ module Yast
       ret
     end
 
+
     def CreateMd(nr, type)
       Builtins.y2milestone("CreateMd nr:%1 type:%2", nr, type)
       tmp = Ops.get(@conv_mdstring, type, 0)
@@ -3218,6 +3309,7 @@ module Yast
       ret == 0
     end
 
+
     def StringListFromList(devs)
       ret = ::Storage::ListString.new()
       Builtins.foreach(devs) do |s|
@@ -3225,6 +3317,7 @@ module Yast
       end
       ret
     end
+
 
     def CreateMdWithDevs(nr, type, devices)
       Builtins.y2milestone(
@@ -3248,6 +3341,7 @@ module Yast
       ret == 0
     end
 
+
     def ReplaceMd(nr, devs)
       Builtins.y2milestone("ReplaceMd nr:%1 devs:%2", nr, devs)
       empty = ::Storage::ListString.new()
@@ -3258,6 +3352,7 @@ module Yast
       UpdateTargetMap()
       ret == 0
     end
+
 
     def ExtendMd(nr, devs)
       Builtins.y2milestone("ExtendMd nr:%1 devs:%2", nr, devs)
@@ -3270,6 +3365,7 @@ module Yast
       ret == 0
     end
 
+
     def ShrinkMd(nr, devs)
       Builtins.y2milestone("ShrinkMd nr:%1 devs:%2", nr, devs)
       empty = ::Storage::ListString.new()
@@ -3281,6 +3377,7 @@ module Yast
       ret == 0
     end
 
+
     def ChangeMdType(nr, mdtype)
       Builtins.y2milestone("ChangeMdType nr:%1 mdtype:%2", nr, mdtype)
       rd = MdToDev(nr)
@@ -3290,6 +3387,7 @@ module Yast
       UpdateTargetMapDev(rd)
       ret == 0
     end
+
 
     def ChangeMdParity(nr, ptype)
       Builtins.y2milestone("ChangeMdParity nr:%1 parity:%2", nr, ptype)
@@ -3303,6 +3401,7 @@ module Yast
       ret == 0
     end
 
+
     def ChangeMdParitySymbol(nr, ptype)
       Builtins.y2milestone("ChangeMdParitySymbol nr:%1 parity:%2", nr, ptype)
       rd = MdToDev(nr)
@@ -3315,6 +3414,7 @@ module Yast
       ret == 0
     end
 
+
     def ChangeMdChunk(nr, chunk)
       Builtins.y2milestone("ChangeMdChunk nr:%1 chunk:%2", nr, chunk)
       rd = MdToDev(nr)
@@ -3326,6 +3426,7 @@ module Yast
       ret == 0
     end
 
+
     def CheckMd(nr)
       Builtins.y2milestone("CheckMd nr:%1", nr)
       ret = 0
@@ -3334,6 +3435,7 @@ module Yast
       Builtins.y2milestone("CheckMd sint ret:%1", ret) if ret != 0
       ret
     end
+
 
     def ComputeMdSize(md_type, devices, sizeK)
       tmp = ::Storage::RAID_UNK
@@ -3350,6 +3452,7 @@ module Yast
       ret
     end
 
+
     def GetCryptPwd(device)
       Builtins.y2milestone("GetCryptPwd device:%1", device)
       ret, pwd = @sint.getCryptPassword(device)
@@ -3362,6 +3465,7 @@ module Yast
       pwd
     end
 
+
     def SetCryptPwd(device, pwd)
       Builtins.y2milestone("SetCryptPwd device:%1", device)
       ret = @sint.setCryptPassword(device, pwd)
@@ -3372,6 +3476,7 @@ module Yast
       end
       ret == 0
     end
+
 
     def ActivateCrypt(device, on)
       Builtins.y2milestone("ActivateCrypt device:%1 on:%2", device, on)
@@ -3384,11 +3489,13 @@ module Yast
       ret == 0
     end
 
+
     def NeedCryptPwd(device)
       ret = @sint.needCryptPassword(device)
       Builtins.y2milestone("NeedCryptPwd device:%1 ret:%2", device, ret)
       ret
     end
+
 
     def IsVgEncrypted(tg, vg_key)
       ret = false
@@ -3401,6 +3508,7 @@ module Yast
       Builtins.y2milestone("IsVgEncrypted key:%1 ret:%2", vg_key, ret)
       ret
     end
+
 
     def NeedVgPassword(tg, vg_key)
       ret = IsVgEncrypted(tg, vg_key)
@@ -3452,6 +3560,7 @@ module Yast
       HandleModulesOnBoot(GetTargetMap())
       ret == 0
     end
+
 
     def DeleteLoop(disk, file, remove_file)
       Builtins.y2milestone(
@@ -3650,7 +3759,6 @@ module Yast
     end
 
 
-
     # Search in the list partitions for windows partitions and add the key
     # "mount" to the found windows partitions.
     # @parm partitions the partitions list
@@ -3768,6 +3876,7 @@ module Yast
       nil
     end
 
+
     def CheckSwapable(dev)
       return true if Mode.test
 
@@ -3780,6 +3889,7 @@ module Yast
       Builtins.y2milestone("CheckSwapable dev:%1 ret:%2", dev, ok)
       ok
     end
+
 
     # mark swap-partitions with pseudo Mountpoint swap in targetMap
     # @param [Hash{String => map}] target Disk map
@@ -3850,12 +3960,12 @@ module Yast
       i == 0
     end
 
+
     def RescanCrypted
       ret = @sint.rescanCryptedObjects()
       Builtins.y2milestone("RescanCrypted ret:%1", ret)
       ret
     end
-
 
 
     def CheckEncryptionPasswords(pw1, pw2, min_length, empty_allowed)
@@ -4069,6 +4179,7 @@ module Yast
       ret == :yes
     end
 
+
     def GetCryptLists(target)
       target = deep_copy(target)
       ac_cr = []
@@ -4104,6 +4215,7 @@ module Yast
       Builtins.y2milestone("ret:%1", ret)
       deep_copy(ret)
     end
+
 
     def AskCryptPasswords(target)
       target = deep_copy(target)
@@ -4195,6 +4307,7 @@ module Yast
       end
       deep_copy(target)
     end
+
 
     def ChangeDmNamesFromCrypttab(crfile)
       st = Convert.to_map(SCR.Read(path(".target.stat"), crfile))
@@ -4477,13 +4590,11 @@ module Yast
       r = ::Storage::ListString.new();
       res = @sint.getRecursiveUsing(devs, false, r);
       Builtins.y2milestone("GetAffectedDevices dev:%1 ret:%2", dev, res)
-      ret = []
-      r.each do |s|
-	ret.push(s)
-      end
+      ret = r.to_a
       Builtins.y2milestone("GetAffectedDevices ret:%1", ret)
       ret
     end
+
 
     def SetRecursiveRemoval(val)
       Builtins.y2milestone("SetRecursiveRemoval val:%1", val)
@@ -4491,9 +4602,11 @@ module Yast
       nil
     end
 
+
     def GetRecursiveRemoval
       @sint.getRecursiveRemoval()
     end
+
 
     def SetTargetMap(target)
       target = deep_copy(target)
@@ -4747,6 +4860,7 @@ module Yast
       GetTargetMap()
     end
 
+
     # Apply storage changes
     #
     # @return [Fixnum]
@@ -4764,6 +4878,7 @@ module Yast
       ret
     end
 
+
     def DeviceMounted(dev)
       ret = ::Storage::ListString.new()
       @sint.checkDeviceMounted(dev, ret)
@@ -4777,6 +4892,7 @@ module Yast
       end
     end
 
+
     # Umounts a device
     #
     # @param string device name
@@ -4788,6 +4904,7 @@ module Yast
       Builtins.y2milestone("Umount %1 unsetup %2 ret %3", dev, unsetup, ret)
       ret
     end
+
 
     # Mounts a device
     #
@@ -4808,6 +4925,7 @@ module Yast
       )
       ret
     end
+
 
     # Mounts a device
     #
@@ -4873,7 +4991,7 @@ module Yast
         "var/tmp"
       ]
 
-      if Arch.i386
+      if Arch.i386 || Arch.x86_64
         def_subvol.push("boot/grub2/i386-pc")
       end
 
@@ -4883,6 +5001,10 @@ module Yast
 
       if Arch.ppc
         def_subvol.push("boot/grub2/power-ieee1275")
+      end
+
+      if Arch.s390
+        def_subvol.push("boot/grub2/s390x")
       end
 
       def_subvol.sort!()
@@ -5010,6 +5132,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def FindBtrfsUuid(uuid)
       btrfs = Ops.get(GetTargetMap(), "/dev/btrfs", {})
       ret = Ops.get(
@@ -5022,6 +5145,7 @@ module Yast
       Builtins.y2milestone("FindBtrfsUuid uuid:%1 ret:%2", uuid, ret)
       deep_copy(ret)
     end
+
 
     def IsUsedBy(p)
       p = deep_copy(p)
@@ -5041,6 +5165,7 @@ module Yast
       ret
     end
 
+
     # Tries to umount given device if mounted
     #
     # @param [String] device to umount
@@ -5051,6 +5176,7 @@ module Yast
       Builtins.y2milestone("TryUnaccessSwap device %1 ret:%2", device, ret)
       ret
     end
+
 
     def CanEdit(p, verbose)
       p = deep_copy(p)
@@ -5097,6 +5223,7 @@ module Yast
       )
       ret
     end
+
 
     def CanDelete(p, disk, verbose)
       p = deep_copy(p)
@@ -5201,6 +5328,7 @@ module Yast
       ret
     end
 
+
     # Reads and returns fstab from directory
     #
     # FIXME: please, add description of the list that is returned by this function.
@@ -5249,12 +5377,13 @@ module Yast
       infos.each do |info|
         m = {
           :destructive => info.destructive,
-          :text        => info.text
+          :text => info.text.force_encoding("UTF-8")
         }
 	ret.push(m)
       end
       ret
     end
+
 
     def ChangeText
       texts = Builtins.maplist(GetCommitInfos()) do |info|
@@ -5285,14 +5414,14 @@ module Yast
 
 
     def LastAction
-      ret = @sint.getLastAction()
-      ret
+      return @sint.getLastAction().force_encoding("UTF-8")
     end
 
+
     def ExtendedErrorMsg
-      ret = @sint.getExtendedErrorMessage()
-      ret
+      return @sint.getExtendedErrorMessage().force_encoding("UTF-8")
     end
+
 
     def SetZeroNewPartitions(val)
       Builtins.y2milestone("SetZeroNewPartitions val:%1", val)
@@ -5300,6 +5429,7 @@ module Yast
 
       nil
     end
+
 
     def SetPartitionAlignment(pal)
       Builtins.y2milestone("SetPartitionAlignment val:%1", pal)
@@ -5309,12 +5439,14 @@ module Yast
       nil
     end
 
+
     def GetPartitionAlignment
       val = @sint.getPartitionAlignment()
       pal = toSymbol(@conv_partalign, val)
       Builtins.y2milestone("GetPartitionAlignment val:%1", pal)
       pal
     end
+
 
     # GetMountPoints()
     # collect mountpoint:device as map to get a sorted list
@@ -5399,8 +5531,6 @@ module Yast
     end
 
 
-
-
     # Set <key> in partition <device> to the given <value> and return changed map <tg>
     #
     # @param [Hash{String => map}] tg
@@ -5482,6 +5612,7 @@ module Yast
           Ops.get_string(entry, "driver", "") == "vbd")
     end
 
+
     # Checks if a container is partitionable
     #
     # @param [Hash] entry
@@ -5498,6 +5629,7 @@ module Yast
         Ops.get_symbol(entry, "type", :CT_UNKNOWN) == :CT_MDPART ||
         IsRealDisk(entry)
     end
+
 
     def DeviceRealDisk(device)
       ret = false
@@ -5520,6 +5652,7 @@ module Yast
       Builtins.y2milestone("DeviceRealDisk %1 ret %2", device, ret)
       ret
     end
+
 
     #**
     # Determine if there is any Linux partition on this system.
@@ -5763,11 +5896,8 @@ module Yast
     def GetUsedFs
       return nil if !InitLibstorage(false)
 
-      ret = []
       r = @sint.getAllUsedFs()
-      r.each do |s|
-	ret.push(s)
-      end
+      ret = r.to_a
       Builtins.y2milestone( "GetUsedFs ret:%1", ret )
       ret
     end
@@ -5841,7 +5971,7 @@ module Yast
 
       part = GetEntryForMountpoint("/")
       if Ops.get_symbol(part, "used_fs", :unknown) == :btrfs
-        pl << "snapper" << "yast2-snapper"
+        pl << "snapper"
       end
 
       Builtins.y2milestone("AddPackageList ret %1", pl)
@@ -5951,6 +6081,8 @@ module Yast
       end
       p
     end
+
+
     def HandleModulesOnBoot(targetMap)
       targetMap = deep_copy(targetMap)
       ml = Builtins.filter(
@@ -6008,6 +6140,7 @@ module Yast
       nil
     end
 
+
     # Adds an entry into the fstab
     #
     # @param map entry
@@ -6043,6 +6176,7 @@ module Yast
       nil
     end
 
+
     def SetMultipathStartup(val)
       Builtins.y2milestone("SetMultipathStartup val:%1", val)
       if( @default_multipathing != val )
@@ -6061,74 +6195,73 @@ module Yast
       nil
     end
 
+
     def SpecialBootHandling(tg)
       tg = deep_copy(tg)
       have_ppc_boot = false
       Builtins.foreach(tg) do |dev, disk|
-        Builtins.foreach(Ops.get_list(disk, "partitions", [])) do |part|
+        disk.fetch("partitions",[]).each do |part|
           if !have_ppc_boot &&
-              Ops.get_integer(part, "fsid", 0) == Partitions.fsid_prep_chrp_boot &&
-              Builtins.size(Ops.get_string(part, "mount", "")) == 0 &&
-              Ops.get_boolean(part, "create", false)
+             part.fetch("fsid",0) == Partitions.fsid_prep_chrp_boot &&
+             part.fetch("mount","").empty? &&
+             part.fetch("create",false)
             have_ppc_boot = true
           end
         end
       end
-      Builtins.y2milestone(
-        "SpecialBootHandling: have_ppc_boot:%1",
-        have_ppc_boot
-      )
+      Builtins.y2milestone( "SpecialBootHandling: ppc_boot:%1", have_ppc_boot)
       Builtins.foreach(tg) do |dev, disk|
         new_part = []
-        Builtins.foreach(Ops.get_list(disk, "partitions", [])) do |part|
+        disk.fetch("partitions",[]).each do |part|
           # convert a mount point of /boot to a 41 PReP boot partition
           if Partitions.PrepBoot &&
-              Ops.get_string(part, "mount", "") == Partitions.BootMount &&
-              !have_ppc_boot
+             part.fetch("mount","") == Partitions.BootMount &&
+             !have_ppc_boot
             id = Partitions.fsid_prep_chrp_boot
-            Ops.set(part, "format", false)
-            Ops.set(part, "mount", "")
-            Ops.set(part, "fstype", Partitions.FsIdToString(id))
-            Ops.set(part, "prep_install", true)
-            if !Ops.get_boolean(part, "create", false) &&
-                Ops.get_integer(part, "fsid", 0) != id
-              Ops.set(part, "ori_fsid", Ops.get_integer(part, "fsid", 0))
-              Ops.set(part, "change_fsid", true)
+            part["format"]=false
+            part["mount"]=""
+            part["fstype"]=Partitions.FsIdToString(id)
+            part["prep_install"]=true
+            if !part.fetch("create",false) &&
+               part.fetch("fsid",0) != id
+              part["ori_fsid"] = part.fetch("fsid",0)
+              part["change_fsid"] = true
             end
-            Ops.set(part, "fsid", id)
-            Builtins.y2milestone(
-              "SpecialBootHandling modified Prep part=%1",
-              part
-            )
+            part["fsid"] = id
+            Builtins.y2milestone( "SpecialBootHandling modified Prep part=%1", part)
           end
           if Arch.board_mac &&
-              Ops.get_string(part, "mount", "") == Partitions.BootMount
+             part.fetch("mount","") == Partitions.BootMount
             id = Partitions.fsid_mac_hfs
-            Ops.set(part, "mount", "")
-            Ops.set(part, "fstype", Partitions.FsIdToString(id))
-            Ops.set(part, "fsid", id)
-            Ops.set(part, "used_fs", :hfs)
-            Ops.set(part, "detected_fs", :hfs)
-            Builtins.y2milestone(
-              "SpecialBootHandling modified hfs part=%1",
-              part
-            )
+            part["mount"] = ""
+            part["fstype"] = Partitions.FsIdToString(id)
+            part["fsid"] = id
+            part["used_fs"] = :hfs
+            part["detected_fs"] = :hfs
+            Builtins.y2milestone( "SpecialBootHandling modified hfs part=%1", part)
           end
           if Arch.ia64 &&
-              Ops.get_string(part, "mount", "") == Partitions.BootMount
+             part.fetch("mount","") == Partitions.BootMount
             id = Partitions.fsid_gpt_boot
-            Ops.set(part, "fsid", id)
-            Ops.set(part, "fstype", Partitions.FsIdToString(id))
-            if !Ops.get_boolean(part, "create", false) &&
-                Ops.get_symbol(part, "detected_fs", :none) == :vfat
-              Ops.set(part, "format", false)
+            part["fsid"] = id
+            part["fstype"] = Partitions.FsIdToString(id)
+            if !part.fetch("create",false) &&
+               part.fetch("detected_fs",:none)==:vfat
+              part["format"] = false
             end
-            Builtins.y2milestone(
-              "SpecialBootHandling modified GPT boot part=%1",
-              part
-            )
+            Builtins.y2milestone( "SpecialBootHandling modified GPT boot part=%1", part)
           end
-          new_part = Builtins.add(new_part, part)
+          if !Partitions.EfiBoot && (Arch.i386||Arch.x86_64) &&
+	     disk.fetch("label","") == "gpt" &&
+             part.fetch("mount","") == Partitions.BootMount
+            id = Partitions.fsid_bios_grub
+            part["fsid"] = id
+            part["fstype"] = Partitions.FsIdToString(id)
+	    part["format"] = false
+	    part["mount"] = ""
+            Builtins.y2milestone( "SpecialBootHandling modified BIOS grub part=%1", part)
+          end
+          new_part.push(part)
         end
         Ops.set(tg, [dev, "partitions"], new_part)
       end
@@ -6184,6 +6317,7 @@ module Yast
       crypt_ok
     end
 
+
     # Detects a filesystem on a device
     #
     # @param [String] device name
@@ -6229,6 +6363,7 @@ module Yast
       Builtins.y2milestone("HdToIseries input:%1 ret:%2", input, ret)
       ret
     end
+
 
     def SLES9PersistentDevNames(input)
       ret = input
@@ -6276,6 +6411,7 @@ module Yast
       )
       ret
     end
+
 
     def HdDiskMap(input, diskmap)
       diskmap = deep_copy(diskmap)
@@ -6358,6 +6494,16 @@ module Yast
     end
 
 
+    def TranslateDeviceDmraidToMdadm(device, mapping)
+      ret = device
+      mapping.each do |name, uuid|
+        ret = ret.sub("/dev/disk/by-id/raid-" + name, "/dev/disk/by-id/md-uuid-" + uuid)
+        ret = ret.sub("/dev/disk/by-id/dm-name-" + name, "/dev/disk/by-id/md-uuid-" + uuid)
+        ret = ret.sub("/dev/disk/by-id/dm-uuid-DMRAID-" + name, "/dev/disk/by-id/md-uuid-" + uuid)
+      end
+      return ret
+    end
+
 
     def GetTranslatedDevices(oldv, newv, names)
       oldv = deep_copy(oldv)
@@ -6382,15 +6528,13 @@ module Yast
         "major",
         0
       ) == 9
-      # convert EVMS names to LVM
-      # FIXME: add version checking, but does not seem necessary, since non-LVM
-      # installations will not be affected by this conversion at all
-      ret = Builtins.maplist(ret) do |n|
-        if Builtins.substring(n, 0, 15) == "/dev/evms/lvm2/"
-          n = Ops.add("/dev/", Builtins.substring(n, 15))
-        end
-        n
+
+      # convert dmraid names to mdadm names
+      mapping = GetDmraidToMdadm()
+      if !mapping.empty?
+        ret.map! { |name| TranslateDeviceDmraidToMdadm(name, mapping) }
       end
+
       Builtins.y2milestone("GetTranslatedDevices ret %1", ret)
       deep_copy(ret)
     end
@@ -6454,13 +6598,7 @@ module Yast
         need_dmmultipath
       )
 
-      if need_crypt
-        CallInsserv(true, "boot.crypto")
-        CallInsserv(true, "boot.crypto-early")
-      end
-
       CallInsserv(need_md, "boot.md")
-      CallInsserv(need_lvm, "boot.lvm")
       CallInsserv(need_dmraid, "boot.dmraid")
       CallInsserv(need_dmmultipath, "boot.multipath")
       CallInsserv(need_dmmultipath, "multipathd")
@@ -6849,7 +6987,7 @@ module Yast
       ret = false
       tg = GetTargetMap()
       ts = fstab_spec
-      if IsKernelDeviceName(fstab_spec)
+      if DeviceNameMightNeedAdaption(fstab_spec)
         # translate fstab_spec from old to new kernel device name
         ts = Ops.get(GetTranslatedDevices({}, {}, [fstab_spec]), 0, "")
         if ts != fstab_spec
@@ -6896,6 +7034,7 @@ module Yast
       ret
     end
 
+
     def AllowedParity(mdtype, sz)
       mdt = Ops.get(@conv_mdstring, mdtype, 0)
       pars = @sint.getMdAllowedParity(mdt, sz)
@@ -6907,6 +7046,7 @@ module Yast
       Builtins.y2milestone("ret:%1", ret)
       ret
     end
+
 
     def GetUsedDisks(device)
       Builtins.y2milestone("GetUsedDisks device:%1", device)
@@ -6986,6 +7126,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def IsDeviceOnNetwork(device)
       ret = :no
       tg = GetTargetMap()
@@ -7014,6 +7155,7 @@ module Yast
       ret
     end
 
+
     def GetCreatedSwaps
       tg = GetTargetMap()
       ret = []
@@ -7029,15 +7171,25 @@ module Yast
       deep_copy(ret)
     end
 
+
     def GetDetectedDiskPaths
-      ret = [];
       disks = ::Storage::getPresentDisks
-      disks.each do |d|
-	ret.push(d)
-      end
+      ret = disks.to_a
       Builtins.y2milestone("disks:%1", ret)
       ret
     end
+
+
+    def GetDmraidToMdadm()
+      mapping = {}
+      tmp = ::Storage::DmraidToMdadm()
+      tmp.each do |a, b|
+        mapping[a] = b
+      end
+      Builtins.y2milestone("dmraid to mdadm mapping %1", mapping)
+      return mapping
+    end
+
 
     publish :variable => :resize_partition, :type => "string"
     publish :variable => :resize_partition_data, :type => "map"
@@ -7222,6 +7374,7 @@ module Yast
     publish :function => :SLES9PersistentDevNames, :type => "string (string)"
     publish :function => :HdDiskMap, :type => "string (string, map)"
     publish :function => :BuildDiskmap, :type => "map (map)"
+    publish :function => :TranslateDeviceDmraidToMdadm, :type => "string (string, map<string, string>)"
     publish :function => :GetTranslatedDevices, :type => "list <string> (map, map, list <string>)"
     publish :function => :FinishInstall, :type => "void ()"
     publish :function => :GetRootInitrdModules, :type => "list ()"

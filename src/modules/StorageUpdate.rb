@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2013] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -195,36 +195,6 @@ module Yast
           Ops.get_string(l, ["fields", 0], "")
         )
         if n != Ops.get_string(l, ["fields", 0], "")
-          fstab_ref = arg_ref(fstab)
-          AsciiFile.ChangeLineField(fstab_ref, line, 0, n)
-          fstab = fstab_ref.value
-        end
-        line = Ops.add(line, 1)
-      end
-      fstab_ref = arg_ref(fstab)
-      AsciiFile.RewriteFile(fstab_ref, tabpath)
-      fstab = fstab_ref.value
-
-      nil
-    end
-
-
-    def UpdateFstabEvms2Lvm
-      Builtins.y2milestone("UpdateFstabEvms2Lvm migrating EVMS to LVM")
-      tabpath = Storage.PathToDestdir("/etc/fstab")
-      fstab = Partitions.GetFstab(tabpath)
-      line = 0
-      n = ""
-      while Ops.less_or_equal(line, AsciiFile.NumLines(fstab))
-        l = (
-          fstab_ref = arg_ref(fstab);
-          _GetLine_result = AsciiFile.GetLine(fstab_ref, line);
-          fstab = fstab_ref.value;
-          _GetLine_result
-        )
-        n = Ops.get_string(l, ["fields", 0], "")
-        if Builtins.substring(n, 0, 15) == "/dev/evms/lvm2/"
-          n = Ops.add("/dev/", Builtins.substring(n, 15))
           fstab_ref = arg_ref(fstab)
           AsciiFile.ChangeLineField(fstab_ref, line, 0, n)
           fstab = fstab_ref.value
@@ -592,6 +562,71 @@ module Yast
       nil
     end
 
+
+    def UpdateFstabDmraidToMdadm()
+      Builtins.y2milestone("UpdateFstabDmraidToMdadm")
+
+      mapping = Storage.GetDmraidToMdadm()
+      if mapping.empty?
+        return
+      end
+
+      fstab_path = Storage.PathToDestdir("/etc/fstab")
+      fstab = Partitions.GetFstab(fstab_path)
+
+      for line in 1..AsciiFile.NumLines(fstab)
+        l = (
+          fstab_ref = arg_ref(fstab);
+          _GetLine_result = AsciiFile.GetLine(fstab_ref, line);
+          fstab = fstab_ref.value;
+          _GetLine_result
+        )
+
+        device = Ops.get_string(l, ["fields", 0], "")
+
+        device = Storage.TranslateDeviceDmraidToMdadm(device, mapping)
+
+        if device != Ops.get_string(l, ["fields", 0], "")
+          fstab_ref = arg_ref(fstab)
+          AsciiFile.ChangeLineField(fstab_ref, line, 0, device)
+          fstab = fstab_ref.value
+        end
+      end
+
+      fstab_ref = arg_ref(fstab)
+      AsciiFile.RewriteFile(fstab_ref, fstab_path)
+      fstab = fstab_ref.value
+
+      crtab_path = Storage.PathToDestdir("/etc/cryptotab")
+      crtab = Partitions.GetCrypto(crtab_path)
+
+      for line in 1..AsciiFile.NumLines(crtab)
+        l = (
+          crtab_ref = arg_ref(crtab);
+          _GetLine_result = AsciiFile.GetLine(crtab_ref, line);
+          crtab = crtab_ref.value;
+          _GetLine_result
+        )
+
+        device = Ops.get_string(l, ["fields", 1], "")
+
+        device = Storage.TranslateDeviceDmraidToMdadm(device, mapping)
+
+        if device != Ops.get_string(l, ["fields", 1], "")
+          crtab_ref = arg_ref(crtab)
+          AsciiFile.ChangeLineField(crtab_ref, line, 1, device)
+          crtab = crtab_ref.value
+        end
+      end
+
+      crtab_ref = arg_ref(crtab)
+      AsciiFile.RewriteFile(crtab_ref, crtab_path)
+      crtab = crtab_ref.value
+
+      return
+    end
+
+
     # Updates fstab on disk
     #
     # @param map old version
@@ -654,9 +689,7 @@ module Yast
           UpdateFstabHotplugOption()
         end
 
-        # remove EVMS
-        # FIXME add appropriate condition if needed (does not seem so)
-        UpdateFstabEvms2Lvm()
+        UpdateFstabDmraidToMdadm()
 
         dm = Storage.BuildDiskmap(oldv)
         if Ops.greater_than(Builtins.size(dm), 0)
@@ -694,10 +727,6 @@ module Yast
             Ops.get_integer(oldv, "major", 0) == 9 &&
               Ops.get_integer(oldv, "minor", 0) == 0
           UpdateFstabIseriesVd() if Arch.board_iseries
-          cmd = "cd / && /sbin/insserv -r /etc/init.d/boot.evms"
-          Builtins.y2milestone("Update cmd %1", cmd)
-          bo = Convert.to_map(SCR.Execute(path(".target.bash_output"), cmd))
-          Builtins.y2milestone("Update bo %1", bo)
         end
         if Ops.less_than(Ops.get_integer(oldv, "major", 0), 10) ||
             Ops.get_integer(oldv, "major", 0) == 10 &&

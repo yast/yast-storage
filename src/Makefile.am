@@ -19,7 +19,8 @@ module_DATA = \
   modules/DevicesSelectionBox.rb \
   modules/Partitions.rb \
   modules/Region.rb \
-  modules/StorageClients.rb
+  modules/StorageClients.rb \
+  modules/StorageUtils.rb
 
 client_DATA = \
   clients/inst_disk_proposal.rb \

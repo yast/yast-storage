@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -32,6 +32,7 @@
 #
 module Yast
   class StorageFinishClient < Client
+
     def main
 
       textdomain "storage"
@@ -39,6 +40,7 @@ module Yast
       Yast.import "Storage"
       Yast.import "StorageSettings"
       Yast.import "StorageUpdate"
+      Yast.import "StorageUtils"
       Yast.import "Mode"
       Yast.import "Installation"
 
@@ -90,12 +92,7 @@ module Yast
         StorageSettings.Save
 
         if Mode.installation
-          @part = Storage.GetEntryForMountpoint("/")
-          if Ops.get_symbol(@part, "used_fs", :unknown) == :btrfs
-            if SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus create-config --fstype=btrfs /") == 0
-              SCR.Write(path(".sysconfig.yast2.USE_SNAPPER"), "yes")
-            end
-          end
+          StorageUtils.ConfigureSnapper()
         end
 
       else
@@ -107,6 +104,7 @@ module Yast
       Builtins.y2milestone("storage_finish finished")
       deep_copy(@ret)
     end
+
   end
 end
 

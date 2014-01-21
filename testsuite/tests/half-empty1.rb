@@ -12,17 +12,10 @@ module Yast
 
       Yast.import "ProductFeatures"
 
-      ProductFeatures.SetBooleanFeature(
-        "partitioning",
-        "try_separate_home",
-        true
-      )
+      ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", true)
       ProductFeatures.SetBooleanFeature("partitioning", "proposal_lvm", false)
-      ProductFeatures.SetStringFeature(
-        "partitioning",
-        "root_base_size",
-        "20 GB"
-      )
+      ProductFeatures.SetBooleanFeature("partitioning", "proposal_snapshots", false)
+      ProductFeatures.SetStringFeature("partitioning", "root_base_size", "20 GB")
 
       Yast.include self, "helper1b.rb"
 

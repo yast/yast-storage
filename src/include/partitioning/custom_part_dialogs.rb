@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -39,6 +39,7 @@
 #  $Id$
 module Yast
   module PartitioningCustomPartDialogsInclude
+
     def initialize_partitioning_custom_part_dialogs(include_target)
       Yast.import "UI"
       textdomain "storage"
@@ -1588,20 +1589,27 @@ module Yast
       deep_copy(items)
     end
 
+
     # Dialog: Subvolume handling
     # @parm old map with original partition
     # @parm new map with changes filled in
     def SubvolHandling(old, new)
       old = deep_copy(old)
       new = deep_copy(new)
+
       # help text, richtext format
       helptext = _(
-        "<p>\n" +
-          "Create and remove subvolumes \n" +
-          "from a Btrfs filesystem.</p>\n"
+        "<p>Create and remove subvolumes from a Btrfs filesystem.</p>\n"
       )
 
+      if Mode.installation()
+        helptext += _(
+          "<p>Enable automatic snapshots for a Btrfs filesystem with snapper.</p>"
+        )
+      end
+
       old_subvol = Ops.get_list(new, "subvol", [])
+      old_userdata = Ops.get_map(new, "userdata", {})
 
       items = SubvolNames(new)
 
@@ -1632,6 +1640,19 @@ module Yast
         )
       )
 
+      if Mode.installation()
+        contents = Builtins.add(contents, VSpacing(0.5))
+        contents = Builtins.add(contents,
+          Left(
+            CheckBox(
+              Id(:snapshots),
+              # TRANSLATOR: checkbox text
+              _("Enable Snapshots")
+            )
+          )
+        )
+      end
+
       UI.OpenDialog(
         Opt(:decorated),
         VBox(
@@ -1650,6 +1671,8 @@ module Yast
           )
         )
       )
+
+      UI.ChangeWidget(Id(:snapshots), :Value, old_userdata["/"] == "snapshots")
 
       UI.ChangeWidget(:help, :HelpText, helptext)
 
@@ -1725,6 +1748,17 @@ module Yast
           UI.ChangeWidget(Id(:subvol), :Items, items)
           UI.ChangeWidget(Id(:new_path), :Value, "")
         end
+
+        if ret == :ok
+          val = UI.QueryWidget(Id(:snapshots), :Value)
+          if val
+            old_userdata["/"] = "snapshots"
+          else
+            old_userdata.delete("/")
+          end
+          Ops.set(new, "userdata", old_userdata)
+        end
+
         if ret == :cancel
           if changed
             if Popup.YesNo(
@@ -1739,11 +1773,14 @@ module Yast
       end until ret == :ok || ret == :cancel
 
       UI.CloseDialog
+
       Builtins.y2milestone(
-        "SubvolHandling subvol %1",
-        Ops.get_list(new, "subvol", [])
+        "SubvolHandling subvol:%1 userdata:%2",
+        Ops.get_list(new, "subvol", []),
+        Ops.get_map(new, "userdata", {})
       )
       deep_copy(new)
     end
+
   end
 end

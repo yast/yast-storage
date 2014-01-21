@@ -82,6 +82,7 @@ module Yast
       fat_system_mount = false
       fat_system_boot = false
       raid_type = ""
+      rootdlabel = ""
 
       Builtins.foreach(targetMap) do |disk, diskinfo|
         part_info = Ops.get_list(diskinfo, "partitions", [])
@@ -117,6 +118,9 @@ module Yast
             end
             raid_type = Ops.get_string(part, "raid_type", "") if !boot_raid
             root_lvm = true if Ops.get_symbol(part, "type", :unknown) == :lvm
+            if diskinfo.fetch( "type", :CT_UNKNOWN ) == :CT_DISK 
+               rootdlabel = diskinfo.fetch( "label", "" )
+            end
           elsif mountpoint == Partitions.BootMount
             if (Partitions.EfiBoot || Arch.ia64) &&
                 Ops.get_string(diskinfo, "label", "gpt") != "gpt"
@@ -189,9 +193,18 @@ module Yast
           end
         end
       end
+      if rootdlabel.empty?
+        targetMap.values do |diskinfo|
+          if diskinfo.fetch( "type", :CT_UNKNOWN ) == :CT_DISK &&
+             rootdlabel.empty?
+            rootdlabel = diskinfo.fetch( "label", "" )
+          end
+        end
+      end
 
       Builtins.y2milestone("diskless:%1", diskless)
-      Builtins.y2milestone("root_found:%1 root_fs:%2", root_found, root_fs)
+      Builtins.y2milestone("root_found:%1 root_fs:%2 rootdlabel:%3", 
+                           root_found, root_fs, rootdlabel)
       Builtins.y2milestone(
         "boot_found:%1 boot_fs:%2 boot_fsid:%3",
         boot_found,
@@ -261,7 +274,7 @@ module Yast
         ok = false if !Popup.YesNo(message)
       end
 
-      if boot_found && installation || show_all_popups
+      if boot_found && boot_fsid!=Partitions.fsid_bios_grub && installation || show_all_popups
         if Ops.greater_or_equal(boot_end, Partitions.BootCyl) || show_all_popups
           # popup text, %1 is a number
           message = Builtins.sformat(
@@ -300,6 +313,19 @@ module Yast
       end
 
       #/////////////////////////// NO BOOT ///////////////////////////
+      if (!boot_found && installation && 
+          !Partitions.EfiBoot && rootdlabel=="gpt") || show_all_popups
+        message = _(
+          "Warning: There is no partition of type bios_grub present.\n" +
+          "To boot from a GPT disk using grub2 such a partition is needed.\n" +
+          "\n" +
+          "Really use this setup?\n"
+          )
+
+        ok = false if !Popup.YesNo(message)
+        # set it to true to avoid further possible boot warnings
+        boot_found = true
+      end
 
       if !boot_found && installation || show_all_popups
         # iSeries does not really need a boot partition
