@@ -183,6 +183,8 @@ module Yast
           @default_boot_fs = :vfat
         elsif Arch.board_mac
           @default_boot_fs = :hfs
+        elsif Arch.s390
+          @default_boot_fs = :ext2
         end
       end
       @default_boot_fs
@@ -203,6 +205,7 @@ module Yast
       if @boot_mount_point == ""
         @boot_mount_point = "/boot"
         @boot_mount_point = "/boot/efi" if EfiBoot()
+        @boot_mount_point = "/boot/zipl" if Arch.s390
       end
       @boot_mount_point
     end
@@ -226,6 +229,9 @@ module Yast
         elsif Arch.board_mac
           Ops.set(@boot_size_k, :proposed, 32 * 1024)
           Ops.set(@boot_size_k, :minimal, 800)
+        elsif Arch.s390
+          Ops.set(@boot_size_k, :proposed, 200 * 1024)
+          Ops.set(@boot_size_k, :minimal, 100 * 1024)
         end
 
         Builtins.y2milestone("BootSizeK boot_size_k:%1", @boot_size_k)
@@ -323,7 +329,7 @@ module Yast
 
     def NeedBoot
       ret = false
-      if EfiBoot() || Arch.ia64 || Arch.ppc || Arch.sparc || Arch.alpha
+      if EfiBoot() || Arch.ia64 || Arch.ppc || Arch.sparc || Arch.alpha || Arch.s390
         ret = true
       end
       Builtins.y2milestone("NeedBoot ret:%1", ret)
