@@ -3,6 +3,7 @@
 # testedfiles: helper1b.yh
 module Yast
   class Empty1Client < Client
+
     def main
       Yast.include self, "setup-system.rb"
 
@@ -22,6 +23,7 @@ module Yast
 
       nil
     end
+
   end
 end
 

@@ -2,6 +2,7 @@
 
 module Yast
   module Helper1bInclude
+
     def initialize_helper1b(include_target)
       Yast.import "Storage"
       Yast.import "StorageProposal"
@@ -33,5 +34,6 @@ module Yast
 
       Storage.FinishLibstorage
     end
+
   end
 end

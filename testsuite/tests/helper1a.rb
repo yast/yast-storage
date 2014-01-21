@@ -1,7 +1,10 @@
 # encoding: utf-8
 
+require 'rexml/document'
+
 module Yast
   module Helper1aInclude
+
     def initialize_helper1a(include_target)
       Yast.import "Testsuite"
 
@@ -28,11 +31,23 @@ module Yast
         }
       }
 
+      begin
+        file = File.new("tmp/arch.info")
+        doc = REXML::Document.new(file)
+        arch = doc.elements["arch"].elements["arch"].text
+        if arch == "s390x"
+          arch = "s390_64"
+        end
+        @READ["probe"]["architecture"] = arch
+      rescue Errno::ENOENT
+      end
+
       Testsuite.Init([@READ, {}, @READ], nil)
 
       Yast.import "Stage"
 
       Stage.Set("initial")
     end
+
   end
 end
