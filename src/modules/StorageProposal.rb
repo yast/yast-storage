@@ -6096,29 +6096,6 @@ module Yast
           )
         )
       )
-#<<<<<<< HEAD
-#      # No space for another partition on DASD devices
-#      # TODO: Handle different device types well
-#      if ! Arch.s390
-#        vb = Builtins.add(vb, VSpacing(space))
-#        vb = Builtins.add(
-#          vb,
-#          Left(
-#            HBox(
-#              HSpacing(3),
-#              CheckBox(
-#                Id(:home),
-#                Opt(:notify),
-#                # Label text
-#                _("Propose Separate &Home Partition"),
-#                GetProposalHome()
-#              )
-#            )
-#          )
-#        )
-#      end
-#      vb = Builtins.add(vb, VSpacing(space))
-#=======
 
       vb = Builtins.add(vb, VSpacing(1))
 
@@ -6151,39 +6128,40 @@ module Yast
           )
         )
       )
+      if ! Arch.s390
 
-      vb = Builtins.add(vb, VSpacing(1))
-
-      vb = Builtins.add(
-        vb,
-        Left(
-          HBox(
-            HSpacing(3),
-            CheckBox(
-              Id(:home),
-              Opt(:notify),
-              # TRANSLATORS: checkbox text
-              _("Propose Separate &Home Partition"),
-              GetProposalHome()
+        vb = Builtins.add(vb, VSpacing(1))
+  
+        vb = Builtins.add(
+          vb,
+          Left(
+            HBox(
+              HSpacing(3),
+              CheckBox(
+                Id(:home),
+                Opt(:notify),
+                # TRANSLATORS: checkbox text
+                _("Propose Separate &Home Partition"),
+                GetProposalHome()
+              )
             )
           )
         )
-      )
-#>>>>>>> upstream/master
-      vb = Builtins.add(
-        vb,
-        Left(
-          HBox(
-            HSpacing(7),
-            ComboBox(
-              Id(:home_fs),
-              # TRANSLATORS: combobox label
-              _("File System for Home Partition"),
-              filesystems
+        vb = Builtins.add(
+          vb,
+          Left(
+            HBox(
+              HSpacing(7),
+              ComboBox(
+                Id(:home_fs),
+                # TRANSLATORS: combobox label
+                _("File System for Home Partition"),
+                filesystems
+              )
             )
           )
         )
-      )
+      end
 
       vb = Builtins.add(vb, VSpacing(1))
 
