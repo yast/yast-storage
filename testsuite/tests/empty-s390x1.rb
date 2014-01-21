@@ -7,7 +7,7 @@ module Yast
     def main
       Yast.include self, "setup-system.rb"
 
-      setup_system("s390-empty")
+      setup_system("empty-s390x")
 
       Yast.include self, "helper1a.rb"
 

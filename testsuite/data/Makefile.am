@@ -2,5 +2,6 @@
 # Makefile.am for storage/storage/src/testsuite/data
 #
 
-SUBDIRS = empty empty-efi half-empty reuse-home windows windows-only windows-only-efi s390-empty
+SUBDIRS = empty empty-efi half-empty reuse-home windows windows-only		\
+	windows-only-efi empty-s390x
 
