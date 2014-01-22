@@ -85,6 +85,7 @@ module Yast
       fat_system_boot = false
       raid_type = ""
       rootdlabel = ""
+      root_subvols_shadowed = false
 
       Builtins.foreach(targetMap) do |disk, diskinfo|
         part_info = Ops.get_list(diskinfo, "partitions", [])
@@ -123,6 +124,27 @@ module Yast
             if diskinfo.fetch( "type", :CT_UNKNOWN ) == :CT_DISK 
                rootdlabel = diskinfo.fetch( "label", "" )
             end
+
+            # search for shadowed subvolumes of root filesystem
+            subvols = part.fetch("subvol", [])
+            subvols.each do |subvol|
+
+              if FileSystems.default_subvol.empty?
+                tmp = "/" + subvol.fetch("name")
+              else
+                tmp = subvol.fetch("name")[FileSystems.default_subvol.size..-1]
+              end
+
+              targetMap.each do |dev, disk|
+                parts = disk.fetch("partitions", [])
+                parts.each do |part|
+                  if part.fetch("mount", "") == tmp
+                    root_subvols_shadowed = true
+                  end
+                end
+              end
+            end
+
           elsif mountpoint == Partitions.BootMount
             if (Partitions.EfiBoot || Arch.ia64) &&
                 Ops.get_string(diskinfo, "label", "gpt") != "gpt"
@@ -373,6 +395,18 @@ module Yast
 
           ok = false if !Popup.YesNo(message)
         end
+
+        if root_subvols_shadowed || show_all_popups
+          message = _(
+            "Warning: Some subvolumes of the root filesystem are shadowed by\n" +
+            "mount points of other filesystem. This could lead to problems.\n" +
+            "\n" +
+            "Really use this setup?\n"
+          )
+
+          ok = false if !Popup.YesNo(message)
+        end
+
       end
 
       # iSeries has no problems with this configuration
