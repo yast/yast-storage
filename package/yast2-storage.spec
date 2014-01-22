@@ -34,6 +34,7 @@ BuildRequires:  yast2-core-devel >= 2.23.1
 BuildRequires:  yast2-devtools >= 3.1.10
 BuildRequires:	yast2-testsuite >= 2.19.0
 BuildRequires:	rubygem-ruby-dbus
+BuildRequires:	rubygem-rspec
 BuildRequires:	libstorage-ruby >= 2.25.4
 Requires:	libstorage5 >= 2.25.4
 Requires:	libstorage-ruby >= 2.25.4
