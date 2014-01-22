@@ -25,6 +25,7 @@
 # Authors:     Arvin Schnell <aschnell@suse.de>
 module Yast
   module PartitioningCustomPartCheckGeneratedInclude
+
     def initialize_partitioning_custom_part_check_generated(include_target)
       Yast.import "Arch"
       Yast.import "Storage"
@@ -40,6 +41,7 @@ module Yast
 
       textdomain "storage"
     end
+
 
     #---------------------------------------------------------------------
     # Checks the generated partition table.
@@ -522,6 +524,8 @@ module Yast
 
       ok
     end
+
+
     def check_devices_used(partitions, not_cr)
       partitions = deep_copy(partitions)
       ret = :UB_NONE
@@ -812,5 +816,6 @@ module Yast
       end
       ret
     end
+
   end
 end
