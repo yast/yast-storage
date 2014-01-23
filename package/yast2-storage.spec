@@ -1,7 +1,7 @@
 #
 # spec file for package yast2-storage
 #
-# Copyright (c) 2013 SUSE LINUX Products GmbH, Nuernberg, Germany.
+# Copyright (c) 2014 SUSE LINUX Products GmbH, Nuernberg, Germany.
 #
 # All modifications and additions to the file contributed by third parties
 # remain the property of their copyright owners, unless otherwise agreed
@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.5
+Version:        3.1.6
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -28,16 +28,16 @@ License:	GPL-2.0
 
 BuildRequires:	gcc-c++ libtool
 BuildRequires:	docbook-xsl-stylesheets doxygen libxslt perl-XML-Writer sgml-skel update-desktop-files
-BuildRequires:	libstorage-devel >= 2.25.4
+BuildRequires:	libstorage-devel >= 2.25.7
 BuildRequires:  yast2 >= 2.19.4
 BuildRequires:  yast2-core-devel >= 2.23.1
 BuildRequires:  yast2-devtools >= 3.1.10
 BuildRequires:	yast2-testsuite >= 2.19.0
 BuildRequires:	rubygem-ruby-dbus
 BuildRequires:	rubygem-rspec
-BuildRequires:	libstorage-ruby >= 2.25.4
-Requires:	libstorage5 >= 2.25.4
-Requires:	libstorage-ruby >= 2.25.4
+BuildRequires:	libstorage-ruby >= 2.25.7
+Requires:	libstorage5 >= 2.25.7
+Requires:	libstorage-ruby >= 2.25.7
 Requires:	yast2-core >= 2.18.3 yast2 >= 2.19.4 yast2-libyui >= 2.18.7
 Requires:	rubygem-ruby-dbus
 %ifarch s390 s390x
