@@ -4514,8 +4514,8 @@ module Yast
 
         # remove all devices unknown to libstorage, otherwise the target-map
         # has containers without container-type
-        tmp = Builtins.filter(tmp) do |dev, disk|
-          @conts.index { |c| c.fetch("device", "") == dev } != nil
+        tmp.select! do |dev, disk|
+          @conts.any? { |c| c["device"] == dev }
         end
 
         Builtins.y2milestone("probing done")
