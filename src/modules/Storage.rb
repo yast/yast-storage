@@ -4511,8 +4511,14 @@ module Yast
           Builtins.size(rename),
           0
         )
-        Builtins.y2milestone("probing done")
 
+        # remove all devices unknown to libstorage, otherwise the target-map
+        # has containers without container-type
+        tmp = Builtins.filter(tmp) do |dev, disk|
+          @conts.index { |c| c.fetch("device", "") == dev } != nil
+        end
+
+        Builtins.y2milestone("probing done")
         @probe_done = true
         changed = true
         Builtins.foreach(tmp) do |dev, disk|
