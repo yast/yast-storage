@@ -89,7 +89,7 @@ KERNEL_MODULES_TARGET_MAP = {
   }
 }
 
-describe "#HandleModulesOnBoot" do
+describe "Yast::Storage#HandleModulesOnBoot" do
   it "adds 'cryptoloop' and 'twofish' modules to kernel modules loaded on boot
       if 'twofish' encryption is used and partition is not automatically mounted" do
     target_map = KERNEL_MODULES_TARGET_MAP.clone
