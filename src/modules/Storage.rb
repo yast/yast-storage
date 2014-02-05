@@ -1730,7 +1730,7 @@ module Yast
           Ops.set(p, "raid_inactive", true) if info.inactive
 
           p["devices"] = info.devices.to_a
-          p["spares"] = info.spares.to_a if !info.spares.empty
+          p["spares"] = info.spares.to_a if !info.spares.empty?
 
           Ops.set(
             c,
