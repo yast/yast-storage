@@ -73,6 +73,7 @@ module Yast
       Yast.import "String"
       Yast.import "Hotplug"
       Yast.import "ProductFeatures"
+      Yast.import "Kernel"
 
       # simple resize functionality - dialog to set size of Linux and Windows before proposal
 
@@ -6089,63 +6090,43 @@ module Yast
     end
 
 
+    # Searches for encrypted partitions that are not automatically mounted.
+    # If they are found, required Kernel modules are added into the list
+    # of modules loaded on boot.
+    #
+    # @param [Hash] target map
     def HandleModulesOnBoot(targetMap)
-      targetMap = deep_copy(targetMap)
-      ml = Builtins.filter(
-        Builtins.splitstring(
-          Misc.SysconfigRead(
-            path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-            ""
-          ),
-          " \t"
-        )
-      ) { |e| Ops.greater_than(Builtins.size(e), 0) }
-      Builtins.y2milestone("HandleModulesOnBoot ml %1", ml)
-      need_cryptoloop = false
-      need_fish2 = false
-      Builtins.foreach(targetMap) do |disk, e|
-        Builtins.foreach(Ops.get_list(e, "partitions", [])) do |p|
-          if Ops.get_boolean(p, "noauto", false) &&
-              Ops.get_symbol(p, "enc_type", :none) != :none
-            if Ops.get_symbol(p, "enc_type", :none) == :twofish
-              need_cryptoloop = true
-            elsif Ops.get_symbol(p, "enc_type", :none) == :twofish_old ||
-                Ops.get_symbol(p, "enc_type", :none) == :twofish_256_old
-              need_fish2 = true
-            end
-          end
-        end
-      end
+      enc_partitions = encoded_partitions(targetMap)
+      enc_noauto_partitions = enc_partitions.select { |p|  p["noauto"] }
+      used_encodings =  enc_noauto_partitions.map { |p|  p["enc_type"] }
+      need_cryptoloop = used_encodings.include?(:twofish)
+      need_fish2 = used_encodings.include?(:twofish_old) || used_encodings.include?(:twofish_256_old)
+
       Builtins.y2milestone(
-        "HandleModulesOnBoot need_fish2 %1 need_cryptoloop %2",
-        need_fish2,
-        need_cryptoloop
+        "HandleModulesOnBoot need_fish2 #{need_fish2} need_cryptoloop #{need_cryptoloop}"
       )
-      if need_fish2 && Builtins.find(ml) { |e| e == "loop_fish2" } == nil
-        ml = Builtins.add(ml, "loop_fish2")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
-      end
-      if need_cryptoloop && Builtins.find(ml) { |e| e == "cryptoloop" } == nil
-        ml = Builtins.add(ml, "cryptoloop")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
-      end
-      if need_cryptoloop && Builtins.find(ml) { |e| e == "twofish" } == nil
-        ml = Builtins.add(ml, "twofish")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
+
+      if need_fish2
+        Kernel.AddModuleToLoad("loop_fish2")
       end
 
-      nil
+      if need_cryptoloop
+        Kernel.AddModuleToLoad("cryptoloop")
+        Kernel.AddModuleToLoad("twofish")
+      end
+
+      Kernel.SaveModulesToLoad
     end
 
+    # Returns all partitions that use encryption
+    #
+    # @param [Hash] TargetMap
+    # @return [Array] of partitions
+    def encoded_partitions(target_map)
+      partitions = target_map.values.map { |e| e.fetch("partitions", []) }
+      partitions.flatten!
+      partitions.select { |p| p["enc_type"] != :none }
+    end
 
     # Adds an entry into the fstab
     #
