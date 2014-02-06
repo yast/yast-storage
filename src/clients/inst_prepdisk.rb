@@ -102,7 +102,6 @@ module Yast
       @ret_val = :abort if @ret != 0
 
       if Stage.initial
-        Storage.WriteFstab
 
         # If a kernel without initrd is booted, then there is a small window
         # between mounting the root filesystem until /etc/init.d/boot

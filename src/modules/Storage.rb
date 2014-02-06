@@ -3557,7 +3557,6 @@ module Yast
       ret = @sint.modifyFileLoop(dev, file, !create, sizeK)
       Builtins.y2error("UpdateLoop sint ret:%1", ret) if ret<0
       UpdateTargetMapDisk("/dev/loop")
-      HandleModulesOnBoot(GetTargetMap())
       ret == 0
     end
 
@@ -6089,64 +6088,6 @@ module Yast
     end
 
 
-    def HandleModulesOnBoot(targetMap)
-      targetMap = deep_copy(targetMap)
-      ml = Builtins.filter(
-        Builtins.splitstring(
-          Misc.SysconfigRead(
-            path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-            ""
-          ),
-          " \t"
-        )
-      ) { |e| Ops.greater_than(Builtins.size(e), 0) }
-      Builtins.y2milestone("HandleModulesOnBoot ml %1", ml)
-      need_cryptoloop = false
-      need_fish2 = false
-      Builtins.foreach(targetMap) do |disk, e|
-        Builtins.foreach(Ops.get_list(e, "partitions", [])) do |p|
-          if Ops.get_boolean(p, "noauto", false) &&
-              Ops.get_symbol(p, "enc_type", :none) != :none
-            if Ops.get_symbol(p, "enc_type", :none) == :twofish
-              need_cryptoloop = true
-            elsif Ops.get_symbol(p, "enc_type", :none) == :twofish_old ||
-                Ops.get_symbol(p, "enc_type", :none) == :twofish_256_old
-              need_fish2 = true
-            end
-          end
-        end
-      end
-      Builtins.y2milestone(
-        "HandleModulesOnBoot need_fish2 %1 need_cryptoloop %2",
-        need_fish2,
-        need_cryptoloop
-      )
-      if need_fish2 && Builtins.find(ml) { |e| e == "loop_fish2" } == nil
-        ml = Builtins.add(ml, "loop_fish2")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
-      end
-      if need_cryptoloop && Builtins.find(ml) { |e| e == "cryptoloop" } == nil
-        ml = Builtins.add(ml, "cryptoloop")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
-      end
-      if need_cryptoloop && Builtins.find(ml) { |e| e == "twofish" } == nil
-        ml = Builtins.add(ml, "twofish")
-        SCR.Write(
-          path(".sysconfig.kernel.MODULES_LOADED_ON_BOOT"),
-          Builtins.mergestring(ml, " ")
-        )
-      end
-
-      nil
-    end
-
-
     # Adds an entry into the fstab
     #
     # @param map entry
@@ -6189,15 +6130,6 @@ module Yast
 	  @default_multipathing = val
 	  ActivateMultipath(val) if @sint
       end
-      nil
-    end
-
-
-    # Writes fstab to the disk
-    def WriteFstab
-      Builtins.y2milestone("WriteFstab called")
-      HandleModulesOnBoot(GetTargetMap())
-
       nil
     end
 
@@ -6566,8 +6498,6 @@ module Yast
       Builtins.y2milestone("FinishInstall initial:%1", Stage.initial)
 
       target_map = GetTargetMap()
-
-      HandleModulesOnBoot(target_map) if Stage.initial
 
       need_crypt = false
       need_md = false
@@ -7371,7 +7301,6 @@ module Yast
     publish :function => :PathToDestdir, :type => "string (string)"
     publish :function => :ActivateHld, :type => "void (boolean)"
     publish :function => :ActivateMultipath, :type => "void (boolean)"
-    publish :function => :WriteFstab, :type => "void ()"
     publish :function => :SpecialBootHandling, :type => "map <string, map> (map <string, map>)"
     publish :function => :PerformLosetup, :type => "boolean (map &, boolean)"
     publish :function => :DetectFs, :type => "symbol (string)"
