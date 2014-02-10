@@ -2992,7 +2992,7 @@ module Yast
         changed = true
         d = part.fetch("device", "")
         userdata = ::Storage::MapStringString.new()
-        part["userdata"].each do |a, b|
+        part.fetch("userdata", {}).each do |a, b|
           userdata[a]= b
         end
         Builtins.y2milestone("ChangeVolumeProperties userdata to %1", userdata.to_s)
