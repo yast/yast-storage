@@ -2512,6 +2512,7 @@ module Yast
       sort_map = {
         "/boot"     => 0,
         "/boot/efi" => 0,
+        "/boot/zipl" => 0,
         "swap"      => 1,
         "/"         => 5,
         "/home"     => 6
