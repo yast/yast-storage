@@ -3536,7 +3536,8 @@ module Yast
       swaps = Builtins.filter(partitions) do |p|
         Ops.get_symbol(p, "type", :unknown) != :free &&
           !Ops.get_boolean(p, "delete", false) &&
-          Ops.get_symbol(p, "detected_fs", :unknown) == :swap
+          Ops.get_symbol(p, "detected_fs", :unknown) == :swap &&
+          [ "", "swap" ].include?(p.fetch("mount", ""))
       end
       swaps = Builtins.filter(swaps) do |p|
         check_swapable(Ops.get_string(p, "device", ""))
