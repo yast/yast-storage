@@ -19,33 +19,16 @@
 # To contact Novell about this file by physical or electronic mail, you may
 # find current contact information at www.novell.com.
 
-# Module: 		Storage.ycp
-#
-# Authors:		Johannes Buchhold (jbuch@suse.de)
-#
-# Purpose: 		These module contains all settings/information which
-# are needed to partitioning the harddisk. Futhermore it contains a interface
-# to * access and modify the partitioning settings.
-#
-# Todo: Translate
-# Diese Modul enthält alle Informationen die für die Partitionierung der
-# Festplatten erforderlich sind. Diese Informationen bestehen aus der
-# Beschreibung, der vor der Partitionierung vorhandenen Platteneinstellungen,
-# und der Art und Weise wie diese verändert werden soll.
-# Alle nötigen Zugriffsfunktionen auf diese Datenstruktur sind ebenfalls in
-# diesem Modul enthalten. Der Zugriff auf die Speicherung der
-# Partitionseinstellungen läuft also nur über dieses Modul.
-# Der Zugriff und die Rückgabe von Teilen der Partitionsdatenstruktur
-# wurde versucht "intelligent" zu gestallten und ist im einzelen bei den
-# entspechenden Funktionen näher erklärt.
-#
-# $Id$
 require "yast"
 require "dbus"
 require "storage"
 
 module Yast
   class StorageClass < Module
+
+
+    include Yast::Logger
+
 
     def main
       Yast.import "Pkg"
@@ -338,10 +321,11 @@ module Yast
     def InitLibstorage(readonly)
       return true if @sint != nil
 
-      Builtins.y2milestone("InitLibstorage")
+      log.info("InitLibstorage")
+
       @sint = StorageInit.CreateInterface(readonly)
       if @sint == nil
-        Builtins.y2error("StorageInit::CreateInterface failed")
+        log.error("StorageInit::CreateInterface failed")
         return false
       end
 
@@ -362,7 +346,8 @@ module Yast
       end
 
       @conts = getContainers
-      Builtins.y2milestone("InitLibstorage conts:%1", @conts)
+      log.info("InitLibstorage conts:#{@conts}")
+
       FileSystems.InitSlib(@sint)
       Partitions.InitSlib(@sint)
 
@@ -373,7 +358,7 @@ module Yast
     def FinishLibstorage
       return if @sint == nil
 
-      Builtins.y2milestone("FinishLibstorage")
+      log.info("FinishLibstorage")
       ::Storage::destroyStorageInterface(@sint)
       @sint = nil
 
@@ -5220,13 +5205,10 @@ module Yast
           end
         end
       end
-      Builtins.y2milestone(
-        "CanEdit dev:%1 verbose:%2 ret:%3",
-        Ops.get_string(p, "device", ""),
-        verbose,
-        ret
-      )
-      ret
+
+      log.info("CanEdit device:#{p["device"]} verbose:#{verbose} ret:#{ret}")
+
+      return ret
     end
 
 
@@ -5324,13 +5306,9 @@ module Yast
         end
       end
 
-      Builtins.y2milestone(
-        "CanDelete dev:%1 verbose:%2 ret:%3",
-        Ops.get_string(p, "device", ""),
-        verbose,
-        ret
-      )
-      ret
+      log.info("CanDelete device:#{p["device"]} verbose:#{verbose} ret:#{ret}")
+
+      return ret
     end
 
 
