@@ -47,6 +47,10 @@ require "storage"
 module Yast
   class StorageClass < Module
 
+
+    include Yast::Logger
+
+
     def main
       Yast.import "Pkg"
       Yast.import "UI"
@@ -338,10 +342,11 @@ module Yast
     def InitLibstorage(readonly)
       return true if @sint != nil
 
-      Builtins.y2milestone("InitLibstorage")
+      log.info("InitLibstorage")
+
       @sint = StorageInit.CreateInterface(readonly)
       if @sint == nil
-        Builtins.y2error("StorageInit::CreateInterface failed")
+        log.error("StorageInit::CreateInterface failed")
         return false
       end
 
@@ -362,7 +367,8 @@ module Yast
       end
 
       @conts = getContainers
-      Builtins.y2milestone("InitLibstorage conts:%1", @conts)
+      log.info("InitLibstorage conts:#{@conts}")
+
       FileSystems.InitSlib(@sint)
       Partitions.InitSlib(@sint)
 
@@ -373,7 +379,7 @@ module Yast
     def FinishLibstorage
       return if @sint == nil
 
-      Builtins.y2milestone("FinishLibstorage")
+      log.info("FinishLibstorage")
       ::Storage::destroyStorageInterface(@sint)
       @sint = nil
 
@@ -5220,13 +5226,10 @@ module Yast
           end
         end
       end
-      Builtins.y2milestone(
-        "CanEdit dev:%1 verbose:%2 ret:%3",
-        Ops.get_string(p, "device", ""),
-        verbose,
-        ret
-      )
-      ret
+
+      log.info("CanEdit device:#{p["device"]} verbose:#{verbose} ret:#{ret}")
+
+      return ret
     end
 
 
@@ -5324,13 +5327,9 @@ module Yast
         end
       end
 
-      Builtins.y2milestone(
-        "CanDelete dev:%1 verbose:%2 ret:%3",
-        Ops.get_string(p, "device", ""),
-        verbose,
-        ret
-      )
-      ret
+      log.info("CanDelete device:#{p["device"]} verbose:#{verbose} ret:#{ret}")
+
+      return ret
     end
 
 

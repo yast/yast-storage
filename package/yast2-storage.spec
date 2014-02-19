@@ -36,6 +36,7 @@ BuildRequires:	yast2-testsuite >= 2.19.0
 BuildRequires:	rubygem-ruby-dbus
 BuildRequires:	rubygem-rspec
 BuildRequires:	libstorage-ruby >= 2.25.7
+BuildRequires:  yast2-ruby-bindings >= 3.1.7
 Requires:	libstorage5 >= 2.25.7
 Requires:	libstorage-ruby >= 2.25.7
 Requires:	yast2-core >= 2.18.3 yast2 >= 2.19.4 yast2-libyui >= 2.18.7
@@ -52,7 +53,7 @@ Provides:	yast2-trans-inst-partitioning
 Obsoletes:	yast2-trans-inst-partitioning
 Provides:	y2t_inst-partitioning
 Obsoletes:	y2t_inst-partitioning
-Requires:       yast2-ruby-bindings >= 1.0.0
+Requires:       yast2-ruby-bindings >= 3.1.7
 
 Summary:	YaST2 - Storage Configuration
 
