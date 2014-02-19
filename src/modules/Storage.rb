@@ -19,27 +19,6 @@
 # To contact Novell about this file by physical or electronic mail, you may
 # find current contact information at www.novell.com.
 
-# Module: 		Storage.ycp
-#
-# Authors:		Johannes Buchhold (jbuch@suse.de)
-#
-# Purpose: 		These module contains all settings/information which
-# are needed to partitioning the harddisk. Futhermore it contains a interface
-# to * access and modify the partitioning settings.
-#
-# Todo: Translate
-# Diese Modul enthält alle Informationen die für die Partitionierung der
-# Festplatten erforderlich sind. Diese Informationen bestehen aus der
-# Beschreibung, der vor der Partitionierung vorhandenen Platteneinstellungen,
-# und der Art und Weise wie diese verändert werden soll.
-# Alle nötigen Zugriffsfunktionen auf diese Datenstruktur sind ebenfalls in
-# diesem Modul enthalten. Der Zugriff auf die Speicherung der
-# Partitionseinstellungen läuft also nur über dieses Modul.
-# Der Zugriff und die Rückgabe von Teilen der Partitionsdatenstruktur
-# wurde versucht "intelligent" zu gestallten und ist im einzelen bei den
-# entspechenden Funktionen näher erklärt.
-#
-# $Id$
 require "yast"
 require "dbus"
 require "storage"
