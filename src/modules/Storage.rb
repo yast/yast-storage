@@ -1077,7 +1077,7 @@ module Yast
           "primary_possible"  => swig_slot.primaryPossible,
           "extended_slot"     => swig_slot.extendedSlot,
           "extended_possible" => swig_slot.extendedPossible,
-          "logical_Slot"      => swig_slot.logicalSlot,
+          "logical_slot"      => swig_slot.logicalSlot,
           "logical_possible"  => swig_slot.logicalPossible
         }
 	slots.value.push( m )
