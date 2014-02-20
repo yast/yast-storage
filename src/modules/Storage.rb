@@ -1072,7 +1072,7 @@ module Yast
       slots.value = []
       swig_slots.each do |swig_slot|
         m = {
-          "region"            => [ swig_slot.cylStart, swig_slot.cylSize ],
+          "region"            => [ swig_slot.cylRegion.start, swig_slot.cylRegion.len ],
           "primary_slot"      => swig_slot.primarySlot,
           "primary_possible"  => swig_slot.primaryPossible,
           "extended_slot"     => swig_slot.extendedSlot,
@@ -1424,11 +1424,7 @@ module Yast
         "fstype",
         Partitions.FsIdToString(Ops.get_integer(p, "fsid", 0))
       )
-      Ops.set(
-        p,
-        "region",
-        [ info.cylStart, info.cylSize ]
-      )
+      p["region"] = [ info.cylRegion.start, info.cylRegion.len ]
       Ops.set(p, "type", toSymbol(@conv_ptype, info.partitionType))
       Ops.set(p, "boot", true) if info.boot
       Builtins.y2milestone("partAddMap ret:%1", p)
@@ -1504,14 +1500,7 @@ module Yast
             "fstype",
             Partitions.FsIdToString(Ops.get_integer(p, "fsid", 0))
           )
-          Ops.set(
-            p,
-            "region",
-            [
-              info.cylStart,
-              info.cylSize
-            ]
-          )
+          p["region"] = [ info.cylRegion.start, info.cylRegion.len ]
           t = info.partitionType
           Ops.set(p, "type", toSymbol(@conv_ptype, t))
           boot = info.boot
