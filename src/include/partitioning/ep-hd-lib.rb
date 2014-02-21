@@ -214,7 +214,7 @@ module Yast
 
       extended_slots = slots.select { |slot| slot.fetch(:extended_possible, false) }
       if !extended_slots.empty?
-        ret[:primary] = helper(extended_slots)
+        ret[:extended] = helper(extended_slots)
       end
 
       logical_slots = slots.select { |slot| slot.fetch(:logical_possible, false) }
