@@ -2532,44 +2532,33 @@ module Yast
     # @param [Symbol] mby (one of?)
     # @return [Boolean] if successful
     def CreatePartition(disk, device, ptype, id, start, len, mby)
-      Builtins.y2milestone(
-        "CreatePartition disk:%1 device:%2 ptype:%3 id:%4 start:%5 len:%6 mby:%7",
-        disk,
-        device,
-        ptype,
-        id,
-        start,
-        len,
-        mby
-      )
+      log.info("CreatePartition disk:#{disk} device:#{device} ptype:#{ptype} id:#{id} " +
+               "start:#{start} len:#{len} mby:#{mby}")
       pt = fromSymbol(@conv_ptype, ptype)
-      Builtins.y2milestone("CreatePartition type:%1 pt:%2", ptype, pt)
-      ret, cdev = @sint.createPartition(disk, pt, start, len)
+      log.info("CreatePartition ptype:#{ptype} pt:#{pt}")
+      region = ::Storage::RegionInfo.new(start, len)
+      ret, cdev = @sint.createPartition(disk, pt, region)
       cdev = "" if ret<0
       if device != cdev
-        Builtins.y2error("CreatePartition device:%1 cdev:%2", device, cdev)
+        log.error("CreatePartition device:#{device} cdev:#{cdev}")
       end
-      Builtins.y2error("CreatePartition ret %1", ret) if ret<0
+      log.error("CreatePartition ret #{ret}") if ret<0
       ret = @sint.changePartitionId(device, id)
-      Builtins.y2error("CreatePartition ret %1", ret) if ret<0
+      log.error("CreatePartition ret #{ret}") if ret<0
       tmp = fromSymbol(@conv_mountby, mby)
       @sint.changeMountBy(device, tmp)
-      Builtins.y2milestone("CreatePartition sint ret:%1", ret)
+      log.info("CreatePartition sint ret:#{ret}")
       UpdateTargetMap()
       ret == 0
     end
 
 
     def UpdatePartition(device, start, len)
-      Builtins.y2milestone(
-        "UpdatePartition device:%1 start:%2 len:%3",
-        device,
-        start,
-        len
-      )
-      ret = @sint.updatePartitionArea(device, start, len)
+      log.info("UpdatePartition device:#{device} start:#{start} len:#{len}")
+      region = ::Storage::RegionInfo.new(start, len)
+      ret = @sint.updatePartitionArea(device, region)
       if ret<0
-        Builtins.y2error("UpdatePartition sint ret:%1", ret)
+        log.error("UpdatePartition sint ret:#{ret}")
       end
       UpdateTargetMapDev(device)
       ret == 0
