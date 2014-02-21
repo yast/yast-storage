@@ -207,17 +207,17 @@ module Yast
         return slots.map { |slot| slot.select { |k, v| [:region, :nr, :device].include?(k) } }
       end
 
-      primary_slots = slots.reject { |slot| !slot.fetch(:primary_possible, false) }
+      primary_slots = slots.select { |slot| slot.fetch(:primary_possible, false) }
       if !primary_slots.empty?
         ret[:primary] = helper(primary_slots)
       end
 
-      extended_slots = slots.reject { |slot| !slot.fetch(:extended_possible, false) }
+      extended_slots = slots.select { |slot| slot.fetch(:extended_possible, false) }
       if !extended_slots.empty?
         ret[:primary] = helper(extended_slots)
       end
 
-      logical_slots = slots.reject { |slot| !slot.fetch(:logical_possible, false) }
+      logical_slots = slots.select { |slot| slot.fetch(:logical_possible, false) }
       if !logical_slots.empty?
         ret[:logical] = helper(logical_slots)
       end
