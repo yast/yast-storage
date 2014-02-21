@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -23,11 +23,18 @@
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+
 module Yast
   module PartitioningEpHdLibInclude
+
+
+    include Yast::Logger
+
+
     def initialize_partitioning_ep_hd_lib(include_target)
       textdomain "storage"
     end
+
 
     def EpCreatePartitionTable(disk_device)
       if disk_device == nil
@@ -188,59 +195,34 @@ module Yast
       slots_ref = arg_ref(slots)
       Storage.GetUnusedPartitionSlots(disk_device, slots_ref)
       slots = slots_ref.value
-      Builtins.y2milestone("slots %1", slots)
+
+      log.info("slots:#{slots}")
 
       # individual sort primary, extended and logical slots
 
       ret = {}
-      tmp = []
 
-      tmp = Builtins.filter(slots) do |slot|
-        Ops.get_boolean(slot, "primary_possible", false)
-      end
-      tmp = Builtins.sort(tmp) do |a, b|
-        Ops.greater_than(
-          Ops.get_integer(a, ["region", 1], 0),
-          Ops.get_integer(b, ["region", 1], 0)
-        )
-      end
-      if Ops.greater_than(Builtins.size(tmp), 0)
-        Ops.set(ret, :primary, Builtins.maplist(tmp) do |slot|
-          Ops.get_list(slot, "region", [])
-        end)
+      def helper(slots)
+        slots = slots.sort { |a, b| b[:region][1] <=> a[:region][1] }
+        return slots.map { |slot| slot.select { |k, v| [:region, :nr, :device].include?(k) } }
       end
 
-      tmp = Builtins.filter(slots) do |slot|
-        Ops.get_boolean(slot, "extended_possible", false)
-      end
-      tmp = Builtins.sort(tmp) do |a, b|
-        Ops.greater_than(
-          Ops.get_integer(a, ["region", 1], 0),
-          Ops.get_integer(b, ["region", 1], 0)
-        )
-      end
-      if Ops.greater_than(Builtins.size(tmp), 0)
-        Ops.set(ret, :extended, Builtins.maplist(tmp) do |slot|
-          Ops.get_list(slot, "region", [])
-        end)
+      primary_slots = slots.reject { |slot| !slot.fetch(:primary_possible, false) }
+      if !primary_slots.empty?
+        ret[:primary] = helper(primary_slots)
       end
 
-      tmp = Builtins.filter(slots) do |slot|
-        Ops.get_boolean(slot, "logical_possible", false)
-      end
-      tmp = Builtins.sort(tmp) do |a, b|
-        Ops.greater_than(
-          Ops.get_integer(a, ["region", 1], 0),
-          Ops.get_integer(b, ["region", 1], 0)
-        )
-      end
-      if Ops.greater_than(Builtins.size(tmp), 0)
-        Ops.set(ret, :logical, Builtins.maplist(tmp) do |slot|
-          Ops.get_list(slot, "region", [])
-        end)
+      extended_slots = slots.reject { |slot| !slot.fetch(:extended_possible, false) }
+      if !extended_slots.empty?
+        ret[:primary] = helper(extended_slots)
       end
 
-      if Builtins.size(ret) == 0
+      logical_slots = slots.reject { |slot| !slot.fetch(:logical_possible, false) }
+      if !logical_slots.empty?
+        ret[:logical] = helper(logical_slots)
+      end
+
+      if ret.empty?
         # error popup
         Popup.Error(
           Builtins.sformat(
@@ -250,7 +232,8 @@ module Yast
         )
       end
 
-      Builtins.y2milestone("ret %1", ret)
+      log.info("ret:#{ret}")
+
       deep_copy(ret)
     end
 
@@ -794,5 +777,7 @@ module Yast
 
       nil
     end
+
+
   end
 end

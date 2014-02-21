@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -23,11 +23,18 @@
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+
 module Yast
   module PartitioningEpHdDialogsInclude
+
+
+    include Yast::Logger
+
+
     def initialize_partitioning_ep_hd_dialogs(include_target)
       textdomain "storage"
     end
+
 
     def MiniWorkflowStepPartitionTypeHelptext
       # helptext
@@ -38,7 +45,8 @@ module Yast
 
 
     def MiniWorkflowStepPartitionType(data)
-      Builtins.y2milestone("MiniWorkflowStepPartitionType data:%1", data.value)
+
+      log.info("MiniWorkflowStepPartitionType data:#{data.value}")
 
       type = Ops.get_symbol(data.value, "type", :unknown)
       slots = Ops.get_map(data.value, "slots", {})
@@ -114,18 +122,17 @@ module Yast
       if widget == :next
         Ops.set(data.value, "type", type)
 
-        r = Storage.NextPartition(
-          Ops.get_string(data.value, "disk_device", ""),
-          Ops.get_symbol(data.value, "type", :none)
-        )
-        Ops.set(data.value, "device", Ops.get_string(r, "device", ""))
+        # get the largest slot of type
+        slot = data.value["slots"][type][0]
+
+        data.value["device"] = slot[:device]
 
         if Builtins.haskey(data.value, "disk_udev_id")
           Ops.set(
             data.value,
             "udev_id",
             Builtins.maplist(Ops.get_list(data.value, "disk_udev_id", [])) do |s|
-              Builtins.sformat("%1-part%2", s, Ops.get_integer(r, "nr", 0))
+              "#{s}-part#{slot[:nr]}"
             end
           )
         end
@@ -137,7 +144,7 @@ module Yast
             Builtins.sformat(
               "%1-part%2",
               Ops.get_string(data.value, "disk_udev_path", ""),
-              Ops.get_integer(r, "nr", 0)
+              slot[:nr]
             )
           )
         end
@@ -148,13 +155,9 @@ module Yast
         end
       end
 
-      Builtins.y2milestone(
-        "MiniWorkflowStepPartitionType data:%1 ret:%2",
-        data.value,
-        widget
-      )
+      log.info("MiniWorkflowStepPartitionType data:#{data.value} ret:#{widget}")
 
-      widget
+      return widget
     end
 
 
@@ -167,26 +170,28 @@ module Yast
 
 
     def MiniWorkflowStepPartitionSize(data)
-      Builtins.y2milestone("MiniWorkflowStepPartitionSize data:%1", data.value)
+
+      log.info("MiniWorkflowStepPartitionSize data:#{data.value}")
 
       cyl_size = Ops.get_integer(data.value, "cyl_size", 0)
       cyl_count = Ops.get_integer(data.value, "cyl_count", 0)
-      slots = Ops.get_list(
-        data.value,
-        ["slots", Ops.get_symbol(data.value, "type", :unknown)],
-        []
-      )
-      slot = Ops.get(slots, 0, [])
+
+      type = data.value["type"]
+
+      slots = data.value["slots"][type]
+
+      # get the largest slot
+      slot = slots[0]
 
       region = Convert.convert(
-        Ops.get(data.value, "region", slot),
+        Ops.get(data.value, "region", slot[:region]),
         :from => "any",
         :to   => "list <integer>"
       )
       size_k = Ops.divide(Ops.multiply(Ops.get(region, 1, 0), cyl_size), 1024)
 
       min_num_cyl = 1
-      max_num_cyl = Ops.get(slot, 1, 0)
+      max_num_cyl = slot[:region][1]
 
       min_size_k = Builtins.tointeger(
         Ops.divide(
@@ -214,7 +219,7 @@ module Yast
 
       #prefer max size for extended partition (#428337)
       #cascaded triple operators would do, but this is more readable
-      if region == slot
+      if region == slot[:region]
         what = type == :extended ? :max_size : :manual_size
       else
         what = :manual_region
@@ -368,7 +373,7 @@ module Yast
                 region = [s, Ops.add(Ops.subtract(e, s), 1)]
 
                 valid = Ops.greater_than(Region.Length(region), 0) &&
-                  Builtins.find(slots) { |slot2| Region.Inside(slot2, region) } != nil
+                  Builtins.find(slots) { |slot2| Region.Inside(slot2[:region], region) } != nil
 
                 if !valid
                   # error popup
@@ -384,7 +389,7 @@ module Yast
       if widget == :next
         case Convert.to_symbol(UI.QueryWidget(Id(:size), :Value))
           when :max_size
-            Ops.set(data.value, "region", slot)
+            Ops.set(data.value, "region", slot[:region])
           when :manual_size
             num_cyl = Builtins.tointeger(
               Ops.add(
@@ -399,7 +404,7 @@ module Yast
               )
             )
             num_cyl = Integer.Clamp(num_cyl, min_num_cyl, max_num_cyl)
-            Ops.set(data.value, "region", [Ops.get(slot, 0, 0), num_cyl])
+            Ops.set(data.value, "region", [Ops.get(slot[:region], 0, 0), num_cyl])
           when :manual_region
             Ops.set(data.value, "region", region)
         end
@@ -427,13 +432,9 @@ module Yast
         end
       end
 
-      Builtins.y2milestone(
-        "MiniWorkflowStepPartitionSize data:%1 ret:%2",
-        data.value,
-        widget
-      )
+      log.info("MiniWorkflowStepPartitionSize data:#{data.value} ret:#{widget}")
 
-      widget
+      return widget
     end
 
 
@@ -501,18 +502,19 @@ module Yast
       start = Builtins.size(slots) == 1 ? "Size" : "Type"
 
       if start == "Size"
-        r = Storage.NextPartition(
-          Ops.get_string(data.value, "disk_device", ""),
-          Ops.get_symbol(data.value, "type", :none)
-        )
-        Ops.set(data.value, "device", Ops.get_string(r, "device", ""))
+
+        # get the largest slot of type
+        type = data.value["type"]
+        slot = data.value["slots"][type][0]
+
+        data.value["device"] = slot[:device]
 
         if Builtins.haskey(data.value, "disk_udev_id")
           Ops.set(
             data.value,
             "udev_id",
             Builtins.maplist(Ops.get_list(data.value, "disk_udev_id", [])) do |s|
-              Builtins.sformat("%1-part%2", s, Ops.get_integer(r, "nr", 0))
+              "#{s}-part#{slot[:nr]}"
             end
           )
         end
@@ -524,7 +526,7 @@ module Yast
             Builtins.sformat(
               "%1-part%2",
               Ops.get_string(data.value, "disk_udev_path", ""),
-              Ops.get_integer(r, "nr", 0)
+              slot[:nr]
             )
           )
         end
@@ -717,5 +719,7 @@ module Yast
         Builtins.sformat(_("Really delete all partitions on \"%1\"?"), disk)
       )
     end
+
+
   end
 end
