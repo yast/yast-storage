@@ -1073,6 +1073,8 @@ module Yast
       swig_slots.each do |swig_slot|
         m = {
           "region"            => [ swig_slot.cylRegion.start, swig_slot.cylRegion.len ],
+          "nr" => swig_slot.nr,
+          "device" => swig_slot.device,
           "primary_slot"      => swig_slot.primarySlot,
           "primary_possible"  => swig_slot.primaryPossible,
           "extended_slot"     => swig_slot.extendedSlot,
