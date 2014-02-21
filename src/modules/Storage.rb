@@ -1072,13 +1072,15 @@ module Yast
       slots.value = []
       swig_slots.each do |swig_slot|
         m = {
-          "region"            => [ swig_slot.cylRegion.start, swig_slot.cylRegion.len ],
-          "primary_slot"      => swig_slot.primarySlot,
-          "primary_possible"  => swig_slot.primaryPossible,
-          "extended_slot"     => swig_slot.extendedSlot,
-          "extended_possible" => swig_slot.extendedPossible,
-          "logical_slot"      => swig_slot.logicalSlot,
-          "logical_possible"  => swig_slot.logicalPossible
+          :region => [ swig_slot.cylRegion.start, swig_slot.cylRegion.len ],
+          :nr => swig_slot.nr,
+          :device => swig_slot.device,
+          :primary_slot => swig_slot.primarySlot,
+          :primary_possible => swig_slot.primaryPossible,
+          :extended_slot => swig_slot.extendedSlot,
+          :extended_possible => swig_slot.extendedPossible,
+          :logical_slot => swig_slot.logicalSlot,
+          :logical_possible => swig_slot.logicalPossible
         }
 	slots.value.push( m )
       end
