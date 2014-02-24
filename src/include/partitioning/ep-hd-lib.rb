@@ -253,14 +253,12 @@ module Yast
         :to   => "map <string, any>"
       )
 
-      if Storage.IsUsedBy(disk)
-        # error popup
-        Popup.Error(_("The disk is in use and cannot be modified."))
+      if Ops.get_boolean(disk, "readonly", false)
+        Popup.Error(Partitions.RdonlyText(disk, true))
         return
       end
 
-      if Ops.get_boolean(disk, "readonly", false)
-        Popup.Error(Partitions.RdonlyText(disk, true))
+      if !Storage.CanCreate(disk, true)
         return
       end
 

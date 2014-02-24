@@ -5148,6 +5148,39 @@ module Yast
     end
 
 
+    def CanCreate(disk, verbose)
+
+      ret = true
+
+      if ret && IsUsedBy(disk)
+        if verbose
+          # TRANSLATORS: error popup
+          txt = _("The disk is in use and cannot be modified.")
+          Popup.Message(txt)
+        end
+        ret = false
+      end
+
+      if ret && disk.fetch("label", "") == "dasd"
+        if disk.fetch("partitions", []).any? do |partition|
+            !DeviceMounted(partition["device"]).empty? || IsUsedBy(partition)
+          end
+          if verbose
+            # TRANSLATORS: error popup
+            txt = _("Partitions cannot be created since other partitions on the disk are used.")
+            Popup.Message(txt)
+          end
+          ret = false
+        end
+      end
+
+      log.info("CanCreate device:#{disk["device"]} verbose:#{verbose} ret:#{ret}")
+
+      return ret
+
+    end
+
+
     def CanEdit(p, verbose)
       p = deep_copy(p)
       ret = true
@@ -5265,23 +5298,24 @@ module Yast
         end
       end
 
-      if ret && verbose &&
-          Builtins.substring(Ops.get_string(disk, "device", ""), 0, 9) == "/dev/dasd"
-        if Builtins.find(Ops.get_list(disk, "partitions", [])) do |partition|
+      if ret && disk.fetch("label", "") == "dasd"
+        if disk.fetch("partitions", []).any? do |partition|
             Ops.get_string(partition, "device", "") !=
               Ops.get_string(p, "device", "") &&
-              IsUsedBy(partition)
-          end != nil
-          txt = Builtins.sformat(
-            _(
-              "\n" +
-                "Partition %1 cannot be removed since other partitions on the\n" +
-                "disk %2 are used.\n"
-            ),
-            Ops.get_string(p, "device", ""),
-            Ops.get_string(disk, "device", "")
-          )
+              !DeviceMounted(partition["device"]).empty? || IsUsedBy(partition)
+          end
+          if verbose
+            txt = Builtins.sformat(
+              _(
+                "\n" +
+                  "Partition %1 cannot be removed since other partitions on the\n" +
+                  "disk %2 are used.\n"
+                ),
+              Ops.get_string(p, "device", ""),
+              Ops.get_string(disk, "device", "")
+            )
           Popup.Message(txt)
+          end
           ret = false
         end
       end
@@ -7229,6 +7263,7 @@ module Yast
     publish :function => :SetVolOptions, :type => "map (map, string, symbol, string, string, string)"
     publish :function => :IsUsedBy, :type => "boolean (map)"
     publish :function => :TryUnaccessSwap, :type => "boolean (string)"
+    publish :function => :CanCreate, :type => "boolean (map, boolean)"
     publish :function => :CanEdit, :type => "boolean (map, boolean)"
     publish :function => :CanDelete, :type => "boolean (map, map, boolean)"
     publish :function => :ReadFstab, :type => "list <map> (string)"
