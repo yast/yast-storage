@@ -30,7 +30,8 @@ module Yast
     end
 
     def DlgCreateTmpfs(data)
-      aliases = { "FormatMount" => lambda do
+      aliases = {
+        "FormatMount" => lambda do
         (
           data_ref = arg_ref(data.value);
           _MiniWorkflowStepFormatMount_result = MiniWorkflowStepFormatMount(
@@ -39,7 +40,8 @@ module Yast
           data.value = data_ref.value;
           _MiniWorkflowStepFormatMount_result
         )
-      end }
+        end
+      }
 
       sequence = { "FormatMount" => { :finish => :finish } }
 
