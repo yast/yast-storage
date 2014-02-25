@@ -32,7 +32,8 @@ module Yast
     def DlgEditDmVolume(data)
       device = Ops.get_string(data.value, "device", "error")
 
-      aliases = { "FormatMount" => lambda do
+      aliases = {
+        "FormatMount" => lambda do
         (
           data_ref = arg_ref(data.value);
           _MiniWorkflowStepFormatMount_result = MiniWorkflowStepFormatMount(
@@ -41,15 +42,16 @@ module Yast
           data.value = data_ref.value;
           _MiniWorkflowStepFormatMount_result
         )
-      end, "Password" => lambda(
-      ) do
+        end,
+        "Password" => lambda do
         (
           data_ref = arg_ref(data.value);
           _MiniWorkflowStepPassword_result = MiniWorkflowStepPassword(data_ref);
           data.value = data_ref.value;
           _MiniWorkflowStepPassword_result
         )
-      end }
+        end
+      }
 
       sequence = {
         "FormatMount" => { :next => "Password", :finish => :finish },
