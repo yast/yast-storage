@@ -4040,6 +4040,7 @@ module Yast
       if Ops.get_boolean(ps1, "ok", false)
         ret = Ops.get_list(ps1, ["disk", "partitions"], [])
       end
+      ret = post_process_partitions(ret)
       Builtins.y2milestone("get_proposal ret:%1", ret)
       deep_copy(ret)
     end
@@ -4393,31 +4394,40 @@ module Yast
     end
 
 
+    def post_process_partitions(partitions)
+
+      partitions.each do |volume|
+
+        # if we have a home volume remove the home subvolume
+        if PropDefaultFs() == :btrfs && GetProposalHome()
+          if volume["mount"] == "/"
+            if FileSystems.default_subvol.empty?
+              home = "home"
+            else
+              home = FileSystems.default_subvol + "/" + "home"
+            end
+            volume["subvol"].delete_if { |subvol| subvol["name"] == home }
+          end
+        end
+
+        # enable snapshots for root volume if desired
+        if PropDefaultFs() == :btrfs && GetProposalSnapshots()
+          if volume["mount"] == "/"
+            volume["userdata"] = { "/" => "snapshots" }
+          end
+        end
+
+      end
+
+      return partitions
+
+    end
+
+
     def post_process_target(target)
 
       target.each do |device, container|
-        container["partitions"].each do |volume|
-
-          # if we have a home volume remove the home subvolume
-          if PropDefaultFs() == :btrfs && GetProposalHome()
-            if volume["mount"] == "/"
-              if FileSystems.default_subvol.empty?
-                home = "home"
-              else
-                home = FileSystems.default_subvol + "/" + "home"
-              end
-              volume["subvol"].delete_if { |subvol| subvol["name"] == home }
-            end
-          end
-
-          # enable snapshots for root volume if desired
-          if PropDefaultFs() == :btrfs && GetProposalSnapshots()
-            if volume["mount"] == "/"
-              volume["userdata"] = { "/" => "snapshots" }
-            end
-          end
-
-        end
+        container["partitions"] = post_process_partitions(container["partitions"])
       end
 
       return target
