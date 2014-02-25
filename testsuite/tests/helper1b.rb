@@ -12,22 +12,34 @@ module Yast
 
       StorageProposal.GetControlCfg
 
-      @target_map = Storage.GetTargetMap
-      @prop = StorageProposal.get_inst_prop(@target_map)
+      target_map = Storage.GetTargetMap()
+      prop = StorageProposal.get_inst_prop(target_map)
 
-      if Ops.get_boolean(@prop, "ok", false)
-        Storage.SetTargetMap(Ops.get_map(@prop, "target", {}))
+      if prop.fetch("ok", false)
+        Storage.SetTargetMap(prop.fetch("target", {}))
 
-        @infos = Storage.GetCommitInfos
+        infos = Storage.GetCommitInfos
 
         Testsuite.Dump("Proposal:")
-        Builtins.foreach(@infos) do |info|
-          text = Ops.get_string(info, :text, "")
-          if Ops.get_boolean(info, :destructive, false)
-            text = Ops.add(text, " [destructive]")
+        infos.each do |info|
+          text = info.fetch(:text, "")
+          if info.fetch(:destructive, false)
+            text += " [destructive]"
           end
           Testsuite.Dump(text)
         end
+
+        Testsuite.Dump("")
+
+        Testsuite.Dump("Extra Data:")
+        prop["target"].each do |device, container|
+          container["partitions"].each do |volume|
+            if !volume.fetch("userdata", {}).empty?
+              Testsuite.Dump("device:#{volume["device"]} userdata:#{volume["userdata"]}")
+            end
+          end
+        end
+
       else
         Testsuite.Dump("No proposal.")
       end

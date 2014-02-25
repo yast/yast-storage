@@ -16,6 +16,7 @@ module Yast
       ProductFeatures.SetBooleanFeature("partitioning", "proposal_lvm", false)
       ProductFeatures.SetStringFeature("partitioning", "root_max_size", "20 GB")
       ProductFeatures.SetStringFeature("partitioning", "root_base_size", "15 GB")
+      ProductFeatures.SetBooleanFeature("partitioning", "proposal_snapshots", false)
 
       Yast.include self, "helper1b.rb"
 
