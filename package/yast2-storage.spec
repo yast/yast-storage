@@ -56,6 +56,7 @@ Obsoletes:	y2t_inst-partitioning
 Requires:       yast2-ruby-bindings >= 3.1.7
 
 Summary:	YaST2 - Storage Configuration
+Url:		http://github.com/yast/yast-storage/
 
 %description
 This package contains the files for YaST2 that handle access to disk
