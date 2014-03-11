@@ -4977,7 +4977,7 @@ module Yast
       end
 
       if Arch.s390
-        def_subvol.push("boot/grub2/s390x")
+        def_subvol.push("boot/grub2/s390x-emu")
       end
 
       def_subvol.sort!()
