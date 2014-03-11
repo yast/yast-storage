@@ -3,5 +3,5 @@
 #
 
 SUBDIRS = empty empty-efi half-empty reuse-home windows windows-only		\
-	windows-only-efi empty-s390x
+	windows-only-efi empty-s390x empty-small
 

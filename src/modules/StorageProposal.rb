@@ -4396,10 +4396,21 @@ module Yast
 
     def post_process_partitions(partitions)
 
+      have_home_partition = false
+
+      partitions.each do |volume|
+
+        # check whether we have a home partition
+        if volume["mount"] == "/home"
+          have_home_partition = true
+        end
+
+      end
+
       partitions.each do |volume|
 
         # if we have a home volume remove the home subvolume
-        if PropDefaultFs() == :btrfs && GetProposalHome()
+        if PropDefaultFs() == :btrfs && have_home_partition
           if volume["mount"] == "/"
             if FileSystems.default_subvol.empty?
               home = "home"
