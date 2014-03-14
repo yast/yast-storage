@@ -11,8 +11,9 @@ module Yast
       @READ = {
         "probe"     => {
           "architecture" => "i386",
-          "bios"         => [{ "lba_support" => true }],
-          "cdrom"        => []
+          "bios"         => [ { "lba_support" => true } ],
+          "cdrom"        => [],
+          "system"       => [ { "system" => "" } ]
         },
         "proc"      => {
           "swaps"   => [],
@@ -35,13 +36,16 @@ module Yast
         file = File.new("tmp/arch.info")
         doc = REXML::Document.new(file)
         arch = doc.elements["arch"].elements["arch"].text
+        system = ""
         if arch == "s390x"
           arch = "s390_64"
         end
         if arch == "ppc64le"
           arch = "ppc64"
+          system = "CHRP"
         end
         @READ["probe"]["architecture"] = arch
+        @READ["probe"]["system"][0]["system"] = system
       rescue Errno::ENOENT
       end
 
