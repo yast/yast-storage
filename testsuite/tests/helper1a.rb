@@ -38,6 +38,9 @@ module Yast
         if arch == "s390x"
           arch = "s390_64"
         end
+        if arch == "ppc64le"
+          arch = "ppc64"
+        end
         @READ["probe"]["architecture"] = arch
       rescue Errno::ENOENT
       end
