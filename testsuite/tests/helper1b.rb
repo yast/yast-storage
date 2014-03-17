@@ -31,12 +31,22 @@ module Yast
 
         Testsuite.Dump("")
 
-        Testsuite.Dump("Extra Data:")
+        Testsuite.Dump("Target Map Excerpt:")
         prop["target"].each do |device, container|
           container["partitions"].each do |volume|
-            if !volume.fetch("userdata", {}).empty?
-              Testsuite.Dump("device:#{volume["device"]} userdata:#{volume["userdata"]}")
+
+            line = "device:#{volume["device"]}"
+
+            if volume.fetch("fsid", 0) != 0
+              line << " fsid:0x#{volume["fsid"].to_s(16)}"
             end
+
+            if !volume.fetch("userdata", {}).empty?
+              line << " userdata:#{volume["userdata"]}"
+            end
+
+            Testsuite.Dump(line)
+
           end
         end
 
