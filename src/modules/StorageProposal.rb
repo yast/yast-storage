@@ -315,17 +315,7 @@ module Yast
         keys = ["home_limit", "root_max", "root_base", "home_max", "vm_want"]
         Builtins.foreach(keys) do |k|
           if Builtins.haskey(ret, k)
-            Ops.set(
-              ret,
-              k,
-              Ops.add(
-                Ops.get_integer(ret, k, 0),
-                Ops.divide(
-                  Ops.multiply(Ops.get_integer(ret, k, 0), 100),
-                  Ops.get_integer(@cfg_xml, "btrfs_increase_percentage", 0)
-                )
-              )
-            )
+            ret[k] *= 1.0 + @cfg_xml["btrfs_increase_percentage"] / 100.0
           else
             Builtins.y2warning("GetControlCfg no key:%1", k)
           end
