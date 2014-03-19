@@ -5929,7 +5929,7 @@ module Yast
       Builtins.foreach(target_map) do |k, e|
         need_lvm = true if Ops.get_symbol(e, "type", :CT_UNKNOWN) == :CT_LVM
         need_nfs = true if Ops.get_symbol(e, "type", :CT_UNKNOWN) == :CT_NFS
-        need_iscsi = true if Ops.get_boolean(e, "iscsi", :CT_UNKNOWN) == true
+        need_iscsi = true if e.fetch("iscsi", false)
         if Builtins.find(Ops.get_list(e, "partitions", [])) do |part2|
             FileSystems.HasQuota(part2)
           end != nil
