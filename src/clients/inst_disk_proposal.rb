@@ -56,7 +56,6 @@ module Yast
 
 
       Yast.include self, "partitioning/custom_part_dialogs.rb"
-      Yast.include self, "partitioning/ep-import.rb"
 
       @targetMap = Storage.GetTargetMap
 
@@ -79,8 +78,6 @@ module Yast
       @modify_str = _("&Edit Partition Setup...")
       # Radiobutton for partition dialog
       @detailed_str = _("&Create Partition Setup...")
-      # Radiobutton for partition dialog
-      @import_str = _("&Import Partition Setup...")
 
       @target_is = ""
 
@@ -136,8 +133,6 @@ module Yast
       @bframe = VBox(
         PushButton(Id(:detailed), @detailed_str),
         VSpacing(0.2),
-        PushButton(Id(:import), @import_str),
-        VSpacing(0.2),
         PushButton(Id(:modify), @modify_str)
       )
 
@@ -179,19 +174,6 @@ module Yast
               "partitioner dialog.</p>\n"
           ),
           Builtins.deletechars(@modify_str, "&")
-        )
-
-      # help text continued
-      # %1 is replaced by button text
-      help_text +=
-        Builtins.sformat(
-          _(
-            "<p>\n" +
-              "To import the mount points from an existing Linux\n" +
-              "system choose <b>%1</b>. You can still make modification\n" +
-              "afterwards in the expert partitioner dialog.</p>\n"
-          ),
-          Builtins.deletechars(@import_str, "&")
         )
 
       # help text continued
@@ -260,7 +242,7 @@ module Yast
               @changes = Storage.ChangeText
               UI.ChangeWidget(Id(:richtext), :Value, @changes)
             end
-          elsif Builtins.contains([:modify, :detailed, :import], @ret)
+          elsif [:modify, :detailed].include?(@ret)
             Storage.SetPartProposalFirst(false)
             Storage.SetPartProposalActive(false)
 
@@ -276,9 +258,6 @@ module Yast
                 end
                 Storage.SetPartDisk("")
                 Storage.SetPartProposalMode("detailed")
-              when :import
-                @target_is = "PROP_MODIFY"
-                Storage.SetPartProposalMode("modify")
             end
 
             Storage.SetPartMode(@target_is)
@@ -414,8 +393,6 @@ module Yast
             Wizard.OpenNextBackDialog
             result = Sequencer.Run(aliases, seq)
             Wizard.CloseDialog
-          when :import
-            ImportMountPoints()
         end
 
         Storage.HandleProposalPackages
