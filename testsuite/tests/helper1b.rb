@@ -33,6 +33,19 @@ module Yast
 
         Testsuite.Dump("Target Map Excerpt:")
         prop["target"].each do |device, container|
+
+          if Storage.IsDiskType(container.fetch("type", :CT_UNKNOWN))
+
+            line = "device:#{container["device"]}"
+
+            if container.fetch("label", "") != ""
+              line << " label:#{container["label"]}"
+            end
+
+            Testsuite.Dump(line)
+
+          end
+
           container["partitions"].each do |volume|
 
             line = "device:#{volume["device"]}"
@@ -48,6 +61,7 @@ module Yast
             Testsuite.Dump(line)
 
           end
+
         end
 
       else
