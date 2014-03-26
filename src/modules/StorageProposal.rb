@@ -2055,6 +2055,7 @@ module Yast
         Ops.set(lg, "procpart", 0)
         lp = Builtins.eval(ps)
         if Ops.get_boolean(g, "extended_possible", false) &&
+            !Partitions.BootPrimary() &&
             Ops.greater_than(
               Ops.add(Builtins.size(ps), 1),
               Builtins.size(Ops.get_list(g, "free_pnr", []))
