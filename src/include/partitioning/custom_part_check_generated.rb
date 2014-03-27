@@ -138,8 +138,11 @@ module Yast
               targetMap.each do |dev, disk|
                 parts = disk.fetch("partitions", [])
                 parts.each do |part|
-                  if part.fetch("mount", "") == tmp
-                    root_subvols_shadowed = true
+                  if part.has_key?("mount")
+                    mp = part["mount"]
+                    if (tmp == mp) || (tmp.start_with?(mp) && tmp[mp.size] == "/")
+                      root_subvols_shadowed = true
+                    end
                   end
                 end
               end
