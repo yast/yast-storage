@@ -75,7 +75,7 @@ module Yast
       # Title for dialogue
       @title = _("Suggested Partitioning")
       # Radiobutton for partition dialog
-      @modify_str = _("&Edit Partition Setup...")
+      @modify_str = _("&Expert Partitioner...")
       # Radiobutton for partition dialog
       @detailed_str = _("&Create Partition Setup...")
 
