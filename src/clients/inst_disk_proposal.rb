@@ -239,6 +239,7 @@ module Yast
               end
               Storage.SetPartMode(@target_is)
               Storage.SetTargetMap(@targetMap)
+              Storage.HandleProposalPackages()
               @changes = Storage.ChangeText
               UI.ChangeWidget(Id(:richtext), :Value, @changes)
             end
