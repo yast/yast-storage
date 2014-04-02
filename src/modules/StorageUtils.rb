@@ -43,7 +43,7 @@ module Yast
         if userdata.fetch("/", "") == "snapshots"
           Builtins.y2milestone("configuring snapper for root fs")
           if SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus create-config " <<
-                         "--fstype=btrfs /") == 0
+                         "--fstype=btrfs --add-fstab /") == 0
             SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus set-config " <<
                         "NUMBER_CLEANUP=yes NUMBER_LIMIT=20 NUMBER_LIMIT_IMPORTANT=10")
             SCR.Write(path(".sysconfig.yast2.USE_SNAPPER"), "yes")
