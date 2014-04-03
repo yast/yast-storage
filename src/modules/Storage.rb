@@ -5301,7 +5301,8 @@ module Yast
         end
       end
 
-      if ret && disk.fetch("label", "") == "dasd"
+      # the check for verbose is needed for calls from StorageProposal (see bnc#871779)
+      if ret && disk.fetch("label", "") == "dasd" && verbose
         if disk.fetch("partitions", []).any? do |partition|
             Ops.get_string(partition, "device", "") !=
               Ops.get_string(p, "device", "") &&
