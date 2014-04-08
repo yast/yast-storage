@@ -279,6 +279,8 @@ module Yast
       elsif !Ops.get_boolean(part, "format", false) &&
           Ops.get_symbol(part, "detected_fs", :none) != :swap
         allowed = false
+        # error popup text
+        Popup.Error(_("It is not allowed to assign the mount point swap\nto a device without a swap file system."));
       end
 
       allowed = CheckFstabOptions(part) if allowed
