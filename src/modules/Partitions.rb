@@ -224,8 +224,8 @@ module Yast
           Ops.set(@boot_size_k, :proposed, 200 * 1024)
           Ops.set(@boot_size_k, :minimal, 180 * 1024)
         elsif Arch.board_chrp || Arch.board_prep || Arch.board_iseries
-          Ops.set(@boot_size_k, :proposed, 200 * 1024)
-          Ops.set(@boot_size_k, :minimal, 180 * 1024)
+          Ops.set(@boot_size_k, :proposed, 8032 )
+          Ops.set(@boot_size_k, :minimal, 8032 )
         elsif Arch.board_mac
           Ops.set(@boot_size_k, :proposed, 32 * 1024)
           Ops.set(@boot_size_k, :minimal, 800)
