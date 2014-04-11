@@ -32,6 +32,11 @@ require "yast"
 
 module Yast
   class PartitionsClass < Module
+
+
+    include Yast::Logger
+
+
     def main
 
       textdomain "storage"
@@ -439,14 +444,14 @@ module Yast
       sw
     end
 
+
     def IsResizable(fsid)
-      ret = false
-      ret = IsDosWinNtPartition(fsid) || fsid == @fsid_swap ||
-        fsid == @fsid_native ||
-        IsExtendedPartition(fsid)
-      Builtins.y2milestone("IsResizable fsid:%1 ret:%2", fsid, ret)
-      ret
+      ret = [@fsid_swap, @fsid_native, @fsid_gpt_boot].include?(fsid) ||
+        IsDosWinNtPartition(fsid) || IsExtendedPartition(fsid)
+      log.info("IsResizable fsid:#{fsid} ret:#{ret}")
+      return ret
     end
+
 
     def IsLinuxPartition(fsid)
       fsid == @fsid_native || fsid == @fsid_swap || fsid == @fsid_lvm ||
