@@ -649,6 +649,7 @@ module Yast
       boot = pl.index { |e| e.fetch("mount","")==Partitions.BootMount }!=nil
       root = pl.index { |e| e.fetch("mount","")=="/" }!=nil
       tc = deep_copy(conf)
+      dlabel = disk.fetch("label", "")
       Builtins.y2milestone("try_add_boot conf %1", conf)
       Builtins.y2milestone(
         "try_add_boot boot %1 root %2 force %3 need_boot:%4",
@@ -665,7 +666,7 @@ module Yast
 	  pb["size"] = sz
 	end
 	pb["fsys"] = Partitions.DefaultBootFs
-	pb["id"] = Partitions.FsidBoot
+	pb["id"] = Partitions.FsidBoot(dlabel)
         pb["auto_added"] = true
         pb["max_cyl"] = Partitions.BootCyl
         pb["primary"] = Partitions.BootPrimary
@@ -3223,6 +3224,7 @@ module Yast
         fsys = Builtins.union(fsys, [fs]) if fs != :none
       end
       Ops.set(conf, "keep_partition_fsys", fsys)
+      dlabel = xmlflex["disklabel"]
       partitions = []
       Builtins.foreach(Ops.get_list(xmlflex, "partitions", [])) do |p|
         partition = {}
@@ -3292,7 +3294,7 @@ module Yast
             Ops.set(partition, "fsys", Partitions.DefaultBootFs)
           end
           if Ops.get_integer(partition, "id", 0) == 0
-            Ops.set(partition, "id", Partitions.FsidBoot)
+            Ops.set(partition, "id", Partitions.FsidBoot(dlabel))
           end
           Ops.set(partition, "max_cyl", Partitions.BootCyl)
         end
@@ -3342,6 +3344,15 @@ module Yast
       end
       Builtins.y2milestone("lines %1", lines)
       fnd = []
+
+      lines.each |line| do
+	if line.match(/^\s*DISKLABEL\s*=\s*(\S+)/) do |m|
+          disklabel = m[1]
+	  break
+	  end
+	end
+      end
+
       Builtins.foreach(["PREFER_REMOVE", "REMOVE_SPECIAL_PARTITIONS"]) do |key|
         rex = Ops.add(Ops.add("[ \t]*", key), "[ \t]*=")
         fnd = Builtins.filter(lines) { |e| Builtins.regexpmatch(e, rex) }
@@ -3364,6 +3375,7 @@ module Yast
           end
         end
       end
+
       Builtins.foreach(["KEEP_PARTITION_ID", "KEEP_PARTITION_NUM"]) do |key|
         rex = Ops.add(Ops.add("[ \t]*", key), "[ \t]*=")
         Builtins.y2milestone("rex %1", rex)
@@ -3494,7 +3506,7 @@ module Yast
             Ops.set(part, "fsys", Partitions.DefaultBootFs)
           end
           if Ops.get_integer(part, "id", 0) == 0
-            Ops.set(part, "id", Partitions.FsidBoot)
+            Ops.set(part, "id", Partitions.FsidBoot(disklabel))
           end
           Ops.set(part, "max_cyl", Partitions.BootCyl)
         end
@@ -3639,13 +3651,13 @@ module Yast
         Builtins.y2milestone( "can_boot_reuse pl:%1", pl )
         boot2 = Builtins.find(pl) do |p|
           p.fetch("fsid",0) == Partitions.fsid_gpt_boot ||
-	  p.fetch("fsid",0) == Partitions.FsidBoot &&
+	  p.fetch("fsid",0) == Partitions.FsidBoot(label) &&
 	    p.fetch("size_k",0)*1024<=Partitions.MaximalBootsize ||
 	  p.fetch("detected_fs",:unknown) == :hfs &&
 	    p.fetch("boot",false) &&
 	    label == "mac" ||
-	  p.fetch("fsid",0) == Partitions.fsid_prep_chrp_boot &&
-	    p.fetch("nr",0)<=max_prim &&
+          p.fetch("fsid",0) == Partitions.FsidBoot(label) &&
+            p.fetch("nr",0)<=max_prim &&
 	    Partitions.PrepBoot ||
 	  p.fetch("fsid",0) == Partitions.fsid_bios_grub &&
 	    label=="gpt" &&
@@ -4147,12 +4159,13 @@ module Yast
       ]
       remk = ["del_ptable", "disklabel"]
       Builtins.foreach(ddev) do |s|
+	dlabel = Ops.get_string(tg, [s, "label"])
         Ops.set(
           tg,
           [s, "partitions"],
           Builtins.maplist(Ops.get_list(tg, [s, "partitions"], [])) do |p|
             if Builtins.contains(linux_pid, Ops.get_integer(p, "fsid", 0)) ||
-                Ops.get_integer(p, "fsid", 0) == Partitions.FsidBoot &&
+                Ops.get_integer(p, "fsid", 0) == Partitions.FsidBoot(dlabel) &&
                   !Partitions.EfiBoot &&
                   Ops.less_or_equal(
                     Ops.multiply(Ops.get_integer(p, "size_k", 0), 1024),
@@ -4160,7 +4173,7 @@ module Yast
                   ) ||
                 Partitions.PrepBoot &&
                   (Ops.get_integer(p, "fsid", 0) ==
-                    Partitions.fsid_prep_chrp_boot ||
+                    Partitions.FsidBoot(dlabel) ||
                     Ops.get_integer(p, "fsid", 0) == 6)
               Ops.set(p, "linux", true)
             else
@@ -5564,7 +5577,7 @@ module Yast
         "mount"   => Partitions.BootMount,
         "size"    => Partitions.ProposedBootsize,
         "fsys"    => Partitions.DefaultBootFs,
-        "id"      => Partitions.FsidBoot,
+        "id"      => Partitions.FsidBoot(nil),
         "max_cyl" => Partitions.BootCyl
       }
       Ops.set(boot, "primary", true) if Partitions.BootPrimary
@@ -5773,6 +5786,8 @@ module Yast
               did_remove_vg(Ops.get_list(disk, "partitions", []), key)
             vg = ""
           end
+          dlabel = Ops.get_string(disk, "label")
+          boot["id"] = Partitions.FsidBoot(dlabel) if dlabel == "gpt"
           ps = do_vm_disk_conf(disk, have_boot ? {} : boot, boot2, vg, key)
           if Ops.get_boolean(ps, "ok", false)
             mb = get_vm_sol(ps)
@@ -5933,12 +5948,13 @@ module Yast
       opts = GetControlCfg()
       target = remove_mount_points(target)
       target = remove_vm(target, key)
+      dlabel = disk.fetch("label", "")
       Ops.set(ret, "target", target)
       boot = {
         "mount"   => Partitions.BootMount,
         "size"    => Partitions.ProposedBootsize,
         "fsys"    => Partitions.DefaultBootFs,
-        "id"      => Partitions.FsidBoot,
+        "id"      => Partitions.FsidBoot(dlabel),
         "max_cyl" => Partitions.BootCyl
       }
       Ops.set(boot, "primary", true) if Partitions.BootPrimary

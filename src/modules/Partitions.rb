@@ -66,6 +66,7 @@ module Yast
       @fsid_gpt_service = 260
       @fsid_gpt_msftres = 261
       @fsid_bios_grub = 263
+      @fsid_gpt_prep = 264
       @fsid_freebsd = 165
       @fsid_openbsd = 166
       @fsid_netbsd = 169
@@ -316,14 +317,14 @@ module Yast
       ret
     end
 
-
-    def FsidBoot
+    def FsidBoot(dlabel)
       if @fsid_boot == 0
         @fsid_boot = @fsid_native
         if EfiBoot() || Arch.ia64
           @fsid_boot = @fsid_gpt_boot
         elsif PrepBoot()
-          @fsid_boot = @fsid_prep_chrp_boot
+            @fsid_boot = @fsid_prep_chrp_boot
+            @fsid_boot = @fsid_gpt_prep if dlabel && dlabel == "gpt"
         elsif Arch.board_mac
           @fsid_boot = @fsid_mac_hfs
         end
@@ -860,6 +861,8 @@ module Yast
           return "Apple_UFS"
         when 263
           return "BIOS Grub"
+        when 264
+          return "GPT PReP"
         else
           return "unknown"
       end
@@ -1000,6 +1003,7 @@ module Yast
     publish :variable => :fsid_fat16, :type => "const integer"
     publish :variable => :fsid_fat32, :type => "const integer"
     publish :variable => :fsid_prep_chrp_boot, :type => "const integer"
+    publish :variable => :fsid_gpt_prep, :type => "const integer"
     publish :variable => :fsid_mac_hidden, :type => "const integer"
     publish :variable => :fsid_mac_hfs, :type => "const integer"
     publish :variable => :fsid_mac_ufs, :type => "const integer"
@@ -1043,7 +1047,7 @@ module Yast
     publish :function => :BootCyl, :type => "integer ()"
     publish :function => :PrepBoot, :type => "boolean ()"
     publish :function => :BootPrimary, :type => "boolean ()"
-    publish :function => :FsidBoot, :type => "integer ()"
+    publish :function => :FsidBoot, :type => "integer (string)"
     publish :function => :NeedBoot, :type => "boolean ()"
     publish :function => :IsDosPartition, :type => "boolean (integer)"
     publish :function => :IsDosWinNtPartition, :type => "boolean (integer)"
