@@ -4031,7 +4031,10 @@ module Yast
       if Ops.get_boolean(ps1, "ok", false)
         ret = Ops.get_list(ps1, ["disk", "partitions"], [])
       end
-      ret = post_process_partitions(ret)
+
+      post_processor = PostProcessor.new()
+      ret = post_processor.process_partitions(ret)
+
       Builtins.y2milestone("get_proposal ret:%1", ret)
       deep_copy(ret)
     end
@@ -4385,54 +4388,94 @@ module Yast
     end
 
 
-    def post_process_partitions(partitions)
+    class PostProcessor
 
-      have_home_partition = false
+      def helper1(partitions)
 
-      partitions.each do |volume|
+        partitions.each do |volume|
 
-        # check whether we have a home partition
-        if volume["mount"] == "/home"
-          have_home_partition = true
+          # check whether we have a boot partition
+          if volume["mount"] == "/boot"
+            @have_boot_partition = true
+          end
+
+          # check whether we have a home partition
+          if volume["mount"] == "/home"
+            @have_home_partition = true
+          end
+
         end
 
       end
 
-      partitions.each do |volume|
+      def helper2(partitions)
 
-        # if we have a home volume remove the home subvolume
-        if PropDefaultFs() == :btrfs && have_home_partition
-          if volume["mount"] == "/"
-            if FileSystems.default_subvol.empty?
-              home = "home"
-            else
-              home = FileSystems.default_subvol + "/" + "home"
+        partitions.each do |volume|
+
+          # if we have a boot volume remove the boot subvolumes
+          if StorageProposal.PropDefaultFs() == :btrfs && @have_boot_partition
+            if volume["mount"] == "/"
+              if FileSystems.default_subvol.empty?
+                boot = "boot"
+              else
+                boot = FileSystems.default_subvol + "/" + "boot"
+              end
+              volume["subvol"].delete_if { |subvol| subvol["name"].start_with?(boot) }
             end
-            volume["subvol"].delete_if { |subvol| subvol["name"] == home }
           end
+
+          # if we have a home volume remove the home subvolume
+          if StorageProposal.PropDefaultFs() == :btrfs && @have_home_partition
+            if volume["mount"] == "/"
+              if FileSystems.default_subvol.empty?
+                home = "home"
+              else
+                home = FileSystems.default_subvol + "/" + "home"
+              end
+              volume["subvol"].delete_if { |subvol| subvol["name"] == home }
+            end
+          end
+
+          # enable snapshots for root volume if desired
+          if StorageProposal.PropDefaultFs() == :btrfs && StorageProposal.GetProposalSnapshots()
+            if volume["mount"] == "/"
+              volume["userdata"] = { "/" => "snapshots" }
+            end
+          end
+
         end
 
-        # enable snapshots for root volume if desired
-        if PropDefaultFs() == :btrfs && GetProposalSnapshots()
-          if volume["mount"] == "/"
-            volume["userdata"] = { "/" => "snapshots" }
-          end
-        end
+        return partitions
 
       end
 
-      return partitions
+      def process_partitions(partitions)
 
-    end
+        @have_boot_partition = false
+        @have_home_partition = false
 
+        helper1(partitions)
 
-    def post_process_target(target)
+        return helper2(partitions)
 
-      target.each do |device, container|
-        container["partitions"] = post_process_partitions(container["partitions"])
       end
 
-      return target
+      def process_target(target)
+
+        @have_boot_partition = false
+        @have_home_partition = false
+
+        target.each do |device, container|
+          helper1(container["partitions"])
+        end
+
+        target.each do |device, container|
+          container["partitions"] = helper2(container["partitions"])
+        end
+
+        return target
+
+      end
 
     end
 
@@ -5005,7 +5048,10 @@ module Yast
           "get_inst_proposal sol:%1",
           Ops.get_map(ret, ["target", sol_disk], {})
         )
-        ret["target"] = post_process_target(ret["target"])
+
+        post_processor = PostProcessor.new()
+        ret["target"] = post_processor.process_target(ret["target"])
+
       end
       Builtins.y2milestone(
         "get_inst_proposal ret[ok]:%1",
@@ -5909,6 +5955,10 @@ module Yast
           Ops.get_map(ret, ["target", sol_disk], {})
         )
       end
+
+      post_processor = PostProcessor.new()
+      ret["target"] = post_processor.process_target(ret["target"])
+
       Builtins.y2milestone(
         "get_inst_prop_vm ret[ok]:%1",
         Ops.get_boolean(ret, "ok", false)
@@ -6145,7 +6195,7 @@ module Yast
       if ! Arch.s390
 
         vb = Builtins.add(vb, VSpacing(1))
-  
+
         vb = Builtins.add(
           vb,
           Left(
