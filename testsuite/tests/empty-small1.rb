@@ -2,7 +2,8 @@
 
 # testedfiles: helper1b.yh
 module Yast
-  class Empty1Client < Client
+
+  class TestClient < Client
 
     def main
       Yast.include self, "setup-system.rb"
@@ -18,12 +19,16 @@ module Yast
       ProductFeatures.SetBooleanFeature("partitioning", "proposal_snapshots", true)
       ProductFeatures.SetStringFeature("partitioning", "root_base_size", "10 GB")
 
+      def setup3()
+      end
+
       Yast.include self, "helper1b.rb"
 
       nil
     end
 
   end
+
 end
 
-Yast::Empty1Client.new.main
+Yast::TestClient.new.main

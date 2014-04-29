@@ -2,7 +2,9 @@
 
 # testedfiles: helper1b.yh
 module Yast
-  class Windows1Client < Client
+
+  class TestClient < Client
+
     def main
       Yast.include self, "setup-system.rb"
 
@@ -18,11 +20,16 @@ module Yast
       ProductFeatures.SetStringFeature("partitioning", "root_max_size", "20 GB")
       ProductFeatures.SetStringFeature("partitioning", "root_base_size", "15 GB")
 
+      def setup3()
+      end
+
       Yast.include self, "helper1b.rb"
 
       nil
     end
+
   end
+
 end
 
-Yast::Windows1Client.new.main
+Yast::TestClient.new.main
