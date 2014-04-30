@@ -10,9 +10,12 @@ module Yast
 
       Storage.InitLibstorage(false)
 
-      StorageProposal.GetControlCfg
+      StorageProposal.GetControlCfg()
 
       target_map = Storage.GetTargetMap()
+
+      setup3()
+
       prop = StorageProposal.get_inst_prop(target_map)
 
       if prop.fetch("ok", false)
