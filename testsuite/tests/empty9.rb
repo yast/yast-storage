@@ -8,10 +8,10 @@ module Yast
 
     def main
 
-      Yast.include self, "setup-system.rb"
+      def setup1()
+        setup_system("empty")
+      end
 
-      setup_system("empty")
-      
       def setup2()
         ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", true)
         ProductFeatures.SetBooleanFeature("partitioning", "proposal_lvm", true)

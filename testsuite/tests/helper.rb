@@ -7,6 +7,14 @@ module Yast
 
     def initialize_helper(include_target)
 
+      def setup_system(name)
+        SCR.Execute(path(".target.bash"), "mkdir -p tmp")
+        SCR.Execute(path(".target.bash"), "rm -rf tmp/*")
+        SCR.Execute(path(".target.bash"), "cp data/#{name}/*.info tmp")
+      end
+
+      setup1()
+
       Yast.import "Testsuite"
 
       @READ = {

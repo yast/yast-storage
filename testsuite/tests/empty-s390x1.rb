@@ -8,9 +8,9 @@ module Yast
 
     def main
 
-      Yast.include self, "setup-system.rb"
-
-      setup_system("empty-s390x")
+      def setup1()
+        setup_system("empty-s390x")
+      end
 
       def setup2()
         ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", false)

@@ -8,9 +8,9 @@ module Yast
 
     def main
 
-      Yast.include self, "setup-system.rb"
-
-      setup_system("empty-efi")
+      def setup1()
+        setup_system("empty-efi")
+      end
 
       def setup2()
         ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", true)
