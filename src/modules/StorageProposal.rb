@@ -4390,7 +4390,39 @@ module Yast
 
     class PostProcessor
 
-      def helper1(partitions)
+      public
+
+      def process_partitions(partitions)
+
+        @have_boot_partition = false
+        @have_home_partition = false
+
+        analyse(partitions)
+
+        return modify(partitions)
+
+      end
+
+      def process_target(target)
+
+        @have_boot_partition = false
+        @have_home_partition = false
+
+        target.each do |device, container|
+          analyse(container["partitions"])
+        end
+
+        target.each do |device, container|
+          container["partitions"] = modify(container["partitions"])
+        end
+
+        return target
+
+      end
+
+      private
+
+      def analyse(partitions)
 
         partitions.each do |volume|
 
@@ -4408,7 +4440,7 @@ module Yast
 
       end
 
-      def helper2(partitions)
+      def modify(partitions)
 
         partitions.each do |volume|
 
@@ -4446,34 +4478,6 @@ module Yast
         end
 
         return partitions
-
-      end
-
-      def process_partitions(partitions)
-
-        @have_boot_partition = false
-        @have_home_partition = false
-
-        helper1(partitions)
-
-        return helper2(partitions)
-
-      end
-
-      def process_target(target)
-
-        @have_boot_partition = false
-        @have_home_partition = false
-
-        target.each do |device, container|
-          helper1(container["partitions"])
-        end
-
-        target.each do |device, container|
-          container["partitions"] = helper2(container["partitions"])
-        end
-
-        return target
 
       end
 
