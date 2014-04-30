@@ -246,7 +246,7 @@ module Yast
                     Ops.set(partition, "format", true)
                   end
                   if format_sys && Ops.get_string(partition, "mount", "") == "/" &&
-                      Ops.get_symbol(partition, "detected_fs", :unknown) == :BTRFS
+                      Ops.get_symbol(partition, "detected_fs", :unknown) == :btrfs
                     partition = Storage.AddSubvolRoot(partition)
                   end
                   if !Builtins.isempty(
