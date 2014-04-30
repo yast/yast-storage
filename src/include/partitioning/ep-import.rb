@@ -226,7 +226,17 @@ module Yast
           Builtins.maplist(Ops.get_list(disk, "partitions", [])) do |partition|
             part_device = Ops.get_string(partition, "device", "")
             if !Storage.IsInstallationSource(part_device)
-              Builtins.foreach(fstab) do |fstab_entry|
+              fstab.each do |fstab_entry|
+
+                type_fstab = fstab_entry["detected_fs"]
+                opts_fstab = fstab_entry["fstopt"]
+
+                # YaST cannot handle multiple mount points per device so ignore all
+                # subvolume mounts (bnc #874288)
+                if type_fstab == :btrfs && opts_fstab.include?("subvol=")
+                  next
+                end
+
                 dev_fstab = Ops.get_string(fstab_entry, "device", "")
                 mount_fstab = Ops.get_string(fstab_entry, "mount", "")
                 if dev_fstab == part_device
@@ -236,7 +246,7 @@ module Yast
                     Ops.set(partition, "format", true)
                   end
                   if format_sys && Ops.get_string(partition, "mount", "") == "/" &&
-                      Ops.get_symbol(partition, "detected_fs", :unknown) == :BTRFS
+                      Ops.get_symbol(partition, "detected_fs", :unknown) == :btrfs
                     partition = Storage.AddSubvolRoot(partition)
                   end
                   if !Builtins.isempty(
