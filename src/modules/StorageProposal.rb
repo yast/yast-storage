@@ -6416,7 +6416,7 @@ module Yast
           Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
           susps
         )
-      ret = ret || StorageProposal.GetProposalSuspend
+      ret = ret || GetProposalSuspend()
       Builtins.y2milestone(
         "EnableSuspend csw:%1 swsize:%2 suspsize:%3 ret:%4",
         Builtins.size(swaps),
@@ -6448,16 +6448,16 @@ module Yast
       UI.ChangeWidget(Id(:encrypt), :Enabled, GetProposalLvm())
       UI.ChangeWidget(Id(:root_fs), :Value, GetProposalRootFs())
       UI.ChangeWidget(Id(:snapshots), :Enabled, GetProposalRootFs() == :btrfs)
-      UI.ChangeWidget(Id(:home_fs), :Enabled, StorageProposal.GetProposalHome())
-      UI.ChangeWidget(Id(:home_fs), :Value, StorageProposal.GetProposalHomeFs())
+      UI.ChangeWidget(Id(:home_fs), :Enabled, GetProposalHome())
+      UI.ChangeWidget(Id(:home_fs), :Value, GetProposalHomeFs())
       UI.ChangeWidget(Id(:suspend), :Enabled, EnableSuspend())
 
-      UI.ChangeWidget(Id(:help), :HelpText, StorageProposal.CommonWidgetsHelp())
+      UI.ChangeWidget(Id(:help), :HelpText, CommonWidgetsHelp())
 
       begin
         ret = Convert.to_symbol(UI.UserInput)
-        if StorageProposal.IsCommonWidget(ret)
-          StorageProposal.HandleCommonWidgets(ret)
+        if IsCommonWidget(ret)
+          HandleCommonWidgets(ret)
         end
       end until [ :ok, :cancel ].include?(ret)
 
