@@ -310,7 +310,7 @@ module Yast
         "GetControlCfg GetProposalSnapshots:%1",
         GetProposalSnapshots()
       )
-      if GetProposalSnapshots()
+      if PropDefaultFs() == :btrfs && GetProposalSnapshots()
         Builtins.y2milestone("GetControlCfg before:%1", ret)
         keys = ["home_limit", "root_max", "root_base", "home_max", "vm_want"]
         Builtins.foreach(keys) do |k|
