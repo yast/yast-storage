@@ -24,7 +24,7 @@
 # Authors:		Andreas Schwab (schwab@suse.de)
 #			Klaus Kämpf (kkaempf@suse.de)
 #
-# Purpose:		This module creates the neccessary partitions
+# Purpose:		This module creates the necessary partitions
 #			in the targetMap
 #
 # $Id$
