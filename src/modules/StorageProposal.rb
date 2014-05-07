@@ -1312,7 +1312,7 @@ module Yast
               !Ops.get_boolean(conf, "prefer_remove", false))
           Builtins.y2milestone("do_pflex desperate mode")
           tc = Builtins.eval(conf)
-          @cur_mode = :desparate
+          @cur_mode = :desperate
           Ops.set(tc, "keep_partition_fsys", [])
           Ops.set(tc, "keep_partition_id", [])
           Ops.set(tc, "keep_partition_num", [])
@@ -1373,7 +1373,7 @@ module Yast
           Ops.get_list(conf, "partitions", [])
         )
         tc = try_add_boot(conf, e, false)
-        @cur_mode = :free if @cur_mode != :desparate
+        @cur_mode = :free if @cur_mode != :desperate
         if !Ops.get_boolean(tc, "prefer_remove", false)
           gap = get_gap_info(e, false)
           tc = add_cylinder_info(tc, gap)
@@ -2686,7 +2686,7 @@ module Yast
         ret = Ops.subtract(ret, 100)
       elsif @cur_mode == :resize
         ret = Ops.subtract(ret, 1000)
-      elsif @cur_mode == :desparate
+      elsif @cur_mode == :desperate
         ret = Ops.subtract(ret, 1000000)
       end
       Builtins.y2milestone("do_weighting after mode ret %1", ret)
@@ -4506,9 +4506,9 @@ module Yast
       target = prepare_part_lists(ddev, target)
       mode = :free
       while mode != :end && Builtins.size(sol_disk) == 0
-        if mode == :free || mode == :desparate
+        if mode == :free || mode == :desperate
           valid = Builtins.listmap(ddev) { |s| { s => true } }
-          if mode == :desparate
+          if mode == :desperate
             ddev = get_disk_try_list(target, false)
             valid = Builtins.listmap(ddev) { |s| { s => true } }
             target = prepare_part_lists(ddev, target)
@@ -4990,11 +4990,11 @@ module Yast
           elsif mode == :remove && Builtins.find(lb) { |v| v } == nil
             mode = :resize
           elsif mode == :resize && Builtins.find(lb) { |v| v } == nil
-            mode = :desparate
-          elsif mode == :desparate
+            mode = :desperate
+          elsif mode == :desperate
             mode = :end
           end
-          if mode == :desparate && Builtins.size(sol_disk) == 0
+          if mode == :desperate && Builtins.size(sol_disk) == 0
             max_mb = 0
             Builtins.foreach(size_mb) do |s, mb|
               if Ops.greater_than(
@@ -5636,9 +5636,9 @@ module Yast
       target = prepare_part_lists(ddev, target)
       mode = :free
       while mode != :end && Builtins.size(sol_disk) == 0
-        if mode == :free || mode == :desparate
+        if mode == :free || mode == :desperate
           valid = Builtins.listmap(ddev) { |s| { s => true } }
-          if mode == :desparate
+          if mode == :desperate
             ddev = get_disk_try_list(target, false)
             valid = Builtins.listmap(ddev) { |s| { s => true } }
             target = prepare_part_lists(ddev, target)
@@ -5884,8 +5884,8 @@ module Yast
           elsif mode == :remove && Builtins.find(lb) { |v| v } == nil
             mode = :resize
           elsif mode == :resize && Builtins.find(lb) { |v| v } == nil
-            mode = :desparate
-          elsif mode == :desparate
+            mode = :desperate
+          elsif mode == :desperate
             mode = :end
           end
         end
