@@ -182,14 +182,17 @@ module Yast
       )
     end
 
+
     def ia64_gpt_fix_text
       _(
-        "Warning: Your system states that it reqires an EFI \n" +
+        "Warning: Your system states that it requires an EFI \n" +
           "boot setup. Since the selected disk does not contain a \n" +
           "GPT disk label YaST will create a GPT label on this disk.\n" +
           "\n" +
           "You need to mark all partitions on this disk for removal.\n"
       )
     end
+
+
   end
 end
