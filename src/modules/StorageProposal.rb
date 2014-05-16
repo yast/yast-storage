@@ -310,7 +310,7 @@ module Yast
         "GetControlCfg GetProposalSnapshots:%1",
         GetProposalSnapshots()
       )
-      if GetProposalSnapshots()
+      if PropDefaultFs() == :btrfs && GetProposalSnapshots()
         Builtins.y2milestone("GetControlCfg before:%1", ret)
         keys = ["home_limit", "root_max", "root_base", "home_max", "vm_want"]
         Builtins.foreach(keys) do |k|
@@ -1313,7 +1313,7 @@ module Yast
               !Ops.get_boolean(conf, "prefer_remove", false))
           Builtins.y2milestone("do_pflex desperate mode")
           tc = Builtins.eval(conf)
-          @cur_mode = :desparate
+          @cur_mode = :desperate
           Ops.set(tc, "keep_partition_fsys", [])
           Ops.set(tc, "keep_partition_id", [])
           Ops.set(tc, "keep_partition_num", [])
@@ -1374,7 +1374,7 @@ module Yast
           Ops.get_list(conf, "partitions", [])
         )
         tc = try_add_boot(conf, e, false)
-        @cur_mode = :free if @cur_mode != :desparate
+        @cur_mode = :free if @cur_mode != :desperate
         if !Ops.get_boolean(tc, "prefer_remove", false)
           gap = get_gap_info(e, false)
           tc = add_cylinder_info(tc, gap)
@@ -2687,7 +2687,7 @@ module Yast
         ret = Ops.subtract(ret, 100)
       elsif @cur_mode == :resize
         ret = Ops.subtract(ret, 1000)
-      elsif @cur_mode == :desparate
+      elsif @cur_mode == :desperate
         ret = Ops.subtract(ret, 1000000)
       end
       Builtins.y2milestone("do_weighting after mode ret %1", ret)
@@ -4043,7 +4043,10 @@ module Yast
       if Ops.get_boolean(ps1, "ok", false)
         ret = Ops.get_list(ps1, ["disk", "partitions"], [])
       end
-      ret = post_process_partitions(ret)
+
+      post_processor = PostProcessor.new()
+      ret = post_processor.process_partitions(ret)
+
       Builtins.y2milestone("get_proposal ret:%1", ret)
       deep_copy(ret)
     end
@@ -4398,54 +4401,98 @@ module Yast
     end
 
 
-    def post_process_partitions(partitions)
+    class PostProcessor
 
-      have_home_partition = false
+      public
 
-      partitions.each do |volume|
+      def process_partitions(partitions)
 
-        # check whether we have a home partition
-        if volume["mount"] == "/home"
-          have_home_partition = true
+        @have_boot_partition = false
+        @have_home_partition = false
+
+        analyse(partitions)
+
+        return modify(partitions)
+
+      end
+
+      def process_target(target)
+
+        @have_boot_partition = false
+        @have_home_partition = false
+
+        target.each do |device, container|
+          analyse(container["partitions"])
+        end
+
+        target.each do |device, container|
+          container["partitions"] = modify(container["partitions"])
+        end
+
+        return target
+
+      end
+
+      private
+
+      def analyse(partitions)
+
+        partitions.each do |volume|
+
+          # check whether we have a boot partition
+          if volume["mount"] == "/boot"
+            @have_boot_partition = true
+          end
+
+          # check whether we have a home partition
+          if volume["mount"] == "/home"
+            @have_home_partition = true
+          end
+
         end
 
       end
 
-      partitions.each do |volume|
+      def modify(partitions)
 
-        # if we have a home volume remove the home subvolume
-        if PropDefaultFs() == :btrfs && have_home_partition
-          if volume["mount"] == "/"
-            if FileSystems.default_subvol.empty?
-              home = "home"
-            else
-              home = FileSystems.default_subvol + "/" + "home"
+        partitions.each do |volume|
+
+          # if we have a boot volume remove the boot subvolumes
+          if StorageProposal.PropDefaultFs() == :btrfs && @have_boot_partition
+            if volume["mount"] == "/"
+              if FileSystems.default_subvol.empty?
+                boot = "boot"
+              else
+                boot = FileSystems.default_subvol + "/" + "boot"
+              end
+              volume["subvol"].delete_if { |subvol| subvol["name"].start_with?(boot) }
             end
-            volume["subvol"].delete_if { |subvol| subvol["name"] == home }
           end
+
+          # if we have a home volume remove the home subvolume
+          if StorageProposal.PropDefaultFs() == :btrfs && @have_home_partition
+            if volume["mount"] == "/"
+              if FileSystems.default_subvol.empty?
+                home = "home"
+              else
+                home = FileSystems.default_subvol + "/" + "home"
+              end
+              volume["subvol"].delete_if { |subvol| subvol["name"] == home }
+            end
+          end
+
+          # enable snapshots for root volume if desired
+          if StorageProposal.PropDefaultFs() == :btrfs && StorageProposal.GetProposalSnapshots()
+            if volume["mount"] == "/"
+              volume["userdata"] = { "/" => "snapshots" }
+            end
+          end
+
         end
 
-        # enable snapshots for root volume if desired
-        if PropDefaultFs() == :btrfs && GetProposalSnapshots()
-          if volume["mount"] == "/"
-            volume["userdata"] = { "/" => "snapshots" }
-          end
-        end
+        return partitions
 
       end
-
-      return partitions
-
-    end
-
-
-    def post_process_target(target)
-
-      target.each do |device, container|
-        container["partitions"] = post_process_partitions(container["partitions"])
-      end
-
-      return target
 
     end
 
@@ -4472,9 +4519,9 @@ module Yast
       target = prepare_part_lists(ddev, target)
       mode = :free
       while mode != :end && Builtins.size(sol_disk) == 0
-        if mode == :free || mode == :desparate
+        if mode == :free || mode == :desperate
           valid = Builtins.listmap(ddev) { |s| { s => true } }
-          if mode == :desparate
+          if mode == :desperate
             ddev = get_disk_try_list(target, false)
             valid = Builtins.listmap(ddev) { |s| { s => true } }
             target = prepare_part_lists(ddev, target)
@@ -4956,11 +5003,11 @@ module Yast
           elsif mode == :remove && Builtins.find(lb) { |v| v } == nil
             mode = :resize
           elsif mode == :resize && Builtins.find(lb) { |v| v } == nil
-            mode = :desparate
-          elsif mode == :desparate
+            mode = :desperate
+          elsif mode == :desperate
             mode = :end
           end
-          if mode == :desparate && Builtins.size(sol_disk) == 0
+          if mode == :desperate && Builtins.size(sol_disk) == 0
             max_mb = 0
             Builtins.foreach(size_mb) do |s, mb|
               if Ops.greater_than(
@@ -5018,7 +5065,10 @@ module Yast
           "get_inst_proposal sol:%1",
           Ops.get_map(ret, ["target", sol_disk], {})
         )
-        ret["target"] = post_process_target(ret["target"])
+
+        post_processor = PostProcessor.new()
+        ret["target"] = post_processor.process_target(ret["target"])
+
       end
       Builtins.y2milestone(
         "get_inst_proposal ret[ok]:%1",
@@ -5599,9 +5649,9 @@ module Yast
       target = prepare_part_lists(ddev, target)
       mode = :free
       while mode != :end && Builtins.size(sol_disk) == 0
-        if mode == :free || mode == :desparate
+        if mode == :free || mode == :desperate
           valid = Builtins.listmap(ddev) { |s| { s => true } }
-          if mode == :desparate
+          if mode == :desperate
             ddev = get_disk_try_list(target, false)
             valid = Builtins.listmap(ddev) { |s| { s => true } }
             target = prepare_part_lists(ddev, target)
@@ -5849,8 +5899,8 @@ module Yast
           elsif mode == :remove && Builtins.find(lb) { |v| v } == nil
             mode = :resize
           elsif mode == :resize && Builtins.find(lb) { |v| v } == nil
-            mode = :desparate
-          elsif mode == :desparate
+            mode = :desperate
+          elsif mode == :desperate
             mode = :end
           end
         end
@@ -5924,6 +5974,10 @@ module Yast
           Ops.get_map(ret, ["target", sol_disk], {})
         )
       end
+
+      post_processor = PostProcessor.new()
+      ret["target"] = post_processor.process_target(ret["target"])
+
       Builtins.y2milestone(
         "get_inst_prop_vm ret[ok]:%1",
         Ops.get_boolean(ret, "ok", false)
@@ -6161,7 +6215,7 @@ module Yast
       if ! Arch.s390
 
         vb = Builtins.add(vb, VSpacing(1))
-  
+
         vb = Builtins.add(
           vb,
           Left(
@@ -6378,7 +6432,7 @@ module Yast
           Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
           susps
         )
-      ret = ret || StorageProposal.GetProposalSuspend
+      ret = ret || GetProposalSuspend()
       Builtins.y2milestone(
         "EnableSuspend csw:%1 swsize:%2 suspsize:%3 ret:%4",
         Builtins.size(swaps),
@@ -6410,16 +6464,16 @@ module Yast
       UI.ChangeWidget(Id(:encrypt), :Enabled, GetProposalLvm())
       UI.ChangeWidget(Id(:root_fs), :Value, GetProposalRootFs())
       UI.ChangeWidget(Id(:snapshots), :Enabled, GetProposalRootFs() == :btrfs)
-      UI.ChangeWidget(Id(:home_fs), :Enabled, StorageProposal.GetProposalHome())
-      UI.ChangeWidget(Id(:home_fs), :Value, StorageProposal.GetProposalHomeFs())
+      UI.ChangeWidget(Id(:home_fs), :Enabled, GetProposalHome())
+      UI.ChangeWidget(Id(:home_fs), :Value, GetProposalHomeFs())
       UI.ChangeWidget(Id(:suspend), :Enabled, EnableSuspend())
 
-      UI.ChangeWidget(Id(:help), :HelpText, StorageProposal.CommonWidgetsHelp())
+      UI.ChangeWidget(Id(:help), :HelpText, CommonWidgetsHelp())
 
       begin
         ret = Convert.to_symbol(UI.UserInput)
-        if StorageProposal.IsCommonWidget(ret)
-          StorageProposal.HandleCommonWidgets(ret)
+        if IsCommonWidget(ret)
+          HandleCommonWidgets(ret)
         end
       end until [ :ok, :cancel ].include?(ret)
 

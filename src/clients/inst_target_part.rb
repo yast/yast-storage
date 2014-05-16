@@ -420,13 +420,13 @@ module Yast
 
             @ok = create_partitions(@targetMap, @target, @partitions)
             if !@ok
-              @reason = _(
+              reason = _(
                 "Too few partitions are marked for removal or \n" +
                   "the disk is too small. \n" +
                   "To install Linux, select more partitions to \n" +
                   "remove or select a larger disk."
               )
-              display_error_box(@reason)
+              display_error_box(reason)
             end
             @tg = Storage.GetTargetMap
             @pl = Ops.get_list(@tg, [@target_is, "partitions"], [])
@@ -446,10 +446,10 @@ module Yast
                   Ops.get_string(p, "mount", "") == "/home"
                 end) == 0
               @ok = false
-              @reason = _(
+              reason = _(
                 "Not enough space available to propose separate /home."
               )
-              Popup.Error(@reason)
+              Popup.Error(reason)
             end
           end
         end

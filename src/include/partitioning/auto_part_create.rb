@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -19,21 +19,17 @@
 # To contact Novell about this file by physical or electronic mail, you may
 # find current contact information at www.novell.com.
 
-# Module:		auto_part_create.ycp
+# Module:		auto_part_create.rb
 #
 # Authors:		Andreas Schwab (schwab@suse.de)
 #			Klaus Kämpf (kkaempf@suse.de)
 #
-# Purpose:		This module creates the neccessary partitions
+# Purpose:		This module creates the necessary partitions
 #			in the targetMap
-#
-# $Id$
-#
-# used globals
-#
-# defined functions
+
 module Yast
   module PartitioningAutoPartCreateInclude
+
     def initialize_partitioning_auto_part_create(include_target)
       textdomain "storage"
 
@@ -41,6 +37,7 @@ module Yast
       Yast.import "Partitions"
       Yast.import "StorageProposal"
     end
+
 
     def create_partitions(tgmap, disk, partitions)
       tgmap = deep_copy(tgmap)
@@ -60,8 +57,11 @@ module Yast
       Builtins.y2milestone("create_partitions flex %1 vm %2", has_flex, vm)
       Ops.set(disk, "partitions", partitions)
       if StorageProposal.NeedNewDisklabel(disk)
-        Ops.set(tgmap, [Ops.get_string(disk, "device", ""), "disklabel"], "gpt")
-        Ops.set(tgmap, [Ops.get_string(disk, "device", ""), "del_ptable"], true)
+        # TODO understand reason why "label" and "disklabel" are needed
+        device = disk["device"]
+        disk["label"] = tgmap[device]["label"] = "gpt"
+        disk["disklabel"] = tgmap[device]["disklabel"] = "gpt"
+        disk["del_ptable"] = tgmap[device]["del_ptable"] = true
       end
       keep = Builtins.find(partitions) do |p|
         !Ops.get_boolean(p, "delete", false) &&
@@ -205,5 +205,6 @@ module Yast
       Builtins.y2milestone("create_partitions ret %1", ret)
       ret
     end
+
   end
 end

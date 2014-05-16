@@ -1,28 +1,34 @@
 # encoding: utf-8
 
-# testedfiles: helper1b.yh
+# testedfiles: helper.rb
+
 module Yast
-  class Windows1Client < Client
+
+  class TestClient < Client
+
     def main
-      Yast.include self, "setup-system.rb"
 
-      setup_system("windows")
+      def setup1()
+        setup_system("windows")
+      end
 
-      Yast.include self, "helper1a.rb"
+      def setup2()
+        ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", true)
+        ProductFeatures.SetBooleanFeature("partitioning", "proposal_lvm", false)
+        ProductFeatures.SetBooleanFeature("partitioning", "proposal_snapshots", false)
+        ProductFeatures.SetStringFeature("partitioning", "root_max_size", "20 GB")
+        ProductFeatures.SetStringFeature("partitioning", "root_base_size", "15 GB")
+      end
 
-      Yast.import "ProductFeatures"
+      def setup3()
+      end
 
-      ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", true)
-      ProductFeatures.SetBooleanFeature("partitioning", "proposal_lvm", false)
-      ProductFeatures.SetBooleanFeature("partitioning", "proposal_snapshots", false)
-      ProductFeatures.SetStringFeature("partitioning", "root_max_size", "20 GB")
-      ProductFeatures.SetStringFeature("partitioning", "root_base_size", "15 GB")
+      Yast.include self, "helper.rb"
 
-      Yast.include self, "helper1b.rb"
-
-      nil
     end
+
   end
+
 end
 
-Yast::Windows1Client.new.main
+Yast::TestClient.new.main

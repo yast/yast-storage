@@ -22,6 +22,8 @@ module Yast
       end
 
       def setup3()
+        StorageProposal.SetProposalEncrypt(true)
+        StorageProposal.SetProposalPassword("12345678")
       end
 
       Yast.include self, "helper.rb"

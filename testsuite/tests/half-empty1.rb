@@ -1,27 +1,33 @@
 # encoding: utf-8
 
-# testedfiles: helper1b.yh
+# testedfiles: helper.rb
+
 module Yast
-  class HalfEmpty1Client < Client
+
+  class TestClient < Client
+
     def main
-      Yast.include self, "setup-system.rb"
 
-      setup_system("half-empty")
+      def setup1()
+        setup_system("half-empty")
+      end
 
-      Yast.include self, "helper1a.rb"
+      def setup2()
+        ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", true)
+        ProductFeatures.SetBooleanFeature("partitioning", "proposal_lvm", false)
+        ProductFeatures.SetBooleanFeature("partitioning", "proposal_snapshots", false)
+        ProductFeatures.SetStringFeature("partitioning", "root_base_size", "20 GB")
+      end
 
-      Yast.import "ProductFeatures"
+      def setup3()
+      end
 
-      ProductFeatures.SetBooleanFeature("partitioning", "try_separate_home", true)
-      ProductFeatures.SetBooleanFeature("partitioning", "proposal_lvm", false)
-      ProductFeatures.SetBooleanFeature("partitioning", "proposal_snapshots", false)
-      ProductFeatures.SetStringFeature("partitioning", "root_base_size", "20 GB")
+      Yast.include self, "helper.rb"
 
-      Yast.include self, "helper1b.rb"
-
-      nil
     end
+
   end
+
 end
 
-Yast::HalfEmpty1Client.new.main
+Yast::TestClient.new.main
