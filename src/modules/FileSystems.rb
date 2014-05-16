@@ -258,6 +258,7 @@ module Yast
         :ntfs       => true,
         :xxefi      => false,
         :xbootdisk  => false,
+        :xxbootdisk => false,
         :xbootfat   => false,
         :xhibernate => true,
         :raid       => true,
@@ -355,10 +356,17 @@ module Yast
           :fsid_item       => "0xFD Linux RAID "
         },
         :xbootdisk  => {
-          :name            => "PPCBOOT",
+          :name            => "PReP",
           :fsid            => Partitions.fsid_prep_chrp_boot,
           :supports_format => false,
-          :fsid_item       => "0x41 PPC PReP Boot"
+          :fsid_item       => "0x41 PReP Boot"
+        },
+        :xxbootdisk  => {
+          :name            => "GPT PReP",
+          :fsid            => Partitions.fsid_gpt_prep,
+          :supports_format => false,
+          :label           => "gpt",
+          :fsid_item       => "0x00 PReP Boot"
         },
         :xbootfat   => {
           :name            => "FATBOOT",
@@ -1384,6 +1392,7 @@ module Yast
       if Arch.ppc
         Ops.set(@support, :vfat, Arch.board_chrp)
         Ops.set(@support, :xbootdisk, true)
+        Ops.set(@support, :xxbootdisk, true)
         Ops.set(@support, :xbootfat, Arch.board_chrp)
       end
       Ops.set(@support, :vfat, false) if Arch.s390

@@ -166,13 +166,14 @@ module Yast
             end
             raid_type = Ops.get_string(part, "raid_type", "")
           elsif mountpoint == ""
+            dlabel = diskinfo["label"]
             if Partitions.PrepBoot &&
-                (fsid == Partitions.fsid_prep_chrp_boot || fsid == 6)
+                (fsid == Partitions.FsidBoot(dlabel) || fsid == 6)
               boot_found = true
               boot_end = Region.End(Ops.get_list(part, "region", []))
               boot_fs = Ops.get_symbol(part, "used_fs", :unknown)
               boot_size_k = Ops.get_integer(part, "size_k", 0)
-              boot_fsid = Partitions.fsid_prep_chrp_boot
+              boot_fsid = Partitions.FsidBoot(dlabel)
             elsif Arch.board_mac &&
                 Ops.get_symbol(part, "used_fs", :unknown) == :hfs
               boot_found = true
