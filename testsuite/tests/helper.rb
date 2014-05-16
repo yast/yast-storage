@@ -10,7 +10,15 @@ module Yast
       def setup_system(name)
         SCR.Execute(path(".target.bash"), "mkdir -p tmp")
         SCR.Execute(path(".target.bash"), "rm -rf tmp/*")
-        SCR.Execute(path(".target.bash"), "cp data/#{name}/*.info tmp")
+        SCR.Execute(path(".target.bash"), "cp data/#{name}/*.info tmp/")
+      end
+
+      @part_info_size = 0
+      @part_info_string = nil
+
+      def setup_part_info(content)
+        @part_info_size = content.size()
+        @part_info_string = content
       end
 
       setup1()
@@ -34,7 +42,8 @@ module Yast
           "language"   => { "RC_LANG" => "en_US.UTF-8", "RC_LC_MESSAGES" => "" }
         },
         "target"    => {
-          "size"        => 0,
+          "size"        => @part_info_size,
+          "string"      => @part_info_string,
           "bash_output" => {},
           "yast2"       => {},
           "dir"         => []
