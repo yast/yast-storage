@@ -607,16 +607,13 @@ module Yast
     end
 
 
-    def pinfo_name
-      "/part.info"
+    def pinfo_name()
+      return "/part.info"
     end
 
 
     def has_flex_proposal
-      ret = Ops.greater_than(
-        Convert.to_integer(SCR.Read(path(".target.size"), pinfo_name)),
-        0
-      )
+      ret = SCR.Read(path(".target.size"), pinfo_name) > 0
       if !ret
         t = ProductFeatures.GetBooleanFeature(
           "partitioning",
