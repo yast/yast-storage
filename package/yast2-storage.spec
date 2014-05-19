@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.24
+Version:        3.1.25
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -29,7 +29,7 @@ License:	GPL-2.0
 BuildRequires:	gcc-c++ libtool
 BuildRequires:	docbook-xsl-stylesheets doxygen libxslt perl-XML-Writer sgml-skel update-desktop-files
 BuildRequires:	libstorage-devel >= 2.25.10
-BuildRequires:  yast2 >= 2.19.4
+BuildRequires:  yast2 >= 3.1.22
 BuildRequires:  yast2-core-devel >= 2.23.1
 BuildRequires:  yast2-devtools >= 3.1.10
 BuildRequires:	yast2-testsuite >= 2.19.0
@@ -39,7 +39,9 @@ BuildRequires:	libstorage-ruby >= 2.25.10
 BuildRequires:  yast2-ruby-bindings >= 3.1.7
 Requires:	libstorage5 >= 2.25.10
 Requires:	libstorage-ruby >= 2.25.10
-Requires:	yast2-core >= 2.18.3 yast2 >= 2.19.4 yast2-libyui >= 2.18.7
+Requires:	yast2-core >= 2.18.3
+Requires:	yast2 >= 3.1.22
+Requires:	yast2-libyui >= 2.18.7
 Requires:	rubygem-ruby-dbus
 %ifarch s390 s390x
 Requires:	yast2-s390
