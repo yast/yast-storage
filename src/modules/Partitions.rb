@@ -301,6 +301,7 @@ module Yast
       @boot_cyl
     end
 
+
     def PrepBoot
       ret = Arch.ppc &&
         (Arch.board_chrp || Arch.board_prep || Arch.board_iseries)
@@ -311,9 +312,11 @@ module Yast
       ret
     end
 
-    def BootPrimary
-      ret = PrepBoot()
-      ret
+
+    # @return [boolean] true iff the boot partition must be a primary partition
+    #   (with MSDOS disk label)
+    def BootPrimary()
+      return PrepBoot()
     end
 
 
