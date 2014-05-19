@@ -301,6 +301,7 @@ module Yast
       @boot_cyl
     end
 
+
     def PrepBoot
       ret = Arch.ppc &&
         (Arch.board_chrp || Arch.board_prep || Arch.board_iseries)
@@ -311,9 +312,9 @@ module Yast
       ret
     end
 
-    def BootPrimary
-      ret = PrepBoot()
-      ret
+
+    def BootPrimary()
+      return PrepBoot()
     end
 
 

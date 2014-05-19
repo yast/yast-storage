@@ -37,6 +37,10 @@ require "yast"
 module Yast
   class StorageProposalClass < Module
 
+
+    include Yast::Logger
+
+
     def main
 
       textdomain "storage"
@@ -4125,11 +4129,8 @@ module Yast
           end
           deep_copy(p)
         end
-        Builtins.y2milestone(
-          "special_boot_proposal_prepare part:%1",
-          partitions
-        )
-        Builtins.y2milestone("special_boot_proposal_prepare  ret:%1", ret)
+        log.info("special_boot_proposal_prepare part:#{partitions}")
+        log.info("special_boot_proposal_prepare ret:#{ret}")
       end
       deep_copy(ret)
     end
