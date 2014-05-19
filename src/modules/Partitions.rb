@@ -313,6 +313,8 @@ module Yast
     end
 
 
+    # @return [boolean] true iff the boot partition must be a primary partition
+    #   (with MSDOS disk label)
     def BootPrimary()
       return PrepBoot()
     end
