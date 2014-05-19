@@ -9,7 +9,7 @@ module Yast
     def main
 
       def setup1()
-        setup_system("empty")
+        setup_system("empty-efi")
 
         setup_part_info(<<-EOT)
 PARTITION  mount=/      size=8GB
