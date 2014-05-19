@@ -56,6 +56,7 @@ module Yast
       Yast.import "String"
       Yast.import "Hotplug"
       Yast.import "ProductFeatures"
+      Yast.import "Service"
 
       # simple resize functionality - dialog to set size of Linux and Windows before proposal
 
@@ -6532,8 +6533,7 @@ module Yast
 
       CallInsserv(need_md, "boot.md")
       CallInsserv(need_dmraid, "boot.dmraid")
-      CallInsserv(need_dmmultipath, "boot.multipath")
-      CallInsserv(need_dmmultipath, "multipathd")
+      Service.Enable("multipathd") if need_dmmultipath
 
       Builtins.y2milestone("FinishInstall done")
 
