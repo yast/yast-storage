@@ -39,7 +39,9 @@ BuildRequires:	libstorage-ruby >= 2.25.10
 BuildRequires:  yast2-ruby-bindings >= 3.1.7
 Requires:	libstorage5 >= 2.25.10
 Requires:	libstorage-ruby >= 2.25.10
-Requires:	yast2-core >= 2.18.3 yast2 >= 2.19.4 yast2-libyui >= 2.18.7
+Requires:	yast2-core >= 2.18.3
+Requires:	yast2 >= 3.1.22
+Requires:	yast2-libyui >= 2.18.7
 Requires:	rubygem-ruby-dbus
 %ifarch s390 s390x
 Requires:	yast2-s390
