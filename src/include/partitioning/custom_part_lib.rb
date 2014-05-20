@@ -839,7 +839,8 @@ module Yast
               Partitions.fsid_raid,
               Partitions.fsid_hibernation,
               Partitions.fsid_bios_grub,
-              Partitions.fsid_prep_chrp_boot
+              Partitions.fsid_prep_chrp_boot,
+              Partitions.fsid_gpt_prep
             ],
             fs_int
           )

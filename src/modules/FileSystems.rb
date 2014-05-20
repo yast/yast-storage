@@ -258,6 +258,7 @@ module Yast
         :ntfs       => true,
         :xxefi      => false,
         :xbootdisk  => false,
+        :xxbootdisk => false,
         :xbootfat   => false,
         :xhibernate => true,
         :raid       => true,
@@ -359,6 +360,13 @@ module Yast
           :fsid            => Partitions.fsid_prep_chrp_boot,
           :supports_format => false,
           :fsid_item       => "0x41 PPC PReP Boot"
+        },
+        :xxbootdisk  => {
+          :name            => "GPT PReP",
+          :fsid            => Partitions.fsid_gpt_prep,
+          :supports_format => false,
+          :label           => "gpt",
+          :fsid_item       => "0x00 PReP Boot"
         },
         :xbootfat   => {
           :name            => "FATBOOT",
@@ -1359,6 +1367,7 @@ module Yast
       deep_copy(ret)
     end
 
+
     def FindFsid(fs_item)
       ret = nil
       fs = Convert.convert(
@@ -1379,11 +1388,13 @@ module Yast
       ret
     end
 
+
     def FileSystems
       Ops.set(@support, :vfat, false) if Arch.sparc64 || Arch.sparc32
       if Arch.ppc
         Ops.set(@support, :vfat, Arch.board_chrp)
         Ops.set(@support, :xbootdisk, true)
+        Ops.set(@support, :xxbootdisk, true)
         Ops.set(@support, :xbootfat, Arch.board_chrp)
       end
       Ops.set(@support, :vfat, false) if Arch.s390

@@ -6135,9 +6135,10 @@ module Yast
       tg = deep_copy(tg)
       have_ppc_boot = false
       Builtins.foreach(tg) do |dev, disk|
+        dlabel = disk.fetch("label", "")
         disk.fetch("partitions",[]).each do |part|
           if !have_ppc_boot &&
-             part.fetch("fsid",0) == Partitions.fsid_prep_chrp_boot &&
+             part.fetch("fsid", 0) == Partitions.FsidBoot(dlabel) &&
              part.fetch("mount","").empty? &&
              part.fetch("create",false)
             have_ppc_boot = true
@@ -6147,12 +6148,13 @@ module Yast
       Builtins.y2milestone( "SpecialBootHandling: ppc_boot:%1", have_ppc_boot)
       Builtins.foreach(tg) do |dev, disk|
         new_part = []
+        dlabel = disk.fetch("label", "")
         disk.fetch("partitions",[]).each do |part|
           # convert a mount point of /boot to a 41 PReP boot partition
           if Partitions.PrepBoot &&
              part.fetch("mount","") == Partitions.BootMount &&
              !have_ppc_boot
-            id = Partitions.fsid_prep_chrp_boot
+            id = Partitions.FsidBoot(dlabel)
             part["format"]=false
             part["mount"]=""
             part["fstype"]=Partitions.FsIdToString(id)
@@ -6187,7 +6189,7 @@ module Yast
             Builtins.y2milestone( "SpecialBootHandling modified GPT boot part=%1", part)
           end
           if !Partitions.EfiBoot && (Arch.i386||Arch.x86_64) &&
-	     disk.fetch("label","") == "gpt" &&
+            dlabel == "gpt" &&
              part.fetch("mount","") == Partitions.BootMount
             id = Partitions.fsid_bios_grub
             part["fsid"] = id
@@ -6699,6 +6701,7 @@ module Yast
           Builtins.contains(
             [
               Partitions.fsid_prep_chrp_boot,
+              Partitions.fsid_gpt_prep,
               Partitions.fsid_lvm,
               Partitions.fsid_raid
             ],
