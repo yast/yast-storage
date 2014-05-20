@@ -9,13 +9,9 @@ module Yast
     def main
 
       def setup1()
-        setup_system("empty-ppc64le")
-
-        # TODO: The PReP partition is ignored since partitions without a mount
-        # point are ignored when reading the flex proposal configuration.
+        setup_system("empty-big-ppc64le")
 
         setup_part_info(<<-EOT)
-PARTITION  mount=       size=8MB
 PARTITION  mount=/      size=8GB
 PARTITION  mount=swap   size=1GB
 PARTITION  mount=/data  sizepct=100

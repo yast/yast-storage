@@ -656,6 +656,7 @@ module Yast
 
       if !boot && (root || force) &&
           ( disk.fetch("cyl_count", 0) > Partitions.BootCyl || need_boot(disk) )
+        dlabel = disk.fetch("label", "")
         pb = {}
 	pb["mount"] = Partitions.BootMount
 	pb["size"] = Partitions.ProposedBootsize
@@ -665,7 +666,7 @@ module Yast
 	  pb["size"] = sz
 	end
 	pb["fsys"] = Partitions.DefaultBootFs
-	pb["id"] = Partitions.FsidBoot
+	pb["id"] = Partitions.FsidBoot(dlabel)
         pb["auto_added"] = true
         pb["max_cyl"] = Partitions.BootCyl
         pb["primary"] = Partitions.BootPrimary
@@ -3292,7 +3293,10 @@ module Yast
             Ops.set(partition, "fsys", Partitions.DefaultBootFs)
           end
           if Ops.get_integer(partition, "id", 0) == 0
-            Ops.set(partition, "id", Partitions.FsidBoot)
+            # TODO: The empty dlabel for FsidBoot is wrong on PPC but
+            # partitions without a mount point are ignored anyway. See
+            # flex-info-empty-ppc64le2.rb.
+            Ops.set(partition, "id", Partitions.FsidBoot(""))
           end
           Ops.set(partition, "max_cyl", Partitions.BootCyl)
         end
@@ -3314,7 +3318,7 @@ module Yast
       else
         Ops.set(conf, "partitions", partitions)
       end
-      Builtins.y2milestone("conf %1", conf)
+      log.info("conf:#{conf}")
       deep_copy(conf)
     end
 
@@ -3437,7 +3441,7 @@ module Yast
               line = Builtins.substring(line, Ops.add(pos2, 1))
             end
           end
-          Builtins.y2debug("key %1 par \"%2\"", key, par)
+          log.debug("key:'#{key}' par:'#{par}'")
           if key == "id"
             Ops.set(part, key, Builtins.tointeger(par))
           elsif key == "mount"
@@ -3494,7 +3498,10 @@ module Yast
             Ops.set(part, "fsys", Partitions.DefaultBootFs)
           end
           if Ops.get_integer(part, "id", 0) == 0
-            Ops.set(part, "id", Partitions.FsidBoot)
+            # TODO: The empty dlabel for FsidBoot is wrong on PPC but
+            # partitions without a mount point are ignored anyway. See
+            # flex-info-empty-ppc64le2.rb.
+            Ops.set(part, "id", Partitions.FsidBoot(""))
           end
           Ops.set(part, "max_cyl", Partitions.BootCyl)
         end
@@ -3510,7 +3517,7 @@ module Yast
       else
         Ops.set(conf, "partitions", partitions)
       end
-      Builtins.y2milestone("conf %1", conf)
+      log.info("conf:#{conf}")
       deep_copy(conf)
     end
 
@@ -3623,7 +3630,6 @@ module Yast
     end
 
 
-
     def can_boot_reuse(disk, label, boot, max_prim, partitions)
       ret = []
       Builtins.y2milestone("can_boot_reuse boot:%1", boot)
@@ -3639,12 +3645,12 @@ module Yast
         Builtins.y2milestone( "can_boot_reuse pl:%1", pl )
         boot2 = Builtins.find(pl) do |p|
           p.fetch("fsid",0) == Partitions.fsid_gpt_boot ||
-	  p.fetch("fsid",0) == Partitions.FsidBoot &&
+	  p.fetch("fsid", 0) == Partitions.FsidBoot(label) &&
 	    p.fetch("size_k",0)*1024<=Partitions.MaximalBootsize ||
 	  p.fetch("detected_fs",:unknown) == :hfs &&
 	    p.fetch("boot",false) &&
 	    label == "mac" ||
-	  p.fetch("fsid",0) == Partitions.fsid_prep_chrp_boot &&
+	  p.fetch("fsid", 0) == Partitions.FsidBoot(label) &&
 	    p.fetch("nr",0)<=max_prim &&
 	    Partitions.PrepBoot ||
 	  p.fetch("fsid",0) == Partitions.fsid_bios_grub &&
@@ -4123,7 +4129,7 @@ module Yast
         ret = Builtins.maplist(partitions) do |p|
           if Builtins.size(Ops.get_string(p, "mount", "")) == 0 &&
               (Ops.get_integer(p, "fsid", 0) == 6 ||
-                Ops.get_integer(p, "fsid", 0) == 65)
+               Partitions.IsPrepPartition(Ops.get_integer(p, "fsid", 0)))
             Ops.set(p, "delete", true)
           end
           deep_copy(p)
@@ -4147,20 +4153,20 @@ module Yast
       ]
       remk = ["del_ptable", "disklabel"]
       Builtins.foreach(ddev) do |s|
+        dlabel = Ops.get_string(tg, [s, "label"])
         Ops.set(
           tg,
           [s, "partitions"],
           Builtins.maplist(Ops.get_list(tg, [s, "partitions"], [])) do |p|
             if Builtins.contains(linux_pid, Ops.get_integer(p, "fsid", 0)) ||
-                Ops.get_integer(p, "fsid", 0) == Partitions.FsidBoot &&
+                Ops.get_integer(p, "fsid", 0) == Partitions.FsidBoot(dlabel) &&
                   !Partitions.EfiBoot &&
                   Ops.less_or_equal(
                     Ops.multiply(Ops.get_integer(p, "size_k", 0), 1024),
                     Partitions.MaximalBootsize
                   ) ||
                 Partitions.PrepBoot &&
-                  (Ops.get_integer(p, "fsid", 0) ==
-                    Partitions.fsid_prep_chrp_boot ||
+                  (Ops.get_integer(p, "fsid", 0) == Partitions.FsidBoot(dlabel) ||
                     Ops.get_integer(p, "fsid", 0) == 6)
               Ops.set(p, "linux", true)
             else
@@ -5607,14 +5613,7 @@ module Yast
       target = remove_vm(target, key) if Builtins.size(vg_key) == 0
       target = AddWinInfo(target)
       Ops.set(ret, "target", target)
-      boot = {
-        "mount"   => Partitions.BootMount,
-        "size"    => Partitions.ProposedBootsize,
-        "fsys"    => Partitions.DefaultBootFs,
-        "id"      => Partitions.FsidBoot,
-        "max_cyl" => Partitions.BootCyl
-      }
-      Ops.set(boot, "primary", true) if Partitions.BootPrimary
+
       boot2 = {}
       if GetProposalEncrypt() && Partitions.EfiBoot
         boot2 = {
@@ -5820,7 +5819,21 @@ module Yast
               did_remove_vg(Ops.get_list(disk, "partitions", []), key)
             vg = ""
           end
-          ps = do_vm_disk_conf(disk, have_boot ? {} : boot, boot2, vg, key)
+
+          if have_boot
+            boot = {}
+          else
+            boot = {
+              "mount"   => Partitions.BootMount,
+              "size"    => Partitions.ProposedBootsize,
+              "fsys"    => Partitions.DefaultBootFs,
+              "id"      => Partitions.FsidBoot(disk["label"]),
+              "max_cyl" => Partitions.BootCyl,
+              "primary" => Partitions.BootPrimary
+            }
+          end
+
+          ps = do_vm_disk_conf(disk, boot, boot2, vg, key)
           if Ops.get_boolean(ps, "ok", false)
             mb = get_vm_sol(ps)
             if Ops.greater_than(
@@ -5985,14 +5998,7 @@ module Yast
       target = remove_mount_points(target)
       target = remove_vm(target, key)
       Ops.set(ret, "target", target)
-      boot = {
-        "mount"   => Partitions.BootMount,
-        "size"    => Partitions.ProposedBootsize,
-        "fsys"    => Partitions.DefaultBootFs,
-        "id"      => Partitions.FsidBoot,
-        "max_cyl" => Partitions.BootCyl
-      }
-      Ops.set(boot, "primary", true) if Partitions.BootPrimary
+
       boot2 = {}
       if GetProposalEncrypt() && Partitions.EfiBoot
         boot2 = {
@@ -6030,7 +6036,21 @@ module Yast
           boot2 = {}
         end
       end
-      ps = do_vm_disk_conf(disk, have_boot ? {} : boot, boot2, "", key)
+
+      if have_boot
+        boot = {}
+      else
+        boot = {
+          "mount"   => Partitions.BootMount,
+          "size"    => Partitions.ProposedBootsize,
+          "fsys"    => Partitions.DefaultBootFs,
+          "id"      => Partitions.FsidBoot(disk["label"]),
+          "max_cyl" => Partitions.BootCyl,
+          "primary" => Partitions.BootPrimary
+        }
+      end
+
+      ps = do_vm_disk_conf(disk, boot, boot2, "", key)
       Ops.set(ret, "ok", Ops.get_boolean(ps, "ok", false))
       if Ops.get_boolean(ret, "ok", false)
         disk = Ops.get_map(ps, "disk", {})
