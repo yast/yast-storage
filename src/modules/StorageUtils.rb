@@ -49,7 +49,7 @@ module Yast
           if SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus create-config " <<
                          "--fstype=btrfs --add-fstab /") == 0
             SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus set-config " <<
-                        "NUMBER_CLEANUP=yes NUMBER_LIMIT=20 NUMBER_LIMIT_IMPORTANT=10")
+                        "NUMBER_CLEANUP=yes NUMBER_LIMIT=10 NUMBER_LIMIT_IMPORTANT=10")
             SCR.Write(path(".sysconfig.yast2.USE_SNAPPER"), "yes")
             SCR.Write(path(".sysconfig.yast2"), nil)
           else
