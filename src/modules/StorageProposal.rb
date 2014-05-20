@@ -650,13 +650,12 @@ module Yast
       boot = pl.index { |e| e.fetch("mount","")==Partitions.BootMount }!=nil
       root = pl.index { |e| e.fetch("mount","")=="/" }!=nil
       tc = deep_copy(conf)
-      Builtins.y2milestone("try_add_boot conf %1", conf)
-      Builtins.y2milestone(
-        "try_add_boot boot %1 root %2 force %3 need_boot:%4",
-        boot, root, force, need_boot(disk))
+
+      log.info("try_add_boot conf:#{conf}")
+      log.info("try_add_boot boot:#{boot} root:#{root} force:#{force} need_boot:#{need_boot(disk)}")
+
       if !boot && (root || force) &&
-         disk.fetch("cyl_count",0)>Partitions.BootCyl ||
-	 need_boot(disk)
+          ( disk.fetch("cyl_count", 0) > Partitions.BootCyl || need_boot(disk) )
         pb = {}
 	pb["mount"] = Partitions.BootMount
 	pb["size"] = Partitions.ProposedBootsize
