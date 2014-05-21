@@ -400,17 +400,17 @@ module Yast
           ok = false if !Popup.YesNo(message)
         end
 
-        if root_subvols_shadowed || show_all_popups
-          message = _(
-            "Warning: Some subvolumes of the root filesystem are shadowed by\n" +
-            "mount points of other filesystem. This could lead to problems.\n" +
-            "\n" +
-            "Really use this setup?\n"
-          )
+      end
 
-          ok = false if !Popup.YesNo(message)
-        end
+      if root_subvols_shadowed || show_all_popups
+        message = _(
+          "Warning: Some subvolumes of the root filesystem are shadowed by\n" +
+          "mount points of other filesystem. This could lead to problems.\n" +
+          "\n" +
+          "Really use this setup?\n"
+        )
 
+        ok = false if !Popup.YesNo(message)
       end
 
       # iSeries has no problems with this configuration
