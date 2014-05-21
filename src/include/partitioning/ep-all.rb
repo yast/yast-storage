@@ -114,6 +114,18 @@ module Yast
         )
       end
 
+      if _IsAvailable.call("fcoe-client")
+        # menu entry text
+        configs = Builtins.add(
+          configs,
+          Item(
+            Id(:fcoe),
+            term(:icon, "fcoe"),
+            _("Configure &FCoE...")
+          )
+        )
+      end
+
       if true
         # menu entry text
         configs = Builtins.add(
@@ -282,6 +294,15 @@ module Yast
             ),
             ["yast2-iscsi-client"],
             "iscsi-client"
+          )
+        when :fcoe
+        # popup text
+          _CallConfig.call(
+            _(
+              "Calling FCoE configuration cancels all current changes.\nReally call iSCSI configuration?"
+            ),
+            ["yast2-fcoe-client"],
+            "fcoe-client"
           )
         when :multipath
           if ProductFeatures.GetBooleanFeature(
