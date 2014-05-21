@@ -299,7 +299,7 @@ module Yast
         # popup text
           _CallConfig.call(
             _(
-              "Calling FCoE configuration cancels all current changes.\nReally call iSCSI configuration?"
+              "Calling FCoE configuration cancels all current changes.\nReally call FCoE configuration?"
             ),
             ["yast2-fcoe-client"],
             "fcoe-client"
