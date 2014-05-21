@@ -73,101 +73,60 @@ module Yast
         fun_ref(StorageFields.method(:PredicateAll), "symbol (map, map)")
       )
 
-      buttons = [
+      buttons = []
+
+      if true
         # push button text
-        PushButton(Id(:rescan), Opt(:key_F6), _("Rescan Devices"))
-      ]
+        buttons << PushButton(Id(:rescan), Opt(:key_F6), _("Rescan Devices"))
+      end
 
       if Mode.installation
         # push button text
-        buttons = Builtins.add(
-          buttons,
-          PushButton(Id(:import), _("Import Mount Points..."))
-        )
+        buttons << PushButton(Id(:import), _("Import Mount Points..."))
       end
 
-      buttons = Builtins.add(buttons, HStretch())
+      buttons << HStretch()
 
       configs = []
 
       if true
         # menu entry text
-        configs = Builtins.add(
-          configs,
-          Item(
-            Id(:cryptpwd),
-            term(:icon, "yast-encrypted"),
-            _("Provide Crypt &Passwords...")
-          )
-        )
+        configs << Item(Id(:cryptpwd), term(:icon, "yast-encrypted"), _("Provide Crypt &Passwords..."))
       end
 
       if _IsAvailable.call("iscsi-client")
         # menu entry text
-        configs = Builtins.add(
-          configs,
-          Item(
-            Id(:iscsi),
-            term(:icon, "yast-iscsi-client"),
-            _("Configure &iSCSI...")
-          )
-        )
+        configs << Item(Id(:iscsi), term(:icon, "yast-iscsi-client"), _("Configure &iSCSI..."))
       end
 
       if _IsAvailable.call("fcoe-client")
         # menu entry text
-        configs = Builtins.add(
-          configs,
-          Item(
-            Id(:fcoe),
-            term(:icon, "fcoe"),
-            _("Configure &FCoE...")
-          )
-        )
+        configs << Item(Id(:fcoe), term(:icon, "fcoe"), _("Configure &FCoE..."))
       end
 
       if true
         # menu entry text
-        configs = Builtins.add(
-          configs,
-          Item(
-            Id(:multipath),
-            term(:icon, "yast-iscsi-server"),
-            _("Configure &Multipath...")
-          )
-        )
+        configs << Item(Id(:multipath), term(:icon, "yast-iscsi-server"), _("Configure &Multipath..."))
       end
 
       if Arch.s390 && _IsAvailable.call("dasd")
         # menu entry text
-        configs = Builtins.add(
-          configs,
-          Item(Id(:dasd), term(:icon, "yast-dasd"), _("Configure &DASD..."))
-        )
+        configs << Item(Id(:dasd), term(:icon, "yast-dasd"), _("Configure &DASD..."))
       end
 
       if Arch.s390 && _IsAvailable.call("zfcp")
         # menu entry text
-        configs = Builtins.add(
-          configs,
-          Item(Id(:zfcp), term(:icon, "yast-zfcp"), _("Configure &zFCP..."))
-        )
+        configs << Item(Id(:zfcp), term(:icon, "yast-zfcp"), _("Configure &zFCP..."))
       end
 
       if Arch.s390 && _IsAvailable.call("xpram")
         # menu entry text
-        configs = Builtins.add(
-          configs,
-          Item(Id(:xpram), term(:icon, "yast-xpram"), _("Configure &XPRAM..."))
-        )
+        configs << Item(Id(:xpram), term(:icon, "yast-xpram"), _("Configure &XPRAM..."))
       end
 
-      if !Builtins.isempty(configs)
+      if !configs.empty?
         # menu button text
-        buttons = Builtins.add(
-          buttons,
-          MenuButton(Opt(:key_F7), _("Configure..."), configs)
-        )
+        buttons << MenuButton(Opt(:key_F7), _("Configure..."), configs)
       end
 
 
@@ -296,7 +255,7 @@ module Yast
             "iscsi-client"
           )
         when :fcoe
-        # popup text
+          # popup text
           _CallConfig.call(
             _(
               "Calling FCoE configuration cancels all current changes.\nReally call FCoE configuration?"
