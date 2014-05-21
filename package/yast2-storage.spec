@@ -26,23 +26,28 @@ Source0:        %{name}-%{version}.tar.bz2
 Group:		System/YaST
 License:	GPL-2.0
 
+BuildRequires:	docbook-xsl-stylesheets
+BuildRequires:	doxygen
 BuildRequires:	gcc-c++ libtool
-BuildRequires:	docbook-xsl-stylesheets doxygen libxslt perl-XML-Writer sgml-skel update-desktop-files
 BuildRequires:	libstorage-devel >= 2.25.13
-BuildRequires:  yast2 >= 3.1.22
-BuildRequires:  yast2-core-devel >= 2.23.1
-BuildRequires:  yast2-devtools >= 3.1.10
-BuildRequires:	yast2-testsuite >= 2.19.0
-BuildRequires:	rubygem-ruby-dbus
-BuildRequires:	rubygem-rspec
 BuildRequires:	libstorage-ruby >= 2.25.13
-BuildRequires:  yast2-ruby-bindings >= 3.1.7
-Requires:	libstorage5 >= 2.25.13
+BuildRequires:	libxslt
+BuildRequires:	perl-XML-Writer
+BuildRequires:	rubygem-rspec
+BuildRequires:	rubygem-ruby-dbus
+BuildRequires:	sgml-skel
+BuildRequires:	update-desktop-files
+BuildRequires:	yast2 >= 3.1.22
+BuildRequires:	yast2-core-devel >= 2.23.1
+BuildRequires:	yast2-devtools >= 3.1.10
+BuildRequires:	yast2-ruby-bindings >= 3.1.7
+BuildRequires:	yast2-testsuite >= 2.19.0
 Requires:	libstorage-ruby >= 2.25.13
-Requires:	yast2-core >= 2.18.3
-Requires:	yast2 >= 3.1.22
-Requires:	yast2-libyui >= 2.18.7
+Requires:	libstorage5 >= 2.25.13
 Requires:	rubygem-ruby-dbus
+Requires:	yast2 >= 3.1.22
+Requires:	yast2-core >= 2.18.3
+Requires:	yast2-libyui >= 2.18.7
 %ifarch s390 s390x
 Requires:	yast2-s390
 %endif
@@ -55,7 +60,7 @@ Provides:	yast2-trans-inst-partitioning
 Obsoletes:	yast2-trans-inst-partitioning
 Provides:	y2t_inst-partitioning
 Obsoletes:	y2t_inst-partitioning
-Requires:       yast2-ruby-bindings >= 3.1.7
+Requires:	yast2-ruby-bindings >= 3.1.7
 
 Summary:	YaST2 - Storage Configuration
 Url:		http://github.com/yast/yast-storage/
@@ -124,8 +129,9 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_ybindir}/check.boot
 
 %package devel
+Requires:	libstdc++-devel
 Requires:	libstorage-devel = %(echo `rpm -q --queryformat '%{VERSION}' libstorage-devel`)
-Requires:       libstdc++-devel yast2-storage = %version
+Requires:	yast2-storage = %version
 
 Summary:        YaST2 - Storage Library Headers and Documentation
 Group:          Development/Libraries/YaST
