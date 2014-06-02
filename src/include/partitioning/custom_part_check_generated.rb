@@ -26,6 +26,10 @@
 module Yast
   module PartitioningCustomPartCheckGeneratedInclude
 
+
+    include Yast::Logger
+
+
     def initialize_partitioning_custom_part_check_generated(include_target)
       Yast.import "Arch"
       Yast.import "Storage"
@@ -230,22 +234,10 @@ module Yast
         end
       end
 
-      Builtins.y2milestone("diskless:%1", diskless)
-      Builtins.y2milestone("root_found:%1 root_fs:%2 rootdlabel:%3", 
-                           root_found, root_fs, rootdlabel)
-      Builtins.y2milestone(
-        "boot_found:%1 boot_fs:%2 boot_fsid:%3",
-        boot_found,
-        boot_fs,
-        boot_fsid
-      )
-      Builtins.y2milestone(
-        "root_dmraid:%1 root_raid:%2 boot_raid:%3 raid_type:%4",
-        root_dmraid,
-        root_raid,
-        boot_raid,
-        raid_type
-      )
+      log.info("diskless:#{diskless}")
+      log.info("root_found:#{root_found} root_fs:#{root_fs} rootdlabel:#{rootdlabel}")
+      log.info("boot_found:#{boot_found} boot_fs:#{boot_fs} boot_fsid:#{boot_fsid}")
+      log.info("root_dmraid:#{root_dmraid} root_raid:#{root_raid} boot_raid:#{boot_raid} raid_type:#{raid_type}")
 
       ok = true
 
