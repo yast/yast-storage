@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -25,7 +25,9 @@
 # Authors:     Arvin Schnell <aschnell@suse.de>
 module Yast
   module PartitioningEpSettingsInclude
+
     def initialize_partitioning_ep_settings(include_target)
+
       textdomain "storage"
 
 
@@ -66,7 +68,25 @@ module Yast
         # combo box entry
         :path   => _("Device Path")
       }
+
+      @alignments = {
+        # combo box entry
+        :align_optimal => _("Optimal"),
+        # combo box entry
+        :align_cylinder => _("Cylinder")
+      }
+
+      @display_names = {
+        # combo box entry
+        :device => _("Device Name"),
+        # combo box entry
+        :id => _("Device ID"),
+        # combo box entry
+        :path => _("Device Path")
+      }
+
     end
+
 
     def CreateSettingsPanel(user_data)
       user_data = deep_copy(user_data)
@@ -94,10 +114,13 @@ module Yast
         Item(Id(fs), FileSystems.GetName(fs, "Error"))
       end
 
-      partalign_items = Builtins.maplist([:align_optimal, :align_cylinder]) do |pal|
-        Item(Id(pal), Builtins.substring(Builtins.sformat("%1", pal), 7))
+      alignment_items = Builtins.maplist(@alignments) do |item_id, label|
+        Item(Id(item_id), label)
       end
 
+      display_name_items = Builtins.maplist(@display_names) do |item_id, label|
+        Item(Id(item_id), label)
+      end
 
       UI.ReplaceWidget(
         :tree_panel,
@@ -108,9 +131,7 @@ module Yast
             VBox(
               Left(
                 term(
-                  :ComboBoxSelected,
-                  Id(:default_mountby),
-                  Opt(:notify),
+                  :ComboBoxSelected, Id(:default_mountby), Opt(:notify),
                   # combo box label
                   _("Default Mount by"),
                   mount_by_items,
@@ -119,9 +140,7 @@ module Yast
               ),
               Left(
                 term(
-                  :ComboBoxSelected,
-                  Id(:default_fs),
-                  Opt(:notify),
+                  :ComboBoxSelected, Id(:default_fs), Opt(:notify),
                   # combo box label
                   _("Default File System"),
                   filesystem_items,
@@ -130,31 +149,20 @@ module Yast
               ),
               Left(
                 term(
-                  :ComboBoxSelected,
-                  Id(:part_align),
-                  Opt(:notify),
+                  :ComboBoxSelected, Id(:part_align), Opt(:notify),
                   # combo box label
                   _("Alignment of Newly Created Partitions"),
-                  partalign_items,
+                  alignment_items,
                   Id(Storage.GetPartitionAlignment)
                 )
               ),
               VSpacing(1),
               Left(
                 term(
-                  :ComboBoxSelected,
-                  Id(:display_name),
-                  Opt(:notify),
+                  :ComboBoxSelected, Id(:display_name), Opt(:notify),
                   # combo box label
                   _("Show Storage Devices by"),
-                  [
-                    # combo box entry
-                    Item(Id(:device), _("Device Name")),
-                    # combo box entry
-                    Item(Id(:id), _("Device ID")),
-                    # combo box entry
-                    Item(Id(:path), _("Device Path"))
-                  ],
+                  display_name_items,
                   Id(StorageSettings.GetDisplayName)
                 )
               ),
@@ -259,6 +267,8 @@ module Yast
 
       nil
     end
+
+
     def DestroySettingsPanel(user_data)
       user_data = deep_copy(user_data)
       selected = Convert.convert(
@@ -288,5 +298,6 @@ module Yast
 
       nil
     end
+
   end
 end

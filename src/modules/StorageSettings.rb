@@ -47,6 +47,7 @@ module Yast
       @modified = false
     end
 
+
     def GetModified
       @modified
     end
@@ -149,6 +150,7 @@ module Yast
 
       Builtins.filter(fields) { |field| !Builtins.setcontains(hidden, field) }
     end
+
 
     def InvertVisibleFields(all_fields, selected)
       all_fields = deep_copy(all_fields)
