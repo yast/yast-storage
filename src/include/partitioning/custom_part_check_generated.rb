@@ -184,7 +184,7 @@ module Yast
               boot_end = Region.End(Ops.get_list(part, "region", []))
               boot_fs = Ops.get_symbol(part, "used_fs", :unknown)
               boot_size_k = Ops.get_integer(part, "size_k", 0)
-            elsif fsid == Partitions.fsid_bios_grub
+            elsif !Partitions.EfiBoot() && fsid == Partitions.fsid_bios_grub
               boot_found = true
               boot_end = Region.End(Ops.get_list(part, "region", []))
               boot_fs = :none
