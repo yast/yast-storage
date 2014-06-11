@@ -356,17 +356,17 @@ module Yast
           :fsid_item       => "0xFD Linux RAID "
         },
         :xbootdisk  => {
-          :name            => "PPCBOOT",
+          :name            => "PReP",
           :fsid            => Partitions.fsid_prep_chrp_boot,
           :supports_format => false,
-          :fsid_item       => "0x41 PPC PReP Boot"
+          :fsid_item       => "0x41 PReP Boot"
         },
         :xxbootdisk  => {
           :name            => "GPT PReP",
           :fsid            => Partitions.fsid_gpt_prep,
           :supports_format => false,
           :label           => "gpt",
-          :fsid_item       => "0x00 PReP Boot"
+          :fsid_item       => "0x00 GPT PReP Boot"
         },
         :xbootfat   => {
           :name            => "FATBOOT",

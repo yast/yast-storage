@@ -785,7 +785,7 @@ module Yast
         when 64
           return "Venix 80286"
         when 65
-          return "PPC PReP Boot"
+          return "PReP Boot"
         when 66
           return "SFS"
         when 77
