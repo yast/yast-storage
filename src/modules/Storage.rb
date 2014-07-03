@@ -4974,7 +4974,7 @@ module Yast
       end
 
       if Arch.ppc
-        def_subvol.push("boot/grub2/power-ieee1275")
+        def_subvol.push("boot/grub2/powerpc-ieee1275")
       end
 
       if Arch.s390
