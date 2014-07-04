@@ -4958,7 +4958,7 @@ module Yast
         "var/crash",
         "var/lib/mailman",
         "var/lib/named",
-        "var/lib/pgqsl",
+        "var/lib/pgsql",
         "var/log",
         "var/opt",
         "var/spool",
