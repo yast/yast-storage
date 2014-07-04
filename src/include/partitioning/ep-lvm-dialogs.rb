@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -981,6 +981,16 @@ module Yast
             _MiniWorkflowStepLvSize_result
           )
         end,
+        "Role"        => lambda do
+          (
+            data_ref = arg_ref(data.value);
+            _MiniWorkflowStepRole_result = MiniWorkflowStepRole(
+              data_ref
+            );
+            data.value = data_ref.value;
+            _MiniWorkflowStepRole_result
+          )
+        end,
         "FormatMount" => lambda do
           (
             data_ref = arg_ref(data.value);
@@ -1006,7 +1016,8 @@ module Yast
 
       sequence = {
         "Name"        => { :next => "Size" },
-        "Size"        => { :next => "FormatMount", :finish => "Commit" },
+        "Size"        => { :next => "Role" },
+        "Role"        => { :next => "FormatMount" },
         "FormatMount" => { :next => "Password", :finish => "Commit" },
         "Password"    => { :finish => "Commit" },
         "Commit"      => { :finish => :finish }

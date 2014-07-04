@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.35
+Version:        3.1.36
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -137,8 +137,8 @@ Summary:        YaST2 - Storage Library Headers and Documentation
 Group:          Development/Libraries/YaST
 
 %description devel
-This package contains the files for YaST2 that are needed of one wants
-to develop a program using libstorage.
+This package contains the files for YaST2 that are needed if one wants
+to develop a program using yast2-storage.
 
 %files devel
 %defattr(-,root,root)
