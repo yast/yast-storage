@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2014] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -25,13 +25,82 @@
 # Authors:     Arvin Schnell <aschnell@suse.de>
 module Yast
   module PartitioningEpDialogsInclude
+
     def initialize_partitioning_ep_dialogs(include_target)
       textdomain "storage"
-
 
       Yast.include include_target, "partitioning/ep-lib.rb"
       Yast.include include_target, "partitioning/custom_part_lib.rb"
     end
+
+
+    def MiniWorkflowStepRoleHelp()
+      # helptext
+      helptext = _("<p>Choose the role of the device.</p>")
+
+      helptext
+    end
+
+
+    def MiniWorkflowStepRole(data)
+
+      log.info("MiniWorkflowStepDeviceRole data:#{data.value}")
+
+      role = data.value.fetch("role", :data)
+
+      tmp = VBox(
+        term(
+          :LeftRadioButton, Id(:system),
+          # radio button text
+          _("Operating System"), role == :system
+        ),
+        term(
+          :LeftRadioButton, Id(:data),
+          # radio button text
+          _("Data and ISV Applications"), role == :data
+        ),
+        term(
+          :LeftRadioButton, Id(:swap),
+          # radio button text
+          _("Swap"), role == :swap
+        ),
+        term(
+          :LeftRadioButton, Id(:raw),
+          # radio button text
+          _("Raw Volume (unformatted)"), role == :raw
+        )
+      )
+
+      contents = HVSquash(
+        term(
+          :FrameWithMarginBox,
+          # heading for a frame in a dialog
+          _("Role"),
+          RadioButtonGroup(Id(:role), tmp)
+        )
+      )
+
+      MiniWorkflow.SetContents(
+        Greasemonkey.Transform(contents),
+        MiniWorkflowStepRoleHelp()
+      )
+      MiniWorkflow.SetLastStep(false)
+
+      widget = nil
+      begin
+        widget = MiniWorkflow.UserInput()
+      end until widget == :abort || widget == :back || widget == :next
+
+      if widget == :next
+        role = UI.QueryWidget(Id(:role), :Value)
+        data.value["role"] = role
+      end
+
+      log.info("MiniWorkflowStepRole data:#{data.value} ret:#{widget}")
+
+      return widget
+    end
+
 
     def MiniWorkflowStepFormatMountHelptext
       # helptext
@@ -169,21 +238,46 @@ module Yast
           !Ops.get_boolean(data, "formatmount_proposed", false)
         Ops.set(data, "formatmount_proposed", true)
 
-        #propose new mountpoint and filesystem
-        mount_point_proposal = SingleMountPointProposal()
-        used_fs = Partitions.DefaultFs
+        role = data["role"]
 
-        #special case for boot partition
-        if mount_point_proposal == Partitions.BootMount
-          used_fs = Partitions.DefaultBootFs
+        case role
+        when :swap
+          mount_point_proposal = "swap"
+          used_fs = :swap
+
+          data["format"] = true
+          data["fsid"] = Partitions.fsid_swap
+          data["ori_fsid"] = Partitions.fsid_swap
+          data["used_fs"] = used_fs
+
+        when :raw
+          mount_point_proposal = ""
+          used_fs = :none
+
+          data["format"] = false
+          data["fsid"] = Partitions.fsid_lvm
+          data["ori_fsid"] = Partitions.fsid_lvm
+          data["used_fs"] = used_fs
+
+        else
+          # propose new mountpoint and filesystem
+          mount_point_proposal = SingleMountPointProposal()
+          used_fs = data["role"] == :system ? Partitions.DefaultFs() :
+            Partitions.DefaultHomeFs()
+
+          # special case for boot partition
+          if mount_point_proposal == Partitions.BootMount
+            used_fs = Partitions.DefaultBootFs
+          end
+
+          data["format"] = !Ops.get_boolean(data, "pool", false)
+          data["fsid"] = Partitions.fsid_native
+          data["ori_fsid"] = Partitions.fsid_native
+          data["used_fs"] = used_fs
+
         end
 
-        Ops.set(data, "format", !Ops.get_boolean(data, "pool", false))
-        Ops.set(data, "fsid", Partitions.fsid_native)
-        Ops.set(data, "ori_fsid", Partitions.fsid_native)
-        Ops.set(data, "used_fs", used_fs)
-
-        #set globals
+        # set globals
         do_format = Ops.get_boolean(data, "format", false)
         mount = mount_point_proposal
         do_mount = mount != ""

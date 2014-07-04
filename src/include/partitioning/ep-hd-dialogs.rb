@@ -460,6 +460,16 @@ module Yast
             _MiniWorkflowStepPartitionSize_result
           )
         end,
+        "Role"        => lambda do
+          (
+            data_ref = arg_ref(data.value);
+            _MiniWorkflowStepRole_result = MiniWorkflowStepRole(
+              data_ref
+            );
+            data.value = data_ref.value;
+            _MiniWorkflowStepRole_result
+          )
+        end,
         "FormatMount" => lambda do
           (
             data_ref = arg_ref(data.value);
@@ -484,7 +494,8 @@ module Yast
 
       sequence = {
         "Type"        => { :next => "Size" },
-        "Size"        => { :next => "FormatMount", :finish => :finish },
+        "Size"        => { :next => "Role" },
+        "Role"        => { :next => "FormatMount" },
         "FormatMount" => { :next => "Password", :finish => :finish },
         "Password"    => { :finish => :finish }
       }
