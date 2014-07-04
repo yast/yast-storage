@@ -137,8 +137,8 @@ Summary:        YaST2 - Storage Library Headers and Documentation
 Group:          Development/Libraries/YaST
 
 %description devel
-This package contains the files for YaST2 that are needed of one wants
-to develop a program using libstorage.
+This package contains the files for YaST2 that are needed if one wants
+to develop a program using yast2-storage.
 
 %files devel
 %defattr(-,root,root)
