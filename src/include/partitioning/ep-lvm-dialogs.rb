@@ -1016,7 +1016,7 @@ module Yast
 
       sequence = {
         "Name"        => { :next => "Size" },
-        "Size"        => { :next => "Role" },
+        "Size"        => { :next => "Role", :finish => "Commit" },
         "Role"        => { :next => "FormatMount" },
         "FormatMount" => { :next => "Password", :finish => "Commit" },
         "Password"    => { :finish => "Commit" },
