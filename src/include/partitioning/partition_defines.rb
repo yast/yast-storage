@@ -103,7 +103,7 @@ module Yast
         free_list = notUsedMountpoints(
           Storage.GetTargetMap,
           FileSystems.SuggestMPoints
-        ) # = filter( string point, base,
+        )
         return Ops.get_string(free_list, 0, "")
       end
     end
