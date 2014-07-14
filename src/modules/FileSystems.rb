@@ -461,10 +461,11 @@ module Yast
       deep_copy(@suggest_m_points)
     end
 
-    def SuggesTmpfsMPoints
+
+    def SuggestTmpfsMPoints
       if Builtins.size(@suggest_tmp_points) == 0
         @suggest_tmp_points = ["/run", "/var/run", "/tmp", "/var/lock"]
-        Builtins.y2milestone("SuggesTmpfsMPoints init:%1", @suggest_tmp_points)
+        Builtins.y2milestone("SuggestTmpfsMPoints init:%1", @suggest_tmp_points)
       end
       deep_copy(@suggest_tmp_points)
     end
@@ -1296,7 +1297,7 @@ module Yast
         },
         :tmpfs   => {
           :name         => "TmpFS",
-          :mountpoints  => SuggesTmpfsMPoints(),
+          :mountpoints  => SuggestTmpfsMPoints(),
           :mount_string => "tmpfs",
           :mount_option => "-t tmpfs",
           :fst_options  => @tmpfs_fst_options
@@ -2016,7 +2017,7 @@ module Yast
     publish :variable => :default_subvol, :type => "string"
     publish :variable => :nchars, :type => "string"
     publish :function => :SuggestMPoints, :type => "list <string> ()"
-    publish :function => :SuggesTmpfsMPoints, :type => "list <string> ()"
+    publish :function => :SuggestTmpfsMPoints, :type => "list <string> ()"
     publish :function => :GetGeneralFstabOptions, :type => "list <map <symbol, any>> ()"
     publish :function => :GetJournalFstabOptions, :type => "list <map <symbol, any>> ()"
     publish :function => :GetAclFstabOptions, :type => "list <map <symbol, any>> ()"
