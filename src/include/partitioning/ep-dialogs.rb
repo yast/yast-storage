@@ -249,6 +249,7 @@ module Yast
           data["fsid"] = Partitions.fsid_swap
           data["ori_fsid"] = Partitions.fsid_swap
           data["used_fs"] = used_fs
+          data["mount"] = mount_point_proposal
 
         when :raw
           mount_point_proposal = ""
@@ -274,6 +275,7 @@ module Yast
           data["fsid"] = Partitions.fsid_native
           data["ori_fsid"] = Partitions.fsid_native
           data["used_fs"] = used_fs
+          data["mount"] = mount_point_proposal
 
         end
 

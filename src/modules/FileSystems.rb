@@ -456,7 +456,7 @@ module Yast
               Ops.get(order_m_mpoints, b, 99)
             )
         end
-        Builtins.y2milestone("SuggestMPoints init:%1", @suggest_m_points)
+        Builtins.y2milestone("SuggestMPoints ret:%1", @suggest_m_points)
       end
       deep_copy(@suggest_m_points)
     end
@@ -465,7 +465,7 @@ module Yast
     def SuggestTmpfsMPoints
       if Builtins.size(@suggest_tmp_points) == 0
         @suggest_tmp_points = ["/run", "/var/run", "/tmp", "/var/lock"]
-        Builtins.y2milestone("SuggestTmpfsMPoints init:%1", @suggest_tmp_points)
+        Builtins.y2milestone("SuggestTmpfsMPoints ret:%1", @suggest_tmp_points)
       end
       deep_copy(@suggest_tmp_points)
     end

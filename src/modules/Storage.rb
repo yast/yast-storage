@@ -4992,7 +4992,7 @@ module Yast
       fmt = part.fetch("format",false)
       names = []
       if !fmt
-	names = ls.select { |s| !s.fetch("delete",false) }.each { |s| s.fetch("name","") }
+	names = lst.select { |s| !s.fetch("delete", false) }.each { |s| s.fetch("name", "") }
       else
 	lst = []
       end

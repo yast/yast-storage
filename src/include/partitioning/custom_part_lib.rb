@@ -694,6 +694,12 @@ module Yast
           UI.ChangeWidget(Id(:fstab_options), :Enabled, !Builtins.isempty(mp))
         end
       end
+
+      # set btrfs subvolumes (bnc#872210)
+      if init
+        new = HandleSubvol(new)
+      end
+
       if init && UI.WidgetExists(Id(:format)) || ret == :do_format ||
           ret == :do_not_format
         format = UI.QueryWidget(Id(:format), :Value) == :do_format
