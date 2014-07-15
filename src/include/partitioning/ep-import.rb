@@ -229,7 +229,7 @@ module Yast
               fstab.each do |fstab_entry|
 
                 type_fstab = fstab_entry["detected_fs"]
-                opts_fstab = fstab_entry["fstopt"]
+                opts_fstab = fstab_entry.fetch("fstopt", "")
 
                 # YaST cannot handle multiple mount points per device so ignore all
                 # subvolume mounts (bnc #874288)
