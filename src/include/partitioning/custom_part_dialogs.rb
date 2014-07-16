@@ -1728,6 +1728,7 @@ module Yast
               svtmp
             )
             Popup.Message(tmp)
+            pth = svtmp + pth
           end
           if Builtins.contains(SubvolNames(new), pth)
             Popup.Message(
