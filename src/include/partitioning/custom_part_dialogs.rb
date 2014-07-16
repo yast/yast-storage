@@ -1681,7 +1681,10 @@ module Yast
       begin
         ret = UI.UserInput
         Builtins.y2milestone("SubvolHandling ret %1", ret)
-        if ret == :remove
+
+        case ret
+
+        when :remove
           pth = Convert.to_string(UI.QueryWidget(Id(:subvol), :CurrentItem))
           Builtins.y2milestone("SubvolHandling remove path:%1", pth)
           Builtins.y2milestone(
@@ -1707,8 +1710,8 @@ module Yast
           Builtins.y2milestone("SubvolHandling remove items:%1", items)
           changed = true
           UI.ChangeWidget(Id(:subvol), :Items, items)
-        end
-        if ret == :add
+
+        when :add
           pth = Convert.to_string(UI.QueryWidget(Id(:new_path), :Value))
           svtmp = Ops.add(FileSystems.default_subvol, "/")
           Builtins.y2milestone(
@@ -1728,6 +1731,7 @@ module Yast
               svtmp
             )
             Popup.Message(tmp)
+            pth = svtmp + pth
           end
           if Builtins.contains(SubvolNames(new), pth)
             Popup.Message(
@@ -1747,9 +1751,8 @@ module Yast
           items = SubvolNames(new)
           UI.ChangeWidget(Id(:subvol), :Items, items)
           UI.ChangeWidget(Id(:new_path), :Value, "")
-        end
 
-        if ret == :ok
+        when :ok
           val = UI.QueryWidget(Id(:snapshots), :Value)
           if val
             old_userdata["/"] = "snapshots"
@@ -1757,9 +1760,8 @@ module Yast
             old_userdata.delete("/")
           end
           Ops.set(new, "userdata", old_userdata)
-        end
 
-        if ret == :cancel
+        when :cancel
           if changed
             if Popup.YesNo(
                 _("Modifications done so far in this dialog will be lost.")
@@ -1769,7 +1771,9 @@ module Yast
               ret = :again
             end
           end
+
         end
+
       end until ret == :ok || ret == :cancel
 
       UI.CloseDialog
