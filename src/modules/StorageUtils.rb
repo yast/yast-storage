@@ -53,9 +53,9 @@ module Yast
                         "TIMELINE_CREATE=no")
             SCR.Write(path(".sysconfig.yast2.USE_SNAPPER"), "yes")
 
-            SCR.Execute(path(".target.bash"), "/sbin/btrfs quota enable /")
-            SCR.Execute(path(".target.bash"), "/sbin/btrfs qgroup create 1/0 /")
-            SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus set-config QGROUP=1/0")
+            # SCR.Execute(path(".target.bash"), "/sbin/btrfs quota enable /")
+            # SCR.Execute(path(".target.bash"), "/sbin/btrfs qgroup create 1/0 /")
+            # SCR.Execute(path(".target.bash"), "/usr/bin/snapper --no-dbus set-config QGROUP=1/0")
 
             SCR.Write(path(".sysconfig.yast2"), nil)
           else
