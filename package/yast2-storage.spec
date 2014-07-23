@@ -33,7 +33,7 @@ BuildRequires:	libstorage-devel >= 2.25.14
 BuildRequires:	libstorage-ruby >= 2.25.14
 BuildRequires:	libxslt
 BuildRequires:	perl-XML-Writer
-%if 0%{?suse_version} >= 1315
+%if 0%{?suse_version} == 1315
 BuildRequires:	rubygem(%{rb_default_ruby_abi}:rspec)
 BuildRequires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
 %else
@@ -49,7 +49,7 @@ BuildRequires:	yast2-ruby-bindings >= 3.1.7
 BuildRequires:	yast2-testsuite >= 2.19.0
 Requires:	libstorage-ruby >= 2.25.14
 Requires:	libstorage5 >= 2.25.14
-%if 0%{?suse_version} >= 1315
+%if 0%{?suse_version} == 1315
 Requires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
 %else
 Requires:	rubygem-ruby-dbus
