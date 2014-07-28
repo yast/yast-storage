@@ -374,6 +374,7 @@ void
 
 void DmPartCo::handleWholeDevice()
     {
+#if 0
     Disk::PartPair pp = disk->partPair( Partition::notDeleted );
     y2mil("empty:" << pp.empty());
     if( pp.empty() )
@@ -393,10 +394,12 @@ void DmPartCo::handleWholeDevice()
 		y2err( "not found:" << *i );
 	    }
 	}
+#endif
     }
     
 void DmPartCo::handleWholeDevice(SystemInfo& si)
     {
+#if 0
     Disk::PartPair pp = disk->partPair( Partition::notDeleted );
     y2mil("empty:" << pp.empty());
     if( pp.empty() )
@@ -416,6 +419,7 @@ void DmPartCo::handleWholeDevice(SystemInfo& si)
 		y2err( "not found:" << *i );
 	    }
 	}
+#endif
     }
     
 Partition* 
