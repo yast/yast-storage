@@ -4473,7 +4473,9 @@ module Yast
 
           # enable snapshots for root volume if desired
           if StorageProposal.PropDefaultFs() == :btrfs && StorageProposal.GetProposalSnapshots()
-            if volume["mount"] == "/"
+            opts = StorageProposal.GetControlCfg()
+            size_limit_k = 1024 * opts["root_base"]
+            if volume["mount"] == "/" && volume["size_k"] >= size_limit_k
               volume["userdata"] = { "/" => "snapshots" }
             end
           end
@@ -6496,6 +6498,56 @@ module Yast
     end
 
 
+    def CouldNotDoSnapshots(prop_target_map)
+      ret = false
+      if GetProposalSnapshots()
+        prop_target_map.each do |device, container|
+          log.info("haha #{device}")
+          container["partitions"].each do |volume|
+            if !volume.fetch("delete", false)
+              if volume.fetch("used_fs", :none) == :btrfs && volume.fetch("mount", "") == "/"
+                userdata = volume.fetch("userdata", {})
+                ret = userdata.fetch("/", "") != "snapshots"
+              end
+            end
+          end
+        end
+      end
+      log.info("CouldNotDoSnapshots ret:#{ret}")
+      return ret
+    end
+
+
+    def CouldNotDoSeparateHome(prop_target_map)
+      ret = false
+      if GetProposalHome()
+        ls = []
+        prop_target_map.each do |k, d|
+          ls = Convert.convert(
+            Builtins.union(
+              ls,
+              Builtins.filter(Ops.get_list(d, "partitions", [])) do |p|
+                !Ops.get_boolean(p, "delete", false) &&
+                  Ops.greater_than(
+                    Builtins.size(Ops.get_string(p, "mount", "")),
+                    0
+                  )
+              end
+            ),
+            :from => "list",
+            :to   => "list <map>"
+          )
+        end
+        ret = Builtins.size(Builtins.filter(ls) do |p|
+          Ops.get_string(p, "mount", "") == "/home"
+        end) == 0
+        Builtins.y2milestone("CouldNotDoSeparateHome ls:%1", ls)
+      end
+      log.info("CouldNotDoSeparateHome ret:#{ret}")
+      return ret
+    end
+
+
     publish :function => :SetCreateVg, :type => "void (boolean)"
     publish :function => :GetProposalHome, :type => "boolean ()"
     publish :function => :SetProposalHome, :type => "void (boolean)"
@@ -6523,6 +6575,8 @@ module Yast
     publish :function => :get_inst_prop, :type => "map <string, any> (map <string, map>)"
     publish :function => :SaveHeight, :type => "boolean ()"
     publish :function => :CommonWidgetsPopup, :type => "boolean ()"
+    publish :function => :CouldNotDoSnapshots, :type => "boolean (map <string, map>)"
+    publish :function => :CouldNotDoSeparateHome, :type => "boolean (map <string, map>)"
   end
 
   StorageProposal = StorageProposalClass.new

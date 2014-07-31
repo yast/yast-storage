@@ -88,14 +88,20 @@ module Yast
         Builtins.y2milestone("prop ok:%1", Ops.get_boolean(@prop, "ok", false))
 
         if Ops.get_boolean(@prop, "ok", false)
-          if CouldNotDoSeparateHome(Ops.get_map(@prop, "target", {}))
+          @targetMap = Ops.get_map(@prop, "target", {})
+          if StorageProposal.CouldNotDoSnapshots(@targetMap)
+            StorageProposal.SetProposalSnapshots(false)
+            if UI.WidgetExists(Id(:snapshots))
+              UI.ChangeWidget(Id(:snapshots), :Value, false)
+            end
+          end
+          if StorageProposal.CouldNotDoSeparateHome(@targetMap)
             StorageProposal.SetProposalHome(false)
             if UI.WidgetExists(Id(:home))
               UI.ChangeWidget(Id(:home), :Value, false)
             end
           end
-          Storage.SetTargetMap(Ops.get_map(@prop, "target", {}))
-          @targetMap = Ops.get_map(@prop, "target", {})
+          Storage.SetTargetMap(@targetMap)
           Storage.SetPartProposalMode("accept")
           @changes = Storage.ChangeText
           Storage.HandleProposalPackages
@@ -226,14 +232,19 @@ module Yast
                 Popup.Error(_("Impossible to create the requested proposal."))
                 Storage.SetPartProposalMode("impossible")
               else
-                if CouldNotDoSeparateHome(Ops.get_map(@prop, "target", {}))
-                  @reason = _(
-                    "Not enough space available to propose separate /home."
-                  )
+                @targetMap = Ops.get_map(@prop, "target", {})
+                if StorageProposal.CouldNotDoSnapshots(@targetMap)
+                  # TRANSLATORS: popup error message
+                  @reason = _("Not enough space available to propose snapshots for root volume.")
+                  Popup.Error(@reason)
+                  StorageProposal.SetProposalSnapshots(false)
+                end
+                if StorageProposal.CouldNotDoSeparateHome(@targetMap)
+                  # TRANSLATORS: popup error message
+                  @reason = _("Not enough space available to propose separate /home.")
                   Popup.Error(@reason)
                   StorageProposal.SetProposalHome(false)
                 end
-                @targetMap = Ops.get_map(@prop, "target", {})
                 Storage.SetPartProposalMode("accept")
                 Storage.SetPartProposalActive(true)
               end
@@ -271,36 +282,6 @@ module Yast
       Storage.SaveExitKey(@ret)
 
       @ret
-    end
-
-    def CouldNotDoSeparateHome(prop)
-      prop = deep_copy(prop)
-      ret = false
-      if StorageProposal.GetProposalHome
-        ls = []
-        Builtins.foreach(prop) do |k, d|
-          ls = Convert.convert(
-            Builtins.union(
-              ls,
-              Builtins.filter(Ops.get_list(d, "partitions", [])) do |p|
-                !Ops.get_boolean(p, "delete", false) &&
-                  Ops.greater_than(
-                    Builtins.size(Ops.get_string(p, "mount", "")),
-                    0
-                  )
-              end
-            ),
-            :from => "list",
-            :to   => "list <map>"
-          )
-        end
-        ret = Builtins.size(Builtins.filter(ls) do |p|
-          Ops.get_string(p, "mount", "") == "/home"
-        end) == 0
-        Builtins.y2milestone("CouldNotDoSeparateHome ls:%1", ls)
-      end
-      Builtins.y2milestone("CouldNotDoSeparateHome ret:%1", ret)
-      ret
     end
 
 
