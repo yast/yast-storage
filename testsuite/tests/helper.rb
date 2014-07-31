@@ -136,6 +136,17 @@ module Yast
 
         end
 
+        Testsuite.Dump("")
+
+        Testsuite.Dump("Proposal Feedback:")
+        if StorageProposal.CouldNotDoSnapshots(prop["target"])
+          Testsuite.Dump("Cound not do snapshots.")
+        end
+
+        if StorageProposal.CouldNotDoSeparateHome(prop["target"])
+          Testsuite.Dump("Cound not do separate home.")
+        end
+
       else
         Testsuite.Dump("No proposal.")
       end
