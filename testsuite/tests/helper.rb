@@ -7,19 +7,118 @@ module Yast
 
     def initialize_helper(include_target)
 
+
       def setup_system(name)
         SCR.Execute(path(".target.bash"), "mkdir -p tmp")
         SCR.Execute(path(".target.bash"), "rm -rf tmp/*")
         SCR.Execute(path(".target.bash"), "cp data/#{name}/*.info tmp/")
       end
 
+
       @part_info_size = 0
       @part_info_string = nil
+
 
       def setup_part_info(content)
         @part_info_size = content.size()
         @part_info_string = content
       end
+
+
+      def dump_hardware()
+
+        Testsuite.Dump("Hardware Excerpt:")
+
+        Testsuite.Dump("Arch: " + Arch.architecture() + (Partitions.EfiBoot() ? " efi" : ""))
+
+      end
+
+
+      def dump_settings()
+
+        Testsuite.Dump("Proposal Settings Excerpt:")
+
+        if StorageProposal.GetProposalLvm()
+          Testsuite.Dump("LVM")
+        end
+        if StorageProposal.GetProposalEncrypt()
+          Testsuite.Dump("Encrypt")
+        end
+        if StorageProposal.GetProposalHome()
+          Testsuite.Dump("Separate Home")
+        end
+
+      end
+
+
+      def dump_proposal(infos)
+
+        Testsuite.Dump("Proposal:")
+
+        infos.each do |info|
+          text = info.fetch(:text, "")
+          if info.fetch(:destructive, false)
+            text += " [destructive]"
+          end
+          Testsuite.Dump(text)
+        end
+
+      end
+
+
+      def dump_target_map(prop)
+
+        Testsuite.Dump("Target Map Excerpt:")
+
+        prop["target"].each do |device, container|
+
+          if Storage.IsDiskType(container.fetch("type", :CT_UNKNOWN))
+
+            line = "device:#{container["device"]}"
+
+            if container.fetch("label", "") != ""
+              line << " label:#{container["label"]}"
+            end
+
+            Testsuite.Dump(line)
+
+          end
+
+          container["partitions"].each do |volume|
+
+            line = "device:#{volume["device"]}"
+
+            if volume.fetch("fsid", 0) != 0
+              line << " fsid:0x#{volume["fsid"].to_s(16)}"
+            end
+
+            if !volume.fetch("userdata", {}).empty?
+              line << " userdata:#{volume["userdata"]}"
+            end
+
+            Testsuite.Dump(line)
+
+          end
+
+        end
+
+      end
+
+
+      def dump_feedback(prop)
+
+        Testsuite.Dump("Proposal Feedback:")
+
+        if StorageProposal.CouldNotDoSnapshots(prop["target"])
+          Testsuite.Dump("Cound not do snapshots.")
+        end
+
+        if StorageProposal.CouldNotDoSeparateHome(prop["target"])
+          Testsuite.Dump("Cound not do separate home.")
+        end
+
+      end
+
 
       setup1()
 
@@ -85,68 +184,21 @@ module Yast
 
       setup3()
 
+      dump_hardware()
+      Testsuite.Dump("")
+      dump_settings()
+      Testsuite.Dump("")
+
       prop = StorageProposal.get_inst_prop(target_map)
 
       if prop.fetch("ok", false)
         Storage.SetTargetMap(prop.fetch("target", {}))
-
-        infos = Storage.GetCommitInfos
-
-        Testsuite.Dump("Proposal:")
-        infos.each do |info|
-          text = info.fetch(:text, "")
-          if info.fetch(:destructive, false)
-            text += " [destructive]"
-          end
-          Testsuite.Dump(text)
-        end
-
+        infos = Storage.GetCommitInfos()
+        dump_proposal(infos)
         Testsuite.Dump("")
-
-        Testsuite.Dump("Target Map Excerpt:")
-        prop["target"].each do |device, container|
-
-          if Storage.IsDiskType(container.fetch("type", :CT_UNKNOWN))
-
-            line = "device:#{container["device"]}"
-
-            if container.fetch("label", "") != ""
-              line << " label:#{container["label"]}"
-            end
-
-            Testsuite.Dump(line)
-
-          end
-
-          container["partitions"].each do |volume|
-
-            line = "device:#{volume["device"]}"
-
-            if volume.fetch("fsid", 0) != 0
-              line << " fsid:0x#{volume["fsid"].to_s(16)}"
-            end
-
-            if !volume.fetch("userdata", {}).empty?
-              line << " userdata:#{volume["userdata"]}"
-            end
-
-            Testsuite.Dump(line)
-
-          end
-
-        end
-
+        dump_target_map(prop)
         Testsuite.Dump("")
-
-        Testsuite.Dump("Proposal Feedback:")
-        if StorageProposal.CouldNotDoSnapshots(prop["target"])
-          Testsuite.Dump("Cound not do snapshots.")
-        end
-
-        if StorageProposal.CouldNotDoSeparateHome(prop["target"])
-          Testsuite.Dump("Cound not do separate home.")
-        end
-
+        dump_feedback(prop)
       else
         Testsuite.Dump("No proposal.")
       end
