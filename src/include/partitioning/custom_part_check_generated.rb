@@ -426,30 +426,6 @@ module Yast
         ok = false if !Popup.YesNo(message)
       end
 
-      # iSeries has no problems with this configuration
-      # an initrd will be created and you can boot from a kernel slot
-      if installation && !Arch.board_iseries &&
-          (root_lvm && !boot_found || show_all_popups) &&
-          AutoinstData.BootLVMWarning
-        # popup text
-        message = Builtins.sformat(
-          _(
-            "Warning: With your current setup, your %1 installation\n" +
-              "will encounter problems when booting, because you have no \"boot\"\n" +
-              "partition and your \"root\" partition is an LVM logical volume.\n" +
-              "This does not work.\n" +
-              "\n" +
-              "If you do not know exactly what you are doing, use a normal\n" +
-              "partition for your files below /boot.\n" +
-              "\n" +
-              "Really use this setup?\n"
-          ),
-          Product.name
-        )
-
-        ok = false if !Popup.YesNo(message)
-      end
-
       if (Partitions.EfiBoot || Arch.ia64) && installation &&
           (!boot_found || boot_fs != :vfat) || show_all_popups
         # popup text

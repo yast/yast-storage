@@ -632,16 +632,13 @@ module Yast
 
 
     def need_boot(disk)
-      Builtins.y2milestone(
-        "need_boot NeedBoot:%1 type:%2",
-        Partitions.NeedBoot,
-        disk.fetch("type",:CT_UNKNOWN)
-      )
+      log.info("need_boot NeedBoot:#{Partitions.NeedBoot()} " +
+               "type:#{disk.fetch("type", :CT_UNKNOWN)}")
       ret = Partitions.NeedBoot ||
         disk.fetch("type",:CT_UNKNOWN) == :CT_DMRAID ||
 	(disk.fetch("label","")=="gpt" && !Partitions.EfiBoot)
-      Builtins.y2milestone("need_boot ret:%1", ret)
-      ret
+      log.info("need_boot ret:#{ret}")
+      return ret
     end
 
 
@@ -5824,7 +5821,7 @@ module Yast
 
           if have_boot
             boot = {}
-          else
+          elsif need_boot(disk) || GetProposalEncrypt()
             boot = {
               "mount"   => Partitions.BootMount,
               "size"    => Partitions.ProposedBootsize,
@@ -6041,7 +6038,7 @@ module Yast
 
       if have_boot
         boot = {}
-      else
+      elsif need_boot(disk) || GetProposalEncrypt()
         boot = {
           "mount"   => Partitions.BootMount,
           "size"    => Partitions.ProposedBootsize,
