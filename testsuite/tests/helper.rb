@@ -42,7 +42,7 @@ module Yast
           Testsuite.Dump("LVM")
         end
         if StorageProposal.GetProposalEncrypt()
-          Testsuite.Dump("Encypted")
+          Testsuite.Dump("Encrypt")
         end
         if StorageProposal.GetProposalHome()
           Testsuite.Dump("Separate Home")
