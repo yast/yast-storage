@@ -4543,7 +4543,7 @@ module Yast
                         Ops.get_integer(p, "fsid", 0)
                       )) &&
                       Storage.CanDelete(p, Ops.get(target, s, {}), false)
-                    if usable_for_win_resize(p, false)
+                    if usable_for_win_resize(p, false) && !NeedNewDisklabel(Ops.get(target, s, {}))
                       Ops.set(
                         p,
                         "dtxt",
@@ -5666,7 +5666,7 @@ module Yast
                         Ops.get_integer(p, "fsid", 0)
                       )) &&
                       Storage.CanDelete(p, Ops.get(target, s, {}), false)
-                    if usable_for_win_resize(p, false)
+                    if usable_for_win_resize(p, false) && !NeedNewDisklabel(Ops.get(target, s, {}))
                       Ops.set(
                         p,
                         "dtxt",
