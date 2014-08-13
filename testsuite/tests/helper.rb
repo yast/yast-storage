@@ -88,6 +88,10 @@ module Yast
 
             line = "device:#{volume["device"]}"
 
+            if volume.fetch("delete", 0) != 0
+              line << " delete"
+            end
+
             if volume.fetch("fsid", 0) != 0
               line << " fsid:0x#{volume["fsid"].to_s(16)}"
             end

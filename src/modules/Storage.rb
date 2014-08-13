@@ -1048,6 +1048,8 @@ module Yast
       )
 
       ret = {
+        "ok"           => r,
+        "resize_ok"    => resize_ok,
         "free"         => (resize_free>0) ? resize_free : 0,
         "df_free"      => df_free,
         "used"         => used,
@@ -1061,7 +1063,7 @@ module Yast
         "ntfs"         => used_fs == :ntfs,
         "new_size"     => new_size
       }
-      Ops.set(ret, "ok", r)
+
       Builtins.y2milestone("GetFreeSpace %1 ret %2", device, ret)
       ret
     end

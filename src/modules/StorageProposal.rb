@@ -2893,7 +2893,7 @@ module Yast
           if Partitions.IsDosWinNtPartition(fsid)
             win = Ops.get_map(p, "winfo", {})
             Builtins.y2milestone("try_resize_windows win=%1", win)
-            if win != nil && Ops.get_boolean(win, "ok", false) &&
+            if win != nil && Ops.get_boolean(win, "resize_ok", false) &&
                 Ops.greater_than(Ops.get_integer(p, "size_k", 0), 1024 * 1024) &&
                 !Ops.get_boolean(win, "efi", false)
               Ops.set(p, "winfo", win)
@@ -4203,7 +4203,7 @@ module Yast
         !Ops.get_boolean(p, "delete", false)
       if ret
         if assert_cons_fs
-          ret = Ops.get_boolean(p, ["winfo", "ok"], false) &&
+          ret = Ops.get_boolean(p, ["winfo", "resize_ok"], false) &&
             !Ops.get_boolean(p, ["winfo", "efi"], false)
         else
           ret = Ops.greater_than(Builtins.size(Ops.get_map(p, "winfo", {})), 0)
@@ -4543,7 +4543,7 @@ module Yast
                         Ops.get_integer(p, "fsid", 0)
                       )) &&
                       Storage.CanDelete(p, Ops.get(target, s, {}), false)
-                    if usable_for_win_resize(p, false)
+                    if usable_for_win_resize(p, false) && !NeedNewDisklabel(Ops.get(target, s, {}))
                       Ops.set(
                         p,
                         "dtxt",
@@ -5666,7 +5666,7 @@ module Yast
                         Ops.get_integer(p, "fsid", 0)
                       )) &&
                       Storage.CanDelete(p, Ops.get(target, s, {}), false)
-                    if usable_for_win_resize(p, false)
+                    if usable_for_win_resize(p, false) && !NeedNewDisklabel(Ops.get(target, s, {}))
                       Ops.set(
                         p,
                         "dtxt",
