@@ -5627,7 +5627,7 @@ module Yast
       valid = {}
       size_mb = Builtins.listmap(ddev) { |s| { s => 0 } }
       keep_vg = {}
-      solution = Builtins.listmap(ddev) { |s| { s => [] } }
+      solution = Builtins.listmap(ddev) { |s| { s => {} } }
       target = prepare_part_lists(ddev, target)
       mode = :free
       while mode != :end && Builtins.size(sol_disk) == 0
@@ -6499,7 +6499,6 @@ module Yast
       ret = false
       if GetProposalSnapshots()
         prop_target_map.each do |device, container|
-          log.info("haha #{device}")
           container["partitions"].each do |volume|
             if !volume.fetch("delete", false)
               if volume.fetch("used_fs", :none) == :btrfs && volume.fetch("mount", "") == "/"
