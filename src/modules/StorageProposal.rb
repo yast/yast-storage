@@ -5627,7 +5627,7 @@ module Yast
       valid = {}
       size_mb = Builtins.listmap(ddev) { |s| { s => 0 } }
       keep_vg = {}
-      solution = Builtins.listmap(ddev) { |s| { s => [] } }
+      solution = Builtins.listmap(ddev) { |s| { s => {} } }
       target = prepare_part_lists(ddev, target)
       mode = :free
       while mode != :end && Builtins.size(sol_disk) == 0
