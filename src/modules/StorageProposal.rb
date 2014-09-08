@@ -4470,10 +4470,12 @@ module Yast
 
           # enable snapshots for root volume if desired
           if StorageProposal.PropDefaultFs() == :btrfs && StorageProposal.GetProposalSnapshots()
-            opts = StorageProposal.GetControlCfg()
-            size_limit_k = 1024 * opts["root_base"]
-            if volume["mount"] == "/" && volume["size_k"] >= size_limit_k
-              volume["userdata"] = { "/" => "snapshots" }
+            if volume["mount"] == "/"
+              opts = StorageProposal.GetControlCfg()
+              size_limit_k = 1024 * opts["root_base"]
+              if volume["size_k"] >= size_limit_k
+                volume["userdata"] = { "/" => "snapshots" }
+              end
             end
           end
 
