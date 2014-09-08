@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.43
+Version:        3.1.44
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -33,13 +33,8 @@ BuildRequires:	libstorage-devel >= 2.25.14
 BuildRequires:	libstorage-ruby >= 2.25.14
 BuildRequires:	libxslt
 BuildRequires:	perl-XML-Writer
-%if 0%{?suse_version} == 1315
-BuildRequires:	rubygem(%{rb_default_ruby_abi}:rspec)
-BuildRequires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
-%else
-BuildRequires:	rubygem-rspec
-BuildRequires:	rubygem-ruby-dbus
-%endif
+BuildRequires:	rubygem(rspec)
+BuildRequires:	rubygem(ruby-dbus)
 BuildRequires:	sgml-skel
 BuildRequires:	update-desktop-files
 BuildRequires:	yast2 >= 3.1.22
@@ -49,11 +44,7 @@ BuildRequires:	yast2-ruby-bindings >= 3.1.7
 BuildRequires:	yast2-testsuite >= 2.19.0
 Requires:	libstorage-ruby >= 2.25.14
 Requires:	libstorage5 >= 2.25.14
-%if 0%{?suse_version} == 1315
-Requires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
-%else
-Requires:	rubygem-ruby-dbus
-%endif
+Requires:	rubygem(ruby-dbus)
 Requires:	yast2 >= 3.1.22
 Requires:	yast2-core >= 2.18.3
 Requires:	yast2-libyui >= 2.18.7
