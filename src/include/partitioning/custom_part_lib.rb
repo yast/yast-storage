@@ -696,7 +696,7 @@ module Yast
       end
 
       # set btrfs subvolumes (bnc#872210)
-      if init
+      if init && new.fetch("mount", "") == "/"
         new = HandleSubvol(new)
       end
 
