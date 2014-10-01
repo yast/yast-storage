@@ -929,13 +929,7 @@ module Yast
           FileSystemOptions(Ops.get_map(new, "fs_options", {}), selected_fs)
         )
       end
-      if Mode.repair
-        UI.ChangeWidget(Id(:do_mount), :Enabled, false)
-        UI.ChangeWidget(Id(:do_not_mount), :Enabled, false)
-        UI.ChangeWidget(Id(:do_mount_attachment), :Enabled, false)
-        UI.ChangeWidget(Id(:fstab_options), :Enabled, false)
-        UI.ChangeWidget(Id(:crypt_fs), :Enabled, false)
-      end
+
       Builtins.y2milestone("HandlePartWidgetChanges old:%1", old)
       Builtins.y2milestone("HandlePartWidgetChanges new:%1", new)
       deep_copy(new)

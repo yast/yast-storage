@@ -66,7 +66,7 @@ module Yast
 			     env.instsys )
 	env.testmode = Mode.test;
 	env.autodetect = !Mode.test;
-	env.instsys = Stage.initial || Mode.repair;
+	env.instsys = Stage.initial
         Builtins.y2milestone("ro:%1 test:%2 auto:%3 instsys:%4", 
 	                     env.readonly, env.testmode, env.autodetect, 
 			     env.instsys )

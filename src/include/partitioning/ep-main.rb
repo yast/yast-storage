@@ -706,7 +706,7 @@ module Yast
                 StorageSettings.GetModified
               if !check_created_partition_table(
                   Storage.GetTargetMap,
-                  Stage.initial && !Mode.repair
+                  Stage.initial
                 )
                 widget = :again
               else
