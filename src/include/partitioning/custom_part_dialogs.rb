@@ -1397,60 +1397,6 @@ module Yast
     end
 
 
-    #FIXME: y2-repair uses this, need to find
-    #a better place for it
-    def ReallyInstPrepdisk
-      ret = :none
-
-      doto = Storage.ChangeText
-      Builtins.y2milestone("ReallyInstPrepdisk doto:%1", doto)
-
-      if Builtins.size(doto) == 0
-        # popup text
-        Popup.Message(_("No unsaved changes exist."))
-        ret = :back
-      else
-        dlg = VBox(
-          VSpacing(1),
-          HSpacing(60),
-          # label text
-          Left(Heading(_("Changes:"))),
-          RichText(doto)
-        )
-
-        UI.OpenDialog(
-          Opt(:decorated, :warncolor),
-          HBox(
-            HSpacing(1),
-            VBox(
-              dlg,
-              VSpacing(1),
-              # popup text
-              Heading(_(" Do you really want to execute these changes?")),
-              VSpacing(1),
-              HBox(
-                PushButton(Id(:back), Label.CancelButton),
-                HStretch(),
-                # button text
-                PushButton(Id(:apply), _("&Apply")),
-                PushButton(Id(:finish), Label.FinishButton)
-              ),
-              VSpacing(0.2)
-            ),
-            HSpacing(1)
-          )
-        )
-
-        ret = Convert.to_symbol(UI.UserInput)
-        UI.CloseDialog
-      end
-
-      Builtins.y2milestone("ReallyInstPrepdisk ret=%1", ret)
-
-      ret
-    end
-
-
     # Delete all partition in targetMap from the device "del_dev" and return
     # a new targetMap.
     # Check if LVM partition exists on the device.

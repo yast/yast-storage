@@ -280,21 +280,6 @@ module Yast
       Ops.greater_than(Builtins.size(@cd_drives), 0)
     end
 
-    def cddrives
-      ProbeCDROMs() if @cd_drives == nil
-      deep_copy(@cd_drives)
-    end
-
-    def GetCdromEntry(device)
-      ret = {}
-      Builtins.y2milestone("GetCdromEntry device %1", device)
-      ret = Builtins.find(@cd_drives) do |e|
-        Ops.get_string(e, "dev_orig", Ops.get_string(e, "dev_name", "")) == device
-      end
-      ret = {} if ret == nil
-      Builtins.y2milestone("GetCdromEntry ret %1", ret)
-      deep_copy(ret)
-    end
 
     # FloppyReady ()
     # @return floppy media status
@@ -664,10 +649,7 @@ module Yast
       nil
     end
 
-    publish :function => :cddrives, :type => "list <map> ()"
-    publish :function => :GetCdromEntry, :type => "map (string)"
     publish :function => :FloppyReady, :type => "boolean ()"
-    publish :function => :ZipDrives, :type => "map <string, map> ()"
     publish :function => :FloppyPresent, :type => "boolean ()"
     publish :function => :FloppyDevice, :type => "string ()"
     publish :function => :FloppyDrives, :type => "list <map> ()"

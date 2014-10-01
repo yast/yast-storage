@@ -4532,7 +4532,7 @@ module Yast
           tmp = AddSwapMp(tmp)
         end
         CreateTargetBackup("initial")
-        if (Stage.initial || Mode.repair) && !Mode.autoinst
+        if Stage.initial && !Mode.autoinst
           AddMountPointsForWin(tmp)
         end
         Ops.set(@StorageMap, @targets_key, GetTargetMap())

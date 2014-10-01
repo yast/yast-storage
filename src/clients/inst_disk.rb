@@ -68,7 +68,7 @@ module Yast
       Storage.CreateTargetBackup("disk") if !Storage.CheckBackupState("disk")
 
 
-      @handle_dialog = Mode.normal || Mode.repair
+      @handle_dialog = Mode.normal
 
 
       if @handle_dialog
