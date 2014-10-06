@@ -1496,7 +1496,7 @@ module Yast
 
     def GetSupportFormat(used_fs)
       fsmap = GetFsMap(used_fs)
-      Ops.get_boolean(fsmap, :supports_format)
+      Ops.get_boolean(fsmap, :supports_format, false)
     end
 
     def GetFsidItem(used_fs)
