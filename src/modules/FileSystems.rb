@@ -63,6 +63,8 @@ module Yast
           ::Storage::NFS      => :nfs,
           ::Storage::NFS4     => :nfs4,
           ::Storage::TMPFS    => :tmpfs,
+          ::Storage::ISO9660  => :iso9660,
+          ::Storage::UDF      => :udf,
           ::Storage::FSNONE   => :none
         }
       }
@@ -1301,6 +1303,26 @@ module Yast
           :mount_string => "tmpfs",
           :mount_option => "-t tmpfs",
           :fst_options  => @tmpfs_fst_options
+        },
+        :iso9660 => {
+          :name            => "ISO9660",
+          :real_fs         => true,
+          :supports_format => false,
+          :crypt           => false,
+          :mountpoints     => [],
+          :mount_string    => "iso9660",
+          :mount_option    => "-t iso9660",
+          :options         => []
+        },
+        :udf => {
+          :name            => "UDF",
+          :real_fs         => true,
+          :supports_format => false,
+          :crypt           => false,
+          :mountpoints     => [],
+          :mount_string    => "udf",
+          :mount_option    => "-t udf",
+          :options         => []
         }
       }
 
@@ -1474,7 +1496,7 @@ module Yast
 
     def GetSupportFormat(used_fs)
       fsmap = GetFsMap(used_fs)
-      Ops.get_boolean(fsmap, :supports_format)
+      Ops.get_boolean(fsmap, :supports_format, false)
     end
 
     def GetFsidItem(used_fs)
