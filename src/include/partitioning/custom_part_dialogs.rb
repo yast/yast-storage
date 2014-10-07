@@ -513,7 +513,7 @@ module Yast
                       RadioButton(
                         Id(:uuid),
                         # label text
-                        "U&UID"
+                        _("&UUID")
                       )
                     )
                   ),

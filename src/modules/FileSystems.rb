@@ -508,7 +508,7 @@ module Yast
         {
           # button text
           :widget    => Left(
-            CheckBox(Id("opt_user"), _("Mountable by &User"), false)
+            CheckBox(Id("opt_user"), _("Mountable by User"), false)
           ),
           :query_key => "opt_user",
           # help text, richtext format
