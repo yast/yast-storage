@@ -4711,7 +4711,8 @@ module Yast
         if Ops.get_boolean(target, [k, "delete"], false)
           if Ops.get_symbol(target, [k, "type"], :CT_UNKNOWN) == :CT_LVM
             DeleteLvmVg(Ops.get_string(target, [k, "name"], ""))
-          elsif Ops.get_symbol(target, [k, "type"], :CT_UNKNOWN) == :CT_DISK
+          elsif Ops.get_symbol(target, [k, "type"], :CT_UNKNOWN) == :CT_DISK ||
+                Ops.get_symbol(target, [k, "type"], :CT_UNKNOWN) == :CT_DMMULTIPATH
             DeletePartitionTable(
               k,
               Ops.get_string(target, [k, "disklabel"], "")
