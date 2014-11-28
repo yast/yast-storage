@@ -556,7 +556,13 @@ module Yast
         Builtins.size(ls),
         ls
       )
-      if Ops.greater_or_equal(Builtins.size(ls), 4) &&
+
+      if device == "/dev/tmpfs"
+        ret = [ { "disk" => "/dev/tmpfs", "nr" => "" } ]
+      elsif device == "tmpfs"
+        # TODO multiple mount points issues unfixable
+        ret = [ { "disk" => "/dev/tmpfs", "nr" => "tmpfs" } ]
+      elsif Ops.greater_or_equal(Builtins.size(ls), 4) &&
           Ops.get(ls, 1, "") == "disk" &&
           Builtins.contains(
             ["by-id", "by-path", "by-uuid", "by-label"],
