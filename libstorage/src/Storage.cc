@@ -2596,7 +2596,7 @@ Storage::changeFormatVolume( const string& device, bool format, FsType fs )
 		    vol->updateFsData();
 		    vol->clearUsedBy();
 		    vol->changeMount( mp );
-                    if( !mp.empty() )
+                    if( !mp.empty() && !instsys() )
                         {
                         vol->setMount(mp);
                         if( mounted )
