@@ -339,6 +339,10 @@ namespace storage
 	    {
 		entry.id = Partition::ID_APPLE_HFS;
 	    }
+	    if (contains(flags, "prep"))
+	    {
+		entry.id = Partition::ID_GPT_PREP;
+	    }
 	}
 	y2mil("num:" << entry.num << " id:" << entry.id << " type:" << toString(entry.type));
 
