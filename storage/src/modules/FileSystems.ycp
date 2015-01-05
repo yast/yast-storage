@@ -177,6 +177,7 @@ global list<string> SuggesTmpfsMPoints()
 		   `ntfs  	: true,
 		   `xxefi  	: false,
 		   `xbootdisk  	: false,
+		   `xxbootdisk 	: false,
 		   `xbootfat  	: false,
 		   `xhibernate 	: true,
 		   `raid       	: true,
@@ -903,6 +904,12 @@ Enter the swap priority. Higher numbers mean higher priority.</p>
 					   `supports_format 	: false,
 					   `fsid_item 		: "0x41 PPC PReP Boot"
 			    ],
+			    `xxbootdisk : $[
+					   `name 		: "GPT PReP",
+					   `fsid 		: Partitions::fsid_gpt_prep,
+					   `supports_format 	: false,
+					   `fsid_item 		: "0x00 GPT PReP Boot"
+			    ],
 			    `xbootfat  : $[
 					   `name 		: "FATBOOT",
 					   `fsid 		: Partitions::fsid_fat16,
@@ -975,6 +982,21 @@ global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
     };
 
 
+global integer FindFsid(string fs_item)
+{
+    integer ret = nil;
+    map<symbol, map> fs = (map<symbol, map>) union(GetNormalFilesystems(), SwapFileSystems);
+    fs = (map<symbol, map>) union(fs, PseudoFileSystems);
+    list l = maplist(symbol ss, map mm, filter(symbol s, map m, fs,
+					       ``(m[`fsid_item]:""==fs_item)),
+		      ``(mm[`fsid]:nil));
+    if (!isempty(l))
+	ret = l[0]:0;
+    y2milestone("FindFsid item:%1 ret:%2", fs_item, ret);
+    return ret;
+}
+
+
     global void FileSystems()
     {
     if( Arch::sparc64() || Arch::sparc32() )
@@ -985,6 +1007,7 @@ global define list< map<symbol, any> > GetFstabOptWidgets( symbol fsys )
 	{
 	support[`vfat] = Arch::board_chrp();
 	support[`xbootdisk] = true;
+	support[`xxbootdisk] = true;
 	support[`xbootfat] = Arch::board_chrp();
 	}
     if( Arch::s390() )
