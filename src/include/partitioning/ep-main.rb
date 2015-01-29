@@ -19,10 +19,11 @@
 # To contact Novell about this file by physical or electronic mail, you may
 # find current contact information at www.novell.com.
 
-# File:        ep-main.ycp
+# File:        ep-main.rb
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+
 module Yast
   module PartitioningEpMainInclude
     def initialize_partitioning_ep_main(include_target)
@@ -156,10 +157,7 @@ module Yast
         :devicegraph => {
           :create  => fun_ref(method(:CreateDeviceGraphPanel), "void (any)"),
           :refresh => fun_ref(method(:RefreshDeviceGraphPanel), "void (any)"),
-          :handle  => fun_ref(
-            method(:HandleDeviceGraphPanel),
-            "void (any, map)"
-          )
+          :handle  => fun_ref(method(:HandleDeviceGraphPanel), "void (any, map)")
         },
         :mountgraph  => {
           :create  => fun_ref(method(:CreateMountGraphPanel), "void (any)"),
@@ -448,25 +446,17 @@ module Yast
       ]
 
       if UI.HasSpecialWidget(:Graph)
-        # tree node label
         tree = Builtins.add(
           tree,
-          Item(
-            Id(:devicegraph),
-            term(:icon, StorageIcons.graph_icon),
-            _("Device Graph"),
-            open.call(:devicegraph)
-          )
+          # tree node label
+          Item(Id(:devicegraph), term(:icon, StorageIcons.graph_icon),
+               _("Device Graph"), open.call(:devicegraph))
         )
-        # tree node label
         tree = Builtins.add(
           tree,
-          Item(
-            Id(:mountgraph),
-            term(:icon, StorageIcons.graph_icon),
-            _("Mount Graph"),
-            open.call(:mountgraph)
-          )
+          # tree node label
+          Item(Id(:mountgraph), term(:icon, StorageIcons.graph_icon),
+               _("Mount Graph"), open.call(:mountgraph))
         )
       end
 
