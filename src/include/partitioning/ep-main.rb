@@ -163,7 +163,7 @@ module Yast
         },
         :mountgraph  => {
           :create  => fun_ref(method(:CreateMountGraphPanel), "void (any)"),
-          :refresh => fun_ref(method(:RefreshDeviceGraphPanel), "void (any)"),
+          :refresh => fun_ref(method(:RefreshMountGraphPanel), "void (any)"),
           :handle  => fun_ref(method(:HandleMountGraphPanel), "void (any, map)")
         },
         :summary     => {
