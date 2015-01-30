@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) 2012 Novell, Inc.
+# Copyright (c) [2012-2015] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -19,10 +19,11 @@
 # To contact Novell about this file by physical or electronic mail, you may
 # find current contact information at www.novell.com.
 
-# File:        ep-main.ycp
+# File:        ep-graph.rb
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+
 module Yast
   module PartitioningEpGraphInclude
     def initialize_partitioning_ep_graph(include_target)
@@ -67,13 +68,7 @@ module Yast
             # dialog heading, graph is the mathematic term for
             # a set of notes connected with edges
             term(:IconAndHeading, _("Device Graph"), StorageIcons.graph_icon),
-            term(
-              :Graph,
-              Id(:graph),
-              Opt(:notify, :notifyContextMenu),
-              filename,
-              "dot"
-            ),
+            term(:Graph, Id(:graph), Opt(:notify, :notifyContextMenu), filename, "dot"),
             HBox(
               # button text
               PushButton(Id(:save), _("Save Device Graph...")),
@@ -162,13 +157,7 @@ module Yast
             # dialog heading, graph is the mathematic term for
             # a set of notes connected with edges
             term(:IconAndHeading, _("Mount Graph"), StorageIcons.graph_icon),
-            term(
-              :Graph,
-              Id(:graph),
-              Opt(:notify, :notifyContextMenu),
-              filename,
-              "dot"
-            ),
+            term(:Graph, Id(:graph), Opt(:notify, :notifyContextMenu), filename, "dot"),
             HBox(
               # button text
               PushButton(Id(:save), _("Save Mount Graph...")),
