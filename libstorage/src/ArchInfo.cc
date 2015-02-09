@@ -35,7 +35,7 @@ namespace storage
 {
 
     ArchInfo::ArchInfo()
-	: arch("i386"), is_ppc_mac(false), is_ppc_pegasos(false), is_efiboot(false)
+	: arch("i386"), is_ppc_mac(false), is_ppc_pegasos(false), is_efiboot(false), is_ppc_p8(false)
     {
     }
 
@@ -108,6 +108,14 @@ namespace storage
 		    y2mil("tmp2:" << tmp2);
 		    is_ppc_pegasos = boost::starts_with(tmp2, "Pegasos");
 		}
+		it = find_if(cpuinfo.lines(), string_starts_with("cpu\t"));
+		if (it != cpuinfo.lines().end())
+		{
+		    y2mil("line:" << *it);
+		    string  tmp1 = extractNthWord(2, *it);
+		    y2mil("tmp1:" << tmp1);
+		    is_ppc_p8 = boost::starts_with(tmp1, "POWER8");
+		}
 	    }
 	}
 
@@ -138,7 +146,7 @@ namespace storage
     {
 	return s << "arch:" << archinfo.arch << " is_ppc_mac:" << archinfo.is_ppc_mac
 		 << " is_ppc_pegasos:" << archinfo.is_ppc_pegasos << " is_efiboot:"
-		 << archinfo.is_efiboot;
+		 << archinfo.is_efiboot << " is_ppc_p8:" << archinfo.is_ppc_p8;
     }
 
 }

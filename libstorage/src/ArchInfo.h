@@ -45,6 +45,7 @@ namespace storage
 	bool is_ppc_mac;
 	bool is_ppc_pegasos;
 	bool is_efiboot;
+	bool is_ppc_p8;
 
     };
 
