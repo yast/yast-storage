@@ -1639,7 +1639,7 @@ int Disk::doCreateLabel()
 	{
 	const ArchInfo& ai = getStorage()->getArchInfo();
 	if( !ai.is_efiboot && 
-	    (ai.arch=="i386" || ai.arch=="ppc" || ai.arch=="x86_64"))
+	    (ai.arch=="i386" || (ai.arch=="ppc" && !ai.is_ppc_p8) || ai.arch=="x86_64"))
 	    {
 	    y2mil( "efi:" << ai.is_efiboot << " arch:" << ai.arch );
 	    lab = LABEL_GPT_SYNC_MBR;
