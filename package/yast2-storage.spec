@@ -1,7 +1,7 @@
 #
 # spec file for package yast2-storage
 #
-# Copyright (c) 2015 SUSE LINUX Products GmbH, Nuernberg, Germany.
+# Copyright (c) 2015 SUSE LINUX GmbH, Nuernberg, Germany.
 #
 # All modifications and additions to the file contributed by third parties
 # remain the property of their copyright owners, unless otherwise agreed
@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.51
+Version:        3.1.52
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -43,7 +43,7 @@ BuildRequires:	yast2-devtools >= 3.1.10
 BuildRequires:	yast2-ruby-bindings >= 3.1.7
 BuildRequires:	yast2-testsuite >= 2.19.0
 Requires:	libstorage-ruby >= 2.25.18
-Requires:	libstorage5 >= 2.25.18
+Requires:	libstorage6 >= 2.25.18
 Requires:	rubygem(ruby-dbus)
 Requires:	yast2 >= 3.1.22
 Requires:	yast2-core >= 2.18.3
