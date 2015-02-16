@@ -22,7 +22,7 @@ describe "StorageSnapper#ConfigureSnapper?" do
 
     Yast::Storage.stub(:GetEntryForMountpoint).with("/").once.and_return(data)
 
-    expect(Yast::StorageSnapper.ConfigureSnapper?).to be_true
+    expect(Yast::StorageSnapper.ConfigureSnapper?).to eq true
 
   end
 
@@ -37,7 +37,7 @@ describe "StorageSnapper#ConfigureSnapper?" do
 
     Yast::Storage.stub(:GetEntryForMountpoint).with("/").once.and_return(data)
 
-    expect(Yast::StorageSnapper.ConfigureSnapper?).to be_false
+    expect(Yast::StorageSnapper.ConfigureSnapper?).to eq false
 
   end
 
