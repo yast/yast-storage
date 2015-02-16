@@ -84,7 +84,8 @@ module Yast
       part = Storage.GetEntryForMountpoint("/")
 
       if BashLogOutput("/usr/lib/snapper/installation-helper --step 1 " <<
-                       "--device '#{String.Quote(part["device"])}'") != 0
+                       "--device '#{String.Quote(part["device"])}' " <<
+                       "--description 'first root filesystem'") != 0
         log.error("configuring snapper for root fs failed")
       end
 
