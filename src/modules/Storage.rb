@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) [2012-2014] Novell, Inc.
+# Copyright (c) [2012-2015] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -52,6 +52,7 @@ module Yast
       Yast.import "StorageInit"
       Yast.import "StorageDevices"
       Yast.import "StorageClients"
+      Yast.import "StorageSnapper"
       Yast.import "Stage"
       Yast.import "String"
       Yast.import "Hotplug"
@@ -364,6 +365,11 @@ module Yast
       @sint = nil
 
       nil
+    end
+
+
+    def DefaultSubvolumeName()
+      return @sint.getDefaultSubvolName()
     end
 
 
@@ -4841,11 +4847,38 @@ module Yast
     end
 
 
+    class MyCommitCallbacks < ::Storage::CommitCallbacks
+
+      def initialize()
+        super()
+      end
+
+      def post_root_filesystem_create()
+        StorageSnapper::ConfigureSnapperStep1()
+      end
+
+      def post_root_mount()
+        StorageSnapper::ConfigureSnapperStep2()
+      end
+
+      def post_root_fstab_add()
+        StorageSnapper::ConfigureSnapperStep3()
+      end
+
+    end
+
+
     # Apply storage changes
     #
     # @return [Fixnum]
     def CommitChanges
       Builtins.y2milestone("CommitChanges")
+
+      if Mode.installation && StorageSnapper.ConfigureSnapper?
+        my_commit_callbacks = MyCommitCallbacks.new()
+        @sint.setCommitCallbacks(my_commit_callbacks)
+      end
+
       ret = @sint.commit()
       if ret<0
         Builtins.y2error("CommitChanges sint ret:%1", ret)

@@ -20,7 +20,7 @@ module_DATA = \
   modules/Partitions.rb \
   modules/Region.rb \
   modules/StorageClients.rb \
-  modules/StorageUtils.rb
+  modules/StorageSnapper.rb
 
 client_DATA = \
   clients/inst_disk_proposal.rb \
