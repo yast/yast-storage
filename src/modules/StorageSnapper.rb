@@ -43,7 +43,7 @@ module Yast
     end
 
 
-    def BashLogOutput(command)
+    def bash_log_output(command)
       tmp = SCR.Execute(path(".target.bash_output"), command)
 
       log.info("exit: #{tmp.fetch("exit")}")
@@ -54,7 +54,7 @@ module Yast
     end
 
 
-    def ConfigureSnapper?()
+    def configure_snapper?
 
       part = Storage.GetEntryForMountpoint("/")
 
@@ -72,7 +72,7 @@ module Yast
     end
 
 
-    def ConfigureSnapperStep1()
+    def configure_snapper_step1()
 
       log.info("configuring snapper for root fs - step 1")
 
@@ -83,38 +83,38 @@ module Yast
 
       part = Storage.GetEntryForMountpoint("/")
 
-      if BashLogOutput("/usr/lib/snapper/installation-helper --step 1 " <<
-                       "--device '#{String.Quote(part["device"])}' " <<
-                       "--description 'first root filesystem'") != 0
+      if bash_log_output("/usr/lib/snapper/installation-helper --step 1 " <<
+                         "--device '#{String.Quote(part["device"])}' " <<
+                         "--description 'first root filesystem'") != 0
         log.error("configuring snapper for root fs failed")
       end
 
     end
 
 
-    def ConfigureSnapperStep2()
+    def configure_snapper_step2()
 
       log.info("configuring snapper for root fs - step 2")
 
       part = Storage.GetEntryForMountpoint("/")
 
-      if BashLogOutput("/usr/lib/snapper/installation-helper --step 2 " <<
-                       "--device '#{String.Quote(part["device"])}' " <<
-                       "--root-prefix '#{String.Quote(Installation.destdir)}' " <<
-                       "--default-subvolume-name '#{String.Quote(Storage.default_subvolume_name())}'") != 0
-          log.error("configuring snapper for root fs failed")
+      if bash_log_output("/usr/lib/snapper/installation-helper --step 2 " <<
+                         "--device '#{String.Quote(part["device"])}' " <<
+                         "--root-prefix '#{String.Quote(Installation.destdir)}' " <<
+                         "--default-subvolume-name '#{String.Quote(Storage.default_subvolume_name())}'") != 0
+        log.error("configuring snapper for root fs failed")
       end
 
     end
 
 
-    def ConfigureSnapperStep3()
+    def configure_snapper_step3()
 
       log.info("configuring snapper for root fs - step 3")
 
-      if BashLogOutput("/usr/lib/snapper/installation-helper --step 3 " <<
-                       "--root-prefix '#{String.Quote(Installation.destdir)}' " <<
-                       "--default-subvolume-name '#{String.Quote(Storage.default_subvolume_name())}'") != 0
+      if bash_log_output("/usr/lib/snapper/installation-helper --step 3 " <<
+                         "--root-prefix '#{String.Quote(Installation.destdir)}' " <<
+                         "--default-subvolume-name '#{String.Quote(Storage.default_subvolume_name())}'") != 0
         log.error("configuring snapper for root fs failed")
       end
 
@@ -126,17 +126,17 @@ module Yast
     end
 
 
-    def ConfigureSnapperStep4()
+    def configure_snapper_step4()
 
       log.info("configuring snapper for root fs - step 4")
 
-      if BashLogOutput("/usr/lib/snapper/installation-helper --step 4") != 0
+      if bash_log_output("/usr/lib/snapper/installation-helper --step 4") != 0
         log.error("configuring snapper for root fs failed")
       end
 
-      BashLogOutput("/usr/bin/snapper --no-dbus set-config " <<
-                    "NUMBER_CLEANUP=yes NUMBER_LIMIT=10 NUMBER_LIMIT_IMPORTANT=10 " <<
-                    "TIMELINE_CREATE=no")
+      bash_log_output("/usr/bin/snapper --no-dbus set-config " <<
+                      "NUMBER_CLEANUP=yes NUMBER_LIMIT=10 NUMBER_LIMIT_IMPORTANT=10 " <<
+                      "TIMELINE_CREATE=no")
 
       SCR.Write(path(".sysconfig.yast2.USE_SNAPPER"), "yes")
       SCR.Write(path(".sysconfig.yast2"), nil)

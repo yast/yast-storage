@@ -91,8 +91,8 @@ module Yast
         Storage.SaveUsedFs
         StorageSettings.Save
 
-        if Mode.installation && StorageSnapper.ConfigureSnapper?
-          StorageSnapper.ConfigureSnapperStep4()
+        if Mode.installation && StorageSnapper.configure_snapper?
+          StorageSnapper.configure_snapper_step4()
         end
 
       else

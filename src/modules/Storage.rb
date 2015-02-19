@@ -4854,15 +4854,15 @@ module Yast
       end
 
       def post_root_filesystem_create()
-        StorageSnapper::ConfigureSnapperStep1()
+        StorageSnapper::configure_snapper_step1()
       end
 
       def post_root_mount()
-        StorageSnapper::ConfigureSnapperStep2()
+        StorageSnapper::configure_snapper_step2()
       end
 
       def post_root_fstab_add()
-        StorageSnapper::ConfigureSnapperStep3()
+        StorageSnapper::configure_snapper_step3()
       end
 
     end
@@ -4874,7 +4874,7 @@ module Yast
     def CommitChanges
       Builtins.y2milestone("CommitChanges")
 
-      if Mode.installation && StorageSnapper.ConfigureSnapper?
+      if Mode.installation && StorageSnapper.configure_snapper?
         my_commit_callbacks = MyCommitCallbacks.new()
         @sint.setCommitCallbacks(my_commit_callbacks)
       end
