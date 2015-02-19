@@ -368,7 +368,7 @@ module Yast
     end
 
 
-    def DefaultSubvolumeName()
+    def default_subvolume_name()
       return @sint.getDefaultSubvolName()
     end
 

@@ -101,7 +101,7 @@ module Yast
       if BashLogOutput("/usr/lib/snapper/installation-helper --step 2 " <<
                        "--device '#{String.Quote(part["device"])}' " <<
                        "--root-prefix '#{String.Quote(Installation.destdir)}' " <<
-                       "--default-subvolume-name '#{String.Quote(Storage.DefaultSubvolumeName())}'") != 0
+                       "--default-subvolume-name '#{String.Quote(Storage.default_subvolume_name())}'") != 0
           log.error("configuring snapper for root fs failed")
       end
 
@@ -114,7 +114,7 @@ module Yast
 
       if BashLogOutput("/usr/lib/snapper/installation-helper --step 3 " <<
                        "--root-prefix '#{String.Quote(Installation.destdir)}' " <<
-                       "--default-subvolume-name '#{String.Quote(Storage.DefaultSubvolumeName())}'") != 0
+                       "--default-subvolume-name '#{String.Quote(Storage.default_subvolume_name())}'") != 0
         log.error("configuring snapper for root fs failed")
       end
 
