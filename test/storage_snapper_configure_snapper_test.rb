@@ -11,6 +11,9 @@ Yast.import "Storage"
 describe "StorageSnapper#configure_snapper?" do
 
 
+  subject { Yast::StorageSnapper.configure_snapper? }
+
+
   it "configures snapper" do
 
     data = {
@@ -20,9 +23,9 @@ describe "StorageSnapper#configure_snapper?" do
       "userdata" => { "/" => "snapshots" }
     }
 
-    Yast::Storage.stub(:GetEntryForMountpoint).with("/").once.and_return(data)
+    allow(Yast::Storage).to receive(:GetEntryForMountpoint).with("/").once.and_return(data)
 
-    expect(Yast::StorageSnapper.configure_snapper?).to eq true
+    expect(subject).to eq true
 
   end
 
@@ -35,9 +38,9 @@ describe "StorageSnapper#configure_snapper?" do
       "used_fs" => :btrfs
     }
 
-    Yast::Storage.stub(:GetEntryForMountpoint).with("/").once.and_return(data)
+    allow(Yast::Storage).to receive(:GetEntryForMountpoint).with("/").once.and_return(data)
 
-    expect(Yast::StorageSnapper.configure_snapper?).to eq false
+    expect(subject).to eq false
 
   end
 
@@ -51,9 +54,9 @@ describe "StorageSnapper#configure_snapper?" do
       "userdata" => { "/" => "snapshots" }
     }
 
-    Yast::Storage.stub(:GetEntryForMountpoint).with("/").once.and_return(data)
+    allow(Yast::Storage).to receive(:GetEntryForMountpoint).with("/").once.and_return(data)
 
-    expect(Yast::StorageSnapper.configure_snapper?).to eq false
+    expect(subject).to eq false
 
   end
 
@@ -66,9 +69,9 @@ describe "StorageSnapper#configure_snapper?" do
       "used_fs" => :xfs
     }
 
-    Yast::Storage.stub(:GetEntryForMountpoint).with("/").once.and_return(data)
+    allow(Yast::Storage).to receive(:GetEntryForMountpoint).with("/").once.and_return(data)
 
-    expect(Yast::StorageSnapper.configure_snapper?).to eq false
+    expect(subject).to eq false
 
   end
 
