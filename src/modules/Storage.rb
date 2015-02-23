@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) [2012-2014] Novell, Inc.
+# Copyright (c) [2012-2015] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -52,6 +52,7 @@ module Yast
       Yast.import "StorageInit"
       Yast.import "StorageDevices"
       Yast.import "StorageClients"
+      Yast.import "StorageSnapper"
       Yast.import "Stage"
       Yast.import "String"
       Yast.import "Hotplug"
@@ -367,13 +368,18 @@ module Yast
     end
 
 
+    def default_subvolume_name()
+      return @sint.getDefaultSubvolName()
+    end
+
+
     def ClassicStringToByte(str)
       ret, bytes = ::Storage::humanStringToByte(str,true)
       if( !ret )
         ts = Ops.add(str, "b")
 	ret, bytes = ::Storage::humanStringToByte(ts,true)
 	if( !ret )
-	  bytes = 0 
+	  bytes = 0
           Builtins.y2error("cannot parse %1 or %2", str, ts)
         end
       end
@@ -1841,7 +1847,7 @@ module Yast
 	  vols = 0;
 	  vols += p["devices"].size if( p.has_key?("devices") )
 	  vols += p["devices_add"].size if( p.has_key?("devices_add") )
-          if vols>1 
+          if vols>1
              !Builtins.isempty(Ops.get_list(p, "devices_add", []))
             Ops.set(
               p,
@@ -2069,7 +2075,7 @@ module Yast
           )
         end
       end
-      Ops.set(@StorageMap, @targets_key, tg) 
+      Ops.set(@StorageMap, @targets_key, tg)
       #SCR::Write(.target.ycp, "/tmp/upd_all_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
       #count = count+1;
 
@@ -2105,7 +2111,7 @@ module Yast
       if Ops.greater_than(numbt, 0) || dev == "/dev/btrfs"
         tg = HandleBtrfsSimpleVolumes(tg)
       end
-      Ops.set(@StorageMap, @targets_key, tg) 
+      Ops.set(@StorageMap, @targets_key, tg)
       #SCR::Write(.target.ycp, "/tmp/upd_disk_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
       #count = count+1;
 
@@ -2172,7 +2178,7 @@ module Yast
         Ops.set(tg, "/dev/btrfs", getContainerInfo(bt))
         tg = HandleBtrfsSimpleVolumes(tg)
       end
-      Ops.set(@StorageMap, @targets_key, tg) 
+      Ops.set(@StorageMap, @targets_key, tg)
       #SCR::Write(.target.ycp, "/tmp/upd_dev_aft_"+sformat("%1",count), StorageMap[targets_key]:$[] );
       #count = count+1;
 
@@ -3264,7 +3270,7 @@ module Yast
       Builtins.y2milestone("MdToDev nr_or:%1", nr_or_string)
       if Ops.is_string?(nr_or_string)
          ret = nr_or_string
-      else 
+      else
          ret = "/dev/md"+nr_or_string.to_s
       end
       Builtins.y2milestone("MdToDev ret:%1", ret)
@@ -4841,11 +4847,38 @@ module Yast
     end
 
 
+    class MyCommitCallbacks < ::Storage::CommitCallbacks
+
+      def initialize()
+        super()
+      end
+
+      def post_root_filesystem_create()
+        StorageSnapper::configure_snapper_step1()
+      end
+
+      def post_root_mount()
+        StorageSnapper::configure_snapper_step2()
+      end
+
+      def post_root_fstab_add()
+        StorageSnapper::configure_snapper_step3()
+      end
+
+    end
+
+
     # Apply storage changes
     #
     # @return [Fixnum]
     def CommitChanges
       Builtins.y2milestone("CommitChanges")
+
+      if Mode.installation && StorageSnapper.configure_snapper?
+        my_commit_callbacks = MyCommitCallbacks.new()
+        @sint.setCommitCallbacks(my_commit_callbacks)
+      end
+
       ret = @sint.commit()
       if ret<0
         Builtins.y2error("CommitChanges sint ret:%1", ret)
@@ -6073,7 +6106,7 @@ module Yast
 
 
     def FreeCylindersAroundPartition(device, free_before, free_after)
-      r, free_before.value, free_after.value = 
+      r, free_before.value, free_after.value =
 	@sint.freeCylindersAroundPartition(device)
       ret = r==0
       Builtins.y2milestone(

@@ -40,7 +40,7 @@ module Yast
       Yast.import "Storage"
       Yast.import "StorageSettings"
       Yast.import "StorageUpdate"
-      Yast.import "StorageUtils"
+      Yast.import "StorageSnapper"
       Yast.import "Mode"
       Yast.import "Installation"
 
@@ -91,8 +91,8 @@ module Yast
         Storage.SaveUsedFs
         StorageSettings.Save
 
-        if Mode.installation
-          StorageUtils.ConfigureSnapper()
+        if Mode.installation && StorageSnapper.configure_snapper?
+          StorageSnapper.configure_snapper_step4()
         end
 
       else
