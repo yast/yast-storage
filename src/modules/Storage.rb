@@ -2753,17 +2753,7 @@ module Yast
       end
       curr = {}
       curr = volumeMap(vinfo, curr) if ret == 0
-      if ret == 0 &&
-          Ops.get_string(part, "mount", "") != Ops.get_string(curr, "mount", "")
-        changed = true
-        ts = Ops.get_string(part, "mount", "")
-        ret = @sint.changeMountPoint(dev, ts)
-        if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
-        else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
-        end
-      end
+
       if ret == 0 && Ops.get_symbol(part, "type", :unknown) != :extended &&
           (Ops.get_boolean(part, "format", false) !=
             Ops.get_boolean(curr, "format", false) ||
@@ -2789,6 +2779,19 @@ module Yast
           Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
         end
       end
+
+      if ret == 0 &&
+          Ops.get_string(part, "mount", "") != Ops.get_string(curr, "mount", "")
+        changed = true
+        ts = Ops.get_string(part, "mount", "")
+        ret = @sint.changeMountPoint(dev, ts)
+        if ret<0
+          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+        else
+          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+        end
+      end
+
       if ret == 0 &&
           Ops.greater_than(Builtins.size(Ops.get_string(part, "mount", "")), 0) &&
           Ops.get_string(part, "fstopt", "") !=
