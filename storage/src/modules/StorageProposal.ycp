@@ -491,7 +491,7 @@ map try_add_boot( map conf, map disk, boolean force )
 	pb["mount"] = Partitions::BootMount();
 	pb["size"] = Partitions::ProposedBootsize();
 	pb["fsys"] = Partitions::DefaultBootFs();
-	pb["id"] = Partitions::FsidBoot();
+	pb["id"] = Partitions::FsidBoot(disk["label"]:"");
 	pb["auto_added"] = true;
 	pb["max_cyl"] = Partitions::BootCyl();
 	pb["primary"] = Partitions::BootPrimary();
@@ -2257,7 +2257,10 @@ map read_partition_xml_config()
 		    }
 		if( partition["id"]:0 == 0 )
 		    {
-		    partition["id"] = Partitions::FsidBoot();
+                    /* TODO: The empty dlabel for FsidBoot is wrong on PPC but
+                       partitions without a mount point are ignored anyway. See
+                       flex-info-empty-ppc64le2.rb. */
+		    partition["id"] = Partitions::FsidBoot("");
 		    }
 		partition["max_cyl"] = Partitions::BootCyl();
 		}
@@ -2476,7 +2479,10 @@ map read_partition_config( string fpath )
 		}
 	    if( part["id"]:0 == 0 )
 		{
-		part["id"] = Partitions::FsidBoot();
+                /* TODO: The empty dlabel for FsidBoot is wrong on PPC but
+                   partitions without a mount point are ignored anyway. See
+                   flex-info-empty-ppc64le2.rb. */
+		part["id"] = Partitions::FsidBoot("");
 		}
 	    part["max_cyl"] = Partitions::BootCyl();
 	    }
@@ -2586,7 +2592,7 @@ list<map> can_boot_reuse( string disk, string label, boolean boot,
 			    Partitions::MinimalBootsize()));
 	map boot = find( map p, pl,
 			 ``((p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
-			    (p["fsid"]:0 == Partitions::FsidBoot() && 
+			    (p["fsid"]:0 == Partitions::FsidBoot(label) && 
 			     p["size_k"]:0*1024 <= Partitions::MaximalBootsize()) ||
 			    (p["detected_fs"]:`unknown==`hfs && 
 			     p["boot"]:false && label=="mac") ||
@@ -2809,7 +2815,10 @@ list<map> special_boot_proposal_prepare( list<map> partitions )
 	ret = maplist( map p, partitions,
 		       ``{
 		       if( size(p["mount"]:"")==0 &&
-		           (p["fsid"]:0 == 0x06 || p["fsid"]:0 == 0x41) )
+		           ( p["fsid"]:0 == 0x06 ||
+                             Partitions::IsPrepPartition(p["fsid"]:0)
+                           )
+                         )
 			   p["delete"] = true;
 		       return( p );
 		       });
@@ -2827,15 +2836,15 @@ map<string,map> prepare_part_lists( list<string> ddev, map<string,map> tg )
     list<string> remk = ["del_ptable", "disklabel"];
     foreach( string s, ddev,
 	``{
+        string dlabel = tg[s, "label"]:"";
 	tg[s,"partitions"] = 
 	    maplist( map p, tg[s,"partitions"]:[],
 		``{
 		if( contains( linux_pid, p["fsid"]:0 ) ||
-		    (p["fsid"]:0 == Partitions::fsid_gpt_boot) ||
-		    (p["fsid"]:0 == Partitions::FsidBoot() && 
+		    (p["fsid"]:0 == Partitions::FsidBoot(dlabel) && 
 		     p["size_k"]:0*1024 <= Partitions::MaximalBootsize()) ||
 		    (Partitions::PrepBoot() && 
-		     (p["fsid"]:0 == Partitions::fsid_prep_chrp_boot||
+		     (p["fsid"]:0 == Partitions::FsidBoot(dlabel)||
 		      p["fsid"]:0 == 0x06)))
 		    p["linux"] = true;
 		else
@@ -3777,15 +3786,6 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	target = remove_vm(target,key);
     target = AddWinInfo(target);
     ret["target"] = target;
-    map boot = $[ "mount" : Partitions::BootMount(), 
-                  "size" : Partitions::ProposedBootsize(),
-                  "fsys" : Partitions::DefaultBootFs(),
-		  "id" : Partitions::FsidBoot(),
-		  "max_cyl" : Partitions::BootCyl() ];
-    if( Partitions::BootPrimary() )
-	{
-	boot["primary"] = true;
-	}
     list<string> ddev = get_disk_try_list( target, true );
     string sol_disk = "";
     map<string,boolean> valid = $[];
@@ -3915,7 +3915,18 @@ map modify_vm( map vm, map opts, boolean need_swap )
 	    string vg = vg_key;
 	    if( size(vg)>0 && did_remove_vg( disk["partitions"]:[], key ))
 		vg = "";
-	    map ps = do_vm_disk_conf( disk, have_boot?($[]):boot, vg, key );
+            map boot = {};
+            if( !have_boot )
+            {
+                boot = $[ "mount" : Partitions::BootMount(), 
+                  "size" : Partitions::ProposedBootsize(),
+                  "fsys" : Partitions::DefaultBootFs(),
+		  "id" : Partitions::FsidBoot(disk["label"]:""),
+		  "max_cyl" : Partitions::BootCyl(),
+                  "primary" : Partitions::BootPrimary()];
+            }
+
+	    map ps = do_vm_disk_conf( disk, boot, vg, key );
 	    if( ps["ok"]:false )
 		{
 		integer mb = get_vm_sol( ps );
@@ -4039,7 +4050,7 @@ map modify_vm( map vm, map opts, boolean need_swap )
     map boot = $[ "mount" : Partitions::BootMount(), 
                   "size" : Partitions::ProposedBootsize(),
                   "fsys" : Partitions::DefaultBootFs(),
-		  "id" : Partitions::FsidBoot(),
+		  "id" : Partitions::FsidBoot(disk["label"]:""),
 		  "max_cyl" : Partitions::BootCyl() ];
     if( Partitions::BootPrimary() )
 	{
