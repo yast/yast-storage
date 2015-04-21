@@ -48,7 +48,6 @@
     global const integer fsid_solaris = 0xbf;
     global const integer fsid_root = fsid_native;
 
-    integer fsid_boot = 0;
     integer boot_cyl = 0;
     string boot_mount_point = "";
 
@@ -273,24 +272,22 @@ global define boolean BootPrimary()
     }
 
 
-global integer FsidBoot()
+global integer FsidBoot( string dlabel )
 {
-    if( fsid_boot == 0 )
+    integer fsid_boot = fsid_native;
+    if (EfiBoot() || Arch::ia64())
     {
-	fsid_boot = fsid_native;
-	if (EfiBoot() || Arch::ia64())
-	{
-	    fsid_boot = fsid_gpt_boot;
-	}
-	else if( PrepBoot() )
-	{
-	    fsid_boot = fsid_prep_chrp_boot;
-	}
-	else if( Arch::board_mac () )
-	{
-	    fsid_boot = fsid_mac_hfs;
-	}
+	fsid_boot = fsid_gpt_boot;
     }
+    else if( PrepBoot() )
+    {
+	fsid_boot = dlabel == "gpt" ? fsid_gpt_prep : fsid_prep_chrp_boot;
+    }
+    else if( Arch::board_mac () )
+    {
+	fsid_boot = fsid_mac_hfs;
+    }
+
     return fsid_boot;
 }
 
@@ -325,6 +322,11 @@ global define boolean IsExtendedPartition( integer fsid )
 global define boolean IsSwapPartition( integer fsid )
     ``{
     return( !IsDosWinNtPartition( fsid ) && fsid==fsid_swap );
+    }
+
+global define boolean IsPrepPartition( integer fsid )
+    {
+    return ( fsid == fsid_prep_chrp_boot || fsid == fsid_gpt_prep );
     }
 
 global integer SwapSizeMb( integer slot_size )

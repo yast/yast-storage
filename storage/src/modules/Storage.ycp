@@ -5503,11 +5503,11 @@ global define map<string,map> SpecialBootHandling( map<string,map> tg )
     boolean have_ppc_boot = false;
     foreach( string dev, map disk, tg,
 	``{
+        string dlabel = disk["label"]:"";
 	foreach(map part, disk["partitions"]:[],
 	    ``{
 	    if( !have_ppc_boot &&
-	        (part["fsid"]:0 == Partitions::fsid_prep_chrp_boot ||
-	        part["fsid"]:0 == Partitions::fsid_gpt_prep) &&
+	        part["fsid"]:0 == Partitions::FsidBoot(dlabel) &&
 		size(part["mount"]:"")==0 && part["create"]:false )
 		{
 		have_ppc_boot = true;
@@ -5520,11 +5520,11 @@ global define map<string,map> SpecialBootHandling( map<string,map> tg )
 	list new_part = [];
 	foreach(map part, disk["partitions"]:[],
 	    ``{
-	    // convert a mount point of /boot to a 41 PReP boot partition
+	    // convert a mount point of /boot to a proper PReP boot partition
 	    if( Partitions::PrepBoot() &&
 		part["mount"]:"" == Partitions::BootMount() && !have_ppc_boot )
 		{
-		integer id = Partitions::fsid_prep_chrp_boot;
+		integer id = Partitions::FsidBoot(dlabel);
 		part["format"] = false;
 		part["mount"] = "";
 		part["fstype"] = Partitions::FsIdToString( id );
@@ -6019,8 +6019,9 @@ global define map onepartition2fstab (map part, integer& other_nr)
 	 size(part["mount"]:"")==0) ||
 	(part["enc_type"]:`none!=`none && !part["noauto"]:false) ||
 	!IsUsedBy(part) ||
-	(contains( [ Partitions::fsid_prep_chrp_boot, Partitions::fsid_lvm,
-	             Partitions::fsid_raid ], part["fsid"]:0 ) &&
+	(contains( [ Partitions::fsid_prep_chrp_boot, Partitions::fsid_gpt_prep,
+                     Partitions::fsid_lvm, Partitions::fsid_raid ],
+                   part["fsid"]:0 ) &&
 	 size(part["mount"]:"")==0))
 	{
 	return $[];
