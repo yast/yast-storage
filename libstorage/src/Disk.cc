@@ -2115,7 +2115,7 @@ int Disk::doRemove( Volume* v )
 	    }
         // before deleting partitions ensure that efi do not contain it
 	const ArchInfo& ai = getStorage()->getArchInfo();
-	if( ret==0 && !p->created() && ai.is_efiboot )
+	if( ai.is_efiboot && label == "gpt" && ret==0 && !p->created() )
             {
 	    std::ostringstream cmd_line;
             cmd_line << EFIBOOTMGR << " -v --delete --disk " << quote(device())
