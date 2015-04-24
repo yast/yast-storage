@@ -2118,7 +2118,7 @@ int Disk::doRemove( Volume* v )
             {
 	    std::ostringstream cmd_line;
 	    classic(cmd_line);
-            cmd_line << "which efibootmgr"
+            cmd_line << "which efibootmgr";
             // there is efibootmgr available so use it
 	    if( !execCheckFailed( cmd_line.str(), false ) )
                 {
