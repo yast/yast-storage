@@ -2114,7 +2114,8 @@ int Disk::doRemove( Volume* v )
 	    ret = v->prepareRemove();
 	    }
         // before deleting partitions ensure that efi do not contain it
-	if( ret==0 && !p->created() )
+	const ArchInfo& ai = getStorage()->getArchInfo();
+	if( ret==0 && !p->created() && ai.is_efiboot )
             {
 	    std::ostringstream cmd_line;
             cmd_line.str("");
