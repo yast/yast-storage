@@ -2118,7 +2118,6 @@ int Disk::doRemove( Volume* v )
 	if( ret==0 && !p->created() && ai.is_efiboot )
             {
 	    std::ostringstream cmd_line;
-            cmd_line.str("");
             cmd_line << EFIBOOTMGR << " -v --delete --disk " << quote(device())
                 << " --part " << p->OrigNr();
 	    SystemCmd c(cmd_line.str());
