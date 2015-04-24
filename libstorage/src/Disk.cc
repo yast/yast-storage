@@ -2117,17 +2117,12 @@ int Disk::doRemove( Volume* v )
 	if( ret==0 && !p->created() )
             {
 	    std::ostringstream cmd_line;
-	    classic(cmd_line);
-            cmd_line << "which efibootmgr";
-            // there is efibootmgr available so use it
-	    if( !execCheckFailed( cmd_line.str(), false ) )
-                {
-                    cmd_line.str("");
-                    cmd_line << "efibootmgr -v --delete --disk " << quote(device())
-                        << " --part " << p->OrigNr();
-                    if (execCheckFailed( cmd_line.str(), false ))
-	                y2war( "Failed to remove entry from efi for " << device() );
-                }
+            cmd_line.str("");
+            cmd_line << EFIBOOTMGR << " -v --delete --disk " << quote(device())
+                << " --part " << p->OrigNr();
+	    SystemCmd c(cmd_line.str());
+            if ( c.retcode() != 0 )
+	        y2war( "Failed to remove entry from efi for " << device() );
             }
 	if( ret==0 && !p->created() )
 	    {
