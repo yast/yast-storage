@@ -84,5 +84,6 @@
 #define MODPROBEBIN "/sbin/modprobe"
 #define GREPBIN        "/usr/bin/grep"
 
+#define EFIBOOTMGR "/usr/sbin/efibootmgr"
 
 #endif
