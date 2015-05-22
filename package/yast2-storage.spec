@@ -107,7 +107,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_clientdir}/disk_worker.rb
 %{yast_clientdir}/multipath-simple.rb
 %{yast_moduledir}/*
-%{yast_libdir}/storage
+%{yast_libdir}/ystorage
 /var/adm/fillup-templates/sysconfig.storage-yast2-storage
 
 %dir %{yast_ydatadir}

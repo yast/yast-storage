@@ -1,3 +1,3 @@
-require "storage/snapshots_finish"
+require "ystorage/snapshots_finish"
 
-Storage::SnapshotsFinish.run
+Yast::YStorage::SnapshotsFinish.run

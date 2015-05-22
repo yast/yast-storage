@@ -1,9 +1,9 @@
 #!/usr/bin/env rspec
 
 require_relative "../test_helper"
-require "storage/snapshots_finish"
+require "ystorage/snapshots_finish"
 
-describe Storage::SnapshotsFinish do
+describe Yast::YStorage::SnapshotsFinish do
   describe "#write" do
     before do
       allow(subject).to receive(:second_stage_required?).and_return(second_stage_required)

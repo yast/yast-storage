@@ -88,9 +88,9 @@ ynclude_DATA = \
   include/partitioning/ep-lvm.rb \
   include/partitioning/custom_part_helptexts.rb
 
-ylibdir = @ylibdir@/storage
+ylibdir = @ylibdir@/ystorage
 ylib_DATA = \
-  lib/storage/snapshots_finish.rb
+  lib/ystorage/snapshots_finish.rb
 
 scrconf_DATA = \
   scrconf/proc_partitions.scr \
