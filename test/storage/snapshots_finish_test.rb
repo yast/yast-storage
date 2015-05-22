@@ -1,7 +1,7 @@
 #!/usr/bin/env rspec
 
 require_relative "../test_helper"
-require_relative "../../src/lib/storage/snapshots_finish"
+require "storage/snapshots_finish"
 
 describe Storage::SnapshotsFinish do
   describe "#write" do
@@ -66,7 +66,7 @@ describe Storage::SnapshotsFinish do
           end
 
           it "logs the error and returns false" do
-            expect(subject.log).to receive(:error).with("Filesystem snapshot could not be created.")
+            expect(subject.log).to receive(:error).with(/Filesystem snapshot not created:/)
             expect(subject.write).to eq(false)
           end
         end

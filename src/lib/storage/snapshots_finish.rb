@@ -24,7 +24,7 @@ module Storage
       if !second_stage_required? && StorageSnapper.configure_snapper?
         log.info("Creating root filesystem snapshot")
         action = Mode.update ? "upgrade" : "installation"
-        create_snapshot(:single, "after #{action}")
+        create_snapshot("after #{action}")
       else
         log.info("Skipping root filesystem snapshot creation")
         false
@@ -37,11 +37,11 @@ module Storage
 
     private
 
-    def create_snapshot(snapshot_type, description)
+    def create_snapshot(description)
       Yast2::FsSnapshot.create_single(description)
       true
-    rescue Yast2::SnapperNotConfigured, Yast2::PreviousSnapshotNotFound, Yast2::SnapshotCreationFailed
-      log.error("Filesystem snapshot could not be created.")
+    rescue Yast2::PreviousSnapshotNotFound, Yast2::SnapshotCreationFailed => e
+      log.error("Filesystem snapshot not created: #{e.message}")
       false
     end
   end
