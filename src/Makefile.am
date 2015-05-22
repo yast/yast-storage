@@ -36,7 +36,8 @@ client_DATA = \
   clients/partitions_proposal.rb \
   clients/disk_worker.rb \
   clients/inst_target_selection.rb \
-  clients/disk.rb
+  clients/disk.rb \
+  clients/snapshots_finish.rb
 
 yncludedir = @yncludedir@/partitioning
 ynclude_DATA = \
@@ -87,6 +88,10 @@ ynclude_DATA = \
   include/partitioning/ep-lvm.rb \
   include/partitioning/custom_part_helptexts.rb
 
+ylibdir = @ylibdir@/storage
+ylib_DATA = \
+  lib/storage/snapshots_finish.rb
+
 scrconf_DATA = \
   scrconf/proc_partitions.scr \
   scrconf/sysconfig_storage.scr \
@@ -108,6 +113,6 @@ desktop_DATA = \
 fillup_DATA = \
   fillup/sysconfig.storage-yast2-storage
 
-EXTRA_DIST = $(module_DATA) $(client_DATA) $(ynclude_DATA) $(scrconf_DATA) $(ybin_SCRIPTS) $(ydata_DATA) $(desktop_DATA) $(fillup_DATA)
+EXTRA_DIST = $(module_DATA) $(client_DATA) $(ynclude_DATA) $(ylib_DATA) $(scrconf_DATA) $(ybin_SCRIPTS) $(ydata_DATA) $(desktop_DATA) $(fillup_DATA)
 
 include $(top_srcdir)/Makefile.am.common

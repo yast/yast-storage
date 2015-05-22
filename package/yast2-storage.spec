@@ -99,6 +99,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_clientdir}/inst_disk_proposal.rb
 %{yast_clientdir}/inst_target_selection.rb
 %{yast_clientdir}/inst_prepdisk.rb
+%{yast_clientdir}/snapshots_finish.rb
 %{yast_clientdir}/storage_finish.rb
 %{yast_clientdir}/partitions_proposal.rb
 %{yast_clientdir}/storage.rb
@@ -106,6 +107,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_clientdir}/disk_worker.rb
 %{yast_clientdir}/multipath-simple.rb
 %{yast_moduledir}/*
+%{yast_libdir}/storage
 /var/adm/fillup-templates/sysconfig.storage-yast2-storage
 
 %dir %{yast_ydatadir}
