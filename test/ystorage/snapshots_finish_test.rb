@@ -7,7 +7,7 @@ describe Yast::YStorage::SnapshotsFinish do
   describe "#write" do
     before do
       allow(subject).to receive(:second_stage_required?).and_return(second_stage_required)
-      allow(Yast::StorageSnapper).to receive(:configure_snapper?).and_return(snapper_configured)
+      allow(Yast2::FsSnapshot).to receive(:configured?).and_return(snapper_configured)
     end
 
     context "when second stage is required" do

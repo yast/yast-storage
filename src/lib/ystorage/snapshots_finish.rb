@@ -24,7 +24,7 @@ module Yast
       # @return [TrueClass,FalseClass] True if snapshot was created;
       #                                otherwise it returns false.
       def write
-        if !second_stage_required? && StorageSnapper.configure_snapper?
+        if !second_stage_required? && Yast2::FsSnapshot.configured?
           log.info("Creating root filesystem snapshot")
           action = Mode.update ? "upgrade" : "installation"
           create_snapshot("after #{action}")
