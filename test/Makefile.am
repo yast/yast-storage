@@ -2,10 +2,9 @@
 # Makefile.am for storage/test
 #
 
-TESTS = \
-  storage_snapper_configure_snapper_test.rb \
-  storage_get_disk_partition.rb \
-  ystorage/snapshots_finish_test.rb
+TESTS =									\
+	storage_snapper_configure_snapper_test.rb			\
+	storage_get_disk_partition.rb
 
 TEST_EXTENSIONS = .rb
 RB_LOG_COMPILER = rspec
