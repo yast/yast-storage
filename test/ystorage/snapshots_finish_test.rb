@@ -61,17 +61,6 @@ describe Yast::YStorage::SnapshotsFinish do
             expect(subject.write).to eq(true)
           end
         end
-
-        context "when some error happens" do
-          before do
-            allow(Yast2::FsSnapshot).to receive(:create_single).and_raise(Yast2::SnapshotCreationFailed)
-          end
-
-          it "logs the error and returns false" do
-            expect(subject.log).to receive(:error).with(/Filesystem snapshot not created:/)
-            expect(subject.write).to eq(false)
-          end
-        end
       end
 
       context "when snapper is not configured" do

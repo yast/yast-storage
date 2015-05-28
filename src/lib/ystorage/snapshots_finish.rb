@@ -49,17 +49,11 @@ module Yast
         Yast2::FsSnapshot.create_post("after upgrade", pre_number)
         Yast2::FsSnapshotStore.clean
         true
-      rescue Yast2::PreviousSnapshotNotFound, Yast2::SnapshotCreationFailed => e
-        log.error("Filesystem snapshot not created: #{e.message}")
-        false
       end
 
       def create_single_snapshot
         Yast2::FsSnapshot.create_single("after installation")
         true
-      rescue Yast2::PreviousSnapshotNotFound, Yast2::SnapshotCreationFailed => e
-        log.error("Filesystem snapshot not created: #{e.message}")
-        false
       end
     end
   end
