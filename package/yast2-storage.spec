@@ -37,7 +37,7 @@ BuildRequires:	rubygem(rspec)
 BuildRequires:	rubygem(ruby-dbus)
 BuildRequires:	sgml-skel
 BuildRequires:	update-desktop-files
-BuildRequires:	yast2 >= 3.1.22
+BuildRequires:	yast2 >= 3.1.126
 BuildRequires:	yast2-core-devel >= 2.23.1
 BuildRequires:	yast2-devtools >= 3.1.10
 BuildRequires:	yast2-ruby-bindings >= 3.1.7
@@ -45,7 +45,7 @@ BuildRequires:	yast2-testsuite >= 2.19.0
 Requires:	libstorage-ruby >= 2.25.18
 Requires:	libstorage6 >= 2.25.18
 Requires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
-Requires:	yast2 >= 3.1.22
+Requires:	yast2 >= 3.1.126
 Requires:	yast2-core >= 2.18.3
 Requires:	yast2-libyui >= 2.18.7
 %ifarch s390 s390x
@@ -99,6 +99,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_clientdir}/inst_disk_proposal.rb
 %{yast_clientdir}/inst_target_selection.rb
 %{yast_clientdir}/inst_prepdisk.rb
+%{yast_clientdir}/snapshots_finish.rb
 %{yast_clientdir}/storage_finish.rb
 %{yast_clientdir}/partitions_proposal.rb
 %{yast_clientdir}/storage.rb
@@ -106,6 +107,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_clientdir}/disk_worker.rb
 %{yast_clientdir}/multipath-simple.rb
 %{yast_moduledir}/*
+%{yast_libdir}/ystorage
 /var/adm/fillup-templates/sysconfig.storage-yast2-storage
 
 %dir %{yast_ydatadir}
