@@ -40,18 +40,20 @@ describe Yast::YStorage::SnapshotsFinish do
 
         context "when upgrading" do
           before do
-            expect(Yast::Mode).to receive(:update).and_return(true)
+            allow(Yast::Mode).to receive(:update).and_return(true)
           end
 
-          it "creates a snapshot of type 'single' with 'after upgrade' as description" do
-            expect(Yast2::FsSnapshot).to receive(:create_single).with("after upgrade").and_return(true)
+          it "creates a snapshot of type 'post' with 'after upgrade' as description and paired with 'pre' snapshot" do
+            expect(Yast2::FsSnapshotStore).to receive(:load).and_return(1)
+            expect(Yast2::FsSnapshotStore).to receive(:clean)
+            expect(Yast2::FsSnapshot).to receive(:create_post).with("after upgrade", 1).and_return(true)
             expect(subject.write).to eq(true)
           end
         end
 
         context "when installing" do
           before do
-            expect(Yast::Mode).to receive(:update).and_return(false)
+            allow(Yast::Mode).to receive(:update).and_return(false)
           end
 
           it "creates a snapshot of type 'single' with 'after installation' as description" do

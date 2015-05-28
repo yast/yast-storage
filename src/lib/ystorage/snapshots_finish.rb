@@ -1,4 +1,5 @@
 require "yast2/fs_snapshot"
+require "yast2/fs_snapshot_store"
 require "installation/finish_client"
 
 module Yast
@@ -26,8 +27,11 @@ module Yast
       def write
         if !second_stage_required? && Yast2::FsSnapshot.configured?
           log.info("Creating root filesystem snapshot")
-          action = Mode.update ? "upgrade" : "installation"
-          create_snapshot("after #{action}")
+          if Mode.update
+            create_post_snapshot
+          else
+            create_single_snapshot
+          end
         else
           log.info("Skipping root filesystem snapshot creation")
           false
@@ -40,8 +44,18 @@ module Yast
 
       private
 
-      def create_snapshot(description)
-        Yast2::FsSnapshot.create_single(description)
+      def create_post_snapshot
+        pre_number = Yast2::FsSnapshotStore.load("upgrade")
+        Yast2::FsSnapshot.create_post("after upgrade", pre_number)
+        Yast2::FsSnapshotStore.clean
+        true
+      rescue Yast2::PreviousSnapshotNotFound, Yast2::SnapshotCreationFailed => e
+        log.error("Filesystem snapshot not created: #{e.message}")
+        false
+      end
+
+      def create_single_snapshot
+        Yast2::FsSnapshot.create_single("after installation")
         true
       rescue Yast2::PreviousSnapshotNotFound, Yast2::SnapshotCreationFailed => e
         log.error("Filesystem snapshot not created: #{e.message}")
