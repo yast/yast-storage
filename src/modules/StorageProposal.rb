@@ -4440,7 +4440,10 @@ module Yast
 
       end
 
+
       def modify(partitions)
+
+        Builtins.y2milestone( "Post-processing partitions..." )
 
         partitions.each do |volume|
 
@@ -4475,6 +4478,9 @@ module Yast
               size_limit_k = 1024 * opts["root_base"]
               if volume["size_k"] >= size_limit_k
                 volume["userdata"] = { "/" => "snapshots" }
+                Builtins.y2milestone( "Adding userdata '/' => 'snapshots'" )
+              else
+                Builtins.y2milestone( "Below size limit - NOT adding userdata '/' => 'snapshots'" )
               end
             end
           end
@@ -6095,7 +6101,14 @@ module Yast
         )
         Builtins.y2milestone("get_proposal_vm sol:%1", disk)
       end
-      Builtins.y2milestone("get_proposal_vm ret:%1", ret)
+
+      post_processor = PostProcessor.new()
+      ret["target"] = post_processor.process_target(ret["target"])
+
+      Builtins.y2milestone(
+        "get_proposal_vm ret[ok]: %1",
+        Ops.get_boolean(ret, "ok", false)
+      )
       deep_copy(ret)
     end
 
