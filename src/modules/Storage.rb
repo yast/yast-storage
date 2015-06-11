@@ -4994,7 +4994,7 @@ module Yast
     def AddSubvolRoot(part)
       part = deep_copy(part)
 
-      def_subvol = [
+      subvol_names = [
         "home",
         "opt",
         "srv",
@@ -5002,6 +5002,7 @@ module Yast
         "usr/local",
         "var/crash",
         "var/lib/mailman",
+        "var/lib/mariadb",
         "var/lib/named",
         "var/lib/pgsql",
         "var/log",
@@ -5010,46 +5011,58 @@ module Yast
         "var/tmp"
       ]
 
+      # No Copy On Write for SQL databases to minimize performance impact
+      nocow_subvols = [
+        "var/lib/mariadb",
+        "var/lib/pgsql"
+      ]
+
       if Arch.i386 || Arch.x86_64
-        def_subvol.push("boot/grub2/i386-pc")
+        subvol_names.push("boot/grub2/i386-pc")
       end
 
       if Arch.x86_64
-        def_subvol.push("boot/grub2/x86_64-efi")
+        subvol_names.push("boot/grub2/x86_64-efi")
       end
 
       if Arch.ppc
-        def_subvol.push("boot/grub2/powerpc-ieee1275")
+        subvol_names.push("boot/grub2/powerpc-ieee1275")
       end
 
       if Arch.s390
-        def_subvol.push("boot/grub2/s390x-emu")
+        subvol_names.push("boot/grub2/s390x-emu")
       end
 
-      def_subvol.sort!()
+      subvol_names.sort!()
 
-      sv_prepend = ""
-      lst = part.fetch("subvol",[])
-      Builtins.y2milestone("AddSubvolRoot subvol:%1", lst)
+      subvol_prepend = ""
+      subvol_list = part.fetch("subvol",[])
+      Builtins.y2milestone("AddSubvolRoot subvol: %1", subvol_list)
       if FileSystems.default_subvol != ""
-        sv_prepend = FileSystems.default_subvol+"/"
+        subvol_prepend = FileSystems.default_subvol+"/"
       end
       fmt = part.fetch("format",false)
       names = []
       if !fmt
-	names = lst.select { |s| !s.fetch("delete", false) }.each { |s| s.fetch("name", "") }
+	names = subvol_list.select { |s| !s.fetch("delete", false) }.each { |s| s.fetch("name", "") }
       else
-	lst = []
+	subvol_list = []
       end
-      Builtins.y2milestone("AddSubvolRoot subvol names:%1 lst:%2", names, lst)
-      def_subvol.each do |s|
-        svn = sv_prepend+s
-        if !names.include?( svn )
-	  lst.push( { "create" => true, "name" => svn } )
+      Builtins.y2milestone("AddSubvolRoot subvol names: %1 subvol_list: %2", names, subvol_list)
+      subvol_names.each do |subvol|
+        subvol_full_name = subvol_prepend + subvol
+        if !names.include?( subvol_full_name )
+          subvol_entry = { "create" => true, "name" => subvol_full_name }
+          if nocow_subvols.include?( subvol )
+            subvol_entry["nocow"] = true
+            Builtins.y2milestone("AddSubvolRoot: NoCOW for %1", subvol_full_name)
+          end
+	  subvol_list.push( subvol_entry  )
         end
       end
-      part["subvol"] = lst;
-      Builtins.y2milestone("AddSubvolRoot part:%1", part)
+      part["subvol"] = subvol_list;
+      Builtins.y2milestone("AddSubvolRoot subvol: %1", subvol_list)
+      Builtins.y2milestone("AddSubvolRoot part: %1", part)
       part
     end
 
