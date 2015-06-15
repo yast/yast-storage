@@ -40,7 +40,9 @@ module Yast
       def format_any( obj, indent_level )
         result = "";
 
-        if ( obj.is_a? Hash )
+        if ( obj == nil )
+          return "<nil>"
+        elsif ( obj.is_a? Hash )
           result = format_hash( obj, indent_level )
         elsif ( obj.is_a? Array )
           result = format_array( obj, indent_level )
@@ -78,18 +80,18 @@ module Yast
         content_prefix = indentation( indent_level + 1 )
 
         hash.each do |key, value|
-          line = content_prefix + "\"#{key}\" => ";
+          line = content_prefix + "\"#{key}\" =>";
 
           if ( value.is_a?( Hash ) )
             if ( is_simple_hash( value ) )
-              line += format_simple_hash( value, 0 )
+              line += " " + format_simple_hash( value, 0 )
             else
               line += "\n" + format_hash( value, indent_level + 1 )
             end
           elsif ( value.is_a?( Array ) )
             line += "\n" + format_array( value, indent_level + 1 )
           else
-            line += "\"#{value}\""
+            line += " \"#{value}\""
           end
 
           lines.push( line )

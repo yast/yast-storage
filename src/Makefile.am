@@ -89,7 +89,7 @@ ynclude_DATA = \
 
 ylibdir = @ylibdir@/storage
 ylib_DATA = \
-  lib/storage/TargetMapFormatter.rb
+  lib/storage/target_map_formatter.rb
 
 
 scrconf_DATA = \
