@@ -22,12 +22,14 @@
 require "yast"
 require "dbus"
 require "storage"
+require "storage/target_map_formatter"
 
 module Yast
   class StorageClass < Module
 
 
     include Yast::Logger
+    include Yast::StorageHelpers::TargetMapFormatter
 
 
     def main
@@ -1882,7 +1884,7 @@ module Yast
         end
       end
       #y2milestone ("getContainerInfo container %1", remove( c, "partitions" ) );
-      Builtins.y2milestone("getContainerInfo container %1", c)
+      Builtins.y2milestone("getContainerInfo container\n%1", format_target_map(c))
       deep_copy(c)
     end
 
@@ -1962,7 +1964,7 @@ module Yast
             Ops.greater_than(Builtins.size(Ops.get_list(p, "devices", [])), 1)
           end
         )
-        Builtins.y2milestone("HandleBtrfsSimpleVolumes simple %1", simple)
+        Builtins.y2milestone("HandleBtrfsSimpleVolumes simple\n%1", format_target_map(simple))
         keys = [
           "subvol",
           "uuid",
@@ -2027,9 +2029,9 @@ module Yast
           Ops.set(tg, dev, getContainerInfo(c))
         end
         Builtins.y2milestone(
-          "UpdateTargetMap dev: %1 is: %2",
+          "UpdateTargetMap dev: %1 is:\n%2",
           dev,
-          Ops.get(tg, dev, {})
+          format_target_map(Ops.get(tg, dev, {}))
         )
       end
       tg = HandleBtrfsSimpleVolumes(tg)
@@ -2169,7 +2171,7 @@ module Yast
           Ops.get_string(disk, "device", "")
         )
       end
-      Builtins.y2milestone("UpdateTargetMapDev mdev %1", mdev)
+      Builtins.y2milestone("UpdateTargetMapDev mdev\n%1", format_target_map(mdev))
       btrfs = btrfs || Ops.get_symbol(mdev, "used_fs", :unknown) == :btrfs
       Builtins.y2milestone("UpdateTargetMapDev btrfs %1", btrfs)
       if btrfs
@@ -4796,13 +4798,13 @@ module Yast
             Ops.get_boolean(p, "create", false)
         end
         if dps.size>1
-	  Builtins.y2milestone("SetTargetMap dps: %1",dps)
+	  Builtins.y2milestone("SetTargetMap dps:\n%1", format_target_map(dps))
 	  if dps.fetch(0,{}).has_key?("nr")
 	    dps.sort! { |a, b| a.fetch("nr",0)<=>b.fetch("nr",0) }
 	  elsif dps.fetch(0,{}).fetch("type",:none)==:lvm
 	    dps = dps.partition { |a| a.fetch("pool",false) }
           end
-	  Builtins.y2milestone("SetTargetMap dps: %1",dps)
+	  Builtins.y2milestone("SetTargetMap dps:\n%1", format_target_map(dps))
         end
         Builtins.foreach(dps) do |p|
           p_ref = arg_ref(p)
@@ -5061,8 +5063,8 @@ module Yast
         end
       end
       part["subvol"] = subvol_list;
-      Builtins.y2milestone("AddSubvolRoot subvol: %1", subvol_list)
-      Builtins.y2milestone("AddSubvolRoot part: %1", part)
+      Builtins.y2milestone("AddSubvolRoot subvol:\n%1", format_target_map(subvol_list))
+      Builtins.y2milestone("AddSubvolRoot part: \n%1", format_target_map(part))
       part
     end
 
@@ -5160,7 +5162,7 @@ module Yast
         Ops.set(ret, "label", "")
       end
 
-      Builtins.y2milestone("SetVolOptions ret: %1", ret)
+      Builtins.y2milestone("SetVolOptions ret: \n%1", format_target_map(ret))
       deep_copy(ret)
     end
 
@@ -7131,7 +7133,7 @@ module Yast
         Builtins.foreach(disks) do |s|
           if ret == :no
             Builtins.y2milestone(
-              "disk: %1 tarnsport: %2",
+              "disk: %1 transport: %2",
               s,
               Ops.get_symbol(tg, [s, "transport"], :unknown)
             )

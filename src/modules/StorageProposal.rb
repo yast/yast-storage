@@ -33,12 +33,14 @@
 #
 #***********************************************************
 require "yast"
+require "storage/target_map_formatter"
 
 module Yast
   class StorageProposalClass < Module
 
 
     include Yast::Logger
+    include Yast::StorageHelpers::TargetMapFormatter
 
 
     def main
@@ -684,8 +686,8 @@ module Yast
       dev = Ops.get_string(disk, "device", "")
       Builtins.y2milestone("do_flexible_disk dev %1", dev)
       Builtins.y2milestone(
-        "do_flexible_disk parts %1",
-        Ops.get_list(disk, "partitions", [])
+        "do_flexible_disk parts\n%1",
+        format_target_map(Ops.get_list(disk, "partitions", []))
       )
       ret = {}
       Ops.set(ret, "ok", false)
@@ -739,8 +741,8 @@ module Yast
       conf = deep_copy(co)
       conf = try_add_boot(conf, disk, true) if !ignore_boot
       Builtins.y2milestone(
-        "do_flexible_disk_conf parts %1",
-        Ops.get_list(disk, "partitions", [])
+        "do_flexible_disk_conf parts\n%1",
+        format_target_map(Ops.get_list(disk, "partitions", []))
       )
       Builtins.y2milestone("do_flexible_disk_conf conf %1", conf)
       ret = {}
@@ -802,8 +804,8 @@ module Yast
         boot2
       )
       Builtins.y2milestone(
-        "do_vm_disk_conf parts %1",
-        Ops.get_list(disk, "partitions", [])
+        "do_vm_disk_conf parts\n%1",
+        format_target_map(Ops.get_list(disk, "partitions", []))
       )
       conf = {}
       if Ops.greater_than(Builtins.size(boot), 0)
@@ -1158,8 +1160,8 @@ module Yast
       )
       if Ops.get_boolean(ret, "ok", false)
         Builtins.y2milestone(
-          "do_vm_disk_conf parts %1",
-          Ops.get_list(ret, ["disk", "partitions"], [])
+          "do_vm_disk_conf parts\n%1",
+          format_target_map(Ops.get_list(ret, ["disk", "partitions"], []))
         )
       end
       deep_copy(ret)
@@ -1889,8 +1891,8 @@ module Yast
               Ops.set(part, "vg", vgname)
             end
             Builtins.y2milestone(
-              "process_partition_data auto partition %1",
-              part
+              "process_partition_data auto partition\n%1",
+              format_target_map(part)
             )
             partitions = Builtins.add(partitions, Builtins.eval(part))
           end
@@ -1907,7 +1909,7 @@ module Yast
         "partitions",
         Builtins.union(Ops.get_list(disk, "partitions", []), partitions)
       )
-      Builtins.y2milestone("process_partition_data disk %1", disk)
+      Builtins.y2milestone("process_partition_data disk\n%1", format_target_map(disk))
       deep_copy(disk)
     end
 
@@ -2014,8 +2016,8 @@ module Yast
         end
       )
       Builtins.y2milestone(
-        "add_cylinder_info parts %1",
-        Ops.get_list(conf, "partitions", [])
+        "add_cylinder_info parts\n%1",
+        format_target_map(Ops.get_list(conf, "partitions", []))
       )
       deep_copy(conf)
     end
@@ -4038,7 +4040,7 @@ module Yast
       post_processor = PostProcessor.new()
       ret = post_processor.process_partitions(ret)
 
-      Builtins.y2milestone("get_proposal ret: %1", ret)
+      Builtins.y2milestone("get_proposal ret:\n%1", format_target_map(ret))
       deep_copy(ret)
     end
 
@@ -4684,8 +4686,8 @@ module Yast
                 end
               )
               Builtins.y2milestone(
-                "get_inst_proposal res parts %1",
-                Ops.get_list(target, [s, "partitions"], [])
+                "get_inst_proposal res parts\n%1",
+                format_target_map(Ops.get_list(target, [s, "partitions"], []))
               )
             end
           end
@@ -5043,7 +5045,7 @@ module Yast
             sol_disk = s
           end
         end
-        Builtins.y2milestone("get_inst_proposal sol_disk %1", sol_disk)
+        Builtins.y2milestone("get_inst_proposal sol_disk\n%1", format_target_map(sol_disk))
       end
       Ops.set(ret, "ok", Ops.greater_than(Builtins.size(sol_disk), 0))
       if Ops.get_boolean(ret, "ok", false)
@@ -5059,8 +5061,8 @@ module Yast
           Storage.SpecialBootHandling(Ops.get_map(ret, "target", {}))
         )
         Builtins.y2milestone(
-          "get_inst_proposal sol: %1",
-          Ops.get_map(ret, ["target", sol_disk], {})
+          "get_inst_proposal sol:\n%1",
+          format_target_map(Ops.get_map(ret, ["target", sol_disk], {}))
         )
 
         post_processor = PostProcessor.new()
@@ -5601,7 +5603,7 @@ module Yast
           end
         )
       end
-      Builtins.y2milestone("modify_vm ret %1", ret)
+      Builtins.y2milestone("modify_vm ret\n%1", format_target_map(ret))
       deep_copy(ret)
     end
 
@@ -5972,8 +5974,8 @@ module Yast
           Storage.SpecialBootHandling(Ops.get_map(ret, "target", {}))
         )
         Builtins.y2milestone(
-          "get_inst_prop_vm sol: %1",
-          Ops.get_map(ret, ["target", sol_disk], {})
+          "get_inst_prop_vm sol:\n%1",
+          format_target_map(Ops.get_map(ret, ["target", sol_disk], {}))
         )
       end
 
@@ -5981,8 +5983,8 @@ module Yast
       ret["target"] = post_processor.process_target(ret["target"])
 
       Builtins.y2milestone(
-        "get_inst_prop_vm ret[ok]: %1",
-        Ops.get_boolean(ret, "ok", false)
+        "get_inst_prop_vm ret[ok]:\n%1",
+        format_target_map(Ops.get_boolean(ret, "ok", false))
       )
       deep_copy(ret)
     end
@@ -6099,7 +6101,7 @@ module Yast
           "target",
           Storage.SpecialBootHandling(Ops.get_map(ret, "target", {}))
         )
-        Builtins.y2milestone("get_proposal_vm sol: %1", disk)
+        Builtins.y2milestone("get_proposal_vm sol:\n%1", format_target_map(disk))
       end
 
       post_processor = PostProcessor.new()
@@ -6139,7 +6141,7 @@ module Yast
           EncryptDevices(Ops.get_map(ret, "target", {}), Ops.add("/dev/", vg))
         )
       end
-      Builtins.y2milestone("get_inst_prop ret: %1", ret)
+      Builtins.y2milestone("get_inst_prop ret:\n%1", format_target_map(ret))
       deep_copy(ret)
     end
 
