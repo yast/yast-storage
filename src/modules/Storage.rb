@@ -2959,10 +2959,14 @@ module Yast
           rem = rem.drop(1)
         end
         while ret == 0 && !cre.empty?
-          pth = cre.first.fetch("name","")
+          subvol = cre.first
+          pth   = subvol.fetch("name", "")
+          nocow = subvol.fetch("nocow", false)
+          log.info "subvolume to create: #{subvol}"
           if ! @sint.existSubvolume(d, pth)
             changed = true
-            ret = @sint.createSubvolume(d, pth)
+            log.info "creating subvolume #{d} #{pth} nocow: #{nocow}"
+            ret = @sint.createSubvolume(d, pth, nocow)
             if ret<0
               Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
             else
