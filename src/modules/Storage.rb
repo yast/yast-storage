@@ -1804,46 +1804,16 @@ module Yast
           p["devices_add"] = info.devices_add.to_a if !info.devices_add.empty?
           p["devices_rem"] = info.devices_rem.to_a if !info.devices_rem.empty?
 
-          li = []
-          Ops.set(p, "subvol", li)
-          ls = []
-          info.subvol.each { |subvol| ls.push(subvol) }
-          if !Builtins.isempty(ls)
-            li = Builtins.maplist(ls) do |s|
-              m = { "name" => s }
-              deep_copy(m)
+          if !info.subvolumes.empty?
+            p["subvol"] = info.subvolumes.map do |subvolume|
+              tmp = { "name" => subvolume.path }
+              tmp["nocow"] = subvolume.nocow if subvolume.nocow
+              tmp["create"] = subvolume.created if subvolume.created
+              tmp["delete"] = subvolume.deleted if subvolume.deleted
+              tmp
             end
-            Ops.set(p, "subvol", li)
-            Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          ls = []
-          info.subvol_add.each { |subvol_add| ls.push(subvol_add) }
-          if !Builtins.isempty(ls)
-            li = Builtins.maplist(ls) do |s|
-              m = { "create" => true, "name" => s }
-              deep_copy(m)
-            end
-            Ops.set(
-              p,
-              "subvol",
-              Builtins.union(Ops.get_list(p, "subvol", []), li)
-            )
-            Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
-          end
-          ls = []
-          info.subvol_rem.each { |subvol_rem| ls.push(subvol_rem) }
-          if !Builtins.isempty(ls)
-            li = Builtins.maplist(ls) do |s|
-              m = { "delete" => true, "name" => s }
-              deep_copy(m)
-            end
-            Ops.set(
-              p,
-              "subvol",
-              Builtins.union(Ops.get_list(p, "subvol", []), li)
-            )
-            Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
-          end
+
 	  vols = 0;
 	  vols += p["devices"].size if( p.has_key?("devices") )
 	  vols += p["devices_add"].size if( p.has_key?("devices_add") )
