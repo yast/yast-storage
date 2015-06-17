@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.54
+Version:        3.1.56
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -44,7 +44,7 @@ BuildRequires:	yast2-ruby-bindings >= 3.1.7
 BuildRequires:	yast2-testsuite >= 2.19.0
 Requires:	libstorage-ruby >= 2.25.23
 Requires:	libstorage6 >= 2.25.23
-Requires:	rubygem(ruby-dbus)
+Requires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
 Requires:	yast2 >= 3.1.22
 Requires:	yast2-core >= 2.18.3
 Requires:	yast2-libyui >= 2.18.7
