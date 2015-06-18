@@ -22,12 +22,14 @@
 require "yast"
 require "dbus"
 require "storage"
+require "storage/target_map_formatter"
 
 module Yast
   class StorageClass < Module
 
 
     include Yast::Logger
+    include Yast::StorageHelpers::TargetMapFormatter
 
 
     def main
@@ -412,7 +414,7 @@ module Yast
       bytes.value = i # bnc #408829 and #408891
       ret, bytes.value = ::Storage::humanStringToByte( str, false )
       Builtins.y2milestone(
-        "HumanStringToByte ret:%1 str:%2 bytes:%3",
+        "HumanStringToByte ret: %1 str: %2 bytes: %3",
         ret,
         str,
         bytes.value
@@ -426,7 +428,7 @@ module Yast
       bytes = 0 if !ret  # bnc #408829
       bytes_k.value = bytes.div(1024)
       Builtins.y2milestone(
-        "HumanStringToKByte ret:%1 str:%2 bytes_k:%3",
+        "HumanStringToKByte ret: %1 str: %2 bytes_k: %3",
         ret,
         str,
         bytes_k.value
@@ -529,7 +531,7 @@ module Yast
       }
 
       Builtins.y2milestone(
-        "GetContVolInfo device:%1 info:%2",
+        "GetContVolInfo device: %1 info: %2",
         device,
         info.value
       )
@@ -555,10 +557,10 @@ module Yast
           2,
           Builtins.search(device, "LABEL=") == 0 ? "by-label" : "by-uuid"
         )
-        Builtins.y2milestone("GetDiskPartitionTg ls:%1", ls)
+        Builtins.y2milestone("GetDiskPartitionTg ls: %1", ls)
       end
       Builtins.y2debug(
-        "GetDiskPartitionTg size:%1 ls:%2",
+        "GetDiskPartitionTg size: %1 ls: %2",
         Builtins.size(ls),
         ls
       )
@@ -617,7 +619,7 @@ module Yast
               Builtins.substring(id, Ops.add(Ops.get_integer(l, 0, 0), 5))
             )
             id = Builtins.substring(id, 0, Ops.get_integer(l, 0, 0))
-            Builtins.y2debug("GetDiskPartitionTg id:%1 num:%2", id, num)
+            Builtins.y2debug("GetDiskPartitionTg id: %1 num: %2", id, num)
           end
           Builtins.foreach(tg) do |dev, disk|
             if Builtins.size(ret) == 0 &&
@@ -646,7 +648,7 @@ module Yast
               Builtins.substring(id, Ops.add(Ops.get_integer(l, 0, 0), 5))
             )
             id = Builtins.substring(id, 0, Ops.get_integer(l, 0, 0))
-            Builtins.y2debug("GetDiskPartitionTg id:%1 num:%2", id, num)
+            Builtins.y2debug("GetDiskPartitionTg id: %1 num: %2", id, num)
           end
           Builtins.foreach(tg) do |dev, disk|
             if Builtins.size(ret) == 0 &&
@@ -740,7 +742,7 @@ module Yast
         end
         if Ops.greater_than(Builtins.size(tg), 0) &&
             !Builtins.haskey(tg, Ops.get_string(tmp, "disk", ""))
-          Builtins.y2milestone("GetDiskPartitionTg tmp:%1", tmp)
+          Builtins.y2milestone("GetDiskPartitionTg tmp: %1", tmp)
           r = {}
           if (
               r_ref = arg_ref(r);
@@ -748,7 +750,7 @@ module Yast
               r = r_ref.value;
               _GetContVolInfo_result
             )
-            Builtins.y2milestone("GetDiskPartitionTg rtmp:%1", r)
+            Builtins.y2milestone("GetDiskPartitionTg rtmp: %1", r)
             if Builtins.haskey(tg, Ops.get_string(r, "cdevice", ""))
               Ops.set(tmp, "disk", Ops.get_string(r, "cdevice", ""))
               if Ops.get_integer(r, "num", -1) != -1
@@ -763,7 +765,7 @@ module Yast
       else
         ret = [{ "disk" => "/dev/nfs", "nr" => device }]
       end
-      Builtins.y2debug("GetDiskPartitionTg device:%1 ret:%2", device, ret)
+      Builtins.y2debug("GetDiskPartitionTg device: %1 ret: %2", device, ret)
       deep_copy(ret)
     end
 
@@ -797,7 +799,7 @@ module Yast
       tg = deep_copy(tg)
       ret = []
       tmp = GetDiskPartitionTg(device, tg)
-      Builtins.y2milestone("GetPartitionLst tmp:%1", tmp)
+      Builtins.y2milestone("GetPartitionLst tmp: %1", tmp)
       Builtins.foreach(tmp) do |m|
         disk = Ops.get_string(m, "disk", "")
         if Builtins.search(device, "/dev/evms") == 0 &&
@@ -935,7 +937,7 @@ module Yast
         end
       end
 
-      Builtins.y2milestone("GetFreeInfo device:%1 ret:%2", device, ret)
+      Builtins.y2milestone("GetFreeInfo device: %1 ret: %2", device, ret)
       ret
     end
 
@@ -976,7 +978,7 @@ module Yast
 
       if used_fs == :ntfs && (!r || !resize_ok) && verbose
         cmd = Builtins.sformat("/usr/sbin/ntfsresize -f -i '%1'", device)
-        Builtins.y2milestone("GetFreeSpace Executing cmd:%1", cmd)
+        Builtins.y2milestone("GetFreeSpace Executing cmd: %1", cmd)
         bcall = Convert.to_map(
           SCR.Execute(
             path(".target.bash_output"),
@@ -984,7 +986,7 @@ module Yast
             { "LC_MESSAGES" => "POSIX" }
           )
         )
-        Builtins.y2milestone("GetFreeSpace Executing ret:%1", bcall)
+        Builtins.y2milestone("GetFreeSpace Executing ret: %1", bcall)
         tmp = _("Resize Not Possible:") + "\n\n"
         tmp = Ops.add(
           Ops.add(tmp, Ops.get_string(bcall, "stdout", "")),
@@ -1123,7 +1125,7 @@ module Yast
           option_blank = Ops.get_boolean(option, "option_blank", false)
           option_cmd = Ops.get_symbol(option, "option_cmd", :mkfs)
           Builtins.y2milestone(
-            "convertFsOptionMapToString k:%1 opt:%2 val:%3 cmd:%4",
+            "convertFsOptionMapToString k: %1 opt: %2 val: %3 cmd: %4",
             option_key,
             option,
             option_value,
@@ -1158,7 +1160,7 @@ module Yast
       if Ops.greater_than(Builtins.size(fsopt), 0) ||
           Ops.greater_than(Builtins.size(ret), 0)
         Builtins.y2milestone(
-          "convertFsOptionMapToString fsopt:%1 ret:%2",
+          "convertFsOptionMapToString fsopt: %1 ret: %2",
           fsopt,
           ret
         )
@@ -1170,7 +1172,7 @@ module Yast
     def convertStringToFsOptionMap(opts, fs, cmd)
       ret = {}
       Builtins.y2milestone(
-        "convertStringToFsOptionMap opts:\"%1\" fs:%2 cmd:%3",
+        "convertStringToFsOptionMap opts:\"%1\" fs: %2 cmd: %3",
         opts,
         fs,
         cmd
@@ -1245,21 +1247,21 @@ module Yast
           end
         end
         Builtins.y2milestone(
-          "convertStringToFsOptionMap opts:%1 ret:%2",
+          "convertStringToFsOptionMap opts: %1 ret: %2",
           opts,
           ret
         )
       end
-      Builtins.y2milestone("convertStringToFsOptionMap ret:%1", ret)
+      Builtins.y2milestone("convertStringToFsOptionMap ret: %1", ret)
       deep_copy(ret)
     end
 
 
     def CheckBackupState(who)
-      Builtins.y2milestone("CheckBackupStates who:%1", who)
+      Builtins.y2milestone("CheckBackupStates who: %1", who)
       return nil if !InitLibstorage(false)
       ret = @sint.checkBackupState(who)
-      Builtins.y2milestone("CheckBackupStates ret:%1", ret)
+      Builtins.y2milestone("CheckBackupStates ret: %1", ret)
       ret
     end
 
@@ -1297,7 +1299,7 @@ module Yast
       elsif Builtins.haskey(d, "dasdfmt")
         d = Builtins.remove(d, "dasdfmt")
       end
-      Builtins.y2milestone("diskMap ret:%1", d)
+      Builtins.y2milestone("diskMap ret: %1", d)
       deep_copy(d)
     end
 
@@ -1308,7 +1310,7 @@ module Yast
       d = diskMap(dinfo, d)
       d["devices"] = infos.devices.to_a
       Ops.set(d, "minor", infos.minor)
-      Builtins.y2milestone("dmPartCoMap ret:%1", d)
+      Builtins.y2milestone("dmPartCoMap ret: %1", d)
       deep_copy(d)
     end
 
@@ -1444,7 +1446,7 @@ module Yast
       p["region"] = [ info.cylRegion.start, info.cylRegion.len ]
       Ops.set(p, "type", toSymbol(@conv_ptype, info.partitionType))
       Ops.set(p, "boot", true) if info.boot
-      Builtins.y2milestone("partAddMap ret:%1", p)
+      Builtins.y2milestone("partAddMap ret: %1", p)
       deep_copy(p)
     end
 
@@ -1459,7 +1461,7 @@ module Yast
         pinfo = info.p
         p = partAddMap(pinfo, p)
       end
-      Builtins.y2milestone("dmPartMap ret:%1", p)
+      Builtins.y2milestone("dmPartMap ret: %1", p)
       deep_copy(p)
     end
 
@@ -1474,7 +1476,7 @@ module Yast
         pinfo = info.p
         p = partAddMap(pinfo, p)
       end
-      Builtins.y2milestone("mdPartMap ret:%1", p)
+      Builtins.y2milestone("mdPartMap ret: %1", p)
       deep_copy(p)
     end
 
@@ -1498,7 +1500,7 @@ module Yast
           c = diskMap(infos, c)
         else
           Builtins.y2warning(
-            "disk \"%1\" ret:%2",
+            "disk \"%1\" ret: %2",
             Ops.get_string(c, "device", ""),
             ret
           )
@@ -1538,7 +1540,7 @@ module Yast
           c = dmPartCoMap(pinfo, c)
         else
           Builtins.y2warning(
-            "disk \"%1\" ret:%2",
+            "disk \"%1\" ret: %2",
             Ops.get_string(c, "device", ""),
             ret)
         end
@@ -1567,7 +1569,7 @@ module Yast
           c = dmPartCoMap(pinfo, c)
         else
           Builtins.y2warning(
-            "disk \"%1\" ret:%2",
+            "disk \"%1\" ret: %2",
             Ops.get_string(c, "device", ""),
             ret
           )
@@ -1597,7 +1599,7 @@ module Yast
           c = diskMap(dinfo, c)
         else
           Builtins.y2warning(
-            "disk \"%1\" ret:%2",
+            "disk \"%1\" ret: %2",
             Ops.get_string(c, "device", ""),
             ret
           )
@@ -1659,7 +1661,7 @@ module Yast
           c["devices_rem"] = infos.devices_rem.to_a if !infos.devices_rem.empty?
         else
           Builtins.y2warning(
-            "LVM Vg \"%1\" ret:%2",
+            "LVM Vg \"%1\" ret: %2",
             Ops.get_string(c, "name", ""),
             ret
           )
@@ -1688,7 +1690,7 @@ module Yast
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_MD
         pinfos = ::Storage::DequeMdInfo.new()
         ret = @sint.getMdInfo(pinfos)
-        Builtins.y2warning("getMdInfo ret:%1", ret) if ret<0
+        Builtins.y2warning("getMdInfo ret: %1", ret) if ret<0
         pinfos.each do |info|
           p = {}
           vinfo = info.v
@@ -1732,7 +1734,7 @@ module Yast
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_LOOP
         pinfos = ::Storage::DequeLoopInfo.new()
         ret = @sint.getLoopInfo(pinfos)
-        Builtins.y2warning("getLoopInfo ret:%1", ret) if ret<0
+        Builtins.y2warning("getLoopInfo ret: %1", ret) if ret<0
         pinfos.each do |info|
           p = {}
           vinfo = info.v
@@ -1755,7 +1757,7 @@ module Yast
       elsif Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_DM
         pinfos = ::Storage::DequeDmInfo.new()
         ret = @sint.getDmInfo(pinfos)
-        Builtins.y2warning("getDmInfo ret:%1", ret) if ret<0
+        Builtins.y2warning("getDmInfo ret: %1", ret) if ret<0
         pinfos.each do |info|
           p = {}
           vinfo = info.v
@@ -1774,7 +1776,7 @@ module Yast
         Builtins.y2milestone("before getNfsInfo")
         ret = @sint.getNfsInfo(pinfos)
         Builtins.y2milestone("after getNfsInfo")
-        Builtins.y2warning("getNfsInfo ret:%1", ret) if ret<0
+        Builtins.y2warning("getNfsInfo ret: %1", ret) if ret<0
         pinfos.each do |info|
           p = {}
           vinfo = info.v
@@ -1792,7 +1794,7 @@ module Yast
         Builtins.y2milestone("before getBtrfsInfo")
         ret = @sint.getBtrfsInfo(pinfos)
         Builtins.y2milestone("after getBtrfsInfo")
-        Builtins.y2warning("getBtrfsInfo ret:%1", ret) if ret<0
+        Builtins.y2warning("getBtrfsInfo ret: %1", ret) if ret<0
         pinfos.each do |info|
           p = {}
           vinfo = info.v
@@ -1804,46 +1806,16 @@ module Yast
           p["devices_add"] = info.devices_add.to_a if !info.devices_add.empty?
           p["devices_rem"] = info.devices_rem.to_a if !info.devices_rem.empty?
 
-          li = []
-          Ops.set(p, "subvol", li)
-          ls = []
-          info.subvol.each { |subvol| ls.push(subvol) }
-          if !Builtins.isempty(ls)
-            li = Builtins.maplist(ls) do |s|
-              m = { "name" => s }
-              deep_copy(m)
+          if !info.subvolumes.empty?
+            p["subvol"] = info.subvolumes.map do |subvolume|
+              tmp = { "name" => subvolume.path }
+              tmp["nocow"] = subvolume.nocow if subvolume.nocow
+              tmp["create"] = subvolume.created if subvolume.created
+              tmp["delete"] = subvolume.deleted if subvolume.deleted
+              tmp
             end
-            Ops.set(p, "subvol", li)
-            Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
           end
-          ls = []
-          info.subvol_add.each { |subvol_add| ls.push(subvol_add) }
-          if !Builtins.isempty(ls)
-            li = Builtins.maplist(ls) do |s|
-              m = { "create" => true, "name" => s }
-              deep_copy(m)
-            end
-            Ops.set(
-              p,
-              "subvol",
-              Builtins.union(Ops.get_list(p, "subvol", []), li)
-            )
-            Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
-          end
-          ls = []
-          info.subvol_rem.each { |subvol_rem| ls.push(subvol_rem) }
-          if !Builtins.isempty(ls)
-            li = Builtins.maplist(ls) do |s|
-              m = { "delete" => true, "name" => s }
-              deep_copy(m)
-            end
-            Ops.set(
-              p,
-              "subvol",
-              Builtins.union(Ops.get_list(p, "subvol", []), li)
-            )
-            Builtins.y2milestone("subvol:%1", Ops.get_list(p, "subvol", []))
-          end
+
 	  vols = 0;
 	  vols += p["devices"].size if( p.has_key?("devices") )
 	  vols += p["devices_add"].size if( p.has_key?("devices_add") )
@@ -1866,7 +1838,7 @@ module Yast
         Builtins.y2milestone("before getTmpfsInfo")
         ret = @sint.getTmpfsInfo(pinfos)
         Builtins.y2milestone("after getTmpfsInfo")
-        Builtins.y2warning("getTmpfsInfo ret:%1", ret) if ret<0
+        Builtins.y2warning("getTmpfsInfo ret: %1", ret) if ret<0
         pinfos.each do |info|
           p = {}
           vinfo = info.v
@@ -1882,7 +1854,7 @@ module Yast
         end
       end
       #y2milestone ("getContainerInfo container %1", remove( c, "partitions" ) );
-      Builtins.y2milestone("getContainerInfo container %1", c)
+      Builtins.y2milestone("getContainerInfo container\n%1", format_target_map(c))
       deep_copy(c)
     end
 
@@ -1933,11 +1905,11 @@ module Yast
       cinfos.each do |info|
         c = deviceMap(info)
         c["type"] = toSymbol(@conv_ctype, info.type)
-	Builtins.y2milestone("c:%1",c)
+	Builtins.y2milestone("c: %1",c)
         c["readonly"] = true if info.readonly
         ret = Builtins.add(ret, c)
       end
-      Builtins.y2milestone("getContainers ret:%1", ret)
+      Builtins.y2milestone("getContainers ret: %1", ret)
       deep_copy(ret)
     end
 
@@ -1962,7 +1934,7 @@ module Yast
             Ops.greater_than(Builtins.size(Ops.get_list(p, "devices", [])), 1)
           end
         )
-        Builtins.y2milestone("HandleBtrfsSimpleVolumes simple %1", simple)
+        Builtins.y2milestone("HandleBtrfsSimpleVolumes simple\n%1", format_target_map(simple))
         keys = [
           "subvol",
           "uuid",
@@ -2027,9 +1999,9 @@ module Yast
           Ops.set(tg, dev, getContainerInfo(c))
         end
         Builtins.y2milestone(
-          "UpdateTargetMap dev:%1 is:%2",
+          "UpdateTargetMap dev: %1 is:\n%2",
           dev,
-          Ops.get(tg, dev, {})
+          format_target_map(Ops.get(tg, dev, {}))
         )
       end
       tg = HandleBtrfsSimpleVolumes(tg)
@@ -2062,14 +2034,14 @@ module Yast
           )
         end
       end
-      Builtins.y2milestone("UpdateTargetMap rem_keys:%1", rem_keys)
+      Builtins.y2milestone("UpdateTargetMap rem_keys: %1", rem_keys)
       Builtins.foreach(rem_keys) { |dev| tg = Builtins.remove(tg, dev) }
       Builtins.foreach(@conts) do |c|
         if Ops.get_symbol(c, "type", :CT_UNKNOWN) != :CT_DISK &&
             !Builtins.haskey(tg, Ops.get_string(c, "device", ""))
           Ops.set(tg, Ops.get_string(c, "device", ""), getContainerInfo(c))
           Builtins.y2milestone(
-            "UpdateTargetMap dev:%1 is:%2",
+            "UpdateTargetMap dev: %1 is: %2",
             Ops.get_string(c, "device", ""),
             Ops.get(tg, Ops.get_string(c, "device", ""), {})
           )
@@ -2102,7 +2074,7 @@ module Yast
           Ops.get_symbol(p, "used_fs", :unknown) == :btrfs
         end
       )
-      Builtins.y2milestone("UpdateTargetMapDisk btrfs:%1", numbt)
+      Builtins.y2milestone("UpdateTargetMapDisk btrfs: %1", numbt)
       if Ops.greater_than(numbt, 0) && dev != "/dev/btrfs"
         bt = Ops.get(tg, "/dev/btrfs", {})
         Ops.set(bt, "type", :CT_BTRFS) if Builtins.size(bt) == 0
@@ -2169,7 +2141,7 @@ module Yast
           Ops.get_string(disk, "device", "")
         )
       end
-      Builtins.y2milestone("UpdateTargetMapDev mdev %1", mdev)
+      Builtins.y2milestone("UpdateTargetMapDev mdev\n%1", format_target_map(mdev))
       btrfs = btrfs || Ops.get_symbol(mdev, "used_fs", :unknown) == :btrfs
       Builtins.y2milestone("UpdateTargetMapDev btrfs %1", btrfs)
       if btrfs
@@ -2206,11 +2178,11 @@ module Yast
           ""
         ) != device
       end
-      Builtins.y2milestone("getDiskInfo c:%1", c)
+      Builtins.y2milestone("getDiskInfo c: %1", c)
       if c != nil
         disk = toDiskMap(disk, getContainerInfo(c))
         Builtins.y2milestone(
-          "getDiskInfo ret:%1",
+          "getDiskInfo ret: %1",
           Builtins.haskey(disk, "partitions") ?
             Builtins.remove(disk, "partitions") :
             disk
@@ -2264,10 +2236,10 @@ module Yast
       )
       @count = Ops.add(@count, 1)
       SCR.Write(path(".target.ycp"), SaveDumpPath(t), GetTargetMap())
-      Builtins.y2milestone("CreateTargetBackup who:%1", who)
+      Builtins.y2milestone("CreateTargetBackup who: %1", who)
       ret = @sint.createBackupState(who)
       if ret<0
-        Builtins.y2error("CreateTargetBackup sint ret:%1", ret)
+        Builtins.y2error("CreateTargetBackup sint ret: %1", ret)
       end
 
       nil
@@ -2275,10 +2247,10 @@ module Yast
 
 
     def DisposeTargetBackup(who)
-      Builtins.y2milestone("DisposeTargetBackup who:%1", who)
+      Builtins.y2milestone("DisposeTargetBackup who: %1", who)
       ret = @sint.removeBackupState(who)
       if ret<0
-        Builtins.y2error("DisposeTargetBackup sint ret:%1", ret)
+        Builtins.y2error("DisposeTargetBackup sint ret: %1", ret)
       end
 
       nil
@@ -2287,19 +2259,19 @@ module Yast
 
     def EqualBackupStates(s1, s2, vb)
       Builtins.y2milestone(
-        "EqualBackupStates s1:\"%1\" s2:\"%2\" verbose:%3",
+        "EqualBackupStates s1:\"%1\" s2:\"%2\" verbose: %3",
         s1, s2, vb)
       ret = @sint.equalBackupStates(s1, s2, vb)
-      Builtins.y2milestone("EqualBackupStates ret:%1", ret)
+      Builtins.y2milestone("EqualBackupStates ret: %1", ret)
       ret
     end
 
 
     def RestoreTargetBackup(who)
-      Builtins.y2milestone("RestoreTargetBackup who:%1", who)
+      Builtins.y2milestone("RestoreTargetBackup who: %1", who)
       ret = @sint.restoreBackupState(who)
       if ret<0
-        Builtins.y2error("RestoreTargetBackup sint ret:%1", ret)
+        Builtins.y2error("RestoreTargetBackup sint ret: %1", ret)
       end
       UpdateTargetMap()
       t = Ops.add("targetMap_r_", who)
@@ -2487,15 +2459,15 @@ module Yast
 
 
     def NextPartition(disk, ptype)
-      Builtins.y2milestone("NextPartition disk:%1 ptype:%2", disk, ptype)
+      Builtins.y2milestone("NextPartition disk: %1 ptype: %2", disk, ptype)
       pt = fromSymbol(@conv_ptype, ptype)
-      Builtins.y2milestone("NextPartition type:%1 pt:%2", ptype, pt)
+      Builtins.y2milestone("NextPartition type: %1 pt: %2", ptype, pt)
       r, num, dev = @sint.nextFreePartition(disk, pt)
       Builtins.y2error("NextPartition ret %1", r) if r<0
       num = 0 if r<0
       dev = "" if r<0
       ret = { "device" => dev, "nr" => num }
-      Builtins.y2milestone("NextPartition sint ret:%1 map:%2", r, ret)
+      Builtins.y2milestone("NextPartition sint ret: %1 map: %2", r, ret)
       deep_copy(ret)
     end
 
@@ -2507,7 +2479,7 @@ module Yast
       num = 0 if r<0
       dev = "" if r<0
       ret = { "device" => dev, "nr" => num }
-      Builtins.y2milestone("NextMd sint ret:%1 map:%2", r, ret)
+      Builtins.y2milestone("NextMd sint ret: %1 map: %2", r, ret)
       deep_copy(ret)
     end
 
@@ -2522,16 +2494,16 @@ module Yast
         1024
       )
       Builtins.y2milestone(
-        "MaxCylLabel val_k:%1 cyl_size:%2",
+        "MaxCylLabel val_k: %1 cyl_size: %2",
         ret,
         Ops.get_integer(disk, "cyl_size", 1)
       )
       cylk2 = Ops.divide(Ops.get_integer(disk, "cyl_size", 1), 512)
       cylk2 = 2 if Ops.less_than(cylk2, 2)
-      Builtins.y2milestone("MaxCylLabel val_k:%1 cylk2:%2", ret, cylk2)
+      Builtins.y2milestone("MaxCylLabel val_k: %1 cylk2: %2", ret, cylk2)
       ret = Ops.subtract(Ops.divide(Ops.multiply(ret, 2), cylk2), 1)
       ret = Ops.add(ret, start_cyl)
-      Builtins.y2milestone("MaxCylLabel ret:%1", ret)
+      Builtins.y2milestone("MaxCylLabel ret: %1", ret)
       ret
     end
 
@@ -2586,10 +2558,10 @@ module Yast
     # @param string mount point
     # @return [Boolean] if successful
     def SetPartitionMount(device, mp)
-      Builtins.y2milestone("SetPartitionMount device:%1 mp:%2", device, mp)
+      Builtins.y2milestone("SetPartitionMount device: %1 mp: %2", device, mp)
       ret = @sint.changeMountPoint(device, mp)
       if ret<0
-        Builtins.y2error("SetPartitionMount sint ret:%1", ret)
+        Builtins.y2error("SetPartitionMount sint ret: %1", ret)
       end
       UpdateTargetMapDev(device)
       ret == 0
@@ -2604,16 +2576,16 @@ module Yast
     # @return [Boolean] if successful
     def SetPartitionFormat(device, format, fs)
       Builtins.y2milestone(
-        "SetPartitionFormat device:%1 format:%2 fs:%3",
+        "SetPartitionFormat device: %1 format: %2 fs: %3",
         device,
         format,
         fs
       )
       tmp = fromSymbol(FileSystems.conv_fs, fs)
-      Builtins.y2milestone("SetPartitionFormat fs:%1", tmp)
+      Builtins.y2milestone("SetPartitionFormat fs: %1", tmp)
       ret = @sint.changeFormatVolume(device, format, tmp)
       if ret<0
-        Builtins.y2error("SetPartitionFormat sint ret:%1", ret)
+        Builtins.y2error("SetPartitionFormat sint ret: %1", ret)
       end
       UpdateTargetMapDev(device)
       ret == 0
@@ -2628,10 +2600,10 @@ module Yast
     #
     # @see #UnchangePartitionId()
     def SetPartitionId(device, id)
-      Builtins.y2milestone("SetPartitionId device:%1 id:%2", device, id)
+      Builtins.y2milestone("SetPartitionId device: %1 id: %2", device, id)
       ret = @sint.changePartitionId(device, id)
       if ret<0
-        Builtins.y2error("SetPartitionId sint ret:%1", ret)
+        Builtins.y2error("SetPartitionId sint ret: %1", ret)
       end
       UpdateTargetMapDev(device)
       ret == 0
@@ -2645,10 +2617,10 @@ module Yast
     #
     # @see #SetPartitionId()
     def UnchangePartitionId(device)
-      Builtins.y2milestone("UnchangePartitionId device:%1", device)
+      Builtins.y2milestone("UnchangePartitionId device: %1", device)
       ret = @sint.forgetChangePartitionId(device)
       if ret<0
-        Builtins.y2error("UnchangePartitionId sint ret:%1", ret)
+        Builtins.y2error("UnchangePartitionId sint ret: %1", ret)
       end
       UpdateTargetMapDev(device)
       ret == 0
@@ -2663,14 +2635,14 @@ module Yast
     # @return [Boolean] if successful
     def ResizePartition(device, disk, new_cyls)
       Builtins.y2milestone(
-        "ResizePartition device:%1 disk:%2 new_cyls:%3",
+        "ResizePartition device: %1 disk: %2 new_cyls: %3",
         device,
         disk,
         new_cyls
       )
       ret = @sint.resizePartition(device, new_cyls)
       if ret<0
-        Builtins.y2error("ResizePartition sint ret:%1", ret)
+        Builtins.y2error("ResizePartition sint ret: %1", ret)
       end
       UpdateTargetMapDisk(disk)
       ret == 0
@@ -2685,13 +2657,13 @@ module Yast
     # @return [Boolean] if successful
     def ResizeVolume(device, disk, new_size_k)
       Builtins.y2milestone(
-        "ResizeVolume device:%1 disk:%2 new_size_k:%3",
+        "ResizeVolume device: %1 disk: %2 new_size_k: %3",
         device,
         disk,
         new_size_k
       )
       ret = @sint.resizeVolume(device, new_size_k)
-      Builtins.y2error("ResizeVolume sint ret:%1", ret) if ret<0
+      Builtins.y2error("ResizeVolume sint ret: %1", ret) if ret<0
       UpdateTargetMapDisk(disk)
       ret == 0
     end
@@ -2699,7 +2671,7 @@ module Yast
 
     def SetCrypt(device, crpt, format)
       Builtins.y2milestone(
-        "SetCrypt device:%1 val:%2 format:%3",
+        "SetCrypt device: %1 val: %2 format: %3",
         device,
         crpt,
         format
@@ -2711,7 +2683,7 @@ module Yast
       else
         ret = @sint.setCrypt(device, crpt)
         if ret<0
-          Builtins.y2error("SetCrypt sint ret:%1", ret)
+          Builtins.y2error("SetCrypt sint ret: %1", ret)
           if !format && crpt
             Popup.Error(
               Builtins.sformat(
@@ -2727,7 +2699,7 @@ module Yast
           end
           @sint.forgetCryptPassword(device)
         else
-          Builtins.y2milestone("SetCrypt sint ret:%1", ret)
+          Builtins.y2milestone("SetCrypt sint ret: %1", ret)
         end
       end
       ret == 0
@@ -2749,7 +2721,7 @@ module Yast
       vinfo = ::Storage::VolumeInfo.new()
       ret = @sint.getVolume(dev, vinfo)
       if ret != 0
-        Builtins.y2error("ChangeVolumeProperties device:%1 not found", dev)
+        Builtins.y2error("ChangeVolumeProperties device: %1 not found", dev)
       end
       curr = {}
       curr = volumeMap(vinfo, curr) if ret == 0
@@ -2765,7 +2737,7 @@ module Yast
           Ops.get_symbol(part, "used_fs", :none)
         )
         Builtins.y2milestone(
-          "ChangeVolumeProperties fs:%1 symbol:%2",
+          "ChangeVolumeProperties fs: %1 symbol: %2",
           tmp,
           Ops.get_symbol(part, "used_fs", :none)
         )
@@ -2774,9 +2746,9 @@ module Yast
             tmp
           );
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
 
@@ -2786,9 +2758,9 @@ module Yast
         ts = Ops.get_string(part, "mount", "")
         ret = @sint.changeMountPoint(dev, ts)
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
 
@@ -2800,9 +2772,9 @@ module Yast
         ts = Ops.get_string(part, "fstopt", "")
         ret = @sint.changeFstabOptions(dev, ts)
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
       defmb = GetMountBy(dev)
@@ -2815,12 +2787,12 @@ module Yast
           @conv_mountby,
           Ops.get_symbol(part, "mountby", :device)
         )
-        Builtins.y2milestone("ChangeVolumeProperties mby:%1", tmp)
+        Builtins.y2milestone("ChangeVolumeProperties mby: %1", tmp)
         ret = @sint.changeMountBy(dev, tmp)
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
       if ret == 0 &&
@@ -2829,9 +2801,9 @@ module Yast
         ts = Ops.get_string(part, "label", "")
         ret = @sint.changeLabelVolume(dev, ts)
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
       if ret == 0 && Ops.get_boolean(part, "format", false) &&
@@ -2842,12 +2814,12 @@ module Yast
           Ops.get_map(part, "fs_options", {}),
           :mkfs
         )
-        Builtins.y2milestone("FsOption ts:%1", ts)
+        Builtins.y2milestone("FsOption ts: %1", ts)
         ret = @sint.changeMkfsOptVolume(dev, ts)
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
       if ret == 0 && Ops.get_boolean(part, "format", false) &&
@@ -2856,12 +2828,12 @@ module Yast
             Ops.get_string(curr, "mkfs_opt", "")
         changed = true
         ts = Ops.get_string(part, "mkfs_options", "")
-        Builtins.y2milestone("FsOption ts:%1", ts)
+        Builtins.y2milestone("FsOption ts: %1", ts)
         ret = @sint.changeMkfsOptVolume(dev, ts)
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
       if ret == 0 && Ops.get_boolean(part, "format", false) &&
@@ -2875,12 +2847,12 @@ module Yast
           Ops.get_map(part, "fs_options", {}),
           :tunefs
         )
-        Builtins.y2milestone("FsOption ts:%1", ts)
+        Builtins.y2milestone("FsOption ts: %1", ts)
         ret = @sint.changeTunefsOptVolume(dev, ts)
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
       if ret == 0 &&
@@ -2918,9 +2890,9 @@ module Yast
           ret = @sint.forgetResizeVolume(d)
         end
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
       if ret == 0 && Ops.get_boolean(part, "change_fsid", false) &&
@@ -2931,9 +2903,9 @@ module Yast
         Builtins.y2milestone("ChangeVolumeProperties fsid to %1", i)
         ret = @sint.changePartitionId(d, i)
         if ret<0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
       if ret == 0 && !part.fetch("subvol",[]).empty?
@@ -2941,30 +2913,34 @@ module Yast
         fmt = part.fetch("format",false)
         rem = part["subvol"].select { |p| p.fetch("delete",false) }
         cre = part["subvol"].select { |p| !p.fetch("delete",false)&&(p.fetch("create",false)||fmt) }
-        Builtins.y2milestone("ChangeVolumeProperties rem:%1", rem)
-        Builtins.y2milestone("ChangeVolumeProperties cre:%1", cre)
+        Builtins.y2milestone("ChangeVolumeProperties rem: %1", rem)
+        Builtins.y2milestone("ChangeVolumeProperties cre: %1", cre)
         while ret == 0 && !rem.empty?
           pth = rem.first.fetch("name","")
           if @sint.existSubvolume(d, pth)
             changed = true
             ret = @sint.removeSubvolume(d, pth)
             if ret<0
-              Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+              Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
             else
-              Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+              Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
             end
           end
           rem = rem.drop(1)
         end
         while ret == 0 && !cre.empty?
-          pth = cre.first.fetch("name","")
+          subvol = cre.first
+          pth   = subvol.fetch("name", "")
+          nocow = subvol.fetch("nocow", false)
+          log.info "subvolume to create: #{subvol}"
           if ! @sint.existSubvolume(d, pth)
             changed = true
-            ret = @sint.createSubvolume(d, pth)
+            log.info "creating subvolume #{d} #{pth} nocow: #{nocow}"
+            ret = @sint.createSubvolume(d, pth, nocow)
             if ret<0
-              Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+              Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
             else
-              Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+              Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
             end
           end
           cre = cre.drop(1)
@@ -2981,54 +2957,54 @@ module Yast
         Builtins.y2milestone("ChangeVolumeProperties userdata to %1", userdata.to_s)
         ret = @sint.setUserdata(d, userdata)
         if ret < 0
-          Builtins.y2error("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2error("ChangeVolumeProperties sint ret: %1", ret)
         else
-          Builtins.y2milestone("ChangeVolumeProperties sint ret:%1", ret)
+          Builtins.y2milestone("ChangeVolumeProperties sint ret: %1", ret)
         end
       end
 
       UpdateTargetMapDev(dev) if changed
       if ret != 0
-        Builtins.y2milestone("ChangeVolumeProperties ret:%1", ret)
-        Builtins.y2milestone("ChangeVolumeProperties part:%1", part)
-        Builtins.y2milestone("ChangeVolumeProperties curr:%1", curr)
+        Builtins.y2milestone("ChangeVolumeProperties ret: %1", ret)
+        Builtins.y2milestone("ChangeVolumeProperties part: %1", part)
+        Builtins.y2milestone("ChangeVolumeProperties curr: %1", curr)
       end
       ret == 0
     end
 
 
     def DeleteDevice(device)
-      Builtins.y2milestone("DeleteDevice device:%1", device)
+      Builtins.y2milestone("DeleteDevice device: %1", device)
       ret = @sint.removeVolume(device)
-      Builtins.y2error("DeleteDevice sint ret:%1", ret) if ret<0
+      Builtins.y2error("DeleteDevice sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
 
     def DeleteLvmVg(name)
-      Builtins.y2milestone("DeleteLvmVg name:%1", name)
+      Builtins.y2milestone("DeleteLvmVg name: %1", name)
       ret = @sint.removeLvmVg(name)
-      Builtins.y2error("DeleteLvmVg sint ret:%1", ret) if ret<0
+      Builtins.y2error("DeleteLvmVg sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
 
     def DeleteDmraid(name)
-      Builtins.y2milestone("DeleteDmraid name:%1", name)
+      Builtins.y2milestone("DeleteDmraid name: %1", name)
       ret = @sint.removeDmraid(name)
-      Builtins.y2error("DeleteDmraid sint ret:%1", ret) if ret<0
+      Builtins.y2error("DeleteDmraid sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
 
     def DeleteMdPartCo(name)
-      Builtins.y2milestone("DeleteMdPartCo name:%1", name)
+      Builtins.y2milestone("DeleteMdPartCo name: %1", name)
       ret = @sint.removeMdPartCo(name, true)
       if ret<0
-        Builtins.y2error("DeleteMdPartCo sint ret:%1", ret)
+        Builtins.y2error("DeleteMdPartCo sint ret: %1", ret)
       end
       UpdateTargetMap()
       ret == 0
@@ -3037,14 +3013,14 @@ module Yast
 
     def CreateLvmVg(name, pesize, lvm2)
       Builtins.y2milestone(
-        "CreateLvmVg name:%1 pesize:%2 lvm2:%3",
+        "CreateLvmVg name: %1 pesize: %2 lvm2: %3",
         name,
         pesize,
         lvm2
       )
       devs = ::Storage::DequeString.new()
       ret = @sint.createLvmVg(name, pesize.div(1024), !lvm2, devs)
-      Builtins.y2error("CreateLvmVg sint ret:%1", ret) if ret<0
+      Builtins.y2error("CreateLvmVg sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
@@ -3062,7 +3038,7 @@ module Yast
     def CreateLvmVgWithDevs(name, pesize, lvm2, devs)
       devd = StringDequeFromList(devs)
       Builtins.y2milestone(
-        "CreateLvmVgWithDevs name:%1 pesize:%2 lvm2:%3 devs:%4",
+        "CreateLvmVgWithDevs name: %1 pesize: %2 lvm2: %3 devs: %4",
         name,
         pesize,
         lvm2,
@@ -3070,7 +3046,7 @@ module Yast
       )
       ret = @sint.createLvmVg(name, pesize.div(1024), !lvm2, devd)
       if ret<0
-        Builtins.y2error("CreateLvmVgWithDevs sint ret:%1", ret)
+        Builtins.y2error("CreateLvmVgWithDevs sint ret: %1", ret)
       end
       UpdateTargetMap()
       ret == 0
@@ -3078,22 +3054,22 @@ module Yast
 
 
     def ExtendLvmVg(name, device)
-      Builtins.y2milestone("ExtendLvmVg name:%1 device:%2", name, device)
+      Builtins.y2milestone("ExtendLvmVg name: %1 device: %2", name, device)
       devd = ::Storage::DequeString.new()
       devd.push(device)
       ret = @sint.extendLvmVg(name, devd)
-      Builtins.y2error("ExtendLvmVg sint ret:%1", ret) if ret<0
+      Builtins.y2error("ExtendLvmVg sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
 
     def ReduceLvmVg(name, device)
-      Builtins.y2milestone("ReduceLvmVg name:%1 device:%2", name, device)
+      Builtins.y2milestone("ReduceLvmVg name: %1 device: %2", name, device)
       devd = ::Storage::DequeString.new()
       devd.push(device)
       ret = @sint.shrinkLvmVg(name, devd)
-      Builtins.y2error("ReduceLvmVg sint ret:%1", ret) if ret<0
+      Builtins.y2error("ReduceLvmVg sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
@@ -3101,7 +3077,7 @@ module Yast
 
     def CreateLvmLv(vgname, lvname, sizeK, stripes)
       Builtins.y2milestone(
-        "CreateLvmLv vg:%1 name:%2 sizeK:%3 stripes:%4",
+        "CreateLvmLv vg: %1 name: %2 sizeK: %3 stripes: %4",
         vgname,
         lvname,
         sizeK,
@@ -3109,7 +3085,7 @@ module Yast
       )
       ret, dummy = @sint.createLvmLv(vgname, lvname, sizeK, stripes)
       dummy = "" if ret<0
-      Builtins.y2error("CreateLvmLv sint ret:%1", ret) if ret<0
+      Builtins.y2error("CreateLvmLv sint ret: %1", ret) if ret<0
       UpdateTargetMapDisk(Ops.add("/dev/", vgname))
       ret == 0
     end
@@ -3117,7 +3093,7 @@ module Yast
 
     def CreateLvmThin(vgname, lvname, pool, sizeK)
       Builtins.y2milestone(
-        "CreateLvmThin vg:%1 name:%2 pool:%3 sizeK:%4",
+        "CreateLvmThin vg: %1 name: %2 pool: %3 sizeK: %4",
         vgname,
         lvname,
         pool,
@@ -3125,7 +3101,7 @@ module Yast
       )
       ret, dummy = @sint.createLvmLvThin(vgname, lvname, pool, sizeK)
       dummy = "" if ret<0
-      Builtins.y2error("CreateLvmLv sint ret:%1", ret) if ret<0
+      Builtins.y2error("CreateLvmLv sint ret: %1", ret) if ret<0
       UpdateTargetMapDisk(Ops.add("/dev/", vgname))
       ret == 0
     end
@@ -3133,14 +3109,14 @@ module Yast
 
     def ChangeLvStripeSize(vgname, lvname, stripeSize)
       Builtins.y2milestone(
-        "ChangeLvStripeSize vg:%1 name:%2 stripeSize:%3",
+        "ChangeLvStripeSize vg: %1 name: %2 stripeSize: %3",
         vgname,
         lvname,
         stripeSize
       )
       ret = @sint.changeLvStripeSize(vgname, lvname, stripeSize)
       if ret<0
-        Builtins.y2error("ChangeLvStripeSize sint ret:%1", ret)
+        Builtins.y2error("ChangeLvStripeSize sint ret: %1", ret)
       end
       UpdateTargetMapDisk(Ops.add("/dev/", vgname))
       ret == 0
@@ -3149,14 +3125,14 @@ module Yast
 
     def ChangeLvStripeCount(vgname, lvname, stripes)
       Builtins.y2milestone(
-        "ChangeLvStripeCount vg:%1 name:%2 stripes:%3",
+        "ChangeLvStripeCount vg: %1 name: %2 stripes: %3",
         vgname,
         lvname,
         stripes
       )
       ret = @sint.changeLvStripeCount(vgname, lvname, stripes)
       if ret<0
-        Builtins.y2error("ChangeLvStripeCount sint ret:%1", ret)
+        Builtins.y2error("ChangeLvStripeCount sint ret: %1", ret)
       end
       UpdateTargetMapDisk(Ops.add("/dev/", vgname))
       ret == 0
@@ -3165,7 +3141,7 @@ module Yast
 
     def CreateLvmPool(vgname, lvname, sizeK, stripes)
       Builtins.y2milestone(
-        "CreateLvmPool vg:%1 name:%2 sizeK:%3 stripes:%4",
+        "CreateLvmPool vg: %1 name: %2 sizeK: %3 stripes: %4",
         vgname,
         lvname,
         sizeK,
@@ -3174,7 +3150,7 @@ module Yast
       ret, dummy = @sint.createLvmLvPool(vgname, lvname, sizeK)
       dummy = "" if ret<0
       if ret<0
-        Builtins.y2error("CreateLvmPool sint ret:%1", ret)
+        Builtins.y2error("CreateLvmPool sint ret: %1", ret)
       elsif Ops.greater_than(stripes, 1) &&
           !ChangeLvStripeCount(vgname, lvname, stripes)
         ret = -1
@@ -3185,13 +3161,13 @@ module Yast
 
 
     def ExtendBtrfsVolume(uuid, device)
-      Builtins.y2milestone("ExtendBtrfsVolume uuid:%1 device:%2", uuid, device)
+      Builtins.y2milestone("ExtendBtrfsVolume uuid: %1 device: %2", uuid, device)
       ret = 0
       devd = ::Storage::DequeString.new()
       devd.push(device)
       ret = @sint.extendBtrfsVolume(uuid, devd)
       if ret<0
-        Builtins.y2error("ExtendBtrfsVolume sint ret:%1", ret)
+        Builtins.y2error("ExtendBtrfsVolume sint ret: %1", ret)
       end
       UpdateTargetMap()
       ret == 0
@@ -3199,13 +3175,13 @@ module Yast
 
 
     def ReduceBtrfsVolume(uuid, device)
-      Builtins.y2milestone("ReduceBtrfsVolume uuid:%1 device:%2", uuid, device)
+      Builtins.y2milestone("ReduceBtrfsVolume uuid: %1 device: %2", uuid, device)
       ret = 0
       devd = ::Storage::DequeString.new()
       devd.push(device)
       ret = @sint.shrinkBtrfsVolume(uuid, devd)
       if ret<0
-        Builtins.y2error("ReduceBtrfsVolume sint ret:%1", ret)
+        Builtins.y2error("ReduceBtrfsVolume sint ret: %1", ret)
       end
       UpdateTargetMap()
       ret == 0
@@ -3214,7 +3190,7 @@ module Yast
 
     def AddNfsVolume(nfsdev, opts, sz, mp, nfs4)
       Builtins.y2milestone(
-        "AddNfsVolume dev:%1 opts:%2 size:%3 mp:%4 nfs4:%5",
+        "AddNfsVolume dev: %1 opts: %2 size: %3 mp: %4 nfs4: %5",
         nfsdev,
         opts,
         sz,
@@ -3222,7 +3198,7 @@ module Yast
         nfs4
       )
       ret = @sint.addNfsDevice(nfsdev, opts, sz, mp, nfs4)
-      Builtins.y2error("AddNfsVolume sint ret:%1", ret) if ret<0
+      Builtins.y2error("AddNfsVolume sint ret: %1", ret) if ret<0
       UpdateTargetMapDisk("/dev/nfs")
       ret == 0
     end
@@ -3230,7 +3206,7 @@ module Yast
 
     def CheckNfsVolume(nfsdev, opts, nfs4)
       Builtins.y2milestone(
-        "CheckNfsVolume dev:%1 opts:%2 nfs4:%3",
+        "CheckNfsVolume dev: %1 opts: %2 nfs4: %3",
         nfsdev,
         opts,
         nfs4
@@ -3238,20 +3214,20 @@ module Yast
       ret, sz = @sint.checkNfsDevice(nfsdev, opts, nfs4)
       sz = 0 if ret<0
       if ret<0
-        Builtins.y2error("CheckNfsVolume sint ret:%1", ret)
+        Builtins.y2error("CheckNfsVolume sint ret: %1", ret)
       else
         ret = sz
       end
-      Builtins.y2milestone("CheckNfsVolume ret:%1", ret)
+      Builtins.y2milestone("CheckNfsVolume ret: %1", ret)
       ret
     end
 
 
     def AddTmpfsVolume(mount, opts)
-      Builtins.y2milestone("AddTmpfsVolume mount:%1 opts:%2", mount, opts)
+      Builtins.y2milestone("AddTmpfsVolume mount: %1 opts: %2", mount, opts)
       ret = @sint.addTmpfsMount(mount, opts)
       if ret<0
-        Builtins.y2error("AddTmpfsVolume sint ret:%1", ret)
+        Builtins.y2error("AddTmpfsVolume sint ret: %1", ret)
       end
       UpdateTargetMapDisk("/dev/tmpfs")
       ret == 0
@@ -3259,10 +3235,10 @@ module Yast
 
 
     def DelTmpfsVolume(mount)
-      Builtins.y2milestone("DelTmpfsVolume mount:%1", mount)
+      Builtins.y2milestone("DelTmpfsVolume mount: %1", mount)
       ret = @sint.removeTmpfsMount(mount)
       if ret<0
-        Builtins.y2error("DelTmpfsVolume sint ret:%1", ret)
+        Builtins.y2error("DelTmpfsVolume sint ret: %1", ret)
       end
       UpdateTargetMapDisk("/dev/tmpfs")
       ret == 0
@@ -3270,24 +3246,24 @@ module Yast
 
 
     def MdToDev(nr_or_string)
-      Builtins.y2milestone("MdToDev nr_or:%1", nr_or_string)
+      Builtins.y2milestone("MdToDev nr_or: %1", nr_or_string)
       if Ops.is_string?(nr_or_string)
          ret = nr_or_string
       else
          ret = "/dev/md"+nr_or_string.to_s
       end
-      Builtins.y2milestone("MdToDev ret:%1", ret)
+      Builtins.y2milestone("MdToDev ret: %1", ret)
       ret
     end
 
 
     def CreateMd(nr, type)
-      Builtins.y2milestone("CreateMd nr:%1 type:%2", nr, type)
+      Builtins.y2milestone("CreateMd nr: %1 type: %2", nr, type)
       tmp = Ops.get(@conv_mdstring, type, 0)
       empty = ::Storage::ListString.new()
       rd = MdToDev(nr)
       ret = @sint.createMd(rd, tmp, empty, empty)
-      Builtins.y2error("CreateMd sint ret:%1", ret) if ret<0
+      Builtins.y2error("CreateMd sint ret: %1", ret) if ret<0
       UpdateTargetMapDisk("/dev/md")
       ret == 0
     end
@@ -3304,7 +3280,7 @@ module Yast
 
     def CreateMdWithDevs(nr, type, devices)
       Builtins.y2milestone(
-        "CreateMdWithDevs nr:%1 type:%2 devices:%3",
+        "CreateMdWithDevs nr: %1 type: %2 devices: %3",
         nr,
         type,
         devices
@@ -3318,7 +3294,7 @@ module Yast
       rd = MdToDev(nr)
       ret = @sint.createMd(rd, tmp, devs, empty)
       if ret<0
-        Builtins.y2error("CreateMdWithDevs sint ret:%1", ret)
+        Builtins.y2error("CreateMdWithDevs sint ret: %1", ret)
       end
       UpdateTargetMap()
       ret == 0
@@ -3326,59 +3302,59 @@ module Yast
 
 
     def ReplaceMd(nr, devs)
-      Builtins.y2milestone("ReplaceMd nr:%1 devs:%2", nr, devs)
+      Builtins.y2milestone("ReplaceMd nr: %1 devs: %2", nr, devs)
       empty = ::Storage::ListString.new()
       devices = StringListFromList(devs);
       rd = MdToDev(nr)
       ret = @sint.updateMd(rd, devices, empty)
-      Builtins.y2error("ReplaceMd sint ret:%1", ret) if ret<0
+      Builtins.y2error("ReplaceMd sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
 
     def ExtendMd(nr, devs)
-      Builtins.y2milestone("ExtendMd nr:%1 devs:%2", nr, devs)
+      Builtins.y2milestone("ExtendMd nr: %1 devs: %2", nr, devs)
       empty = ::Storage::ListString.new()
       devices = StringListFromList(devs);
       rd = MdToDev(nr)
       ret = @sint.extendMd(rd, devices, empty)
-      Builtins.y2error("ExtendMd sint ret:%1", ret) if ret<0
+      Builtins.y2error("ExtendMd sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
 
     def ShrinkMd(nr, devs)
-      Builtins.y2milestone("ShrinkMd nr:%1 devs:%2", nr, devs)
+      Builtins.y2milestone("ShrinkMd nr: %1 devs: %2", nr, devs)
       empty = ::Storage::ListString.new()
       devices = StringListFromList(devs);
       rd = MdToDev(nr)
       ret = @sint.shrinkMd(rd, devices, empty)
-      Builtins.y2error("ShrinkMd sint ret:%1", ret) if ret<0
+      Builtins.y2error("ShrinkMd sint ret: %1", ret) if ret<0
       UpdateTargetMap()
       ret == 0
     end
 
 
     def ChangeMdType(nr, mdtype)
-      Builtins.y2milestone("ChangeMdType nr:%1 mdtype:%2", nr, mdtype)
+      Builtins.y2milestone("ChangeMdType nr: %1 mdtype: %2", nr, mdtype)
       rd = MdToDev(nr)
       tmp = Ops.get(@conv_mdstring, mdtype, 0)
       ret = @sint.changeMdType(rd, tmp)
-      Builtins.y2error("ChangeMdType sint ret:%1", ret) if ret<0
+      Builtins.y2error("ChangeMdType sint ret: %1", ret) if ret<0
       UpdateTargetMapDev(rd)
       ret == 0
     end
 
 
     def ChangeMdParity(nr, ptype)
-      Builtins.y2milestone("ChangeMdParity nr:%1 parity:%2", nr, ptype)
+      Builtins.y2milestone("ChangeMdParity nr: %1 parity: %2", nr, ptype)
       rd = MdToDev(nr)
       tmp = Ops.get(@conv_parstring, ptype, 0)
       ret = @sint.changeMdParity(rd, tmp)
       if ret<0
-        Builtins.y2error("ChangeMdParity sint ret:%1", ret)
+        Builtins.y2error("ChangeMdParity sint ret: %1", ret)
       end
       UpdateTargetMapDev(rd)
       ret == 0
@@ -3386,12 +3362,12 @@ module Yast
 
 
     def ChangeMdParitySymbol(nr, ptype)
-      Builtins.y2milestone("ChangeMdParitySymbol nr:%1 parity:%2", nr, ptype)
+      Builtins.y2milestone("ChangeMdParitySymbol nr: %1 parity: %2", nr, ptype)
       rd = MdToDev(nr)
       tmp = fromSymbol(@conv_mdparity, ptype)
       ret = @sint.changeMdParity(rd, tmp)
       if ret<0
-        Builtins.y2error("ChangeMdParitySymbol sint ret:%1", ret)
+        Builtins.y2error("ChangeMdParitySymbol sint ret: %1", ret)
       end
       UpdateTargetMapDev(rd)
       ret == 0
@@ -3399,11 +3375,11 @@ module Yast
 
 
     def ChangeMdChunk(nr, chunk)
-      Builtins.y2milestone("ChangeMdChunk nr:%1 chunk:%2", nr, chunk)
+      Builtins.y2milestone("ChangeMdChunk nr: %1 chunk: %2", nr, chunk)
       rd = MdToDev(nr)
       ret = @sint.changeMdChunk(rd, chunk)
       if ret<0
-        Builtins.y2error("ChangeMdChunk sint ret:%1", ret)
+        Builtins.y2error("ChangeMdChunk sint ret: %1", ret)
       end
       UpdateTargetMapDev(rd)
       ret == 0
@@ -3411,11 +3387,11 @@ module Yast
 
 
     def CheckMd(nr)
-      Builtins.y2milestone("CheckMd nr:%1", nr)
+      Builtins.y2milestone("CheckMd nr: %1", nr)
       ret = 0
       rd = MdToDev(nr)
       ret = @sint.checkMd(rd)
-      Builtins.y2milestone("CheckMd sint ret:%1", ret) if ret != 0
+      Builtins.y2milestone("CheckMd sint ret: %1", ret) if ret != 0
       ret
     end
 
@@ -3425,49 +3401,49 @@ module Yast
       Builtins.foreach(Ops.get_map(@conv_mdtype, "m", {})) do |k, v|
         tmp = k if v == md_type
       end
-      Builtins.y2milestone("ComputeMdSize devices:%1", devices)
+      Builtins.y2milestone("ComputeMdSize devices: %1", devices)
       empty = ::Storage::ListString.new()
       devs = StringListFromList(devices);
       ret, s = @sint.computeMdSize(tmp, devs, empty)
       sizeK.value=s if ret==0
-      Builtins.y2milestone("ComputeMdSize sint ret:%1", ret) if ret != 0
-      Builtins.y2milestone("ComputeMdSize sizeK:%1", sizeK)
+      Builtins.y2milestone("ComputeMdSize sint ret: %1", ret) if ret != 0
+      Builtins.y2milestone("ComputeMdSize sizeK: %1", sizeK)
       ret
     end
 
 
     def GetCryptPwd(device)
-      Builtins.y2milestone("GetCryptPwd device:%1", device)
+      Builtins.y2milestone("GetCryptPwd device: %1", device)
       ret, pwd = @sint.getCryptPassword(device)
       pwd = "" if ret<0
       if ret<0
-        Builtins.y2error("GetCryptPwd sint ret:%1", ret)
+        Builtins.y2error("GetCryptPwd sint ret: %1", ret)
       else
-        Builtins.y2milestone("GetCryptPwd empty:%1", Builtins.size(pwd) == 0)
+        Builtins.y2milestone("GetCryptPwd empty: %1", Builtins.size(pwd) == 0)
       end
       pwd
     end
 
 
     def SetCryptPwd(device, pwd)
-      Builtins.y2milestone("SetCryptPwd device:%1", device)
+      Builtins.y2milestone("SetCryptPwd device: %1", device)
       ret = @sint.setCryptPassword(device, pwd)
       if ret<0
-        Builtins.y2error("SetCryptPwd sint ret:%1", ret)
+        Builtins.y2error("SetCryptPwd sint ret: %1", ret)
       else
-        Builtins.y2milestone("SetCryptPwd sint ret:%1", ret)
+        Builtins.y2milestone("SetCryptPwd sint ret: %1", ret)
       end
       ret == 0
     end
 
 
     def ActivateCrypt(device, on)
-      Builtins.y2milestone("ActivateCrypt device:%1 on:%2", device, on)
+      Builtins.y2milestone("ActivateCrypt device: %1 on: %2", device, on)
       ret = @sint.activateEncryption(device, on)
       if ret<0
-        Builtins.y2error("ActivateCrypt ret:%1", ret)
+        Builtins.y2error("ActivateCrypt ret: %1", ret)
       else
-        Builtins.y2milestone("ActivateCrypt ret:%1", ret)
+        Builtins.y2milestone("ActivateCrypt ret: %1", ret)
       end
       ret == 0
     end
@@ -3475,7 +3451,7 @@ module Yast
 
     def NeedCryptPwd(device)
       ret = @sint.needCryptPassword(device)
-      Builtins.y2milestone("NeedCryptPwd device:%1 ret:%2", device, ret)
+      Builtins.y2milestone("NeedCryptPwd device: %1 ret: %2", device, ret)
       ret
     end
 
@@ -3486,33 +3462,33 @@ module Yast
       Builtins.foreach(devs) do |s|
         p = GetPartition(tg, s)
         ret = Ops.get_symbol(p, "enc_type", :none) == :luks if !ret
-        Builtins.y2milestone("IsVgEncrypted ret:%1 p:%2", ret, p)
+        Builtins.y2milestone("IsVgEncrypted ret: %1 p: %2", ret, p)
       end
-      Builtins.y2milestone("IsVgEncrypted key:%1 ret:%2", vg_key, ret)
+      Builtins.y2milestone("IsVgEncrypted key: %1 ret: %2", vg_key, ret)
       ret
     end
 
 
     def NeedVgPassword(tg, vg_key)
       ret = IsVgEncrypted(tg, vg_key)
-      Builtins.y2milestone("NeedVgPassword vg:%1", Ops.get(tg, vg_key, {}))
+      Builtins.y2milestone("NeedVgPassword vg: %1", Ops.get(tg, vg_key, {}))
       if ret
         devs = Ops.get_list(tg, [vg_key, "devices"], [])
         Builtins.foreach(devs) do |s|
           ret = ret && NeedCryptPwd(s)
-          Builtins.y2milestone("NeedVgPassword ret:%1 s:%2", ret, s)
+          Builtins.y2milestone("NeedVgPassword ret: %1 s: %2", ret, s)
         end
       else
         ret = !Builtins.haskey(tg, vg_key)
       end
-      Builtins.y2milestone("NeedVgPassword key:%1 ret:%2", vg_key, ret)
+      Builtins.y2milestone("NeedVgPassword key: %1 ret: %2", vg_key, ret)
       ret
     end
 
 
     def CreateLoop(file, create, sizeK, mp)
       Builtins.y2milestone(
-        "CreateLoop file:%1 create:%2 sizeK:%3 mp:%4",
+        "CreateLoop file: %1 create: %2 sizeK: %3 mp: %4",
         file,
         create,
         sizeK,
@@ -3521,24 +3497,24 @@ module Yast
       pwd = GetCryptPwd(file)
       ret, dev = @sint.createFileLoop(file, !create, sizeK, mp, pwd)
       dev = "" if ret<0
-      Builtins.y2error("CreateLoop sint ret:%1", ret) if ret<0
+      Builtins.y2error("CreateLoop sint ret: %1", ret) if ret<0
       @sint.forgetCryptPassword(file)
       UpdateTargetMapDisk("/dev/loop")
-      Builtins.y2milestone("CreateLoop dev:%1", dev)
+      Builtins.y2milestone("CreateLoop dev: %1", dev)
       dev
     end
 
 
     def UpdateLoop(dev, file, create, sizeK)
       Builtins.y2milestone(
-        "UpdateLoop device:%1 file:%2 create:%3 sizeK:%4",
+        "UpdateLoop device: %1 file: %2 create: %3 sizeK: %4",
         dev,
         file,
         create,
         sizeK
       )
       ret = @sint.modifyFileLoop(dev, file, !create, sizeK)
-      Builtins.y2error("UpdateLoop sint ret:%1", ret) if ret<0
+      Builtins.y2error("UpdateLoop sint ret: %1", ret) if ret<0
       UpdateTargetMapDisk("/dev/loop")
       ret == 0
     end
@@ -3546,13 +3522,13 @@ module Yast
 
     def DeleteLoop(disk, file, remove_file)
       Builtins.y2milestone(
-        "DeleteLoop disk:%1 file:%2 remove_file:%3",
+        "DeleteLoop disk: %1 file: %2 remove_file: %3",
         disk,
         file,
         remove_file
       )
       ret = @sint.removeFileLoop(file, remove_file)
-      Builtins.y2error("DeleteLoop sint ret:%1", ret) if ret<0
+      Builtins.y2error("DeleteLoop sint ret: %1", ret) if ret<0
       UpdateTargetMapDisk(disk)
       ret == 0
     end
@@ -3560,7 +3536,7 @@ module Yast
 
     def DefaultDiskLabel(disk)
       label = @sint.defaultDiskLabel(disk)
-      Builtins.y2milestone("DefaultDiskLabel disk:%1 label:%2", disk, label)
+      Builtins.y2milestone("DefaultDiskLabel disk: %1 label: %2", disk, label)
       label
     end
 
@@ -3569,11 +3545,11 @@ module Yast
     # @param string the disk to deleted the partition table from
     # @return [Boolean]
     def DeletePartitionTable(disk, label)
-      Builtins.y2milestone("DeletePartitionTable disk:%1 label:%2", disk, label)
+      Builtins.y2milestone("DeletePartitionTable disk: %1 label: %2", disk, label)
       label = DefaultDiskLabel(disk) if Builtins.isempty(label)
       ret = @sint.destroyPartitionTable(disk, label)
       if ret<0
-        Builtins.y2error("DeletePartitionTable sint ret:%1", ret)
+        Builtins.y2error("DeletePartitionTable sint ret: %1", ret)
       end
       UpdateTargetMap()
       ret == 0
@@ -3581,10 +3557,10 @@ module Yast
 
 
     def CreatePartitionTable(disk, label)
-      Builtins.y2milestone("CreatePartitionTable %1 label:%2", disk, label)
+      Builtins.y2milestone("CreatePartitionTable %1 label: %2", disk, label)
       ret = @sint.destroyPartitionTable(disk, label)
       if ret<0
-        Builtins.y2error("CreatePartitionTable sint ret:%1", ret)
+        Builtins.y2error("CreatePartitionTable sint ret: %1", ret)
       end
       UpdateTargetMap()
       ret == 0
@@ -3599,12 +3575,12 @@ module Yast
       Builtins.y2milestone("InitializeDisk %1 value %2", disk, value)
       ret = @sint.initializeDisk(disk, value)
       if ret<0
-        Builtins.y2error("InitializeDisk sint ret:%1", ret)
+        Builtins.y2error("InitializeDisk sint ret: %1", ret)
         rbool = false
       end
       if rbool && value
         d = GetDisk(GetTargetMap(), disk)
-        Builtins.y2milestone("d:%1", d)
+        Builtins.y2milestone("d: %1", d)
         rbool = CreatePartition(
           disk,
           Ops.add(disk, "1"),
@@ -3657,7 +3633,7 @@ module Yast
           ret = ExtendMd( p.value["device"], p.value.fetch("devices",[]))
         end
       elsif ctype == :CT_LOOP
-        Builtins.y2milestone("CreateAny Loop p:%1", p.value)
+        Builtins.y2milestone("CreateAny Loop p: %1", p.value)
         dev = CreateLoop(
           Ops.get_string(p.value, "fpath", ""),
           Ops.get_boolean(p.value, "create_file", false),
@@ -3706,7 +3682,7 @@ module Yast
           Ops.get_symbol(p.value, "used_fs", :nfs) == :nfs4
         )
       end
-      Builtins.y2milestone("CreateAny ret:%1", ret)
+      Builtins.y2milestone("CreateAny ret: %1", ret)
       ret
     end
 
@@ -3736,7 +3712,7 @@ module Yast
         ret = true
       end
 
-      Builtins.y2milestone("IsEfiPartition ret:%1", ret)
+      Builtins.y2milestone("IsEfiPartition ret: %1", ret)
       ret
     end
 
@@ -3852,7 +3828,7 @@ module Yast
     #
     # @param [String] device name
     def RemoveDmMapsTo(device)
-      Builtins.y2milestone("RemoveDmMapsTo device:%1", device)
+      Builtins.y2milestone("RemoveDmMapsTo device: %1", device)
       return if !InitLibstorage(false)
       @sint.removeDmTableTo(device)
       nil
@@ -3868,7 +3844,7 @@ module Yast
         cmd = Ops.add("/sbin/swapoff ", dev)
         SCR.Execute(path(".target.bash"), cmd)
       end
-      Builtins.y2milestone("CheckSwapable dev:%1 ret:%2", dev, ok)
+      Builtins.y2milestone("CheckSwapable dev: %1 ret: %2", dev, ok)
       ok
     end
 
@@ -3901,7 +3877,7 @@ module Yast
                   dev = Ops.get_string(part, "crypt_device", "")
                 end
                 ok = CheckSwapable(dev)
-                Builtins.y2milestone("AddSwapMp initial ok:%1", ok)
+                Builtins.y2milestone("AddSwapMp initial ok: %1", ok)
               end
               if ok
                 Ops.set(part, "mount", "swap")
@@ -3934,7 +3910,7 @@ module Yast
         )
       end
       Builtins.y2milestone(
-        "CheckCryptOk dev:%1 pwlen:%2 ret:%3",
+        "CheckCryptOk dev: %1 pwlen: %2 ret: %3",
         dev,
         Builtins.size(fs_passwd),
         i == 0
@@ -3945,7 +3921,7 @@ module Yast
 
     def RescanCrypted
       ret = @sint.rescanCryptedObjects()
-      Builtins.y2milestone("RescanCrypted ret:%1", ret)
+      Builtins.y2milestone("RescanCrypted ret: %1", ret)
       ret
     end
 
@@ -4157,7 +4133,7 @@ module Yast
       UI.OpenDialog(layout)
       ret = Convert.to_symbol(UI.UserInput)
       UI.CloseDialog
-      Builtins.y2milestone("symbol:%1", ret)
+      Builtins.y2milestone("symbol: %1", ret)
       ret == :yes
     end
 
@@ -4185,8 +4161,8 @@ module Yast
           :to   => "list <map>"
         )
       end
-      Builtins.y2milestone("GetCryptLists inactive:%1", in_cr)
-      Builtins.y2milestone("GetCryptLists active:%1", ac_cr)
+      Builtins.y2milestone("GetCryptLists inactive: %1", in_cr)
+      Builtins.y2milestone("GetCryptLists active: %1", ac_cr)
       ret = {}
       Ops.set(ret, "active", Builtins.maplist(ac_cr) do |p|
         Ops.get_string(p, "device", "")
@@ -4194,7 +4170,7 @@ module Yast
       Ops.set(ret, "inactive", Builtins.maplist(in_cr) do |p|
         Ops.get_string(p, "device", "")
       end)
-      Builtins.y2milestone("ret:%1", ret)
+      Builtins.y2milestone("ret: %1", ret)
       deep_copy(ret)
     end
 
@@ -4224,7 +4200,7 @@ module Yast
           Ops.get_list(crvol, "inactive", []),
           Ops.get_list(crvol, "active", [])
         )
-        Builtins.y2milestone("ret:%1", ret)
+        Builtins.y2milestone("ret: %1", ret)
         if ret
           # label text, multiple device names follow
           label = _("Provide password for any of the following devices:")
@@ -4294,7 +4270,7 @@ module Yast
     def ChangeDmNamesFromCrypttab(crfile)
       st = Convert.to_map(SCR.Read(path(".target.stat"), crfile))
       Builtins.y2milestone(
-        "ChangeDmNamesFromCrypttab crfile:%1 st:%2",
+        "ChangeDmNamesFromCrypttab crfile: %1 st: %2",
         crfile,
         st
       )
@@ -4316,13 +4292,13 @@ module Yast
             cr = cr_ref.value;
             _GetLine_result
           )
-          Builtins.y2milestone("ChangeDmNamesFromCrypttab line:%1 is:%2", i, l)
+          Builtins.y2milestone("ChangeDmNamesFromCrypttab line: %1 is: %2", i, l)
           dev = Ops.get_string(l, ["fields", 1], "")
           nm = Ops.get_string(l, ["fields", 0], "")
           if !Builtins.isempty(dev) && !Builtins.isempty(nm)
             r = @sint.renameCryptDm(dev, nm)
             Builtins.y2milestone(
-              "ChangeDmNamesFromCrypttab rename dm of %1 to %2 ret:%3",
+              "ChangeDmNamesFromCrypttab rename dm of %1 to %2 ret: %3",
               dev, nm, r)
           end
           i = Ops.add(i, 1)
@@ -4484,7 +4460,7 @@ module Yast
             tmp = Builtins.remove(tmp, old)
             Ops.set(tmp, [new, "device"], new)
             Builtins.y2milestone(
-              "probing old:%1 new:%2",
+              "probing old: %1 new: %2",
               old,
               Ops.get(tmp, new, {})
             )
@@ -4514,11 +4490,11 @@ module Yast
         end
         tmp = HandleBtrfsSimpleVolumes(tmp)
         if !Builtins.isempty(bios_id_raid)
-          Builtins.y2milestone("bios_id_raid:%1", bios_id_raid)
+          Builtins.y2milestone("bios_id_raid: %1", bios_id_raid)
           Builtins.foreach(bios_id_raid) do |dm, bios|
             pos = Builtins.findfirstof(dm, "0123456789")
             minor = Builtins.tointeger(Builtins.substring(dm, pos))
-            Builtins.y2milestone("pos:%1 minor:%2", pos, minor)
+            Builtins.y2milestone("pos: %1 minor: %2", pos, minor)
             Builtins.foreach(tmp) do |dev, c|
               if Ops.get_symbol(c, "type", :CT_UNKNOWN) == :CT_DMRAID &&
                   Ops.get_integer(c, "minor", 0) == minor
@@ -4557,15 +4533,15 @@ module Yast
 
       ret = Ops.get_map(@StorageMap, @targets_key, {})
       if changed
-        Builtins.y2milestone("GetTargetMap changed:%1", changed)
+        Builtins.y2milestone("GetTargetMap changed: %1", changed)
       else
-        Builtins.y2debug("GetTargetMap changed:%1", changed)
+        Builtins.y2debug("GetTargetMap changed: %1", changed)
       end
       Builtins.foreach(ret) do |k, m|
         if changed
-          Builtins.y2milestone("GetTargetMap %1:%2", k, m)
+          Builtins.y2milestone("GetTargetMap %1: %2", k, m)
         else
-          Builtins.y2debug("GetTargetMap %1:%2", k, m)
+          Builtins.y2debug("GetTargetMap %1: %2", k, m)
         end
       end
       deep_copy(ret)
@@ -4577,15 +4553,15 @@ module Yast
       devs.push(dev)
       r = ::Storage::ListString.new();
       res = @sint.getRecursiveUsing(devs, false, r);
-      Builtins.y2milestone("GetAffectedDevices dev:%1 ret:%2", dev, res)
+      Builtins.y2milestone("GetAffectedDevices dev: %1 ret: %2", dev, res)
       ret = r.to_a
-      Builtins.y2milestone("GetAffectedDevices ret:%1", ret)
+      Builtins.y2milestone("GetAffectedDevices ret: %1", ret)
       ret
     end
 
 
     def SetRecursiveRemoval(val)
-      Builtins.y2milestone("SetRecursiveRemoval val:%1", val)
+      Builtins.y2milestone("SetRecursiveRemoval val: %1", val)
       @sint.setRecursiveRemoval(val)
       nil
     end
@@ -4659,7 +4635,7 @@ module Yast
               Ops.get_integer(b, "nr", 0)
             )
           end
-          Builtins.y2milestone("SetTargetMap dps:%1", dps)
+          Builtins.y2milestone("SetTargetMap dps: %1", dps)
         end
         Builtins.foreach(dps) do |p|
           tdev = Ops.get_string(p, "device", "")
@@ -4796,13 +4772,13 @@ module Yast
             Ops.get_boolean(p, "create", false)
         end
         if dps.size>1
-	  Builtins.y2milestone("SetTargetMap dps:%1",dps)
+	  Builtins.y2milestone("SetTargetMap dps:\n%1", format_target_map(dps))
 	  if dps.fetch(0,{}).has_key?("nr")
 	    dps.sort! { |a, b| a.fetch("nr",0)<=>b.fetch("nr",0) }
 	  elsif dps.fetch(0,{}).fetch("type",:none)==:lvm
 	    dps = dps.partition { |a| a.fetch("pool",false) }
           end
-	  Builtins.y2milestone("SetTargetMap dps:%1",dps)
+	  Builtins.y2milestone("SetTargetMap dps:\n%1", format_target_map(dps))
         end
         Builtins.foreach(dps) do |p|
           p_ref = arg_ref(p)
@@ -4824,7 +4800,7 @@ module Yast
         end
       end
       changed = !EqualBackupStates("tmp_set", "", true)
-      Builtins.y2milestone("SetTargetMap changed:%1", changed)
+      Builtins.y2milestone("SetTargetMap changed: %1", changed)
       UpdateChangeTime() if changed
       DisposeTargetBackup("tmp_set")
       Builtins.y2milestone("SetTargetMap ChangeTime %1", GetTargetChangeTime())
@@ -4842,7 +4818,7 @@ module Yast
 
       return nil if !InitLibstorage(false)
 
-      Builtins.y2milestone("start reread need_reread:%1", need_reread)
+      Builtins.y2milestone("start reread need_reread: %1", need_reread)
       @probe_done = false
       @sint.rescanEverything() if need_reread
       @conts = getContainers
@@ -4884,7 +4860,7 @@ module Yast
 
       ret = @sint.commit()
       if ret<0
-        Builtins.y2error("CommitChanges sint ret:%1", ret)
+        Builtins.y2error("CommitChanges sint ret: %1", ret)
       end
       UpdateTargetMap()
 
@@ -4957,7 +4933,7 @@ module Yast
 
     def DetectHomeFs(p)
       p = deep_copy(p)
-      Builtins.y2milestone("DetectHomeFs p:%1", p)
+      Builtins.y2milestone("DetectHomeFs p: %1", p)
       ret = false
       poss_fs = [:ext2, :ext3, :ext4, :btrfs, :reiser, :xfs, :jfs]
       device = Ops.get_string(p, "device", "")
@@ -4986,7 +4962,7 @@ module Yast
           ret = true
         end
       end
-      Builtins.y2milestone("DetectHomeFs device:%1 ret:%2", device, ret)
+      Builtins.y2milestone("DetectHomeFs device: %1 ret: %2", device, ret)
       ret
     end
 
@@ -4994,7 +4970,7 @@ module Yast
     def AddSubvolRoot(part)
       part = deep_copy(part)
 
-      def_subvol = [
+      subvol_names = [
         "home",
         "opt",
         "srv",
@@ -5002,6 +4978,7 @@ module Yast
         "usr/local",
         "var/crash",
         "var/lib/mailman",
+        "var/lib/mariadb",
         "var/lib/named",
         "var/lib/pgsql",
         "var/log",
@@ -5010,55 +4987,67 @@ module Yast
         "var/tmp"
       ]
 
+      # No Copy On Write for SQL databases to minimize performance impact
+      nocow_subvols = [
+        "var/lib/mariadb",
+        "var/lib/pgsql"
+      ]
+
       if Arch.i386 || Arch.x86_64
-        def_subvol.push("boot/grub2/i386-pc")
+        subvol_names.push("boot/grub2/i386-pc")
       end
 
       if Arch.x86_64
-        def_subvol.push("boot/grub2/x86_64-efi")
+        subvol_names.push("boot/grub2/x86_64-efi")
       end
 
       if Arch.ppc
-        def_subvol.push("boot/grub2/powerpc-ieee1275")
+        subvol_names.push("boot/grub2/powerpc-ieee1275")
       end
 
       if Arch.s390
-        def_subvol.push("boot/grub2/s390x-emu")
+        subvol_names.push("boot/grub2/s390x-emu")
       end
 
-      def_subvol.sort!()
+      subvol_names.sort!()
 
-      sv_prepend = ""
-      lst = part.fetch("subvol",[])
-      Builtins.y2milestone("AddSubvolRoot subvol:%1", lst)
+      subvol_prepend = ""
+      subvol_list = part.fetch("subvol",[])
+      Builtins.y2milestone("AddSubvolRoot subvol: %1", subvol_list)
       if FileSystems.default_subvol != ""
-        sv_prepend = FileSystems.default_subvol+"/"
+        subvol_prepend = FileSystems.default_subvol+"/"
       end
       fmt = part.fetch("format",false)
       names = []
       if !fmt
-	names = lst.select { |s| !s.fetch("delete", false) }.each { |s| s.fetch("name", "") }
+	names = subvol_list.select { |s| !s.fetch("delete", false) }.each { |s| s.fetch("name", "") }
       else
-	lst = []
+	subvol_list = []
       end
-      Builtins.y2milestone("AddSubvolRoot subvol names:%1 lst:%2", names, lst)
-      def_subvol.each do |s|
-        svn = sv_prepend+s
-        if !names.include?( svn )
-	  lst.push( { "create" => true, "name" => svn } )
+      Builtins.y2milestone("AddSubvolRoot subvol names: %1 subvol_list: %2", names, subvol_list)
+      subvol_names.each do |subvol|
+        subvol_full_name = subvol_prepend + subvol
+        if !names.include?( subvol_full_name )
+          subvol_entry = { "create" => true, "name" => subvol_full_name }
+          if nocow_subvols.include?( subvol )
+            subvol_entry["nocow"] = true
+            Builtins.y2milestone("AddSubvolRoot: NoCOW for %1", subvol_full_name)
+          end
+	  subvol_list.push( subvol_entry  )
         end
       end
-      part["subvol"] = lst;
-      Builtins.y2milestone("AddSubvolRoot part:%1", part)
+      part["subvol"] = subvol_list;
+      Builtins.y2milestone("AddSubvolRoot subvol:\n%1", format_target_map(subvol_list))
+      Builtins.y2milestone("AddSubvolRoot part: \n%1", format_target_map(part))
       part
     end
 
 
     def SetVolOptions(p, mnt, fs, fs_opts, fstab_opts, label)
       p = deep_copy(p)
-      Builtins.y2milestone("SetVolOptions p:%1", p)
+      Builtins.y2milestone("SetVolOptions p: %1", p)
       Builtins.y2milestone(
-        "SetVolOptions mount:%1 fs:%2 fs_opt:%3 fst_opt:%4 label:%5",
+        "SetVolOptions mount: %1 fs: %2 fs_opt: %3 fst_opt: %4 label: %5",
         mnt,
         fs,
         fs_opts,
@@ -5147,7 +5136,7 @@ module Yast
         Ops.set(ret, "label", "")
       end
 
-      Builtins.y2milestone("SetVolOptions ret:%1", ret)
+      Builtins.y2milestone("SetVolOptions ret: \n%1", format_target_map(ret))
       deep_copy(ret)
     end
 
@@ -5161,7 +5150,7 @@ module Yast
         0,
         {}
       )
-      Builtins.y2milestone("FindBtrfsUuid uuid:%1 ret:%2", uuid, ret)
+      Builtins.y2milestone("FindBtrfsUuid uuid: %1 ret: %2", uuid, ret)
       deep_copy(ret)
     end
 
@@ -5176,7 +5165,7 @@ module Yast
         end
       end
       Builtins.y2milestone(
-        "IsUsedBy %1 by %2 ret:%3",
+        "IsUsedBy %1 by %2 ret: %3",
         Ops.get_string(p, "device", ""),
         Ops.get_list(p, "used_by", []),
         ret
@@ -5192,7 +5181,7 @@ module Yast
     def TryUnaccessSwap(device)
       ret = Builtins.isempty(DeviceMounted(device))
       ret = Umount(device, true) if !ret && Mode.live_installation
-      Builtins.y2milestone("TryUnaccessSwap device %1 ret:%2", device, ret)
+      Builtins.y2milestone("TryUnaccessSwap device %1 ret: %2", device, ret)
       ret
     end
 
@@ -5239,7 +5228,7 @@ module Yast
             Ops.get_string(p, "mount", "") == "swap"
           ret = false
           ret = TryUnaccessSwap(Ops.get_string(p, "device", "")) if verbose
-          Builtins.y2milestone("CanEdit ret:%1 p:%2", ret, p)
+          Builtins.y2milestone("CanEdit ret: %1 p: %2", ret, p)
           if verbose && !ret
             txt = Builtins.sformat(
               _(
@@ -5314,7 +5303,7 @@ module Yast
           Ops.get_symbol(q, "type", :unknown) == :logical &&
             Ops.greater_than(Ops.get_integer(q, "nr", 0), num)
         end
-        Builtins.y2milestone("CanDelete pl:%1", pl)
+        Builtins.y2milestone("CanDelete pl: %1", pl)
         pos = 0
         while ret && Ops.less_than(pos, Builtins.size(pl))
           ret = CanEdit(Ops.get(pl, pos, {}), false)
@@ -5471,7 +5460,7 @@ module Yast
 
 
     def SetZeroNewPartitions(val)
-      Builtins.y2milestone("SetZeroNewPartitions val:%1", val)
+      Builtins.y2milestone("SetZeroNewPartitions val: %1", val)
       @sint.setZeroNewPartitions(val)
 
       nil
@@ -5479,7 +5468,7 @@ module Yast
 
 
     def SetPartitionAlignment(pal)
-      Builtins.y2milestone("SetPartitionAlignment val:%1", pal)
+      Builtins.y2milestone("SetPartitionAlignment val: %1", pal)
       val = fromSymbol(@conv_partalign, pal)
       @sint.setPartitionAlignment(val)
 
@@ -5490,7 +5479,7 @@ module Yast
     def GetPartitionAlignment
       val = @sint.getPartitionAlignment()
       pal = toSymbol(@conv_partalign, val)
-      Builtins.y2milestone("GetPartitionAlignment val:%1", pal)
+      Builtins.y2milestone("GetPartitionAlignment val: %1", pal)
       pal
     end
 
@@ -5716,7 +5705,7 @@ module Yast
       Builtins.foreach(GetTargetMap()) do |dev, disk|
         if !ret
           Builtins.y2milestone(
-            "HaveLinuxPartitions %1 typ:%2 pbl:%3 ro:%4 driver:%5",
+            "HaveLinuxPartitions %1 typ: %2 pbl: %3 ro: %4 driver: %5",
             dev,
             Ops.get_symbol(disk, "type", :CT_UNKNOWN),
             IsPartitionable(disk),
@@ -5775,7 +5764,7 @@ module Yast
     def CheckSwapOn(disk)
       swaps = SwappingPartitions()
       ret = Builtins.contains(SwappingPartitions(), disk)
-      Builtins.y2milestone("CheckSwapOn disk:%1 ret:%2", disk, ret)
+      Builtins.y2milestone("CheckSwapOn disk: %1 ret: %2", disk, ret)
       ret
     end
 
@@ -5859,7 +5848,7 @@ module Yast
         end
       end
       Builtins.y2milestone(
-        "GetPrimPartitions foreign_os:%5 num_linux %1 num_win %2 num_dos %3 num_os2 %4",
+        "GetPrimPartitions foreign_os: %5 num_linux %1 num_win %2 num_dos %3 num_os2 %4",
         num_linux,
         num_win,
         num_dos,
@@ -5945,7 +5934,7 @@ module Yast
 
       r = @sint.getAllUsedFs()
       ret = r.to_a
-      Builtins.y2milestone( "GetUsedFs ret:%1", ret )
+      Builtins.y2milestone( "GetUsedFs ret: %1", ret )
       ret
     end
 
@@ -5990,7 +5979,7 @@ module Yast
       end
 
       Builtins.y2milestone(
-        "AddPackageList need_lvm:%1 need_nfs:%2 need_quota:%3 need_crypt:%4 need_iscsi:%5",
+        "AddPackageList need_lvm: %1 need_nfs: %2 need_quota: %3 need_crypt: %4 need_iscsi: %5",
         need_lvm, need_nfs, need_quota, need_crypt, need_iscsi
       )
 
@@ -6103,7 +6092,7 @@ module Yast
       ret["device"] = (Partitions.IsResizable(part.fetch("fsid",0)) &&
                        !part.fetch("device","").start_with?("/dev/dasd")) ||
 		      part.fetch("type",:none)==:lvm
-      Builtins.y2milestone("IsResizable part:%1 ret:%2", part, ret)
+      Builtins.y2milestone("IsResizable part: %1 ret: %2", part, ret)
       deep_copy(ret)
     end
 
@@ -6113,7 +6102,7 @@ module Yast
 	@sint.freeCylindersAroundPartition(device)
       ret = r==0
       Builtins.y2milestone(
-        "FreeCylindersAfterPartition ret:%1 free_before:%2 free_after:%3",
+        "FreeCylindersAfterPartition ret: %1 free_before: %2 free_after: %3",
         ret,
         free_before.value,
         free_after.value
@@ -6136,7 +6125,7 @@ module Yast
     # @return [Fixnum] (0 and higher == OK, otherwise error)
     def AddFstabEntry(e)
       e = deep_copy(e)
-      Builtins.y2milestone("AddFstabEntry entry:%1", e)
+      Builtins.y2milestone("AddFstabEntry entry: %1", e)
       ret = 0
       freq = Ops.get_integer(e, "freq", 0)
       passno = Ops.get_integer(e, "passno", 0)
@@ -6145,13 +6134,13 @@ module Yast
       vfs = Ops.get_string(e, "vfstype", "auto")
       opts = Ops.get_string(e, "mntops", "defaults")
       ret = @sint.addFstabEntry(dev, m, vfs, opts, freq, passno)
-      Builtins.y2error("ret:%1 entry:%2", ret, e) if ret<0
+      Builtins.y2error("ret: %1 entry: %2", ret, e) if ret<0
       ret
     end
 
 
     def ActivateHld(val)
-      Builtins.y2milestone("ActivateHld val:%1", val)
+      Builtins.y2milestone("ActivateHld val: %1", val)
       @sint.activateHld(val)
 
       nil
@@ -6159,7 +6148,7 @@ module Yast
 
 
     def ActivateMultipath(val)
-      Builtins.y2milestone("ActivateMultipath val:%1", val)
+      Builtins.y2milestone("ActivateMultipath val: %1", val)
       @sint.activateMultipath(val)
 
       nil
@@ -6167,7 +6156,7 @@ module Yast
 
 
     def SetMultipathStartup(val)
-      Builtins.y2milestone("SetMultipathStartup val:%1", val)
+      Builtins.y2milestone("SetMultipathStartup val: %1", val)
       if( @default_multipathing != val )
 	  @default_multipathing = val
 	  ActivateMultipath(val) if @sint
@@ -6190,7 +6179,7 @@ module Yast
           end
         end
       end
-      Builtins.y2milestone( "SpecialBootHandling: ppc_boot:%1", have_ppc_boot)
+      Builtins.y2milestone( "SpecialBootHandling: ppc_boot: %1", have_ppc_boot)
       Builtins.foreach(tg) do |dev, disk|
         new_part = []
         dlabel = disk.fetch("label", "")
@@ -6256,7 +6245,7 @@ module Yast
       pwd = Ops.get_string(loop.value, "passwd", "")
       device = Ops.get_string(loop.value, "partitionName", "")
       mdir = SaveDumpPath("tmp_mp")
-      Builtins.y2milestone("PerformLosetup mdir:%1", mdir)
+      Builtins.y2milestone("PerformLosetup mdir: %1", mdir)
       if Ops.greater_or_equal(
           Convert.to_integer(SCR.Read(path(".target.size"), mdir)),
           0
@@ -6271,7 +6260,7 @@ module Yast
         ret = @sint.getVolume(device, vinfo)
         if ret != 0
           Builtins.y2error(
-            "PerformLosetup device:%1 not found (ret:%2)",
+            "PerformLosetup device: %1 not found (ret: %2)",
             device,
             ret
           )
@@ -6289,7 +6278,7 @@ module Yast
             )
           )
           Builtins.y2milestone(
-            "PerformLosetup crdev:%1",
+            "PerformLosetup crdev: %1",
             Ops.get_string(loop.value, "loop_dev", "")
           )
         end
@@ -6306,11 +6295,11 @@ module Yast
     # @return [Symbol] filesystem
     def DetectFs(device)
       ret = :unknown
-      Builtins.y2milestone("DetectFs:%1", device)
+      Builtins.y2milestone("DetectFs: %1", device)
       vinfo = ::Storage::VolumeInfo.new()
       r = @sint.getVolume(device, vinfo)
       if r != 0
-        Builtins.y2error("DetectFs device:%1 not found (ret:%2)", device, r)
+        Builtins.y2error("DetectFs device: %1 not found (ret: %2)", device, r)
       else
         curr = {}
         curr = volumeMap(vinfo, curr)
@@ -6331,7 +6320,7 @@ module Yast
         0,
         {}
       )
-      Builtins.y2milestone("disk:%1 ret:%2", disk, ret)
+      Builtins.y2milestone("disk: %1 ret: %2", disk, ret)
       deep_copy(ret)
     end
 
@@ -6342,7 +6331,7 @@ module Yast
       if Builtins.regexpmatch(input, regex)
         ret = Ops.add("/dev/iseries/vd", Builtins.substring(ret, 7))
       end
-      Builtins.y2milestone("HdToIseries input:%1 ret:%2", input, ret)
+      Builtins.y2milestone("HdToIseries input: %1 ret: %2", input, ret)
       ret
     end
 
@@ -6387,7 +6376,7 @@ module Yast
         end
       end
       Builtins.y2milestone(
-        "SLES9PersistentDevNames input:%1 ret:%2",
+        "SLES9PersistentDevNames input: %1 ret: %2",
         input,
         ret
       )
@@ -6407,7 +6396,7 @@ module Yast
           )
         end
       end
-      Builtins.y2milestone("HdDiskMap input:%1 ret:%2", input, ret)
+      Builtins.y2milestone("HdDiskMap input: %1 ret: %2", input, ret)
       ret
     end
 
@@ -6421,12 +6410,12 @@ module Yast
         )
       )
       Builtins.y2milestone(
-        "BuildDiskmap oldv:%1 Vers:%2",
+        "BuildDiskmap oldv: %1 Vers: %2",
         oldv,
         @DiskMapVersion
       )
       Builtins.y2milestone(
-        "dir:%1 d:%2",
+        "dir: %1 d: %2",
         Ops.add(Installation.destdir, "/var/lib/hardware"),
         d
       )
@@ -6491,7 +6480,7 @@ module Yast
       oldv = deep_copy(oldv)
       newv = deep_copy(newv)
       names = deep_copy(names)
-      Builtins.y2milestone("GetTranslatedDevices old:%1 new:%2", oldv, newv)
+      Builtins.y2milestone("GetTranslatedDevices old: %1 new: %2", oldv, newv)
       Builtins.y2milestone("GetTranslatedDevices names %1", names)
       ret = deep_copy(names)
       dm = BuildDiskmap(oldv)
@@ -6523,7 +6512,7 @@ module Yast
 
 
     def CallInsserv(on, name)
-      Builtins.y2milestone("CallInsserv on:%1 name:%2", on, name)
+      Builtins.y2milestone("CallInsserv on: %1 name: %2", on, name)
       scrname = Ops.add("/etc/init.d/", name)
       if Ops.greater_than(SCR.Read(path(".target.size"), scrname), 0)
         cmd = "cd / && /sbin/insserv "
@@ -6539,7 +6528,7 @@ module Yast
 
 
     def FinishInstall
-      Builtins.y2milestone("FinishInstall initial:%1", Stage.initial)
+      Builtins.y2milestone("FinishInstall initial: %1", Stage.initial)
 
       target_map = GetTargetMap()
 
@@ -6570,7 +6559,7 @@ module Yast
       end
 
       Builtins.y2milestone(
-        "FinishInstall need crypto:%1 md:%2 lvm:%3 dmraid:%4 dmmultipath:%5",
+        "FinishInstall need crypto: %1 md: %2 lvm: %3 dmraid: %4 dmmultipath: %5",
         need_crypt,
         need_md,
         need_lvm,
@@ -6687,7 +6676,7 @@ module Yast
       end
       SCR.UnmountAgent(path(".proc.modules"))
       lmod = Convert.to_map(SCR.Read(path(".proc.modules")))
-      Builtins.y2milestone("GetRootInitrdModules lmod:%1", lmod)
+      Builtins.y2milestone("GetRootInitrdModules lmod: %1", lmod)
       if Ops.greater_than(Builtins.size(Ops.get_map(lmod, "edd", {})), 0)
         initrdmodules = Builtins.add(initrdmodules, "edd")
       end
@@ -6699,7 +6688,7 @@ module Yast
     def CheckForLvmRootFs
       part = GetEntryForMountpoint("/")
       ret = Ops.get_symbol(part, "type", :primary) == :lvm
-      Builtins.y2milestone("CheckForLvmRootFs root:%1 ret:%2", part, ret)
+      Builtins.y2milestone("CheckForLvmRootFs root: %1 ret: %2", part, ret)
       ret
     end
 
@@ -6707,7 +6696,7 @@ module Yast
     def CheckForMdRootFs
       part = GetEntryForMountpoint("/")
       ret = Ops.get_symbol(part, "type", :primary) == :sw_raid
-      Builtins.y2milestone("CheckForMdRootFs root:%1 ret:%2", part, ret)
+      Builtins.y2milestone("CheckForMdRootFs root: %1 ret: %2", part, ret)
       ret
     end
 
@@ -6722,7 +6711,7 @@ module Yast
       sl = Builtins.maplist(sl) { |s| Builtins.substring(s, 9) }
       il = Builtins.sort(Builtins.maplist(sl) { |s| Builtins.tointeger(s) })
       ret = Ops.add(Ops.get(il, Ops.subtract(Builtins.size(sl), 1), -1), 1)
-      Builtins.y2milestone("NumLoopDevices ret:%1", ret)
+      Builtins.y2milestone("NumLoopDevices ret: %1", ret)
       ret
     end
 
@@ -6877,7 +6866,7 @@ module Yast
     def AddHwPackages(names)
       names = deep_copy(names)
       Builtins.y2milestone(
-        "AddHwPackages names:%1 list:%2",
+        "AddHwPackages names: %1 list: %2",
         names,
         @hw_packages
       )
@@ -6886,14 +6875,14 @@ module Yast
         :from => "list",
         :to   => "list <string>"
       )
-      Builtins.y2milestone("AddHwPackages list:%1", @hw_packages)
+      Builtins.y2milestone("AddHwPackages list: %1", @hw_packages)
 
       nil
     end
 
 
     def SwitchUiAutomounter(on)
-      Builtins.y2milestone("SwitchUiAutomounter on:%1", on)
+      Builtins.y2milestone("SwitchUiAutomounter on: %1", on)
 
       begin
 
@@ -6951,14 +6940,14 @@ module Yast
 
     def SaveDeviceGraph(filename)
       ret = ::Storage::saveDeviceGraph(@sint, filename)
-      Builtins.y2milestone("SaveDeviceGraph filename:%1 ret:%2", filename, ret)
+      Builtins.y2milestone("SaveDeviceGraph filename: %1 ret: %2", filename, ret)
       ret
     end
 
 
     def SaveMountGraph(filename)
       ret = ::Storage::saveMountGraph(@sint, filename);
-      Builtins.y2milestone("SaveMountGraph filename:%1 ret:%2", filename, ret)
+      Builtins.y2milestone("SaveMountGraph filename: %1 ret: %2", filename, ret)
       ret
     end
 
@@ -6981,7 +6970,7 @@ module Yast
       pl = GetPartitionLst(tg, ts)
       ret = Builtins.find(pl) { |p| Ops.get_string(p, "device", "") == device } != nil
       Builtins.y2milestone(
-        "DeviceMatchFstab device:%1 fstab:%2 ret:%3",
+        "DeviceMatchFstab device: %1 fstab: %2 ret: %3",
         device,
         fstab_spec,
         ret
@@ -7007,7 +6996,7 @@ module Yast
           Ops.greater_than(Builtins.size(Ops.get_list(d, "udev_id", [])), 0)
       end
       Builtins.y2milestone(
-        "IsPersistent device:%1 ret:%2",
+        "IsPersistent device: %1 ret: %2",
         Ops.get_string(p, "device", ""),
         ret
       )
@@ -7023,13 +7012,13 @@ module Yast
         l = [toSymbol(@conv_mdparity, i), Ops.get(@rev_conv_parstring, i, "")]
 	ret.push(l)
       end
-      Builtins.y2milestone("ret:%1", ret)
+      Builtins.y2milestone("ret: %1", ret)
       ret
     end
 
 
     def GetUsedDisks(device)
-      Builtins.y2milestone("GetUsedDisks device:%1", device)
+      Builtins.y2milestone("GetUsedDisks device: %1", device)
       ret = []
       tg = GetTargetMap()
       info = {}
@@ -7038,7 +7027,7 @@ module Yast
           info = info_ref.value;
           _GetContVolInfo_result
         )
-        Builtins.y2milestone("GetUsedDisks info:%1", info)
+        Builtins.y2milestone("GetUsedDisks info: %1", info)
         to_visit = [device]
         visited_devs = []
         begin
@@ -7060,7 +7049,7 @@ module Yast
                 Ops.get_string(info, "vdevice", "")
               )
             end
-            Builtins.y2milestone("GetUsedDisks bt:%1", bt)
+            Builtins.y2milestone("GetUsedDisks bt: %1", bt)
             add_list = Ops.get_list(bt, "devices", []) if bt != nil
           else
             add_list = Ops.get_list(
@@ -7070,7 +7059,7 @@ module Yast
             )
           end
           if Ops.greater_than(Builtins.size(add_list), 0)
-            Builtins.y2milestone("GetUsedDisks add_list:%1", add_list)
+            Builtins.y2milestone("GetUsedDisks add_list: %1", add_list)
           end
           Builtins.foreach(add_list) do |s|
             if !Builtins.contains(visited_devs, s) &&
@@ -7079,7 +7068,7 @@ module Yast
               to_visit = Builtins.add(to_visit, s)
             end
           end
-          Builtins.y2milestone("GetUsedDisks to_visit:%1", to_visit)
+          Builtins.y2milestone("GetUsedDisks to_visit: %1", to_visit)
           while Ops.greater_than(Builtins.size(to_visit), 0) &&
               !(
                 info_ref = arg_ref(info);
@@ -7094,7 +7083,7 @@ module Yast
             to_visit = Builtins.remove(to_visit, 0)
           end
           if Ops.greater_than(Builtins.size(to_visit), 0)
-            Builtins.y2milestone("GetUsedDisks info:%1", info)
+            Builtins.y2milestone("GetUsedDisks info: %1", info)
           end
         end while Ops.greater_than(Builtins.size(to_visit), 0)
         ret = Builtins.sort(ret) if Ops.greater_than(Builtins.size(ret), 1)
@@ -7102,7 +7091,7 @@ module Yast
           Ops.greater_than(Builtins.search(device, ":"), 0)
         ret = ["/dev/nfs"]
       end
-      Builtins.y2milestone("GetUsedDisks ret:%1", ret)
+      Builtins.y2milestone("GetUsedDisks ret: %1", ret)
       deep_copy(ret)
     end
 
@@ -7118,7 +7107,7 @@ module Yast
         Builtins.foreach(disks) do |s|
           if ret == :no
             Builtins.y2milestone(
-              "disk:%1 tarnsport:%2",
+              "disk: %1 transport: %2",
               s,
               Ops.get_symbol(tg, [s, "transport"], :unknown)
             )
@@ -7131,7 +7120,7 @@ module Yast
           end
         end
       end
-      Builtins.y2milestone("IsDeviceOnNetwork device:%1 ret:%2", device, ret)
+      Builtins.y2milestone("IsDeviceOnNetwork device: %1 ret: %2", device, ret)
       ret
     end
 
@@ -7155,7 +7144,7 @@ module Yast
     def GetDetectedDiskPaths
       disks = ::Storage::getPresentDisks
       ret = disks.to_a
-      Builtins.y2milestone("disks:%1", ret)
+      Builtins.y2milestone("disks: %1", ret)
       ret
     end
 

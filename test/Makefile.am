@@ -2,7 +2,8 @@
 # Makefile.am for storage/test
 #
 
-TESTS =									\
+TESTS = \
+	format_target_map_test.rb					\
 	storage_snapper_configure_snapper_test.rb			\
 	storage_get_disk_partition.rb
 

@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.56
+Version:        3.1.57
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -29,8 +29,8 @@ License:	GPL-2.0
 BuildRequires:	docbook-xsl-stylesheets
 BuildRequires:	doxygen
 BuildRequires:	gcc-c++ libtool
-BuildRequires:	libstorage-devel >= 2.25.18
-BuildRequires:	libstorage-ruby >= 2.25.18
+BuildRequires:	libstorage-devel >= 2.25.23
+BuildRequires:	libstorage-ruby >= 2.25.23
 BuildRequires:	libxslt
 BuildRequires:	perl-XML-Writer
 BuildRequires:	rubygem(rspec)
@@ -42,8 +42,8 @@ BuildRequires:	yast2-core-devel >= 2.23.1
 BuildRequires:	yast2-devtools >= 3.1.10
 BuildRequires:	yast2-ruby-bindings >= 3.1.7
 BuildRequires:	yast2-testsuite >= 2.19.0
-Requires:	libstorage-ruby >= 2.25.18
-Requires:	libstorage6 >= 2.25.18
+Requires:	libstorage-ruby >= 2.25.23
+Requires:	libstorage6 >= 2.25.23
 Requires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
 Requires:	yast2 >= 3.1.22
 Requires:	yast2-core >= 2.18.3
@@ -106,6 +106,8 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_clientdir}/disk_worker.rb
 %{yast_clientdir}/multipath-simple.rb
 %{yast_moduledir}/*
+%dir %{yast_libdir}/storage
+%{yast_libdir}/storage/*.rb
 /var/adm/fillup-templates/sysconfig.storage-yast2-storage
 
 %dir %{yast_ydatadir}
