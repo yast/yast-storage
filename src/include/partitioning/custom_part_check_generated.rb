@@ -337,10 +337,9 @@ module Yast
           !Partitions.EfiBoot && rootdlabel=="gpt") || show_all_popups
         message = _(
           "Warning: There is no partition of type bios_grub present.\n" \
-          "When installing Grub2 to the MBR of a GPT formatted disc it is recommended\n" \
-          "(if Btrfs is used, then it is required) to reserve a small (around 1MB)\n" \
-          "unformatted partition of this type.\n" \
-          "Grub2 will use this partition to load its 2nd stage boot loader program from.\n" \
+          "Such a partition is recommended (required with Btrfs) when Grub2 is\n" \
+          "installed in the MBR of a GPT disk. It must be unformatted and\n" \
+          "approximately 1MB large." \
           "\n" \
           "Really use this setup?\n"
           )
