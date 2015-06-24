@@ -33,12 +33,14 @@
 #
 #***********************************************************
 require "yast"
+require "storage/target_map_formatter"
 
 module Yast
   class StorageProposalClass < Module
 
 
     include Yast::Logger
+    include Yast::StorageHelpers::TargetMapFormatter
 
 
     def main
@@ -80,7 +82,7 @@ module Yast
 
     def SetCreateVg(val)
       @proposal_create_vg = val
-      Builtins.y2milestone("SetCreateVg val:%1", @proposal_create_vg)
+      Builtins.y2milestone("SetCreateVg val: %1", @proposal_create_vg)
     end
 
 
@@ -90,7 +92,7 @@ module Yast
 
     def SetProposalHome(val)
       @proposal_home = val
-      Builtins.y2milestone("SetProposalHome val:%1", @proposal_home)
+      Builtins.y2milestone("SetProposalHome val: %1", @proposal_home)
     end
 
     def GetProposalHomeFs
@@ -99,7 +101,7 @@ module Yast
 
     def SetProposalHomeFs(val)
       @proposal_home_fs = val
-      Builtins.y2milestone("SetProposalHomeFs val:%1", @proposal_home_fs)
+      Builtins.y2milestone("SetProposalHomeFs val: %1", @proposal_home_fs)
     end
 
 
@@ -109,7 +111,7 @@ module Yast
 
     def SetProposalLvm(val)
       @proposal_lvm = val
-      Builtins.y2milestone("SetProposalLvm val:%1", val)
+      Builtins.y2milestone("SetProposalLvm val: %1", val)
     end
 
     def GetProposalEncrypt
@@ -118,7 +120,7 @@ module Yast
 
     def SetProposalEncrypt(val)
       @proposal_encrypt = val
-      Builtins.y2milestone("SetProposalEncrypt val:%1", val)
+      Builtins.y2milestone("SetProposalEncrypt val: %1", val)
     end
 
 
@@ -128,7 +130,7 @@ module Yast
 
     def SetProposalRootFs(val)
       @proposal_root_fs = val
-      Builtins.y2milestone("SetProposalRootFs val:%1", @proposal_root_fs)
+      Builtins.y2milestone("SetProposalRootFs val: %1", @proposal_root_fs)
     end
 
     def GetProposalSnapshots()
@@ -137,7 +139,7 @@ module Yast
 
     def SetProposalSnapshots(val)
       @proposal_snapshots = val
-      Builtins.y2milestone("SetProposalSnapshots val:%1", val)
+      Builtins.y2milestone("SetProposalSnapshots val: %1", val)
     end
 
 
@@ -147,7 +149,7 @@ module Yast
 
     def SetProposalSuspend(val)
       @proposal_suspend = val
-      Builtins.y2milestone("SetProposalSuspend val:%1", val)
+      Builtins.y2milestone("SetProposalSuspend val: %1", val)
     end
 
 
@@ -179,7 +181,7 @@ module Yast
         SetProposalSnapshots(Ops.get_boolean(@cfg_xml, "prop_snapshots", false))
       end
       Builtins.y2milestone(
-        "SetProposalDefault home:%1 lvm:%2 encypt:%3 home_only:%4 snapshots:%5 suspend:%6 root_fs:%7 home_fs:%8",
+        "SetProposalDefault home: %1 lvm: %2 encypt: %3 home_only: %4 snapshots: %5 suspend: %6 root_fs: %7 home_fs: %8",
         @proposal_home,
         @proposal_lvm,
         @proposal_encrypt,
@@ -307,24 +309,24 @@ module Yast
         Ops.set(@cfg_xml, "suspend", btmp ? true : false)
 
         SetProposalDefault(false)
-        Builtins.y2milestone("GetControlCfg cfg_xml:%1", @cfg_xml)
+        Builtins.y2milestone("GetControlCfg cfg_xml: %1", @cfg_xml)
       end
       ret = deep_copy(@cfg_xml)
       Builtins.y2milestone(
-        "GetControlCfg GetProposalSnapshots:%1",
+        "GetControlCfg GetProposalSnapshots: %1",
         GetProposalSnapshots()
       )
       if PropDefaultFs() == :btrfs && GetProposalSnapshots()
-        Builtins.y2milestone("GetControlCfg before:%1", ret)
+        Builtins.y2milestone("GetControlCfg before: %1", ret)
         keys = ["home_limit", "root_max", "root_base", "home_max", "vm_want"]
         Builtins.foreach(keys) do |k|
           if Builtins.haskey(ret, k)
             ret[k] *= 1.0 + @cfg_xml["btrfs_increase_percentage"] / 100.0
           else
-            Builtins.y2warning("GetControlCfg no key:%1", k)
+            Builtins.y2warning("GetControlCfg no key: %1", k)
           end
         end
-        Builtins.y2milestone("GetControlCfg after :%1", ret)
+        Builtins.y2milestone("GetControlCfg after : %1", ret)
       end
 
       deep_copy(ret)
@@ -334,7 +336,7 @@ module Yast
     def GetProposalVM
       ret = ""
       ret = "system" if @proposal_lvm
-      Builtins.y2milestone("ProposalVM lvm:%1 ret:%2", @proposal_lvm, ret)
+      Builtins.y2milestone("ProposalVM lvm: %1 ret: %2", @proposal_lvm, ret)
       ret
     end
 
@@ -355,7 +357,7 @@ module Yast
 
       devices = Ops.get_list(target, [vg, "devices_add"], [])
 
-      Builtins.y2milestone("vg:%1 devices:%2", vg, devices)
+      Builtins.y2milestone("vg: %1 devices: %2", vg, devices)
 
       # go through target map and set enc_type and password for all devices used by
       # our volume group
@@ -374,7 +376,7 @@ module Yast
         { disk_device => data }
       end
 
-      Builtins.y2milestone("target:%1", target)
+      Builtins.y2milestone("target: %1", target)
 
       deep_copy(target)
     end
@@ -437,7 +439,7 @@ module Yast
           if inst != nil && Ops.greater_than(Builtins.size(inst), 0)
             inst = Ops.add("/dev/", inst) if Builtins.search(inst, "/dev/") != 0
             d = Storage.GetDiskPartition(inst)
-            Builtins.y2milestone("NoProposeDisks inst:%1 disk:%2", inst, d)
+            Builtins.y2milestone("NoProposeDisks inst: %1 disk: %2", inst, d)
             if Ops.greater_than(Builtins.size(Ops.get_string(d, "disk", "")), 0)
               @no_propose_disks = Builtins.add(
                 @no_propose_disks,
@@ -453,7 +455,7 @@ module Yast
           if inst != nil && Ops.greater_than(Builtins.size(inst), 0)
             inst = Ops.add("/dev/", inst) if Builtins.search(inst, "/dev/") != 0
             d = Storage.GetDiskPartition(inst)
-            Builtins.y2milestone("NoProposeDisks inst:%1 disk:%2", inst, d)
+            Builtins.y2milestone("NoProposeDisks inst: %1 disk: %2", inst, d)
             if Ops.greater_than(Builtins.size(Ops.get_string(d, "disk", "")), 0)
               @no_propose_disks = Builtins.add(
                 @no_propose_disks,
@@ -492,7 +494,7 @@ module Yast
         ret = lab != "gpt"
       end
       Builtins.y2milestone(
-        "NeedNewDisklabel dev:%1 ret:%2",
+        "NeedNewDisklabel dev: %1 ret: %2",
         Ops.get_string(entry, "device", ""),
         ret
       )
@@ -527,7 +529,7 @@ module Yast
       end
       ret = true if !ret && soft && Builtins.contains(NoProposeDisks(), dev)
       ret = Storage.IsUsedBy(entry) if !ret && soft
-      Builtins.y2milestone("ignoring disk %1 soft:%2", dev, soft) if ret
+      Builtins.y2milestone("ignoring disk %1 soft: %2", dev, soft) if ret
       ret
     end
 
@@ -626,7 +628,7 @@ module Yast
         Builtins.y2milestone("ProductFeatures::GetBooleanFeature %1", t)
         ret = true if Ops.is_boolean?(t) && Convert.to_boolean(t)
       end
-      Builtins.y2milestone("has_flex_proposal ret:%1", ret)
+      Builtins.y2milestone("has_flex_proposal ret: %1", ret)
       ret
     end
 
@@ -684,8 +686,8 @@ module Yast
       dev = Ops.get_string(disk, "device", "")
       Builtins.y2milestone("do_flexible_disk dev %1", dev)
       Builtins.y2milestone(
-        "do_flexible_disk parts %1",
-        Ops.get_list(disk, "partitions", [])
+        "do_flexible_disk parts\n%1",
+        format_target_map(Ops.get_list(disk, "partitions", []))
       )
       ret = {}
       Ops.set(ret, "ok", false)
@@ -739,8 +741,8 @@ module Yast
       conf = deep_copy(co)
       conf = try_add_boot(conf, disk, true) if !ignore_boot
       Builtins.y2milestone(
-        "do_flexible_disk_conf parts %1",
-        Ops.get_list(disk, "partitions", [])
+        "do_flexible_disk_conf parts\n%1",
+        format_target_map(Ops.get_list(disk, "partitions", []))
       )
       Builtins.y2milestone("do_flexible_disk_conf conf %1", conf)
       ret = {}
@@ -794,7 +796,7 @@ module Yast
       boot2 = deep_copy(boot2)
       dev = Ops.get_string(disk, "device", "")
       Builtins.y2milestone(
-        "do_vm_disk_conf dev %1 vmkey %2 key %3 boot %4 boot2:%5",
+        "do_vm_disk_conf dev %1 vmkey %2 key %3 boot %4 boot2: %5",
         dev,
         vmkey,
         key,
@@ -802,8 +804,8 @@ module Yast
         boot2
       )
       Builtins.y2milestone(
-        "do_vm_disk_conf parts %1",
-        Ops.get_list(disk, "partitions", [])
+        "do_vm_disk_conf parts\n%1",
+        format_target_map(Ops.get_list(disk, "partitions", []))
       )
       conf = {}
       if Ops.greater_than(Builtins.size(boot), 0)
@@ -918,7 +920,7 @@ module Yast
           count = Ops.add(count, 1)
         end
         Builtins.y2milestone(
-          "do_vm_disk_conf ok:%1 gap %2",
+          "do_vm_disk_conf ok: %1 gap %2",
           ok,
           Ops.get_list(gap, "gap", [])
         )
@@ -950,7 +952,7 @@ module Yast
                   1
                 )
             end
-            Builtins.y2milestone("do_vm_disk_conf ee:%1 ae:%2", ext_end, aext)
+            Builtins.y2milestone("do_vm_disk_conf ee: %1 ae: %2", ext_end, aext)
             if aext != nil
               Ops.set(gap, "resize_ext", Ops.get_integer(aext, "end", 0))
               Ops.set(gap, "gap", Builtins.filter(Ops.get_list(gap, "gap", [])) do |g|
@@ -1044,7 +1046,7 @@ module Yast
                   )
               end
               Builtins.y2milestone(
-                "do_vm_disk_conf ee:%1 ae:%2",
+                "do_vm_disk_conf ee: %1 ae: %2",
                 Ops.get_integer(g, "end", 0),
                 acur
               )
@@ -1158,8 +1160,8 @@ module Yast
       )
       if Ops.get_boolean(ret, "ok", false)
         Builtins.y2milestone(
-          "do_vm_disk_conf parts %1",
-          Ops.get_list(ret, ["disk", "partitions"], [])
+          "do_vm_disk_conf parts\n%1",
+          format_target_map(Ops.get_list(ret, ["disk", "partitions"], []))
         )
       end
       deep_copy(ret)
@@ -1350,7 +1352,7 @@ module Yast
       else
         conf = read_partition_config(pinfo_name)
       end
-      Builtins.y2milestone("conf:%1", conf)
+      Builtins.y2milestone("conf: %1", conf)
       do_pflex(target, conf)
     end
 
@@ -1889,8 +1891,8 @@ module Yast
               Ops.set(part, "vg", vgname)
             end
             Builtins.y2milestone(
-              "process_partition_data auto partition %1",
-              part
+              "process_partition_data auto partition\n%1",
+              format_target_map(part)
             )
             partitions = Builtins.add(partitions, Builtins.eval(part))
           end
@@ -1907,7 +1909,7 @@ module Yast
         "partitions",
         Builtins.union(Ops.get_list(disk, "partitions", []), partitions)
       )
-      Builtins.y2milestone("process_partition_data disk %1", disk)
+      Builtins.y2milestone("process_partition_data disk\n%1", format_target_map(disk))
       deep_copy(disk)
     end
 
@@ -2014,8 +2016,8 @@ module Yast
         end
       )
       Builtins.y2milestone(
-        "add_cylinder_info parts %1",
-        Ops.get_list(conf, "partitions", [])
+        "add_cylinder_info parts\n%1",
+        format_target_map(Ops.get_list(conf, "partitions", []))
       )
       deep_copy(conf)
     end
@@ -2832,7 +2834,7 @@ module Yast
           deep_copy(p)
         end
         Builtins.y2milestone(
-          "try_remove_sole_extended delete extended p:%1",
+          "try_remove_sole_extended delete extended p: %1",
           ret
         )
       end
@@ -3629,17 +3631,17 @@ module Yast
 
     def can_boot_reuse(disk, label, boot, max_prim, partitions)
       ret = []
-      Builtins.y2milestone("can_boot_reuse boot:%1", boot)
+      Builtins.y2milestone("can_boot_reuse boot: %1", boot)
       if boot && !Partitions.PrepBoot
         Builtins.y2milestone(
-          "can_boot_reuse disk:%1 max_prim:%2 label:%3 part:%4",
+          "can_boot_reuse disk: %1 max_prim: %2 label: %3 part: %4",
           disk, max_prim, label, partitions)
         pl = partitions.select do |p|
           !p.fetch("delete",false) &&
           (p.fetch("size_k",0)*1024>=Partitions.MinimalBootsize||
 	   p.fetch("fsid",0)==Partitions.fsid_bios_grub)
         end
-        Builtins.y2milestone( "can_boot_reuse pl:%1", pl )
+        Builtins.y2milestone( "can_boot_reuse pl: %1", pl )
         boot2 = Builtins.find(pl) do |p|
           p.fetch("fsid",0) == Partitions.fsid_gpt_boot ||
 	  p.fetch("fsid", 0) == Partitions.FsidBoot(label) &&
@@ -3654,7 +3656,7 @@ module Yast
 	    label=="gpt" &&
 	    !Partitions.EfiBoot
         end
-	Builtins.y2milestone("can_boot_reuse boot2:%1", boot2)
+	Builtins.y2milestone("can_boot_reuse boot2: %1", boot2)
 	if boot2 != nil
 	  ret = partitions.map do |p|
 	    if !p.fetch("delete",false) &&
@@ -3666,7 +3668,7 @@ module Yast
           p
 	  end
 	end
-        Builtins.y2milestone("can_boot_reuse ret:%1", ret)
+        Builtins.y2milestone("can_boot_reuse ret: %1", ret)
       end
       deep_copy(ret)
     end
@@ -3675,10 +3677,10 @@ module Yast
     def can_rboot_reuse(disk, label, boot, max_prim, partitions)
       partitions = deep_copy(partitions)
       ret = []
-      Builtins.y2milestone("can_rboot_reuse boot:%1", boot)
+      Builtins.y2milestone("can_rboot_reuse boot: %1", boot)
       if boot
         Builtins.y2milestone(
-          "can_rboot_reuse disk:%1 max_prim:%2 label:%3 part:%4",
+          "can_rboot_reuse disk: %1 max_prim: %2 label: %3 part: %4",
           disk,
           max_prim,
           label,
@@ -3716,7 +3718,7 @@ module Yast
           end
           deep_copy(p)
         end if boot2 != nil
-        Builtins.y2milestone("can_rboot_reuse ret:%1", ret)
+        Builtins.y2milestone("can_rboot_reuse ret: %1", ret)
       end
       deep_copy(ret)
     end
@@ -3888,7 +3890,7 @@ module Yast
     def get_proposal(have_swap, disk)
       disk = deep_copy(disk)
       ret = []
-      Builtins.y2milestone("get_proposal have_swap:%1 disk %2", have_swap, disk)
+      Builtins.y2milestone("get_proposal have_swap: %1 disk %2", have_swap, disk)
       root = {
         "mount"       => "/",
         "increasable" => true,
@@ -3993,7 +3995,7 @@ module Yast
         )
         diff = Ops.unary_minus(diff) if Ops.less_than(diff, 0)
         Builtins.y2milestone(
-          "get_proposal diff:%1 ps1 ok:%2",
+          "get_proposal diff: %1 ps1 ok: %2",
           diff,
           Ops.get_boolean(ps1, "ok", false)
         )
@@ -4006,7 +4008,7 @@ module Yast
           )
           ps2 = do_flexible_disk_conf(disk, conf, false, false)
           Builtins.y2milestone(
-            "get_proposal ps2 ok:%1",
+            "get_proposal ps2 ok: %1",
             Ops.get_boolean(ps2, "ok", false)
           )
           if Ops.get_boolean(ps2, "ok", false)
@@ -4018,8 +4020,8 @@ module Yast
               !Ops.get_boolean(p, "delete", false) &&
                 Ops.get_string(p, "mount", "") == "/"
             end
-            Builtins.y2milestone("get_proposal rp1:%1", rp1)
-            Builtins.y2milestone("get_proposal rp2:%1", rp2)
+            Builtins.y2milestone("get_proposal rp1: %1", rp1)
+            Builtins.y2milestone("get_proposal rp2: %1", rp2)
             if rp1 == nil ||
                 rp2 != nil &&
                   Ops.greater_than(
@@ -4038,7 +4040,7 @@ module Yast
       post_processor = PostProcessor.new()
       ret = post_processor.process_partitions(ret)
 
-      Builtins.y2milestone("get_proposal ret:%1", ret)
+      Builtins.y2milestone("get_proposal ret:\n%1", format_target_map(ret))
       deep_copy(ret)
     end
 
@@ -4190,7 +4192,7 @@ module Yast
       end) { |k, e| k }
       ret = Builtins.sort(ret)
       ret = restrict_disk_names(ret) if Ops.greater_than(Builtins.size(ret), 4)
-      Builtins.y2milestone("get_disk_try_list soft:%1 ret:%2", soft, ret)
+      Builtins.y2milestone("get_disk_try_list soft: %1 ret: %2", soft, ret)
       deep_copy(ret)
     end
 
@@ -4684,8 +4686,8 @@ module Yast
                 end
               )
               Builtins.y2milestone(
-                "get_inst_proposal res parts %1",
-                Ops.get_list(target, [s, "partitions"], [])
+                "get_inst_proposal res parts\n%1",
+                format_target_map(Ops.get_list(target, [s, "partitions"], []))
               )
             end
           end
@@ -4874,7 +4876,7 @@ module Yast
               )
               diff = Ops.unary_minus(diff) if Ops.less_than(diff, 0)
               Builtins.y2milestone(
-                "get_inst_proposal diff:%1 ps1 ok:%2",
+                "get_inst_proposal diff: %1 ps1 ok: %2",
                 diff,
                 Ops.get_boolean(ps1, "ok", false)
               )
@@ -4895,7 +4897,7 @@ module Yast
                   mode == :reuse
                 )
                 Builtins.y2milestone(
-                  "get_inst_proposal ps2 ok:%1",
+                  "get_inst_proposal ps2 ok: %1",
                   Ops.get_boolean(ps2, "ok", false)
                 )
                 if Ops.get_boolean(ps2, "ok", false)
@@ -4911,8 +4913,8 @@ module Yast
                     !Ops.get_boolean(p2, "delete", false) &&
                       Ops.get_string(p2, "mount", "") == "/"
                   end
-                  Builtins.y2milestone("get_inst_proposal rp1:%1", rp1)
-                  Builtins.y2milestone("get_inst_proposal rp2:%1", rp2)
+                  Builtins.y2milestone("get_inst_proposal rp1: %1", rp1)
+                  Builtins.y2milestone("get_inst_proposal rp2: %1", rp2)
                   if rp1 == nil ||
                       rp2 != nil &&
                         Ops.greater_than(
@@ -5043,7 +5045,7 @@ module Yast
             sol_disk = s
           end
         end
-        Builtins.y2milestone("get_inst_proposal sol_disk %1", sol_disk)
+        Builtins.y2milestone("get_inst_proposal sol_disk\n%1", format_target_map(sol_disk))
       end
       Ops.set(ret, "ok", Ops.greater_than(Builtins.size(sol_disk), 0))
       if Ops.get_boolean(ret, "ok", false)
@@ -5059,8 +5061,8 @@ module Yast
           Storage.SpecialBootHandling(Ops.get_map(ret, "target", {}))
         )
         Builtins.y2milestone(
-          "get_inst_proposal sol:%1",
-          Ops.get_map(ret, ["target", sol_disk], {})
+          "get_inst_proposal sol:\n%1",
+          format_target_map(Ops.get_map(ret, ["target", sol_disk], {}))
         )
 
         post_processor = PostProcessor.new()
@@ -5068,7 +5070,7 @@ module Yast
 
       end
       Builtins.y2milestone(
-        "get_inst_proposal ret[ok]:%1",
+        "get_inst_proposal ret[ok]: %1",
         Ops.get_boolean(ret, "ok", false)
       )
       deep_copy(ret)
@@ -5111,7 +5113,7 @@ module Yast
 
     def remove_vm(tg, ky)
       tg = deep_copy(tg)
-      Builtins.y2milestone("remove_vm key:%1", ky)
+      Builtins.y2milestone("remove_vm key: %1", ky)
       key = Ops.add("/dev/", ky)
       if Builtins.haskey(tg, key)
         Ops.set(tg, [key, "delete"], true)
@@ -5123,7 +5125,7 @@ module Yast
             deep_copy(p)
           end
         )
-        Builtins.y2milestone("remove_vm removed:%1", Ops.get(tg, key, {}))
+        Builtins.y2milestone("remove_vm removed: %1", Ops.get(tg, key, {}))
         dl = Ops.get_list(tg, [key, "devices"], [])
         Builtins.foreach(dl) do |d|
           tg = Storage.DelPartitionData(tg, d, "used_by_type")
@@ -5150,7 +5152,7 @@ module Yast
         ret = ""
       end
       Builtins.y2milestone(
-        "find_vm key:%1 min_size:%2 ret:%3",
+        "find_vm key: %1 min_size: %2 ret: %3",
         ky,
         min_size,
         ret
@@ -5173,7 +5175,7 @@ module Yast
           ret = true
         end
       end
-      Builtins.y2milestone("did_remove_vg vg:%1 ret:%2", vg, ret)
+      Builtins.y2milestone("did_remove_vg vg: %1 ret: %2", vg, ret)
       ret
     end
 
@@ -5241,7 +5243,7 @@ module Yast
 
     def create_vm(key, disk)
       disk = deep_copy(disk)
-      Builtins.y2milestone("create_vm key:%1 disk:%2", key, disk)
+      Builtins.y2milestone("create_vm key: %1 disk: %2", key, disk)
       ret = {
         "type"       => :CT_LVM,
         "name"       => key,
@@ -5601,7 +5603,7 @@ module Yast
           end
         )
       end
-      Builtins.y2milestone("modify_vm ret %1", ret)
+      Builtins.y2milestone("modify_vm ret\n%1", format_target_map(ret))
       deep_copy(ret)
     end
 
@@ -5972,8 +5974,8 @@ module Yast
           Storage.SpecialBootHandling(Ops.get_map(ret, "target", {}))
         )
         Builtins.y2milestone(
-          "get_inst_prop_vm sol:%1",
-          Ops.get_map(ret, ["target", sol_disk], {})
+          "get_inst_prop_vm sol:\n%1",
+          format_target_map(Ops.get_map(ret, ["target", sol_disk], {}))
         )
       end
 
@@ -5981,8 +5983,8 @@ module Yast
       ret["target"] = post_processor.process_target(ret["target"])
 
       Builtins.y2milestone(
-        "get_inst_prop_vm ret[ok]:%1",
-        Ops.get_boolean(ret, "ok", false)
+        "get_inst_prop_vm ret[ok]:\n%1",
+        format_target_map(Ops.get_boolean(ret, "ok", false))
       )
       deep_copy(ret)
     end
@@ -5993,7 +5995,7 @@ module Yast
       disk = deep_copy(disk)
       ddev = Ops.get_string(disk, "device", "")
       Builtins.y2milestone(
-        "get_proposal_vm ddev:%1 vg:%2 home:%3 lvm:%4 encrypt:%5",
+        "get_proposal_vm ddev: %1 vg: %2 home: %3 lvm: %4 encrypt: %5",
         ddev,
         key,
         GetProposalHome(),
@@ -6099,7 +6101,7 @@ module Yast
           "target",
           Storage.SpecialBootHandling(Ops.get_map(ret, "target", {}))
         )
-        Builtins.y2milestone("get_proposal_vm sol:%1", disk)
+        Builtins.y2milestone("get_proposal_vm sol:\n%1", format_target_map(disk))
       end
 
       post_processor = PostProcessor.new()
@@ -6118,7 +6120,7 @@ module Yast
       ret = {}
       vg = GetProposalVM()
       Builtins.y2milestone(
-        "get_inst_prop vg:%1 home:%2 lvm:%3 encypt:%4",
+        "get_inst_prop vg: %1 home: %2 lvm: %3 encypt: %4",
         vg,
         GetProposalHome(),
         GetProposalLvm(),
@@ -6131,7 +6133,7 @@ module Yast
           ret = get_inst_proposal(target)
         end
       else
-        Builtins.y2milestone("target:%1", target)
+        Builtins.y2milestone("target: %1", target)
         ret = get_inst_prop_vm(target, vg)
         Ops.set(
           ret,
@@ -6139,7 +6141,7 @@ module Yast
           EncryptDevices(Ops.get_map(ret, "target", {}), Ops.add("/dev/", vg))
         )
       end
-      Builtins.y2milestone("get_inst_prop ret:%1", ret)
+      Builtins.y2milestone("get_inst_prop ret:\n%1", format_target_map(ret))
       deep_copy(ret)
     end
 
@@ -6449,7 +6451,7 @@ module Yast
         )
       ret = ret || GetProposalSuspend()
       Builtins.y2milestone(
-        "EnableSuspend csw:%1 swsize:%2 suspsize:%3 ret:%4",
+        "EnableSuspend csw: %1 swsize: %2 suspsize: %3 ret: %4",
         Builtins.size(swaps),
         Ops.divide(Ops.get_integer(swaps, [0, "size_k"], 0), 1024),
         susps,
@@ -6552,7 +6554,7 @@ module Yast
         ret = Builtins.size(Builtins.filter(ls) do |p|
           Ops.get_string(p, "mount", "") == "/home"
         end) == 0
-        Builtins.y2milestone("CouldNotDoSeparateHome ls:%1", ls)
+        Builtins.y2milestone("CouldNotDoSeparateHome ls: %1", ls)
       end
       log.info("CouldNotDoSeparateHome ret:#{ret}")
       return ret

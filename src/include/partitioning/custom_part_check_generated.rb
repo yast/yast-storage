@@ -336,9 +336,11 @@ module Yast
       if (!boot_found && installation && 
           !Partitions.EfiBoot && rootdlabel=="gpt") || show_all_popups
         message = _(
-          "Warning: There is no partition of type bios_grub present.\n" +
-          "To boot from a GPT disk using grub2 such a partition is needed.\n" +
-          "\n" +
+          "Warning: There is no partition of type bios_grub present.\n" \
+          "Such a partition is recommended (required with Btrfs) when Grub2 is\n" \
+          "installed in the MBR of a GPT disk. It must be unformatted and\n" \
+          "approximately 1MB large." \
+          "\n" \
           "Really use this setup?\n"
           )
 
