@@ -2706,8 +2706,19 @@ module Yast
     end
 
 
-    def ChangeDescText(dev, txt)
-      ret = @sint.changeDescText(dev, txt)
+    def ChangeDescText(device, text)
+      @sint.changeDescText(device, text)
+    end
+
+
+    def SetUserdata(device, userdata)
+      tmp = ::Storage::MapStringString.new()
+      userdata.each do |a, b|
+        tmp[a]= b
+      end
+      ret = @sint.setUserdata(device, tmp)
+      UpdateTargetMap()
+      return ret
     end
 
 
