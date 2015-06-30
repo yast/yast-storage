@@ -128,9 +128,11 @@ module Yast
           )
         end
         if Builtins.size(Ops.get_list(devmap, "partitions", [])) == 0 &&
-            Storage.IsPartType(Ops.get_symbol(devmap, "type", :CT_UNKNOWN)) &&
-            (!Storage.IsUsedBy(devmap) ||
-              Ops.get_symbol(devmap, "used_by_type", :UB_NONE) == :UB_LVM)
+           Storage.IsPartType(Ops.get_symbol(devmap, "type", :CT_UNKNOWN)) &&
+           # unpartitioned DASDs cannot be used for LVM (fate #317934)
+           !String.StartsWith(dev, "/dev/dasd") &&
+           (!Storage.IsUsedBy(devmap) ||
+            Ops.get_symbol(devmap, "used_by_type", :UB_NONE) == :UB_LVM)
           p = {
             "device"  => dev,
             "maindev" => dev,
