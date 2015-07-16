@@ -405,7 +405,7 @@ module Yast
       SCR.Execute(path(".target.modprobe"), "raid5", "")
       SCR.Execute(path(".target.modprobe"), "raid6", "")
       SCR.Execute(path(".target.modprobe"), "raid10", "")
-      SCR.Execute(path(".target.modprobe"), "multipath", "")
+      SCR.Execute(path(".target.modprobe"), "dm-multipath", "")
 
       StartHotplugStorage()
 
