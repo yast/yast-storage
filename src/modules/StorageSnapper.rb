@@ -37,7 +37,6 @@ module Yast
 
       Yast.import "String"
       Yast.import "Installation"
-      Yast.import "InstExtensionImage"
       Yast.import "Storage"
 
     end
@@ -76,11 +75,6 @@ module Yast
 
       log.info("configuring snapper for root fs - step 1")
 
-      if ENV["YAST2_STORAGE_SNAPPER_EXTEND"] != "no"
-        # TRANSLATORS: message in progress bar
-        InstExtensionImage.LoadExtension("snapper", _("Retrieving %s extension...") % "snapper")
-      end
-
       part = Storage.GetEntryForMountpoint("/")
 
       if bash_log_output("/usr/lib/snapper/installation-helper --step 1 " <<
@@ -116,11 +110,6 @@ module Yast
                          "--root-prefix '#{String.Quote(Installation.destdir)}' " <<
                          "--default-subvolume-name '#{String.Quote(Storage.default_subvolume_name())}'") != 0
         log.error("configuring snapper for root fs failed")
-      end
-
-      if ENV["YAST2_STORAGE_SNAPPER_EXTEND"] != "no"
-        # TRANSLATORS: message in progress bar
-        InstExtensionImage.UnLoadExtension("snapper", _("Releasing %s extension...") % "snapper")
       end
 
     end
