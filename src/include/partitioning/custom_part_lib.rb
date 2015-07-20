@@ -73,9 +73,9 @@ module Yast
     # @param [String] mount mount point
     # @return [Boolean]
     #
-    def check_raid_mount_points(mount)
+    def check_raid_mount_points(mount, raid_level)
       not_allowed_raid_mount_points = []
-      if Arch.ppc || Arch.s390
+      if (Arch.ppc && raid_level != "raid1") || Arch.s390
         not_allowed_raid_mount_points = Builtins.add(
           not_allowed_raid_mount_points,
           Partitions.BootMount
@@ -360,7 +360,7 @@ module Yast
           Ops.set(ret, "field", :mount_point)
         end
         if Ops.get_symbol(new, "type", :primary) == :sw_raid
-          if !check_raid_mount_points(Ops.get_string(new, "mount", ""))
+          if !check_raid_mount_points(Ops.get_string(new, "mount", ""), Ops.get_string(new, "raid_type", ""))
             Ops.set(ret, "ok", false)
             Ops.set(ret, "field", :mount_point)
           end
