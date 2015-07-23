@@ -4988,6 +4988,7 @@ module Yast
         "tmp",
         "usr/local",
         "var/crash",
+        "var/lib/libvirt/images",
         "var/lib/mailman",
         "var/lib/mariadb",
         "var/lib/named",
@@ -4998,8 +4999,10 @@ module Yast
         "var/tmp"
       ]
 
-      # No Copy On Write for SQL databases to minimize performance impact
+      # No Copy On Write for SQL databases and libvirt virtual disks to
+      # minimize performance impact
       nocow_subvols = [
+        "var/lib/libvirt/images",
         "var/lib/mariadb",
         "var/lib/pgsql"
       ]
