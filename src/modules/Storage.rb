@@ -23,6 +23,7 @@ require "yast"
 require "dbus"
 require "storage"
 require "storage/target_map_formatter"
+require "storage/used_storage_features"
 
 module Yast
   class StorageClass < Module
@@ -5966,66 +5967,14 @@ module Yast
 
 
     def AddPackageList
-      pl = deep_copy(@hw_packages)
+      packages = @hw_packages.dup # start with packages suggested by hwinfo
 
-      target_map = GetTargetMap()
+      used_features = Yast::StorageHelpers::UsedStorageFeatures.new(@sint)
+      features = used_features.collect_features
+      packages += used_features.feature_packages(features)
 
-      need_lvm = false
-      need_nfs = false
-      need_quota = false
-      need_crypt = false
-      need_iscsi = false
-
-      Builtins.foreach(target_map) do |k, e|
-        need_lvm = true if Ops.get_symbol(e, "type", :CT_UNKNOWN) == :CT_LVM
-        need_nfs = true if Ops.get_symbol(e, "type", :CT_UNKNOWN) == :CT_NFS
-        need_iscsi = true if e.fetch("iscsi", false)
-        if Builtins.find(Ops.get_list(e, "partitions", [])) do |part2|
-            FileSystems.HasQuota(part2)
-          end != nil
-          need_quota = true
-        end
-        if Builtins.find(Ops.get_list(e, "partitions", [])) do |part2|
-            Ops.get_symbol(part2, "enc_type", :none) != :none
-          end != nil
-          need_crypt = true
-        end
-      end
-
-      Builtins.y2milestone(
-        "AddPackageList need_lvm: %1 need_nfs: %2 need_quota: %3 need_crypt: %4 need_iscsi: %5",
-        need_lvm, need_nfs, need_quota, need_crypt, need_iscsi
-      )
-
-      if need_lvm
-        pl << "lvm2"
-      end
-
-      # nfs-client needs to be marked for installation if we have some NFS
-      # shares. It will pull in portmapper package(#436897)
-      if need_nfs
-        pl << "nfs-client" << "yast2-nfs-client"
-      end
-
-      if need_quota
-        pl << "quota"
-      end
-
-      if need_crypt
-        pl << "cryptsetup" << "cryptsetup-mkinitrd" << "pam_mount"
-      end
-
-      if need_iscsi
-        pl << "open-iscsi"
-      end
-
-      part = GetEntryForMountpoint("/")
-      if Ops.get_symbol(part, "used_fs", :unknown) == :btrfs
-        pl << "snapper"
-      end
-
-      Builtins.y2milestone("AddPackageList ret %1", pl)
-      deep_copy(pl)
+      log.info("AddPackageList(): packages: #{packages}")
+      packages
     end
 
 
