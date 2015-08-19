@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.45
+Version:        3.1.45.1
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -35,6 +35,7 @@ BuildRequires:	libxslt
 BuildRequires:	perl-XML-Writer
 BuildRequires:	rubygem(rspec)
 BuildRequires:	rubygem(ruby-dbus)
+BuildRequires:	rubygem(yast-rake)
 BuildRequires:	sgml-skel
 BuildRequires:	update-desktop-files
 BuildRequires:	yast2 >= 3.1.22
