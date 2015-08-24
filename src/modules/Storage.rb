@@ -2722,8 +2722,27 @@ module Yast
     end
 
 
-    def ChangeDescText(dev, txt)
-      ret = @sint.changeDescText(dev, txt)
+    def ChangeDescText(device, text)
+      @sint.changeDescText(device, text)
+    end
+
+
+    # Sets a key-value pairs of data for a given device
+    #
+    # @param [String] device
+    # @param [Map] user data
+    # @return [Integer] error number, 0 if successful
+    def SetUserData(device, user_data)
+      log.info "Setting user data #{user_data} for #{device}"
+      set_user_data = ::Storage::MapStringString.new()
+
+      user_data.each do |key, value|
+        set_user_data[key] = value
+      end
+
+      ret = @sint.setUserdata(device, set_user_data)
+      UpdateTargetMap()
+      ret
     end
 
 
