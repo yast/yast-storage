@@ -33,7 +33,7 @@ module Yast
   module StorageHelpers
     #
     # Class that collects information about which storage features are used
-    # in the current targt machine's storage setup so add-on packages can be
+    # in the current target machine's storage setup so add-on packages can be
     # marked for installation as needed.
     #
     class UsedStorageFeatures
@@ -77,8 +77,8 @@ module Yast
           FT_JFS:           "jfsutils",
           FT_REISERFS:      "reiserfs",
           FT_HFS:           "hfsutils",
-          FT_NFS:           "nfsclient",
-          FT_NFS4:          "nfsclient",
+          FT_NFS:           "nfs-client",
+          FT_NFS4:          "nfs-client",
           FT_NTFS:          ["ntfs-3g", "ntfsprogs"],
           FT_VFAT:          "dosfstools",
           FT_LOOP:          nil, # util-linux which is always installed
@@ -259,11 +259,11 @@ module Yast
       # a storage feature symbol or 'nil'. If non-nil, the feature will be
       # added to the feature set in 'features', and a log line will be written.
       #
-      # @param [Set<Symbol> feature set
-      # @param [String]     object type that is being checked (Container, Disk, Volume)
-      # @param [String]     name of the object that is being checked
-      # @param [String]     feature type that is checked for ("feature", "filesystem", ...)
-      # @param [Block]      code block that does the checking (return nil or a FT_... symbol)
+      # @param [Set<Symbol>]  feature set
+      # @param [String]       object type that is being checked (Container, Disk, Volume)
+      # @param [String]       name of the object that is being checked
+      # @param [String]       feature type that is checked for ("feature", "filesystem", ...)
+      # @param [Block]        code block that does the checking (return nil or a FT_... symbol)
       # @return [Set<Symbol>] feature set
       #
       def feature_check(features, type, name, feature_type = "feature", &block)
