@@ -248,7 +248,7 @@ module Yast
           feature_check(features, "Root FS", name) { root_btrfs?(vol) ? :FT_BTRFS_ROOT : nil }
 
           feature_check(features, "Volume", name, "quota") do
-            vol.fstab_options.match(/quota/i) ? :FT_QUOTA : nil
+            vol.fstab_options.match(/(usr|grp)j?quota/i) ? :FT_QUOTA : nil
           end
         end
 
