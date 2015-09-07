@@ -4584,6 +4584,10 @@ module Yast
     end
 
 
+    # Sets the target map.
+    # This function should not be used since it is very fragile. Error
+    # handling is basically non-existing. Instead use individual functions to
+    # modify devices.
     def SetTargetMap(target)
       target = deep_copy(target)
       save_crypt = {}
