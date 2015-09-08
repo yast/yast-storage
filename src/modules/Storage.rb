@@ -6206,7 +6206,6 @@ module Yast
       deep_copy(tg)
     end
 
-
     def PerformLosetup(loop, format)
       crypt_ok = false
       pwd = Ops.get_string(loop.value, "passwd", "")
@@ -7124,6 +7123,42 @@ module Yast
       end
       Builtins.y2milestone("dmraid to mdadm mapping %1", mapping)
       return mapping
+    end
+
+    # Updates /boot partition information
+    #
+    # It relies on SpecialBootHandling to determine what changes need to be done.
+    # To write changes in the current map, it calls SetPartitionFormat, SetPartitionId
+    # and SetPartitionMount methods, as SetTargetMap does not work properly.
+    #
+    # @param [Hash] old_tg Original target map (usually GetTargetMap())
+    # @see SpecialBootHandling
+    # @see SetPartitionFormat
+    # @see SetPartitionId
+    # @see SetPartitionMount
+    def update_boot_partition_data(old_tg)
+      new_tg = SpecialBootHandling(old_tg)
+      new_tg.each do |dev, disk|
+        old_partitions = old_tg.fetch(dev, {}).fetch("partitions")
+        disk["partitions"].each_with_index do |part, idx|
+          old_part = old_partitions[idx]
+
+          # format and fstype
+          if old_part["format"] != part["format"] || old_part["fstype"] != part["fstype"]
+            SetPartitionFormat(part["device"], part["format"], part["fstype"])
+          end
+
+          # fsid
+          if old_part["fsid"] != part["fsid"]
+            SetPartitionId(part["device"], part["fsid"])
+          end
+
+          # mount point
+          if old_part["mount"] != part["mount"]
+            SetPartitionMount(part["device"], part["mount"])
+          end
+        end
+      end
     end
 
 

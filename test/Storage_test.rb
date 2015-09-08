@@ -36,7 +36,7 @@ describe Yast::Storage do
 
   # Helper function to build a map with custom boot partition information
   #
-  # BASE_MAP is used as base for that map. With boot_part_data you can
+  # base_map is used as base for that map. With boot_part_data you can
   # change the boot partition information.
   #
   # @param [Hash] boot_part_data Boot partition data
@@ -164,6 +164,72 @@ describe Yast::Storage do
         expect(boot["fsid"]).to eq(fsid)
         expect(boot["fstype"]).to eq(fstype)
         expect(boot["format"]).to eq(false)
+      end
+    end
+  end
+
+  describe "#update_boot_partition_data" do
+    OLD_TG = {
+      "/dev/vda" => {
+        "partitions" => [
+          {
+            "fsid" => 259, "fstype" => "BIOS Grub", "format" => true,
+            "mount" => "/boot", "device" => "/dev/vda1"
+          }
+        ]
+      }
+    }
+
+    let(:new_tg) do
+      { "/dev/vda" => { "partitions" => [ boot_part ] } }
+    end
+
+    before do
+      expect(storage).to receive(:SpecialBootHandling).with(OLD_TG).and_return(new_tg)
+    end
+
+    context "when fstype has changed" do
+      let(:boot_part) do
+        {
+          "fsid" => 259, "fstype" => "Apple_HFS", "format" => true,
+          "mount" => "/boot", "device" => "/dev/vda1"
+        }
+      end
+
+      it "calls SetPartitionFormat for the changed device" do
+        expect(storage).to receive(:SetPartitionFormat)
+          .with(boot_part["device"], boot_part["format"], boot_part["fstype"])
+        storage.update_boot_partition_data(OLD_TG)
+      end
+    end
+
+    context "when fsid has changed" do
+      let(:boot_part) do
+        {
+          "fsid" => 264, "fstype" => "BIOS Grub", "format" => true,
+          "mount" => "/boot", "device" => "/dev/vda1"
+        }
+      end
+
+      it "calls SetPartitionId for the changed device" do
+        expect(storage).to receive(:SetPartitionId)
+          .with(boot_part["device"], boot_part["fsid"])
+        storage.update_boot_partition_data(OLD_TG)
+      end
+    end
+
+    context "when mount point has changed" do
+      let(:boot_part) do
+        {
+          "fsid" => 259, "fstype" => "BIOS Grub", "format" => true,
+          "mount" => "", "device" => "/dev/vda1"
+        }
+      end
+
+      it "calls SetPartitionMount for the changed device" do
+        expect(storage).to receive(:SetPartitionMount)
+          .with(boot_part["device"], boot_part["mount"])
+        storage.update_boot_partition_data(OLD_TG)
       end
     end
   end
