@@ -725,8 +725,7 @@ module Yast
           if !Storage.EqualBackupStates("expert-partitioner", "", true)
             # Handle boot partition (bsc#940374) during installation
             if Stage.initial && !Mode.repair
-              new_tgmap = Storage.SpecialBootHandling(Storage.GetTargetMap())
-              Storage.SetTargetMap(new_tgmap)
+              Storage.update_boot_partition_data(Storage.GetTargetMap())
             end
 
             Storage.SetPartMode("CUSTOM")
