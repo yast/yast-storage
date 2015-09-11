@@ -358,9 +358,8 @@ module Yast
             _(
               "Warning: There is no partition mounted as /boot.\n" +
                 "To boot from your hard disk, a small /boot partition\n" +
-                "(approx. %1) is required.  Consider creating one.\n" +
-                "Partitions assigned to /boot will automatically be changed to\n" +
-                "type 0x41 PReP/CHRP.\n" +
+                "(approx. %1) is required.  Consider creating one\n" +
+                "with type 0x41 PReP/CHRP.\n" +
                 "\n" +
                 "Really use the setup without /boot partition?\n"
             ),
