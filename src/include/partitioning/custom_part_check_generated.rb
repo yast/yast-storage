@@ -70,6 +70,7 @@ module Yast
       partition_mounted_but_not_formated = false
       swap_found = false
       boot_found = false
+      boot_mount_point = ""
       root_found = false
       gpt_boot_ia64 = false
       boot_end = 0
@@ -158,6 +159,7 @@ module Yast
               gpt_boot_ia64 = true
             end
             boot_found = true
+            boot_mount_point = mountpoint
             if Ops.get_symbol(diskinfo, "type", :CT_UNKNOWN) == :CT_DISK
               boot_end = Region.End(Ops.get_list(part, "region", []))
             else
@@ -174,6 +176,7 @@ module Yast
             if Partitions.PrepBoot &&
                 (fsid == Partitions.FsidBoot(dlabel) || fsid == 6)
               boot_found = true
+              boot_mount_point = mountpoint
               boot_end = Region.End(Ops.get_list(part, "region", []))
               boot_fs = Ops.get_symbol(part, "used_fs", :unknown)
               boot_size_k = Ops.get_integer(part, "size_k", 0)
@@ -181,11 +184,13 @@ module Yast
             elsif Arch.board_mac &&
                 Ops.get_symbol(part, "used_fs", :unknown) == :hfs
               boot_found = true
+              boot_mount_point = mountpoint
               boot_end = Region.End(Ops.get_list(part, "region", []))
               boot_fs = Ops.get_symbol(part, "used_fs", :unknown)
               boot_size_k = Ops.get_integer(part, "size_k", 0)
             elsif !Partitions.EfiBoot() && fsid == Partitions.fsid_bios_grub
               boot_found = true
+              boot_mount_point = mountpoint
               boot_end = Region.End(Ops.get_list(part, "region", []))
               boot_fs = :none
               boot_size_k = Ops.get_integer(part, "size_k", 0)
@@ -289,6 +294,20 @@ module Yast
             "system, such as ext3 or ext4, for this mount point.\n" +
             "\n" +
             "Really use this setup?\n"
+        )
+
+        ok = false if !Popup.YesNo(message)
+      end
+
+      # A PReP/CHRP partition is not supposed to be mounted. So if we find any
+      # other /boot partition, we should warn the user.
+      if boot_found && Partitions.PrepBoot && !boot_mount_point.empty? && !Arch.board_iseries && installation || show_all_popups
+        message = _(
+          "Warning:\n" \
+          "Your system needs a boot partition with type 0x41 PReP/CHRP.\n" \
+          "Please, consider creating one.\n" \
+          "\n" \
+          "Really use this setup?\n"
         )
 
         ok = false if !Popup.YesNo(message)
