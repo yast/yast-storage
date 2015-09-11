@@ -5624,11 +5624,16 @@ module Yast
       Ops.set(ret, "target", target)
 
       boot2 = {}
-      if GetProposalEncrypt() && Partitions.EfiBoot
+      if GetProposalEncrypt() && (Partitions.EfiBoot||Partitions.PrepBoot)
+        if Partitions.EfiBoot
+          bootfsid = Partitions.DefaultFs
+        else
+          bootfsid = Partitions.DefaultBootFs
+        end
         boot2 = {
           "mount" => "/boot",
           "size"  => 400 * 1024 * 1024,
-          "fsys"  => Partitions.DefaultFs,
+          "fsys"  => bootfsid,
           "id"    => Partitions.fsid_native
         }
       end
@@ -6009,11 +6014,16 @@ module Yast
       Ops.set(ret, "target", target)
 
       boot2 = {}
-      if GetProposalEncrypt() && Partitions.EfiBoot
+      if GetProposalEncrypt() && (Partitions.EfiBoot && Partitions.PrepBoot)
+        if Partitions.EfiBoot
+          bootfsid = Partitions.DefaultFs
+        else
+          bootfsid = Partitions.DefaultBootFs
+        end
         boot2 = {
           "mount" => "/boot",
           "size"  => Partitions.ProposedBootsize,
-          "fsys"  => Partitions.DefaultFs,
+          "fsys"  => bootfsid,
           "id"    => Partitions.fsid_native
         }
       end
