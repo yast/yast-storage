@@ -219,6 +219,31 @@ describe "Yast::PartitioningCustomPartCheckGeneratedInclude" do
             end
           end
         end
+
+        context "and a /boot partition is present but it's not PReP/CHRP" do
+          let(:map) do
+            build_map("gpt-ppc-btrfs").tap do |m|
+              m["/dev/sda"]["partitions"][0].merge!("fsid" => 131, "fstype" => "Linux native")
+            end
+          end
+
+          it "warns the user and returns false" do
+            expect(Yast::Popup).to receive(:YesNo).with(/There is no partition mounted as \/boot/)
+              .and_return(false)
+            expect(client.check_created_partition_table(map, installation)).to eq(false)
+          end
+
+          context "and machine belongs to iSeries" do
+            before do
+              allow(Yast::Arch).to receive(:board_iseries).and_return(true)
+            end
+
+            it "returns true" do
+              expect(Yast::Popup).to_not receive(:YesNo)
+              expect(client.check_created_partition_table(map, installation)).to eq(true)
+            end
+          end
+        end
       end
 
       context "when /boot partition is not present" do
@@ -746,6 +771,30 @@ describe "Yast::PartitioningCustomPartCheckGeneratedInclude" do
           context "and fsid does not match FsidBoot" do
             it "returns true" do
               allow(Yast::Partitions).to receive(:FsidBoot).and_return(1)
+              expect(Yast::Popup).to_not receive(:YesNo)
+              expect(client.check_created_partition_table(map, installation)).to eq(true)
+            end
+          end
+        end
+
+        context "and a /boot partition is present but it's not PReP/CHRP" do
+          let(:map) do
+            build_map("gpt-ppc-btrfs").tap do |m|
+              m["/dev/sda"]["partitions"][0].merge!("fsid" => 131, "fstype" => "Linux native")
+            end
+          end
+
+          it "warns the user and returns false" do
+            expect(Yast::Popup).to_not receive(:YesNo)
+            expect(client.check_created_partition_table(map, installation)).to eq(true)
+          end
+
+          context "and machine belongs to iSeries" do
+            before do
+              allow(Yast::Arch).to receive(:board_iseries).and_return(true)
+            end
+
+            it "returns true" do
               expect(Yast::Popup).to_not receive(:YesNo)
               expect(client.check_created_partition_table(map, installation)).to eq(true)
             end
