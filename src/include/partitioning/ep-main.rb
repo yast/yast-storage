@@ -733,12 +733,6 @@ module Yast
           Storage.SetPartMode("CUSTOM") if Storage.GetPartMode == "NORMAL"
         when :next
           if !Storage.EqualBackupStates("expert-partitioner", "", true)
-            # Handle boot partition (bsc#940374) during installation
-            if Stage.initial && !Mode.repair
-              new_tgmap = Storage.SpecialBootHandling(Storage.GetTargetMap())
-              Storage.SetTargetMap(new_tgmap)
-            end
-
             Storage.SetPartMode("CUSTOM")
             Storage.UpdateChangeTime
           end
