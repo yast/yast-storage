@@ -1,6 +1,6 @@
 #!/usr/bin/env rspec
 
-require_relative "../spec_helper"
+require "yast"
 
 Yast.import "Arch"
 Yast.import "AutoinstData"
@@ -51,7 +51,7 @@ describe "Yast::PartitioningCustomPartCheckGeneratedInclude" do
     let(:prep_boot) { false }
 
     before do
-      allow(Yast::SCR).to receive(:Read).with(path(".target.ycp"), anything).and_call_original
+      allow(Yast::SCR).to receive(:Read).with(Yast::Path.new(".target.ycp"), anything).and_call_original
       allow(Yast::Arch).to receive(:architecture).and_return(arch)
       allow(Yast::Partitions).to receive(:EfiBoot).and_return(efi)
       allow(Yast::FileSystems).to receive(:default_subvol).and_return("@")
