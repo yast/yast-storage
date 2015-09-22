@@ -997,6 +997,17 @@ module Yast
       text
     end
 
+    # Determines whether a PReP boot partition is needed
+    #
+    # iSeries does not really need a boot partition: a bootable binary will be
+    # written to a kernel slot in /proc.
+    #
+    # @return [Boolean] 'true' if boot partition is needed; 'false' otherwise.
+    def prep_boot_needed?
+      PrepBoot() && !Arch.board_iseries
+    end
+    alias_method :prep_boot_needed, :prep_boot_needed?
+
     publish :variable => :fsid_empty, :type => "const integer"
     publish :variable => :fsid_native, :type => "const integer"
     publish :variable => :fsid_swap, :type => "const integer"
@@ -1074,6 +1085,7 @@ module Yast
     publish :function => :MaxLogical, :type => "integer (string)"
     publish :function => :MaxSectors, :type => "integer (string)"
     publish :function => :RdonlyText, :type => "string (map <string, any>, boolean)"
+    publish :function => :prep_boot_needed, :type => "boolean ()"
   end
 
   Partitions = PartitionsClass.new

@@ -301,7 +301,7 @@ module Yast
 
       # A PReP/CHRP partition is not supposed to be mounted. So if we find any
       # other /boot partition, we should warn the user.
-      if boot_found && Partitions.PrepBoot && !boot_mount_point.empty? && !Arch.board_iseries && installation || show_all_popups
+      if boot_found && Partitions.prep_boot_needed? && !boot_mount_point.empty? && installation || show_all_popups
         message = _(
           "Warning:\n" \
           "Your system needs a boot partition with type 0x41 PReP/CHRP.\n" \
@@ -369,9 +369,7 @@ module Yast
       end
 
       if !boot_found && installation || show_all_popups
-        # iSeries does not really need a boot partition
-        # a bootable binary will be written to a kernel slot in /proc
-        if Partitions.PrepBoot && !Arch.board_iseries && !diskless || show_all_popups
+        if Partitions.prep_boot_needed? && !diskless || show_all_popups
           # popup text
           # If the user chooses 'no' here, the system will not be able to
           # boot from the hard drive!
