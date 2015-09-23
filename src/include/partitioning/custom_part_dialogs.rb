@@ -47,7 +47,6 @@ module Yast
       Yast.import "Storage"
       Yast.import "Partitions"
       Yast.import "FileSystems"
-      Yast.import "Package"
       Yast.import "Mode"
       Yast.import "Arch"
       Yast.import "Label"
@@ -935,9 +934,6 @@ module Yast
           if UI.WidgetExists(Id("opt_quota")) &&
               UI.QueryWidget(Id("opt_quota"), :Value) == true
             new_fstopt = FileSystems.AddQuotaOpts(new, new_fstopt)
-            if !Ops.get_boolean(old_state, "opt_quota", false) && Mode.normal
-              Package.InstallAll(["quota"])
-            end
           end
           Builtins.y2milestone("FstabOptions new_state=%1", new_state)
           Builtins.y2milestone(

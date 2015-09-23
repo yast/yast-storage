@@ -495,7 +495,18 @@ module Yast
         )
       end
 
-      Ops.add(part_summary, config_summary)
+      if Mode.installation
+        return part_summary + config_summary
+      end
+
+      packages = Storage.missing_packages
+      if !packages.empty?
+        packages_summary = HTML.Heading(_("<p>Packages to install:</p>")) + HTML.List(packages)
+      else
+        packages_summary = HTML.Heading(_("<p>No packages need to be installed.</p>"))
+      end
+
+      return part_summary + config_summary + packages_summary
     end
 
 

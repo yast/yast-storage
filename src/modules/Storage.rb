@@ -61,6 +61,7 @@ module Yast
       Yast.import "Hotplug"
       Yast.import "ProductFeatures"
       Yast.import "Service"
+      Yast.import "Package"
 
       # simple resize functionality - dialog to set size of Linux and Windows before proposal
 
@@ -4863,6 +4864,15 @@ module Yast
     end
 
 
+    # return list of missing packages in the running system
+    def missing_packages
+      used_features = Yast::StorageHelpers::UsedStorageFeatures.new(@sint)
+      features = used_features.collect_features
+      packages = used_features.feature_packages(features)
+      packages = packages.delete_if { |package| Package.Installed(package) }
+    end
+
+
     # Apply storage changes
     #
     # @return [Fixnum]
@@ -4872,6 +4882,20 @@ module Yast
       if Mode.installation && StorageSnapper.configure_snapper?
         my_commit_callbacks = MyCommitCallbacks.new()
         @sint.setCommitCallbacks(my_commit_callbacks)
+      end
+
+      if !Mode.installation
+        if !Package.DoInstall(missing_packages)
+          # TODO: more informative error message, but the Package module does
+          # not provide anything
+          # TRANSLATORS: error popup
+          text = _("Installing required packages failed.") + "\n" +
+                 _("Continue despite the error?")
+          if !Report.ErrorAnyQuestion(Popup.NoHeadline, text,
+            Label.ContinueButton, Label.AbortButton, :focus_no)
+            return -1
+          end
+        end
       end
 
       ret = @sint.commit()
