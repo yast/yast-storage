@@ -481,18 +481,12 @@ module Yast
       if Builtins.isempty(part_summary)
         part_summary = HTML.Heading(_("<p>No changes to partitioning.</p>"))
       else
-        part_summary = Ops.add(
-          HTML.Heading(_("<p>Changes to partitioning:</p>")),
-          part_summary
-        )
+        part_summary = HTML.Heading(_("<p>Changes to partitioning:</p>")) + part_summary
       end
 
       config_summary = HTML.Heading(_("<p>No changes to storage settings.</p>"))
       if StorageSettings.GetModified
-        config_summary = Ops.add(
-          HTML.Heading(_("<p>Storage settings:</p>")),
-          StorageSettings.Summary
-        )
+        config_summary = HTML.Heading(_("<p>Storage settings:</p>")) + StorageSettings.Summary
       end
 
       if Mode.installation
