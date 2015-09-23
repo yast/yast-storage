@@ -36,17 +36,6 @@ module Yast
 
       Yast.include include_target, "partitioning/partition_defines.rb"
 
-      @pkg_for_fs = {
-        :ext2   => ["e2fsprogs"],
-        :ext3   => ["e2fsprogs"],
-        :ext4   => ["e2fsprogs"],
-        :btrfs  => ["btrfsprogs"],
-        :reiser => ["reiserfs"],
-        :vfat   => ["dosfstools"],
-        :ntfs   => ["ntfsprogs"],
-        :jfs    => ["jfsutils"],
-        :xfs    => ["xfsprogs"]
-      }
     end
 
     # Check lvm mount points
@@ -515,20 +504,7 @@ module Yast
 
           apply_change = Popup.YesNo(message)
         end
-        if apply_change && !Stage.initial
-          if Ops.greater_than(
-              Builtins.size(Ops.get_list(@pkg_for_fs, used_fs, [])),
-              0
-            )
-            r = Package.InstallAll(Ops.get_list(@pkg_for_fs, used_fs, []))
-            Builtins.y2milestone(
-              "HandleFsChanged install %1 ret:%2",
-              Ops.get_list(@pkg_for_fs, used_fs, []),
-              r
-            )
-            apply_change = false if !r
-          end
-        end
+
         if !apply_change
           Ops.set(new, "used_fs", old_fs)
           UI.ChangeWidget(Id(:fs), :Value, old_fs)
@@ -913,11 +889,6 @@ module Yast
           Ops.set(new, "mountby", :device)
           Ops.set(new, "label", "")
           Ops.set(new, "ori_label", "")
-          if !Stage.initial
-            Package.InstallAll(
-              ["cryptsetup", "cryptsetup-mkinitrd", "pam_mount"]
-            )
-          end
         else
           new = Builtins.remove(new, "mountby")
         end
