@@ -4885,7 +4885,8 @@ module Yast
       end
 
       if !Mode.installation
-        if !Package.DoInstall(missing_packages)
+        packages = missing_packages
+        if !packages.empty? && !Package.DoInstall(packages)
           # TODO: more informative error message, but the Package module does
           # not provide anything
           # TRANSLATORS: error popup
