@@ -60,7 +60,7 @@ module Yast
           FT_BTRFS:         ["btrfsprogs", "e2fsprogs"],
           FT_BTRFS_ROOT:    nil,  # use FT_SNAPSHOTS instead
           FT_SNAPSHOTS:     "snapper",
-          FT_EFIBOOT:       "efibootbgr",
+          FT_EFIBOOT:       "efibootmgr",
 
           # RAID technologies and related
           FT_DM:            ["device-mapper"],
