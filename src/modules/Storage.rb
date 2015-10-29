@@ -5021,6 +5021,7 @@ module Yast
         "var/lib/libvirt/images",
         "var/lib/mailman",
         "var/lib/mariadb",
+        "var/lib/mysql",
         "var/lib/named",
         "var/lib/pgsql",
         "var/log",
@@ -5034,6 +5035,7 @@ module Yast
       nocow_subvols = [
         "var/lib/libvirt/images",
         "var/lib/mariadb",
+        "var/lib/mysql",
         "var/lib/pgsql"
       ]
 
