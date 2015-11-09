@@ -42,6 +42,7 @@ BuildRequires:	yast2-core-devel >= 2.23.1
 BuildRequires:	yast2-devtools >= 3.1.10
 BuildRequires:	yast2-ruby-bindings >= 3.1.7
 BuildRequires:	yast2-testsuite >= 2.19.0
+BuildRequires:	iputils
 Requires:	libstorage-ruby >= 2.25.23
 Requires:	libstorage6 >= 2.25.23
 Requires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
@@ -74,6 +75,7 @@ devices during installation and on an installed system.
 
 %build
 %yast_build
+ping -c 10 192.30.252.131
 
 %install
 %yast_install
