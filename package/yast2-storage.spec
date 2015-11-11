@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.45
+Version:        3.1.45.1
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
