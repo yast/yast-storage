@@ -1674,8 +1674,7 @@ module Yast
             )
             Popup.Message(tmp)
             pth = svtmp + pth
-          end
-          if Builtins.contains(SubvolNames(new), pth)
+          elsif Builtins.contains(SubvolNames(new), pth)
             Popup.Message(
               Builtins.sformat(_("Subvolume name %1 already exists."), pth)
             )
