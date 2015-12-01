@@ -1780,7 +1780,6 @@ module Yast
 
       if Ops.get_string(part, "mount", "") != "/"
         need_nofail = false
-        need_netdev = false
         assertInit
 
         devs = Convert.convert(
@@ -1797,7 +1796,6 @@ module Yast
           # USB since those might actually not be present during boot
           # iSCSI since the boot scripts need it
           hotplug_transports = [::Storage::USB, ::Storage::ISCSI]
-          network_transports = [::Storage::ISCSI, ::Storage::FCOE]
 
           usedby_devices.each do |usedby_device|
             dp = ::Storage::ContVolInfo.new()
@@ -1805,13 +1803,9 @@ module Yast
                 dp.ctype == ::Storage::DISK
               disk = dp.cdevice
               infos = ::Storage::DiskInfo.new()
-              if @sint.getDiskInfo(disk, infos)==0
-                if Builtins.contains(hotplug_transports, infos.transport)
-                  need_nofail = true
-               end
-                if Builtins.contains(network_transports, infos.transport)
-                   need_netdev = true
-               end
+              if @sint.getDiskInfo(disk, infos)==0 &&
+                  Builtins.contains(hotplug_transports, infos.transport)
+                need_nofail = true
               end
             end
           end
@@ -1821,12 +1815,6 @@ module Yast
               fst_default = Ops.add(fst_default, ",")
             end
             fst_default = Ops.add(fst_default, "nofail")
-          end
-          if need_netdev
-            if !Builtins.isempty(fst_default)
-              fst_default = Ops.add(fst_default, ",")
-            end
-            fst_default = Ops.add(fst_default, "_netdev")
           end
         end
       end
