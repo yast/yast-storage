@@ -5008,6 +5008,28 @@ module Yast
     end
 
 
+    def SubvolShadowed?(subvol)
+      shadowed = false
+      tmp = "/" + subvol
+
+      GetTargetMap().each do |dev, disk|
+        parts = disk.fetch("partitions", [])
+        parts.each do |part|
+          if part.has_key?("mount")
+            mp = part["mount"]
+            if (tmp == mp) || (tmp.start_with?(mp) && tmp[mp.size] == "/")
+              shadowed = true
+            end
+          end
+        end
+      end
+
+      Builtins.y2milestone("SubvolShadowed?( %1 ): %2", subvol, shadowed)
+
+      shadowed
+    end
+
+
     def AddSubvolRoot(part)
       part = deep_copy(part)
 
@@ -5073,7 +5095,7 @@ module Yast
       Builtins.y2milestone("AddSubvolRoot subvol names: %1 subvol_list: %2", names, subvol_list)
       subvol_names.each do |subvol|
         subvol_full_name = subvol_prepend + subvol
-        if !names.include?( subvol_full_name )
+        if !names.include?( subvol_full_name ) && !SubvolShadowed?( subvol )
           subvol_entry = { "create" => true, "name" => subvol_full_name }
           if nocow_subvols.include?( subvol )
             subvol_entry["nocow"] = true
