@@ -89,6 +89,14 @@ ynclude_DATA = \
 
 ylibdir = @ylibdir@/storage
 ylib_DATA = \
+  lib/storage/boot_requirements_checker.rb \
+  lib/storage/disk_analyzer.rb \
+  lib/storage/disk_size.rb \
+  lib/storage/proposal_settings.rb \
+  lib/storage/proposal_volume.rb \
+  lib/storage/space_maker.rb \
+  lib/storage/storage_manager.rb \
+  lib/storage/storage_proposal.rb \
   lib/storage/target_map_formatter.rb \
   lib/storage/used_storage_features.rb
 
