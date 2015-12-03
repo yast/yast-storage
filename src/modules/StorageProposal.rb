@@ -72,6 +72,7 @@ module Yast
       @proposal_suspend = false
       @proposal_password = ""
       @proposal_create_vg = false
+      @proposal_keep_free_space = false
 
       @cfg_xml = {}
 
@@ -93,6 +94,15 @@ module Yast
     def SetProposalHome(val)
       @proposal_home = val
       Builtins.y2milestone("SetProposalHome val: %1", @proposal_home)
+    end
+
+    def GetProposalKeepFreeSpace
+      @proposal_keep_free_space
+    end
+
+    def SetProposalKeepFreeSpace(val)
+      @proposal_keep_free_space = fal
+      Builtins.y2milestone("SetProposalKeepFreeSpace val: %1", @proposal_keep_free_space)
     end
 
     def GetProposalHomeFs
@@ -179,9 +189,10 @@ module Yast
         SetProposalRootFs(Partitions.DefaultFs())
         SetProposalHomeFs(Partitions.DefaultHomeFs())
         SetProposalSnapshots(Ops.get_boolean(@cfg_xml, "prop_snapshots", false))
+        SetProposalKeepFreeSpace(Ops.get_boolean(@cfg_xml, "keep_free_space", false))
       end
       Builtins.y2milestone(
-        "SetProposalDefault home: %1 lvm: %2 encypt: %3 home_only: %4 snapshots: %5 suspend: %6 root_fs: %7 home_fs: %8",
+        "SetProposalDefault home: %1 lvm: %2 encypt: %3 home_only: %4 snapshots: %5 suspend: %6 root_fs: %7 home_fs: %8 keep_free_space: %9",
         @proposal_home,
         @proposal_lvm,
         @proposal_encrypt,
@@ -189,7 +200,8 @@ module Yast
         @proposal_snapshots,
         @proposal_suspend,
         @proposal_root_fs,
-        @proposal_home_fs
+        @proposal_home_fs,
+        @proposal_keep_free_space
       )
 
       nil
@@ -255,6 +267,12 @@ module Yast
           "vm_keep_unpartitioned_region"
         )
         Ops.set(@cfg_xml, "vm_keep_unpartitioned_region", btmp)
+
+        btmp = ProductFeatures.GetBooleanFeature(
+          "partitioning",
+          "keep_free_space"
+        )
+        Ops.set(@cfg_xml, "keep_free_space", btmp)
 
         stmp = ProductFeatures.GetStringFeature(
           "partitioning",
@@ -3925,8 +3943,9 @@ module Yast
         Builtins.add(Ops.get_list(conf, "partitions", []), root)
       )
       old_root = {}
-      if GetProposalHome() &&
-          Ops.less_than(Ops.get_integer(opts, "home_limit", 0), avail_size)
+      if GetProposalKeepFreeSpace() ||
+        (GetProposalHome() &&
+          Ops.less_than(Ops.get_integer(opts, "home_limit", 0), avail_size))
         home = {
           "mount"       => "/home",
           "increasable" => true,
@@ -3964,11 +3983,13 @@ module Yast
             deep_copy(p)
           end
         )
-        Ops.set(
-          conf,
-          "partitions",
-          Builtins.add(Ops.get_list(conf, "partitions", []), home)
-        )
+        if(GetProposalHome() && Ops.less_than(Ops.get_integer(opts, "home_limit", 0), avail_size))
+          Ops.set(
+            conf,
+            "partitions",
+            Builtins.add(Ops.get_list(conf, "partitions", []), home)
+          )
+        end
       end
       ps1 = do_flexible_disk_conf(disk, conf, false, false)
       if Ops.greater_than(Builtins.size(old_root), 0) &&
@@ -4796,11 +4817,12 @@ module Yast
               )
             end
             old_root = {}
-            if !have_home && GetProposalHome() &&
+             if GetProposalKeepFreeSpace() ||
+               (!have_home && GetProposalHome() &&
                 Ops.less_than(
                   Ops.get_integer(opts, "home_limit", 0),
                   avail_size
-                )
+                ))
               home = {
                 "mount"       => "/home",
                 "increasable" => true,
@@ -4845,11 +4867,17 @@ module Yast
                   deep_copy(p2)
                 end
               )
-              Ops.set(
-                conf,
-                "partitions",
-                Builtins.add(Ops.get_list(conf, "partitions", []), home)
-              )
+              if !have_home && GetProposalHome() &&
+                Ops.less_than(
+                  Ops.get_integer(opts, "home_limit", 0),
+                  avail_size
+                )
+                Ops.set(
+                  conf,
+                  "partitions",
+                  Builtins.add(Ops.get_list(conf, "partitions", []), home)
+                )
+              end
             end
             ps1 = do_flexible_disk_conf(disk, conf, have_boot, mode == :reuse)
             if Ops.greater_than(Builtins.size(old_root), 0) &&
