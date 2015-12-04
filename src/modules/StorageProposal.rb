@@ -6117,7 +6117,7 @@ module Yast
 
     def get_inst_prop(target)
       # initialize data from control file earlier, it is needed in this function
-      # to decide whteher to use LVM proposal (bsc#957913)
+      # to decide whether to use LVM proposal (bsc#957913)
       GetControlCfg()
       target = deep_copy(target)
       ret = {}
