@@ -6116,6 +6116,7 @@ module Yast
 
 
     def get_inst_prop(target)
+      GetControlCfg()
       target = deep_copy(target)
       ret = {}
       vg = GetProposalVM()
