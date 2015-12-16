@@ -1664,31 +1664,37 @@ module Yast
           Builtins.y2milestone("SubvolHandling names:%1", SubvolNames(new))
           if pth == nil || Builtins.size(pth) == 0
             Popup.Message(_("Empty subvolume name not allowed."))
-          elsif Ops.greater_than(Builtins.size(FileSystems.default_subvol), 0) &&
-              Builtins.substring(pth, 0, Builtins.size(svtmp)) != svtmp
-            tmp = Builtins.sformat(
-              _(
-                "Only subvolume names starting with \"%1\" currently allowed!\nAutomatically prepending \"%1\" to name of subvolume."
-              ),
-              svtmp
-            )
-            Popup.Message(tmp)
-            pth = svtmp + pth
-          end
-          if Builtins.contains(SubvolNames(new), pth)
+          elsif Builtins.contains(SubvolNames(new), pth)
             Popup.Message(
               Builtins.sformat(_("Subvolume name %1 already exists."), pth)
             )
           else
-            Ops.set(
-              new,
-              "subvol",
-              Builtins.add(
-                Ops.get_list(new, "subvol", []),
-                { "create" => true, "name" => pth }
+            if Ops.greater_than(Builtins.size(FileSystems.default_subvol), 0) &&
+                Builtins.substring(pth, 0, Builtins.size(svtmp)) != svtmp
+              tmp = Builtins.sformat(
+                _(
+                  "Only subvolume names starting with \"%1\" currently allowed!\nAutomatically prepending \"%1\" to name of subvolume."
+                ),
+                svtmp
               )
-            )
-            changed = true
+              Popup.Message(tmp)
+              pth = svtmp + pth  
+            end
+            if Builtins.contains(SubvolNames(new), pth)
+              Popup.Message(
+                Builtins.sformat(_("Subvolume name %1 already exists."), pth)
+              )
+            else
+              Ops.set(
+                new,
+                "subvol",
+                Builtins.add(
+                  Ops.get_list(new, "subvol", []),
+                  { "create" => true, "name" => pth }
+                )
+              )
+              changed = true
+            end
           end
           items = SubvolNames(new)
           UI.ChangeWidget(Id(:subvol), :Items, items)
