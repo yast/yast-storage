@@ -1678,17 +1678,23 @@ module Yast
                 svtmp
               )
               Popup.Message(tmp)
-              pth = svtmp + pth
+              pth = svtmp + pth  
             end
-            Ops.set(
-              new,
-              "subvol",
-              Builtins.add(
-                Ops.get_list(new, "subvol", []),
-                { "create" => true, "name" => pth }
+            if Builtins.contains(SubvolNames(new), pth)
+              Popup.Message(
+                Builtins.sformat(_("Subvolume name %1 already exists."), pth)
               )
-            )
-            changed = true
+            else
+              Ops.set(
+                new,
+                "subvol",
+                Builtins.add(
+                  Ops.get_list(new, "subvol", []),
+                  { "create" => true, "name" => pth }
+                )
+              )
+              changed = true
+            end
           end
           items = SubvolNames(new)
           UI.ChangeWidget(Id(:subvol), :Items, items)
