@@ -1664,10 +1664,6 @@ module Yast
           Builtins.y2milestone("SubvolHandling names:%1", SubvolNames(new))
           if pth == nil || Builtins.size(pth) == 0
             Popup.Message(_("Empty subvolume name not allowed."))
-          elsif Builtins.contains(SubvolNames(new), pth)
-            Popup.Message(
-              Builtins.sformat(_("Subvolume name %1 already exists."), pth)
-            )
           else
             if Ops.greater_than(Builtins.size(FileSystems.default_subvol), 0) &&
                 Builtins.substring(pth, 0, Builtins.size(svtmp)) != svtmp
