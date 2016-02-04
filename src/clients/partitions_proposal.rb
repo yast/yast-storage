@@ -232,12 +232,6 @@ module Yast
       if !Builtins.isempty(part) && !Ops.get_boolean(part, "format", false)
         Builtins.y2milestone("/home partition will not be formatted")
 
-        Yast.import "UsersSimple"
-        if UsersSimple.AfterAuth != "users"
-          Builtins.y2milestone("non-local user authentication")
-          return true
-        end
-
         device = Ops.get_string(part, "device", "")
         resize_info = {}
         content_info = {}
