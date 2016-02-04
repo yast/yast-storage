@@ -1582,7 +1582,7 @@ module Yast
         )
       )
 
-      if Mode.installation()
+      if Mode.installation() && snapshots_supported?(new)
         contents = Builtins.add(contents, VSpacing(0.5))
         contents = Builtins.add(contents,
           Left(
@@ -1730,5 +1730,8 @@ module Yast
       deep_copy(new)
     end
 
+    def snapshots_supported?(data)
+      data["mount"] == "/"
+    end
   end
 end
