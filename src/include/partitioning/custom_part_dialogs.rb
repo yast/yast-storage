@@ -1533,11 +1533,11 @@ module Yast
 
 
     # Dialog: Subvolume handling
-    # @parm old map with original partition
-    # @parm new map with changes filled in
-    def SubvolHandling(old, new)
-      old = deep_copy(old)
-      new = deep_copy(new)
+    # @parm old_partition map with original partition
+    # @parm new_partition map with changes filled in
+    def SubvolHandling(old_partition, new_partition)
+      old_partition = deep_copy(old_partition)
+      new_partition = deep_copy(new_partition)
 
       # help text, richtext format
       helptext = _(
@@ -1550,10 +1550,10 @@ module Yast
         )
       end
 
-      old_subvol = Ops.get_list(new, "subvol", [])
-      old_userdata = Ops.get_map(new, "userdata", {})
+      initial_subvol = Ops.get_list(new_partition, "subvol", [])
+      initial_userdata = Ops.get_map(new_partition, "userdata", {})
 
-      items = SubvolNames(new)
+      items = SubvolNames(new_partition)
 
       contents = VBox(
         # label text
@@ -1582,7 +1582,7 @@ module Yast
         )
       )
 
-      if Mode.installation() && snapshots_supported?(new)
+      if Mode.installation() && snapshots_supported?(new_partition)
         contents = Builtins.add(contents, VSpacing(0.5))
         contents = Builtins.add(contents,
           Left(
@@ -1614,7 +1614,7 @@ module Yast
         )
       )
 
-      UI.ChangeWidget(Id(:snapshots), :Value, old_userdata["/"] == "snapshots")
+      UI.ChangeWidget(Id(:snapshots), :Value, initial_userdata["/"] == "snapshots")
 
       UI.ChangeWidget(:help, :HelpText, helptext)
 
@@ -1631,12 +1631,12 @@ module Yast
           Builtins.y2milestone("SubvolHandling remove path:%1", pth)
           Builtins.y2milestone(
             "SubvolHandling remove subvol:%1",
-            Ops.get_list(new, "subvol", [])
+            Ops.get_list(new_partition, "subvol", [])
           )
           Ops.set(
-            new,
+            new_partition,
             "subvol",
-            Builtins.maplist(Ops.get_list(new, "subvol", [])) do |p|
+            Builtins.maplist(Ops.get_list(new_partition, "subvol", [])) do |p|
               if Ops.get_string(p, "name", "") == pth
                 Ops.set(p, "delete", true)
                 p = Builtins.remove(p, "create")
@@ -1646,9 +1646,9 @@ module Yast
           )
           Builtins.y2milestone(
             "SubvolHandling remove subvol:%1",
-            Ops.get_list(new, "subvol", [])
+            Ops.get_list(new_partition, "subvol", [])
           )
-          items = SubvolNames(new)
+          items = SubvolNames(new_partition)
           Builtins.y2milestone("SubvolHandling remove items:%1", items)
           changed = true
           UI.ChangeWidget(Id(:subvol), :Items, items)
@@ -1661,7 +1661,7 @@ module Yast
             pth,
             svtmp
           )
-          Builtins.y2milestone("SubvolHandling names:%1", SubvolNames(new))
+          Builtins.y2milestone("SubvolHandling names:%1", SubvolNames(new_partition))
           if pth == nil || Builtins.size(pth) == 0
             Popup.Message(_("Empty subvolume name not allowed."))
           else
@@ -1676,41 +1676,41 @@ module Yast
               Popup.Message(tmp)
               pth = svtmp + pth  
             end
-            if Builtins.contains(SubvolNames(new), pth)
+            if Builtins.contains(SubvolNames(new_partition), pth)
               Popup.Message(
                 Builtins.sformat(_("Subvolume name %1 already exists."), pth)
               )
             else
               Ops.set(
-                new,
+                new_partition,
                 "subvol",
                 Builtins.add(
-                  Ops.get_list(new, "subvol", []),
+                  Ops.get_list(new_partition, "subvol", []),
                   { "create" => true, "name" => pth }
                 )
               )
               changed = true
             end
           end
-          items = SubvolNames(new)
+          items = SubvolNames(new_partition)
           UI.ChangeWidget(Id(:subvol), :Items, items)
           UI.ChangeWidget(Id(:new_path), :Value, "")
 
         when :ok
           val = UI.QueryWidget(Id(:snapshots), :Value)
           if val
-            old_userdata["/"] = "snapshots"
+            initial_userdata["/"] = "snapshots"
           else
-            old_userdata.delete("/")
+            initial_userdata.delete("/")
           end
-          Ops.set(new, "userdata", old_userdata)
+          Ops.set(new_partition, "userdata", initial_userdata)
 
         when :cancel
           if changed
             if Popup.YesNo(
                 _("Modifications done so far in this dialog will be lost.")
               )
-              Ops.set(new, "subvol", old_subvol)
+              new_partition["subvol"] = initial_subvol
             else
               ret = :again
             end
@@ -1724,14 +1724,18 @@ module Yast
 
       Builtins.y2milestone(
         "SubvolHandling subvol:%1 userdata:%2",
-        Ops.get_list(new, "subvol", []),
-        Ops.get_map(new, "userdata", {})
+        new_partition["subvol"],
+        new_partition["userdata"]
       )
-      deep_copy(new)
+      deep_copy(new_partition)
     end
 
-    def snapshots_supported?(data)
-      data["mount"] == "/"
+    # Checks whether Btrfs snapshots are supported for the partition
+    #
+    # @param partition [Hash] map representing the partition
+    # @return [Boolean]
+    def snapshots_supported?(partition)
+      partition["mount"] == "/"
     end
   end
 end
