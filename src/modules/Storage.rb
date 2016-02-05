@@ -1924,18 +1924,13 @@ module Yast
     def HandleBtrfsSimpleVolumes(tg)
       tg = deep_copy(tg)
       if Builtins.haskey(tg, "/dev/btrfs")
-        simple = Builtins.filter(
-          Ops.get_list(tg, ["/dev/btrfs", "partitions"], [])
-        ) do |p|
-          Ops.less_or_equal(Builtins.size(Ops.get_list(p, "devices", [])), 1)
+        btrfs_partitions = Ops.get_list(tg, ["/dev/btrfs", "partitions"], [])
+        simple = Builtins.filter(btrfs_partitions) do |p|
+          p["devices"].nil? || p["devices"].size <= 1
         end
-        Ops.set(
-          tg,
-          ["/dev/btrfs", "partitions"],
-          Builtins.filter(Ops.get_list(tg, ["/dev/btrfs", "partitions"], [])) do |p|
-            Ops.greater_than(Builtins.size(Ops.get_list(p, "devices", [])), 1)
-          end
-        )
+        tg["/dev/btrfs"]["partitions"] = Builtins.filter(btrfs_partitions) do |p|
+          p["devices"] &&  p["devices"].size > 1
+        end
         Builtins.y2milestone("HandleBtrfsSimpleVolumes simple\n%1", format_target_map(simple))
         keys = [
           "subvol",
@@ -1946,10 +1941,11 @@ module Yast
           "mount",
           "mountby",
           "used_fs",
+          "fstopt",
           "userdata"
         ]
         Builtins.foreach(simple) do |p|
-          mp = GetPartition(tg, Ops.get_string(p, "device", ""))
+          mp = GetPartition(tg, p["device"])
           Builtins.y2milestone("HandleBtrfsSimpleVolumes before %1", mp)
           Builtins.foreach(keys) do |k|
             if Ops.get(p, k) != nil
