@@ -631,7 +631,10 @@ module Yast
     # @param file_systems [Hash] definitions of the supported filesystems
     # @param old [Hash] map with original partition
     # @param new [Hash] map with changes filled in
-    def HandlePartWidgetChanges(init, ret, file_systems, old, new)
+    # @param force_defaults [Boolean] whether to overwrite all the properties
+    #     (like the list of subvolumes) with the expert partitioner default values.
+    #     Useful when creating a partition for the first time
+    def HandlePartWidgetChanges(init, ret, file_systems, old, new, force_defaults: false)
       ret = deep_copy(ret)
       file_systems = deep_copy(file_systems)
       old = deep_copy(old)
@@ -673,7 +676,8 @@ module Yast
       end
 
       # set btrfs subvolumes (bnc#872210)
-      if init && new.fetch("mount", "") == "/"
+      # only when requested from the caller (i.e. new partition) (bsc#965279)
+      if init && new.fetch("mount", "") == "/" && force_defaults
         new = HandleSubvol(new)
       end
 
