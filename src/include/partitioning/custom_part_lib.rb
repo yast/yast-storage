@@ -425,8 +425,8 @@ module Yast
         Builtins.y2milestone("before HandleSubvol fs:%1", ret['used_fs'])
         Builtins.y2milestone(
           "before HandleSubvol subvol:%1 userdata:%2",
-          ret['subvol'],
-          ret['userdata']
+          ret["subvol"],
+          ret["userdata"]
         )
         if ret["used_fs"] == :btrfs
           ret["subvol"] ||= []
