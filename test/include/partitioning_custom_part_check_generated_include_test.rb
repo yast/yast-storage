@@ -360,6 +360,11 @@ describe "Yast::PartitioningCustomPartCheckGeneratedInclude" do
             .and_return(false)
           expect(client.check_created_partition_table(map, installation)).to eq(false)
         end
+
+        it "displays the list of shadowed subvolumes" do
+          expect(Yast::Popup).to receive(:YesNo).with(/@\/boot\/grub2\/i386-pc, @\/boot\/grub2\/x86_64-efi/)
+          client.check_created_partition_table(map, installation)
+        end
       end
 
       context "when no swap is found" do
