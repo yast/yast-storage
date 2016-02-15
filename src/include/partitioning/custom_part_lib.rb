@@ -414,54 +414,45 @@ module Yast
     end
 
 
+    # Handles btrfs subvolumes for root (/)
+    #
+    # If the partition is going to be formatted, it enforces the default list of
+    # subvolumes. Otherwise, it withdraws any previous change in the list of
+    # subvolumes.
     def HandleSubvol(data)
-      data = deep_copy(data)
-      ret = deep_copy(data)
-      if Ops.get_string(ret, "mount", "") == "/"
-        Builtins.y2milestone(
-          "before HandleSubvol fs:%1",
-          Ops.get_symbol(ret, "used_fs", :unknown)
-        )
+      ret = data.dup
+      if ret["mount"] == "/"
+        Builtins.y2milestone("before HandleSubvol fs:%1", ret['used_fs'])
         Builtins.y2milestone(
           "before HandleSubvol subvol:%1 userdata:%2",
-          Ops.get_list(ret, "subvol", []),
-          Ops.get_map(ret, "userdata", {})
+          ret["subvol"],
+          ret["userdata"]
         )
-        if Ops.get_symbol(ret, "used_fs", :unknown) == :btrfs
-          if Ops.get_boolean(ret, "format", false)
-            ret = Convert.convert(
-              Storage.AddSubvolRoot(ret),
-              :from => "map",
-              :to   => "map <string, any>"
-            )
+        if ret["used_fs"] == :btrfs
+          ret["subvol"] ||= []
+          if ret["format"]
+            ret = Storage.AddSubvolRoot(ret)
             ret["userdata"] = { "/" => "snapshots" }
             Builtins.y2milestone(
               "HandleSubvol AddSubvolRoot subvol:%1 userdata:%2",
-              Ops.get_list(ret, "subvol", []),
-              Ops.get_map(ret, "userdata", {})
+              ret["subvol"],
+              ret["userdata"]
             )
           else
-            Ops.set(
-              ret,
-              "subvol",
-              Builtins.filter(Ops.get_list(ret, "subvol", [])) do |s|
-                !Ops.get_boolean(s, "create", false) &&
-                  !Ops.get_boolean(s, "delete", false)
-              end
-            )
+            ret["subvol"].reject! {|s| s["create"] || s["delete"] }
           end
         else
-          Ops.set(ret, "subvol", [])
+          ret["subvol"] = []
         end
         Builtins.y2milestone(
           "after HandleSubvol subvol:%1 userdata:%2",
-          Ops.get_list(ret, "subvol", []),
-          Ops.get_map(ret, "userdata", {})
+          ret['subvol'],
+          ret['userdata']
         )
       else
-        Ops.set(ret, "subvol", [])
+        ret["subvol"] = []
       end
-      deep_copy(ret)
+      ret
     end
 
 
@@ -629,7 +620,21 @@ module Yast
     end
 
 
-    def HandlePartWidgetChanges(init, ret, file_systems, old, new)
+    # Handles the widgets with information about a partition and updates the
+    # partition information according
+    #
+    # @param init [Boolean] whether this is the initialization call (i.e.
+    #   setting the initial values in the dialog and the partition information)
+    #   or a refresh (i.e. a call resulting from an change in some widget)
+    # @param ret [Symbol] id of the widget that triggered the action (expected
+    #   to be nil if init == true)
+    # @param file_systems [Hash] definitions of the supported filesystems
+    # @param old [Hash] map with original partition
+    # @param new [Hash] map with changes filled in
+    # @param force_defaults [Boolean] whether to overwrite all the properties
+    #     (like the list of subvolumes) with the expert partitioner default values.
+    #     Useful when creating a partition for the first time
+    def HandlePartWidgetChanges(init, ret, file_systems, old, new, force_defaults: false)
       ret = deep_copy(ret)
       file_systems = deep_copy(file_systems)
       old = deep_copy(old)
@@ -642,8 +647,7 @@ module Yast
       )
       used_fs = Ops.get_symbol(new, "used_fs", :unknown)
       selected_fs = Ops.get_map(file_systems, used_fs, {})
-      if init && !Builtins.isempty(Ops.get_string(old, "mount", "")) &&
-          Ops.get_boolean(old, "ignore_fstab", false)
+      if init && old["mount"] && !old["mount"].empty? && old["ignore_fstab"]
         UI.ChangeWidget(Id(:fstab_options), :Enabled, false)
       end
       #///////////////////////////////////////////////////////
@@ -672,7 +676,8 @@ module Yast
       end
 
       # set btrfs subvolumes (bnc#872210)
-      if init && new.fetch("mount", "") == "/"
+      # only when requested from the caller (i.e. new partition) (bsc#965279)
+      if init && new.fetch("mount", "") == "/" && force_defaults
         new = HandleSubvol(new)
       end
 

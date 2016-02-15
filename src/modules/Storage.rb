@@ -5004,6 +5004,10 @@ module Yast
     end
 
 
+    # Adds the list of subvolumes to a partition meant to be used as root (/)
+    #
+    # If the partition is going to be formatted, it deletes all existing
+    # subvolumes, leaving only the ones defined by this function.
     def AddSubvolRoot(part)
       part = deep_copy(part)
 
@@ -5054,19 +5058,19 @@ module Yast
       subvol_names.sort!()
 
       subvol_prepend = ""
-      subvol_list = part.fetch("subvol",[])
-      Builtins.y2milestone("AddSubvolRoot subvol: %1", subvol_list)
+      part["subvol"] ||= []
+      Builtins.y2milestone("AddSubvolRoot subvol: %1", part["subvol"])
       if FileSystems.default_subvol != ""
         subvol_prepend = FileSystems.default_subvol+"/"
       end
       fmt = part.fetch("format",false)
       names = []
       if !fmt
-	names = subvol_list.select { |s| !s.fetch("delete", false) }.each { |s| s.fetch("name", "") }
+        names = part["subvol"].select { |s| !s.fetch("delete", false) }.each { |s| s.fetch("name", "") }
       else
-	subvol_list = []
+        part["subvol"] = []
       end
-      Builtins.y2milestone("AddSubvolRoot subvol names: %1 subvol_list: %2", names, subvol_list)
+      Builtins.y2milestone("AddSubvolRoot subvol names: %1 subvol: %2", names, part["subvol"])
       subvol_names.each do |subvol|
         subvol_full_name = subvol_prepend + subvol
         if !names.include?( subvol_full_name )
@@ -5075,11 +5079,10 @@ module Yast
             subvol_entry["nocow"] = true
             Builtins.y2milestone("AddSubvolRoot: NoCOW for %1", subvol_full_name)
           end
-	  subvol_list.push( subvol_entry  )
+          part["subvol"].push(subvol_entry)
         end
       end
-      part["subvol"] = subvol_list;
-      Builtins.y2milestone("AddSubvolRoot subvol:\n%1", format_target_map(subvol_list))
+      Builtins.y2milestone("AddSubvolRoot subvol:\n%1", format_target_map(part["subvol"]))
       Builtins.y2milestone("AddSubvolRoot part: \n%1", format_target_map(part))
       part
     end
