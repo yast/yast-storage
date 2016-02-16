@@ -140,7 +140,7 @@ module Yast
               parts = disk.fetch("partitions", [])
               parts.each do |other_part|
                 if other_part.has_key?("mount")
-                  shadowed = ShadowedVolList.new(partition: part, mntpoint: other_part["mount"])
+                  shadowed = ShadowedVolList.new(partition: part, mount_point: other_part["mount"])
                   shadowed_root_subvols += shadowed.to_a
                 end
               end

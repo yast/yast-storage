@@ -25,12 +25,12 @@ module Yast
     include Enumerable
     include Yast::Logger
 
-    attr_reader :partition, :mntpoint
+    attr_reader :partition, :mount_point
 
-    def initialize(partition: nil, mntpoint: nil)
-      raise ArgumentError unless partition && mntpoint
+    def initialize(partition: nil, mount_point: nil)
+      raise ArgumentError unless partition && mount_point
       @partition = partition
-      @mntpoint = mntpoint
+      @mount_point = mount_point
       @volumes = selected_volumes
     end
 
@@ -50,7 +50,7 @@ module Yast
     end
 
     def shadowed?(name)
-      (name == mntpoint) || (name.start_with?(mntpoint) && name[mntpoint.size] == "/")
+      (name == mount_point) || name.start_with?("#{mount_point}/")
     end
 
     def full_name(subvol)
