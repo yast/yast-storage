@@ -23,12 +23,17 @@
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+
+require "storage/shadowed_vol_list"
+
 module Yast
   module PartitioningCustomPartCheckGeneratedInclude
 
 
     include Yast::Logger
 
+    POPUP_LINE_LENGTH = 70
+    private_constant :POPUP_LINE_LENGTH
 
     def initialize_partitioning_custom_part_check_generated(include_target)
       Yast.import "Arch"
@@ -90,7 +95,7 @@ module Yast
       fat_system_boot = false
       raid_type = ""
       rootdlabel = ""
-      root_subvols_shadowed = false
+      shadowed_root_subvols = []
 
       Builtins.foreach(targetMap) do |disk, diskinfo|
         part_info = Ops.get_list(diskinfo, "partitions", [])
@@ -131,24 +136,12 @@ module Yast
             end
 
             # search for shadowed subvolumes of root filesystem
-            subvols = part.fetch("subvol", [])
-            subvols.each do |subvol|
-
-              if FileSystems.default_subvol.empty?
-                tmp = "/" + subvol.fetch("name")
-              else
-                tmp = subvol.fetch("name")[FileSystems.default_subvol.size..-1]
-              end
-
-              targetMap.each do |dev, disk|
-                parts = disk.fetch("partitions", [])
-                parts.each do |part|
-                  if part.has_key?("mount")
-                    mp = part["mount"]
-                    if (tmp == mp) || (tmp.start_with?(mp) && tmp[mp.size] == "/")
-                      root_subvols_shadowed = true
-                    end
-                  end
+            targetMap.each do |dev, disk|
+              parts = disk.fetch("partitions", [])
+              parts.each do |other_part|
+                if other_part.has_key?("mount")
+                  shadowed = ShadowedVolList.new(partition: part, mount_point: other_part["mount"])
+                  shadowed_root_subvols += shadowed.to_a
                 end
               end
             end
@@ -412,13 +405,20 @@ module Yast
 
       end
 
-      if root_subvols_shadowed || show_all_popups
+      if !shadowed_root_subvols.empty? || show_all_popups
+        if shadowed_root_subvols.empty?
+          subvol_list = ""
+        else
+          subvols = shadowed_root_subvols.map { |vol| vol["name"] }
+          subvol_list = format_subvols(subvols)
+        end
         message = _(
           "Warning: Some subvolumes of the root filesystem are shadowed by\n" +
           "mount points of other filesystem. This could lead to problems.\n" +
+          "%s" +
           "\n" +
           "Really use this setup?\n"
-        )
+        ) % subvol_list
 
         ok = false if !Popup.YesNo(message)
       end
@@ -549,6 +549,12 @@ module Yast
       ok
     end
 
+    def format_subvols(subvols)
+      # Extra space needed for the regexp
+      all = subvols.join(', ') + " "
+      lines = all.scan(/.{1,#{POPUP_LINE_LENGTH}}\s/).map(&:strip)
+      "\n#{lines.join("\n")}\n"
+    end
 
     def check_devices_used(partitions, not_cr)
       partitions = deep_copy(partitions)
