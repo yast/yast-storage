@@ -49,7 +49,7 @@ module Yast
         )
         Ops.set(data, "device", device)
 
-        Storage.ChangeVolumeProperties(data)
+        ep_update_volume(data)
 
         UpdateMainStatus()
         UpdateNavigationTree(nil)
@@ -89,7 +89,7 @@ module Yast
           data = data_ref.value;
           _DlgEditLoop_result
         )
-        Storage.ChangeVolumeProperties(data)
+        ep_update_volume(data)
 
         UpdateMainStatus()
         UpdateNavigationTree(nil)
@@ -108,7 +108,7 @@ module Yast
         return
       end
 
-      if EpDeleteDevice(device)
+      if ep_delete_device(device)
         UpdateMainStatus()
         UpdateNavigationTree(:loop)
         TreePanel.Create

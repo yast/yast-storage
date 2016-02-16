@@ -19,6 +19,7 @@
 # Set the paths
 SRC_PATH = File.expand_path("../../src", __FILE__)
 DATA_PATH = File.join(File.expand_path(File.dirname(__FILE__)), "data")
+FIXTURES_PATH = File.expand_path('../fixtures', __FILE__)
 ENV["Y2DIR"] = SRC_PATH
 
 require "yast"
@@ -39,4 +40,17 @@ if ENV["COVERAGE"]
       Coveralls::SimpleCov::Formatter
     ]
   end
+end
+
+# Helper method to load partitioning maps
+#
+# Partitioning maps are stored in /test/fixtures as ycp files.
+#
+# @param [String] name Map name (without .ycp extension)
+# @return Hash    Hash representing information contained in the map
+def build_map(name)
+  path = File.join(FIXTURES_PATH, "#{name}.ycp")
+  content = Yast::SCR.Read(Yast::Path.new(".target.ycp"), path)
+  raise "Fixtures #{name} not found (file #{path}) does not exist)" if content.nil?
+  content
 end

@@ -134,7 +134,7 @@ module Yast
 	    end
           end
 
-          Storage.ChangeVolumeProperties(data)
+          ep_update_volume(data)
 
           UpdateMainStatus()
           UpdateNavigationTree(nil)
@@ -178,7 +178,7 @@ module Yast
           data = data_ref.value;
           _DlgEditRaid_result
         )
-        Storage.ChangeVolumeProperties(data)
+        ep_update_volume(data)
 
         UpdateMainStatus()
         UpdateNavigationTree(nil)
@@ -256,7 +256,7 @@ module Yast
         return
       end
 
-      if EpDeleteDevice(device)
+      if ep_delete_device(device)
         new_focus = nil
         new_focus = :md if UI.QueryWidget(:tree, :CurrentItem) == device
 

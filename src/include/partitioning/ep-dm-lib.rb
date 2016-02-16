@@ -58,7 +58,7 @@ module Yast
           data = data_ref.value;
           _DlgEditDmVolume_result
         )
-        Storage.ChangeVolumeProperties(data)
+        ep_update_volume(data)
 
         UpdateMainStatus()
         UpdateNavigationTree(nil)

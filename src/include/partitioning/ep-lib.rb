@@ -23,6 +23,9 @@
 # Package:     yast2-storage
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
+
+require "storage/shadowed_vol_helper"
+
 module Yast
   module PartitioningEpLibInclude
     def initialize_partitioning_ep_lib(include_target)
@@ -289,6 +292,21 @@ module Yast
       false
     end
 
+    def ep_update_shadowed_subvols
+      new_root = ShadowedVolHelper.new.root_partition
+      Storage.ChangeVolumeProperties(new_root)
+    end
+
+    def ep_delete_device(device)
+      res = EpDeleteDevice(device)
+      ep_update_shadowed_subvols if res
+      res
+    end
+
+    def ep_update_volume(partition)
+      Storage.ChangeVolumeProperties(partition)
+      ep_update_shadowed_subvols
+    end
 
     def DiskBarGraph(device)
       return Empty() if !UI.HasSpecialWidget(:BarGraph)
