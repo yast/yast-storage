@@ -611,7 +611,8 @@ module Yast
           (
             data_ref = arg_ref(data.value);
             _MiniWorkflowStepFormatMount_result = MiniWorkflowStepFormatMount(
-              data_ref
+              data_ref,
+              creating: true
             );
             data.value = data_ref.value;
             _MiniWorkflowStepFormatMount_result
