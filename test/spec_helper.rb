@@ -24,6 +24,7 @@ ENV["Y2DIR"] = SRC_PATH
 
 require "yast"
 require "yast/rspec"
+require "yaml"
 
 if ENV["COVERAGE"]
   require "simplecov"
@@ -49,8 +50,8 @@ end
 # @param [String] name Map name (without .ycp extension)
 # @return Hash    Hash representing information contained in the map
 def build_map(name)
-  path = File.join(FIXTURES_PATH, "#{name}.ycp")
-  content = Yast::SCR.Read(Yast::Path.new(".target.ycp"), path)
+  path = File.join(FIXTURES_PATH, "#{name}.yml")
+  content = YAML.load_file(path)
   raise "Fixtures #{name} not found (file #{path}) does not exist)" if content.nil?
   content
 end
