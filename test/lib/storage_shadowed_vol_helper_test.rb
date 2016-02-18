@@ -27,14 +27,15 @@ describe Yast::ShadowedVolHelper do
     end
   end
 
+  subject(:helper) { Yast::ShadowedVolHelper.instance }
+
   before do
     allow(Yast::FileSystems).to receive(:default_subvol).and_return("@")
-    Yast::ShadowedVolHelper.cleanup
+    helper.reset
   end
 
   describe "#root_partition" do
-    subject(:helper) { Yast::ShadowedVolHelper.new(target_map: target_map) }
-    let(:new_root) { helper.root_partition }
+    let(:new_root) { helper.root_partition(target_map: target_map) }
 
     context "when no subvolume is shadowed" do
       let(:target_map) { build_map("gpt-btrfs") }
@@ -66,20 +67,20 @@ describe Yast::ShadowedVolHelper do
           let(:clean) { true }
 
           it "restores the corresponding subvolumes" do
-            second_root = helper.root_partition
+            second_root = helper.root_partition(target_map: target_map)
             subvol = find_subvol(second_root, "@/boot/grub2/i386-pc")
             expect(subvol["delete"]).to_not eq true
           end
 
           it "does not restore another subvolumes" do
-            second_root = helper.root_partition
+            second_root = helper.root_partition(target_map: target_map)
             subvol = find_subvol(second_root, "@/home")
             expect(subvol["delete"]).to eq true
           end
 
-          it "does not restore the subvolume if .cleanup was called" do
-            Yast::ShadowedVolHelper.cleanup
-            second_root = helper.root_partition
+          it "does not restore the subvolume if #reset was called" do
+            helper.reset
+            second_root = helper.root_partition(target_map: target_map)
             subvol = find_subvol(second_root, "@/boot/grub2/i386-pc")
             expect(subvol).to be_nil
           end
@@ -89,20 +90,20 @@ describe Yast::ShadowedVolHelper do
           let(:clean) { false }
 
           it "restores the corresponding subvolumes" do
-            second_root = helper.root_partition
+            second_root = helper.root_partition(target_map: target_map)
             subvol = find_subvol(second_root, "@/boot/grub2/i386-pc")
             expect(subvol["delete"]).to_not eq true
           end
 
           it "does not restore another subvolumes" do
-            second_root = helper.root_partition
+            second_root = helper.root_partition(target_map: target_map)
             subvol = find_subvol(second_root, "@/home")
             expect(subvol["delete"]).to eq true
           end
 
-          it "does not restore the subvolume if .cleanup was called" do
-            Yast::ShadowedVolHelper.cleanup
-            second_root = helper.root_partition
+          it "does not restore the subvolume if #reset was called" do
+            helper.reset
+            second_root = helper.root_partition(target_map: target_map)
             subvol = find_subvol(second_root, "@/boot/grub2/i386-pc")
             expect(subvol["delete"]).to eq true
           end

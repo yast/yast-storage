@@ -23,21 +23,23 @@ require "storage/shadowed_vol_list"
 Yast.import "Storage"
 
 module Yast
-  # Class implementing user-friendly subvolumes handling for the expert
-  # partitioner as described in fate#320296
+  # Singleton class implementing user-friendly subvolumes handling for the
+  # expert partitioner as described in fate#320296
   #
-  # It operates based on the information contained in the specified target_map.
-  #
-  # It holds a global list of deleted subvolumes to make possible to restore
-  # them during the same execution of the expert partitioner.
-  # @see .cleanup
+  # This is a singleton class (use .instance instead of .new) holding a global
+  # list of deleted subvolumes to make possible to restore them during the same
+  # execution of the expert partitioner.
+  # @see .reset
   class ShadowedVolHelper
     include Yast::Logger
+    include Singleton
 
-    attr_reader :target_map
-
-    def initialize(target_map: Storage.GetTargetMap)
-      @target_map = target_map
+    # Cleans the list of deleted subvolumes
+    #
+    # Expected to be called between subsequent executions of the expert
+    # partitioner.
+    def reset
+      @aborted_subvols = []
     end
 
     # Copy of the root partition with all the shadowed subvolumes marked for
@@ -45,22 +47,17 @@ module Yast
     # not shadowed anymore
     #
     # In order to make the recovery of previously deleted subvolumes possible,
-    # it stores the deleted volumes in a class variable. This list needs to be
-    # cleaned between subsequent calls to the expert partitioner.
-    # @see .cleanup
-    def root_partition
-      log.info " shadowed subvolumes"
-      return unless doable?
-      root_copy = deep_dup(root_part)
+    # it stores the deleted volumes in a list.
+    # @see #reset
+    #
+    # @param target_map [Hash] map with the partitions layout
+    def root_partition(target_map: Storage.GetTargetMap)
+      return unless doable?(target_map)
+      root_copy = deep_dup(root_part(target_map))
       restore_aborted_subvols(root_copy)
-      abort_shadowed_subvols(root_copy)
+      abort_shadowed_subvols(root_copy, target_map)
       log.info "New list of subvolumes: #{root_copy["subvol"]}"
       root_copy
-    end
-
-    # Cleans the global list of deleted subvolumes
-    def self.cleanup
-      clean_aborted_subvols
     end
 
   protected
@@ -69,18 +66,22 @@ module Yast
       Marshal.load(Marshal.dump(hash))
     end
 
-    def partitions
+    def partitions(target_map)
       target_map.values.each_with_object([]) do |disk, list|
         list.concat(disk.fetch("partitions", []))
       end
     end
 
-    def root_part
-      partitions.detect {|p| p["mount"] == "/" }
+    def root_part(target_map)
+      partitions(target_map).detect {|p| p["mount"] == "/" }
     end
 
-    def doable?
-      if root_part.nil?
+    def is_root?(partition)
+      partition["mount"] == "/"
+    end
+
+    def doable?(target_map)
+      if root_part(target_map).nil?
         log.info "No root partition found, skipping shadowed volumes update"
         false
       else
@@ -88,9 +89,13 @@ module Yast
       end
     end
 
-    def abort_shadowed_subvols(target_part)
-      partitions.each do |part|
-        if part != root_part && part.has_key?("mount")
+    def aborted_subvols
+      @aborted_subvols ||= []
+    end
+
+    def abort_shadowed_subvols(target_part, target_map)
+      partitions(target_map).each do |part|
+        if !is_root?(part) && part.has_key?("mount")
           abort_shadowed_subvols_for(target_part, part["mount"])
         end
       end
@@ -134,19 +139,7 @@ module Yast
           existing_subvol["delete"] = false
         end
       end
-      clean_aborted_subvols
-    end
-
-    def aborted_subvols
-      @@aborted_subvols ||= []
-    end
-
-    def clean_aborted_subvols
-      self.class.clean_aborted_subvols
-    end
-
-    def self.clean_aborted_subvols
-      @@aborted_subvols = []
+      reset
     end
   end
 end

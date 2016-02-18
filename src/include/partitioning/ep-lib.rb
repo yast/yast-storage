@@ -293,7 +293,7 @@ module Yast
     end
 
     def ep_update_shadowed_subvols
-      new_root = ShadowedVolHelper.new.root_partition
+      new_root = ShadowedVolHelper.instance.root_partition
       Storage.ChangeVolumeProperties(new_root)
     end
 

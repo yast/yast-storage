@@ -738,7 +738,7 @@ module Yast
         Storage.GetTargetMap
       )
       # Cleanup memory about deleted shadowed subvolumes
-      ShadowedVolHelper.cleanup
+      ShadowedVolHelper.instance.reset
 
       widget
     end
