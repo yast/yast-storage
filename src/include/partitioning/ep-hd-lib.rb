@@ -302,7 +302,7 @@ module Yast
             Ops.get_integer(data, ["region", 1], 0),
             mby
           )
-          Storage.ChangeVolumeProperties(data)
+          ep_update_volume(data)
 
           UpdateMainStatus()
           UpdateNavigationTree(nil)
@@ -352,7 +352,7 @@ module Yast
           part = part_ref.value;
           _DlgEditPartition_result
         )
-        Storage.ChangeVolumeProperties(part)
+        ep_update_volume(part)
 
         UpdateMainStatus()
         UpdateNavigationTree(nil)
@@ -493,7 +493,7 @@ module Yast
       parent = ParentDevice(device)
       _next = NextDeviceAfterDelete(device)
 
-      if EpDeleteDevice(device)
+      if ep_delete_device(device)
         UpdateMainStatus()
 
         case context

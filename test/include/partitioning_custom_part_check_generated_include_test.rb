@@ -11,8 +11,6 @@ Yast.import "Product"
 Yast.import "Stage"
 
 describe "Yast::PartitioningCustomPartCheckGeneratedInclude" do
-  FIXTURES_PATH = File.expand_path('../../fixtures', __FILE__)
-
   # Dummy client to test PartitioningCustomPartCheckGeneratedInclude
   module DummyYast
     class StorageClient < Yast::Client
@@ -26,19 +24,6 @@ describe "Yast::PartitioningCustomPartCheckGeneratedInclude" do
         main
       end
     end
-  end
-
-  # Helper method to load partitioning maps
-  #
-  # Partitioning maps are stored in /test/fixtures as ycp files.
-  #
-  # @param [String] name Map name (without .ycp extension)
-  # @return Hash    Hash representing information contained in the map
-  def build_map(name)
-    path = File.join(FIXTURES_PATH, "#{name}.ycp")
-    content = Yast::SCR.Read(Yast::Path.new(".target.ycp"), path)
-    raise "Fixtures #{name} not found (file #{path}) does not exist)" if content.nil?
-    content
   end
 
   subject(:client) { DummyYast::StorageClient.new }
