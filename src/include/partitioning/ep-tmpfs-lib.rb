@@ -48,6 +48,7 @@ module Yast
           Builtins.sformat(_("\nReally delete tmpfs mounted to %1"), mount)
         ) &&
           Storage.DelTmpfsVolume(mount)
+        ep_update_shadowed_subvols
         new_focus = nil
         new_focus = :tmpfs if UI.QueryWidget(:tree, :CurrentItem) == device
         UpdateMainStatus()
@@ -78,6 +79,7 @@ module Yast
           Ops.get_string(data, "mount", ""),
           Ops.get_string(data, "fstopt", "")
         )
+        ep_update_shadowed_subvols
         UpdateMainStatus()
         UpdateNavigationTree(nil)
         TreePanel.Create

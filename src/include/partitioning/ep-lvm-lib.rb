@@ -291,6 +291,7 @@ module Yast
           data = data_ref.value;
           _DlgCreateLogicalVolume_result
         )
+        ep_update_shadowed_subvols
         UpdateMainStatus()
         UpdateNavigationTree(nil)
         TreePanel.Create
@@ -349,7 +350,7 @@ module Yast
           data = data_ref.value;
           _DlgEditLogicalVolume_result
         )
-        Storage.ChangeVolumeProperties(data)
+        ep_update_volume(data)
 
         UpdateMainStatus()
         UpdateNavigationTree(nil)
@@ -406,7 +407,7 @@ module Yast
       parent = ParentDevice(device)
       _next = NextDeviceAfterDelete(device)
 
-      if EpDeleteDevice(device)
+      if ep_delete_device(device)
         UpdateMainStatus()
 
         case context

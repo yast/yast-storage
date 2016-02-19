@@ -4503,13 +4503,13 @@ module Yast
       ret = {}
       target = AddWinInfo(target)
       Ops.set(ret, "target", target)
+      opts = GetControlCfg()
       root = {
         "mount"       => "/",
         "increasable" => true,
         "fsys"        => PropDefaultFs(),
         "size"        => 0
       }
-      opts = GetControlCfg()
       ddev = get_disk_try_list(target, true)
       sol_disk = ""
       valid = {}

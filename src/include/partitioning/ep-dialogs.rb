@@ -130,7 +130,12 @@ module Yast
     end
 
 
-    def MiniWorkflowStepFormatMount(orig_data)
+    # Workflow used to specify the format and options of a partition
+    # It is used during creation and during modification
+    # @param orig_data [ArgRef] reference to the map with partition information
+    # @param creating [Boolean] whether this call is part of the creation process
+    #       of the partition (not a modification)
+    def MiniWorkflowStepFormatMount(orig_data, creating: false)
       data = orig_data.value
       d = Storage.GetDiskPartition(Ops.get_string(data, "device", ""))
       lbl = Ops.get_string(
@@ -443,7 +448,8 @@ module Yast
         widget,
         all_filesystems,
         orig_data.value,
-        data
+        data,
+        force_defaults: creating
       )
       begin
         widget = MiniWorkflow.UserInput

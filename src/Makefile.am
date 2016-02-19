@@ -98,8 +98,9 @@ ylib_DATA = \
   lib/storage/storage_manager.rb \
   lib/storage/storage_proposal.rb \
   lib/storage/target_map_formatter.rb \
-  lib/storage/used_storage_features.rb
-
+  lib/storage/used_storage_features.rb \
+  lib/storage/shadowed_vol_list.rb \
+  lib/storage/shadowed_vol_helper.rb
 
 scrconf_DATA = \
   scrconf/proc_partitions.scr \
