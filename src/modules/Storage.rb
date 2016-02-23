@@ -24,6 +24,7 @@ require "dbus"
 require "storage"
 require "storage/target_map_formatter"
 require "storage/used_storage_features"
+require "storage/shadowed_vol_helper"
 
 module Yast
   class StorageClass < Module
@@ -2274,6 +2275,9 @@ module Yast
       UpdateTargetMap()
       t = Ops.add("targetMap_r_", who)
       SCR.Write(path(".target.ycp"), SaveDumpPath(t), GetTargetMap())
+
+      # Cleanup memory about deleted shadowed subvolumes
+      ShadowedVolHelper.instance.reset
 
       nil
     end

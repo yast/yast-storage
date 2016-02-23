@@ -24,8 +24,6 @@
 # Summary:     Expert Partitioner
 # Authors:     Arvin Schnell <aschnell@suse.de>
 
-require "storage/shadowed_vol_helper"
-
 module Yast
   module PartitioningEpMainInclude
     def initialize_partitioning_ep_main(include_target)
@@ -737,8 +735,6 @@ module Yast
         Storage.SaveDumpPath("targetmap-ep-end"),
         Storage.GetTargetMap
       )
-      # Cleanup memory about deleted shadowed subvolumes
-      ShadowedVolHelper.instance.reset
 
       widget
     end
