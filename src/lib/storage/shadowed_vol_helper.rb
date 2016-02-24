@@ -20,8 +20,6 @@
 require "yast"
 require "storage/shadowed_vol_list"
 
-Yast.import "Storage"
-
 module Yast
   # Singleton class implementing user-friendly subvolumes handling for the
   # expert partitioner as described in fate#320296
@@ -58,6 +56,12 @@ module Yast
       abort_shadowed_subvols(root_copy, target_map)
       log.info "New list of subvolumes: #{root_copy["subvol"]}"
       root_copy
+    end
+
+    def initialize
+      # Performing this import at the top of the file is dangerous because
+      # the Storage module requires this file
+      Yast.import "Storage"
     end
 
   protected
