@@ -31,7 +31,7 @@ module Yast
   module Storage
     #
     # Class to build faked device graphs in libstorage instead of doing real
-    # hardware probing. This can be used to create device graphs from YaML
+    # hardware probing. This can be used to create device graphs from YAML
     # files or directly with libstorage calls. The objective is to achieve
     # broader test coverage with faked hardware setups that would be difficult
     # to set up with real hardware, much less with virtualized hardware.
@@ -80,14 +80,6 @@ module Yast
       def to_probed
         @storage.remove_devicegraph(PROBED) if @storage.exist_devicegraph(PROBED)
         @storage.copy_devicegraph(FAKE, PROBED)
-      end
-
-      # Debugging: Dump all disks of 'devicegraph' to stdout.
-      #
-      def dump_disks(devicegraph = nil)
-        devicegraph ||= @devicegraph
-        disks = devicegraph.all_disks.to_a
-        disks.each { |disk| puts("Found disk #{disk.name}") }
       end
     end
   end
