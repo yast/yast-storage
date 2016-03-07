@@ -6300,9 +6300,9 @@ module Yast
       # TRANSLATORS: help text
       help_text =
         _(
-          "<p>Choose Partition-based Proposal if you don't want to use LVM.\n" +
-          "Choose LVM-based Proposal for plain LVM and Encrypted LVM-based\n" +
-          "if you want your system to be encrypted.</p>"
+          "<p>Choose <b>Partition-based Proposal</b> if you don't want to use LVM.\n" +
+          "Choose <b>LVM-based Proposal</b> for plain LVM and <b>Encrypted LVM-based\n" +
+          "Proposal</b> if you want your system to be encrypted.</p>"
           )
 
       # TRANSLATORS: help text
