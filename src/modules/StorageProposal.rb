@@ -55,6 +55,7 @@ module Yast
       Yast.import "ProductFeatures"
       Yast.import "Arch"
       Yast.import "Stage"
+      Yast.import "Report"
 
       @cur_mode = :free
       @cur_weight = -10000
@@ -618,6 +619,12 @@ module Yast
     end
 
 
+    # Checks if the product is configured to use flexible_partitioning, either
+    # by means of control.xml or using a part.info file
+    #
+    # Note that flexible_partitioning is a not supported feature (fate#320111)
+    #
+    # return [Boolean]
     def has_flex_proposal
       ret = SCR.Read(path(".target.size"), pinfo_name) > 0
       if !ret
@@ -681,7 +688,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def do_flexible_disk(disk)
+      Builtins.y2error("do_flexible_disk called. That should not have happened.")
       disk = deep_copy(disk)
       dev = Ops.get_string(disk, "device", "")
       Builtins.y2milestone("do_flexible_disk dev %1", dev)
@@ -1191,7 +1200,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def do_pflex(target, conf)
+      Builtins.y2error("do_pflex called. That should not have happened.")
       target = deep_copy(target)
       conf = deep_copy(conf)
       ret = {}
@@ -1341,7 +1352,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def do_proposal_flexible(target)
+      Builtins.y2error("do_proposal_flexible called. That should not have happened.")
       target = deep_copy(target)
       conf = {}
       if ProductFeatures.GetBooleanFeature(
@@ -3183,7 +3196,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def read_partition_xml_config
+      Builtins.y2error("read_partition_xml_config called. That should not have happened.")
       xmlflex = Convert.to_map(
         ProductFeatures.GetFeature("partitioning", "flexible_partitioning")
       )
@@ -3322,7 +3337,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def read_partition_config(fpath)
+      Builtins.y2error("read_partition_config called. That should not have happened.")
       pos = 0
       line = ""
       rex = ""
@@ -6128,10 +6145,13 @@ module Yast
       )
       if Builtins.isempty(vg)
         if has_flex_proposal
-          ret = do_proposal_flexible(target)
-        else
-          ret = get_inst_proposal(target)
+          Report.Error(
+            "The product is configured to use flexible partitioning,\n" \
+            "but that feature is not longer available.\n" \
+            "Falling back to the default partitioning proposal mechanism."
+          )
         end
+        ret = get_inst_proposal(target)
       else
         Builtins.y2milestone("target: %1", target)
         ret = get_inst_prop_vm(target, vg)
