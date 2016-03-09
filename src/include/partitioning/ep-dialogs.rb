@@ -49,7 +49,7 @@ module Yast
       role = data.value.fetch("role", :data)
 
       efi_select = Empty()
-      if Partitions.EfiBoot && (Arch.i386||Arch.x86_64)
+      if Partitions.EfiBoot && (Arch.i386 || Arch.x86_64 || Arch.aarch64)
         efi_select = term(
           :LeftRadioButton, Id(:efi_boot),
           # radio button text
