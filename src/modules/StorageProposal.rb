@@ -55,6 +55,7 @@ module Yast
       Yast.import "ProductFeatures"
       Yast.import "Arch"
       Yast.import "Stage"
+      Yast.import "Report"
 
       @cur_mode = :free
       @cur_weight = -10000
@@ -618,6 +619,12 @@ module Yast
     end
 
 
+    # Checks if the product is configured to use flexible_partitioning, either
+    # by means of control.xml or using a part.info file
+    #
+    # Note that flexible_partitioning is a not supported feature (fate#320111)
+    #
+    # return [Boolean]
     def has_flex_proposal
       ret = SCR.Read(path(".target.size"), pinfo_name) > 0
       if !ret
@@ -681,7 +688,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def do_flexible_disk(disk)
+      Builtins.y2error("do_flexible_disk called. That should not have happened.")
       disk = deep_copy(disk)
       dev = Ops.get_string(disk, "device", "")
       Builtins.y2milestone("do_flexible_disk dev %1", dev)
@@ -1191,7 +1200,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def do_pflex(target, conf)
+      Builtins.y2error("do_pflex called. That should not have happened.")
       target = deep_copy(target)
       conf = deep_copy(conf)
       ret = {}
@@ -1341,7 +1352,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def do_proposal_flexible(target)
+      Builtins.y2error("do_proposal_flexible called. That should not have happened.")
       target = deep_copy(target)
       conf = {}
       if ProductFeatures.GetBooleanFeature(
@@ -3183,7 +3196,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def read_partition_xml_config
+      Builtins.y2error("read_partition_xml_config called. That should not have happened.")
       xmlflex = Convert.to_map(
         ProductFeatures.GetFeature("partitioning", "flexible_partitioning")
       )
@@ -3322,7 +3337,9 @@ module Yast
     end
 
 
+    # @deprecated since the removal of flexible_partitioning (fate#320111)
     def read_partition_config(fpath)
+      Builtins.y2error("read_partition_config called. That should not have happened.")
       pos = 0
       line = ""
       rex = ""
@@ -6128,10 +6145,13 @@ module Yast
       )
       if Builtins.isempty(vg)
         if has_flex_proposal
-          ret = do_proposal_flexible(target)
-        else
-          ret = get_inst_proposal(target)
+          Report.Error(
+            "The product is configured to use flexible partitioning,\n" \
+            "but that feature is not longer available.\n" \
+            "Falling back to the default partitioning proposal mechanism."
+          )
         end
+        ret = get_inst_proposal(target)
       else
         Builtins.y2milestone("target: %1", target)
         ret = get_inst_prop_vm(target, vg)
@@ -6167,33 +6187,13 @@ module Yast
 
       vb = VBox()
 
+      @previous_strategy = strategy
       vb = Builtins.add(
         vb,
         Left(
           HBox(
             HSpacing(3),
-            CheckBox(
-              Id(:lvm),
-              Opt(:notify),
-              # TRANSLATORS: checkbox text
-              _("Create &LVM-based Proposal"),
-              GetProposalLvm()
-            )
-          )
-        )
-      )
-      vb = Builtins.add(
-        vb,
-        Left(
-          HBox(
-            HSpacing(7),
-            CheckBox(
-              Id(:encrypt),
-              Opt(:notify),
-              # TRANSLATORS: checkbox text
-              _("Encr&ypt Volume Group"),
-              GetProposalEncrypt()
-            )
+            strategy_widget
           )
         )
       )
@@ -6300,8 +6300,9 @@ module Yast
       # TRANSLATORS: help text
       help_text =
         _(
-          "<p>To create an LVM-based proposal, choose the corresponding button. The\n" +
-          "LVM-based proposal can be encrypted.</p>\n"
+          "<p>Choose <b>Partition-based Proposal</b> if you don't want to use LVM.\n" +
+          "Choose <b>LVM-based Proposal</b> for plain LVM and <b>Encrypted LVM-based\n" +
+          "Proposal</b> if you want your system to be encrypted.</p>"
           )
 
       # TRANSLATORS: help text
@@ -6411,7 +6412,7 @@ module Yast
 
 
     def IsCommonWidget(id)
-      return [ :lvm, :encrypt, :root_fs, :snapshots, :home, :home_fs, :suspend ].include?(id)
+      return [ :lvm, :lvm_crypt, :partitions, :root_fs, :snapshots, :home, :home_fs, :suspend ].include?(id)
     end
 
 
@@ -6421,15 +6422,15 @@ module Yast
 
       case id
 
-        when :lvm
-          UI.ChangeWidget(Id(:encrypt), :Enabled, val)
-
-        when :encrypt
+        when :lvm_crypt
           if val
             if !QueryProposalPassword()
-              UI.ChangeWidget(Id(:encrypt), :Value, false)
+              UI.ChangeWidget(Id(:strategy), :CurrentButton, @previous_strategy)
             end
           end
+
+        when :lvm, :partitions
+          @previous_strategy = id if val
 
         when :root_fs
           UI.ChangeWidget(Id(:snapshots), :Enabled, val == :btrfs)
@@ -6496,8 +6497,7 @@ module Yast
 
       if ret == :ok
         y2milestone("setting storage proposal settings")
-        SetProposalLvm(UI.QueryWidget(Id(:lvm), :Value))
-        SetProposalEncrypt(UI.QueryWidget(Id(:encrypt), :Value))
+        self.strategy = UI.QueryWidget(Id(:strategy), :CurrentButton)
         SetProposalRootFs(UI.QueryWidget(Id(:root_fs), :Value))
         SetProposalSnapshots(UI.QueryWidget(Id(:snapshots), :Value))
         SetProposalHome(UI.QueryWidget(Id(:home), :Value))
@@ -6560,6 +6560,43 @@ module Yast
       return ret
     end
 
+    def strategy_widget
+      RadioButtonGroup(
+        Id(:strategy),
+        VBox(
+          strategy_button(:partitions, _("&Partition-based Proposal")),
+          VSpacing(0.3),
+          strategy_button(:lvm, _("&LVM-based Proposal")),
+          VSpacing(0.3),
+          strategy_button(:lvm_crypt, _("&Encrypted LVM-based Proposal"))
+        )
+      )
+    end
+
+    def strategy_button(strategy, label)
+      selected = self.strategy == strategy
+      Left(RadioButton(Id(strategy), Opt(:notify), label, selected))
+    end
+
+    # Current strategy based on the current values of ProposalLvm
+    # and ProposalEncrypt
+    def strategy
+      if GetProposalLvm()
+        if GetProposalEncrypt()
+          :lvm_crypt
+        else
+          :lvm
+        end
+      else
+        :partitions
+      end
+    end
+
+    # Adjust ProposalLvm and ProposalEncrypt to match a given strategy
+    def strategy=(value)
+      SetProposalLvm([:lvm, :lvm_crypt].include?(value))
+      SetProposalEncrypt(value == :lvm_crypt)
+    end
 
     publish :function => :SetCreateVg, :type => "void (boolean)"
     publish :function => :GetProposalHome, :type => "boolean ()"

@@ -36,6 +36,7 @@ module Yast
       Yast.import "Storage"
       Yast.import "Partitions"
       Yast.import "StorageProposal"
+      Yast.import "Report"
     end
 
 
@@ -69,65 +70,65 @@ module Yast
       end
       if Builtins.size(vm) == 0
         if has_flex
-          flex = StorageProposal.do_flexible_disk(disk)
-          if Ops.get_boolean(flex, "ok", false)
-            partitions = Ops.get_list(flex, ["disk", "partitions"], [])
+          Report.Error(
+            "The product is configured to use flexible partitioning,\n" \
+            "but that feature is not longer available.\n" \
+            "Falling back to the default partitioning proposal mechanism."
+          )
+        end
+        num_del_exist = Builtins.size(Builtins.filter(partitions) do |p|
+          Ops.get_symbol(p, "type", :unknown) != :free &&
+            Ops.get_boolean(p, "delete", false)
+        end)
+        num_del_free = Builtins.size(Builtins.filter(partitions) do |p|
+          Ops.get_symbol(p, "type", :unknown) == :free &&
+            Ops.get_boolean(p, "delete", false)
+        end)
+        r = StorageProposal.can_swap_reuse(
+          Ops.get_string(disk, "device", ""),
+          partitions,
+          tgmap
+        )
+        if Builtins.haskey(r, "partitions")
+          partitions = Ops.get_list(r, "partitions", [])
+        elsif Builtins.haskey(r, "targets")
+          tgmap = Ops.get_map(r, "targets", {})
+        end
+
+        Builtins.y2milestone(
+          "create_partitions num_del_exist %1 num_del_free %2 swap_reuse %3",
+          num_del_exist,
+          num_del_free,
+          Ops.greater_than(Builtins.size(r), 0)
+        )
+        Builtins.y2milestone("create_partitions keep %1", keep)
+        if keep != nil && Ops.greater_than(Builtins.size(r), 0) &&
+            !StorageProposal.GetProposalHome &&
+            !StorageProposal.GetProposalSnapshots &&
+            num_del_exist == 1 &&
+            num_del_free == 0
+          Builtins.y2milestone("create_partitions single special")
+          first = true
+          partitions = Builtins.maplist(partitions) do |p|
+            if Ops.get_boolean(p, "delete", false) && first
+              p = Builtins.remove(p, "delete")
+              first = false
+              p = Storage.SetVolOptions(
+                p,
+                "/",
+                Partitions.DefaultFs,
+                "",
+                "",
+                ""
+              )
+              Builtins.y2milestone("create_partitions single p %1", p)
+            end
+            deep_copy(p)
           end
         else
-          num_del_exist = Builtins.size(Builtins.filter(partitions) do |p|
-            Ops.get_symbol(p, "type", :unknown) != :free &&
-              Ops.get_boolean(p, "delete", false)
-          end)
-          num_del_free = Builtins.size(Builtins.filter(partitions) do |p|
-            Ops.get_symbol(p, "type", :unknown) == :free &&
-              Ops.get_boolean(p, "delete", false)
-          end)
-          r = StorageProposal.can_swap_reuse(
-            Ops.get_string(disk, "device", ""),
-            partitions,
-            tgmap
-          )
-          if Builtins.haskey(r, "partitions")
-            partitions = Ops.get_list(r, "partitions", [])
-          elsif Builtins.haskey(r, "targets")
-            tgmap = Ops.get_map(r, "targets", {})
-          end
-
-          Builtins.y2milestone(
-            "create_partitions num_del_exist %1 num_del_free %2 swap_reuse %3",
-            num_del_exist,
-            num_del_free,
-            Ops.greater_than(Builtins.size(r), 0)
-          )
-          Builtins.y2milestone("create_partitions keep %1", keep)
-          if keep != nil && Ops.greater_than(Builtins.size(r), 0) &&
-              !StorageProposal.GetProposalHome &&
-              !StorageProposal.GetProposalSnapshots &&
-              num_del_exist == 1 &&
-              num_del_free == 0
-            Builtins.y2milestone("create_partitions single special")
-            first = true
-            partitions = Builtins.maplist(partitions) do |p|
-              if Ops.get_boolean(p, "delete", false) && first
-                p = Builtins.remove(p, "delete")
-                first = false
-                p = Storage.SetVolOptions(
-                  p,
-                  "/",
-                  Partitions.DefaultFs,
-                  "",
-                  "",
-                  ""
-                )
-                Builtins.y2milestone("create_partitions single p %1", p)
-              end
-              deep_copy(p)
-            end
-          else
-            have_swap = Ops.greater_than(Builtins.size(r), 0) &&
-              !StorageProposal.GetProposalSuspend
-            partitions = StorageProposal.get_proposal(have_swap, disk)
-          end
+          have_swap = Ops.greater_than(Builtins.size(r), 0) &&
+            !StorageProposal.GetProposalSuspend
+          partitions = StorageProposal.get_proposal(have_swap, disk)
         end
         Builtins.y2milestone("create_partitions %1", partitions)
       else
