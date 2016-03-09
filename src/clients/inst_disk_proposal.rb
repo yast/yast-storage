@@ -276,7 +276,16 @@ module Yast
             execSubscreens(@ret)
             @changes = Storage.ChangeText
             UI.ChangeWidget(Id(:richtext), :Value, @changes)
+
+          else @ret == :next
+
+            if Storage.GetEntryForMountpoint("/").empty?
+              Popup.Error(_("Nothing assigned as root filesystem. Cannot continue."))
+              @ret = nil
+            end
+
           end
+
         end until @ret == :next || @ret == :back || @ret == :cancel
       end
       Storage.SaveExitKey(@ret)
