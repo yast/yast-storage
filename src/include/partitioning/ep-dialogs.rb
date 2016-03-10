@@ -48,6 +48,15 @@ module Yast
 
       role = data.value.fetch("role", :data)
 
+      efi_select = Empty()
+      if Partitions.EfiBoot && (Arch.i386 || Arch.x86_64 || Arch.aarch64)
+        efi_select = term(
+          :LeftRadioButton, Id(:efi_boot),
+          # radio button text
+          _("EFI Boot Partition"), role == :efi_boot
+        )
+      end
+
       tmp = VBox(
         term(
           :LeftRadioButton, Id(:system),
@@ -59,6 +68,7 @@ module Yast
           # radio button text
           _("Data and ISV Applications"), role == :data
         ),
+        efi_select,
         term(
           :LeftRadioButton, Id(:swap),
           # radio button text
@@ -93,7 +103,10 @@ module Yast
 
       if widget == :next
         role = UI.QueryWidget(Id(:role), :Value)
-        data.value["role"] = role
+        if data.value["role"] != role
+          data.value["role"] = role
+          data.value["formatmount_proposed"] = false #make a new proposal
+        end
       end
 
       log.info("MiniWorkflowStepRole data:#{data.value} ret:#{widget}")
@@ -253,6 +266,16 @@ module Yast
           data["format"] = true
           data["fsid"] = Partitions.fsid_swap
           data["ori_fsid"] = Partitions.fsid_swap
+          data["used_fs"] = used_fs
+          data["mount"] = mount_point_proposal
+
+        when :efi_boot
+          mount_point_proposal = "/boot/efi"
+          used_fs = Partitions.DefaultBootFs
+
+          data["format"] = true
+          data["fsid"] = Partitions.FsidBoot( lbl )
+          data["ori_fsid"] = Partitions.FsidBoot( lbl )
           data["used_fs"] = used_fs
           data["mount"] = mount_point_proposal
 
@@ -440,6 +463,15 @@ module Yast
       )
       UI.ChangeWidget(Id(:do_mount_attachment), :Enabled, do_mount)
       UI.ChangeWidget(Id(:mount_point), :Value, mount)
+
+      if data["new"] && role == :efi_boot
+        # Creating a new one.
+        # Only vfat, /boot/efi and "Efi Boot" makes sense here.
+        # So alternative selections are disabled.
+        UI.ChangeWidget(Id(:mount_point), :Enabled, false)
+        UI.ChangeWidget(Id(:fs), :Enabled, false)
+        UI.ChangeWidget(Id(:fsid_point), :Enabled, false)
+      end
 
       widget = nil
 
