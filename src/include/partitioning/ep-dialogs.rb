@@ -464,7 +464,7 @@ module Yast
       UI.ChangeWidget(Id(:do_mount_attachment), :Enabled, do_mount)
       UI.ChangeWidget(Id(:mount_point), :Value, mount)
 
-      if Ops.get_boolean(data, "new", false) && role == :efi_boot
+      if data["new"] && role == :efi_boot
         # Creating a new one.
         # Only vfat, /boot/efi and "Efi Boot" makes sense here.
         # So alternative selections are disabled.
