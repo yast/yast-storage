@@ -17,6 +17,7 @@ module Yast
 
       @part_info_size = 0
       @part_info_string = nil
+      @system = ""
 
 
       def setup_part_info(content)
@@ -30,6 +31,7 @@ module Yast
         Testsuite.Dump("Hardware Excerpt:")
 
         Testsuite.Dump("Arch: " + Arch.architecture() + (Partitions.EfiBoot() ? " efi" : ""))
+        Testsuite.Dump("Platform: " + @system ) if @system == "PowerNV"
 
       end
 
@@ -157,16 +159,19 @@ module Yast
         file = File.new("tmp/arch.info")
         doc = REXML::Document.new(file)
         arch = doc.elements["arch"].elements["arch"].text
-        system = ""
         if arch == "s390x"
           arch = "s390_64"
         end
         if arch == "ppc64le"
           arch = "ppc64"
-          system = "CHRP"
+          if REXML::XPath.first( doc, "//arch/ppc_powernv" )
+            @system = "PowerNV"
+          else
+            @system = "CHRP"
+          end
         end
         @READ["probe"]["architecture"] = arch
-        @READ["probe"]["system"][0]["system"] = system
+        @READ["probe"]["system"][0]["system"] = @system
       rescue Errno::ENOENT
       end
 

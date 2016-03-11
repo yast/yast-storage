@@ -5051,7 +5051,7 @@ module Yast
         subvol_names.push("boot/grub2/x86_64-efi")
       end
 
-      if Arch.ppc
+      if Arch.ppc and !Arch.board_powernv
         subvol_names.push("boot/grub2/powerpc-ieee1275")
       end
 

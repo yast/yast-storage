@@ -1414,7 +1414,7 @@ module Yast
 
     def FileSystems
       Ops.set(@support, :vfat, false) if Arch.sparc64 || Arch.sparc32
-      if Arch.ppc
+      if Arch.ppc and !Arch.board_powernv
         Ops.set(@support, :vfat, Arch.board_chrp)
         Ops.set(@support, :xbootdisk, true)
         Ops.set(@support, :xxbootdisk, true)
