@@ -6197,6 +6197,9 @@ module Yast
             end
             part["fsid"] = id
             Builtins.y2milestone( "SpecialBootHandling modified Prep part=%1", part)
+            # Only single PReP parition is required. Stop applying a hack if we converted
+            # parition before
+            have_ppc_boot = true
           end
           if Arch.board_mac &&
              part.fetch("mount","") == Partitions.BootMount
