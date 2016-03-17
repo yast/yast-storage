@@ -646,6 +646,8 @@ module Yast
       ret = Partitions.NeedBoot ||
         disk.fetch("type",:CT_UNKNOWN) == :CT_DMRAID ||
 	(disk.fetch("label","")=="gpt" && !Partitions.EfiBoot)
+      #We don't need boot for PowerNV even on gpt
+      ret = Partitions.NeedBoot if Arch.board_powernv
       log.info("need_boot ret:#{ret}")
       return ret
     end

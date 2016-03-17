@@ -335,7 +335,7 @@ module Yast
 
     def NeedBoot
       ret = false
-      if EfiBoot() || Arch.ia64 || Arch.ppc || Arch.sparc || Arch.alpha || Arch.s390
+      if EfiBoot() || Arch.ia64 || (Arch.ppc and !Arch.board_powernv)|| Arch.sparc || Arch.alpha || Arch.s390
         ret = true
       end
       Builtins.y2milestone("NeedBoot ret:%1", ret)
