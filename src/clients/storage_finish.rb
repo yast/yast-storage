@@ -93,6 +93,7 @@ module Yast
 
         if Mode.installation && StorageSnapper.configure_snapper?
           StorageSnapper.configure_snapper_step4()
+          StorageSnapper.configure_snapper_step6()
         end
 
       else
