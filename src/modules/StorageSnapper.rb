@@ -132,6 +132,15 @@ module Yast
 
     end
 
+
+    def configure_snapper_step6()
+
+      log.info("configuring snapper for root fs - step 6")
+
+      bash_log_output("/usr/bin/snapper --no-dbus setup-quota")
+
+    end
+
   end
 
   StorageSnapper = StorageSnapperClass.new
