@@ -789,7 +789,7 @@ module Yast
 
 
     def UpdateChangeTime
-      change_time = Builtins.time
+      change_time = ::Time.now.to_i
       Builtins.y2milestone("UpdateChangeTime time %1", change_time)
       Ops.set(@StorageMap, "targets_time", change_time)
 
