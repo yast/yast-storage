@@ -124,7 +124,7 @@ module Yast
       end
 
       bash_log_output("/usr/bin/snapper --no-dbus set-config " <<
-                      "NUMBER_CLEANUP=yes NUMBER_LIMIT=10 NUMBER_LIMIT_IMPORTANT=10 " <<
+                      "NUMBER_CLEANUP=yes NUMBER_LIMIT=2-10 NUMBER_LIMIT_IMPORTANT=4-10 " <<
                       "TIMELINE_CREATE=no")
 
       SCR.Write(path(".sysconfig.yast2.USE_SNAPPER"), "yes")
