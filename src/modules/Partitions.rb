@@ -925,74 +925,71 @@ module Yast
     def RdonlyText(disk, expert_partitioner)
       disk = deep_copy(disk)
       text = ""
-      if expert_partitioner
-        text = Builtins.sformat(
-          _("Operation not permitted on disk %1.\n"),
-          Ops.get_string(disk, "device", "")
-        )
-      end
-
-      if !Ops.get_boolean(disk, "has_fake_partition", false)
-        # popup text %1 is replaced by disk name e.g. /dev/hda
-        text = Ops.add(
-          text,
-          Builtins.sformat(
-            _(
-              "\n" +
-                "The partitioning on your disk %1 is either not readable or not \n" +
-                "supported by the partitioning tool parted used to change the\n" +
-                "partition table.\n" +
-                "\n" +
-                "You can use the partitions on disk %1 as they are or\n" +
-                "format them and assign mount points, but you cannot add, edit, \n" +
-                "resize, or remove partitions from that disk here.\n"
-            ),
-            Ops.get_string(disk, "device", "")
-          )
-        )
-      else
-        # popup text %1 is replaced by disk name e.g. /dev/dasda
-        text = Ops.add(
-          text,
-          Builtins.sformat(
-            _(
-              "\n" +
-                "The disk %1 does not contain a partition table but for\n" +
-                "compatibility the kernel has automatically generated a\n" +
-                "partition spanning almost the entire disk.\n" +
-                "\n" +
-                "You can use the partition on disk %1 as it is or\n" +
-                "format it and assign a mount point, but you cannot resize\n" +
-                "or remove the partition from that disk here.\n"
-            ),
-            Ops.get_string(disk, "device", "")
-          )
-        )
-      end
+      device = disk["device"] || ""
+      ldl_dasd = (disk["dasd_format"] == ::Storage::DASDF_LDL)
 
       if expert_partitioner
-        # popup text
-        text = Ops.add(
-          text,
-          _(
-            "\n" +
-              "\n" +
-              "You can initialize the disk partition table to a sane state in the Expert\n" +
-              "Partitioner by selecting \"Expert\"->\"Create New Partition Table\", \n" +
-              "but this will destroy all data on all partitions of this disk.\n"
-          )
-        )
+        text = _("Operation not permitted on disk %{device}.\n") % {:device => device}
+      end
+
+      if ldl_dasd
+        # popup text %{device} is replaced by disk name e.g. /dev/hda
+        text << _(
+                "\n" +
+                  "It's not supported by the partitioning tool parted to change\n" +
+                  "the partition table on your disk %{device}\n" +
+                  "(the disk is LDL formatted).\n" +
+                  "\n" +
+                  "You can use the partitions on disk %{device} as they are or\n" +
+                  "format them and assign mount points, but you cannot add,\n" +
+                  "resize, or remove partitions from that disk here.\n"
+                 ) % {:device => device}
+      elsif !disk["has_fake_partition"]
+        # popup text %{device} is replaced by disk name e.g. /dev/hda
+        text << _(
+                "\n" +
+                  "The partitioning on your disk %{device} is either not readable or not \n" +
+                  "supported by the partitioning tool parted used to change the\n" +
+                  "partition table.\n" +
+                  "\n" +
+                  "You can use the partitions on disk %{device} as they are or\n" +
+                  "format them and assign mount points, but you cannot add, edit, \n" +
+                  "resize, or remove partitions from that disk here.\n"
+                 ) % {:device => device}
+      else
+        # popup text %{device} is replaced by disk name e.g. /dev/dasda
+        text << _(
+                "\n" +
+                  "The disk %{device} does not contain a partition table but for\n" +
+                  "compatibility the kernel has automatically generated a\n" +
+                  "partition spanning almost the entire disk.\n" +
+                  "\n" +
+                  "You can use the partition on disk %{device} as it is or\n" +
+                  "format it and assign a mount point, but you cannot resize\n" +
+                  "or remove the partition from that disk here.\n"
+                 ) % {:device => device}
+      end
+
+      if expert_partitioner
+        # it's not supported to create a new partition table on LDL DASDs (bnc#958893)
+        if !ldl_dasd
+          # popup text
+          text << _(
+                  "\n" +
+                   "\n" +
+                     "You can initialize the disk partition table to a sane state in the Expert\n" +
+                     "Partitioner by selecting \"Expert\"->\"Create New Partition Table\", \n" +
+                     "but this will destroy all data on all partitions of this disk.\n"
+                   )
+        end
       else
         # popup text
-        text = Ops.add(
-          text,
-          _(
-            "\n" +
-              "\n" +
-              "Safely ignore this message if you do not intend to use \n" +
-              "this disk during installation.\n"
-          )
-        )
+        text << _(
+                "\n" +
+                  "\n" +
+                  "Safely ignore this message if you do not intend to use \n" +
+                   "this disk during installation.\n"
+                  )
       end
       text
     end
