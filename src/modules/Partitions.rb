@@ -932,7 +932,25 @@ module Yast
         )
       end
 
-      if !Ops.get_boolean(disk, "has_fake_partition", false)
+      if disk["dasd_format"] == ::Storage::DASDF_LDL
+        # popup text %1 is replaced by disk name e.g. /dev/hda
+        text = Ops.add(
+          text,
+          Builtins.sformat(
+            _(
+              "\n" +
+                "It's not supported by the partitioning tool parted to change\n" +
+                "the partition table on your disk %1\n" +
+                "(the disk is LDL formatted).\n" +  
+                "\n" +
+                "You can use the partitions on disk %1 as they are or\n" +
+                "format them and assign mount points, but you cannot add,\n" +
+                "resize, or remove partitions from that disk here.\n"
+            ),
+            Ops.get_string(disk, "device", "")
+          )
+        )
+      elsif !Ops.get_boolean(disk, "has_fake_partition", false)
         # popup text %1 is replaced by disk name e.g. /dev/hda
         text = Ops.add(
           text,
@@ -971,17 +989,20 @@ module Yast
       end
 
       if expert_partitioner
-        # popup text
-        text = Ops.add(
-          text,
-          _(
-            "\n" +
+        # it's not allowed to create a new partition table on LDL DASDs (bnc#958893)
+        if !(disk["dasd_format"] == ::Storage::DASDF_LDL)
+          # popup text
+          text = Ops.add(
+            text,
+            _(
+              "\n" +
               "\n" +
               "You can initialize the disk partition table to a sane state in the Expert\n" +
               "Partitioner by selecting \"Expert\"->\"Create New Partition Table\", \n" +
               "but this will destroy all data on all partitions of this disk.\n"
+            )
           )
-        )
+        end
       else
         # popup text
         text = Ops.add(
