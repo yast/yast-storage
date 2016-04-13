@@ -46,6 +46,12 @@ module Yast
       target_map = Storage.GetTargetMap
       disk = Ops.get(target_map, disk_device, {})
 
+      if disk["dasd_format"] == ::Storage::DASDF_LDL
+        # error popup
+        Popup.Error(_("Cannot create partition table on LDL formatted DASD."))
+        return
+      end
+
       if Storage.IsUsedBy(disk)
         # error popup
         Popup.Error(_("The disk is in use and cannot be modified."))
