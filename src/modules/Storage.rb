@@ -1280,6 +1280,8 @@ module Yast
       Ops.set(d, "orig_label", tmp) if Ops.greater_than(Builtins.size(tmp), 0)
       Ops.set(d, "max_logical", dinfo.maxLogical)
       Ops.set(d, "max_primary", dinfo.maxPrimary)
+      Ops.set(d, "dasd_format", dinfo.dasd_format)
+      Ops.set(d, "dasd_type", dinfo.dasd_type)
 
       t = dinfo.transport
       Ops.set(d, "transport", toSymbol(@conv_transport, t))
@@ -1888,6 +1890,8 @@ module Yast
         "udev_id",
         "udev_path",
         "has_fake_partition",
+        "dasd_format",
+        "dasd_type",
         "userdata"
       ]
       Builtins.foreach(l) do |s|
