@@ -5025,6 +5025,7 @@ module Yast
         "srv",
         "tmp",
         "usr/local",
+        "var/cache",
         "var/crash",
         "var/lib/libvirt/images",
         "var/lib/mailman",
