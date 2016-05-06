@@ -4516,9 +4516,6 @@ module Yast
 
 
     def get_inst_proposal(target)
-      # initialize data from control file earlier, it is needed in this function
-      # to decide whether to use LVM proposal (bsc#957913)
-      GetControlCfg()
       target = deep_copy(target)
       Builtins.y2milestone("get_inst_proposal start")
       flex_init_swapable(target)
@@ -6138,6 +6135,9 @@ module Yast
 
 
     def get_inst_prop(target)
+      # initialize data from control file earlier, it is needed in this function
+      # to decide whether to use LVM proposal (bsc#957913)
+      GetControlCfg()
       target = deep_copy(target)
       ret = {}
       vg = GetProposalVM()
