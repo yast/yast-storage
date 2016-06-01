@@ -227,8 +227,9 @@ module Yast
 
         if Arch.aarch64
           # Has higher requirements on BTRFS since pagesize==sectorsize = 64k
-          Ops.set(@boot_size_k, :proposed, 500 * 1024)
-          Ops.set(@boot_size_k, :minimal, 490 * 1024)
+          # See bsc#979037
+          Ops.set(@boot_size_k, :proposed, 660 * 1024)
+          Ops.set(@boot_size_k, :minimal, 650 * 1024)
         elsif Arch.ia64
           Ops.set(@boot_size_k, :proposed, 200 * 1024)
           Ops.set(@boot_size_k, :minimal, 180 * 1024)
