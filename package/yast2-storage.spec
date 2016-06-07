@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.93
+Version:        3.1.94
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -144,5 +144,4 @@ to develop a program using yast2-storage.
 
 %files devel
 %defattr(-,root,root)
-%doc %{yast_docdir}/autodocs
 %doc %{yast_docdir}/config.xml.description
