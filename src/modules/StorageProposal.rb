@@ -4514,6 +4514,24 @@ module Yast
 
     end
 
+    # Check if a disk is a DASD.
+    #
+    # @param [String] disk_name device name of the disk
+    # @return [bool] true if it is a DASD, false if not
+    #
+    def is_dasd?(disk_name)
+      return false if disk_name.nil?
+      disk_name.start_with?("/dev/dasd")
+    end
+
+    # Check if any disk in a string array is a DASD.
+    #
+    # @param [Array<String>] disk_names device names of the disks
+    # @return [bool] true if any of them is a DASD, false if not
+    #
+    def any_dasd?(disk_names)
+      disk_names.any? { |disk| is_dasd?(disk) }
+    end
 
     def get_inst_proposal(target)
       target = deep_copy(target)
@@ -4537,6 +4555,10 @@ module Yast
       target = prepare_part_lists(ddev, target)
       mode = :free
       while mode != :end && Builtins.size(sol_disk) == 0
+        if any_dasd?(ddev) && mode == :reuse
+          log.info("Skipping reuse mode for DASD")
+          mode = :desperate # bsc#983003
+        end
         if mode == :free || mode == :desperate
           valid = Builtins.listmap(ddev) { |s| { s => true } }
           if mode == :desperate
