@@ -668,7 +668,7 @@ module Yast
         pb = {}
 	pb["mount"] = Partitions.BootMount
 	pb["size"] = Partitions.ProposedBootsize
-	if disk.fetch("label","")=="gpt" && !Partitions.EfiBoot
+	if disk.fetch("label","")=="gpt" && !Partitions.EfiBoot && !is_dasd?(disk.fetch("device", ""))
 	  sz = disk.fetch("cyl_size",0)-1024
 	  sz = 200*1024 if sz<200*1024
 	  pb["size"] = sz
