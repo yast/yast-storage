@@ -346,8 +346,8 @@ module Yast
         @sint.setDetectMountedVolumes(false)
         @sint.setRootPrefix(Installation.destdir)
 
-        if Mode.autoinst || Mode.autoupgrade
-	  val = @default_multipathing ? ::Storage::MPAS_ON : ::Storage::MPAS_OFF
+        if skip_activation_popup?
+          val = @default_multipathing ? ::Storage::MPAS_ON : ::Storage::MPAS_OFF
           @sint.setMultipathAutostart(val)
         end
       end
@@ -4528,7 +4528,7 @@ module Yast
         end
         if Stage.initial
           tmp = AddProposalName(tmp)
-          tmp = AskCryptPasswords(tmp) if !Mode.autoinst
+          tmp = AskCryptPasswords(tmp) unless skip_activation_popup?
         end
         Ops.set(@StorageMap, @targets_key, tmp)
       end
@@ -7161,6 +7161,18 @@ module Yast
       return mapping
     end
 
+    # Checks if activation of multipath has been explicitly disabled
+    #
+    # @return [Boolean]
+    def multipath_off?
+      @sint.getMultipathAutostart == ::Storage::MPAS_OFF
+    end
+
+  protected
+
+    def skip_activation_popup?
+      Mode.autoinst || Mode.autoupgrade || Installation.restarting?
+    end
 
     publish :variable => :resize_partition, :type => "string"
     publish :variable => :resize_partition_data, :type => "map"
