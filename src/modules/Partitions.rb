@@ -225,7 +225,7 @@ module Yast
         }
         Ops.set(@boot_size_k, :proposed, 150 * 1024) if EfiBoot()
 
-        if Arch.aarch64
+        if Arch.aarch64 && !EfiBoot()
           # Has higher requirements on BTRFS since pagesize==sectorsize = 64k
           # See bsc#979037
           Ops.set(@boot_size_k, :proposed, 660 * 1024)
