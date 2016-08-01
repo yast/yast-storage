@@ -6754,7 +6754,7 @@ bool Storage::knownDevice( const string& dev, bool disks_allowed )
     ConstVolIterator v;
     if( !findVolume( dev, v ) )
 	{
-	ret = disks_allowed && findDisk( dev )!=dEnd();
+	ret = disks_allowed && (findDisk(dev) != dEnd() || findDmPartCo(dev) != dmpCoEnd());
 	}
     y2mil("dev:" << dev << " ret:" << ret);
     return( ret );
@@ -6821,7 +6821,14 @@ bool Storage::canUseDevice( const string& dev, bool disks_allowed )
 	if( disks_allowed )
 	    {
 	    DiskIterator i = findDisk( dev );
-	    ret = i != dEnd() && !i->isUsedBy() && i->numPartitions() == 0;
+	    if (i != dEnd())
+	      ret = !i->isUsedBy() && i->numPartitions() == 0;
+	    else
+	      {
+		DmPartCoIterator i2 = findDmPartCo(dev);
+		if (i2 != dmpCoEnd())
+		  ret = !i2->isUsedBy() && i2->numPartitions() == 0;
+	      }
 	    }
 	else
 	    ret = false;
@@ -6868,6 +6875,12 @@ unsigned long long Storage::deviceSize( const string& dev )
 	DiskIterator i = findDisk( dev );
 	if( i!=dEnd() )
 	    ret = i->sizeK();
+	else
+	  {
+	    DmPartCoIterator i2 = findDmPartCo(dev);
+	    if (i2 != dmpCoEnd())
+	      ret = i2->sizeK();
+	  }
 	}
     else
 	ret = v->sizeK();
