@@ -6193,22 +6193,15 @@ module Yast
             id = Partitions.FsidBoot(dlabel)
             part["format"]=false
             part["mount"]=""
-            part["fstype"]=Partitions.FsIdToString(id)
             part["prep_install"]=true
-            if !part.fetch("create",false) &&
-               part.fetch("fsid",0) != id
-              part["ori_fsid"] = part.fetch("fsid",0)
-              part["change_fsid"] = true
-            end
-            part["fsid"] = id
+            propose_new_fsid(part, id)
             Builtins.y2milestone( "SpecialBootHandling modified Prep part=%1", part)
           end
           if Arch.board_mac &&
              part.fetch("mount","") == Partitions.BootMount
             id = Partitions.fsid_mac_hfs
             part["mount"] = ""
-            part["fstype"] = Partitions.FsIdToString(id)
-            part["fsid"] = id
+            propose_new_fsid(part, id)
             part["used_fs"] = :hfs
             part["detected_fs"] = :hfs
             Builtins.y2milestone( "SpecialBootHandling modified hfs part=%1", part)
@@ -6216,8 +6209,7 @@ module Yast
           if Arch.ia64 &&
              part.fetch("mount","") == Partitions.BootMount
             id = Partitions.fsid_gpt_boot
-            part["fsid"] = id
-            part["fstype"] = Partitions.FsIdToString(id)
+            propose_new_fsid(part, id)
             if !part.fetch("create",false) &&
                part.fetch("detected_fs",:none)==:vfat
               part["format"] = false
@@ -6228,8 +6220,7 @@ module Yast
             dlabel == "gpt" &&
              part.fetch("mount","") == Partitions.BootMount
             id = Partitions.fsid_bios_grub
-            part["fsid"] = id
-            part["fstype"] = Partitions.FsIdToString(id)
+            propose_new_fsid(part, id)
 	    part["format"] = false
 	    part["mount"] = ""
             Builtins.y2milestone( "SpecialBootHandling modified BIOS grub part=%1", part)
@@ -7172,6 +7163,15 @@ module Yast
 
     def skip_activation_popup?
       Mode.autoinst || Mode.autoupgrade || Installation.restarting?
+    end
+
+    def propose_new_fsid(part, id)
+      if !part.fetch("create", false) && part.fetch("fsid", 0) != id
+        part["ori_fsid"] = part.fetch("fsid", 0)
+        part["change_fsid"] = true
+      end
+      part["fstype"] = Partitions.FsIdToString(id)
+      part["fsid"] = id
     end
 
     publish :variable => :resize_partition, :type => "string"

@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.1.98
+Version:        3.1.99
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -29,7 +29,7 @@ License:	GPL-2.0
 BuildRequires:	docbook-xsl-stylesheets
 BuildRequires:	doxygen
 BuildRequires:	gcc-c++ libtool
-BuildRequires:	libstorage-devel >= 2.25.36
+BuildRequires:	libstorage-devel >= 2.26.6
 BuildRequires:	libstorage-ruby >= 2.25.36
 BuildRequires:	libxslt
 BuildRequires:	perl-XML-Writer
@@ -43,7 +43,7 @@ BuildRequires:	yast2-devtools >= 3.1.10
 BuildRequires:	yast2-ruby-bindings >= 3.1.7
 BuildRequires:	yast2-testsuite >= 2.19.0
 Requires:	libstorage-ruby >= 2.26.1
-Requires:	libstorage7 >= 2.26.1
+Requires:	libstorage7 >= 2.26.6
 Requires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
 Requires:	yast2 >= 3.1.22
 Requires:	yast2-core >= 2.18.3
