@@ -297,7 +297,8 @@ module Yast
       if boot_found && Partitions.prep_boot_needed? && !boot_mount_point.empty? && installation || show_all_popups
         message = _(
           "Warning:\n" \
-          "Your system needs a boot partition with type 0x41 PReP/CHRP.\n" \
+          "Your system needs a boot partition, either with type 0x41 PReP/CHRP\n" \
+          "on MS-DOS or type 0x00 GPT PReP Boot on GPT.\n" \
           "Please, consider creating one.\n" \
           "\n" \
           "Really use this setup?\n"
@@ -371,7 +372,8 @@ module Yast
               "Warning: There is no partition mounted as /boot.\n" +
                 "To boot from your hard disk, a small /boot partition\n" +
                 "(approx. %1) is required.  Consider creating one\n" +
-                "with type 0x41 PReP/CHRP.\n" +
+                "with type 0x41 PReP/CHRP on MS-DOS or type 0x00 GPT\n" +
+                "PReP Boot on GPT.\n" +
                 "\n" +
                 "Really use the setup without /boot partition?\n"
             ),
