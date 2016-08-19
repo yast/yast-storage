@@ -5028,6 +5028,7 @@ module Yast
         "var/cache",
         "var/crash",
         "var/lib/libvirt/images",
+        "var/lib/machines",
         "var/lib/mailman",
         "var/lib/mariadb",
         "var/lib/mysql",
