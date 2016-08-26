@@ -7163,7 +7163,7 @@ module Yast
   protected
 
     def skip_activation_popup?
-      Mode.autoinst || Mode.autoupgrade || Installation.restarting?
+      Mode.autoinst || Mode.autoupgrade
     end
 
     def propose_new_fsid(part, id)
