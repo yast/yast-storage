@@ -259,10 +259,22 @@ class Volume
 	bool noFreqPassno() const;
 
 	std::ostream& logVolume( std::ostream& file ) const;
-	string getLosetupCmd( storage::EncryptType, const string& pwdfile ) const;
-	string getCryptsetupCmd( storage::EncryptType e, const string& dmdev,
-				 const string& mp, const string& pwdfile, bool format,
-				 bool empty_pwd=false ) const;
+
+	string getLosetupCmd( storage::EncryptType ) const;
+
+        /**
+         * Create a "cryptsetup" command for the specified parameters.
+         *
+         * Return 0 on error and the corresponding SystemCmd (ready to be
+         * executed) otherwise. The caller needs to delete the SystemCmd when
+         * done.
+         **/
+        SystemCmd * createCryptSetupCmd( storage::EncryptType encryption,
+                                         const string& dmdev,
+                                         const string& mount,
+                                         const string& password,
+                                         bool format ) const;
+
 	storage::EncryptType detectEncryption();
 	string getFilesysSysfsPath() const;
 
