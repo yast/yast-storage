@@ -2018,7 +2018,7 @@ int Volume::doCryptsetup()
 	    }
         }
     else
-	{
+        {
 	cryptUnsetup();
 	updateFstabOptions();
 	}
