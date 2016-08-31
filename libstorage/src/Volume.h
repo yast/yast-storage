@@ -221,10 +221,21 @@ class Volume
 	int cryptUnsetup( bool force=false );
 
 	std::ostream& logVolume( std::ostream& file ) const;
-	string getLosetupCmd( storage::EncryptType e, const string& pwdfile ) const;
-	string getCryptsetupCmd( const string& dmdev, const string& mp, 
-	                         const string& pwdfile, bool format,
-				 bool empty_pwd=false ) const;
+
+	SystemCmd * createLosetupCmd( storage::EncryptType, const string& password ) const;
+
+        /**
+         * Create a "cryptsetup" command for the specified parameters.
+         *
+         * Return 0 on error and the corresponding SystemCmd (ready to be
+         * executed) otherwise. The caller needs to delete the SystemCmd when
+         * done.
+         **/
+        SystemCmd * createCryptSetupCmd( const string& dmdev,
+                                         const string& mount,
+                                         const string& password,
+                                         bool format ) const;
+
 	storage::EncryptType detectEncryption();
 	string getFilesysSysfsPath() const;
 

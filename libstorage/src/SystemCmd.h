@@ -26,8 +26,8 @@ class SystemCmd
 	SystemCmd( const string& Command_Cv );
 	SystemCmd();
 	virtual ~SystemCmd();
-	int execute( const string& Command_Cv );
-	int executeBackground( const string& Command_Cv );
+	int execute( const string& Command_Cv = "" );
+	int executeBackground( const string& Command_Cv = "" );
 	int executeRestricted( const string& Command_Cv, 
 	                       unsigned long MaxTimeSec,
 			       unsigned long MaxLineOut, 
@@ -41,7 +41,8 @@ class SystemCmd
 	            unsigned Idx_ii=IDX_STDOUT );
 	const string& stderr() const { return( *getString(IDX_STDERR)); }
 	const string& stdout() const { return( *getString(IDX_STDOUT)); }
-	const string& cmd() const { return( lastCmd ); }
+	const string& cmd() const { return( _cmd ); }
+        void setCmd( const string & newCmd ) { _cmd = newCmd; }
 	const string* getString( unsigned Idx_ii=IDX_STDOUT ) const;
 	const string* getLine( unsigned Num_iv, bool Selected_bv=false,
 			       unsigned Idx_ii=IDX_STDOUT ) const;
@@ -58,6 +59,8 @@ class SystemCmd
 	int getStderr( std::list<string> &Ret_Cr, const bool Append_bv = false ) const
 	    { return placeOutput( IDX_STDERR, Ret_Cr, Append_bv); }
 
+        void setStdinText( const string & stdinText ) { _stdinText = stdinText; }
+
     protected:
 
         int  placeOutput( unsigned Which_iv, std::vector<string> &Ret_Cr, const bool Append_bv ) const;
@@ -68,6 +71,7 @@ class SystemCmd
 	int doExecute( string Cmd_Cv );
 	bool doWait( bool Hang_bv, int& Ret_ir );
         void checkOutput();
+        void sendStdin();
 	void getUntilEOF( FILE* File_Cr, std::vector<string>& Lines_Cr,
 	                  bool& NewLineSeen_br, bool Stderr_bv );
 	void extractNewline( const char* Buf_ti, int Cnt_ii, bool& NewLineSeen_br,
@@ -78,18 +82,20 @@ class SystemCmd
 	mutable string Text_aC[2];
 	mutable bool Valid_ab[2];
 	FILE* File_aC[2];
+        FILE* _childStdin;
 	std::vector<string> Lines_aC[2];
 	std::vector<string*> SelLines_aC[2];
+        string _stdinText;
 	bool NewLineSeen_ab[2];
 	bool Combine_b;
 	bool Background_b;
-	string lastCmd;
+	string _cmd;
 	int Ret_i;
 	int Pid_i;
 	void (* OutputHandler_f)( void*, string, bool );
 	void *HandlerPar_p;
 	OutputProcessor* output_proc;
-	struct pollfd pfds[2];
+	struct pollfd pfds[3];
 	static int Nr_i;
     };
 
