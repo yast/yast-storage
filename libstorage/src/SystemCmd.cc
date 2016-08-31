@@ -70,11 +70,16 @@ void SystemCmd::init()
     HandlerPar_p = NULL;
     output_proc = NULL;
     File_aC[0] = File_aC[1] = NULL;
-    pfds[0].events = pfds[1].events = POLLIN;
+    _childStdin = NULL;
+    pfds[0].events = POLLOUT; // stdin
+    pfds[1].events = POLLIN;  // stdout
+    pfds[2].events = POLLIN;  // stderr
     }
 
 SystemCmd::~SystemCmd()
     {
+    if ( _childStdin )
+        fclose( _childStdin );
     if( File_aC[IDX_STDOUT] )
 	fclose( File_aC[IDX_STDOUT] );
     if( File_aC[IDX_STDERR] )
@@ -186,7 +191,7 @@ SystemCmd::executeRestricted( const string& Command_Cv,
 #define ALTERNATE_SHELL "/bin/bash"
 
 int
-SystemCmd::doExecute( string Cmd )
+SystemCmd::doExecute( string command )
     {
     string Shell_Ci = PRIMARY_SHELL;
     if( access( Shell_Ci.c_str(), X_OK ) != 0 )
@@ -194,18 +199,34 @@ SystemCmd::doExecute( string Cmd )
 	Shell_Ci = ALTERNATE_SHELL;
 	}
 
-    lastCmd = Cmd;
+        if ( ! command.empty() )
+            _cmd = command;
+
+        if ( _cmd.empty() )
+            {
+            y2error( "No command specified" );
+            return -1;
+            }
+
     if( output_proc )
 	{
 	output_proc->reset();
 	}
-    y2deb("Cmd:" << Cmd);
+    y2deb("Cmd:" << _cmd);
 
+    _childStdin = NULL;
     File_aC[IDX_STDERR] = File_aC[IDX_STDOUT] = NULL;
     invalidate();
+    int sin[2];
     int sout[2];
     int serr[2];
     bool ok_bi = true;
+    if( !testmode && pipe(sin)<0 )
+	{
+	y2error( "pipe stdin creation failed errno=%d (%s)", errno,
+	         strerror(errno));
+	ok_bi = false;
+	}
     if( !testmode && pipe(sout)<0 )
 	{
 	y2error( "pipe stdout creation failed errno=%d (%s)", errno,
@@ -220,27 +241,38 @@ SystemCmd::doExecute( string Cmd )
 	}
     if( !testmode && ok_bi )
 	{
-	pfds[0].fd = sout[0];
+	pfds[0].fd = sin[1];
 	if( fcntl( pfds[0].fd, F_SETFL, O_NONBLOCK )<0 )
+	    {
+	    y2error( "fcntl O_NONBLOCK failed errno=%d (%s)", errno,
+		     strerror(errno));
+	    }
+	pfds[1].fd = sout[0];
+	if( fcntl( pfds[1].fd, F_SETFL, O_NONBLOCK )<0 )
 	    {
 	    y2error( "fcntl O_NONBLOCK failed errno=%d (%s)", errno,
 		     strerror(errno));
 	    }
 	if( !Combine_b )
 	    {
-	    pfds[1].fd = serr[0];
-	    if( fcntl( pfds[1].fd, F_SETFL, O_NONBLOCK )<0 )
+	    pfds[2].fd = serr[0];
+	    if( fcntl( pfds[2].fd, F_SETFL, O_NONBLOCK )<0 )
 		{
 		y2error( "fcntl O_NONBLOCK failed errno=%d (%s)", errno,
 			 strerror(errno));
 		}
 	    }
-	y2debug( "sout:%d serr:%d", pfds[0].fd, Combine_b?-1:pfds[1].fd );
+	y2debug( "sout:%d serr:%d", pfds[1].fd, Combine_b?-1:pfds[2].fd );
 	switch( (Pid_i=fork()) )
 	    {
 	    case 0:
 		setenv( "LC_ALL", "C", 1 );
 		setenv( "LANGUAGE", "C", 1 );
+		if( dup2( sin[0], 0 )<0 )
+		    {
+		    y2error( "dup2 stdin child failed errno=%d (%s)", errno,
+			     strerror(errno));
+		    }
 		if( dup2( sout[1], 1 )<0 )
 		    {
 		    y2error( "dup2 stdout child failed errno=%d (%s)", errno,
@@ -256,6 +288,11 @@ SystemCmd::doExecute( string Cmd )
 		    y2error( "dup2 stderr child failed errno=%d (%s)", errno,
 			     strerror(errno));
 		    }
+		if( close( sin[1] )<0 )
+		    {
+		    y2error( "close child failed errno=%d (%s)", errno,
+		             strerror(errno));
+		    }
 		if( close( sout[0] )<0 )
 		    {
 		    y2error( "close child failed errno=%d (%s)", errno,
@@ -268,7 +305,7 @@ SystemCmd::doExecute( string Cmd )
 		    }
 		closeOpenFds();
 		Ret_i = execl( Shell_Ci.c_str(), Shell_Ci.c_str(), "-c",
-			       Cmd.c_str(), NULL );
+			       _cmd.c_str(), NULL );
 		y2error( "SHOULD NOT HAPPEN \"%s\" Ret:%d", Shell_Ci.c_str(),
 			 Ret_i );
 		break;
@@ -276,6 +313,11 @@ SystemCmd::doExecute( string Cmd )
 		Ret_i = -1;
 		break;
 	    default:
+		if( close( sin[0] )<0 )
+		    {
+		    y2error( "close parent failed errno=%d (%s)", errno,
+		             strerror(errno));
+		    }
 		if( close( sout[1] )<0 )
 		    {
 		    y2error( "close parent failed errno=%d (%s)", errno,
@@ -287,6 +329,12 @@ SystemCmd::doExecute( string Cmd )
 		             strerror(errno));
 		    }
 		Ret_i = 0;
+                _childStdin = fdopen( sin[1], "a" );
+                if ( _childStdin == NULL )
+		    {
+		    y2error( "fdopen stdin failed errno=%d (%s)", errno,
+		             strerror(errno));
+		    }
 		File_aC[IDX_STDOUT] = fdopen( sout[0], "r" );
 		if( File_aC[IDX_STDOUT] == NULL )
 		    {
@@ -316,11 +364,11 @@ SystemCmd::doExecute( string Cmd )
     else
 	{
 	Ret_i = 0;
-	y2mil("TESTMODE would execute \"" << Cmd << "\"");
+	y2mil("TESTMODE would execute \"" << _cmd << "\"");
 	}
     if( Ret_i==-127 || Ret_i==-1 )
 	{
-	y2err("system (\"" << Cmd << "\") = " << Ret_i);
+	y2err("system (\"" << _cmd << "\") = " << Ret_i);
 	}
     if( !testmode )
 	checkOutput();
@@ -341,16 +389,19 @@ SystemCmd::doWait( bool Hang_bv, int& Ret_ir )
     do
 	{
 	y2debug( "[0] id:%d ev:%x [1] fs:%d ev:%x",
-	             pfds[0].fd, (unsigned)pfds[0].events,
-		     Combine_b?-1:pfds[1].fd, Combine_b?0:(unsigned)pfds[1].events );
-	if( (sel=poll( pfds, Combine_b?1:2, 1000 ))<0 )
+	             pfds[1].fd, (unsigned)pfds[1].events,
+		     Combine_b?-1:pfds[2].fd, Combine_b?0:(unsigned)pfds[2].events );
+	if( (sel=poll( pfds, Combine_b?2:3, 1000 ))<0 )
 	    {
 	    y2error( "poll failed errno=%d (%s)", errno, strerror(errno));
 	    }
 	y2debug( "poll ret:%d", sel );
 	if( sel>0 )
 	    {
-	    checkOutput();
+            if ( pfds[0].revents )
+                sendStdin();
+            if ( pfds[1].revents || pfds[2].revents )
+                checkOutput();
 	    }
 	Wait_ii = waitpid( Pid_i, &Status_ii, WNOHANG );
 	y2debug( "Wait ret:%d", Wait_ii );
@@ -359,6 +410,11 @@ SystemCmd::doWait( bool Hang_bv, int& Ret_ir )
     if( Wait_ii != 0 )
 	{
 	checkOutput();
+        if ( _childStdin )
+            {
+            fclose( _childStdin );
+            _childStdin = NULL;
+            }
 	fclose( File_aC[IDX_STDOUT] );
 	File_aC[IDX_STDOUT] = NULL;
 	if( !Combine_b )
@@ -532,6 +588,33 @@ SystemCmd::checkOutput()
     y2debug( "NewLine out:%d err:%d", NewLineSeen_ab[IDX_STDOUT],
 	     NewLineSeen_ab[IDX_STDERR] );
     }
+
+    void
+    SystemCmd::sendStdin()
+    {
+    if ( ! _childStdin )
+        return;
+
+    if ( ! _stdinText.empty() )
+        {
+        string::size_type count = 0;
+        string::size_type len   = _stdinText.size();
+        int result = 1;
+
+        while ( count < len && result > 0 )
+            result = fputc( _stdinText[ count++ ], _childStdin );
+
+        _stdinText.erase( 0, count );
+        }
+
+    if ( _stdinText.empty() )
+        {
+        fclose( _childStdin );
+        _childStdin = NULL;
+        pfds[0].fd = -1; // ignore for poll() from now on
+        }
+    }
+
 
 #define BUF_LEN 256
 

@@ -1511,7 +1511,7 @@ int Volume::getFreeLoop()
     return( ret );
     }
 
-string Volume::getLosetupCmd( storage::EncryptType, const string& pwdfile ) const
+string Volume::getLosetupCmd( storage::EncryptType ) const
     {
     string cmd = LOSETUPBIN " " + quote(loop_dev) + " ";
     const Loop* l = static_cast<const Loop*>(this);
@@ -1520,37 +1520,40 @@ string Volume::getLosetupCmd( storage::EncryptType, const string& pwdfile ) cons
     return( cmd );
     }
 
-string Volume::getCryptsetupCmd( storage::EncryptType e, const string& dmdev,
-				 const string& mount, const string& pwdf,
-				 bool format, bool empty_pwd ) const
+SystemCmd * Volume::createCryptSetupCmd( storage::EncryptType encryption,
+                                         const string& dmdev,
+                                         const string& mount,
+                                         const string& password,
+                                         bool format ) const
     {
     string table = dmdev;
-    y2mil( "enctype:" << e << " dmdev:" << dmdev << " mount:" << mount <<
-	   " format:" << format << " pwempty:" << empty_pwd );
+    y2mil( "enctype:" << encryption << " dmdev:" << dmdev << " mount:" << mount <<
+           " format:" << format );
     if( table.find( '/' )!=string::npos )
 	table.erase( 0, table.find_last_of( '/' )+1 );
     string cmd = CRYPTSETUPBIN " -q";
+    string stdinText = password;
 
     if( format )
     {
-	switch( e )
+	switch( encryption )
 	{
 	    case ENC_LUKS:
-		if( isTmpCryptMp(mount) && empty_pwd )
+                if( isTmpCryptMp(mount) && password.empty() )
 		{
 		    cmd += " --key-file /dev/urandom create";
 		    cmd += ' ';
 		    cmd += quote(table);
 		    cmd += ' ';
 		    cmd += quote(is_loop?loop_dev:dev);
+                    stdinText = "";
 		}
 		else
 		{
 		    cmd += " luksFormat";
 		    cmd += ' ';
 		    cmd += quote(is_loop?loop_dev:dev);
-		    cmd += ' ';
-		    cmd += pwdf;
+                    cmd += " --key-file -"; // use stdin
 		}
 		break;
 
@@ -1568,10 +1571,10 @@ string Volume::getCryptsetupCmd( storage::EncryptType e, const string& dmdev,
     }
     else
     {
-	switch( e )
+	switch( encryption )
 	{
 	    case ENC_LUKS:
-		cmd += " --key-file " + pwdf;
+                cmd += " --key-file -"; // use stdin
 		cmd += " luksOpen ";
 		cmd += quote(is_loop?loop_dev:dev);
 		cmd += ' ';
@@ -1584,7 +1587,7 @@ string Volume::getCryptsetupCmd( storage::EncryptType e, const string& dmdev,
 		cmd += quote(table);
 		cmd += ' ';
 		cmd += quote(is_loop?loop_dev:dev);
-		cmd += " < " + pwdf;
+                // reads password from stdin by default
 		break;
 
 	    case ENC_TWOFISH_OLD:
@@ -1593,7 +1596,7 @@ string Volume::getCryptsetupCmd( storage::EncryptType e, const string& dmdev,
 		cmd += quote(table);
 		cmd += ' ';
 		cmd += quote(is_loop?loop_dev:dev);
-		cmd += " < " + pwdf;
+                // reads password from stdin by default
 		break;
 
 	    case ENC_TWOFISH256_OLD:
@@ -1602,7 +1605,7 @@ string Volume::getCryptsetupCmd( storage::EncryptType e, const string& dmdev,
 		cmd += quote(table);
 		cmd += ' ';
 		cmd += quote(is_loop?loop_dev:dev);
-		cmd += " < " + pwdf;
+                // reads password from stdin by default
 		break;
 
 	    case ENC_NONE:
@@ -1612,8 +1615,16 @@ string Volume::getCryptsetupCmd( storage::EncryptType e, const string& dmdev,
 	}
     }
 
-    y2milestone( "cmd:%s", cmd.c_str() );
-    return( cmd );
+    if ( cmd.empty() )
+        return 0;
+
+    SystemCmd * cryptSetupCmd = new SystemCmd();
+    cryptSetupCmd->setCmd( cmd );
+    cryptSetupCmd->setStdinText( stdinText );
+
+    y2mil( "cmd: " << cmd );
+
+    return cryptSetupCmd;
     }
 
 bool Volume::pwdLengthOk( storage::EncryptType typ, const string& val,
@@ -1723,9 +1734,7 @@ EncryptType Volume::detectEncryption()
     unsigned pos=0;
     static EncryptType try_order[] = { ENC_LUKS, ENC_TWOFISH_OLD,
                                        ENC_TWOFISH256_OLD, ENC_TWOFISH };
-    string fname = cont->getStorage()->tmpDir()+"/pwdf";
     string mpname = cont->getStorage()->tmpDir()+"/mp";
-    SystemCmd c;
     y2milestone( "device:%s", dev.c_str() );
 
     mkdir( mpname.c_str(), 0700 );
@@ -1733,10 +1742,6 @@ EncryptType Volume::detectEncryption()
     detected_fs = fs = FSUNKNOWN;
     do
 	{
-	ofstream pwdfile( fname.c_str() );
-	classic(pwdfile);
-	pwdfile << crypt_pwd;
-	pwdfile.close();
 	encryption = orig_encryption = try_order[pos];
 	is_loop = cont->type()==LOOP;
 	dmcrypt_dev = getDmcryptName();
@@ -1745,14 +1750,22 @@ EncryptType Volume::detectEncryption()
 	    {
 	    string lfile;
 	    if( getLoopFile( lfile ))
-		c.execute(LOSETUPBIN " " + quote(loop_dev) + " " +
+		SystemCmd losetupCmd(LOSETUPBIN " " + quote(loop_dev) + " " +
 			  quote(cont->getStorage()->root() + lfile));
 	    }
-	string cmd = getCryptsetupCmd( try_order[pos], dmcrypt_dev, "", fname, false );
-	c.execute(MODPROBEBIN " dm-crypt");
-	c.execute( cmd );
+	SystemCmd modprobeCmd(MODPROBEBIN " dm-crypt");
+	bool cryptSetupOk = false;
+	SystemCmd * cryptSetupCmd = createCryptSetupCmd( try_order[pos], dmcrypt_dev, "", crypt_pwd, false);
+
+	if ( cryptSetupCmd )
+	    {
+	    cryptSetupCmd->execute();
+	    cryptSetupOk = cryptSetupCmd->retcode() == 0;
+	    delete cryptSetupCmd;
+	    cryptSetupCmd = 0;
+	    }
         string use_dev = dmcrypt_dev;
-	if( c.retcode()==0 )
+        if( cryptSetupOk )
 	    {
 	    cont->getStorage()->waitForDevice( use_dev );
 	    updateFsData();
@@ -1780,17 +1793,18 @@ EncryptType Volume::detectEncryption()
 			break;
 		    }
 		bool excTime, excLines;
-		c.executeRestricted( cmd, 15, 500, excTime, excLines );
-		bool ok = c.retcode()==0 || (excTime && !excLines);
+                SystemCmd fsckCmd;
+                fsckCmd.executeRestricted( cmd, 15, 500, excTime, excLines );
+		bool ok = fsckCmd.retcode()==0 || (excTime && !excLines);
 		y2milestone( "ok:%d retcode:%d excTime:%d excLines:%d",
-			     ok, c.retcode(), excTime, excLines );
+			     ok, fsckCmd.retcode(), excTime, excLines );
 		if( ok )
 		    {
-		    c.execute(MODPROBEBIN " " + fs_names[detected_fs]);
-		    c.execute(MOUNTBIN " -oro -t " + fsTypeString(detected_fs) + " " +
-			      quote(use_dev) + " " + quote(mpname));
-		    ok = c.retcode()==0;
-		    c.execute(UMOUNTBIN " " + quote(mpname));
+		    SystemCmd modprobeCmd(MODPROBEBIN " " + fs_names[detected_fs]);
+		    SystemCmd mountCmd(MOUNTBIN " -oro -t " + fsTypeString(detected_fs) + " " +
+                                       quote(use_dev) + " " + quote(mpname));
+		    ok = mountCmd.retcode()==0;
+		    SystemCmd umountCmd(UMOUNTBIN " " + quote(mpname));
 		    }
 		if( !ok )
 		    {
@@ -1820,7 +1834,6 @@ EncryptType Volume::detectEncryption()
 	orig_crypt_pwd.erase();
 	ret = encryption = orig_encryption = ENC_UNKNOWN;
 	}
-    unlink( fname.c_str() );
     rmdir( mpname.c_str() );
     rmdir( cont->getStorage()->tmpDir().c_str() );
     y2milestone( "ret:%s", encTypeString(ret).c_str() );
@@ -1849,25 +1862,11 @@ int Volume::doLosetup()
 	    }
 	if( ret==0 )
 	    {
-	    string fname;
-	    if( !dmcrypt() )
-		{
-		fname = cont->getStorage()->tmpDir()+"/pwdf";
-		ofstream pwdfile( fname.c_str() );
-		classic(pwdfile);
-		pwdfile << crypt_pwd << endl;
-		pwdfile.close();
-		}
-	    SystemCmd c( getLosetupCmd( encryption, fname ));
+	    SystemCmd c( getLosetupCmd( encryption ) );
 	    if( c.retcode()!=0 )
 		ret = VOLUME_LOSETUP_FAILED;
 	    else
 		orig_crypt_pwd = crypt_pwd;
-	    if( !fname.empty() )
-		{
-		unlink( fname.c_str() );
-		rmdir( cont->getStorage()->tmpDir().c_str() );
-		}
 	    cont->getStorage()->waitForDevice( loop_dev );
 	    }
 	if( ret==0 )
@@ -1960,39 +1959,39 @@ int Volume::doCryptsetup()
 	    }
 	if( ret==0 )
 	    {
-	    string fname = cont->getStorage()->tmpDir()+"/pwdf";
-	    ofstream pwdfile( fname.c_str() );
-	    classic(pwdfile);
-	    pwdfile << crypt_pwd;
-	    pwdfile.close();
 	    SystemCmd cmd;
 	    if( format || (isTmpCryptMp(mp)&&crypt_pwd.empty()) ||
 	        (encryption!=ENC_NONE&&mp.empty()) )
 		{
-		string cmdline = getCryptsetupCmd( encryption, dmcrypt_dev, mp, fname, true,
-						   crypt_pwd.empty() );
-		if( !cmdline.empty() )
+                SystemCmd * cryptSetupCmd = createCryptSetupCmd( encryption, dmcrypt_dev, mp, crypt_pwd, true );
+                if( cryptSetupCmd )
 		    {
-		    cmd.execute( cmdline );
-		    if( cmd.retcode()!=0 )
-		    ret = VOLUME_CRYPTFORMAT_FAILED;
-		if( ret==0 && mp=="swap" )
-		    cmd.execute("/sbin/mkswap " + quote(dmcrypt_dev));
-		}
+                    cryptSetupCmd->execute();
+                    if( cryptSetupCmd->retcode() != 0 )
+			ret = VOLUME_CRYPTFORMAT_FAILED;
+
+                    delete cryptSetupCmd;
+                    cryptSetupCmd = 0;
+
+                    if( ret==0 && mp=="swap" )
+                        SystemCmd mkswapCmd("/sbin/mkswap " + quote(dmcrypt_dev));
+                    }
 		}
 	    if( ret==0 && (!isTmpCryptMp(mp)||!crypt_pwd.empty()) )
 		{
-		string cmdline = getCryptsetupCmd( encryption, dmcrypt_dev, mp, fname, false );
-		if( !cmdline.empty() )
+		SystemCmd * cryptSetupCmd = createCryptSetupCmd( encryption, dmcrypt_dev, mp, crypt_pwd, false );
+                if ( cryptSetupCmd )
 		    {
-		    cmd.execute( cmdline );
-		    if( cmd.retcode()!=0 )
-		    ret = VOLUME_CRYPTSETUP_FAILED;
-		}
+                    cryptSetupCmd->execute();
+                    if( cryptSetupCmd->retcode()!=0 )
+			ret = VOLUME_CRYPTSETUP_FAILED;
+
+                    delete cryptSetupCmd;
+                    cryptSetupCmd = 0;
+		    }
 		}
 	    if( ret==0 )
 		orig_crypt_pwd = crypt_pwd;
-	    unlink( fname.c_str() );
 	    rmdir( cont->getStorage()->tmpDir().c_str() );
 	    cont->getStorage()->waitForDevice( dmcrypt_dev );
 	    }
@@ -2007,19 +2006,19 @@ int Volume::doCryptsetup()
 		replaceAltName( "/dev/dm-", Dm::dmDeviceName(mnr) );
 		}
 	    else
-	    {
+	        {
 		getMajorMinor( dmcrypt_dev, dummy, minor );
 		replaceAltName("/dev/dm-", Dm::dmDeviceName(minor));
-	    }
+	        }
 
 	    ProcPart p;
 	    unsigned long long sz;
 	    if( p.getSize( Dm::dmDeviceName(minor), sz ))
 		setSize( sz );
 	    }
-	}
+        }
     else
-	{
+        {
 	cryptUnsetup();
 	updateFstabOptions();
 	}
