@@ -3222,6 +3222,27 @@ Volume::createText(bool doing) const
 			      mp.c_str());
 	    }
 	}
+	else if (fs != FSUNKNOWN && fs != FSNONE)
+	{
+	    if (encryption == ENC_NONE)
+	    {
+		// displayed text before action,
+		// %1$s is replaced by device name e.g. /dev/sda1,
+		// %2$s is replaced by size (e.g. 623.5 MB),
+		// %3$s is replaced by file system type (e.g. ext4)
+		txt = sformat(_("Create volume %1$s (%2$s) with %3$s"), dev.c_str(),
+			      sizeString().c_str(), fsTypeString().c_str());
+	    }
+	    else
+	    {
+		// displayed text before action,
+		// %1$s is replaced by device name e.g. /dev/sda1,
+		// %2$s is replaced by size (e.g. 623.5 MB),
+		// %3$s is replaced by file system type (e.g. ext4)
+		txt = sformat(_("Create encrypted volume %1$s (%2$s) with %3$s"), dev.c_str(),
+			      sizeString().c_str(), fsTypeString().c_str());
+	    }
+	}
 	else
 	{
 	    if (encryption == ENC_NONE)
