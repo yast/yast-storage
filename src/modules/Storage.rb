@@ -1368,7 +1368,7 @@ module Yast
       Ops.set(p, "used_fs", fs) if fs != :unknown
       fs = toSymbol(FileSystems.conv_fs, vinfo.detected_fs)
       Ops.set(p, "detected_fs", fs)
-      Ops.set(p, "format", true) if vinfo.format
+      Ops.set(p, "format", true) if vinfo.format && fs != :unknown
       Ops.set(p, "create", true) if vinfo.create
       tmp = vinfo.mount
       if !Builtins.isempty(tmp)
