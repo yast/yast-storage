@@ -293,13 +293,13 @@ module Yast
 
       if Ops.less_than(size_k, min_size_k)
         # warning message, %1 is replaced by fs name (e.g. Ext3)
-        # %2 is replaced by the user inputted size (e.g. 20GB)
+        # %2 is replaced by the user entered size (e.g. 20GB)
         # %3 is replaced by a size (e.g. 10 MB)
         Popup.Warning(
           Builtins.sformat(
             _(
               "Your partition is too small to use %1.\n" +
-                "Your inputted size (after rounding up) is %2.\n" +
+                "The size you entered (after rounding up) is %2.\n" +
                 "The minimum size for this file system is %3.\n"
             ),
             FileSystems.GetName(fs, ""),
