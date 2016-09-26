@@ -291,7 +291,7 @@ module Yast
         min_size_k
       )
 
-      if Ops.less_than(size_k, min_size_k)
+      if size_k < min_size_k
         # warning message, %1 is replaced by fs name (e.g. Ext3)
         # %2 is replaced by the user entered size (e.g. 20GB)
         # %3 is replaced by a size (e.g. 10 MB)
