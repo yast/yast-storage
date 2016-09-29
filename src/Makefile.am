@@ -56,7 +56,6 @@ ynclude_DATA = \
   include/partitioning/custom_part_check_generated.rb \
   include/partitioning/auto_part_ui.rb \
   include/partitioning/ep-hd-dialogs.rb \
-  include/partitioning/ep-log.rb \
   include/partitioning/ep-loop.rb \
   include/partitioning/lvm_pv_lib.rb \
   include/partitioning/ep-loop-lib.rb \
