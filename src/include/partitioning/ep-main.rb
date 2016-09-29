@@ -86,7 +86,6 @@ module Yast
       Yast.include include_target, "partitioning/ep-graph.rb"
       Yast.include include_target, "partitioning/ep-summary.rb"
       Yast.include include_target, "partitioning/ep-settings.rb"
-      Yast.include include_target, "partitioning/ep-log.rb"
     end
 
     def UpdateTableFocus(device)
@@ -171,11 +170,6 @@ module Yast
           :create  => fun_ref(method(:CreateSettingsPanel), "void (any)"),
           :handle  => fun_ref(method(:HandleSettingsPanel), "void (any, map)"),
           :destroy => fun_ref(method(:DestroySettingsPanel), "void (any)")
-        },
-        :log         => {
-          :create  => fun_ref(method(:CreateLogPanel), "void (any)"),
-          :handle  => fun_ref(method(:HandleLogPanel), "void (any, map)"),
-          :destroy => fun_ref(method(:DestroyLogPanel), "void (any)")
         }
       }
 
@@ -482,19 +476,6 @@ module Yast
           open.call(:settings)
         )
       )
-
-      if Mode.normal
-        # tree node label
-        tree = Builtins.add(
-          tree,
-          Item(
-            Id(:log),
-            term(:icon, StorageIcons.log_icon),
-            _("Log"),
-            open.call(:log)
-          )
-        )
-      end
 
       return tree, data
 
