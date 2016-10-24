@@ -25,6 +25,7 @@ require "storage"
 require "storage/target_map_formatter"
 require "storage/used_storage_features"
 require "storage/shadowed_vol_helper"
+require "storage/subvol"
 
 module Yast
   class StorageClass < Module
@@ -5010,7 +5011,6 @@ module Yast
       Builtins.y2milestone("DetectHomeFs device: %1 ret: %2", device, ret)
       ret
     end
-
 
     # Adds the list of subvolumes to a partition meant to be used as root (/)
     #
