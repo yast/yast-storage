@@ -25,6 +25,10 @@ describe Yast::StorageClass::Subvol do
       it "is not arch-specific" do
         expect(subject.arch_specific?).to be false
       end
+
+      it "matches arch 'fake'" do
+        expect(subject.matches_arch?("fake")).to be true
+      end
     end
 
     describe "NoCOW subvol" do
@@ -75,7 +79,7 @@ describe Yast::StorageClass::Subvol do
   context "#create_from_xml" do
     describe "Fully specified subvol" do
       subject do
-        xml = { "path" => "var/fake", "copy_on_write" => false, "archs" => "fake,ppc" }
+        xml = { "path" => "var/fake", "copy_on_write" => false, "archs" => "fake, ppc,  !  foo" }
         Yast::StorageClass::Subvol.create_from_xml( xml )
       end
 
@@ -85,6 +89,10 @@ describe Yast::StorageClass::Subvol do
 
       it "is NoCOW" do
         expect(subject.no_cow?).to be true
+      end
+
+      it "is tolerant against whitespace in the archs list" do
+        expect(subject.archs).to be == ["fake", "ppc", "!foo"]
       end
 
       it "matches arch 'fake'" do
@@ -97,6 +105,34 @@ describe Yast::StorageClass::Subvol do
 
       it "does not match arch 'foo'" do
         expect(subject.matches_arch?("foo")).to be false
+      end
+
+      it "does not match arch 'bar'" do
+        expect(subject.matches_arch?("bar")).to be false
+      end
+
+    end
+
+    describe "Minimalistic subvol" do
+      subject do
+        xml = { "path" => "var/fake" }
+        Yast::StorageClass::Subvol.create_from_xml( xml )
+      end
+
+      it "has the correct path" do
+        expect(subject.path).to be == "var/fake"
+      end
+
+      it "is COW" do
+        expect(subject.cow?).to be true
+      end
+
+      it "is not arch-specific" do
+        expect(subject.arch_specific?).to be false
+      end
+
+      it "matches arch 'fake'" do
+        expect(subject.matches_arch?("fake")).to be true
       end
     end
   end

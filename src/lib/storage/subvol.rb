@@ -107,12 +107,10 @@ module Yast
         end
         archs = nil
         if xml.key?("archs")
-          archs = xml["archs"].gsub("\s+", "").split(",")
+          archs = xml["archs"].gsub(/\s+/, "").split(",")
         end
-        arch_text = archs.to_s || "all"
-        log.info("Creating Subvol from XML for \"#{path}\" cow: #{cow} archs: #{arch_text}")
         subvol = Subvol.new(path, copy_on_write: cow, archs: archs)
-        log.info("Creating #{subvol}")
+        log.info("Creating from XML: #{subvol}")
         subvol
       end
     end
