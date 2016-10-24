@@ -240,10 +240,10 @@ module Yast
           feature_check(features, "Volume", name) { USED_BY_FEATURES[u.type] }
         end
 
+        feature_check(features, "Volume",  name, "filesystem") { FILESYSTEM_FEATURES[vol.fs] }
         feature_check(features, "Volume",  name, "encryption") { ENCRYPTION_FEATURES[vol.encryption] }
 
         if !vol.mount.empty?
-          feature_check(features, "Volume",  name, "filesystem") { FILESYSTEM_FEATURES[vol.fs] }
           feature_check(features, "Volume",  name) { snapshots?(vol) ? :FT_SNAPSHOTS : nil }
           feature_check(features, "Root FS", name) { root_btrfs?(vol) ? :FT_BTRFS_ROOT : nil }
 
