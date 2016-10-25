@@ -34,6 +34,8 @@ require "yast"
 
 module Yast
   class FileSystemsClass < Module
+    SUPPORTED_DEFAULT_SUBVOLUME_NAMES = ["", "@"].freeze
+
     def main
 
       textdomain "storage"
@@ -2030,14 +2032,37 @@ module Yast
       ret
     end
 
+    # Set the default subvolume name
+    #
+    # @param [String] Default subvolume name. Only "" and "@" are supported.
+    # @return [Boolean] True if subvolume was changed; false otherwise.
+    def default_subvol=(name)
+      if SUPPORTED_DEFAULT_SUBVOLUME_NAMES.include?(name)
+        @default_subvol = name
+        Storage.default_subvolume_name = name
+        true
+      else
+        log.warn "Unsupported default subvolume name='#{name}'. Ignoring."
+        false
+      end
+    end
+
+    # Default subvolume name
+    #
+    # @return [String] Default subvolume name.
+    def default_subvol
+      @default_subvol
+    end
+
     publish :variable => :conv_fs, :type => "map <string, any>"
     publish :variable => :possible_root_fs, :type => "const list <symbol>"
     publish :function => :system_m_points, :type => "list <string> ()"
     publish :function => :crypt_m_points, :type => "list <string> ()"
     publish :variable => :swap_m_points, :type => "const list <string>"
     publish :variable => :tmp_m_points, :type => "const list <string>"
-    publish :variable => :default_subvol, :type => "string"
     publish :variable => :nchars, :type => "string"
+    publish :function => :default_subvol, :type => "string ()"
+    publish :function => :default_subvol=, :type => "string (string)"
     publish :function => :SuggestMPoints, :type => "list <string> ()"
     publish :function => :SuggestTmpfsMPoints, :type => "list <string> ()"
     publish :function => :GetGeneralFstabOptions, :type => "list <map <symbol, any>> ()"
