@@ -33,6 +33,32 @@ module Yast
 
       attr_accessor :path, :copy_on_write, :archs
 
+      COW_SUBVOL_PATHS = [
+        "home",
+        "opt",
+        "srv",
+        "tmp",
+        "usr/local",
+        "var/cache",
+        "var/crash",
+        "var/lib/machines",
+        "var/lib/mailman",
+        "var/lib/named",
+        "var/log",
+        "var/opt",
+        "var/spool",
+        "var/tmp"
+      ]
+
+      # No Copy On Write for SQL databases and libvirt virtual disks to
+      # minimize performance impact
+      NO_COW_SUBVOL_PATHS = [
+        "var/lib/libvirt/images",
+        "var/lib/mariadb",
+        "var/lib/mysql",
+        "var/lib/pgsql"
+      ]
+
       def initialize(path, copy_on_write: true, archs: nil)
         @path = path
         @copy_on_write = copy_on_write
@@ -42,7 +68,8 @@ module Yast
       def to_s
         text = "Subvol #{@path}"
         text += " (NoCOW)" unless @copy_on_write
-        text += archs.nil? ? " (archs: all)" : " (archs: #{@archs})"
+        text += " (archs: #{@archs})" if arch_specific?
+        text
       end
 
       def arch_specific?
@@ -55,6 +82,12 @@ module Yast
 
       def no_cow?
         !@copy_on_write
+      end
+
+      # Comparison operator for sorting
+      #
+      def <=>(other)
+        path <=> other.path
       end
 
       # Check if this subvolume should be used for the current architecture.
@@ -98,6 +131,10 @@ module Yast
         use_subvol
       end
 
+      # Factory method: Create one Subvol from XML data stored as a map.
+      #
+      # @return Subvol or nil if error
+      #
       def self.create_from_xml(xml)
         return nil unless xml.key?("path")
         path = xml["path"]
@@ -112,6 +149,22 @@ module Yast
         subvol = Subvol.new(path, copy_on_write: cow, archs: archs)
         log.info("Creating from XML: #{subvol}")
         subvol
+      end
+
+      # Create a fallback list of Subvols. This is useful if nothing is
+      # specified in the control.xml file.
+      #
+      # @return List<Subvol>
+      #
+      def self.fallback_list
+        subvols = []
+        COW_SUBVOL_PATHS.each    { |path| subvols << Subvol.new(path) }
+        NO_COW_SUBVOL_PATHS.each { |path| subvols << Subvol.new(path, copy_on_write: false) }
+        subvols << Subvol.new("boot/grub2/i386-pc",          archs: ["i386", "x86_64"])
+        subvols << Subvol.new("boot/grub2/x86_64-efi",       archs: ["x86_64"])
+        subvols << Subvol.new("boot/grub2/powerpc-ieee1275", archs: ["ppc", "!board_powernv"])
+        subvols << Subvol.new("boot/grub2/s390x-emu",        archs: ["s390"])
+        subvols.select { |s| s.current_arch? }.sort
       end
     end
   end

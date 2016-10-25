@@ -136,4 +136,56 @@ describe Yast::StorageClass::Subvol do
       end
     end
   end
+
+  context "#<=>" do
+    let(:a) { Yast::StorageClass::Subvol.new("aaa") }
+    let(:b) { Yast::StorageClass::Subvol.new("bbb") }
+    let(:c) { Yast::StorageClass::Subvol.new("ccc") }
+
+    describe "Sorting subvol arrays" do
+      subject { [b, c, a].sort }
+      it "sorts by path" do
+        expect(subject[0].path).to be == "aaa"
+        expect(subject[1].path).to be == "bbb"
+        expect(subject[2].path).to be == "ccc"
+      end
+    end
+  end
+
+  context "#fallback_list" do
+    let(:fallbacks) { Yast::StorageClass::Subvol.fallback_list }
+
+    describe "var/cache subvolume" do
+      subject { fallbacks.find { |subvol| subvol.path == "var/cache" } }
+
+      it "is in the fallback list" do
+        expect(subject).not_to be_nil
+      end
+
+      it "is COW" do
+        expect(subject.cow?).to be true
+      end
+
+      it "is not arch-specific" do
+        expect(subject.arch_specific?).to be false
+      end
+    end
+
+    describe "var/lib/mariadb subvolume" do
+      subject { fallbacks.find { |subvol| subvol.path == "var/lib/mariadb" } }
+
+      it "is in the fallback list" do
+        expect(subject).not_to be_nil
+      end
+
+      it "is NoCOW" do
+        expect(subject.no_cow?).to be true
+      end
+
+      it "is not arch-specific" do
+        expect(subject.arch_specific?).to be false
+      end
+    end
+  end
+
 end
