@@ -5012,6 +5012,24 @@ module Yast
       ret
     end
 
+    # Create a list of Subvols from the <subvolumes> part of control.xml.
+    # The map may be empty if there is a <subvolumes> section, but it's empty.
+    #
+    # This function does not do much error handling or reporting; it is assumed
+    # that control.xml is validated against its schema.
+    #
+    # @param subvolumes_xml list of XML <subvolume> entries
+    # @return Subvolumes map or nil
+    #
+    def ReadSubvolsFromXml(subvolumes_xml)
+      return nil if subvolumes_xml.nil?
+      return nil unless subvolumes_xml.respond_to?(:each_with_object)
+
+      subvolumes_xml.each_with_object([]) do |xml, subvols|
+        subvols << Subvol.create_from_xml(xml)
+      end.reject { |s| s.nil? }.select { |s| s.current_arch? }.sort
+    end
+
     # Adds the list of subvolumes to a partition meant to be used as root (/)
     #
     # If the partition is going to be formatted, it deletes all existing
@@ -5019,53 +5037,9 @@ module Yast
     def AddSubvolRoot(part)
       part = deep_copy(part)
 
-      subvol_names = [
-        "home",
-        "opt",
-        "srv",
-        "tmp",
-        "usr/local",
-        "var/cache",
-        "var/crash",
-        "var/lib/libvirt/images",
-        "var/lib/machines",
-        "var/lib/mailman",
-        "var/lib/mariadb",
-        "var/lib/mysql",
-        "var/lib/named",
-        "var/lib/pgsql",
-        "var/log",
-        "var/opt",
-        "var/spool",
-        "var/tmp"
-      ]
-
-      # No Copy On Write for SQL databases and libvirt virtual disks to
-      # minimize performance impact
-      nocow_subvols = [
-        "var/lib/libvirt/images",
-        "var/lib/mariadb",
-        "var/lib/mysql",
-        "var/lib/pgsql"
-      ]
-
-      if Arch.i386 || Arch.x86_64
-        subvol_names.push("boot/grub2/i386-pc")
-      end
-
-      if Arch.x86_64
-        subvol_names.push("boot/grub2/x86_64-efi")
-      end
-
-      if Arch.ppc and !Arch.board_powernv
-        subvol_names.push("boot/grub2/powerpc-ieee1275")
-      end
-
-      if Arch.s390
-        subvol_names.push("boot/grub2/s390x-emu")
-      end
-
-      subvol_names.sort!()
+      xml = ProductFeatures.GetSection("partitioning")
+      subvols = ReadSubvolsFromXml(xml["subvolumes"]) || Subvol.fallback_list
+      subvols.each { |s| log.info("Initial #{s}") }
 
       subvol_prepend = ""
       part["subvol"] ||= []
@@ -5073,27 +5047,27 @@ module Yast
       if FileSystems.default_subvol != ""
         subvol_prepend = FileSystems.default_subvol+"/"
       end
-      fmt = part.fetch("format",false)
+      fmt = part["format"] || false
       names = []
       if !fmt
         names = part["subvol"].select { |s| !s.fetch("delete", false) }.each { |s| s.fetch("name", "") }
       else
         part["subvol"] = []
       end
-      Builtins.y2milestone("AddSubvolRoot subvol names: %1 subvol: %2", names, part["subvol"])
-      subvol_names.each do |subvol|
-        subvol_full_name = subvol_prepend + subvol
+      log.info("AddSubvolRoot subvol names: #{names} subvol: #{part['subvol']}")
+      subvols.each do |subvol|
+        subvol_full_name = subvol_prepend + subvol.path
         if !names.include?( subvol_full_name )
           subvol_entry = { "create" => true, "name" => subvol_full_name }
-          if nocow_subvols.include?( subvol )
+          if subvol.no_cow?
             subvol_entry["nocow"] = true
-            Builtins.y2milestone("AddSubvolRoot: NoCOW for %1", subvol_full_name)
+            log.info("AddSubvolRoot: NoCOW for #{subvol_full_name}")
           end
           part["subvol"].push(subvol_entry)
         end
       end
-      Builtins.y2milestone("AddSubvolRoot subvol:\n%1", format_target_map(part["subvol"]))
-      Builtins.y2milestone("AddSubvolRoot part: \n%1", format_target_map(part))
+      log.info("AddSubvolRoot subvol:\n#{format_target_map(part['subvol'])}")
+      log.info("AddSubvolRoot part: \n#{format_target_map(part)}")
       part
     end
 
