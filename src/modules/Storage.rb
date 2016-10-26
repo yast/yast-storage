@@ -5023,11 +5023,12 @@ module Yast
     #
     def ReadSubvolsFromXml(subvolumes_xml)
       return nil if subvolumes_xml.nil?
-      return nil unless subvolumes_xml.respond_to?(:each_with_object)
+      return nil unless subvolumes_xml.respond_to?(:map)
 
-      subvolumes_xml.each_with_object([]) do |xml, subvols|
-        subvols << Subvol.create_from_xml(xml)
-      end.reject { |s| s.nil? }.select { |s| s.current_arch? }.sort
+      all_subvols = subvolumes_xml.map { |xml| Subvol.create_from_xml(xml) }
+      all_subvols.compact! # Remove nil subvols due to XML parse errors
+      relevant_subvols = all_subvols.select { |s| s.current_arch? }
+      relevant_subvols.sort
     end
 
     # Adds the list of subvolumes to a partition meant to be used as root (/)
