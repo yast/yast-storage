@@ -1,6 +1,6 @@
 # encoding: utf-8
 
-# Copyright (c) [2012-2015] Novell, Inc.
+# Copyright (c) [2012-2016] Novell, Inc.
 #
 # All Rights Reserved.
 #
@@ -95,7 +95,7 @@ module Yast
       # It is not used if its archs contain the current arch negated
       # (e.g. "!ppc").
       #
-      # @return bool
+      # @return [Boolean] true if this subvolume matches the current architecture
       #
       def current_arch?
         matches_arch? { |arch| Arch.respond_to?(arch.to_sym) && Arch.send(arch.to_sym) }
@@ -108,6 +108,8 @@ module Yast
       #
       # If no block is given (and only then), the 'target_arch' parameter is
       # used to check against.
+      #
+      # @return [Boolean] true if this subvolume matches
       #
       def matches_arch?(target_arch = nil, &block)
         return true unless arch_specific?

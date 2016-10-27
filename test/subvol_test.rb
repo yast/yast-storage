@@ -2,7 +2,6 @@
 
 require_relative "spec_helper"
 require "storage/subvol"
-require "pp"
 Yast.import "Arch"
 
 
@@ -76,7 +75,7 @@ describe Yast::StorageClass::Subvol do
     end
   end
 
-  context "#create_from_xml" do
+  context ".create_from_xml" do
     describe "Fully specified subvol" do
       subject do
         xml = { "path" => "var/fake", "copy_on_write" => false, "archs" => "fake, ppc,  !  foo" }
@@ -152,7 +151,7 @@ describe Yast::StorageClass::Subvol do
     end
   end
 
-  context "#fallback_list" do
+  context ".fallback_list" do
     let(:fallbacks) { Yast::StorageClass::Subvol.fallback_list }
 
     describe "var/cache subvolume" do
