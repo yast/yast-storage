@@ -2090,6 +2090,14 @@ module Yast
       ProductFeatures.GetStringFeature("partitioning", "btrfs_default_subvolume")
     end
 
+    # Read the default subvolume from the filesystem and stores the value
+    #
+    # @return [String,nil] Default subvolume from the target system
+    # @see default_subvol_from_filesystem
+    def read_default_subvol_from_filesystem
+      self.default_subvol = default_subvol_from_filesystem
+    end
+
     protected
 
     def btrfs_subvol_name_for(partition)
