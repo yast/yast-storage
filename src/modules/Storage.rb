@@ -373,11 +373,6 @@ module Yast
       nil
     end
 
-    def default_subvolume_name=(name)
-      return if @sint.nil?
-      @sint.setDefaultSubvolName(name)
-    end
-
 
     def default_subvolume_name()
       return @sint.getDefaultSubvolName()

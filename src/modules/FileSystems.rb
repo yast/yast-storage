@@ -2045,9 +2045,10 @@ module Yast
     # @param [String] Default subvolume name. Only "" and "@" are supported.
     # @return [Boolean] True if subvolume was changed; false otherwise.
     def default_subvol=(name)
+      return if @sint.nil?
       if SUPPORTED_DEFAULT_SUBVOLUME_NAMES.include?(name)
         @default_subvol = name
-        Storage.default_subvolume_name = name
+        @sint.setDefaultSubvolName(name)
         true
       else
         log.warn "Unsupported default subvolume name='#{name}'. Ignoring."
@@ -2064,6 +2065,7 @@ module Yast
     #
     # @return [String,nil] Default subvolume from the target system
     def default_subvol_from_target
+      Yast.import "Storage"
       parts = Storage.GetTargetMap.map { |_k, d| d.fetch("partitions")  }.flatten.compact
       btrfs_parts = parts.select { |p| p["used_fs"] == :btrfs }
       default_subvol_names = btrfs_parts.reduce({}) do |memo, part|
