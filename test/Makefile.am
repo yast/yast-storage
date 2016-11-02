@@ -8,7 +8,8 @@ TESTS = \
 	storage_get_disk_partition.rb					\
 	storage_boot_on_raid1.rb \
 	partitions_test.rb \
-	include/partitioning_custom_part_check_generated_include_test.rb\
+	include/partitioning_custom_part_check_generated_include_test.rb \
+	subvol_test.rb \
         ro_text_test.rb
 
 TEST_EXTENSIONS = .rb
