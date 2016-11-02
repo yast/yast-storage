@@ -31,6 +31,7 @@
 # $Id$
 require "storage"
 require "yast"
+require "yast2/execute"
 
 module Yast
   class FileSystemsClass < Module
