@@ -35,13 +35,7 @@ require "yast2/execute"
 
 module Yast
   class FileSystemsClass < Module
-    include Yast::Logger
-
-    # @return [Array<String>] Supported default subvolume names
     SUPPORTED_DEFAULT_SUBVOLUME_NAMES = ["", "@"].freeze
-
-    # @return [String] Default subvolume name.
-    attr_reader :default_subvol
 
     def main
 
@@ -2053,6 +2047,13 @@ module Yast
         log.warn "Unsupported default subvolume name='#{name}'. Ignoring."
         false
       end
+    end
+
+    # Default subvolume name
+    #
+    # @return [String] Default subvolume name.
+    def default_subvol
+      @default_subvol
     end
 
     # Try to find the default subvolume name in the target system
