@@ -31,7 +31,6 @@
 # $Id$
 require "storage"
 require "yast"
-require "yast2/execute"
 
 module Yast
   class FileSystemsClass < Module
@@ -47,7 +46,6 @@ module Yast
       Yast.import "Encoding"
       Yast.import "Stage"
       Yast.import "StorageInit"
-      Yast.import "ProductFeatures"
 
       @conv_fs = {
         "def_sym" => :unknown,
@@ -2054,47 +2052,6 @@ module Yast
     # @return [String] Default subvolume name.
     def default_subvol
       @default_subvol
-    end
-
-    # Try to find the default subvolume name in the target system
-    #
-    # * Root partition takes precedence
-    # * Not supported: more than 1 Btrfs filesystems, one using
-    #   a '@' default subvolume and the other using ''. In that case,
-    #   default_subvolume is set to product's default.
-    #
-    # @return [String,nil] Default subvolume from the target system
-    def default_subvol_from_filesystem
-      parts = Storage.GetTargetMap.map { |_k, d| d.fetch("partitions")  }.flatten.compact
-      btrfs_parts = parts.select { |p| p["used_fs"] == :btrfs }
-      default_subvol_names = btrfs_parts.reduce({}) do |memo, part|
-        memo[part["mount"]] = btrfs_subvol_name_for(part) unless part["mount"].nil?
-        memo
-      end
-
-      # Root takes precedence
-      return default_subvol_names["/"] if default_subvol_names.has_key?("/")
-
-      # If all has the same default subvolume name
-      found_names = default_subvol_names.values.uniq
-      return found_names.first if found_names.size == 1
-
-      # If there are different values, fallback to product's default
-      default_subvol_from_product
-    end
-
-    # Default subvol name from product
-    #
-    # @return [String] Default subvolume name
-    def default_subvol_from_product
-      ProductFeatures.GetStringFeature("partitioning", "btrfs_default_subvolume")
-    end
-
-    protected
-
-    def btrfs_subvol_name_for(partition)
-      ret = Yast::Execute.on_target("btrfs", "subvol", "list", partition["mount"], stdout: :capture)
-      ret.split("\n").first =~ /.+ @\z/ ? "@" : ""
     end
 
     publish :variable => :conv_fs, :type => "map <string, any>"
