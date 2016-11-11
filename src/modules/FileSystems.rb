@@ -2064,7 +2064,7 @@ module Yast
     #   default_subvolume is set to product's default.
     #
     # @return [String,nil] Default subvolume from the target system
-    def default_subvol_from_target
+    def default_subvol_from_filesystem
       parts = Storage.GetTargetMap.map { |_k, d| d.fetch("partitions")  }.flatten.compact
       btrfs_parts = parts.select { |p| p["used_fs"] == :btrfs }
       default_subvol_names = btrfs_parts.reduce({}) do |memo, part|
@@ -2093,9 +2093,9 @@ module Yast
     # Read the default subvolume from the filesystem and stores the value
     #
     # @return [String,nil] Default subvolume from the target system
-    # @see default_subvol_from_target
-    def read_default_subvol_from_target
-      self.default_subvol = default_subvol_from_target
+    # @see default_subvol_from_filesystem
+    def read_default_subvol_from_filesystem
+      self.default_subvol = default_subvol_from_filesystem
     end
 
     protected

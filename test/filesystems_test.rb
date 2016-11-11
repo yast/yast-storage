@@ -52,9 +52,7 @@ describe Yast::FileSystems do
       context "and partitions uses different subvolume names" do
         before do
           allow(Yast::Execute).to receive(:on_target).with("btrfs", "subvol", "list", "/srv", anything)
-            .and_return(btrfs_list_fixture("srv"))
-          allow(Yast::Execute).to receive(:on_target).with("btrfs", "subvol", "list", "/data", anything)
-            .and_return(btrfs_list_fixture("data_no_at"))
+            .and_return(btrfs_list)
         end
 
         it "returns the distribution default" do
