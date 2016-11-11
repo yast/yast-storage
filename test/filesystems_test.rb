@@ -13,16 +13,9 @@ describe Yast::FileSystems do
     File.read(File.join(FIXTURES_PATH, fixture_name))
   end
 
-  let(:default_subvol) { "@" }
-  let(:libstorage) do
-    double("libstorage", getDefaultSubvolName: default_subvol, setDefaultSubvolName: default_subvol)
-  end
-
-  before do
-    subject.InitSlib(libstorage)
-  end
-
   describe "#default_subvol_from_target" do
+    let(:default_subvol) { "@" }
+
     before do
       allow(Yast::Storage).to receive(:GetTargetMap).and_return(target_map)
       allow(Yast::ProductFeatures).to receive(:GetStringFeature)
@@ -91,13 +84,13 @@ describe Yast::FileSystems do
 
   describe "#default_subvol=" do
     it "sets the default_subvol if a valid value is given" do
-      expect(libstorage).to receive(:setDefaultSubvolName).with("@")
-      subject.default_subvol = "@"
+      subject.default_subvol = ""
+      expect { subject.default_subvol = "@" }.to change { subject.default_subvol }
+        .to("@")
     end
 
     it "refuses to set default_subvol if an invalid value is given" do
-      expect(libstorage).to_not receive(:setDefaultSubvolName)
-      subject.default_subvol = "UNDEFINED"
+      expect { subject.default_subvol = "whatever" }.to_not change { subject.default_subvol }
     end
   end
 end
