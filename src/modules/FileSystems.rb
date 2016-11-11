@@ -2069,7 +2069,7 @@ module Yast
       parts = Storage.GetTargetMap.map { |_k, d| d.fetch("partitions")  }.flatten.compact
       btrfs_parts = parts.select { |p| p["used_fs"] == :btrfs }
       default_subvol_names = btrfs_parts.reduce({}) do |memo, part|
-        memo[part["mount"]] = btrfs_subvol_name_for(part["mount"]) unless part["mount"].nil?
+        memo[part["mount"]] = btrfs_subvol_name_for(part) unless part["mount"].nil?
         memo
       end
 
@@ -2101,14 +2101,8 @@ module Yast
 
     protected
 
-    # Find the default subvolume name
-    #
-    # Only "" and "@" are supported.
-    #
-    # @param mount [String] Mount point.
-    # @return ["@", ""] Default subvolume name for the given mount point.
-    def btrfs_subvol_name_for(mount)
-      ret = Yast::Execute.on_target("btrfs", "subvol", "list", mount, stdout: :capture)
+    def btrfs_subvol_name_for(partition)
+      ret = Yast::Execute.on_target("btrfs", "subvol", "list", partition["mount"], stdout: :capture)
       ret.split("\n").first =~ /.+ @\z/ ? "@" : ""
     end
 
