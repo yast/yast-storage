@@ -84,8 +84,7 @@ module Yast
       @possible_root_fs = [:ext2, :ext3, :ext4, :btrfs, :reiser, :xfs]
       @swap_m_points = ["swap"]
       @tmp_m_points = ["/tmp", "/var/tmp"]
-      self.default_subvol = ProductFeatures.GetStringFeature("partitioning", "btrfs_default_subvolume")
-
+      @default_subvol = "UNDEFINED"
 
       @suggest_m_points = []
       @suggest_tmp_points = []
@@ -1450,7 +1449,7 @@ module Yast
     def InitSlib(value)
       @sint = value
       if @sint != nil
-        @sint.setDefaultSubvolName(@default_subvol)
+        @default_subvol = @sint.getDefaultSubvolName()
         Builtins.y2milestone(
           "InitSlib used default_subvol:\"%1\"",
           @default_subvol
@@ -2046,9 +2045,10 @@ module Yast
     # @param [String] Default subvolume name. Only "" and "@" are supported.
     # @return [Boolean] True if subvolume was changed; false otherwise.
     def default_subvol=(name)
+      return if @sint.nil?
       if SUPPORTED_DEFAULT_SUBVOLUME_NAMES.include?(name)
         @default_subvol = name
-        @sint.setDefaultSubvolName(name) unless @sint.nil?
+        @sint.setDefaultSubvolName(name)
         true
       else
         log.warn "Unsupported default subvolume name='#{name}'. Ignoring."
