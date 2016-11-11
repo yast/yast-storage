@@ -31,18 +31,9 @@
 # $Id$
 require "storage"
 require "yast"
-require "yast2/execute"
 
 module Yast
   class FileSystemsClass < Module
-    include Yast::Logger
-
-    # @return [Array<String>] Supported default subvolume names
-    SUPPORTED_DEFAULT_SUBVOLUME_NAMES = ["", "@"].freeze
-
-    # @return [String] Default subvolume name.
-    attr_reader :default_subvol
-
     def main
 
       textdomain "storage"
@@ -53,7 +44,6 @@ module Yast
       Yast.import "Encoding"
       Yast.import "Stage"
       Yast.import "StorageInit"
-      Yast.import "ProductFeatures"
 
       @conv_fs = {
         "def_sym" => :unknown,
@@ -84,8 +74,7 @@ module Yast
       @possible_root_fs = [:ext2, :ext3, :ext4, :btrfs, :reiser, :xfs]
       @swap_m_points = ["swap"]
       @tmp_m_points = ["/tmp", "/var/tmp"]
-      self.default_subvol = ProductFeatures.GetStringFeature("partitioning", "btrfs_default_subvolume")
-
+      @default_subvol = "UNDEFINED"
 
       @suggest_m_points = []
       @suggest_tmp_points = []
@@ -1450,7 +1439,7 @@ module Yast
     def InitSlib(value)
       @sint = value
       if @sint != nil
-        @sint.setDefaultSubvolName(@default_subvol)
+        @default_subvol = @sint.getDefaultSubvolName()
         Builtins.y2milestone(
           "InitSlib used default_subvol:\"%1\"",
           @default_subvol
@@ -2041,86 +2030,14 @@ module Yast
       ret
     end
 
-    # Set the default subvolume name
-    #
-    # @param [String] Default subvolume name. Only "" and "@" are supported.
-    # @return [Boolean] True if subvolume was changed; false otherwise.
-    def default_subvol=(name)
-      if SUPPORTED_DEFAULT_SUBVOLUME_NAMES.include?(name)
-        @default_subvol = name
-        @sint.setDefaultSubvolName(name) unless @sint.nil?
-        true
-      else
-        log.warn "Unsupported default subvolume name='#{name}'. Ignoring."
-        false
-      end
-    end
-
-    # Try to find the default subvolume name in the target system
-    #
-    # * Root partition takes precedence
-    # * Not supported: more than 1 Btrfs filesystems, one using
-    #   a '@' default subvolume and the other using ''. In that case,
-    #   default_subvolume is set to product's default.
-    #
-    # @return [String,nil] Default subvolume from the target system
-    def default_subvol_from_target
-      Yast.import "Storage"
-      parts = Storage.GetTargetMap.map { |_k, d| d.fetch("partitions")  }.flatten.compact
-      btrfs_parts = parts.select { |p| p["used_fs"] == :btrfs }
-      default_subvol_names = btrfs_parts.reduce({}) do |memo, part|
-        memo[part["mount"]] = btrfs_subvol_name_for(part["mount"]) unless part["mount"].nil?
-        memo
-      end
-
-      # Root takes precedence
-      return default_subvol_names["/"] if default_subvol_names.has_key?("/")
-
-      # If all has the same default subvolume name
-      found_names = default_subvol_names.values.uniq
-      return found_names.first if found_names.size == 1
-
-      # If there are different values, fallback to product's default
-      default_subvol_from_product
-    end
-
-    # Default subvol name from product
-    #
-    # @return [String] Default subvolume name
-    def default_subvol_from_product
-      ProductFeatures.GetStringFeature("partitioning", "btrfs_default_subvolume")
-    end
-
-    # Read the default subvolume from the filesystem and stores the value
-    #
-    # @return [String,nil] Default subvolume from the target system
-    # @see default_subvol_from_target
-    def read_default_subvol_from_target
-      self.default_subvol = default_subvol_from_target
-    end
-
-    protected
-
-    # Find the default subvolume name
-    #
-    # Only "" and "@" are supported.
-    #
-    # @param mount [String] Mount point.
-    # @return ["@", ""] Default subvolume name for the given mount point.
-    def btrfs_subvol_name_for(mount)
-      ret = Yast::Execute.on_target("btrfs", "subvol", "list", mount, stdout: :capture)
-      ret.split("\n").first =~ /.+ @\z/ ? "@" : ""
-    end
-
     publish :variable => :conv_fs, :type => "map <string, any>"
     publish :variable => :possible_root_fs, :type => "const list <symbol>"
     publish :function => :system_m_points, :type => "list <string> ()"
     publish :function => :crypt_m_points, :type => "list <string> ()"
     publish :variable => :swap_m_points, :type => "const list <string>"
     publish :variable => :tmp_m_points, :type => "const list <string>"
+    publish :variable => :default_subvol, :type => "string"
     publish :variable => :nchars, :type => "string"
-    publish :function => :default_subvol, :type => "string ()"
-    publish :function => :default_subvol=, :type => "string (string)"
     publish :function => :SuggestMPoints, :type => "list <string> ()"
     publish :function => :SuggestTmpfsMPoints, :type => "list <string> ()"
     publish :function => :GetGeneralFstabOptions, :type => "list <map <symbol, any>> ()"

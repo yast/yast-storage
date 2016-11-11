@@ -339,6 +339,10 @@ module Yast
 
       StorageClients.InstallCallbacks(@sint)
 
+      btrfs_default_subvolume = ProductFeatures.GetStringFeature("partitioning",
+                                                                 "btrfs_default_subvolume")
+      @sint.setDefaultSubvolName(btrfs_default_subvolume) if btrfs_default_subvolume
+
       if Stage.initial
         @sint.setDetectMountedVolumes(false)
         @sint.setRootPrefix(Installation.destdir)
@@ -371,7 +375,7 @@ module Yast
 
 
     def default_subvolume_name()
-      FileSystems.default_subvol
+      return @sint.getDefaultSubvolName()
     end
 
 
