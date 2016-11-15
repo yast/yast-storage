@@ -42,7 +42,6 @@ module Yast
     include Yast::Logger
     include Yast::StorageHelpers::TargetMapFormatter
 
-
     def main
 
       textdomain "storage"
@@ -73,6 +72,9 @@ module Yast
       @proposal_suspend = false
       @proposal_password = ""
       @proposal_create_vg = false
+
+      @proposal_settings_editable = true
+      @expert_partitioner_warning = false
 
       @cfg_xml = {}
 
@@ -161,6 +163,14 @@ module Yast
     def SetProposalPassword(val)
       @proposal_password = val
       Builtins.y2milestone("SetProposalPassword")
+    end
+
+    def GetProposalSettingsEditable
+      @proposal_settings_editable
+    end
+
+    def GetExpertPartitionerWarning
+      @expert_partitioner_warning
     end
 
 
@@ -328,6 +338,19 @@ module Yast
           end
         end
         Builtins.y2milestone("GetControlCfg after : %1", ret)
+      end
+
+      xml = ProductFeatures.GetSection("partitioning")
+      if xml.key?("proposal_settings_editable")
+        # ProductFetures.GetBooleanFeature cannot tell the difference between a missing value
+        # and one that is explicitly set to 'false'
+        @proposal_settings_editable =
+          ProductFeatures.GetBooleanFeature("partitioning", "proposal_settings_editable")
+      end
+
+      if xml.key?("expert_partitioner_warning")
+        @expert_partitioner_warning =
+          ProductFeatures.GetBooleanFeature("partitioning", "expert_partitioner_warning")
       end
 
       deep_copy(ret)
