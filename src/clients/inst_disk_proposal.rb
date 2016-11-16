@@ -72,7 +72,7 @@ module Yast
       end
 
 
-      # Title for dialogue
+      # Title for dialog
       @title = _("Suggested Partitioning")
       # Radiobutton for partition dialog
       @modify_str = _("&Expert Partitioner...")
