@@ -72,7 +72,7 @@ module Yast
       end
 
 
-      # Title for dialogue
+      # Title for dialog
       @title = _("Suggested Partitioning")
       # Radiobutton for partition dialog
       @modify_str = _("&Expert Partitioner...")
@@ -129,12 +129,13 @@ module Yast
 
       Builtins.y2milestone("current proposal: %1", @changes)
 
-      @rframe = VBox(
-        VSpacing(0.2),
-        # TRANSLATORS: button text
-        PushButton(Id(:settings), _("Edit Proposal Settings")),
-        HSpacing(0.2)
-      )
+      @rframe = StorageProposal.GetProposalSettingsEditable ?
+        VBox(
+          VSpacing(0.2),
+          # TRANSLATORS: button text
+          PushButton(Id(:settings), _("Edit Proposal Settings")),
+          HSpacing(0.2)
+        ) : Empty()
 
       @bframe = VBox(
         PushButton(Id(:detailed), @detailed_str),

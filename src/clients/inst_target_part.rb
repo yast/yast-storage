@@ -161,7 +161,7 @@ module Yast
             Ops.get_integer(@target, "cyl_size", 1)
           )
           @vbox = Builtins.add(@vbox, VSpacing(1.5))
-          @vbox = Builtins.add(@vbox, PushButton(Id(:settings), _("Edit Proposal Settings")))
+          @vbox = Builtins.add(@vbox, edit_proposal_settings_button)
           Builtins.y2milestone("can resize !")
         else
           # this is the normal case
@@ -175,14 +175,14 @@ module Yast
             Ops.get_term(@tmp, "term", VBox()),
             VBox(
               VSpacing(1.5),
-              PushButton(Id(:settings), _("Edit Proposal Settings"))
+              edit_proposal_settings_button
             )
           )
         end
       else
         @vbox = create_whole_disk_dialog
         @vbox = Builtins.add(@vbox, VSpacing(1.5))
-        @vbox = Builtins.add(@vbox, PushButton(Id(:settings), _("Edit Proposal Settings")))
+        @vbox = Builtins.add(@vbox, edit_proposal_settings_button)
       end
 
       # Since resize case and normal case have different help texts we need
@@ -490,6 +490,14 @@ module Yast
       end until ret == :abort || ret == :back
 
       ret
+    end
+
+    # Return a term for a PushButton("Edit Proposal Settings")
+    # or Empty() if that button is disabled in control.xml.
+    #
+    def edit_proposal_settings_button
+      return Empty() unless StorageProposal.GetProposalSettingsEditable
+      PushButton(Id(:settings), _("Edit Proposal Settings"))
     end
   end
 end
