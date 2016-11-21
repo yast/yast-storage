@@ -46,6 +46,7 @@ module Yast
       Yast.import "Partitions"
       Yast.import "Wizard"
       Yast.import "Storage"
+      Yast.import "StorageProposal"
       Yast.import "StorageFields"
 
       Yast.include self, "partitioning/custom_part_helptexts.rb"
@@ -232,14 +233,11 @@ module Yast
       @sym = :none
       begin
         @ret = Wizard.UserInput
-
+        # Always fetch widget values from the widget -
+        # never duplicate a widget's status by internal variables!
+        @custom_val = UI.QueryWidget(Id("CUSTOM"), :Value)
 
         Builtins.y2milestone("ret %1", @ret)
-
-        if Ops.is_string?(@ret) && Convert.to_string(@ret) == "CUSTOM"
-          #UI::ChangeWidget( `id(`disklist), `CurrentItem, "" );
-          @custom_val = !@custom_val
-        end
 
         @sym = :none
         @sym = Convert.to_symbol(@ret) if Ops.is_symbol?(@ret)
@@ -326,6 +324,15 @@ module Yast
             Storage.ResetOndiskTarget if Storage.GetPartMode != "USE_DISK"
             Storage.SetCustomDisplay(true)
           end
+          if @custom_val && StorageProposal.GetExpertPartitionerWarning
+            if show_expert_partitioner_warning
+              Builtins.y2milestone("User confirmed to enter expert partitioner")
+            else
+              UI.ChangeWidget(Id("CUSTOM"), :Value, false)
+              @custom_val = false
+              @sym = :again
+            end
+          end
         end # if (ret == next)
       end until @sym == :next || @sym == :back || @sym == :cancel
       if @sym != :next
@@ -334,6 +341,22 @@ module Yast
       end
       Storage.SaveExitKey(@sym)
       @sym
+    end
+
+    # Show a warning popup for the expert partitioner.
+    #
+    # @return [Boolean] user confirmed or not
+    #
+    def show_expert_partitioner_warning
+      # Warning popup about using the expert partitioner
+      @msg = _(
+        "This is for experts only.\n" +
+        "You might lose support if you use this!\n" +
+        "\n" +
+        "Please refer to the manual to make sure your custom\n" +
+        "partitioning meets the requirements of this product."
+      )
+      Popup.ContinueCancelHeadline(Label.WarningMsg, @msg)
     end
   end
 end
