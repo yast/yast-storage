@@ -1,8 +1,6 @@
 #!/usr/bin/env rspec
 
-ENV["Y2DIR"] = File.expand_path("../../src", __FILE__)
-
-require "yast"
+require_relative "spec_helper"
 
 Yast.import "StorageSnapper"
 Yast.import "Storage"

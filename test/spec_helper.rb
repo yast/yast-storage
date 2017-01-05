@@ -26,6 +26,30 @@ require "yast"
 require "yast/rspec"
 require "yaml"
 
+# fake StorageCallbacks as it is binary file and need to be build before tests
+# and in fact not tested. So if there is a plan to test it, just undefine
+# Yast::StorageCallbacks and call import again
+module Yast
+  class StorageCallbacksClass
+    METHODS = [
+      :ProgressBar,
+      :ShowInstallInfo,
+      :InfoPopup,
+      :YesNoPopup,
+      :CommitErrorPopup,
+      :PasswordPopup
+    ]
+
+    METHODS.each do |m|
+      define_method(m) {|_func| }
+    end
+  end
+
+  StorageCallbacks = StorageCallbacksClass.new
+end
+
+
+
 if ENV["COVERAGE"]
   require "simplecov"
   SimpleCov.start
