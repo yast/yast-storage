@@ -1,11 +1,6 @@
 #!/usr/bin/env rspec
 
-$LOAD_PATH.unshift File.expand_path('../../src', __FILE__)
-ENV["Y2DIR"] = File.expand_path("../../src", __FILE__)
-
-require "yast"
-
-require "include/partitioning/custom_part_lib"
+require_relative "spec_helper"
 
 class CustomPartLib < Yast::Client
   include Singleton
