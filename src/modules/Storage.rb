@@ -337,6 +337,8 @@ module Yast
         return false
       end
 
+      FileSystems.InitSlib(@sint)
+      Partitions.InitSlib(@sint)
       StorageClients.InstallCallbacks(@sint)
 
       if Stage.initial
@@ -351,9 +353,6 @@ module Yast
 
       @conts = getContainers
       log.info("InitLibstorage conts:#{@conts}")
-
-      FileSystems.InitSlib(@sint)
-      Partitions.InitSlib(@sint)
 
       true
     end
