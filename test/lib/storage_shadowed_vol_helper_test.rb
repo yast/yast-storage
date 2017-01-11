@@ -84,6 +84,29 @@ describe Yast::ShadowedVolHelper do
             subvol = find_subvol(second_root, "@/boot/grub2/i386-pc")
             expect(subvol).to be_nil
           end
+
+          # See bsc#1008740
+          context "if all the other subvolumes have been deleted" do
+            before do
+              # If all the subvolumes are deleted (not the same that 'marked for
+              # deletion'), the value for 'subvol' becomes nil (not empty)
+              root = find_partition(target_map, "/")
+              root.delete("subvol")
+            end
+
+            it "does not raise an exception" do
+              expect { helper.root_partition(target_map: target_map) }
+                .to_not raise_error
+            end
+
+            it "restores only the corresponding subvolumes" do
+              second_root = helper.root_partition(target_map: target_map)
+              subvolumes = second_root["subvol"].reject { |s| s["delete"] }
+              expect(subvolumes.map { |s| s["name"] }).to contain_exactly(
+                "@/boot/grub2/i386-pc", "@/boot/grub2/x86_64-efi"
+              )
+            end
+          end
         end
 
         context "before committing the changes" do

@@ -134,9 +134,11 @@ module Yast
         name = subvol["name"]
         log.info "Restore subvol #{name}?"
         log.debug "subvol: #{subvol}"
-        existing_subvol = target_part["subvol"].detect { |s| s["name"] == name}
+        subvols = target_part["subvol"] || []
+        existing_subvol = subvols.detect { |s| s["name"] == name}
         if existing_subvol.nil?
           log.info "Restoring subvol"
+          target_part["subvol"] ||= []
           target_part["subvol"] << subvol
         elsif existing_subvol["delete"]
           log.info "Rejecting subvol deletion"
