@@ -108,6 +108,18 @@ module Yast
           )
           Ops.set(@ret, "warning_level", :blocker)
         end
+
+        if @param["simple_mode"]
+          item = if rand > 0.5
+                   # A standard configuration
+                   _("Standard")
+                 else
+                   # A custom configuration
+                   _("Custom")
+                 end
+          @ret["label_proposal"] = [item]
+        end
+
         Storage.HandleProposalPackages
       elsif @func == "AskUser"
         @has_next = Ops.get_boolean(@param, "has_next", false)
