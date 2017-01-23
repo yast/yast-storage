@@ -30,6 +30,10 @@
 #			See also file proposal-API.txt for details.
 module Yast
   class PartitionsProposalClient < Client
+    class << self
+      attr_accessor :modified
+    end
+
     def main
       textdomain "storage"
 
@@ -110,12 +114,13 @@ module Yast
         end
 
         if @param["simple_mode"]
-          item = if rand > 0.5
-                   # A standard configuration
-                   _("Standard")
-                 else
+          self.class.modified = false if self.class.modified.nil?
+          item = if self.class.modified
                    # A custom configuration
                    _("Custom")
+                 else
+                   # A standard configuration
+                   _("Standard")
                  end
           @ret["label_proposal"] = [item]
         end
@@ -219,6 +224,7 @@ module Yast
 
         # Fill return map
         Storage.HandleProposalPackages
+        self.class.modified = true if @result == :next
         @ret = { "workflow_sequence" => @result }
       elsif @func == "Description"
         # Fill return map.
