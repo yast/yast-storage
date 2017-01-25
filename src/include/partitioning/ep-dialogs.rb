@@ -208,7 +208,6 @@ module Yast
           :crypt_fs,
           :Enabled,
           Ops.get_boolean(fs_data, :crypt, true) &&
-            Ops.get_symbol(data, "used_fs", :unknown) != :btrfs &&
             !Ops.get_boolean(data, "pool", false)
         )
 
@@ -445,7 +444,7 @@ module Yast
       #not there in RAID/LVM/loop configuration (#483789)
       ChangeWidgetIfExists(:do_not_format_attachment, :Enabled, !do_format)
 
-      _EnableDisableFsOpts.call(used_fs) if do_format
+      _EnableDisableFsOpts.call(used_fs)
 
       #not there on s390s
       ChangeWidgetIfExists(:crypt_fs, :Value, crypt_fs)

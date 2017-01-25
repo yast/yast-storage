@@ -481,7 +481,6 @@ module Yast
 
       if apply_change && UI.WidgetExists(Id(:crypt_fs))
         cr = Ops.get_boolean(selected_fs, :crypt, true) &&
-          Ops.get_symbol(new, "used_fs", :unknown) != :btrfs &&
           !Ops.get_boolean(new, "pool", false)
         Builtins.y2milestone("HandleFsChanged cr:%1", cr)
 
@@ -816,10 +815,8 @@ module Yast
           if no_fs
             UI.ChangeWidget(Id(:do_not_mount), :Value, true)
             ChangeExistingSymbolsState([:fs_options, :fs], false)
-            ChangeExistingSymbolsState(
-              [:crypt_fs],
-              fs_int == Partitions.fsid_lvm
-            )
+            enable_crypt = [Partitions.fsid_lvm, Partitions.fsid_raid].include?(fs_int)
+            ChangeExistingSymbolsState([:crypt_fs], enable_crypt)
           elsif fs_int == Partitions.fsid_native
             Ops.set(new, "used_fs", Partitions.DefaultFs)
             UI.ChangeWidget(
