@@ -35,7 +35,6 @@ module Yast
       Yast.import "Greasemonkey"
 
       Yast.include include_target, "partitioning/partition_defines.rb"
-
     end
 
     # Check lvm mount points
@@ -108,26 +107,6 @@ module Yast
       ret
     end
 
-    # Check crypted mount points and return true if the mount point is ok.
-    # @param [String] mount mount point
-    # @param [Boolean] crypt_fs boolean
-    # @return [Boolean]
-    #
-    def check_crypt_fs_mount_points(mount, crypt_fs)
-      if crypt_fs && FileSystems.IsCryptMp(mount, false)
-        # error popup text
-        Popup.Error(
-          _(
-            "You have assigned an encrypted file system to a partition\n" +
-              "with one of the following mount points: \"/\", \"/usr\", \"/boot\",\n" +
-              "/var\".  This is not possible. Change the mount point or use a\n" +
-              "nonloopbacked file system.\n"
-          )
-        )
-        return false
-      end
-      true
-    end
     def check_unique_label(targetMap, part)
       targetMap = deep_copy(targetMap)
       part = deep_copy(part)
@@ -148,6 +127,7 @@ module Yast
       end
       unique
     end
+
     def CheckFstabOptions(part)
       part = deep_copy(part)
       ret = true
@@ -340,13 +320,6 @@ module Yast
         if UI.WidgetExists(Id(:crypt_fs))
           crypt_fs = Convert.to_boolean(UI.QueryWidget(Id(:crypt_fs), :Value))
         end
-        if !check_crypt_fs_mount_points(
-            Ops.get_string(new, "mount", ""),
-            crypt_fs
-          )
-          Ops.set(ret, "ok", false)
-          Ops.set(ret, "field", :mount_point)
-        end
         if Ops.get_boolean(new, "noauto", false) &&
             !check_noauto_mount(Ops.get_string(new, "mount", ""))
           Ops.set(ret, "ok", false)
@@ -508,7 +481,6 @@ module Yast
 
       if apply_change && UI.WidgetExists(Id(:crypt_fs))
         cr = Ops.get_boolean(selected_fs, :crypt, true) &&
-          Ops.get_symbol(new, "used_fs", :unknown) != :btrfs &&
           !Ops.get_boolean(new, "pool", false)
         Builtins.y2milestone("HandleFsChanged cr:%1", cr)
 
@@ -843,10 +815,8 @@ module Yast
           if no_fs
             UI.ChangeWidget(Id(:do_not_mount), :Value, true)
             ChangeExistingSymbolsState([:fs_options, :fs], false)
-            ChangeExistingSymbolsState(
-              [:crypt_fs],
-              fs_int == Partitions.fsid_lvm
-            )
+            enable_crypt = [Partitions.fsid_lvm, Partitions.fsid_raid].include?(fs_int)
+            ChangeExistingSymbolsState([:crypt_fs], enable_crypt)
           elsif fs_int == Partitions.fsid_native
             Ops.set(new, "used_fs", Partitions.DefaultFs)
             UI.ChangeWidget(

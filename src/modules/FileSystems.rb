@@ -360,12 +360,14 @@ module Yast
           :name            => "LVM",
           :fsid            => Partitions.fsid_lvm,
           :supports_format => false,
+          :crypt           => true,
           :fsid_item       => "0x8E Linux LVM "
         },
         :raid       => {
           :name            => "RAID",
           :fsid            => Partitions.fsid_raid,
           :supports_format => false,
+          :crypt           => true,
           :fsid_item       => "0xFD Linux RAID "
         },
         :xbootdisk  => {
