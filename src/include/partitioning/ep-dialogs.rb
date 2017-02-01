@@ -356,7 +356,7 @@ module Yast
                 tmp1
               ),
               VSpacing(0.45),
-              CryptButton(data)
+              CryptCheckBox(data)
             )
           )
         )
