@@ -1046,17 +1046,32 @@ module Yast
           _("File &System"),
           filesystems
         ),
-        PushButton(
-          Id(:fs_options),
-          Opt(:hstretch),
-          # button text
-          _("O&ptions...")
-        )
+        ReplacePoint(Id(:rep_fs_options), Empty())
       )
     end
 
 
-    def CryptButton(new_val)
+    def FsOptionsButton
+      PushButton(
+        Id(:fs_options),
+        Opt(:hstretch),
+        # button text
+        _("O&ptions...")
+      )
+    end
+
+
+    def EnableSnapshotsCheckBox
+      Left(
+        CheckBox(
+          Id(:snapshots),
+          # Translators: checkbox text
+          _("Enable Snapshots")
+        )
+      )
+    end
+
+    def CryptCheckBox(new_val)
       new_val = deep_copy(new_val)
       cr = Ops.get_symbol(new_val, "enc_type", :none) != :none
 
@@ -1198,7 +1213,7 @@ module Yast
               )
             ),
             HBox(HSpacing(2), FileSystemsComboBox(new_val, file_systems)),
-            CryptButton(new_val),
+            CryptCheckBox(new_val),
             VSpacing(0.5)
           )
         )
@@ -1582,19 +1597,6 @@ module Yast
         )
       )
 
-      if Mode.installation() && snapshots_supported?(new_partition)
-        contents = Builtins.add(contents, VSpacing(0.5))
-        contents = Builtins.add(contents,
-          Left(
-            CheckBox(
-              Id(:snapshots),
-              # TRANSLATOR: checkbox text
-              _("Enable Snapshots")
-            )
-          )
-        )
-      end
-
       UI.OpenDialog(
         Opt(:decorated),
         VBox(
@@ -1613,8 +1615,6 @@ module Yast
           )
         )
       )
-
-      UI.ChangeWidget(Id(:snapshots), :Value, initial_userdata["/"] == "snapshots")
 
       UI.ChangeWidget(:help, :HelpText, helptext)
 
@@ -1674,7 +1674,7 @@ module Yast
                 svtmp
               )
               Popup.Message(tmp)
-              pth = svtmp + pth  
+              pth = svtmp + pth
             end
             if Builtins.contains(SubvolNames(new_partition), pth)
               Popup.Message(
@@ -1695,15 +1695,6 @@ module Yast
           items = SubvolNames(new_partition)
           UI.ChangeWidget(Id(:subvol), :Items, items)
           UI.ChangeWidget(Id(:new_path), :Value, "")
-
-        when :ok
-          val = UI.QueryWidget(Id(:snapshots), :Value)
-          if val
-            initial_userdata["/"] = "snapshots"
-          else
-            initial_userdata.delete("/")
-          end
-          Ops.set(new_partition, "userdata", initial_userdata)
 
         when :cancel
           if changed
@@ -1728,14 +1719,6 @@ module Yast
         new_partition["userdata"]
       )
       deep_copy(new_partition)
-    end
-
-    # Checks whether Btrfs snapshots are supported for the partition
-    #
-    # @param partition [Hash] map representing the partition
-    # @return [Boolean]
-    def snapshots_supported?(partition)
-      partition["mount"] == "/"
     end
   end
 end

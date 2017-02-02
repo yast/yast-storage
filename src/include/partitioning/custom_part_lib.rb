@@ -432,6 +432,100 @@ module Yast
       ret
     end
 
+    # Checks whether Btrfs snapshots are supported for the partition
+    #
+    # @param partition [Hash] hash representing the partition
+    # @return [Boolean]
+    #
+    def snapshots_supported?(partition)
+      partition["mount"] == "/"
+    end
+
+    # Checks whether Btrfs snapshots are currently enabled for the partition
+    #
+    # @param partition [Hash] hash representing the partition
+    # @return [Boolean]
+    #
+    def snapshots_enabled?(partition)
+      mount_point = partition["mount"]
+      userdata = partition["userdata"] || {}
+      log.info("snapshots_enabled? mount point: #{mount_point} userdata: #{userdata}")
+      return false if mount_point != "/"
+      userdata[mount_point] == "snapshots"
+    end
+
+
+    # Switch between the "Options" button or the "Enable Snapshots" check box.
+    #
+    # This can be done since we don't support any other Btrfs options: In that
+    # case, the "Options" button is always disabled anyway, so we replace it
+    # with that check box.
+    #
+    # @param used_fs [Symbol] the new filesystem the user selected
+    # @param partition [Hash] hash representing the partition
+    #
+    def switch_options_or_snapshots(used_fs, partition)
+      using_btrfs = used_fs == :btrfs
+      if UI.WidgetExists(Id(:subvol_rp))
+        UI.ReplaceWidget(Id(:subvol_rp), SubvolPart(using_btrfs))
+        if UI.WidgetExists(Id(:subvol))
+          UI.ChangeWidget(Id(:subvol), :Enabled, using_btrfs)
+        end
+      end
+      if using_btrfs && Mode.installation()
+        if !UI.WidgetExists(Id(:snapshots))
+          UI.ReplaceWidget(Id(:rep_fs_options), EnableSnapshotsCheckBox())
+        end
+        enable_disable_snapshots_checkbox(partition)
+      else
+        if !UI.WidgetExists(Id(:fs_options))
+          UI.ReplaceWidget(Id(:rep_fs_options), FsOptionsButton())
+        end
+      end
+    end
+
+
+    # Enable or disable the "Enable Snapshots" check box depending on the
+    # partition.
+    #
+    # @param partition [Hash] hash representing the partition
+    #
+    def enable_disable_snapshots_checkbox(partition)
+      if UI.WidgetExists(Id(:snapshots))
+        UI.ChangeWidget(Id(:snapshots), :Enabled, snapshots_supported?(partition))
+        UI.ChangeWidget(Id(:snapshots), :Value, snapshots_enabled?(partition))
+      end
+    end
+
+    # Apply the current value of the "Enable Snapshots" button to the current
+    # partition.
+    #
+    # @param partition [Hash] hash representing the partition
+    # @return partition [Hash] modified map
+    #
+    def apply_snapshots_checkbox_value(partition)
+      snapshots = false;
+      if UI.WidgetExists(Id(:snapshots)) && UI.QueryWidget(Id(:snapshots), :Enabled) == true
+        snapshots = UI.QueryWidget(Id(:snapshots), :Value)
+      end
+      if snapshots
+        # That hash in "userdata" is not used for anything else at the time
+        # being (in the context of partitions; snapshots are another matter),
+        # so it's safe to overwrite it completely.
+        #
+        # It is also safe to assume a mount point "/" since in all other cases
+        # the check box should be disabled (which we check) or not there at
+        # all.
+        partition["userdata"] = {"/" => "snapshots" }
+        log.info("apply_snapshots_checkbox_value: Enabling snapshots for /")
+      else
+        # Similar to above: It is safe to delete the entire hash in this "userdata" key.
+        partition.delete("userdata")
+        log.info("apply_snapshots_checkbox_value: No snapshots - deleting userdata")
+      end
+      partition
+    end
+
 
     def HandleFsChanged(init, new, old_fs, file_systems)
       new = deep_copy(new)
@@ -440,20 +534,12 @@ module Yast
       not_used_mp = []
       used_fs = Ops.get_symbol(new, "used_fs", :unknown)
       selected_fs = Ops.get_map(file_systems, used_fs, {})
-      Builtins.y2milestone(
-        "HandleFsChanged init:%1 used_fs:%2 old_fs:%3 new:%4",
-        init,
-        used_fs,
-        old_fs,
-        new
-      )
+      log.info("HandleFsChanged init: #{init} used_fs: #{used_fs} old_fs: #{old_fs} new: #{new}")
 
       if !init && used_fs != old_fs
-        Builtins.y2milestone(
-          "HandleFsChanged IsUnsupported:%1",
-          FileSystems.IsUnsupported(used_fs)
-        )
-        if FileSystems.IsUnsupported(Ops.get_symbol(new, "used_fs", :unknown))
+        is_unsupported = FileSystems.IsUnsupported(used_fs)
+        log.info("HandleFsChanged IsUnsupported: #{is_unsupported}")
+        if is_unsupported
           # warning message, %1 is replaced by fs name (e.g. Ext3)
           message = Builtins.sformat(
             _(
@@ -491,26 +577,17 @@ module Yast
         end
       end
 
-      if !init && apply_change && UI.WidgetExists(Id(:subvol_rp))
-        sv = Ops.get_symbol(new, "used_fs", :unknown) == :btrfs
-        Builtins.y2milestone("HandleFsChanged sv:%1", sv)
-        UI.ReplaceWidget(Id(:subvol_rp), SubvolPart(sv))
-        if UI.WidgetExists(Id(:subvol))
-          UI.ChangeWidget(Id(:subvol), :Enabled, sv)
-        end
-      end
-
       if apply_change
         #//////////////////////////////////////////////
         # switch between swap and other mountpoints
         mount = Convert.to_string(UI.QueryWidget(Id(:mount_point), :Value))
-        Ops.set(new, "mount", mount)
+        new["mount"] = mount
         if used_fs == :swap
           not_used_mp = Ops.get_list(selected_fs, :mountpoints, [])
           if mount != "swap" &&
-              (Ops.get_symbol(new, "type", :primary) != :lvm || mount != "")
-            Ops.set(new, "mount", "swap")
-            Ops.set(new, "inactive", true)
+             (Ops.get_symbol(new, "type", :primary) != :lvm || mount != "")
+            new["mount"] = "swap"
+            new["inactive"] = true
           end
         else
           not_used_mp = notUsedMountpoints(
@@ -528,9 +605,10 @@ module Yast
               !Builtins.contains(FileSystems.system_m_points, mp)
             end
           end
-          Ops.set(new, "mount", "") if mount == "swap"
+          new["mount"] = "" if mount == "swap"
         end
-        # UI::ReplaceWidget(`id(`mount_dlg_rp), MountDlg( new, not_used_mp));
+        switch_options_or_snapshots(used_fs, new)
+
         UI.ChangeWidget(
           Id(:mount_point),
           :Value,
@@ -611,7 +689,6 @@ module Yast
     #     (like the list of subvolumes) with the expert partitioner default values.
     #     Useful when creating a partition for the first time
     def HandlePartWidgetChanges(init, ret, file_systems, old, new, force_defaults: false)
-      ret = deep_copy(ret)
       file_systems = deep_copy(file_systems)
       old = deep_copy(old)
       new = deep_copy(new)
@@ -634,20 +711,24 @@ module Yast
           new = Builtins.filter(new) { |key, value| key != "fstopt" }
         end
       end
-      if !init && ret == :mount_point
-        mp = Convert.to_string(UI.QueryWidget(Id(:mount_point), :Value))
-        if Ops.get_string(new, "mount", "") != mp
-          oldfst = FileSystems.DefaultFstabOptions(new)
-          Ops.set(new, "mount", mp)
-          newfst = FileSystems.DefaultFstabOptions(new)
-          if oldfst != newfst
-            # Default fstab options have changed, set new default, bnc#774499
-            Ops.set(new, "fstopt", newfst)
+      if ret == :mount_point
+        enable_disable_snapshots_checkbox(new)
+        if !init
+          mp = Convert.to_string(UI.QueryWidget(Id(:mount_point), :Value))
+          if Ops.get_string(new, "mount", "") != mp
+            oldfst = FileSystems.DefaultFstabOptions(new)
+            new["mount"] = mp
+            enable_disable_snapshots_checkbox(new)
+            newfst = FileSystems.DefaultFstabOptions(new)
+            if oldfst != newfst
+              # Default fstab options have changed, set new default, bnc#774499
+              Ops.set(new, "fstopt", newfst)
+            end
+            new = HandleSubvol(new)
           end
-          new = HandleSubvol(new)
-        end
-        if UI.WidgetExists(Id(:fstab_options))
-          UI.ChangeWidget(Id(:fstab_options), :Enabled, !Builtins.isempty(mp))
+          if UI.WidgetExists(Id(:fstab_options))
+            UI.ChangeWidget(Id(:fstab_options), :Enabled, !Builtins.isempty(mp))
+          end
         end
       end
 
@@ -879,10 +960,11 @@ module Yast
           FileSystemOptions(Ops.get_map(new, "fs_options", {}), selected_fs)
         )
       end
+      apply_snapshots_checkbox_value(new) if ret == :next
 
       Builtins.y2milestone("HandlePartWidgetChanges old:%1", old)
       Builtins.y2milestone("HandlePartWidgetChanges new:%1", new)
-      deep_copy(new)
+      new
     end
 
 
