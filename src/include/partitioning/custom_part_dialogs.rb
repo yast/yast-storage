@@ -1597,19 +1597,6 @@ module Yast
         )
       )
 
-      if Mode.installation() && snapshots_supported?(new_partition)
-        contents = Builtins.add(contents, VSpacing(0.5))
-        contents = Builtins.add(contents,
-          Left(
-            CheckBox(
-              Id(:snapshots),
-              # TRANSLATOR: checkbox text
-              _("Enable Snapshots")
-            )
-          )
-        )
-      end
-
       UI.OpenDialog(
         Opt(:decorated),
         VBox(
@@ -1628,8 +1615,6 @@ module Yast
           )
         )
       )
-
-      UI.ChangeWidget(Id(:snapshots), :Value, initial_userdata["/"] == "snapshots")
 
       UI.ChangeWidget(:help, :HelpText, helptext)
 
@@ -1710,15 +1695,6 @@ module Yast
           items = SubvolNames(new_partition)
           UI.ChangeWidget(Id(:subvol), :Items, items)
           UI.ChangeWidget(Id(:new_path), :Value, "")
-
-        when :ok
-          val = UI.QueryWidget(Id(:snapshots), :Value)
-          if val
-            initial_userdata["/"] = "snapshots"
-          else
-            initial_userdata.delete("/")
-          end
-          Ops.set(new_partition, "userdata", initial_userdata)
 
         when :cancel
           if changed
