@@ -485,7 +485,7 @@ module Yast
     end
 
 
-    # Enable or disable the "Enable Snapshots" combo box depending on the
+    # Enable or disable the "Enable Snapshots" check box depending on the
     # partition.
     #
     # @param partition [Hash] hash representing the partition
