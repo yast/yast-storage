@@ -38,8 +38,10 @@ module Yast
     def initialize_partitioning_custom_part_check_generated(include_target)
       Yast.import "Arch"
       Yast.import "Storage"
+      Yast.import "StorageProposal"
       Yast.import "Partitions"
       Yast.import "Label"
+      Yast.import "Mode"
       Yast.import "Product"
       Yast.import "AutoinstData"
       Yast.import "FileSystems"
@@ -64,7 +66,7 @@ module Yast
     def check_created_partition_table(targetMap, installation)
       targetMap = deep_copy(targetMap)
       Builtins.y2milestone(
-        "now checking generated target map installation:%1",
+        "Now checking generated target map. installation: %1",
         installation
       )
 
@@ -85,6 +87,7 @@ module Yast
       boot_raid = false
       root_lvm = false
       root_fs = :unknown
+      snapshots_size_warning = false
       boot_fs = :unknown
       boot_fsid = 0
       boot_size_k = 0
@@ -131,9 +134,10 @@ module Yast
             end
             raid_type = Ops.get_string(part, "raid_type", "") if !boot_raid
             root_lvm = true if Ops.get_symbol(part, "type", :unknown) == :lvm
-            if diskinfo.fetch( "type", :CT_UNKNOWN ) == :CT_DISK 
+            if diskinfo.fetch( "type", :CT_UNKNOWN ) == :CT_DISK
                rootdlabel = diskinfo.fetch( "label", "" )
             end
+            snapshots_size_warning = !check_root_for_snapshot_size(part)
 
             # search for shadowed subvolumes of root filesystem
             targetMap.each do |dev, disk|
@@ -336,7 +340,7 @@ module Yast
                 "Your boot partition is smaller than %1.\n" +
                 "We recommend to increase the size of /boot.\n" +
                 "\n" +
-                "Really keep this size of boot partition?\n"
+                "Really keep this size of the boot partition?\n"
             ),
             Storage.KByteToHumanStringOmitZeroes(12 * 1024)
           )
@@ -346,7 +350,7 @@ module Yast
       end
 
       #/////////////////////////// NO BOOT ///////////////////////////
-      if (!boot_found && installation && 
+      if (!boot_found && installation &&
           !Partitions.EfiBoot && rootdlabel=="gpt") || show_all_popups
         message = _(
           "Warning: There is no partition of type bios_grub present.\n" \
@@ -424,6 +428,8 @@ module Yast
 
         ok = false if !Popup.YesNo(message)
       end
+
+      ok = show_snapshots_size_warning if snapshots_size_warning || show_all_popups
 
       # iSeries has no problems with this configuration
       # an initrd will be created and you can boot from a kernel slot
@@ -849,5 +855,69 @@ module Yast
       ret
     end
 
+    # Check if a Btrfs root filesystem is large enough for snapshots (if it has
+    # snapshots enabled).
+    #
+    # @param part [Hash] hash representing the partition
+    # @return [Boolean] true if ok, false if a warning should be shown
+    #
+    def check_root_for_snapshot_size(part)
+      log.info("check_root_for_snapshot_size: part: #{part}")
+      return true unless Mode.installation
+      return true unless part["mount"] == "/"
+      return true unless part["used_fs"] == :btrfs
+      return true unless part.has_key?("userdata")
+      userdata = part["userdata"]
+      return true unless userdata["/"] == "snapshots"
+      root_size_k = part["size_k"].to_i || 0
+      min_root_size_k = recommended_root_size_k_for_snapshots
+      log.info("check_root_for_snapshot_size: root: #{format_size_k(root_size_k)}; " +
+               "recommended min: #{format_size_k(min_root_size_k)}")
+      root_size_k >= min_root_size_k
+    end
+
+    # Format a size_k (kiB) human readable
+    #
+    # @param size_k [Fixnum]
+    # @return [String]
+    #
+    def format_size_k(size_k)
+      Storage.KByteToHumanStringOmitZeroes(size_k.to_i)
+    end
+
+    # Calculate the recommended minimum root filesystem size in kiB if
+    # snapshots are enabled.
+    #
+    # @return [Integer] size_k
+    #
+    def recommended_root_size_k_for_snapshots
+      proposal_settings = StorageProposal.GetControlCfg()
+      root_base_k = 1024 * (proposal_settings["root_base"] || 0)
+      btrfs_inc = proposal_settings["btrfs_increase_percentage"] || 0
+      log.info("recommended_root: base: #{root_base_k/(1024*1024.0)} GiB inc: #{btrfs_inc}%")
+      root_base_k * (1.0 + btrfs_inc / 100.0)
+    end
+
+    # Show a warning that the root partition is too small.
+    #
+    # @return [Boolean] true: user confirmed with "Yes", false: "No"
+    #
+    def show_snapshots_size_warning
+      recommended_k = recommended_root_size_k_for_snapshots
+      # popup text, %1 is a size
+      message = Builtins.sformat(
+        _(
+          "Warning:\n" +
+          "\n" +
+          "Your root partition is very small for snapshots.\n" +
+          "We recommend to increase the size of the root partition\n" +
+          "to %1 or more or to disable snapshots.\n" +
+          "\n" +
+          "Really keep the current setup?\n"
+        ),
+        format_size_k(recommended_k)
+      )
+      Popup.YesNo(message)
+    end
   end
 end
