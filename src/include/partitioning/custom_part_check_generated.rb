@@ -862,7 +862,6 @@ module Yast
     # @return [Boolean] true if ok, false if a warning should be shown
     #
     def check_root_for_snapshot_size(part)
-      log.info("check_root_for_snapshot_size: part: #{part}")
       return true unless Mode.installation
       return true unless part["mount"] == "/"
       return true unless part["used_fs"] == :btrfs
@@ -892,10 +891,7 @@ module Yast
     #
     def recommended_root_size_k_for_snapshots
       proposal_settings = StorageProposal.GetControlCfg()
-      root_base_k = 1024 * (proposal_settings["root_base"] || 0)
-      btrfs_inc = proposal_settings["btrfs_increase_percentage"] || 0
-      log.info("recommended_root: base: #{root_base_k/(1024*1024.0)} GiB inc: #{btrfs_inc}%")
-      root_base_k * (1.0 + btrfs_inc / 100.0)
+      1024 * (proposal_settings["root_base"] || 0)
     end
 
     # Show a warning that the root partition is too small.
