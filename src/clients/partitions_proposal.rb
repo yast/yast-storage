@@ -86,6 +86,13 @@ module Yast
           Builtins.y2milestone("prop=%1", @prop)
         end
 
+        if StorageProposal.CouldNotDoSnapshots(Storage.GetTargetMap)
+          Storage.SetPartProposalMode("impossible")
+          Builtins.y2milestone("no snapshots, rejecting proposal")
+          @ret["warning"] =
+            _("No snapshots possible.\nPlease use larger root partition.")
+        end
+
         if Storage.GetPartProposalMode != "impossible" ||
             !Storage.GetPartProposalActive
           Ops.set(@ret, "preformatted_proposal", Storage.ChangeText)
@@ -101,16 +108,11 @@ module Yast
             Ops.set(@ret, "warning_level", :warning)
           end
         else
-          Ops.set(@ret, "raw_proposal", [])
+          @ret["raw_proposal"] = []
           # popup text
-          Ops.set(
-            @ret,
-            "warning",
-            _(
-              "No automatic proposal possible.\nSpecify mount points manually in the 'Partitioner' dialog."
-            )
-          )
-          Ops.set(@ret, "warning_level", :blocker)
+          @ret["warning"] ||=
+            _("No automatic proposal possible.\nSpecify mount points manually in the 'Partitioner' dialog.")
+          @ret["warning_level"] = :blocker
         end
 
         if @param["simple_mode"]
