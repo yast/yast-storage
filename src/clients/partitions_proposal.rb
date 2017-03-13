@@ -86,7 +86,7 @@ module Yast
           Builtins.y2milestone("prop=%1", @prop)
         end
 
-        if StorageProposal.CouldNotDoSnapshots(Storage.GetTargetMap)
+        if @param["simple_mode"] && StorageProposal.CouldNotDoSnapshots(Storage.GetTargetMap)
           Storage.SetPartProposalMode("impossible")
           Builtins.y2milestone("no snapshots, rejecting proposal")
           @ret["warning"] =
