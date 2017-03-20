@@ -6474,23 +6474,6 @@ module Yast
       deep_copy(ret)
     end
 
-
-    def CallInsserv(on, name)
-      Builtins.y2milestone("CallInsserv on: %1 name: %2", on, name)
-      scrname = Ops.add("/etc/init.d/", name)
-      if Ops.greater_than(SCR.Read(path(".target.size"), scrname), 0)
-        cmd = "cd / && /sbin/insserv "
-        cmd = Ops.add(cmd, "-r ") if !on
-        cmd = Ops.add(cmd, scrname)
-        Builtins.y2milestone("CallInsserv cmd %1", cmd)
-        bo = Convert.to_map(SCR.Execute(path(".target.bash_output"), cmd))
-        Builtins.y2milestone("CallInsserv bo %1", bo)
-      end
-
-      nil
-    end
-
-
     def FinishInstall
       Builtins.y2milestone("FinishInstall initial: %1", Stage.initial)
 
@@ -6531,8 +6514,6 @@ module Yast
         need_dmmultipath
       )
 
-      CallInsserv(need_md, "boot.md")
-      CallInsserv(need_dmraid, "boot.dmraid")
       Service.Enable("multipathd") if need_dmmultipath
 
       Builtins.y2milestone("FinishInstall done")
