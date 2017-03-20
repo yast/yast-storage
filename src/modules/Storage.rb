@@ -6537,7 +6537,6 @@ module Yast
       )
 
       CallInsserv(need_md, "boot.md")
-      CallInsserv(need_dmraid, "boot.dmraid")
       Service.Enable("multipathd") if need_dmmultipath
 
       Builtins.y2milestone("FinishInstall done")
