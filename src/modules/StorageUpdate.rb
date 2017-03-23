@@ -728,24 +728,11 @@ module Yast
               Ops.get_integer(oldv, "minor", 0) == 0
           UpdateFstabIseriesVd() if Arch.board_iseries
         end
-        if Ops.less_than(Ops.get_integer(oldv, "major", 0), 10) ||
-            Ops.get_integer(oldv, "major", 0) == 10 &&
-              Ops.less_or_equal(Ops.get_integer(oldv, "minor", 0), 2)
-          cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto"
-          bo = Convert.to_map(SCR.Execute(path(".target.bash_output"), cmd))
-          Builtins.y2milestone("Update bo %1", bo)
-
-          cmd = "cd / && /sbin/insserv /etc/init.d/boot.crypto-early"
-          bo = Convert.to_map(SCR.Execute(path(".target.bash_output"), cmd))
-          Builtins.y2milestone("Update bo %1", bo)
-        end
         if Ops.less_than(Ops.get_integer(oldv, "major", 0), 11) ||
             Ops.get_integer(oldv, "major", 0) == 11 &&
               Ops.less_or_equal(Ops.get_integer(oldv, "minor", 0), 2)
           UpdateFstabCryptNofail()
         end
-        # 	    if( oldv["major"]:0<=11 || (oldv["major"]:0==12 && oldv["minor"]:0<=1))
-        # 		UpdateFstabWindowsMounts();
         if Ops.less_than(Ops.get_integer(oldv, "major", 0), 13)
           UpdateFstabRemoveSystemdMps()
         end
