@@ -65,6 +65,7 @@ module Yast
 
       @proposal_home = false
       @proposal_home_fs = :xfs
+      @proposal_swap = true
       @proposal_lvm = false
       @proposal_encrypt = false
       @proposal_root_fs = :btrfs
@@ -145,6 +146,14 @@ module Yast
       Builtins.y2milestone("SetProposalSnapshots val: %1", val)
     end
 
+    def GetProposalSwap()
+      @proposal_swap
+    end
+
+    def SetProposalSwap(val)
+      @proposal_swap = val
+      Builtins.y2milestone("SetProposalSwap val: %1", val)
+    end
 
     def GetProposalSuspend
       @proposal_suspend
@@ -190,15 +199,17 @@ module Yast
         SetProposalRootFs(Partitions.DefaultFs())
         SetProposalHomeFs(Partitions.DefaultHomeFs())
         SetProposalSnapshots(Ops.get_boolean(@cfg_xml, "prop_snapshots", false))
+        SetProposalSwap(Ops.get_boolean(@cfg_xml, "need_swap", true))
       end
       Builtins.y2milestone(
-        "SetProposalDefault home: %1 lvm: %2 encypt: %3 home_only: %4 snapshots: %5 suspend: %6 root_fs: %7 home_fs: %8",
+        "SetProposalDefault home: %1 lvm: %2 encypt: %3 home_only: %4 snapshots: %5 suspend: %6 swap: %7 root_fs: %8 home_fs: %9",
         @proposal_home,
         @proposal_lvm,
         @proposal_encrypt,
         home_only,
         @proposal_snapshots,
         @proposal_suspend,
+        @proposal_swap,
         @proposal_root_fs,
         @proposal_home_fs
       )
@@ -299,6 +310,10 @@ module Yast
         # GetBooleanFeature cannot distinguish between missing and false
         tmp = ProductFeatures.GetFeature("partitioning", "proposal_snapshots")
         Ops.set(@cfg_xml, "prop_snapshots", tmp == "" || tmp == true ? true : false)
+
+        # GetBooleanFeature cannot distinguish between missing and false
+        tmp = ProductFeatures.GetFeature("partitioning", "need_swap")
+        Ops.set(@cfg_xml, "need_swap", tmp == "" || tmp == true ? true : false)
 
         itmp = ProductFeatures.GetIntegerFeature(
           "partitioning",
@@ -3572,6 +3587,9 @@ module Yast
         disk,
         partitions
       )
+      if !GetProposalSwap()
+        return ret
+      end
       swaps = Builtins.filter(partitions) do |p|
         Ops.get_symbol(p, "type", :unknown) != :free &&
           !Ops.get_boolean(p, "delete", false) &&
@@ -3943,7 +3961,7 @@ module Yast
       conf = { "partitions" => [] }
       swap_sizes = []
       avail_size = get_avail_size_mb(Ops.get_list(disk, "partitions", []))
-      if !have_swap
+      if !have_swap && GetProposalSwap()
         swap_sizes = get_swap_sizes(avail_size)
         swap = {
           "mount"       => "swap",
@@ -4030,7 +4048,7 @@ module Yast
         )
         ps1 = do_flexible_disk_conf(disk, conf, false, false)
       end
-      if !have_swap
+      if !have_swap && GetProposalSwap()
         diff = Ops.subtract(
           Ops.get(swap_sizes, 0, 256),
           Ops.get(swap_sizes, 1, 256)
@@ -4834,7 +4852,7 @@ module Yast
                 )
               end
             end
-            if !have_swap
+            if !have_swap && GetProposalSwap()
               swap_sizes = get_swap_sizes(avail_size)
               swap = {
                 "mount"       => "swap",
@@ -4933,7 +4951,7 @@ module Yast
               )
               ps1 = do_flexible_disk_conf(disk, conf, have_boot, mode == :reuse)
             end
-            if !have_swap
+            if !have_swap && GetProposalSwap()
               diff = Ops.subtract(
                 Ops.get(swap_sizes, 0, 256),
                 Ops.get(swap_sizes, 1, 256)
@@ -6028,7 +6046,7 @@ module Yast
           modify_vm(
             Ops.get_map(ret, ["target", vg_key], {}),
             opts,
-            Builtins.size(r) == 0
+            Builtins.size(r) == 0 && GetProposalSwap()
           )
         )
         Ops.set(ret, ["target", sol_disk], Ops.get_map(solution, sol_disk, {}))
@@ -6152,7 +6170,7 @@ module Yast
         Ops.set(
           ret,
           ["target", vg_key],
-          modify_vm(vg, opts, Builtins.size(r) == 0)
+          modify_vm(vg, opts, Builtins.size(r) == 0 && GetProposalSwap())
         )
         Ops.set(ret, ["target", ddev], disk)
         Ops.set(
