@@ -74,7 +74,13 @@ module Yast
             "prop ok:%1",
             Ops.get_boolean(@prop, "ok", false)
           )
-          if Ops.get_boolean(@prop, "ok", false)
+          if @prop["ok"] && StorageProposal.CouldNotDoSnapshots(@prop["target"])
+            Storage.SetTargetMap(Ops.get_map(@prop, "target", {}))
+            Storage.SetPartProposalMode("impossible")
+            @ret["warning"] =
+              _("No snapshots possible.\nPlease use larger root partition.")
+            Builtins.y2milestone("XXX no snapshots")
+          elsif Ops.get_boolean(@prop, "ok", false)
             Storage.SetTargetMap(Ops.get_map(@prop, "target", {}))
             Storage.SetPartProposalMode("accept")
             Builtins.y2milestone("PROPOSAL: %1", Storage.ChangeText)
