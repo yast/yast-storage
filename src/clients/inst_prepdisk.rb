@@ -36,6 +36,8 @@
 # possible return values: `back, `abort `next
 module Yast
   class InstPrepdiskClient < Client
+    EFIVARS_PATH = "/sys/firmware/efi/efivars".freeze
+
     def main
       textdomain "storage"
 
@@ -140,6 +142,7 @@ module Yast
 
         MountTarget("/proc", "proc", "-t proc")
         MountTarget("/sys", "sysfs", "-t sysfs")
+        MountTarget(EFIVARS_PATH, "efivarfs", "-t efivarfs") if File.exists?(EFIVARS_PATH)
 
         # mounting /run for udev (bnc#717321)
         @cmd = Ops.add(
