@@ -354,6 +354,9 @@ module Yast
       @conts = getContainers
       log.info("InitLibstorage conts:#{@conts}")
 
+      # Initializes default subvolume name (bsc#1040154)
+      FileSystems.read_default_subvol_from_target if Mode.normal || Mode.config
+
       true
     end
 
