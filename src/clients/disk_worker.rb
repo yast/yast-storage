@@ -42,6 +42,7 @@ module Yast
       Yast.import "CommandLine"
       Yast.import "Storage"
       Yast.import "StorageFields"
+      Yast.import "FileSystems"
 
 
       @cmdline = {
@@ -84,6 +85,7 @@ module Yast
     def DiskSequence
       return :abort if !Storage.InitLibstorage(false)
 
+      FileSystems.read_default_subvol_from_target
       Storage.SwitchUiAutomounter(false)
       ret = WFM.CallFunction("inst_disk", [true, true])
       Storage.SwitchUiAutomounter(true)
