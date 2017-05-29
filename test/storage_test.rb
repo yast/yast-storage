@@ -13,31 +13,27 @@ describe "Yast::Storage" do
   before { subject.main }
 
   describe "#InitLibstorage" do
-    before { Yast::Mode.SetMode(mode) }
-
-    context "when running on normal mode" do
-      let(:mode) { "normal" }
-
-      it "reads the default subvolume from the target system" do
-        expect(Yast::FileSystems).to receive(:read_default_subvol_from_target)
-        subject.InitLibstorage(false)
-      end
+    around do |example|
+      old_stage = Yast::Stage.stage
+      Yast::Stage.Set(stage)
+      example.run
+      Yast::Stage.Set(old_stage)
     end
 
-    context "when running on autoinst_config mode" do
-      let(:mode) { "autoinst_config" }
+    context "when running on initial stage" do
+      let(:stage) { "initial" }
 
-      it "reads the default subvolume from the target system" do
-        expect(Yast::FileSystems).to receive(:read_default_subvol_from_target)
-        subject.InitLibstorage(false)
-      end
-    end
-
-    context "when running on installation mode" do
-      let(:mode) { "installation" }
-
-      it "does not read the default subvolume" do
+      it "does not read the default subvolume from the target system" do
         expect(Yast::FileSystems).to_not receive(:read_default_subvol_from_target)
+        subject.InitLibstorage(false)
+      end
+    end
+
+    context "when not running on initial stage" do
+      let(:stage) { "normal" }
+
+      it "reads the default subvolume from the target system" do
+        expect(Yast::FileSystems).to receive(:read_default_subvol_from_target)
         subject.InitLibstorage(false)
       end
     end
