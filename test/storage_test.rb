@@ -20,7 +20,7 @@ describe "Yast::Storage" do
       Yast::Stage.Set(old_stage)
     end
 
-    context "when running on initial stage" do
+    context "when running in the initial stage" do
       let(:stage) { "initial" }
 
       it "does not read the default subvolume from the target system" do
@@ -29,7 +29,7 @@ describe "Yast::Storage" do
       end
     end
 
-    context "when not running on initial stage" do
+    context "when not running in the initial stage" do
       let(:stage) { "normal" }
 
       it "reads the default subvolume from the target system" do
