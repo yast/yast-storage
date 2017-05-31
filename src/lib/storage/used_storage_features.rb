@@ -95,6 +95,17 @@ module Yast
           # Other
           FT_QUOTA:         "quota"
         }
+
+      # Storage-related packages that are nice to have, but not absolutely
+      # required.
+      #
+      # SLES-12 for example (unlike SLED-12) does not come with NTFS packages,
+      # so they cannot be installed. But there might already be an existing
+      # NTFS Windows partition on the disk; don't throw an error pop-up in that
+      # case, just log a warning (bsc#1039830).
+      #
+      OPTIONAL_PACKAGES = [ "ntfs-3g", "ntfsprogs" ]
+      #
       # configurable part ends here
       #======================================================================
 

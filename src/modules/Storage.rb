@@ -4867,12 +4867,22 @@ module Yast
     end
 
 
-    # return list of missing packages in the running system
+    # Return list of missing packages in the running system
     def missing_packages
       used_features = Yast::StorageHelpers::UsedStorageFeatures.new(@sint)
       features = used_features.collect_features
       packages = used_features.feature_packages(features)
       packages = packages.delete_if { |package| Package.Installed(package) }
+      packages = packages.delete_if { |package| unavailable_optional_package?(package) }
+    end
+
+    # Return 'true' if a package is an optional package that is unavailable.
+    def unavailable_optional_package?(package)
+      return false unless Yast::StorageHelpers::UsedStorageFeatures::OPTIONAL_PACKAGES.include?(package)
+      log.info("Checking optional pkg #{package}")
+      return false if Package.Available(package)
+      log.warn("WARNING: Skipping unavailable filesystem support package #{package}")
+      true
     end
 
 
@@ -5985,6 +5995,7 @@ module Yast
       used_features = Yast::StorageHelpers::UsedStorageFeatures.new(@sint)
       features = used_features.collect_features
       packages += used_features.feature_packages(features)
+      packages = packages.delete_if { |package| unavailable_optional_package?(package) }
 
       log.info("AddPackageList(): packages: #{packages}")
       packages
