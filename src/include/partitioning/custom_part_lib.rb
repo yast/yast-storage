@@ -478,7 +478,7 @@ module Yast
         end
         enable_disable_snapshots_checkbox(partition)
       else
-        if !UI.WidgetExists(Id(:fs_options))
+        if !UI.WidgetExists(Id(:fs_options)) && UI.WidgetExists(Id(:rep_fs_options))
           UI.ReplaceWidget(Id(:rep_fs_options), FsOptionsButton())
         end
       end
