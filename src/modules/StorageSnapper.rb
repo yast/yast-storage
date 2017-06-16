@@ -77,9 +77,11 @@ module Yast
 
       part = Storage.GetEntryForMountpoint("/")
 
+      # TRANSLATORS: first snapshot description
+      snapshot_description = _("first root filesystem")
       if bash_log_output("/usr/lib/snapper/installation-helper --step 1 " <<
                          "--device '#{String.Quote(part["device"])}' " <<
-                         "--description 'first root filesystem'") != 0
+                         "--description '#{String.Quote(snapshot_description)}'") != 0
         log.error("configuring snapper for root fs failed")
       end
 
