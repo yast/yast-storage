@@ -2066,11 +2066,11 @@ module Yast
     # @return [String,nil] Default subvolume from the target system
     def default_subvol_from_target
       Yast.import "Storage"
-      parts = Storage.GetTargetMap.map { |_k, d| d.fetch("partitions")  }.flatten.compact
+      parts = Storage.GetTargetMap.map { |_k, d| d.fetch("partitions", []) }.flatten.compact
       btrfs_parts = parts.select { |p| p["used_fs"] == :btrfs }
-      default_subvol_names = btrfs_parts.reduce({}) do |memo, part|
-        memo[part["mount"]] = btrfs_subvol_name_for(part["mount"]) unless part["mount"].nil?
-        memo
+      default_subvol_names = btrfs_parts.each_with_object({}) do |part, memo|
+        next if part["mount"].nil? || !::File.directory?(part["mount"])
+        memo[part["mount"]] = btrfs_subvol_name_for(part["mount"])
       end
 
       # Root takes precedence
