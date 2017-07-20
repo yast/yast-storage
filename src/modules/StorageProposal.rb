@@ -6601,7 +6601,7 @@ module Yast
       ret = false
       if GetProposalSnapshots()
         prop_target_map.each do |device, container|
-          container["partitions"].each do |volume|
+          container.fetch("partitions", []).each do |volume|
             if !volume.fetch("delete", false)
               if volume.fetch("used_fs", :none) == :btrfs && volume.fetch("mount", "") == "/"
                 userdata = volume.fetch("userdata", {})
