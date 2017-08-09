@@ -42,6 +42,15 @@ module Yast
     include Yast::Logger
     include Yast::StorageHelpers::TargetMapFormatter
 
+    # Internal name of the home partition or volume.
+    # This does not change, even if the mount point for this is really "/data"
+    # or anything else.
+    #
+    # The mount point for this (which might be "/home" or "/data") is
+    # GetHomePath() / SetHomePath().
+    HOME_VOL_NAME = "home"
+    DEFAULT_HOME_PATH = "/home"
+
     def main
 
       textdomain "storage"
@@ -76,6 +85,10 @@ module Yast
       @proposal_settings_editable = true
       @expert_partitioner_warning = false
 
+      # Path of the home partition or volume.
+      # This might become "data" in certain setups (CaaSP).
+      @home_path = DEFAULT_HOME_PATH
+
       @cfg_xml = {}
 
       @swapable = {}
@@ -105,6 +118,19 @@ module Yast
     def SetProposalHomeFs(val)
       @proposal_home_fs = val
       Builtins.y2milestone("SetProposalHomeFs val: %1", @proposal_home_fs)
+    end
+
+
+    def SetHomePath(val)
+      @home_path = val
+    end
+
+    def GetHomePath
+      @home_path
+    end
+
+    def GetStrippedHomePath
+      @home_path.gsub(/^\//, "")
     end
 
 
@@ -292,6 +318,15 @@ module Yast
         if Ops.less_or_equal(Ops.get_integer(@cfg_xml, "home_max", 0), 0)
           Ops.set(@cfg_xml, "home_max", 25 * 1024)
         end
+
+        @home_path = ProductFeatures.GetStringFeature("partitioning", "home_path")
+        @home_path ||= DEFAULT_HOME_PATH
+        if !@home_path.start_with?("/")
+          log.error("home_path in control.xml does not start with /")
+          log.error("falling back to @{DEFAULT_HOME_PATH}")
+          @home_path = DEFAULT_HOME_PATH
+        end
+        log.info("home_path: #{@home_path}") unless @home_path == DEFAULT_HOME_PATH
 
         btmp = ProductFeatures.GetBooleanFeature("partitioning", "proposal_lvm")
         Ops.set(@cfg_xml, "prop_lvm", btmp ? true : false)
@@ -2544,7 +2579,7 @@ module Yast
         "/boot/zipl" => 0,
         "swap"      => 1,
         "/"         => 5,
-        "/home"     => 6
+        GetHomePath()     => 6
       }
       Builtins.foreach(Ops.get_list(g, "gap", [])) do |e|
         if !Ops.get_boolean(e, "exists", false) &&
@@ -3814,7 +3849,7 @@ module Yast
           if !Ops.get_boolean(p, "delete", false) &&
               Ops.get_string(p, "device", "") ==
                 Ops.get_string(pl, [0, "device"], "")
-            p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
+            p = Storage.SetVolOptions(p, GetHomePath(), PropDefaultHomeFs(), "", "", "")
           end
           deep_copy(p)
         end
@@ -3970,7 +4005,7 @@ module Yast
       if GetProposalHome() &&
           Ops.less_than(Ops.get_integer(opts, "home_limit", 0), avail_size)
         home = {
-          "mount"       => "/home",
+          "mount"       => GetHomePath(),
           "increasable" => true,
           "fsys"        => PropDefaultHomeFs(),
           "size"        => 512 * 1024 * 1024,
@@ -4019,7 +4054,7 @@ module Yast
           conf,
           "partitions",
           Builtins.filter(Ops.get_list(conf, "partitions", [])) do |p|
-            Ops.get_string(p, "mount", "") != "/home" &&
+            Ops.get_string(p, "mount", "") != GetHomePath() &&
               Ops.get_string(p, "mount", "") != "/"
           end
         )
@@ -4476,7 +4511,7 @@ module Yast
           end
 
           # check whether we have a home partition
-          if volume["mount"] == "/home"
+          if volume["mount"] == StorageProposal.GetHomePath()
             @have_home_partition = true
           end
 
@@ -4507,9 +4542,9 @@ module Yast
           if StorageProposal.PropDefaultFs() == :btrfs && @have_home_partition
             if volume["mount"] == "/"
               if FileSystems.default_subvol.empty?
-                home = "home"
+                home = StorageProposal.GetStrippedHomePath()
               else
-                home = FileSystems.default_subvol + "/" + "home"
+                home = FileSystems.default_subvol + "/" + StorageProposal.GetStrippedHomePath()
               end
               volume["subvol"].delete_if { |subvol| subvol["name"] == home }
             end
@@ -4665,7 +4700,7 @@ module Yast
               [s, "partitions"],
               remove_p_settings(
                 Ops.get_list(target, [s, "partitions"], []),
-                ["/", "/home"]
+                ["/", GetHomePath()]
               )
             )
           end
@@ -4866,7 +4901,7 @@ module Yast
                   avail_size
                 )
               home = {
-                "mount"       => "/home",
+                "mount"       => GetHomePath(),
                 "increasable" => true,
                 "fsys"        => PropDefaultHomeFs(),
                 "size"        => 512 * 1024 * 1024,
@@ -4922,7 +4957,7 @@ module Yast
                 conf,
                 "partitions",
                 Builtins.filter(Ops.get_list(conf, "partitions", [])) do |p2|
-                  Ops.get_string(p2, "mount", "") != "/home" &&
+                  Ops.get_string(p2, "mount", "") != GetHomePath() &&
                     Ops.get_string(p2, "mount", "") != "/"
                 end
               )
@@ -4993,7 +5028,7 @@ module Yast
             if Ops.get_boolean(ps1, "ok", false)
               mb = [get_mb_sol(ps1, "/")]
               if GetProposalHome()
-                home_mb = get_mb_sol(ps1, "/home")
+                home_mb = get_mb_sol(ps1, GetHomePath())
                 mb = Builtins.add(mb, home_mb)
                 # penalty for not having separate /home
                 if home_mb == 0
@@ -5370,7 +5405,7 @@ module Yast
         Ops.get_string(p, "name", "") == "root"
       end
       home = Builtins.find(Ops.get_list(ret, "partitions", [])) do |p|
-        Ops.get_string(p, "name", "") == "home"
+        Ops.get_string(p, "name", "") == HOME_VOL_NAME
       end
       Builtins.y2milestone(
         "modify_vm swap %1 root %2 home %3",
@@ -5408,7 +5443,7 @@ module Yast
           )
         end
       )
-      keep = ["root", "home", "swap"]
+      keep = ["root", HOME_VOL_NAME, "swap"]
       root_pe = sizek_to_pe(
         Ops.multiply(Ops.get_integer(opts, "root_base", 0), 1024),
         pe,
@@ -5643,11 +5678,11 @@ module Yast
       if home == nil && Ops.greater_than(home_pe, 0)
         p = {
           "create" => true,
-          "name"   => "home",
-          "device" => Ops.add(Ops.get_string(ret, "device", ""), "/home"),
+          "name"   => HOME_VOL_NAME,
+          "device" => Ops.add(Ops.get_string(ret, "device", ""), GetHomePath()),
           "size_k" => pe_to_sizek(home_pe, pe)
         }
-        p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
+        p = Storage.SetVolOptions(p, GetHomePath(), PropDefaultHomeFs(), "", "", "")
         Builtins.y2milestone("modify_vm created %1", p)
         Ops.set(
           ret,
@@ -5659,8 +5694,8 @@ module Yast
           ret,
           "partitions",
           Builtins.maplist(Ops.get_list(ret, "partitions", [])) do |p|
-            if Ops.get_string(p, "name", "") == "home"
-              p = Storage.SetVolOptions(p, "/home", PropDefaultHomeFs(), "", "", "")
+            if Ops.get_string(p, "name", "") == HOME_VOL_NAME
+              p = Storage.SetVolOptions(p, GetHomePath(), PropDefaultHomeFs(), "", "", "")
               Builtins.y2milestone("modify_vm reuse %1", p)
             end
             deep_copy(p)
@@ -6566,7 +6601,7 @@ module Yast
       ret = false
       if GetProposalSnapshots()
         prop_target_map.each do |device, container|
-          container["partitions"].each do |volume|
+          container.fetch("partitions", []).each do |volume|
             if !volume.fetch("delete", false)
               if volume.fetch("used_fs", :none) == :btrfs && volume.fetch("mount", "") == "/"
                 userdata = volume.fetch("userdata", {})
@@ -6602,7 +6637,7 @@ module Yast
           )
         end
         ret = Builtins.size(Builtins.filter(ls) do |p|
-          Ops.get_string(p, "mount", "") == "/home"
+          Ops.get_string(p, "mount", "") == GetHomePath()
         end) == 0
         Builtins.y2milestone("CouldNotDoSeparateHome ls: %1", ls)
       end
