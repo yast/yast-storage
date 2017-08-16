@@ -1,6 +1,7 @@
 require "yast/rake"
 
 Yast::Tasks.submit_to :casp10
+obs_project = "Devel:YaST:CASP:1.0"
 
 Yast::Tasks.configuration do |conf|
   #lets ignore license check for now
