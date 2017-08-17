@@ -328,9 +328,6 @@ module Yast
         end
         log.info("home_path: #{@home_path}") unless @home_path == DEFAULT_HOME_PATH
 
-        @proposal_home_fs = get_fs_type_from_control_xml("home_fs", @proposal_home_fs)
-        @proposal_root_fs = get_fs_type_from_control_xml("root_fs", @proposal_root_fs)
-
         btmp = ProductFeatures.GetBooleanFeature("partitioning", "proposal_lvm")
         Ops.set(@cfg_xml, "prop_lvm", btmp ? true : false)
 
@@ -359,6 +356,9 @@ module Yast
 
         SetProposalDefault(false)
         Builtins.y2milestone("GetControlCfg cfg_xml: %1", @cfg_xml)
+
+        @proposal_home_fs = get_fs_type_from_control_xml("home_fs", @proposal_home_fs)
+        @proposal_root_fs = get_fs_type_from_control_xml("root_fs", @proposal_root_fs)
       end
       ret = deep_copy(@cfg_xml)
       Builtins.y2milestone(
@@ -6693,7 +6693,8 @@ module Yast
     # @return [Symbol] filesystem type (:btrfs, :xfs, :ext4, ...)
     #
     def get_fs_type_from_control_xml(name, fallback)
-      fs = ProductFeatures.GetStringFeature("partitioning", name) || fallback
+      fs = ProductFeatures.GetStringFeature("partitioning", name)
+      fs = fallback if fs.nil? || fs.empty?
       fs = fs.downcase.to_sym unless fs.is_a?(Symbol)
       log.info("#{name}: #{fs}") unless fs == fallback
       fs
