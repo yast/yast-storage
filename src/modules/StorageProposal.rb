@@ -328,6 +328,9 @@ module Yast
         end
         log.info("home_path: #{@home_path}") unless @home_path == DEFAULT_HOME_PATH
 
+        @proposal_home_fs = get_fs_type_from_control_xml("home_fs", @proposal_home_fs)
+        @proposal_root_fs = get_fs_type_from_control_xml("root_fs", @proposal_root_fs)
+
         btmp = ProductFeatures.GetBooleanFeature("partitioning", "proposal_lvm")
         Ops.set(@cfg_xml, "prop_lvm", btmp ? true : false)
 
@@ -6681,6 +6684,19 @@ module Yast
     def strategy=(value)
       SetProposalLvm([:lvm, :lvm_crypt].include?(value))
       SetProposalEncrypt(value == :lvm_crypt)
+    end
+
+    # Get a filesystem type from control.xml.
+    #
+    # @param [String] name  key below "partitioning" in control.xml
+    # @param [Symbol] fallback  fallback value if not present in control.xml
+    # @return [Symbol] filesystem type (:btrfs, :xfs, :ext4, ...)
+    #
+    def get_fs_type_from_control_xml(name, fallback)
+      fs = ProductFeatures.GetStringFeature("partitioning", name) || fallback
+      fs = fs.downcase.to_sym unless fs.is_a?(Symbol)
+      log.info("#{name}: #{fs}") unless fs == fallback
+      fs
     end
 
     publish :function => :SetCreateVg, :type => "void (boolean)"
