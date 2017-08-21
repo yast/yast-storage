@@ -23,15 +23,16 @@ describe Yast::FileSystems do
   end
 
   describe "#default_subvol_from_target" do
+    let(:target_map) { YAML.load_file(File.join(FIXTURES_PATH, "subvolumes.yml")) }
+
     before do
       allow(Yast::Storage).to receive(:GetTargetMap).and_return(target_map)
       allow(Yast::ProductFeatures).to receive(:GetStringFeature)
         .with("partitioning", "btrfs_default_subvolume").and_return(default_subvol)
+      allow(File).to receive(:directory?).and_return(true)
     end
 
     context "when root partition uses the default subvolume name (@)" do
-      let(:target_map) { YAML.load_file(File.join(FIXTURES_PATH, "subvolumes.yml")) }
-
       before do
         allow(Yast::Execute).to receive(:on_target).with("btrfs", "subvol", "list", "/", anything)
           .and_return(btrfs_list_fixture("root"))
@@ -76,6 +77,19 @@ describe Yast::FileSystems do
         it "returns the distribution default" do
           expect(subject.default_subvol_from_target).to eq(default_subvol)
         end
+      end
+    end
+
+    context "when a mount point does not exist" do
+      before do
+        allow(File).to receive(:directory?).with("/srv").and_return(false)
+        allow(Yast::Execute).to receive(:on_target).with("btrfs", "subvol", "list", "/", anything)
+          .and_return(btrfs_list_fixture("root"))
+      end
+
+      it "ignores that partition" do
+        expect(Yast::Execute).to_not receive(:on_target).with("btrfs", "subvol", "list", "/srv", anything)
+        subject.default_subvol_from_target
       end
     end
   end
