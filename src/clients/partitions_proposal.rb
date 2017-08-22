@@ -30,6 +30,10 @@
 #			See also file proposal-API.txt for details.
 module Yast
   class PartitionsProposalClient < Client
+    class << self
+      attr_accessor :modified
+    end
+
     def main
       textdomain "storage"
 
@@ -82,6 +86,14 @@ module Yast
           Builtins.y2milestone("prop=%1", @prop)
         end
 
+        if @param["simple_mode"] && StorageProposal.CouldNotDoSnapshots(Storage.GetTargetMap)
+          Storage.SetPartProposalMode("impossible")
+          Builtins.y2milestone("no snapshots, rejecting proposal")
+          @ret["warning"] =
+            _("No snapshots possible.\nPlease use larger root partition.")
+          @ret["warning_level"] = :blocker
+        end
+
         if Storage.GetPartProposalMode != "impossible" ||
             !Storage.GetPartProposalActive
           Ops.set(@ret, "preformatted_proposal", Storage.ChangeText)
@@ -97,17 +109,25 @@ module Yast
             Ops.set(@ret, "warning_level", :warning)
           end
         else
-          Ops.set(@ret, "raw_proposal", [])
+          @ret["raw_proposal"] = []
           # popup text
-          Ops.set(
-            @ret,
-            "warning",
-            _(
-              "No automatic proposal possible.\nSpecify mount points manually in the 'Partitioner' dialog."
-            )
-          )
-          Ops.set(@ret, "warning_level", :blocker)
+          @ret["warning"] ||=
+            _("No automatic proposal possible.\nSpecify mount points manually in the 'Partitioner' dialog.")
+          @ret["warning_level"] = :blocker
         end
+
+        if @param["simple_mode"]
+          self.class.modified = false if self.class.modified.nil?
+          item = if self.class.modified
+                   # A custom configuration
+                   _("Custom")
+                 else
+                   # A standard configuration
+                   _("Standard")
+                 end
+          @ret["label_proposal"] = [item]
+        end
+
         Storage.HandleProposalPackages
       elsif @func == "AskUser"
         @has_next = Ops.get_boolean(@param, "has_next", false)
@@ -207,6 +227,7 @@ module Yast
 
         # Fill return map
         Storage.HandleProposalPackages
+        self.class.modified = true if @result == :next
         @ret = { "workflow_sequence" => @result }
       elsif @func == "Description"
         # Fill return map.

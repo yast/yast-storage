@@ -337,11 +337,9 @@ module Yast
         return false
       end
 
+      FileSystems.InitSlib(@sint)
+      Partitions.InitSlib(@sint)
       StorageClients.InstallCallbacks(@sint)
-
-      btrfs_default_subvolume = ProductFeatures.GetStringFeature("partitioning",
-                                                                 "btrfs_default_subvolume")
-      @sint.setDefaultSubvolName(btrfs_default_subvolume) if btrfs_default_subvolume
 
       if Stage.initial
         @sint.setDetectMountedVolumes(false)
@@ -356,8 +354,8 @@ module Yast
       @conts = getContainers
       log.info("InitLibstorage conts:#{@conts}")
 
-      FileSystems.InitSlib(@sint)
-      Partitions.InitSlib(@sint)
+      # Initializes default subvolume name (bsc#1040154)
+      FileSystems.read_default_subvol_from_target unless Stage.initial
 
       true
     end
@@ -375,7 +373,7 @@ module Yast
 
 
     def default_subvolume_name()
-      return @sint.getDefaultSubvolName()
+      FileSystems.default_subvol
     end
 
 
