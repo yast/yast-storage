@@ -16,6 +16,11 @@
 #
 
 
+#Compat macro for new _fillupdir macro introduced in Nov 2017
+%if ! %{defined _fillupdir}
+  %define _fillupdir /var/adm/fillup-templates
+%endif
+
 Name:           yast2-storage
 Version:        3.2.18
 Release:        0
@@ -108,7 +113,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 %{yast_moduledir}/*
 %dir %{yast_libdir}/storage
 %{yast_libdir}/storage/*.rb
-/var/adm/fillup-templates/sysconfig.storage-yast2-storage
+%{_fillupdir}/sysconfig.storage-yast2-storage
 
 %dir %{yast_ydatadir}
 %{yast_ydatadir}/*.ycp
