@@ -16,7 +16,7 @@
 #
 
 Name:           yast2-storage
-Version:        3.2.19
+Version:        3.2.20
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -131,7 +131,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 
 %package devel
 Requires:	libstdc++-devel
-Requires:	libstorage-devel = %(echo `rpm -q --queryformat '%{VERSION}' libstorage-devel`)
+Requires:	libstorage-devel = %(echo `rpm -q --queryformat '%%{VERSION}' libstorage-devel`)
 Requires:	yast2-storage = %version
 
 Summary:        YaST2 - Storage Library Headers and Documentation
