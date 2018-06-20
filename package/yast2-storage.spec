@@ -17,7 +17,7 @@
 
 
 Name:           yast2-storage
-Version:        3.2.16.2
+Version:        3.2.16.3
 Release:        0
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
@@ -48,6 +48,8 @@ Requires:	rubygem(%{rb_default_ruby_abi}:ruby-dbus)
 Requires:	yast2 >= 3.1.22
 Requires:	yast2-core >= 2.18.3
 Requires:	yast2-libyui >= 2.18.7
+# findutils for xargs
+Requires:       findutils
 %ifarch s390 s390x
 Requires:	yast2-s390
 %endif
@@ -129,6 +131,7 @@ rm -f $RPM_BUILD_ROOT/%{yast_plugindir}/libpy2StorageCallbacks.so
 
 # scripts
 %{yast_ybindir}/check.boot
+%{yast_ybindir}/mask-systemd-units
 
 %package devel
 Requires:	libstdc++-devel
