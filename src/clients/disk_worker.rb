@@ -85,7 +85,9 @@ module Yast
       return :abort if !Storage.InitLibstorage(false)
 
       Storage.SwitchUiAutomounter(false)
+      SCR.Execute(path(".target.bash"), "/usr/lib/YaST2/bin/mask-systemd-units --mask")
       ret = WFM.CallFunction("inst_disk", [true, true])
+      SCR.Execute(path(".target.bash"), "/usr/lib/YaST2/bin/mask-systemd-units --unmask")
       Storage.SwitchUiAutomounter(true)
       Storage.SaveUsedFs
 

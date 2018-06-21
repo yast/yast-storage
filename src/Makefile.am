@@ -103,7 +103,8 @@ scrconf_DATA = \
   scrconf/proc_dasddev.scr
 
 ybin_SCRIPTS = \
-  bin/check.boot
+  bin/check.boot \
+  bin/mask-systemd-units
 
 ydata_DATA = \
   data/test_target_map.ycp \
