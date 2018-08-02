@@ -278,7 +278,7 @@ module Yast
             @changes = Storage.ChangeText
             UI.ChangeWidget(Id(:richtext), :Value, @changes)
 
-          else @ret == :next
+          elsif @ret == :next
 
             if Storage.GetEntryForMountpoint("/").empty?
               Popup.Error(_("Nothing assigned as root filesystem. Cannot continue."))
