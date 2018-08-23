@@ -251,18 +251,10 @@ module Yast
           Ops.set(@cfg_xml, "root_percent", 40)
         end
 
-        stmp = ProductFeatures.GetStringFeature(
-          "partitioning",
-          "limit_try_home"
-        )
-        Ops.set(
-          @cfg_xml,
-          "home_limit",
-          Ops.divide(Storage.ClassicStringToByte(stmp), 1024 * 1024)
-        )
-        if Ops.less_or_equal(Ops.get_integer(@cfg_xml, "home_limit", 0), 0)
-          Ops.set(@cfg_xml, "home_limit", 5 * 1024)
-        end
+        home_limit = ProductFeatures.GetStringFeature("partitioning", "limit_try_home")
+        home_limit = Storage.ClassicStringToByte(home_limit) / (1024 * 1024)
+        home_limit = 5 * 1024 if home_limit <= 0
+        @cfg_xml["home_limit"] = home_limit
 
         stmp = ProductFeatures.GetStringFeature(
           "partitioning",
@@ -4005,17 +3997,15 @@ module Yast
         Builtins.add(Ops.get_list(conf, "partitions", []), root)
       )
       old_root = {}
-      if GetProposalHome() &&
-          Ops.less_than(Ops.get_integer(opts, "home_limit", 0), avail_size)
-        home = {
+      home_limit = opts["home_limit"] || 0
+      if GetProposalHome() && avail_size > home_limit
+        home =
+        {
           "mount"       => GetHomePath(),
           "increasable" => true,
           "fsys"        => PropDefaultHomeFs(),
           "size"        => 512 * 1024 * 1024,
-          "pct"         => Ops.subtract(
-            100,
-            Ops.get_integer(opts, "root_percent", 40)
-          )
+          "pct"         => 100 - Ops.get_integer(opts, "root_percent", 40)
         }
         Ops.set(
           conf,
@@ -4835,17 +4825,14 @@ module Yast
             mode,
             avail_size
           )
-          if Ops.greater_than(avail_size, 0)
+          if avail_size > 0
             if mode == :reuse
               parts = Ops.get_list(disk, "partitions", [])
               tmp = []
-              if GetProposalHome() &&
-                  Ops.greater_than(
-                    avail_size,
-                    Ops.get_integer(opts, "home_limit", 0)
-                  )
+              home_limit = opts["home_limit"] || 0
+              if GetProposalHome() && avail_size > home_limit
                 tmp = can_home_reuse(4 * 1024, 0, parts)
-                if Ops.greater_than(Builtins.size(tmp), 0)
+                if Builtins.size(tmp) > 0
                   have_home = true
                   parts = deep_copy(tmp)
                 end
@@ -4898,20 +4885,14 @@ module Yast
               )
             end
             old_root = {}
-            if !have_home && GetProposalHome() &&
-                Ops.less_than(
-                  Ops.get_integer(opts, "home_limit", 0),
-                  avail_size
-                )
+            home_limit = opts["home_limit"] || 0
+            if !have_home && GetProposalHome() && avail_size > home_limit
               home = {
                 "mount"       => GetHomePath(),
                 "increasable" => true,
                 "fsys"        => PropDefaultHomeFs(),
                 "size"        => 512 * 1024 * 1024,
-                "pct"         => Ops.subtract(
-                  100,
-                  Ops.get_integer(opts, "root_percent", 40)
-                )
+                "pct"         => 100 - Ops.get_integer(opts, "root_percent", 40)
               }
               Ops.set(
                 conf,
@@ -5571,15 +5552,9 @@ module Yast
           root_pe,
           swap_pe
         )
-        if home == nil && GetProposalHome() &&
-            Ops.greater_than(
-              free,
-              sizek_to_pe(
-                Ops.multiply(Ops.get_integer(opts, "home_limit", 0), 1024),
-                pe,
-                false
-              )
-            )
+        home_limit = opts["home_limit"] || 0
+        home_limit_pe = sizek_to_pe(home_limit * 1024, pe, false)
+        if home == nil && GetProposalHome() && free > home_limit_pe
           tmp = Ops.divide(
             Ops.multiply(free, Ops.get_integer(opts, "root_percent", 40)),
             100
