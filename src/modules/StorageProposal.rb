@@ -3975,16 +3975,15 @@ module Yast
       avail_size = get_avail_size_mb(Ops.get_list(disk, "partitions", []))
       if !have_swap
         swap_sizes = get_swap_sizes(avail_size)
+        swap_size_mb = swap_sizes[0] || 256
         swap = {
           "mount"       => "swap",
           "increasable" => true,
           "fsys"        => :swap,
           "maxsize"     => 2 * 1024 * 1024 * 1024,
-          "size"        => Ops.multiply(
-            Ops.multiply(Ops.get(swap_sizes, 0, 256), 1024),
-            1024
-          )
+          "size"        => swap_size_mb * 1024 * 1024
         }
+        avail_size -= swap_size_mb
         Ops.set(
           conf,
           "partitions",
