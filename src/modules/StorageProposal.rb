@@ -387,6 +387,9 @@ module Yast
     end
 
 
+    # Return the name of the LVM volume group if the product is configured to
+    # create an LVM-based proposal and an empty string if it should be a
+    # partition-based proposal.
     def GetProposalVM
       ret = ""
       ret = "system" if @proposal_lvm
@@ -4583,6 +4586,8 @@ module Yast
       disk_names.any? { |disk| is_dasd?(disk) }
     end
 
+    # Make a partition-based storage proposal.
+    # This is called from get_inst_prop().
     def get_inst_proposal(target)
       target = deep_copy(target)
       Builtins.y2milestone("get_inst_proposal start")
@@ -5684,6 +5689,8 @@ module Yast
     end
 
 
+    # Make an LVM-based (VM: "Volume Manager") storage proposal.
+    # This is called from get_inst_prop().
     def get_inst_prop_vm(target, key)
       target = deep_copy(target)
       Builtins.y2milestone("get_inst_prop_vm start key %1", key)
@@ -6066,6 +6073,7 @@ module Yast
     end
 
 
+    # Make a storage proposal for AutoYaST.
     def get_proposal_vm(target, key, disk)
       target = deep_copy(target)
       disk = deep_copy(disk)
@@ -6191,6 +6199,9 @@ module Yast
     end
 
 
+    # Toplevel entry function for a storage proposal during installation.
+    # For a partition-based proposal, this will call get_inst_proposal().
+    # For an LVM-based proposal, this will call get_inst_prop_vm().
     def get_inst_prop(target)
       # initialize data from control file earlier, it is needed in this function
       # to decide whether to use LVM proposal (bsc#957913)
