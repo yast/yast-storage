@@ -251,18 +251,10 @@ module Yast
           Ops.set(@cfg_xml, "root_percent", 40)
         end
 
-        stmp = ProductFeatures.GetStringFeature(
-          "partitioning",
-          "limit_try_home"
-        )
-        Ops.set(
-          @cfg_xml,
-          "home_limit",
-          Ops.divide(Storage.ClassicStringToByte(stmp), 1024 * 1024)
-        )
-        if Ops.less_or_equal(Ops.get_integer(@cfg_xml, "home_limit", 0), 0)
-          Ops.set(@cfg_xml, "home_limit", 5 * 1024)
-        end
+        home_limit = ProductFeatures.GetStringFeature("partitioning", "limit_try_home")
+        home_limit = Storage.ClassicStringToByte(home_limit) / (1024 * 1024)
+        home_limit = 5 * 1024 if home_limit <= 0
+        @cfg_xml["home_limit"] = home_limit
 
         stmp = ProductFeatures.GetStringFeature(
           "partitioning",
@@ -395,6 +387,9 @@ module Yast
     end
 
 
+    # Return the name of the LVM volume group if the product is configured to
+    # create an LVM-based proposal and an empty string if it should be a
+    # partition-based proposal.
     def GetProposalVM
       ret = ""
       ret = "system" if @proposal_lvm
@@ -3983,16 +3978,15 @@ module Yast
       avail_size = get_avail_size_mb(Ops.get_list(disk, "partitions", []))
       if !have_swap
         swap_sizes = get_swap_sizes(avail_size)
+        swap_size_mb = swap_sizes[0] || 256
         swap = {
           "mount"       => "swap",
           "increasable" => true,
           "fsys"        => :swap,
           "maxsize"     => 2 * 1024 * 1024 * 1024,
-          "size"        => Ops.multiply(
-            Ops.multiply(Ops.get(swap_sizes, 0, 256), 1024),
-            1024
-          )
+          "size"        => swap_size_mb * 1024 * 1024
         }
+        avail_size -= swap_size_mb
         Ops.set(
           conf,
           "partitions",
@@ -4005,17 +3999,15 @@ module Yast
         Builtins.add(Ops.get_list(conf, "partitions", []), root)
       )
       old_root = {}
-      if GetProposalHome() &&
-          Ops.less_than(Ops.get_integer(opts, "home_limit", 0), avail_size)
-        home = {
+      home_limit = opts["home_limit"] || 0
+      if GetProposalHome() && avail_size > home_limit
+        home =
+        {
           "mount"       => GetHomePath(),
           "increasable" => true,
           "fsys"        => PropDefaultHomeFs(),
           "size"        => 512 * 1024 * 1024,
-          "pct"         => Ops.subtract(
-            100,
-            Ops.get_integer(opts, "root_percent", 40)
-          )
+          "pct"         => 100 - Ops.get_integer(opts, "root_percent", 40)
         }
         Ops.set(
           conf,
@@ -4594,6 +4586,8 @@ module Yast
       disk_names.any? { |disk| is_dasd?(disk) }
     end
 
+    # Make a partition-based storage proposal.
+    # This is called from get_inst_prop().
     def get_inst_proposal(target)
       target = deep_copy(target)
       Builtins.y2milestone("get_inst_proposal start")
@@ -4835,17 +4829,14 @@ module Yast
             mode,
             avail_size
           )
-          if Ops.greater_than(avail_size, 0)
+          if avail_size > 0
             if mode == :reuse
               parts = Ops.get_list(disk, "partitions", [])
               tmp = []
-              if GetProposalHome() &&
-                  Ops.greater_than(
-                    avail_size,
-                    Ops.get_integer(opts, "home_limit", 0)
-                  )
+              home_limit = opts["home_limit"] || 0
+              if GetProposalHome() && avail_size > home_limit
                 tmp = can_home_reuse(4 * 1024, 0, parts)
-                if Ops.greater_than(Builtins.size(tmp), 0)
+                if Builtins.size(tmp) > 0
                   have_home = true
                   parts = deep_copy(tmp)
                 end
@@ -4898,20 +4889,14 @@ module Yast
               )
             end
             old_root = {}
-            if !have_home && GetProposalHome() &&
-                Ops.less_than(
-                  Ops.get_integer(opts, "home_limit", 0),
-                  avail_size
-                )
+            home_limit = opts["home_limit"] || 0
+            if !have_home && GetProposalHome() && avail_size > home_limit
               home = {
                 "mount"       => GetHomePath(),
                 "increasable" => true,
                 "fsys"        => PropDefaultHomeFs(),
                 "size"        => 512 * 1024 * 1024,
-                "pct"         => Ops.subtract(
-                  100,
-                  Ops.get_integer(opts, "root_percent", 40)
-                )
+                "pct"         => 100 - Ops.get_integer(opts, "root_percent", 40)
               }
               Ops.set(
                 conf,
@@ -5571,15 +5556,9 @@ module Yast
           root_pe,
           swap_pe
         )
-        if home == nil && GetProposalHome() &&
-            Ops.greater_than(
-              free,
-              sizek_to_pe(
-                Ops.multiply(Ops.get_integer(opts, "home_limit", 0), 1024),
-                pe,
-                false
-              )
-            )
+        home_limit = opts["home_limit"] || 0
+        home_limit_pe = sizek_to_pe(home_limit * 1024, pe, false)
+        if home == nil && GetProposalHome() && free > home_limit_pe
           tmp = Ops.divide(
             Ops.multiply(free, Ops.get_integer(opts, "root_percent", 40)),
             100
@@ -5710,6 +5689,8 @@ module Yast
     end
 
 
+    # Make an LVM-based (VM: "Volume Manager") storage proposal.
+    # This is called from get_inst_prop().
     def get_inst_prop_vm(target, key)
       target = deep_copy(target)
       Builtins.y2milestone("get_inst_prop_vm start key %1", key)
@@ -6092,6 +6073,7 @@ module Yast
     end
 
 
+    # Make a storage proposal for AutoYaST.
     def get_proposal_vm(target, key, disk)
       target = deep_copy(target)
       disk = deep_copy(disk)
@@ -6217,6 +6199,9 @@ module Yast
     end
 
 
+    # Toplevel entry function for a storage proposal during installation.
+    # For a partition-based proposal, this will call get_inst_proposal().
+    # For an LVM-based proposal, this will call get_inst_prop_vm().
     def get_inst_prop(target)
       # initialize data from control file earlier, it is needed in this function
       # to decide whether to use LVM proposal (bsc#957913)
