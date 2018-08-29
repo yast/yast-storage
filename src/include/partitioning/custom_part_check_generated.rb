@@ -25,12 +25,13 @@
 # Authors:     Arvin Schnell <aschnell@suse.de>
 
 require "storage/shadowed_vol_list"
+require "storage/target_map_formatter"
 
 module Yast
   module PartitioningCustomPartCheckGeneratedInclude
 
-
     include Yast::Logger
+    include Yast::StorageHelpers::TargetMapFormatter
 
     POPUP_LINE_LENGTH = 70
     private_constant :POPUP_LINE_LENGTH
@@ -55,6 +56,53 @@ module Yast
 
 
     #---------------------------------------------------------------------
+    # Set partition id (fsid) in a partition.
+    #---------------------------------------------------------------------
+    def adjust_fsid(partition, fsid)
+      partition["fsid"] = fsid
+      partition["fstype"] = Partitions.FsIdToString(fsid)
+      Builtins.y2milestone("#{partition["device"]}: fsid adjusted to #{fsid} (#{partition["fstype"]})")
+    end
+
+
+    #---------------------------------------------------------------------
+    # Fix trivial inconsistencies in the target map.
+    #
+    # - adjust prep types to match partition label
+    #---------------------------------------------------------------------
+    def sanitize_created_partition_table(targetMap)
+      Builtins.y2milestone("target map to sanitize: %1", format_target_map(targetMap))
+
+      adjusted = false
+
+      targetMap.each_value do |disk|
+        label = disk["label"]
+        partitions = disk["partitions"]
+        if label && partitions
+          partitions.each do |partition|
+            fsid = partition["fsid"]
+            fstype = partition["fstype"]
+            if fsid == Partitions.fsid_gpt_prep && label == "msdos"
+              adjust_fsid(partition, Partitions.fsid_prep_chrp_boot)
+              adjusted = true
+            end
+            if fsid == Partitions.fsid_prep_chrp_boot && label == "gpt"
+              adjust_fsid(partition, Partitions.fsid_gpt_prep)
+              adjusted = true
+            end
+          end
+        end
+      end
+
+      if adjusted
+        Builtins.y2milestone("target map sanitized: %1", format_target_map(targetMap))
+      else
+        Builtins.y2milestone("target map was perfect")
+      end
+    end
+
+
+    #---------------------------------------------------------------------
     # Checks the generated partition table.
     #---------------------------------------------------------------------
     # Checkpoints:
@@ -64,6 +112,7 @@ module Yast
     # - check if the boot partition ends in a bootable cylinder (/or/boot)
 
     def check_created_partition_table(targetMap, installation)
+      sanitize_created_partition_table(targetMap)
       targetMap = deep_copy(targetMap)
       Builtins.y2milestone(
         "Now checking generated target map. installation: %1",
