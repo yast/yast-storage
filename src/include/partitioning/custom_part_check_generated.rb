@@ -126,6 +126,7 @@ module Yast
       partition_mounted_but_not_formated = false
       swap_found = false
       boot_found = false
+      prep_found = false
       boot_mount_point = ""
       root_found = false
       gpt_boot_ia64 = false
@@ -222,6 +223,7 @@ module Yast
             if Partitions.PrepBoot &&
                 (fsid == Partitions.FsidBoot(dlabel) || fsid == 6)
               boot_found = true
+              prep_found = true
               boot_mount_point = mountpoint
               boot_end = Region.End(Ops.get_list(part, "region", []))
               boot_fs = Ops.get_symbol(part, "used_fs", :unknown)
@@ -287,6 +289,9 @@ module Yast
 
       log.info("diskless:#{diskless}")
       log.info("root_found:#{root_found} root_fs:#{root_fs} rootdlabel:#{rootdlabel}")
+      # Note to the uninitiated:
+      #   While 'boot_fs' *is* the fs of the boot partition, 'boot_fsid' is *not* its fsid.
+      #   Nope.
       log.info("boot_found:#{boot_found} boot_fs:#{boot_fs} boot_fsid:#{boot_fsid}")
       log.info("root_dmraid:#{root_dmraid} root_raid:#{root_raid} boot_raid:#{boot_raid} raid_type:#{raid_type}")
 
@@ -347,7 +352,11 @@ module Yast
 
       # A PReP/CHRP partition is not supposed to be mounted. So if we find any
       # other /boot partition, we should warn the user.
-      if boot_found && Partitions.prep_boot_needed? && !boot_mount_point.empty? && installation || show_all_popups
+      #
+      # Note:
+      #   This covers the case *with* /boot but no prep. There's a similar blob below
+      #   covering the case *without* /boot.
+      if boot_found && Partitions.prep_boot_needed? && !prep_found && installation || show_all_popups
         message = _(
           "Warning:\n" \
           "Your system needs a boot partition, either with type 0x41 PReP/CHRP\n" \
