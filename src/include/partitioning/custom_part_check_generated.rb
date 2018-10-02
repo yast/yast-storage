@@ -61,6 +61,7 @@ module Yast
     def adjust_fsid(partition, fsid)
       partition["fsid"] = fsid
       partition["fstype"] = Partitions.FsIdToString(fsid)
+      Storage.SetPartitionId(partition["device"], fsid)
       Builtins.y2milestone("#{partition["device"]}: fsid adjusted to #{fsid} (#{partition["fstype"]})")
     end
 
