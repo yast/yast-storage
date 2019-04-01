@@ -446,8 +446,9 @@ module Yast
                   Ops.get_string(p, "mount", "") == StorageProposal.GetHomePath()
                 end) == 0
               @ok = false
-              reason = _(
-                "Not enough space available to propose separate /home."
+              reason = Builtins.sformat(
+                _("Not enough space available to propose separate %1."),
+                StorageProposal.GetHomePath()
               )
               Popup.Error(reason)
             end
