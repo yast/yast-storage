@@ -443,7 +443,7 @@ module Yast
             Builtins.y2milestone("proposed partitions:%1", @pl)
             if StorageProposal.GetProposalHome &&
                 Builtins.size(Builtins.filter(@pl) do |p|
-                  Ops.get_string(p, "mount", "") == "/home"
+                  Ops.get_string(p, "mount", "") == StorageProposal.GetHomePath()
                 end) == 0
               @ok = false
               reason = _(
