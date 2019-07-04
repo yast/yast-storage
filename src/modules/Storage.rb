@@ -690,7 +690,9 @@ module Yast
         elsif Builtins.search(device, "/dev/i2o/hd") == 0
           dlen = 12
         elsif @sint.getPartitionPrefix(device)=="p"
-          pos = Builtins.findlastof(device, "p")
+          pos = device.rindex("p")
+          # ignore the "p" in "pmem" (e.g. /dev/pmem0)
+          pos = nil if pos && device.start_with?("/dev/pmem") && pos < "/dev/pmem".size
           dlen = Builtins.size(device)
           dlen = pos if pos != nil
         elsif Builtins.search(device, "/dev/dasd") == 0
