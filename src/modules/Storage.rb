@@ -3871,6 +3871,12 @@ module Yast
     # @param [Hash{String => map}] target Disk map
     # @return [Hash{String => map}] modified target
     def AddSwapMp(target)
+
+      # Add at most 20 swaps since the kernel cannot handle much
+      # more. The proposal can reuse or create more swaps. (see bsc
+      # #1150949)
+      n = 0
+
       target = deep_copy(target)
       swaps = SwappingPartitions()
       Builtins.y2milestone("AddSwapMp swaps %1", swaps)
@@ -3897,7 +3903,8 @@ module Yast
                 ok = CheckSwapable(dev)
                 Builtins.y2milestone("AddSwapMp initial ok: %1", ok)
               end
-              if ok
+              if ok && n < 20
+                n += 1
                 Ops.set(part, "mount", "swap")
                 ChangeVolumeProperties(part)
                 Builtins.y2milestone("AddSwapMp %1", part)
