@@ -10,6 +10,7 @@ TESTS = \
 	storage_boot_on_raid1_test.rb 					 \
 	partitions_test.rb 						 \
 	include/partitioning_custom_part_check_generated_include_test.rb \
+	include/ep-lvm-lib_test.rb 					 \
 	subvol_test.rb 							 \
         ro_text_test.rb
 

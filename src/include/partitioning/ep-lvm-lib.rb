@@ -100,6 +100,53 @@ module Yast
       nil
     end
 
+    # Finds the device in the given target map and returns its kernel name
+    #
+    # In case the device is not found, the given device name is returned
+    #
+    # @param target_map [Hash]
+    # @param device_name [String]
+    #
+    # @return [String]
+    def device_kernel_name(target_map, device_name)
+      device = find_device(target_map, device_name)
+
+      return device_name unless device
+
+      device["device"]
+    end
+
+    # Looks for the a device with the given name in the target map
+    #
+    # @param target_map [Hash]
+    # @param device_name [String]
+    #
+    # @return [Hash]
+    def find_device(target_map, device_name)
+      devices = []
+
+      target_map.values.each do |device|
+        devices << device
+        devices += (device["partitions"] || [])
+      end
+
+      devices.find { |d| match_any_name?(d, device_name) }
+    end
+
+    # Checks whether any of the device names matches with the given name
+    #
+    # @param device [Hash]
+    # @param name [String]
+    #
+    # @return [Boolean]
+    def match_any_name?(device, name)
+      return true if device["device"] == name
+
+      base_name = name.split("/").last
+      udev_ids = device["udev_id"] || []
+
+      udev_ids.include?(base_name)
+    end
 
     def EpResizeVolumeGroup(device)
       if device == nil
@@ -117,10 +164,9 @@ module Yast
 
       vgname = Ops.get_string(data, "name", "error")
 
-
       _Commit = lambda do |data|
-        devices_old = MergeDevices(data)
-        devices_new = Ops.get_list(data, "devices_new", [])
+        devices_old = MergeDevices(data).map { |d| device_kernel_name(target_map, d) }
+        devices_new = (data["devices_new"] || []).map { |d| device_kernel_name(target_map, d) }
 
         devices_added = AddedToList(devices_old, devices_new)
         devices_removed = RemovedFromList(devices_old, devices_new)
